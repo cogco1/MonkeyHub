@@ -2016,6 +2016,7 @@
       "depends_on": [
         "M002",
         "M004",
+        "M024",
         "P018",
         "P024",
         "P025",
@@ -4696,6 +4697,108 @@
       "evidence": [
         "Bilingual main diagram now exposes one Design Decision as the common source of Semantic Component and Realization Specification, three realization families, neutral GeometryProgram compilation, stable component-geometry-platform receipt mapping, and structured-scene versus screenshot evidence authority; deterministic render, XML/anchor/parity/link/dimension checks, architecture firewall, and devctl tests passed."
       ]
+    },
+    {
+      "id": "P049",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Implement deterministic sandbox evaluators for the declared geometry function vocabulary without any building-type answer.",
+      "depends_on": [
+        "P047",
+        "P048"
+      ],
+      "write_scope": [
+        "archflow/state/geometry_program.py",
+        "archflow/realization/",
+        "archflow/adapters/sandbox_render.py",
+        "tests/",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "REVOLVE and EXTRUSION realize as analytic representations with exact containment tests.",
+        "LOFT and SWEEP realize as deterministically tessellated bounded meshes with loss codes.",
+        "TRANSFORM and ARRAY compose placement without new geometry authority.",
+        "CURVE gains an explicit polyline-or-bezier basis with tolerance-bounded sampling.",
+        "Voxel, render, and use-scenario paths consume new representations without instance defaults.",
+        "Identical programs produce identical scene, view, and render digests across runs."
+      ],
+      "tests": [
+        "Per-evaluator analytic ground-truth units",
+        "Double-run digest equality",
+        "Voxel containment property tests",
+        "No-instance-default scan"
+      ],
+      "card": "docs/mapping/planning/P049-neutral-geometry-function-evaluators.md",
+      "evidence": []
+    },
+    {
+      "id": "P050",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Derive GeometryProgramProposal project records from Architect semantics and P023 spatial records instead of any framework-owned template.",
+      "depends_on": [
+        "P023",
+        "P029",
+        "P047",
+        "P048",
+        "P049"
+      ],
+      "write_scope": [
+        "archflow/capabilities/",
+        "archflow/runtime/",
+        "tests/",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "A producer compiles spatial options, program facts, and model rounds into typed proposal records with receipts.",
+        "The model authors operations over the function vocabulary; malformed output fails typed into the repair loop.",
+        "The framework owns no massing, opening, dimension-bound, or typology constant; templates are provenance-bound project records.",
+        "Proposal records bind exact-base digests, source spatial options, and semantic bindings.",
+        "Rejected proposal rounds persist and lineage reloads."
+      ],
+      "tests": [
+        "Scripted-provider producer units (accept, repair, refuse)",
+        "Proposal lineage round-trip and reload",
+        "Compiler and realization integration",
+        "No-instance-default scan"
+      ],
+      "card": "docs/mapping/planning/P050-record-driven-geometry-proposal-producer.md",
+      "evidence": []
+    },
+    {
+      "id": "M024",
+      "origin_stream": "modify",
+      "stream": "modify",
+      "status": "ready",
+      "goal": "Replace sandbox_gold's framework-owned geometry template and fabricated evidence with record-driven derivation and genuine review outcomes.",
+      "depends_on": [
+        "P049",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/runtime/",
+        "probes/p026-sandbox-gold/",
+        "tests/integration/",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "sandbox_gold owns no massing, topology, opening, or dimension constant; geometry arrives through the P050 producer.",
+        "Use-zone evidence derives from spatial derivation and the required-spaces gate can genuinely fail.",
+        "Approval policy and pre-authorization events are persisted records that resolve on reload.",
+        "Concept rejection emerges from hard gates judging genuine model output, never schema-guaranteed choreography.",
+        "The honest Gold path runs end to end with reload and restart-reload, preserving rejected lineage.",
+        "Case content lives under probes/p026-sandbox-gold/, never in archflow/."
+      ],
+      "tests": [
+        "Honest-path Gold E2E with scripted and repair-loop providers",
+        "Negative gate tests for spaces, approvals, and rejection",
+        "Full reload and restart-reload chain",
+        "No-instance-default scan over sandbox_gold"
+      ],
+      "card": "docs/mapping/modify/M024-sandbox-gold-evidence-honesty.md",
+      "evidence": []
     }
   ]
 }

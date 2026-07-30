@@ -59,8 +59,8 @@ These are the main responsibility chains. Individual cards retain their exact fa
 | Ledger | Meaning | Items | Index |
 | --- | --- | ---: | --- |
 | Retirement | Replacement-first removal of old ownership | 0 | [R](mapping/retirement/INDEX.md) |
-| Modify | Scoped repair of the active path | 0 | [M](mapping/modify/INDEX.md) |
-| Planning | Not implemented or not yet accepted | 5 | [P](mapping/planning/INDEX.md) |
+| Modify | Scoped repair of the active path | 1 | [M](mapping/modify/INDEX.md) |
+| Planning | Not implemented or not yet accepted | 7 | [P](mapping/planning/INDEX.md) |
 | Archive | Completed and evidenced work | 65 | [A](mapping/archive/INDEX.md) |
 
 R, M, and P are parallel ledgers, not mandatory runtime stages. Archive is
@@ -75,6 +75,9 @@ the cleared construction record, not a fourth execution phase.
 | P031 | planning | ready | Add material accounting staged realization neutral save/share and optional downstream platform exports. | [P031](mapping/planning/P031-player-save-material-build.md) |
 | P038 | planning | ready | Prove the Pantheon probe as a longitudinal raw-request-to-usable-building workflow without framework-owned instance answers. | [P038](mapping/planning/P038-pantheon-longitudinal-full-flow.md) |
 | P044 | planning | ready | Package state-responsive ArchFlow capabilities as provider-neutral versioned Skills with thin model-surface adapters and no transfer of runtime authority. | [P044](mapping/planning/P044-portable-skill-packages.md) |
+| P049 | planning | ready | Implement deterministic sandbox evaluators for the declared geometry function vocabulary without any building-type answer. | [P049](mapping/planning/P049-neutral-geometry-function-evaluators.md) |
+| P050 | planning | ready | Derive GeometryProgramProposal project records from Architect semantics and P023 spatial records instead of any framework-owned template. | [P050](mapping/planning/P050-record-driven-geometry-proposal-producer.md) |
+| M024 | modify | ready | Replace sandbox_gold's framework-owned geometry template and fabricated evidence with record-driven derivation and genuine review outcomes. | [M024](mapping/modify/M024-sandbox-gold-evidence-honesty.md) |
 
 ## Module state
 
