@@ -1,0 +1,1 @@
+{"obligation_id":"verify-load-path","schema":"DetachedDiagnosticObligation@1","statement":"Verify that each detached load source has a support path to ground.","topic":"load_path"}

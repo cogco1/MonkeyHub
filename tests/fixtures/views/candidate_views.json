@@ -1,0 +1,19 @@
+{
+  "schema": "ViewEvidenceFixture@1",
+  "views": [
+    {
+      "evidence_ref": "view:candidate:front",
+      "artifact_id": "artifact-test-candidate",
+      "uri": "artifact://candidate/front.png",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "viewpoint": "front pedestrian view"
+    },
+    {
+      "evidence_ref": "view:candidate:interior",
+      "artifact_id": "artifact-test-candidate",
+      "uri": "artifact://candidate/interior.png",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "viewpoint": "entry toward primary space"
+    }
+  ]
+}

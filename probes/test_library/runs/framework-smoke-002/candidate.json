@@ -1,0 +1,42 @@
+{
+  "base": {
+    "run_id": "test_library:framework-smoke-002",
+    "version": 0
+  },
+  "claims": [
+    {
+      "evidence_refs": [
+        "artifact-8bc0519e4fbbd8c7c48e"
+      ],
+      "key": "artifact.loadable",
+      "value": "satisfied by fake artifact"
+    },
+    {
+      "evidence_refs": [
+        "artifact-8bc0519e4fbbd8c7c48e"
+      ],
+      "key": "use.requested",
+      "value": "satisfied by fake artifact"
+    }
+  ],
+  "delta": {
+    "artifacts_add": [
+      "artifact-8bc0519e4fbbd8c7c48e"
+    ],
+    "commitments_add": [],
+    "facts_add": [],
+    "obligations_add": [],
+    "obligations_discharge": [
+      "artifact.loadable",
+      "use.requested"
+    ]
+  },
+  "evidence_refs": [
+    "artifact-8bc0519e4fbbd8c7c48e"
+  ],
+  "intent": "Produce one loadable fake voxel building artifact.",
+  "schema": "ProbeCandidateSubmission@1",
+  "submission_id": "submission-w-0-622e57f41ce8",
+  "unresolved": [],
+  "workspace_id": "w-0-622e57f41ce8"
+}

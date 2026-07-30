@@ -1,0 +1,20 @@
+{
+  "schema": "VoxelScan@1",
+  "source_artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "base_state": {"run_id": "run-fixture", "version": 0},
+  "workspace_id": "__WORKSPACE__",
+  "bounds": {"min": [0, 0, 0], "max": [4, 3, 4]},
+  "default_kind": "air",
+  "runs": [
+    {"kind": "solid", "from": [0, 0, 0], "to": [4, 0, 4]},
+    {"kind": "solid", "from": [0, 3, 0], "to": [4, 3, 4]},
+    {"kind": "solid", "from": [0, 1, 0], "to": [4, 2, 0]},
+    {"kind": "solid", "from": [0, 1, 4], "to": [4, 2, 4]},
+    {"kind": "solid", "from": [0, 1, 1], "to": [0, 2, 3]},
+    {"kind": "solid", "from": [4, 1, 1], "to": [4, 2, 3]}
+  ],
+  "cells": [
+    {"at": [2, 1, 0], "kind": "opening"},
+    {"at": [2, 2, 0], "kind": "opening"}
+  ]
+}

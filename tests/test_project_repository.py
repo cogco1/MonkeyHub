@@ -1,0 +1,269 @@
+from __future__ import annotations
+
+import io
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from archflow.project import (
+    FilesystemProjectRepository,
+    PersistenceArea,
+    PersistenceDestination,
+    ProjectArtifactRef,
+    ProjectAlreadyExists,
+    ProjectIntegrityError,
+    ProjectRecordRef,
+    ProjectVersionRef,
+    PromotionAuthorityError,
+    RunRef,
+    StaleProjectHead,
+    project_state_sha256,
+)
+
+
+def _decision(
+    repository: FilesystemProjectRepository,
+    run: RunRef,
+    *,
+    status: str,
+    candidate_ref: str = "project://project-a/runs/candidate-001",
+) -> ProjectRecordRef:
+    return repository.put_json(
+        run=run,
+        destination=PersistenceDestination(
+            PersistenceArea.RUN_REVIEW,
+            run_id=run.run_id,
+        ),
+        record_kind=f"decision-{status}",
+        payload={
+            "schema": "PromotionDecision@1",
+            "status": status,
+            "project_id": run.project_id,
+            "run_id": run.run_id,
+            "checked_state": {
+                "project_id": run.base.project_id,
+                "version": run.base.version,
+                "state_sha256": run.base.require_digest(),
+            },
+            "candidate_ref": candidate_ref,
+        },
+    )
+
+
+class ProjectRepositoryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name) / "project-a"
+        self.repository = FilesystemProjectRepository.initialize(
+            self.root,
+            project_id="project-a",
+            initial_state={"phase": "request", "commitments": []},
+        )
+
+    def test_initialization_is_immutable_and_reopens_with_verified_head(self) -> None:
+        before = self.repository.read_head()
+        reopened = FilesystemProjectRepository.open(self.root)
+        state = {"phase": "request", "commitments": []}
+
+        self.assertEqual(reopened.read_head(), before)
+        self.assertEqual(reopened.load_current_state(), state)
+        self.assertEqual(before.require_digest(), project_state_sha256(state))
+        head_document = json.loads(
+            self.repository.layout.head.read_text(encoding="utf-8")
+        )
+        self.assertEqual(head_document["schema"], "ProjectHead@2")
+        self.assertNotEqual(
+            before.require_digest(),
+            head_document["snapshot"]["sha256"],
+        )
+        self.assertEqual(
+            reopened.load_manifest().format_version,
+            2,
+        )
+        self.assertIsNotNone(before.state_sha256)
+        with self.assertRaises(ProjectAlreadyExists):
+            FilesystemProjectRepository.initialize(
+                self.root,
+                project_id="project-a",
+                initial_state={},
+            )
+
+    def test_declared_semantic_digest_and_identity_mismatch_fail(self) -> None:
+        bad_digest_root = Path(self.temporary.name) / "bad-digest"
+        with self.assertRaisesRegex(
+            ProjectIntegrityError,
+            "semantic digest",
+        ):
+            FilesystemProjectRepository.initialize(
+                bad_digest_root,
+                project_id="bad-digest",
+                initial_state={
+                    "schema": "CanonicalState@1",
+                    "project_id": "bad-digest",
+                    "version": 0,
+                    "state_sha256": "0" * 64,
+                },
+            )
+        bad_identity_root = Path(self.temporary.name) / "bad-identity"
+        with self.assertRaisesRegex(
+            ProjectIntegrityError,
+            "canonical identity",
+        ):
+            FilesystemProjectRepository.initialize(
+                bad_identity_root,
+                project_id="bad-identity",
+                initial_state={
+                    "schema": "CanonicalState@1",
+                    "project_id": "another-project",
+                    "version": 0,
+                },
+            )
+
+    def test_record_and_artifact_ingestion_are_content_addressed(self) -> None:
+        run = self.repository.create_run("run-001")
+        destination = PersistenceDestination(
+            PersistenceArea.RUN_RECORD,
+            run_id=run.run_id,
+        )
+        first = self.repository.put_json(
+            run=run,
+            destination=destination,
+            record_kind="observation",
+            payload={"schema": "Observation@1", "value": 1},
+        )
+        duplicate = self.repository.put_json(
+            run=run,
+            destination=destination,
+            record_kind="observation",
+            payload={"schema": "Observation@1", "value": 1},
+        )
+        artifact = self.repository.ingest(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.OBJECT),
+            artifact_id="artifact-001",
+            media_type="application/octet-stream",
+            source=io.BytesIO(b"voxel-data"),
+        )
+
+        self.assertEqual(first, duplicate)
+        self.assertTrue(first.uri.startswith("project://project-a/"))
+        self.assertNotIn(str(self.root), first.uri)
+        self.assertIsInstance(artifact, ProjectArtifactRef)
+        self.assertEqual(
+            self.repository.layout.resolve_record(artifact).read_bytes(),
+            b"voxel-data",
+        )
+
+    def test_cross_project_absolute_and_escape_references_fail(self) -> None:
+        run = self.repository.create_run("run-001")
+        with self.assertRaises(ValueError):
+            self.repository.put_json(
+                run=RunRef(
+                    "project-b",
+                    "run-001",
+                    ProjectVersionRef("project-b", 0, "0" * 64),
+                ),
+                destination=PersistenceDestination(
+                    PersistenceArea.RUN_RECORD,
+                    run_id="run-001",
+                ),
+                record_kind="record",
+                payload={},
+            )
+        with self.assertRaises(ValueError):
+            ProjectRecordRef(
+                project_id="project-a",
+                relative_path="C:/absolute.json",
+                sha256="0" * 64,
+            )
+        with self.assertRaises(ValueError):
+            ProjectRecordRef(
+                project_id="project-a",
+                relative_path="../escape.json",
+                sha256="0" * 64,
+            )
+        with self.assertRaises(PromotionAuthorityError):
+            self.repository.put_json(
+                run=run,
+                destination=PersistenceDestination(PersistenceArea.EVENT),
+                record_kind="fake-event",
+                payload={},
+            )
+
+    def test_rejected_decision_cannot_prepare_or_advance_head(self) -> None:
+        run = self.repository.create_run("run-rejected")
+        before = self.repository.read_head()
+        rejected = _decision(self.repository, run, status="rejected")
+
+        with self.assertRaises(PromotionAuthorityError):
+            self.repository.prepare_transition(
+                run=run,
+                expected=before,
+                replacement_state={"phase": "candidate"},
+                decision_receipt=rejected,
+            )
+        self.assertEqual(self.repository.read_head(), before)
+
+    def test_exact_base_cas_rejects_concurrent_stale_writer(self) -> None:
+        base = self.repository.read_head()
+        run_a = self.repository.create_run("run-a", base=base)
+        run_b = self.repository.create_run("run-b", base=base)
+        prepared_a = self.repository.prepare_transition(
+            run=run_a,
+            expected=base,
+            replacement_state={"selected": "a"},
+            decision_receipt=_decision(self.repository, run_a, status="accepted"),
+        )
+        prepared_b = self.repository.prepare_transition(
+            run=run_b,
+            expected=base,
+            replacement_state={"selected": "b"},
+            decision_receipt=_decision(self.repository, run_b, status="accepted"),
+        )
+
+        accepted = self.repository.compare_and_swap(
+            expected=prepared_a.expected,
+            event=prepared_a.event,
+            replacement=prepared_a.replacement,
+        )
+        with self.assertRaises(StaleProjectHead):
+            self.repository.compare_and_swap(
+                expected=prepared_b.expected,
+                event=prepared_b.event,
+                replacement=prepared_b.replacement,
+            )
+
+        self.assertEqual(self.repository.read_head(), accepted)
+        self.assertEqual(self.repository.load_current_state(), {"selected": "a"})
+
+    def test_uncommitted_crash_artifacts_are_reported_but_not_loaded(self) -> None:
+        base = self.repository.read_head()
+        run = self.repository.create_run("run-crash", base=base)
+        prepared = self.repository.prepare_transition(
+            run=run,
+            expected=base,
+            replacement_state={"uncommitted": True},
+            decision_receipt=_decision(self.repository, run, status="accepted"),
+        )
+
+        reopened = FilesystemProjectRepository.open(self.root)
+        report = reopened.verify()
+
+        self.assertEqual(reopened.read_head(), base)
+        self.assertEqual(
+            set(report.orphan_paths),
+            {
+                prepared.event.relative_path,
+                prepared.replacement.relative_path,
+            },
+        )
+        self.assertEqual(
+            reopened.load_current_state(),
+            {"phase": "request", "commitments": []},
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

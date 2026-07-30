@@ -1,0 +1,378 @@
+{
+  "schema": "V3LegacyResponsibilityManifest@1",
+  "captured_at": "2026-07-28",
+  "source_repository": {
+    "path_hint": "D:/ARCHFLOW_V3",
+    "git_commit": "3e70a4d23adb9c77e09fd230e38260389d44b8cd",
+    "tracked_worktree_dirty": true,
+    "tracked_change_count": 22,
+    "tracked_status_sha256": "f18ea650d8dfccb76b8a691bf2fd90daa211010b50536511840b8d1fd1fbdc46",
+    "audit_schema": "RetirementSurfaceAudit@0",
+    "audit_command": [
+      "-m",
+      "archflow.governance.retirement_audit",
+      "--json"
+    ],
+    "findings_sha256": "93370f2808db3303579a819798a0a9e475d06f4bfc000c9fe7e41429deec29c9",
+    "summary": {
+      "composer_production_call": 4,
+      "decision_path_composer_call": 2,
+      "keyword_route_fixture_body": 2,
+      "keyword_route_learning_reference": 5,
+      "keyword_route_llm_proposer": 1,
+      "keyword_route_production_entry": 3,
+      "keyword_route_surface": 11,
+      "legacy_adapter_surface": 3,
+      "legacy_pipeline_composer_call": 2
+    }
+  },
+  "dispositions": [
+    "native_capability_candidate",
+    "read_only_gate_candidate",
+    "expert_heuristic_candidate",
+    "building_dossier",
+    "oracle_only",
+    "forbidden_in_production"
+  ],
+  "selected_pilot_id": "v3.gate.load_path_analysis",
+  "entries": [
+    {
+      "id": "v3.routing.studio_builtin_pack_entry",
+      "sources": [
+        {
+          "path": "archflow/apps/studio_core.py",
+          "responsibility_slice": "built-in pack registration and example-planner imports",
+          "lines": [
+            44,
+            376
+          ]
+        }
+      ],
+      "responsibility": "Route Studio prompts into bundled example Packs.",
+      "current_owner": "V3 Studio application",
+      "disposition": "forbidden_in_production",
+      "proposed_v4_contract": "None; V4 discovers capabilities from current state and obligations.",
+      "permitted_side_effects": [],
+      "target_provider": null,
+      "evidence": [
+        "retirement-audit:keyword_route_production_entry"
+      ],
+      "exit_gate": "P014 proves no V4 production entry imports or invokes this route.",
+      "audit_surface_ids": [
+        "keyword_route_production_entry|archflow/apps/studio_core.py|44",
+        "keyword_route_production_entry|archflow/apps/studio_core.py|376"
+      ]
+    },
+    {
+      "id": "v3.routing.cli_builtin_pack_entry",
+      "sources": [
+        {
+          "path": "archflow/cli.py",
+          "responsibility_slice": "example-planner command entry",
+          "lines": [
+            12
+          ]
+        }
+      ],
+      "responsibility": "Route CLI prompt keywords into bundled building examples.",
+      "current_owner": "V3 CLI",
+      "disposition": "forbidden_in_production",
+      "proposed_v4_contract": "None; P028 retrieval and future model adapters remain building-scoped and evidence-bound.",
+      "permitted_side_effects": [],
+      "target_provider": null,
+      "evidence": [
+        "retirement-audit:keyword_route_production_entry"
+      ],
+      "exit_gate": "P014 proves no V4 production command can fall back to the example planner.",
+      "audit_surface_ids": [
+        "keyword_route_production_entry|archflow/cli.py|12"
+      ]
+    },
+    {
+      "id": "v3.adapter.legacy_pack_translation",
+      "sources": [
+        {
+          "path": "archflow/core/adapters/__init__.py",
+          "responsibility_slice": "legacy adapter export",
+          "lines": [
+            11,
+            13
+          ]
+        },
+        {
+          "path": "archflow/core/adapters/legacy_pack_adapter.py",
+          "responsibility_slice": "legacy Pack translation implementation",
+          "lines": [
+            57
+          ]
+        }
+      ],
+      "responsibility": "Translate legacy Pack functions into the V3 PackAdapter surface.",
+      "current_owner": "V3 core adapter compatibility layer",
+      "disposition": "forbidden_in_production",
+      "proposed_v4_contract": "None; retained capabilities must expose a new provider-neutral read-only contract.",
+      "permitted_side_effects": [],
+      "target_provider": null,
+      "evidence": [
+        "retirement-audit:legacy_adapter_surface"
+      ],
+      "exit_gate": "P014 blocks the adapter and Pack protocol from V4 dependency graphs.",
+      "audit_surface_ids": [
+        "legacy_adapter_surface|archflow/core/adapters/__init__.py|11",
+        "legacy_adapter_surface|archflow/core/adapters/__init__.py|13",
+        "legacy_adapter_surface|archflow/core/adapters/legacy_pack_adapter.py|57"
+      ]
+    },
+    {
+      "id": "v3.composer.pipeline_building_assembly",
+      "sources": [
+        {
+          "path": "archflow/core/orchestrator/pipeline.py",
+          "responsibility_slice": "typology compose_building dispatch",
+          "lines": [
+            181,
+            245
+          ]
+        }
+      ],
+      "responsibility": "Let one selected typology compose the full building inside the legacy pipeline.",
+      "current_owner": "V3 pipeline orchestrator",
+      "disposition": "forbidden_in_production",
+      "proposed_v4_contract": "None; V4 advances typed exact-base decisions and independently validated candidates.",
+      "permitted_side_effects": [],
+      "target_provider": null,
+      "evidence": [
+        "retirement-audit:legacy_pipeline_composer_call"
+      ],
+      "exit_gate": "P014 proves compose_building has no V4 caller or fallback.",
+      "audit_surface_ids": [
+        "legacy_pipeline_composer_call|archflow/core/orchestrator/pipeline.py|181",
+        "legacy_pipeline_composer_call|archflow/core/orchestrator/pipeline.py|245"
+      ]
+    },
+    {
+      "id": "v3.composer.decision_v2_building_assembly",
+      "sources": [
+        {
+          "path": "archflow/decision/v2_stages.py",
+          "responsibility_slice": "decision-path compose_building dispatch",
+          "lines": [
+            1291,
+            1321
+          ]
+        }
+      ],
+      "responsibility": "Bypass incremental state compilation by invoking a typology-wide building composer.",
+      "current_owner": "V3 V2 decision-stage compatibility kernel",
+      "disposition": "forbidden_in_production",
+      "proposed_v4_contract": "None; the frozen file remains an oracle for failure analysis only.",
+      "permitted_side_effects": [],
+      "target_provider": null,
+      "evidence": [
+        "retirement-audit:decision_path_composer_call"
+      ],
+      "exit_gate": "P014 blocks decision.v2_stages and compose_building from V4 imports and execution.",
+      "audit_surface_ids": [
+        "decision_path_composer_call|archflow/decision/v2_stages.py|1291",
+        "decision_path_composer_call|archflow/decision/v2_stages.py|1321"
+      ]
+    },
+    {
+      "id": "v3.routing.example_keyword_fixture",
+      "sources": [
+        {
+          "path": "archflow/examples/__init__.py",
+          "responsibility_slice": "keyword table and example planner loop",
+          "lines": [
+            26,
+            134
+          ]
+        }
+      ],
+      "responsibility": "Provide deterministic V3 keyword-routing fixtures and their historical outputs.",
+      "current_owner": "V3 examples package",
+      "disposition": "oracle_only",
+      "proposed_v4_contract": "Evidence-only replay fixture; never an Architect planner or production fallback.",
+      "permitted_side_effects": [
+        "read_only_source_access"
+      ],
+      "target_provider": null,
+      "evidence": [
+        "retirement-audit:keyword_route_fixture_body"
+      ],
+      "exit_gate": "P014 marks all example routing as non-authoritative test evidence.",
+      "audit_surface_ids": [
+        "keyword_route_fixture_body|archflow/examples/__init__.py|26",
+        "keyword_route_fixture_body|archflow/examples/__init__.py|134"
+      ]
+    },
+    {
+      "id": "v3.analysis.keyword_routed_learning_tools",
+      "sources": [
+        {
+          "path": "archflow/support/learning/auto_negatives.py",
+          "responsibility_slice": "example planner reference",
+          "lines": [
+            111
+          ]
+        },
+        {
+          "path": "archflow/support/learning/prompt_gap.py",
+          "responsibility_slice": "example planner reference",
+          "lines": [
+            48
+          ]
+        },
+        {
+          "path": "archflow/support/learning/relation_ablation.py",
+          "responsibility_slice": "example planner reference",
+          "lines": [
+            34
+          ]
+        },
+        {
+          "path": "archflow/support/learning/variance_spectrum.py",
+          "responsibility_slice": "example planner reference",
+          "lines": [
+            72
+          ]
+        },
+        {
+          "path": "archflow/support/optimize/moo.py",
+          "responsibility_slice": "example planner reference",
+          "lines": [
+            101
+          ]
+        }
+      ],
+      "responsibility": "Analyze legacy example-planner behavior for learning and optimization experiments.",
+      "current_owner": "V3 offline research support",
+      "disposition": "oracle_only",
+      "proposed_v4_contract": "Offline comparison evidence only; conclusions must be re-grounded before entering a V4 project.",
+      "permitted_side_effects": [
+        "read_only_source_access",
+        "detached_report_output"
+      ],
+      "target_provider": null,
+      "evidence": [
+        "retirement-audit:keyword_route_learning_reference"
+      ],
+      "exit_gate": "P014 prevents these tools from becoming runtime planners or canonical writers.",
+      "audit_surface_ids": [
+        "keyword_route_learning_reference|archflow/support/learning/auto_negatives.py|111",
+        "keyword_route_learning_reference|archflow/support/learning/prompt_gap.py|48",
+        "keyword_route_learning_reference|archflow/support/learning/relation_ablation.py|34",
+        "keyword_route_learning_reference|archflow/support/learning/variance_spectrum.py|72",
+        "keyword_route_learning_reference|archflow/support/optimize/moo.py|101"
+      ]
+    },
+    {
+      "id": "v3.routing.llm_example_fallback",
+      "sources": [
+        {
+          "path": "archflow/support/llm/proposers/planner.py",
+          "responsibility_slice": "lazy example-planner fallback",
+          "lines": [
+            42
+          ]
+        }
+      ],
+      "responsibility": "Fall back from an LLM proposer to keyword-routed example planning.",
+      "current_owner": "V3 LLM support layer",
+      "disposition": "forbidden_in_production",
+      "proposed_v4_contract": "None; provider failure must remain explicit and resumable.",
+      "permitted_side_effects": [],
+      "target_provider": null,
+      "evidence": [
+        "retirement-audit:keyword_route_llm_proposer"
+      ],
+      "exit_gate": "P014 proves provider failure cannot silently invoke a building answer.",
+      "audit_surface_ids": [
+        "keyword_route_llm_proposer|archflow/support/llm/proposers/planner.py|42"
+      ]
+    },
+    {
+      "id": "v3.gate.load_path_analysis",
+      "sources": [
+        {
+          "path": "archflow/brain/making/load_trace/__init__.py",
+          "responsibility_slice": "support graph, load-path findings, and detached trace",
+          "symbols": [
+            "support_edges",
+            "analyze",
+            "trace"
+          ]
+        }
+      ],
+      "responsibility": "Check whether structural-role components have an evidence-explainable support path to ground.",
+      "current_owner": "V3 structural-causality gate",
+      "disposition": "read_only_gate_candidate",
+      "proposed_v4_contract": "Versioned quarantined CLI receives a neutral component graph and returns detached findings and support paths without mutating V4 state.",
+      "permitted_side_effects": [
+        "read_only_source_access",
+        "detached_receipt_output"
+      ],
+      "target_provider": "quarantined_v3_cli",
+      "evidence": [
+        "archflow/brain/making/load_trace/__init__.py",
+        "archflow/tests/test_load_trace.py"
+      ],
+      "exit_gate": "P013 proves a versioned, fail-closed, building-neutral read-only pilot with no Pack registration or keyword routing.",
+      "audit_surface_ids": []
+    },
+    {
+      "id": "v3.evidence.training_and_probe_archive",
+      "sources": [
+        {
+          "path": "training_records/probes/",
+          "responsibility_slice": "Gold, Red, failed, and longitudinal generated records"
+        },
+        {
+          "path": "probes/",
+          "responsibility_slice": "project-specific V3 probe records"
+        }
+      ],
+      "responsibility": "Preserve historical successes, failures, images, derivations, and replay material.",
+      "current_owner": "V3 evidence archive",
+      "disposition": "oracle_only",
+      "proposed_v4_contract": "Referenced external evidence or explicitly imported project data; never canonical truth or a framework default.",
+      "permitted_side_effects": [
+        "read_only_source_access"
+      ],
+      "target_provider": null,
+      "evidence": [
+        "training_records/probes/",
+        "probes/"
+      ],
+      "exit_gate": "Any later importer requires an explicit project destination, provenance receipt, and no framework-owned building answer.",
+      "audit_surface_ids": []
+    },
+    {
+      "id": "v3.content.building_specific_pack_answers",
+      "sources": [
+        {
+          "path": "archflow/packs/",
+          "responsibility_slice": "typology facts, instance defaults, geometry answers, and Pack-wide orchestration"
+        },
+        {
+          "path": "archflow/examples/",
+          "responsibility_slice": "named-building and keyword-routed answers"
+        }
+      ],
+      "responsibility": "Store building- or typology-specific facts and completed design answers.",
+      "current_owner": "V3 Packs and examples",
+      "disposition": "building_dossier",
+      "proposed_v4_contract": "Project-scoped research evidence only; no value becomes a global V4 default without fresh evidence and an authorized derivation.",
+      "permitted_side_effects": [
+        "read_only_source_access"
+      ],
+      "target_provider": null,
+      "evidence": [
+        "archflow/packs/",
+        "archflow/examples/"
+      ],
+      "exit_gate": "P014 proves Pack defaults, typology composers, and global building answers cannot enter V4 production.",
+      "audit_surface_ids": []
+    }
+  ]
+}

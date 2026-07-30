@@ -1,0 +1,11 @@
+{
+  "checked_state": {
+    "run_id": "test_library:framework-smoke-002",
+    "version": 0
+  },
+  "findings": [],
+  "passed": true,
+  "receipt_id": "validation-4ea7371789a2cbb4ddcf",
+  "schema": "ProbeValidationReceipt@1",
+  "submission_id": "submission-w-0-622e57f41ce8"
+}

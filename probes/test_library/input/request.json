@@ -1,0 +1,9 @@
+{
+  "schema": "ProbeSmokeInput@1",
+  "project_id": "test_library",
+  "prompt": "Create a public library for a voxel sandbox.",
+  "synthetic": true,
+  "generation_authority": false,
+  "supplied_constraints": [],
+  "evidence_refs": []
+}

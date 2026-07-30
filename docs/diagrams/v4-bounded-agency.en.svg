@@ -1,0 +1,353 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1700" viewBox="0 0 1600 1700" role="img" aria-labelledby="title desc">
+  <title id="title">ArchFlow V4 Phase-Gated Design Reasoning, Dual State, and Single-Writer Commit Architecture</title>
+  <desc id="desc">A continuous three-part chain: raw requirements, commitments, and brief compilation form D_v,0. D_v,k advances through a non-skippable design-maturity graph. The current phase, obligations, and evidence dynamically discover experts allowed in that phase. The Primary Architect's natural-language design move first compiles into an exact-base typed operator and State Delta; precondition checks, bindings, application, named-dependency closure, and verifiable observations produce D_v,k+1. Schematic design must precede design development, which must precede candidate assembly. Backward revision invalidates affected downstream deliverables and creates new obligations. Only an execution-ready D_v,k may become a Candidate Submission. Hard gates, commitment monitoring, and readonly aesthetic evaluation remain separate before the single writer creates a commit event and the versioned State Reducer forms C_v+1. C_v, D_v,k, and the append-only evidence trace H remain distinct.</desc>
+
+  <style>
+    :root{
+      --ink:#171717;--muted:#707070;--faint:#a5a5a5;--line:#d8d8d8;
+      --lane:#fafafa;--bg:#ffffff;--ok:#3f7350;--gate:#a3822f;--risk:#a4453a;
+      --blue:#496a88;
+      --sans:"Inter","Noto Sans SC","PingFang SC","Microsoft YaHei",Arial,sans-serif;
+      --mono:"Space Mono","SFMono-Regular",Consolas,monospace;
+    }
+    .bg{fill:#ffffff}
+    .lane{fill:#fafafa;stroke:#d8d8d8;stroke-width:1}
+    .box{fill:#ffffff;stroke:#d8d8d8;stroke-width:1.2}
+    .strong{fill:#ffffff;stroke:#171717;stroke-width:1.6}
+    .design{fill:#ffffff;stroke:#496a88;stroke-width:1.6}
+    .gate{fill:#ffffff;stroke:#a3822f;stroke-width:1.6}
+    .ok{fill:#ffffff;stroke:#3f7350;stroke-width:1.6}
+    .risk{fill:#ffffff;stroke:#a4453a;stroke-width:1.4}
+    .h1{font:700 14px "Inter",Arial,sans-serif;fill:#171717}
+    .h2{font:700 12px "Inter",Arial,sans-serif;fill:#171717}
+    .body{font:10px "Inter",Arial,sans-serif;fill:#707070}
+    .small{font:8.5px "Inter",Arial,sans-serif;fill:#707070}
+    .phase-small{font:8px "Inter",Arial,sans-serif;fill:#707070}
+    .mono{font:8px "Space Mono","SFMono-Regular",Consolas,monospace;fill:#a5a5a5;letter-spacing:.06em}
+    .mono-dark{font:9.5px "Space Mono","SFMono-Regular",Consolas,monospace;fill:#171717}
+    .blue-text{font:9px "Inter",Arial,sans-serif;fill:#496a88}
+    .gate-text{font:9px "Inter",Arial,sans-serif;fill:#a3822f}
+    .ok-text{font:9px "Inter",Arial,sans-serif;fill:#3f7350}
+    .risk-text{font:8.5px "Inter",Arial,sans-serif;fill:#a4453a}
+    .line{fill:none;stroke:#171717;stroke-width:1.2}
+    .line-soft{fill:none;stroke:#a5a5a5;stroke-width:1;stroke-dasharray:5 4}
+    .line-blue{fill:none;stroke:#496a88;stroke-width:1.4}
+    .line-gate{fill:none;stroke:#a3822f;stroke-width:1.4}
+    .line-ok{fill:none;stroke:#3f7350;stroke-width:1.5}
+    .line-risk{fill:none;stroke:#a4453a;stroke-width:1.4}
+    .line-under{fill:none;stroke:#ffffff;stroke-width:5}
+  </style>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#171717"/>
+    </marker>
+    <marker id="arrow-soft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a5a5a5"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#496a88"/>
+    </marker>
+    <marker id="arrow-gate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a3822f"/>
+    </marker>
+    <marker id="arrow-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3f7350"/>
+    </marker>
+    <marker id="arrow-risk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a4453a"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1600" height="1700"/>
+  <text x="40" y="34" class="mono">ARCHFLOW V4 · COMPILE INTENT → EVOLVE DESIGN STATE → SUBMIT CANDIDATE → VALIDATE → SINGLE-WRITER COMMIT</text>
+  <text x="1560" y="34" text-anchor="end" class="gate-text">OPEN DESIGN PATH · EVIDENCED TRANSITIONS · ONE FORMAL WRITER</text>
+
+  <!-- 1. Bootstrap: current authority + raw evidence -> compiler -> D_v,0 -->
+  <rect x="30" y="58" width="1540" height="280" class="lane"/>
+  <text x="50" y="84" class="h1">① COMPILE REQUIREMENTS / COMMITMENTS / BRIEF → D_v,0</text>
+  <text x="565" y="84" class="mono">RAW EVIDENCE + CURRENT AUTHORITY → BRANCH-LOCAL SUFFICIENT DESIGN STATE</text>
+
+  <rect x="55" y="106" width="240" height="78" class="strong"/>
+  <text x="73" y="132" class="h2">Current canonical state C_v</text>
+  <text x="73" y="153" class="mono">CANONICAL · COMMITTED</text>
+  <text x="73" y="175" class="small">artifact · commitments · obligations · version</text>
+
+  <rect x="55" y="216" width="240" height="84" class="box"/>
+  <text x="73" y="242" class="h2">Raw request and available sources</text>
+  <text x="73" y="263" class="mono">PROMPT · FILES · CLI RETRIEVAL</text>
+  <text x="73" y="286" class="small">use · users · preferences · optional constraints</text>
+
+  <rect x="350" y="104" width="380" height="196" class="design"/>
+  <text x="370" y="132" class="h2">Requirement—commitment—brief compiler</text>
+  <text x="370" y="153" class="mono">BRIEF / COMMITMENT / PROGRAM COMPILER</text>
+  <text x="370" y="181" class="body">Interpret users and activities; preserve ambiguity and provenance</text>
+  <text x="370" y="205" class="body">Derive functions, capacities, area ranges, and relations</text>
+  <text x="370" y="229" class="body">Given dimensions → commitments; omitted dimensions → design results</text>
+  <text x="370" y="253" class="body">Output project-scoped commitments / obligations / unknowns</text>
+  <text x="370" y="283" class="blue-text">No hard-coded 16×12, topology, or Pack answer</text>
+
+  <rect x="790" y="104" width="370" height="196" class="design"/>
+  <text x="810" y="132" class="h2">Initial operational Markov state D_v,0</text>
+  <text x="810" y="153" class="mono">BRANCH-LOCAL · OPERATIONALLY MARKOVIAN</text>
+  <text x="810" y="181" class="mono-dark">D = Facts + Bindings + Locks</text>
+  <text x="810" y="202" class="mono-dark">  + Commitments + Obligations + Dependencies</text>
+  <text x="810" y="229" class="body">Plus evaluations, unknowns, phase outputs, and budget for the next move</text>
+  <text x="810" y="253" class="body">Incomplete or branched; no canonical write authority</text>
+  <text x="810" y="283" class="blue-text">Only compiled or observed facts enter state</text>
+
+  <rect x="1215" y="92" width="320" height="208" class="box"/>
+  <text x="1235" y="120" class="h2">Human / player authority interface</text>
+  <text x="1235" y="141" class="mono">CONFIRM · PREVIEW · REVISE · ACCEPT</text>
+  <text x="1235" y="169" class="body">Resolve ambiguity without inventing answers</text>
+  <text x="1235" y="193" class="body">Inspect functions, areas, relations, and rationale</text>
+  <text x="1235" y="217" class="body">Preview, relocate, revise, pause, or undo</text>
+  <text x="1235" y="241" class="body">Preference and final approval remain human authority</text>
+  <text x="1235" y="278" class="gate-text">CONFIRMATION ≠ HARD-GATE WAIVER</text>
+
+  <path d="M295,145 L349,145" class="line" marker-end="url(#arrow)"/>
+  <path d="M295,258 L322,258 L322,241 L349,241" class="line" marker-end="url(#arrow)"/>
+  <path d="M730,202 L789,202" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M1215,156 L1182,156 L1182,181 L1161,181" class="line-soft" marker-end="url(#arrow-soft)"/>
+  <path d="M1215,247 L1188,247 L1188,272 L1161,272" class="line-soft" marker-end="url(#arrow-soft)"/>
+
+  <!-- 2. Inner design loop: D_v,k -> Architect -> proposal -> verified transition -> D_v,k+1 -->
+  <rect x="30" y="362" width="1540" height="542" class="lane"/>
+  <text x="50" y="389" class="h1">② DESIGN LOOP: D_v,k → ARCHITECT → TYPED OPERATOR → CLOSURE → D_v,k+1</text>
+  <text x="830" y="389" class="mono">ORDERED PHASE GATES · DYNAMIC EXPERTS WITHIN THE CURRENT PHASE</text>
+
+  <!-- Design maturity graph: ordered deliverables, dynamic experts within each phase -->
+  <text x="60" y="424" class="h2">DESIGN MATURITY / DELIVERABLE PHASE GATES</text>
+  <text x="1510" y="424" text-anchor="end" class="gate-text">NO FORWARD SKIP · EXPERTS CANNOT SELF-CERTIFY PHASE COMPLETION</text>
+
+  <rect x="60" y="444" width="185" height="62" class="box"/>
+  <text x="76" y="468" class="h2">Research / brief</text>
+  <text x="76" y="489" class="phase-small">evidence · brief · commitments</text>
+
+  <rect x="270" y="444" width="185" height="62" class="box"/>
+  <text x="286" y="468" class="h2">Programming</text>
+  <text x="286" y="489" class="phase-small">function · capacity · area</text>
+
+  <rect x="480" y="444" width="185" height="62" class="box"/>
+  <text x="496" y="468" class="h2">Site / resources</text>
+  <text x="496" y="489" class="phase-small">site · resources · build policy</text>
+
+  <rect x="690" y="444" width="185" height="62" class="design"/>
+  <text x="706" y="468" class="h2">Schematic</text>
+  <text x="706" y="489" class="phase-small">topology · massing · options</text>
+
+  <rect x="900" y="444" width="185" height="62" class="design"/>
+  <text x="916" y="468" class="h2">Design development</text>
+  <text x="916" y="489" class="phase-small">structure · circulation · envelope</text>
+
+  <rect x="1110" y="444" width="185" height="62" class="gate"/>
+  <text x="1126" y="468" class="h2">Candidate assembly</text>
+  <text x="1126" y="489" class="phase-small">plan · receipts · unresolved</text>
+
+  <rect x="1320" y="444" width="190" height="62" class="ok"/>
+  <text x="1336" y="468" class="h2">Execution ready</text>
+  <text x="1336" y="489" class="phase-small">submittable · not committed</text>
+
+  <path d="M245,475 L269,475" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M455,475 L479,475" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M665,475 L689,475" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M875,475 L899,475" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M1085,475 L1109,475" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M1295,475 L1319,475" class="line-blue" marker-end="url(#arrow-blue)"/>
+
+  <path d="M1435,528 L135,528" class="line-risk" marker-end="url(#arrow-risk)"/>
+  <text x="785" y="545" text-anchor="middle" class="risk-text">BACKWARD REVISION → INVALIDATE DOWNSTREAM DELIVERABLES + NEW OBLIGATIONS · D_v,k RECORDS PHASE + EXACT-BASE OUTPUTS</text>
+
+  <g transform="translate(0 150)">
+  <rect x="60" y="420" width="260" height="130" class="design"/>
+  <text x="80" y="448" class="h2">Design state D_v,k</text>
+  <text x="80" y="469" class="mono">CURRENT SUFFICIENT WORKING STATE</text>
+  <text x="80" y="496" class="small">fact value + epistemics · commitments/obligations · typed dependencies</text>
+  <text x="80" y="520" class="small">phase/outputs · evaluations/unknowns/budget · exact base</text>
+
+  <rect x="380" y="420" width="340" height="130" class="strong"/>
+  <text x="400" y="448" class="h2">Primary Architect</text>
+  <text x="400" y="469" class="mono">AUTHOR OF THE NEXT DESIGN MOVE</text>
+  <text x="400" y="496" class="body">Reads D_v,k, obligations, expert advice, and tool evidence</text>
+  <text x="400" y="520" class="body">Retrieves, compares, revises, replaces, pauses, or submits</text>
+  <text x="400" y="540" class="blue-text">Experts advise; the Architect keeps design authority</text>
+
+  <rect x="780" y="420" width="280" height="130" class="design"/>
+  <text x="800" y="448" class="h2">Typed Decision Operator / Delta</text>
+  <text x="800" y="469" class="mono">TYPED OPERATOR · EXACT BASE</text>
+  <text x="800" y="496" class="small">pre · bind · add/delete · commitments/obligations · invalidate</text>
+  <text x="800" y="522" class="gate-text">PROPOSAL ≠ FACT</text>
+  <text x="800" y="540" class="small">pending side effects do not enter design state</text>
+
+  <rect x="1120" y="420" width="390" height="130" class="design"/>
+  <text x="1140" y="448" class="h2">State delta / closure / verified observation</text>
+  <text x="1140" y="469" class="mono">CHECK → APPLY → CLOSURE → D_v,k+1</text>
+  <text x="1140" y="496" class="body">Propagate invalidate/revalidate only; compile blocker readiness</text>
+  <text x="1140" y="520" class="small">stale / digest mismatch / no-op / blind retry fail closed</text>
+  <text x="1140" y="540" class="blue-text">Only closure results or verified observations enter the next state</text>
+
+  <rect x="60" y="590" width="500" height="110" class="box"/>
+  <text x="80" y="618" class="h2">State-responsive experts allowed in this phase</text>
+  <text x="80" y="639" class="mono">PHASE ∩ D_v,k ∩ OBLIGATIONS ∩ EVIDENCE · READ ONLY</text>
+  <text x="80" y="664" class="body">program / capacity / site / structure / circulation / material…</text>
+  <text x="80" y="686" class="gate-text">Dynamic order · reject cross-phase output · advice is not command</text>
+
+  <rect x="850" y="590" width="660" height="110" class="box"/>
+  <text x="870" y="618" class="h2">Open capability layer</text>
+  <text x="870" y="639" class="mono">CLI · MCP · MODEL · STORAGE · NO ARCHITECTURAL AUTHORITY</text>
+  <text x="870" y="664" class="body">retrieve / measure / preview / build / observe / reason / archive → artifacts + receipts</text>
+  <text x="870" y="687" class="gate-text">TOOL SUCCESS ≠ USABILITY · cannot waive hard gates or advance C_v</text>
+
+  <!-- Main inner chain -->
+  <path d="M320,485 L379,485" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M720,485 L779,485" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M1060,485 L1119,485" class="line-blue" marker-end="url(#arrow-blue)"/>
+
+  <!-- Experts and tools stay inside the loop -->
+  <path d="M190,550 L190,589" class="line-soft" marker-end="url(#arrow-soft)"/>
+  <path d="M560,646 L600,646 L600,551" class="line" marker-end="url(#arrow)"/>
+  <path d="M920,550 L920,589" class="line-soft" marker-start="url(#arrow-soft)" marker-end="url(#arrow-soft)"/>
+  <path d="M1350,550 L1350,589" class="line-soft" marker-start="url(#arrow-soft)" marker-end="url(#arrow-soft)"/>
+
+  <!-- Verified transition closes the branch-local loop -->
+  <path d="M1490,550 L1540,550 L1540,730 L45,730 L45,525 L59,525" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <text x="500" y="724" class="blue-text">VERIFIED TRANSITION → D_v,k+1 · stay in phase or cross one gate · rediscover experts</text>
+  </g>
+
+  <!-- Explicit bootstrap handoff from layer 1 -->
+  <path d="M975,300 L975,348 L45,348 L45,555 L190,555 L190,569" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <text x="535" y="356" class="blue-text">BOOTSTRAP D_v,0 → PHASE-AWARE FIRST D_v,k</text>
+
+  <!-- Zoomed semantic-to-realization bridge: explanatory, not a new authority path -->
+  <rect x="30" y="920" width="1540" height="240" class="lane"/>
+  <text x="50" y="948" class="h1">ZOOM: SEMANTIC–REALIZATION BRIDGE BETWEEN ARCHITECT AND TYPED OPERATOR</text>
+  <text x="1510" y="948" text-anchor="end" class="gate-text">ONE DECISION, COMMON SOURCE · PLATFORM EXECUTION HAS NO ACCEPTANCE AUTHORITY</text>
+
+  <rect x="60" y="970" width="180" height="70" class="strong"/>
+  <text x="78" y="997" class="h2">Design Decision</text>
+  <text x="78" y="1020" class="small">one evidenced design move</text>
+
+  <rect x="290" y="970" width="220" height="70" class="design"/>
+  <text x="308" y="997" class="h2">Semantic Component</text>
+  <text x="308" y="1020" class="small">use · relations · intent · component id</text>
+
+  <rect x="290" y="1060" width="220" height="70" class="design"/>
+  <text x="308" y="1087" class="h2">Realization Specification</text>
+  <text x="308" y="1110" class="small">constraints + sources; semantics unchanged</text>
+
+  <rect x="560" y="1060" width="240" height="70" class="box"/>
+  <text x="578" y="1085" class="h2">Realization families</text>
+  <text x="578" y="1107" class="small">Parametric · Authored Asset · Hybrid Family</text>
+
+  <rect x="850" y="1060" width="170" height="70" class="design"/>
+  <text x="868" y="1087" class="h2">GeometryProgram</text>
+  <text x="868" y="1110" class="small">typed neutral compile</text>
+
+  <rect x="1070" y="970" width="250" height="160" class="gate"/>
+  <text x="1088" y="997" class="h2">RealizationReceipt</text>
+  <text x="1088" y="1018" class="mono">STABLE MAPPING</text>
+  <text x="1088" y="1044" class="small">component id ↔ geometry object id</text>
+  <text x="1088" y="1066" class="small">geometry object id ↔ platform object id</text>
+  <text x="1088" y="1094" class="gate-text">execution ≠ acceptance ≠ canonical write</text>
+
+  <rect x="1370" y="970" width="160" height="160" class="box"/>
+  <text x="1388" y="997" class="h2">Evidence boundary</text>
+  <text x="1388" y="1022" class="small">structured scene state</text>
+  <text x="1388" y="1044" class="blue-text">authoritative validation / input</text>
+  <text x="1388" y="1074" class="small">screenshot</text>
+  <text x="1388" y="1096" class="gate-text">readonly visual / aesthetic</text>
+
+  <path d="M240,1005 L289,1005" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M240,1017 L265,1017 L265,1095 L289,1095" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M510,1005 L1069,1005" class="line-soft" marker-end="url(#arrow-soft)"/>
+  <path d="M510,1095 L559,1095" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M800,1095 L849,1095" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M1020,1095 L1069,1095" class="line-blue" marker-end="url(#arrow-blue)"/>
+  <path d="M1320,1050 L1369,1050" class="line-soft" marker-end="url(#arrow-soft)"/>
+  <path d="M750,635 L750,900 L150,900 L150,969" class="line-soft" marker-end="url(#arrow-soft)"/>
+  <text x="50" y="1150" class="mono">STRUCTURED SCENE STATE = AUTHORITY · SCREENSHOT = READONLY EVIDENCE · PLATFORM EXECUTION ≠ ACCEPTANCE</text>
+
+  <!-- 3. Submission, review, commit event, reducer, and C_v+1 -->
+  <g transform="translate(0 400)">
+  <rect x="30" y="780" width="1540" height="438" class="lane"/>
+  <text x="50" y="807" class="h1">③ OUTER LOOP: EXECUTION READY → CANDIDATE REVIEW → SINGLE WRITER → C_v+1</text>
+  <text x="825" y="807" class="mono">HARD / COMMITMENT / SOFT STAY DISTINCT · ONE CANONICAL WRITER</text>
+
+  <rect x="380" y="845" width="300" height="175" class="strong"/>
+  <text x="400" y="875" class="h2">Candidate Submission</text>
+  <text x="400" y="896" class="mono">ARCHITECT-CREATED CHECKPOINT</text>
+  <text x="400" y="926" class="body">artifact / claims / evidence / unresolved</text>
+  <text x="400" y="952" class="body">exact base C_v + final D_v,k digest</text>
+  <text x="400" y="978" class="body">preview / execute / tool receipts</text>
+  <text x="400" y="1004" class="gate-text">Only entry from working design into formal review</text>
+
+  <rect x="730" y="840" width="500" height="185" class="box"/>
+  <text x="750" y="868" class="h2">Readonly decision package</text>
+  <text x="1210" y="868" text-anchor="end" class="mono">NO WRITES · NO MUTUAL WAIVERS</text>
+
+  <rect x="750" y="885" width="220" height="62" class="gate"/>
+  <text x="766" y="910" class="h2">Deterministic hard gates</text>
+  <text x="766" y="932" class="small">entry · connectivity · function · support · geometry</text>
+
+  <rect x="990" y="885" width="220" height="62" class="gate"/>
+  <text x="1006" y="910" class="h2">Commitment monitor</text>
+  <text x="1006" y="932" class="small">authority · lifecycle · dependency</text>
+
+  <rect x="750" y="963" width="460" height="44" class="box"/>
+  <text x="766" y="986" class="h2">Readonly multi-objective aesthetics</text>
+  <text x="1194" y="986" text-anchor="end" class="mono">VECTOR · NO WINNER</text>
+  <text x="766" y="1004" class="small">proportion / rhythm / space / material / preference; cannot waive hard failure</text>
+
+  <rect x="1280" y="845" width="270" height="175" class="ok"/>
+  <text x="1300" y="875" class="h2">Single-writer committer</text>
+  <text x="1300" y="896" class="mono">COMPARE-AND-SWAP · SINGLE WRITER</text>
+  <text x="1300" y="926" class="body">Check exact C_v + decision package</text>
+  <text x="1300" y="952" class="body">Accepted candidate → commit event</text>
+  <text x="1300" y="978" class="ok-text">Only canonical write authority</text>
+  <text x="1300" y="1004" class="gate-text">Soft scores cannot cover hard failure</text>
+
+  <!-- Architect explicitly crosses the candidate boundary; white underlay protects the main arrow at the loop crossing -->
+  <path d="M720,300 L740,300 L740,750 L1550,750 L1550,825 L650,825 L650,844" class="line-under"/>
+  <path d="M720,300 L740,300 L740,750 L1550,750 L1550,825 L650,825 L650,844" class="line" marker-end="url(#arrow)"/>
+  <text x="735" y="773" class="mono">EXECUTION-READY D_v,k ONLY · ARCHITECT DECLARES CANDIDATE</text>
+
+  <!-- Outer acceptance chain -->
+  <path d="M680,935 L729,935" class="line" marker-end="url(#arrow)"/>
+  <path d="M1230,935 L1279,935" class="line-ok" marker-end="url(#arrow-ok)"/>
+  <text x="1254" y="924" text-anchor="middle" class="ok-text">PASS</text>
+
+  <!-- Hard and commitment findings become obligations and return to D_v,k; aesthetics stays separate -->
+  <path d="M860,947 L740,947 L740,1038 L35,1038 L35,500 L59,500" class="line-gate" marker-end="url(#arrow-gate)"/>
+  <path d="M1100,947 L1220,947 L1220,1038 L740,1038" class="line-gate"/>
+  <circle cx="740" cy="1038" r="3" fill="#a3822f"/>
+  <text x="60" y="1060" class="gate-text">HARD / COMMITMENT FINDING → EVIDENCE-BOUND OBLIGATION → D_v,k · ARCHITECT CHOOSES REPAIR</text>
+
+  <!-- Trace remains separate from both state scopes -->
+  <rect x="60" y="1080" width="650" height="105" class="box"/>
+  <text x="80" y="1108" class="h2">Append-only evidence trace H≤t</text>
+  <text x="80" y="1129" class="mono">PROMPTS · RETRIEVAL · PROPOSALS · OBSERVATIONS · REJECTS · COMMITS</text>
+  <text x="80" y="1155" class="small">audit / attribution / training / recovery; do not stuff the full transcript into D_v,k</text>
+  <text x="80" y="1176" class="small">state rebuild ≠ external MCP / LLM execution replay</text>
+
+  <rect x="780" y="1080" width="330" height="105" class="box"/>
+  <text x="800" y="1108" class="h2">Commit event + versioned State Reducer</text>
+  <text x="800" y="1129" class="mono">COMMIT EVENT → REDUCE → REBUILD C_v</text>
+  <text x="800" y="1155" class="body">Validate event order, version, digest, and commitment lifecycle</text>
+  <text x="800" y="1176" class="small">Verifiable state rebuild without claiming execution replay</text>
+
+  <rect x="1160" y="1080" width="370" height="105" class="ok"/>
+  <text x="1180" y="1108" class="h2">Next canonical state C_v+1</text>
+  <text x="1180" y="1129" class="mono">COMMITTED ARTIFACT + ACTIVE COMMITMENTS</text>
+  <text x="1180" y="1155" class="ok-text">The only formal baseline for the next design branch</text>
+  <text x="1180" y="1176" class="small">C_v authority remains separate from branch-local D_v,k</text>
+
+  <!-- Accepted path: single writer -> event/reducer -> C_v+1; the event is also appended to H -->
+  <path d="M1415,1020 L1415,1055 L945,1055 L945,1079" class="line-ok" marker-end="url(#arrow-ok)"/>
+  <text x="1115" y="1049" class="ok-text">ACCEPTED COMMIT EVENT ONLY</text>
+  <path d="M1110,1132 L1159,1132" class="line-ok" marker-end="url(#arrow-ok)"/>
+  <path d="M780,1132 L711,1132" class="line-soft" marker-end="url(#arrow-soft)"/>
+  <text x="742" y="1125" text-anchor="middle" class="mono">APPEND</text>
+
+  <text x="40" y="1262" class="mono">C_v = CANONICAL AUTHORITY · D_v,k = BRANCH-LOCAL DESIGN STATE · H≤t = AUDIT TRACE · PROPOSAL ≠ FACT · TOOL SUCCESS ≠ USABILITY · SOFT ≠ HARD</text>
+  </g>
+</svg>

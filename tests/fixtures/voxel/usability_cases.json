@@ -1,0 +1,41 @@
+{
+  "schema": "UsabilityFixtureCases@1",
+  "cases": [
+    {
+      "id": "size",
+      "scan": "small_room.json",
+      "program_overrides": {"width_blocks": 6},
+      "expected_code": "usability.size.outside_target"
+    },
+    {
+      "id": "clear_height",
+      "scan": "small_room.json",
+      "program_overrides": {"minimum_clear_height": 3},
+      "expected_code": "usability.clear_height.below_minimum"
+    },
+    {
+      "id": "entrance",
+      "scan": "small_room.json",
+      "observation_overrides": {"openings": []},
+      "expected_code": "usability.entrance.insufficient_exterior_openings"
+    },
+    {
+      "id": "connectivity",
+      "scan": "disconnected_with_entrances.json",
+      "program_overrides": {"width_blocks": 11},
+      "expected_code": "usability.connectivity.disconnected"
+    },
+    {
+      "id": "use_zones",
+      "scan": "small_room.json",
+      "omit_use_zone": true,
+      "expected_code": "usability.use_zone.missing_or_unbound"
+    },
+    {
+      "id": "support",
+      "scan": "small_room.json",
+      "observation_overrides": {"unsupported_cells": [[2, 3, 2]]},
+      "expected_code": "usability.support.floating_component"
+    }
+  ]
+}

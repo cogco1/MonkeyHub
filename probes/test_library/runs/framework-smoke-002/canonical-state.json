@@ -1,0 +1,31 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "artifact-8bc0519e4fbbd8c7c48e",
+      "media_type": "application/vnd.archflow.fake-voxel+json",
+      "sha256": "8bc0519e4fbbd8c7c48e7fd1d11b558f49ba3e0fd7368392bd7fc4fe9ca6e29a",
+      "uri": "file:///D:/ARCHFLOW_V4/probes/test_library/runs/framework-smoke-002/workspaces/w-0-622e57f41ce8/building.voxel.json"
+    }
+  ],
+  "commitments": [],
+  "evaluation_refs": [
+    "evaluation-6bf39a75aa5e359d5a19"
+  ],
+  "facts": [],
+  "goal": {
+    "forbid": [],
+    "must": [
+      "artifact.loadable",
+      "use.requested"
+    ],
+    "prefer": [],
+    "prompt": "Create a public library for a voxel sandbox."
+  },
+  "open_obligations": [],
+  "program": null,
+  "ref": {
+    "run_id": "test_library:framework-smoke-002",
+    "version": 1
+  },
+  "schema": "ProbeCanonicalStateSnapshot@1"
+}

@@ -1,0 +1,233 @@
+{
+  "schema": "ArchFlowArchitecturePolicy@1",
+  "source_root": "archflow",
+  "probe_root": "probes",
+  "forbidden_instance_literals": [
+    "16x12",
+    "community library",
+    "live_library",
+    "pantheon",
+    "reading room",
+    "repair workshop",
+    "service desk",
+    "slab_on_grade",
+    "smooth_stone",
+    "test_library"
+  ],
+  "forbidden_framework_identifiers": [
+    "DEFAULT_EXPERT_ORDER",
+    "DEFAULT_ROOM_LIST",
+    "FIXED_EXPERT_ORDER",
+    "FIXED_FOOTPRINT",
+    "HARDCODED_TOPOLOGY"
+  ],
+  "probe_executable_suffixes": [
+    ".bat",
+    ".cmd",
+    ".js",
+    ".ps1",
+    ".py",
+    ".sh",
+    ".ts"
+  ],
+  "allowed_write_sites": [
+    {
+      "path": "archflow/project/repository.py",
+      "function": "*",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "replace",
+        "unlink"
+      ],
+      "kind": "project_repository",
+      "owner": "P036",
+      "reason": "The durable project repository is the sole project-document filesystem writer."
+    },
+    {
+      "path": "archflow/workspace/manager.py",
+      "function": "__init__",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "speculative_workspace",
+      "owner": "P001",
+      "reason": "Creates only the explicitly supplied speculative workspace root."
+    },
+    {
+      "path": "archflow/workspace/manager.py",
+      "function": "fork",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "speculative_workspace",
+      "owner": "P001",
+      "reason": "Creates one branch-local directory under the supplied workspace root."
+    },
+    {
+      "path": "archflow/adapters/fake_voxel.py",
+      "function": "build",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "adapter_workspace",
+      "owner": "P001",
+      "reason": "Writes a synthetic candidate only inside the supplied speculative workspace."
+    },
+    {
+      "path": "archflow/adapters/minecraft_mcp.py",
+      "function": "_write_artifact",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "adapter_workspace",
+      "owner": "P002",
+      "reason": "Writes an MCP candidate artifact into the explicit adapter workspace."
+    },
+    {
+      "path": "archflow/adapters/minecraft_mcp.py",
+      "function": "_fail",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "adapter_workspace",
+      "owner": "P002",
+      "reason": "Writes a bounded failure receipt into the explicit adapter workspace."
+    },
+    {
+      "path": "archflow/adapters/minecraft_mcp.py",
+      "function": "_extract_png",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "adapter_workspace",
+      "owner": "P002",
+      "reason": "Writes returned visual evidence into the explicit adapter workspace."
+    },
+    {
+      "path": "archflow/runtime/environment_feedback.py",
+      "function": "_write_json",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "legacy_explicit_destination",
+      "owner": "M003",
+      "reason": "Existing explicit-path environment receipt helper pending durable world-reconciliation routing."
+    },
+    {
+      "path": "archflow/runtime/environment_feedback.py",
+      "function": "write_tool_invocation_intent",
+      "operations": [
+        "helper:_write_json"
+      ],
+      "kind": "legacy_explicit_destination",
+      "owner": "M003",
+      "reason": "Existing bounded invocation receipt call site."
+    },
+    {
+      "path": "archflow/runtime/environment_feedback.py",
+      "function": "write_tool_environment_observation",
+      "operations": [
+        "helper:_write_json"
+      ],
+      "kind": "legacy_explicit_destination",
+      "owner": "M003",
+      "reason": "Existing bounded environment observation call site."
+    },
+    {
+      "path": "archflow/runtime/environment_feedback.py",
+      "function": "write_tool_failure_link",
+      "operations": [
+        "helper:_write_json"
+      ],
+      "kind": "legacy_explicit_destination",
+      "owner": "M003",
+      "reason": "Existing bounded failure-link call site."
+    },
+    {
+      "path": "archflow/runtime/environment_feedback.py",
+      "function": "write_environment_feedback_trace",
+      "operations": [
+        "helper:_write_json"
+      ],
+      "kind": "legacy_explicit_destination",
+      "owner": "M003",
+      "reason": "Existing bounded feedback-trace call site."
+    }
+  ],
+  "forbidden_layer_imports": [
+    {
+      "source": "archflow/evaluation",
+      "targets": [
+        "archflow.commit",
+        "archflow.project.repository",
+        "archflow.validation"
+      ],
+      "reason": "A read-only evaluator cannot acquire commit repository or hard-gate authority."
+    },
+    {
+      "source": "archflow/validation",
+      "targets": [
+        "archflow.commit",
+        "archflow.evaluation"
+      ],
+      "reason": "Hard validation cannot commit or depend on soft evaluation."
+    },
+    {
+      "source": "archflow/capabilities",
+      "targets": [
+        "archflow.commit",
+        "archflow.project.repository"
+      ],
+      "reason": "Detached experts and capabilities cannot acquire persistence or promotion authority."
+    }
+  ],
+  "authority_symbol_patterns": [
+    "^Committer$",
+    ".*StateStore$",
+    ".*Canonical.*(?:Writer|Store|Repository)$",
+    ".*Event.*(?:Writer|Store|Repository|Log)$",
+    ".*Checkpoint.*(?:Writer|Store|Repository)$",
+    ".*ProjectRepository$"
+  ],
+  "allowed_authority_symbols": [
+    {
+      "path": "archflow/commit/committer.py",
+      "symbol": "Committer",
+      "owner": "P001"
+    },
+    {
+      "path": "archflow/commit/store.py",
+      "symbol": "InMemoryStateStore",
+      "owner": "P001"
+    },
+    {
+      "path": "archflow/project/ports.py",
+      "symbol": "CanonicalRepository",
+      "owner": "P035"
+    },
+    {
+      "path": "archflow/project/repository.py",
+      "symbol": "FilesystemProjectRepository",
+      "owner": "P036"
+    },
+    {
+      "path": "archflow/runtime/event_log.py",
+      "symbol": "EventRecordStore",
+      "owner": "P018"
+    },
+    {
+      "path": "archflow/runtime/event_log.py",
+      "symbol": "AppendOnlyEventLog",
+      "owner": "P018"
+    }
+  ],
+  "forbidden_commit_symbols": [
+    "aesthetic_winner",
+    "ranking",
+    "score",
+    "unique_winner",
+    "winner"
+  ]
+}

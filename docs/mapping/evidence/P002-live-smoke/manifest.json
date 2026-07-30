@@ -1,0 +1,21 @@
+{
+  "after_failure_state": {
+    "run_id": "run-p002-live",
+    "version": 0
+  },
+  "artifact_id": "artifact-92c04faf86bb0e6031b8",
+  "artifact_sha256": "92c04faf86bb0e6031b8e8fa179beed00ddc6b1d9be95ed5c92a9d0417c8266d",
+  "artifact_uri": "file:///D:/ARCHFLOW_V4/docs/mapping/evidence/P002-live-smoke/success/w-0-f48c901b2c13/minecraft-voxel-artifact.json",
+  "base_state": {
+    "run_id": "run-p002-live",
+    "version": 0
+  },
+  "canonical_state_mutated": false,
+  "execution_plan_id": "plan-1",
+  "failure_code": "BRIDGE_UNAVAILABLE",
+  "failure_receipt_uri": "file:///D:/ARCHFLOW_V4/docs/mapping/evidence/P002-live-smoke/failure/w-0-3445d36289a2/minecraft-mcp-failure.json",
+  "preview_plan_id": "plan-1",
+  "schema": "P002LiveSmokeEvidence@1",
+  "screenshot_uri": "file:///D:/ARCHFLOW_V4/docs/mapping/evidence/P002-live-smoke/success/w-0-f48c901b2c13/minecraft-view.png",
+  "world": "ArchFlow V4 Disposable"
+}

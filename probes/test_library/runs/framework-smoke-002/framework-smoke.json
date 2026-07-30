@@ -1,0 +1,63 @@
+{
+  "architectural_usability_proven": false,
+  "artifacts": [
+    {
+      "artifact_id": "artifact-8bc0519e4fbbd8c7c48e",
+      "media_type": "application/vnd.archflow.fake-voxel+json",
+      "sha256": "8bc0519e4fbbd8c7c48e7fd1d11b558f49ba3e0fd7368392bd7fc4fe9ca6e29a",
+      "uri": "file:///D:/ARCHFLOW_V4/probes/test_library/runs/framework-smoke-002/workspaces/w-0-622e57f41ce8/building.voxel.json"
+    }
+  ],
+  "canonical_state": {
+    "after": 1,
+    "before": 0
+  },
+  "commit_receipt_id": "commit-63e5185c1aef5941731b",
+  "evaluation_ids": [
+    "evaluation-6bf39a75aa5e359d5a19"
+  ],
+  "framework_boundary_smoke": true,
+  "generation_authority": false,
+  "input_ref": "input/request.json",
+  "input_sha256": "ac547c0e442b7ac94194a18ee56e89b574cedbc8378c6ece8c99dd604ed73145",
+  "modules_exercised": [
+    "state",
+    "workspace",
+    "runtime",
+    "adapters",
+    "submission",
+    "validation",
+    "evaluation",
+    "commit"
+  ],
+  "project_id": "test_library",
+  "records": [
+    {
+      "path": "candidate.json",
+      "sha256": "c9660fdc74131b5357aa6bf5891b07d820ecb7eeab836387763554148a02a6d4"
+    },
+    {
+      "path": "validation.json",
+      "sha256": "086cd60461f717580939ef86bcae94292414a56b8e269fc21701190712f5c354"
+    },
+    {
+      "path": "evaluations.json",
+      "sha256": "3389f92ba7dadf4c28d3e13effac50a1dccc28e8f167d3031be28c75d7a4b94c"
+    },
+    {
+      "path": "canonical-state.json",
+      "sha256": "e74d1d1dfc7dfe588972c8568c362da330a0409a2ad0d8b9b75cb55a1324c1b8"
+    },
+    {
+      "path": "commit.json",
+      "sha256": "2af0422fec4dbd49126e3265029d35ad626cf83db51938fb539bd72555dabb47"
+    }
+  ],
+  "run_id": "framework-smoke-002",
+  "schema": "ProbeFrameworkSmokeRecord@1",
+  "status": "committed",
+  "synthetic": true,
+  "validation_passed": true,
+  "validation_receipt_id": "validation-4ea7371789a2cbb4ddcf",
+  "workspace_id": "w-0-622e57f41ce8"
+}
