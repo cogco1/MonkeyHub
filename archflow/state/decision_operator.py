@@ -662,24 +662,6 @@ def compile_decision_operator(
             )
         dependencies[item.ref] = item
 
-    refreshed_obligations = _refresh_obligation_readiness(
-        facts=facts,
-        bindings=bindings,
-        locks=locks,
-        commitments=commitments,
-        obligations=obligations,
-        dependencies=dependencies,
-        phase=state.phase,
-    )
-    for item in delta.spawn_obligations:
-        compiled = refreshed_obligations[item.obligation_id]
-        if compiled.status is not item.status:
-            raise DecisionCompilationError(
-                "spawned obligation readiness mismatch: "
-                f"{item.obligation_id} must be {compiled.status.value}"
-            )
-    obligations = refreshed_obligations
-
     closure_refs = _dependency_closure(
         delta.invalidates,
         tuple(dependencies.values()),
@@ -715,6 +697,28 @@ def compile_decision_operator(
     invalidated = (
         set(state.invalidated_refs) - refreshed_refs
     ) | set(closure_refs)
+
+    # Readiness must be judged against the successor's invalidation set, or
+    # obligations conditioned on invalidated:* refs disagree with the state
+    # invariant validator and the compiled state cannot construct.
+    refreshed_obligations = _refresh_obligation_readiness(
+        facts=facts,
+        bindings=bindings,
+        locks=locks,
+        commitments=commitments,
+        obligations=obligations,
+        dependencies=dependencies,
+        phase=state.phase,
+        invalidated=frozenset(invalidated),
+    )
+    for item in delta.spawn_obligations:
+        compiled = refreshed_obligations[item.obligation_id]
+        if compiled.status is not item.status:
+            raise DecisionCompilationError(
+                "spawned obligation readiness mismatch: "
+                f"{item.obligation_id} must be {compiled.status.value}"
+            )
+    obligations = refreshed_obligations
     evidence_refs = tuple(
         sorted(set(state.evidence_refs) | set(operator.evidence_refs))
     )
@@ -986,6 +990,9 @@ def _dependency_closure(
     return tuple(sorted(visited))
 
 
+_MISSING_VALUE = object()
+
+
 def _refresh_obligation_readiness(
     *,
     facts: dict[str, StateFact],
@@ -995,19 +1002,22 @@ def _refresh_obligation_readiness(
     obligations: dict[str, DesignObligation],
     dependencies: dict[str, DependencyEdge],
     phase: str,
+    invalidated: frozenset[str],
 ) -> dict[str, DesignObligation]:
-    """Compile current blockers and exact conditions into lifecycle status."""
+    """Compile current blockers and exact conditions into lifecycle status.
 
-    obligation_refs = {
-        f"obligation:{item.obligation_id}": item
-        for item in obligations.values()
-    }
+    Reference resolution must mirror ``OperationalMarkovState.value_for_ref``
+    (including ``invalidated:*`` fallbacks), and the OPEN/BLOCKED assignment
+    is iterated to a fixed point so the successor state always satisfies its
+    own readiness invariant validator.
+    """
+
     blocking_edges = {
         (item.upstream_ref, item.downstream_ref)
         for item in dependencies.values()
         if item.effect is DependencyEffect.BLOCKS
     }
-    values: dict[str, object] = {
+    base_values: dict[str, object] = {
         "state:phase": phase,
         **{item.ref: item.python_value for item in facts.values()},
         **{item.ref: item.value for item in bindings.values()},
@@ -1019,18 +1029,17 @@ def _refresh_obligation_readiness(
             f"commitment:{item.commitment_id}": item.status.value
             for item in commitments.values()
         },
-        **{
-            ref: item.status.value
-            for ref, item in obligation_refs.items()
-        },
     }
-    refreshed: dict[str, DesignObligation] = {}
+
+    obligation_refs = {
+        f"obligation:{item.obligation_id}": item
+        for item in obligations.values()
+    }
     for obligation_id, item in obligations.items():
         if item.status not in {
             ObligationStatus.OPEN,
             ObligationStatus.BLOCKED,
         }:
-            refreshed[obligation_id] = item
             continue
         downstream_ref = f"obligation:{obligation_id}"
         for blocker_ref in item.blocked_by:
@@ -1043,28 +1052,69 @@ def _refresh_obligation_readiness(
                 raise DecisionCompilationError(
                     "obligation blocker lacks a blocking dependency edge"
                 )
-        condition_ready = (
-            item.condition is None
-            or _canonical_json(values.get(item.condition.ref))
-            == item.condition.expected_value.canonical_json
-        )
-        blockers_ready = all(
-            obligation_refs[ref].status
-            in {
-                ObligationStatus.SATISFIED,
-                ObligationStatus.WAIVED,
-            }
-            for ref in item.blocked_by
-        )
-        status = (
-            ObligationStatus.OPEN
-            if condition_ready and blockers_ready
-            else ObligationStatus.BLOCKED
-        )
-        refreshed[obligation_id] = (
-            item if item.status is status else replace(item, status=status)
-        )
-    return refreshed
+
+    current = dict(obligations)
+    for _ in range(len(current) + 1):
+        refs = {
+            f"obligation:{item.obligation_id}": item
+            for item in current.values()
+        }
+        values = {
+            **base_values,
+            **{ref: item.status.value for ref, item in refs.items()},
+        }
+        changed = False
+        refreshed: dict[str, DesignObligation] = {}
+        for obligation_id, item in current.items():
+            if item.status not in {
+                ObligationStatus.OPEN,
+                ObligationStatus.BLOCKED,
+            }:
+                refreshed[obligation_id] = item
+                continue
+            if item.condition is None:
+                condition_ready = True
+            else:
+                ref = item.condition.ref
+                value = values.get(ref, _MISSING_VALUE)
+                if value is _MISSING_VALUE:
+                    if ref.startswith("invalidated:"):
+                        value = (
+                            "true"
+                            if ref.removeprefix("invalidated:")
+                            in invalidated
+                            else None
+                        )
+                    else:
+                        value = None
+                condition_ready = (
+                    _canonical_json(value)
+                    == item.condition.expected_value.canonical_json
+                )
+            blockers_ready = all(
+                refs[ref].status
+                in {
+                    ObligationStatus.SATISFIED,
+                    ObligationStatus.WAIVED,
+                }
+                for ref in item.blocked_by
+            )
+            status = (
+                ObligationStatus.OPEN
+                if condition_ready and blockers_ready
+                else ObligationStatus.BLOCKED
+            )
+            if item.status is status:
+                refreshed[obligation_id] = item
+            else:
+                changed = True
+                refreshed[obligation_id] = replace(item, status=status)
+        current = refreshed
+        if not changed:
+            return current
+    raise DecisionCompilationError(
+        "obligation readiness does not converge to a stable assignment"
+    )
 
 
 def _revalidation_obligation_id(

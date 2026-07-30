@@ -10,8 +10,11 @@ from archflow.runtime.player_control import (
     PlayerControlError,
     VoxelBounds,
     WorldTarget,
+    approve_candidate_control,
+    cancel_candidate_control,
     create_candidate_preview,
     open_candidate_control,
+    pause_candidate_control,
     record_exact_undo,
 )
 from archflow.runtime.world_recovery import (
@@ -186,6 +189,49 @@ class PreviewUndoContractTests(unittest.TestCase):
             CandidateControlStatus.MANUAL_RECONCILIATION_REQUIRED,
         )
         self.assertIsNone(outcome.restore_evidence_ref)
+
+    def test_pause_cannot_launder_written_candidate(self) -> None:
+        assembly = _assembly()
+        trace = _trace(
+            plan_sha256=assembly.plan.plan_digest,
+            status=WorldMutationStatus.COMPENSATED,
+        )
+        written = _control(trace)
+
+        paused = pause_candidate_control(written, reason="player break")
+        self.assertIs(paused.status, CandidateControlStatus.PAUSED)
+        self.assertIs(
+            paused.effective_status,
+            CandidateControlStatus.UNDO_REQUIRED,
+        )
+
+        with self.assertRaisesRegex(
+            PlayerControlError,
+            "exact undo or reconciliation",
+        ):
+            cancel_candidate_control(paused, reason="give up")
+
+        with self.assertRaisesRegex(
+            PlayerControlError,
+            "paused from undo_required",
+        ):
+            approve_candidate_control(
+                paused,
+                assembly,
+                None,
+                None,
+                now_utc="2026-07-25T10:20:00Z",
+            )
+
+        repaused = pause_candidate_control(paused, reason="still away")
+        self.assertIs(
+            repaused.effective_status,
+            CandidateControlStatus.UNDO_REQUIRED,
+        )
+
+        restored = record_exact_undo(paused, trace)
+        self.assertIs(restored.status, CandidateControlStatus.RESTORED)
+        self.assertIsNone(restored.paused_from)
 
     def test_mismatched_plan_cannot_prove_undo_boundary(self) -> None:
         assembly = _assembly()

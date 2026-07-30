@@ -420,6 +420,7 @@ class PlayerControlTests(unittest.TestCase):
         hard = ValidationReceipt(
             receipt_id="hard-validation-failed",
             submission_id=assembly.submission.submission_id,
+            submission_digest=assembly.submission.content_digest(),
             checked_state=assembly.plan.base,
             passed=False,
             findings=(

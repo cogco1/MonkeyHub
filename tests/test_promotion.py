@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from archflow.adapters import FakeVoxelAdapter
 from archflow.commit import CommitRejected, Committer, InMemoryStateStore
@@ -12,7 +14,16 @@ from archflow.evaluation import (
     evaluate_submission,
 )
 from archflow.runtime import FakeArchitect, initial_state
-from archflow.state import CanonicalState
+from archflow.state import (
+    CanonicalState,
+    Commitment,
+    CommitmentKind,
+    CommitmentStatus,
+    CommitmentStrength,
+    CriterionRef,
+    Fact,
+    RevisionPolicy,
+)
 from archflow.validation import (
     ArtifactPresentValidator,
     ObligationDischargeValidator,
@@ -36,6 +47,26 @@ class BrokenEvaluator:
     def evaluate(self, state, submission):
         del state, submission
         raise RuntimeError("offline")
+
+
+def _active_hard_commitment() -> Commitment:
+    return Commitment(
+        commitment_id="commitment-maintain-egress",
+        kind=CommitmentKind.MAINTENANCE,
+        strength=CommitmentStrength.HARD,
+        status=CommitmentStatus.ACTIVE,
+        authority_id="authority-user",
+        authorized_by="authority-user",
+        source_event_ref="event://brief/commitment",
+        evidence_refs=("evidence://brief/egress",),
+        scope_refs=("fact:brief:egress",),
+        satisfaction_criterion=CriterionRef(
+            criterion_id="criterion-egress",
+            provider_id="validator-usability",
+            subject_refs=("fact:brief:egress",),
+        ),
+        revision_policy=RevisionPolicy.OWNER_ONLY,
+    )
 
 
 class PromotionTests(unittest.TestCase):
@@ -130,6 +161,109 @@ class PromotionTests(unittest.TestCase):
         )
         self.assertEqual(receipt.decision_package_id, package.package_id)
         self.assertEqual(store.read().artifacts, package.submission.delta.artifacts_add)
+
+    def test_substituted_delta_cannot_reuse_validation_receipt(self) -> None:
+        submission = self._submission()
+        validation = validate_submission(self.initial, submission, VALIDATORS)
+        self.assertTrue(validation.passed)
+        doctored = replace(
+            submission,
+            delta=replace(
+                submission.delta,
+                facts_add=(
+                    Fact(
+                        key="smuggled.fact",
+                        value="never validated",
+                        source_ref="nowhere",
+                    ),
+                ),
+            ),
+        )
+
+        with self.assertRaisesRegex(
+            CommitRejected,
+            "does not bind this submission content",
+        ):
+            Committer(self.store).commit(doctored, validation, ())
+
+        self.assertEqual(self.store.read(), self.initial)
+
+    def test_receipt_failure_aborts_before_promotion(self) -> None:
+        _, _, _, package = _human_package()
+        initial = CanonicalState(ref=package.submission.base)
+        store = InMemoryStateStore(initial)
+
+        with patch.object(
+            Committer,
+            "_receipt",
+            side_effect=RuntimeError("receipt construction failed"),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "receipt construction failed",
+            ):
+                Committer(store).commit_decision_package(
+                    package,
+                    now_utc=NOW,
+                )
+
+        self.assertEqual(store.read(), initial)
+
+    def test_unmonitored_canonical_commitment_blocks_promotion(self) -> None:
+        _, _, _, package = _human_package()
+        commitment = _active_hard_commitment()
+        initial = CanonicalState(
+            ref=package.submission.base,
+            commitments=(commitment,),
+        )
+        store = InMemoryStateStore(initial)
+
+        with self.assertRaisesRegex(
+            CommitRejected,
+            "never observed",
+        ):
+            Committer(store).commit_decision_package(
+                package,
+                now_utc=NOW,
+            )
+
+        self.assertEqual(store.read(), initial)
+
+    def test_lookalike_commitment_content_cannot_cover_canonical(
+        self,
+    ) -> None:
+        commitment = _active_hard_commitment()
+        lookalike = replace(
+            commitment,
+            strength=CommitmentStrength.PREFERENCE,
+        )
+        _, _, _, package = _human_package(
+            monitor_state_commitments=(lookalike,),
+        )
+        # The monitor itself passes: on the weakened lookalike every
+        # missing-evidence finding is merely advisory.
+        self.assertTrue(package.commitment_monitor.passed)
+        self.assertEqual(
+            [item.commitment_id for item in package.commitment_monitor.progress],
+            [commitment.commitment_id],
+        )
+
+        initial = CanonicalState(
+            ref=package.submission.base,
+            commitments=(commitment,),
+        )
+        store = InMemoryStateStore(initial)
+
+        with self.assertRaisesRegex(
+            CommitRejected,
+            "different commitment content|evidence_blocked",
+        ):
+            Committer(store).commit_decision_package(
+                package,
+                now_utc=NOW,
+            )
+
+        self.assertEqual(store.read(), initial)
 
     def test_expired_package_cannot_reach_canonical_state(self) -> None:
         _, _, _, package = _human_package()

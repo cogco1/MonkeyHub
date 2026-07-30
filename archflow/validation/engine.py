@@ -164,6 +164,7 @@ def _receipt_id(
         "project_id": state.ref.project_id,
         "version": state.ref.version,
         "submission_id": submission.submission_id,
+        "submission_digest": submission.content_digest(),
         "findings": [
             [item.code, item.message, item.severity.value] for item in findings
         ],
@@ -205,6 +206,7 @@ def validate_submission(
     return ValidationReceipt(
         receipt_id=_receipt_id(state, submission, frozen),
         submission_id=submission.submission_id,
+        submission_digest=submission.content_digest(),
         checked_state=state.ref,
         passed=not any(item.severity is Severity.ERROR for item in frozen),
         findings=frozen,

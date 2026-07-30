@@ -21,6 +21,7 @@ class DevelopmentControlTests(unittest.TestCase):
             [sys.executable, str(DEVCTL), *args],
             cwd=ROOT,
             text=True,
+            encoding="utf-8",
             capture_output=True,
             check=False,
         )
@@ -35,6 +36,12 @@ class DevelopmentControlTests(unittest.TestCase):
         )
         scope = self.run_devctl("check-scope", "P001", "archflow/state/model.py")
         self.assertEqual(scope.returncode, 0, scope.stderr)
+
+    def test_check_scope_without_paths_is_an_error_not_a_pass(self) -> None:
+        result = self.run_devctl("check-scope", "P001")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("verifies nothing", result.stderr)
+        self.assertNotIn("scope PASS", result.stdout)
 
     def test_scope_escape_is_rejected(self) -> None:
         result = self.run_devctl(

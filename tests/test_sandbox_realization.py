@@ -274,6 +274,60 @@ def compiled_room(*, include_asset: bool = False):
 
 
 class SandboxRealizationTests(unittest.TestCase):
+    def test_mesh_occupancy_samples_actual_mesh_not_bounding_box(
+        self,
+    ) -> None:
+        from archflow.realization.sandbox import (
+            AxisAlignedBounds,
+            SceneObject,
+            SceneRepresentation,
+            _canonical_json,
+            _contains,
+        )
+
+        geometry = {
+            "kind": "mesh",
+            "requested_asset_id": "asset-detail",
+            "resolved_asset_id": "asset-detail",
+            "asset_payload_digest": "a" * 64,
+            "socket_id": "origin",
+            "vertices": [
+                [0.0, 0.0, 0.0],
+                [4.0, 0.0, 0.0],
+                [0.0, 4.0, 0.0],
+                [0.0, 0.0, 4.0],
+            ],
+            "faces": [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]],
+        }
+        item = SceneObject(
+            object_id="detail-mesh",
+            producer_op_id="asset-detail-op",
+            source_object_digest="b" * 64,
+            representation=SceneRepresentation.MESH,
+            geometry_json=_canonical_json(geometry),
+            bounds=AxisAlignedBounds(
+                (0.0, 0.0, 0.0),
+                (4.0, 4.0, 4.0),
+            ),
+            semantic_binding_ids=("binding-detail",),
+            physical=True,
+        )
+        objects = {"detail-mesh": item}
+
+        # Inside the tetrahedron: occupied.
+        self.assertTrue(
+            _contains("detail-mesh", (0.5, 0.5, 0.5), objects)
+        )
+        # Inside the bounding box but outside the tetrahedron: the old
+        # AABB shortcut reported this cell as definitively occupied.
+        self.assertFalse(
+            _contains("detail-mesh", (3.5, 3.5, 3.5), objects)
+        )
+        # Outside the bounding box entirely.
+        self.assertFalse(
+            _contains("detail-mesh", (5.0, 5.0, 5.0), objects)
+        )
+
     def test_scene_is_deterministic_and_reloads_without_platform(self) -> None:
         _, program, payloads = compiled_room()
         first = realize_geometry(

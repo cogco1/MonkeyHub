@@ -58,6 +58,7 @@ def _monitor(
     *,
     submission=None,
     passed: bool = True,
+    state_commitments=(),
 ):
     reviewed = assembly.submission if submission is None else submission
     state = OperationalMarkovState(
@@ -72,6 +73,7 @@ def _monitor(
         ),
         compiler_version="promotion-test",
         phase="candidate",
+        commitments=state_commitments,
     )
     if not passed:
         raise AssertionError(
@@ -109,13 +111,14 @@ def _hard_validation(
             else "hard-validation-fail"
         ),
         submission_id=reviewed.submission_id,
+        submission_digest=reviewed.content_digest(),
         checked_state=assembly.plan.base,
         passed=passed,
         findings=findings,
     )
 
 
-def _human_package(*, hard_passed: bool = True):
+def _human_package(*, hard_passed: bool = True, monitor_state_commitments=()):
     policy = _approval_policy()
     assembly = _with_policies(policy)
     approval = issue_human_candidate_approval(
@@ -141,6 +144,7 @@ def _human_package(*, hard_passed: bool = True):
         commitment_monitor=_monitor(
             assembly,
             submission=execution.submission,
+            state_commitments=monitor_state_commitments,
         ),
         now_utc=NOW,
     )

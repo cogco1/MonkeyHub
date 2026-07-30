@@ -104,6 +104,7 @@ from archflow.state.geometry_program import (
     HostedAssembly,
     LengthUnit,
     SemanticBinding,
+    digest_value,
 )
 from archflow.submission import CandidateDelta, CandidateSubmission, Claim
 from archflow.validation import (
@@ -1360,6 +1361,7 @@ def _validation_dict(receipt: object) -> dict[str, object]:
     return {
         "receipt_id": receipt.receipt_id,
         "submission_id": receipt.submission_id,
+        "submission_digest": receipt.submission_digest,
         "checked_state": _base_dict(receipt.checked_state),
         "passed": receipt.passed,
         "findings": [
@@ -1800,9 +1802,11 @@ async def execute_sandbox_gold(
         decision_receipt_digest=_digest(
             {
                 "approval": approval.to_dict(),
-                "hard_validation": accepted.hard_validation.to_dict(),
+                "hard_validation": _validation_dict(
+                    accepted.hard_validation
+                ),
                 "readiness": readiness.to_dict(),
-                "usability": accepted.usability_receipt.to_dict(),
+                "usability": _receipt_dict(accepted.usability_receipt),
             }
         ),
         evidence_refs=tuple(
@@ -1810,7 +1814,7 @@ async def execute_sandbox_gold(
                 (
                     f"approval:{approval.approval_id}",
                     f"hard-validation:{accepted.hard_validation.receipt_id}",
-                    f"promotion-readiness:{readiness.receipt_id}",
+                    f"promotion-readiness:{_digest(readiness.to_dict())}",
                     f"sandbox-scene:{accepted.scene.scene_digest}",
                     f"usability:{accepted.usability_receipt.receipt_id}",
                 )
@@ -2043,7 +2047,10 @@ def reload_sandbox_gold(
             receipt.scene_digest != scene.scene_digest
             or view.scene_digest != scene.scene_digest
             or render.scene_digest != scene.scene_digest
-            or payload["geometry_program"]["program_digest"]
+            # program_digest is a derived property that never serializes;
+            # recompute it from the persisted program content instead of
+            # trusting a self-declared key.
+            or digest_value(payload["geometry_program"])
             != receipt.geometry_program_digest
             or projection.projection_digest
             != payload["geometry_program"][

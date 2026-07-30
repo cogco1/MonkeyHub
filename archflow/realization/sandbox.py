@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping
@@ -232,10 +233,23 @@ class SandboxAssetPayload:
 
     SCHEMA = "SandboxAssetPayload@1"
 
+    # Voxel occupancy samples every mesh triangle per cell, so caller and
+    # model supplied assets must stay explicitly bounded.
+    MAX_VERTICES = 20_000
+    MAX_FACES = 20_000
+
     def __post_init__(self) -> None:
         _identifier(self.asset_id, "asset_id")
         if not isinstance(self.vertices, tuple) or len(self.vertices) < 3:
             raise SandboxRealizationError("mesh asset needs at least 3 vertices")
+        if len(self.vertices) > self.MAX_VERTICES:
+            raise SandboxRealizationError(
+                "mesh asset exceeds the explicit vertex bound"
+            )
+        if isinstance(self.faces, tuple) and len(self.faces) > self.MAX_FACES:
+            raise SandboxRealizationError(
+                "mesh asset exceeds the explicit face bound"
+            )
         normalized_vertices = []
         for vertex in self.vertices:
             if not isinstance(vertex, tuple) or len(vertex) != 3:
@@ -1524,6 +1538,79 @@ class DerivedVoxelView:
         )
 
 
+# One fixed generic ray direction keeps the mesh parity test deterministic
+# while avoiding axis-aligned edge and face coincidences.
+_MESH_RAY_DIRECTION = (1.0, 0.7548776662466927, 0.5698402909980532)
+_MESH_RAY_EPSILON = 1e-12
+
+
+def _ray_hits_triangle(
+    origin: tuple[float, float, float],
+    a: tuple[float, ...],
+    b: tuple[float, ...],
+    c: tuple[float, ...],
+) -> bool:
+    direction = _MESH_RAY_DIRECTION
+    edge1 = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+    edge2 = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
+    pvec = (
+        direction[1] * edge2[2] - direction[2] * edge2[1],
+        direction[2] * edge2[0] - direction[0] * edge2[2],
+        direction[0] * edge2[1] - direction[1] * edge2[0],
+    )
+    det = edge1[0] * pvec[0] + edge1[1] * pvec[1] + edge1[2] * pvec[2]
+    if abs(det) < _MESH_RAY_EPSILON:
+        return False
+    inverse = 1.0 / det
+    tvec = (origin[0] - a[0], origin[1] - a[1], origin[2] - a[2])
+    u = (
+        tvec[0] * pvec[0] + tvec[1] * pvec[1] + tvec[2] * pvec[2]
+    ) * inverse
+    if u < 0.0 or u > 1.0:
+        return False
+    qvec = (
+        tvec[1] * edge1[2] - tvec[2] * edge1[1],
+        tvec[2] * edge1[0] - tvec[0] * edge1[2],
+        tvec[0] * edge1[1] - tvec[1] * edge1[0],
+    )
+    v = (
+        direction[0] * qvec[0]
+        + direction[1] * qvec[1]
+        + direction[2] * qvec[2]
+    ) * inverse
+    if v < 0.0 or u + v > 1.0:
+        return False
+    t = (
+        edge2[0] * qvec[0] + edge2[1] * qvec[1] + edge2[2] * qvec[2]
+    ) * inverse
+    return t > _MESH_RAY_EPSILON
+
+
+def _point_in_mesh(
+    point: tuple[float, float, float],
+    vertices: Sequence[Sequence[float]],
+    faces: Sequence[Sequence[int]],
+) -> bool:
+    """Bounded parity sampling of the actual mesh surface.
+
+    This is the sampling the mesh_validation_uses_bounded_sampling loss code
+    declares: exact at sample points for watertight meshes, approximate for
+    sub-resolution features and open surfaces.
+    """
+
+    crossings = 0
+    for face in faces:
+        for index in range(1, len(face) - 1):
+            if _ray_hits_triangle(
+                point,
+                vertices[face[0]],
+                vertices[face[index]],
+                vertices[face[index + 1]],
+            ):
+                crossings += 1
+    return crossings % 2 == 1
+
+
 def _contains(
     object_id: str,
     point: tuple[float, float, float],
@@ -1532,8 +1619,16 @@ def _contains(
     item = objects[object_id]
     geometry = item.geometry
     kind = geometry["kind"]
-    if kind in {"aabb", "mesh"}:
+    if kind == "aabb":
         return item.bounds.contains_point(point)
+    if kind == "mesh":
+        if not item.bounds.contains_point(point):
+            return False
+        return _point_in_mesh(
+            point,
+            geometry["vertices"],
+            geometry["faces"],
+        )
     if kind == "difference":
         return _contains(geometry["base"], point, objects) and not any(
             _contains(value, point, objects)

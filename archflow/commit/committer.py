@@ -11,6 +11,11 @@ from archflow.evaluation import EvaluationObservation
 from archflow.state import CanonicalState, StateRef
 from archflow.submission import CandidateSubmission
 from archflow.validation import ValidationReceipt
+from archflow.validation.commitments import (
+    MONITORED_COMMITMENT_STATUSES,
+    CommitmentProgressOutcome,
+    commitment_content_digest,
+)
 
 
 class CommitRejected(RuntimeError):
@@ -39,8 +44,14 @@ class Committer:
             )
         self._check_decision_package(current, submission, validation, evaluations)
         replacement = self._apply(current, submission, evaluations)
+        # The receipt must exist before the swap: a receipt-construction
+        # failure after promotion would leave an advanced state with no
+        # receipt, breaking receipt-bound completion.
+        receipt = self._receipt(
+            current, replacement, submission, validation, evaluations
+        )
         self._store._compare_and_swap(submission.base, replacement)
-        return self._receipt(current, replacement, submission, validation, evaluations)
+        return receipt
 
     def commit_decision_package(
         self,
@@ -86,13 +97,57 @@ class Committer:
                 "promotion package lacks passing completion-boundary "
                 "commitment evidence"
             )
+        # The monitor's verdict speaks for this promotion only if it
+        # evaluated the canonical commitments themselves: same id, same
+        # content, and an actually-determined outcome.  A same-id lookalike
+        # with weakened strength, or an evidence-blocked entry, covers
+        # nothing.
+        progress_by_id = {
+            item.commitment_id: item
+            for item in package.commitment_monitor.progress
+        }
+        problems = []
+        for item in current.commitments:
+            if item.status not in MONITORED_COMMITMENT_STATUSES:
+                continue
+            entry = progress_by_id.get(item.commitment_id)
+            if entry is None:
+                problems.append(f"{item.commitment_id}: never observed")
+            elif entry.commitment_digest != commitment_content_digest(item):
+                problems.append(
+                    f"{item.commitment_id}: monitor evaluated different "
+                    "commitment content"
+                )
+            elif entry.outcome is CommitmentProgressOutcome.EVIDENCE_BLOCKED:
+                problems.append(
+                    f"{item.commitment_id}: outcome is evidence_blocked"
+                )
+        if problems:
+            raise CommitRejected(
+                "commitment monitor does not cover canonical commitments: "
+                + "; ".join(sorted(problems))
+            )
+        delta = submission.delta
+        if (
+            delta.facts_add
+            or delta.commitments_add
+            or delta.obligations_discharge
+            or delta.obligations_add
+        ):
+            # Enforce the P024 artifacts-only contract as a typed gate here
+            # instead of relying on the package digest computation to fail.
+            raise CommitRejected(
+                "P024 promotion delta may carry artifacts only"
+            )
         replacement = self._apply(
             current,
             submission,
             package.evaluations,
         )
-        self._store._compare_and_swap(submission.base, replacement)
-        return self._receipt(
+        # Build the receipt (which re-validates the package via its digest
+        # computation) before the swap so any receipt failure aborts the
+        # promotion instead of stranding an advanced, receipt-less state.
+        receipt = self._receipt(
             current,
             replacement,
             submission,
@@ -100,6 +155,8 @@ class Committer:
             package.evaluations,
             package=package,
         )
+        self._store._compare_and_swap(submission.base, replacement)
+        return receipt
 
     @staticmethod
     def _check_decision_package(
@@ -112,6 +169,10 @@ class Committer:
             raise CommitRejected("hard validation did not pass")
         if validation.submission_id != submission.submission_id:
             raise CommitRejected("validation belongs to another submission")
+        if validation.submission_digest != submission.content_digest():
+            raise CommitRejected(
+                "validation receipt does not bind this submission content"
+            )
         if validation.checked_state != submission.base:
             raise CommitRejected("validation checked a different base state")
         if current.ref != submission.base:
@@ -214,6 +275,7 @@ class Committer:
             current.ref.version,
             replacement.ref.version,
             submission.submission_id,
+            validation.submission_digest,
             validation.receipt_id,
             *[item.observation_id for item in evaluations],
             *(
@@ -232,6 +294,7 @@ class Committer:
         return CommitReceipt(
             receipt_id=f"commit-{digest[:20]}",
             submission_id=submission.submission_id,
+            submission_digest=validation.submission_digest,
             validation_receipt_id=validation.receipt_id,
             from_state=current.ref,
             to_state=replacement.ref,

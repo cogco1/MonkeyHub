@@ -95,6 +95,17 @@ class DependencyImpactKind(StrEnum):
     REVALIDATION_REQUIRED = "revalidation_required"
 
 
+# Commitment statuses the monitor evaluates; promotion coverage checks must
+# use this same set so the two definitions can never drift apart.
+MONITORED_COMMITMENT_STATUSES = frozenset(
+    {
+        CommitmentStatus.ACCEPTED,
+        CommitmentStatus.ACTIVE,
+        CommitmentStatus.VIOLATED,
+    }
+)
+
+
 def _text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be non-empty text")
@@ -363,10 +374,24 @@ class TemporalMonitorState:
         )
 
 
+def commitment_content_digest(commitment: Commitment) -> str:
+    """Digest of the exact commitment content a monitor evaluated.
+
+    Promotion compares this against the canonical commitment so a same-id
+    lookalike with weakened strength or a different criterion can never
+    satisfy the completion boundary on the canonical commitment's behalf.
+    """
+
+    if not isinstance(commitment, Commitment):
+        raise TypeError("commitment must be Commitment")
+    return _digest(commitment.to_dict())
+
+
 @dataclass(frozen=True, slots=True)
 class CommitmentProgress:
     commitment_id: str
     kind: CommitmentKind
+    commitment_digest: str
     outcome: CommitmentProgressOutcome
     recommended_status: CommitmentStatus | None
     temporal_state_ref: str | None = None
@@ -375,6 +400,11 @@ class CommitmentProgress:
         _text(self.commitment_id, "commitment_id")
         if not isinstance(self.kind, CommitmentKind):
             raise TypeError("kind must be CommitmentKind")
+        object.__setattr__(
+            self,
+            "commitment_digest",
+            _sha256(self.commitment_digest, "commitment_digest"),
+        )
         if not isinstance(self.outcome, CommitmentProgressOutcome):
             raise TypeError("outcome must be CommitmentProgressOutcome")
         if self.recommended_status is not None and not isinstance(
@@ -982,16 +1012,11 @@ def monitor_commitments(
         obligations.append(_repair_obligation(finding))
         violated_ids.append(existing.commitment_id)
 
-    monitored_statuses = {
-        CommitmentStatus.ACCEPTED,
-        CommitmentStatus.ACTIVE,
-        CommitmentStatus.VIOLATED,
-    }
     for commitment in sorted(
         state.commitments,
         key=lambda item: item.commitment_id,
     ):
-        if commitment.status not in monitored_statuses:
+        if commitment.status not in MONITORED_COMMITMENT_STATUSES:
             continue
         activation = _observation_for(
             observation_by_key,
@@ -1054,6 +1079,7 @@ def monitor_commitments(
                 CommitmentProgress(
                     commitment_id=commitment.commitment_id,
                     kind=commitment.kind,
+                    commitment_digest=commitment_content_digest(commitment),
                     outcome=CommitmentProgressOutcome.EVIDENCE_BLOCKED,
                     recommended_status=None,
                 )
@@ -1077,6 +1103,7 @@ def monitor_commitments(
                 CommitmentProgress(
                     commitment_id=commitment.commitment_id,
                     kind=commitment.kind,
+                    commitment_digest=commitment_content_digest(commitment),
                     outcome=CommitmentProgressOutcome.INACTIVE,
                     recommended_status=None,
                 )
@@ -1119,6 +1146,7 @@ def monitor_commitments(
                 CommitmentProgress(
                     commitment_id=commitment.commitment_id,
                     kind=commitment.kind,
+                    commitment_digest=commitment_content_digest(commitment),
                     outcome=CommitmentProgressOutcome.EVIDENCE_BLOCKED,
                     recommended_status=None,
                 )
@@ -1178,6 +1206,7 @@ def monitor_commitments(
             CommitmentProgress(
                 commitment_id=commitment.commitment_id,
                 kind=commitment.kind,
+                commitment_digest=commitment_content_digest(commitment),
                 outcome=outcome,
                 recommended_status=recommended,
                 temporal_state_ref=temporal_ref,

@@ -628,9 +628,12 @@ def _run_verification_commands(
                 command,
                 cwd=ROOT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 capture_output=True,
                 check=False,
                 timeout=VERIFICATION_TIMEOUT_SECONDS,
+                env={**os.environ, "PYTHONUTF8": "1"},
             )
         except subprocess.TimeoutExpired as exc:
             raise RegistryError(
@@ -1090,6 +1093,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Registry output is UTF-8 regardless of the host locale (GBK consoles
+    # otherwise corrupt or reject card text embedded in command output).
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     args = build_parser().parse_args(argv)
     try:
         if args.command == "verify":
@@ -1110,9 +1118,16 @@ def main(argv: list[str] | None = None) -> int:
                 command_claim(data, args.item_id, args.actor)
             elif args.command == "check-scope":
                 item = find_item(data, args.item_id)
-                paths = args.paths or item["write_scope"]
-                check_scope(item, paths)
-                print(f"{args.item_id}: scope PASS ({len(paths)} paths)")
+                if not args.paths:
+                    raise RegistryError(
+                        f"{args.item_id}: check-scope requires the explicit "
+                        "paths that were touched; a write_scope compared "
+                        "against itself verifies nothing"
+                    )
+                check_scope(item, args.paths)
+                print(
+                    f"{args.item_id}: scope PASS ({len(args.paths)} paths)"
+                )
             elif args.command == "complete":
                 command_complete(data, args.item_id, args.evidence)
     except (OSError, json.JSONDecodeError, RegistryError) as exc:

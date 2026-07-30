@@ -548,7 +548,7 @@
       ],
       "tests": [
         "python -m unittest discover -s tests -v",
-        "python tools/devctl.py check-scope P001"
+        "python tools/devctl.py check-scope P001 README.md pyproject.toml archflow/ tests/ tools/ governance/ docs/"
       ],
       "on_complete": {
         "phase": "P2 - real MCP vertical slice ready",

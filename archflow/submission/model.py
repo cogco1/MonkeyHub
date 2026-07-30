@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 
 from archflow.state import (
@@ -103,3 +105,61 @@ class CandidateSubmission:
         keys = tuple(claim.key for claim in self.claims)
         if len(keys) != len(set(keys)):
             raise ValueError("claim keys contain duplicates")
+
+    def content_digest(self) -> str:
+        """Canonical digest over the complete submission content.
+
+        Validation receipts bind to this digest so promotion can prove the
+        gates examined exactly the delta being committed, not merely a
+        submission that reused the same id and base.
+        """
+        payload = {
+            "schema": "CandidateSubmissionContent@1",
+            "submission_id": self.submission_id,
+            "base": [
+                self.base.project_id,
+                self.base.version,
+                self.base.state_sha256,
+            ],
+            "workspace_id": self.workspace_id,
+            "intent": self.intent,
+            "delta": {
+                "facts_add": [
+                    [item.key, item.value, item.source_ref]
+                    for item in self.delta.facts_add
+                ],
+                "commitments_add": [
+                    item.to_dict() for item in self.delta.commitments_add
+                ],
+                "obligations_discharge": list(
+                    self.delta.obligations_discharge
+                ),
+                "obligations_add": [
+                    [item.obligation_id, item.statement, item.source_ref]
+                    for item in self.delta.obligations_add
+                ],
+                "artifacts_add": [
+                    [
+                        item.artifact_id,
+                        item.uri,
+                        item.media_type,
+                        item.sha256,
+                    ]
+                    for item in self.delta.artifacts_add
+                ],
+            },
+            "claims": [
+                [claim.key, claim.value, list(claim.evidence_refs)]
+                for claim in self.claims
+            ],
+            "evidence_refs": list(self.evidence_refs),
+            "unresolved": list(self.unresolved),
+        }
+        encoded = json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()

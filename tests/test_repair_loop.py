@@ -91,6 +91,7 @@ def _validation(
     return ValidationReceipt(
         receipt_id=f"validation-{submission.submission_id}",
         submission_id=submission.submission_id,
+        submission_digest=submission.content_digest(),
         checked_state=state.ref,
         passed=passed,
         findings=findings,

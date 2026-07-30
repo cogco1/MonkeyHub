@@ -660,8 +660,9 @@ class CandidateControlState:
     mutation_trace_ref: str | None = None
     restore_evidence_ref: str | None = None
     reason: str | None = None
+    paused_from: CandidateControlStatus | None = None
 
-    SCHEMA = "CandidateControlState@1"
+    SCHEMA = "CandidateControlState@2"
 
     def __post_init__(self) -> None:
         for value, field in (
@@ -703,6 +704,36 @@ class CandidateControlState:
             raise PlayerControlError(
                 "restored state requires exact restore evidence"
             )
+        if self.status is CandidateControlStatus.PAUSED:
+            if self.paused_from is None:
+                raise PlayerControlError(
+                    "paused state must record the status it paused from"
+                )
+            if not isinstance(self.paused_from, CandidateControlStatus):
+                raise TypeError(
+                    "paused_from must be CandidateControlStatus"
+                )
+            if self.paused_from in {
+                CandidateControlStatus.PAUSED,
+                CandidateControlStatus.CANCELLED,
+                CandidateControlStatus.RESTORED,
+            }:
+                raise PlayerControlError(
+                    "paused_from must name a resumable status"
+                )
+        elif self.paused_from is not None:
+            raise PlayerControlError(
+                "paused_from is only valid while paused"
+            )
+
+    @property
+    def effective_status(self) -> CandidateControlStatus:
+        """The status guards must judge; pausing never launders state."""
+
+        if self.status is CandidateControlStatus.PAUSED:
+            assert self.paused_from is not None
+            return self.paused_from
+        return self.status
 
     @property
     def state_digest(self) -> str:
@@ -728,6 +759,9 @@ class CandidateControlState:
             "mutation_trace_ref": self.mutation_trace_ref,
             "restore_evidence_ref": self.restore_evidence_ref,
             "reason": self.reason,
+            "paused_from": (
+                None if self.paused_from is None else self.paused_from.value
+            ),
             "world_mutation_performed": False,
             "canonical_write_authority": False,
         }
@@ -1137,6 +1171,15 @@ def approve_candidate_control(
         raise PlayerControlError(
             f"cannot approve candidate from {state.status.value}"
         )
+    if state.effective_status not in {
+        CandidateControlStatus.PREVIEW_READY,
+        CandidateControlStatus.APPROVED,
+    }:
+        raise PlayerControlError(
+            "cannot approve a candidate paused from "
+            f"{state.effective_status.value}; a written candidate keeps "
+            "its undo or reconciliation obligation"
+        )
     validate_candidate_approval(
         assembly,
         policy,
@@ -1149,6 +1192,7 @@ def approve_candidate_control(
         sequence=state.sequence + 1,
         approval_ref=approval.ref,
         reason=None,
+        paused_from=None,
     )
 
 
@@ -1169,6 +1213,11 @@ def pause_candidate_control(
         status=CandidateControlStatus.PAUSED,
         sequence=state.sequence + 1,
         reason=_text(reason, "reason"),
+        paused_from=(
+            state.paused_from
+            if state.status is CandidateControlStatus.PAUSED
+            else state.status
+        ),
     )
 
 
@@ -1177,7 +1226,7 @@ def cancel_candidate_control(
     *,
     reason: str,
 ) -> CandidateControlState:
-    if state.status in {
+    if state.effective_status in {
         CandidateControlStatus.EXECUTED,
         CandidateControlStatus.UNDO_REQUIRED,
         CandidateControlStatus.RESTORED,
@@ -1191,6 +1240,7 @@ def cancel_candidate_control(
         status=CandidateControlStatus.CANCELLED,
         sequence=state.sequence + 1,
         reason=_text(reason, "reason"),
+        paused_from=None,
     )
 
 
@@ -1237,14 +1287,14 @@ def record_exact_undo(
 ) -> CandidateControlState:
     """Recognize M003 exact-token compensation; never perform undo here."""
 
-    if state.status not in {
+    if state.effective_status not in {
         CandidateControlStatus.APPROVED,
         CandidateControlStatus.EXECUTED,
         CandidateControlStatus.UNDO_REQUIRED,
         CandidateControlStatus.MANUAL_RECONCILIATION_REQUIRED,
     }:
         raise PlayerControlError(
-            f"cannot reconcile undo from {state.status.value}"
+            f"cannot reconcile undo from {state.effective_status.value}"
         )
     _require_trace_binding(state, trace)
     if (
@@ -1263,6 +1313,7 @@ def record_exact_undo(
                 "exact-token compensation evidence is not proven; manual "
                 "reconciliation is required"
             ),
+            paused_from=None,
         )
     return replace(
         state,
@@ -1274,6 +1325,7 @@ def record_exact_undo(
             "exact-token compensation was acknowledged; atomic rollback "
             "is not claimed"
         ),
+        paused_from=None,
     )
 
 

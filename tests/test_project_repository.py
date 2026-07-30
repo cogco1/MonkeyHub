@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from archflow.project import (
     FilesystemProjectRepository,
@@ -12,6 +15,7 @@ from archflow.project import (
     PersistenceDestination,
     ProjectArtifactRef,
     ProjectAlreadyExists,
+    ProjectHeadLocked,
     ProjectIntegrityError,
     ProjectRecordRef,
     ProjectVersionRef,
@@ -20,6 +24,31 @@ from archflow.project import (
     StaleProjectHead,
     project_state_sha256,
 )
+
+
+_FOREIGN_LOCK_HOLDER = """
+import os
+import sys
+from pathlib import Path
+
+handle = Path(sys.argv[1]).open("a+b")
+if os.name == "nt":
+    import msvcrt
+
+    handle.seek(0)
+    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+else:
+    import fcntl
+
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+print("LOCKED", flush=True)
+sys.stdin.readline()
+if os.name == "nt":
+    handle.seek(0)
+    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+handle.close()
+print("RELEASED", flush=True)
+"""
 
 
 def _decision(
@@ -237,6 +266,59 @@ class ProjectRepositoryTests(unittest.TestCase):
 
         self.assertEqual(self.repository.read_head(), accepted)
         self.assertEqual(self.repository.load_current_state(), {"selected": "a"})
+
+    def test_head_cas_is_exclusive_across_processes(self) -> None:
+        base = self.repository.read_head()
+        run = self.repository.create_run("run-locked", base=base)
+        prepared = self.repository.prepare_transition(
+            run=run,
+            expected=base,
+            replacement_state={"selected": "locked"},
+            decision_receipt=_decision(self.repository, run, status="accepted"),
+        )
+
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                _FOREIGN_LOCK_HOLDER,
+                str(self.root / "HEAD.lock"),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+        try:
+            self.assertEqual(child.stdout.readline().strip(), "LOCKED")
+            with patch(
+                "archflow.project.repository._HEAD_LOCK_TIMEOUT_SECONDS",
+                0.3,
+            ):
+                with self.assertRaises(ProjectHeadLocked):
+                    self.repository.compare_and_swap(
+                        expected=prepared.expected,
+                        event=prepared.event,
+                        replacement=prepared.replacement,
+                    )
+            self.assertEqual(self.repository.read_head(), base)
+            child.stdin.write("\n")
+            child.stdin.flush()
+            self.assertEqual(child.stdout.readline().strip(), "RELEASED")
+        finally:
+            child.stdin.close()
+            child.wait(timeout=10)
+
+        accepted = self.repository.compare_and_swap(
+            expected=prepared.expected,
+            event=prepared.event,
+            replacement=prepared.replacement,
+        )
+        self.assertEqual(self.repository.read_head(), accepted)
+        self.assertEqual(
+            self.repository.load_current_state(),
+            {"selected": "locked"},
+        )
 
     def test_uncommitted_crash_artifacts_are_reported_but_not_loaded(self) -> None:
         base = self.repository.read_head()

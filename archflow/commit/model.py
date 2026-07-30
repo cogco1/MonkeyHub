@@ -254,6 +254,7 @@ def build_promotion_decision_package(
 class CommitReceipt:
     receipt_id: str
     submission_id: str
+    submission_digest: str
     validation_receipt_id: str
     from_state: StateRef
     to_state: StateRef

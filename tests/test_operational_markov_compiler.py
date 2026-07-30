@@ -569,6 +569,43 @@ class OperationalMarkovCompilerTests(unittest.TestCase):
             )
             self.assertNotIn("move", obligation.statement.lower())
 
+    def test_invalidated_condition_obligation_opens_after_invalidation(
+        self,
+    ) -> None:
+        target = "fact:deliverable:massing-package"
+        conditioned = DesignObligation(
+            obligation_id="revalidate-massing",
+            statement="Revalidate the massing package once invalidated.",
+            source_ref="evidence://brief",
+            subject_refs=(target,),
+            condition=ObligationCondition(
+                ref=f"invalidated:{target}",
+                expected_value="true",
+            ),
+            status=ObligationStatus.BLOCKED,
+        )
+        state = _state(obligations=(conditioned,))
+        operator = DecisionOperator(
+            decision_id="revise-massing",
+            decision_type="revise-semantic-relation",
+            base_state_digest=state.state_digest,
+            authority_id="architect-primary",
+            intent="Revise the massing hypothesis.",
+            invalidates=(target,),
+        )
+
+        result = compile_decision_operator(state, operator)
+
+        self.assertIn(target, result.state.invalidated_refs)
+        refreshed = {
+            item.obligation_id: item
+            for item in result.state.obligations
+        }
+        self.assertIs(
+            refreshed["revalidate-massing"].status,
+            ObligationStatus.OPEN,
+        )
+
     def test_history_distinct_states_are_operationally_equivalent(self) -> None:
         fact = StateFact(
             domain=StateDomain.BRIEF,

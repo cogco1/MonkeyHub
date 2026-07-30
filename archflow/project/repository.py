@@ -6,11 +6,17 @@ import hashlib
 import json
 import os
 import threading
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 from uuid import uuid4
+
+if os.name == "nt":
+    import msvcrt
+else:  # pragma: no cover - exercised only on POSIX hosts
+    import fcntl
 
 from archflow.project.digests import project_state_sha256
 from archflow.project.layout import ProjectLayout
@@ -66,11 +72,83 @@ CURRENT_FORMAT_VERSION = 2
 _LOCK_INDEX_GUARD = threading.Lock()
 _PROJECT_LOCKS: dict[str, threading.RLock] = {}
 
+_HEAD_LOCK_TIMEOUT_SECONDS = 10.0
+_HEAD_LOCK_RETRY_SECONDS = 0.05
+
 
 def _project_lock(root: Path) -> threading.RLock:
     key = os.path.normcase(str(root.resolve(strict=False)))
     with _LOCK_INDEX_GUARD:
         return _PROJECT_LOCKS.setdefault(key, threading.RLock())
+
+
+class ProjectHeadLocked(ProjectRepositoryError):
+    """Another process holds the project head lock."""
+
+
+class _HeadFileLock:
+    """OS-level advisory lock serializing HEAD mutation across processes.
+
+    The per-project ``threading.RLock`` provides in-process ordering, so this
+    lock must only be acquired while that lock is held; then at most one
+    thread per process ever touches the underlying file handle.  The lock
+    file lives beside ``HEAD`` and deliberately carries no ``.json`` suffix
+    so integrity scans never treat it as a project record.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._handle: BinaryIO | None = None
+        self._depth = 0
+
+    def _try_acquire(self, handle: BinaryIO) -> bool:
+        try:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:  # pragma: no cover - exercised only on POSIX hosts
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return False
+        return True
+
+    def __enter__(self) -> None:
+        if self._depth:
+            self._depth += 1
+            return
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        handle = self._path.open("a+b")
+        deadline = time.monotonic() + _HEAD_LOCK_TIMEOUT_SECONDS
+        try:
+            while not self._try_acquire(handle):
+                if time.monotonic() >= deadline:
+                    raise ProjectHeadLocked(
+                        "another process holds the project head lock: "
+                        f"{self._path}"
+                    )
+                time.sleep(_HEAD_LOCK_RETRY_SECONDS)
+        except BaseException:
+            handle.close()
+            raise
+        self._handle = handle
+        self._depth = 1
+
+    def __exit__(self, *exc_info: object) -> None:
+        self._depth -= 1
+        if self._depth:
+            return
+        handle = self._handle
+        self._handle = None
+        if handle is None:  # pragma: no cover - defensive
+            return
+        try:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:  # pragma: no cover - exercised only on POSIX hosts
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
 
 
 def _json_bytes(payload: Mapping[str, Any]) -> bytes:
@@ -147,6 +225,9 @@ def _replace_atomic(path: Path, data: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
+        # No post-replace fsync: raising after the swap is already visible
+        # would break the caller's "exception means no promotion" contract,
+        # which matters more than flushing the rename's directory metadata.
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -247,6 +328,7 @@ class FilesystemProjectRepository:
         self.layout = layout
         self._manifest = manifest
         self._lock = _project_lock(layout.root)
+        self._head_lock = _HeadFileLock(layout.root / "HEAD.lock")
 
     @classmethod
     def initialize(
@@ -261,7 +343,11 @@ class FilesystemProjectRepository:
             project_id=project_id,
             format_version=CURRENT_FORMAT_VERSION,
         )
-        with _project_lock(layout.root):
+        # The existence check and the HEAD write must sit inside the same
+        # OS-level lock compare_and_swap uses, or a stalled duplicate
+        # initialize from another process can reset a promoted HEAD to v0.
+        head_lock = _HeadFileLock(layout.root / "HEAD.lock")
+        with _project_lock(layout.root), head_lock:
             if layout.manifest.exists():
                 raise ProjectAlreadyExists(f"project already exists: {project_id}")
             layout.root.mkdir(parents=True, exist_ok=True)
@@ -317,6 +403,10 @@ class FilesystemProjectRepository:
                     "decision_receipt": None,
                 },
             )
+            if layout.head.exists():
+                raise ProjectAlreadyExists(
+                    f"project head already exists: {project_id}"
+                )
             _replace_atomic(
                 layout.head,
                 _json_bytes(repository._head_payload(head_ref, snapshot, event)),
@@ -632,7 +722,9 @@ class FilesystemProjectRepository:
         replacement: ProjectRecordRef,
     ) -> ProjectVersionRef:
         self._require_project_version(expected, durable=True)
-        with self._lock:
+        # Thread lock first, then the OS file lock: the read-validate-replace
+        # sequence must be exclusive across processes, not just threads.
+        with self._lock, self._head_lock:
             current, current_snapshot, current_event = (
                 self._read_head_document()
             )
