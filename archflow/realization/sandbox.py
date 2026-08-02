@@ -37,10 +37,17 @@ from archflow.state.geometry_program import (
 
 
 _HEX = frozenset("0123456789abcdef")
+_MAX_ARRAY_COUNT = 256
 _SUPPORTED = frozenset(
     {
         GeometryOperationKind.CURVE,
         GeometryOperationKind.SOLID,
+        GeometryOperationKind.TRANSFORM,
+        GeometryOperationKind.EXTRUSION,
+        GeometryOperationKind.REVOLVE,
+        GeometryOperationKind.LOFT,
+        GeometryOperationKind.SWEEP,
+        GeometryOperationKind.ARRAY,
         GeometryOperationKind.BOOLEAN_UNION,
         GeometryOperationKind.BOOLEAN_DIFFERENCE,
         GeometryOperationKind.BOOLEAN_INTERSECTION,
@@ -865,6 +872,206 @@ def _transform_point(
     )
 
 
+def _transform_vector(
+    matrix: tuple[float, ...],
+    vector: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    return tuple(
+        sum(matrix[row * 4 + column] * vector[column] for column in range(3))
+        for row in range(3)
+    )
+
+
+def _subtract(
+    left: Sequence[float],
+    right: Sequence[float],
+) -> tuple[float, float, float]:
+    return tuple(left[index] - right[index] for index in range(3))
+
+
+def _dot(left: Sequence[float], right: Sequence[float]) -> float:
+    return sum(left[index] * right[index] for index in range(3))
+
+
+def _cross(
+    left: Sequence[float],
+    right: Sequence[float],
+) -> tuple[float, float, float]:
+    return (
+        left[1] * right[2] - left[2] * right[1],
+        left[2] * right[0] - left[0] * right[2],
+        left[0] * right[1] - left[1] * right[0],
+    )
+
+
+def _length(vector: Sequence[float]) -> float:
+    return math.sqrt(_dot(vector, vector))
+
+
+def _number(
+    parameters: Mapping[str, object],
+    name: str,
+    operation_id: str,
+) -> float:
+    if name not in parameters:
+        raise SandboxRealizationError(
+            f"{operation_id}: parameter {name} is required"
+        )
+    return _finite(parameters[name], name)
+
+
+def _integer(
+    parameters: Mapping[str, object],
+    name: str,
+    operation_id: str,
+) -> int:
+    value = parameters.get(name)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise SandboxRealizationError(
+            f"{operation_id}: parameter {name} must be an integer"
+        )
+    return value
+
+
+def _boolean(
+    parameters: Mapping[str, object],
+    name: str,
+    operation_id: str,
+) -> bool:
+    value = parameters.get(name)
+    if not isinstance(value, bool):
+        raise SandboxRealizationError(
+            f"{operation_id}: parameter {name} must be boolean"
+        )
+    return value
+
+
+def _matrix4(
+    parameters: Mapping[str, object],
+    name: str,
+    operation_id: str,
+) -> tuple[float, ...]:
+    raw = parameters.get(name)
+    if not isinstance(raw, list) or len(raw) != 16:
+        raise SandboxRealizationError(
+            f"{operation_id}: parameter {name} must be a 4x4 matrix"
+        )
+    matrix = tuple(_finite(item, name) for item in raw)
+    if matrix[12:] != (0.0, 0.0, 0.0, 1.0):
+        raise SandboxRealizationError(
+            f"{operation_id}: parameter {name} must be affine"
+        )
+    return matrix
+
+
+def _points3(
+    parameters: Mapping[str, object],
+    name: str,
+    operation_id: str,
+    *,
+    minimum: int,
+) -> tuple[tuple[float, float, float], ...]:
+    raw = parameters.get(name)
+    if not isinstance(raw, list) or len(raw) < minimum:
+        raise SandboxRealizationError(
+            f"{operation_id}: parameter {name} needs at least {minimum} points"
+        )
+    points = tuple(
+        tuple(_finite(item, name) for item in point)
+        for point in raw
+        if isinstance(point, list) and len(point) == 3
+    )
+    if len(points) != len(raw):
+        raise SandboxRealizationError(
+            f"{operation_id}: every {name} point must be a 3-vector"
+        )
+    return points
+
+
+def _uniform_frame_scale(
+    matrix: tuple[float, ...],
+    operation_id: str,
+    tolerance: float,
+) -> float:
+    axes = tuple(
+        _transform_vector(
+            matrix,
+            tuple(1.0 if index == axis else 0.0 for index in range(3)),
+        )
+        for axis in range(3)
+    )
+    lengths = tuple(_length(axis) for axis in axes)
+    scale = sum(lengths) / 3.0
+    if scale <= 0 or any(abs(value - scale) > tolerance for value in lengths):
+        raise SandboxRealizationError(
+            f"{operation_id}: analytic revolve requires uniform frame scale"
+        )
+    if any(
+        abs(_dot(axes[first], axes[second])) > tolerance
+        for first in range(3)
+        for second in range(first + 1, 3)
+    ):
+        raise SandboxRealizationError(
+            f"{operation_id}: analytic revolve rejects frame shear"
+        )
+    return scale
+
+
+def _point_line_distance(
+    point: Sequence[float],
+    first: Sequence[float],
+    last: Sequence[float],
+) -> float:
+    chord = _subtract(last, first)
+    denominator = _dot(chord, chord)
+    if denominator == 0:
+        return _length(_subtract(point, first))
+    offset = _subtract(point, first)
+    parameter = max(0.0, min(1.0, _dot(offset, chord) / denominator))
+    projected = tuple(first[i] + parameter * chord[i] for i in range(3))
+    return _length(_subtract(point, projected))
+
+
+def _split_bezier(
+    points: tuple[tuple[float, float, float], ...],
+) -> tuple[
+    tuple[tuple[float, float, float], ...],
+    tuple[tuple[float, float, float], ...],
+]:
+    levels = [points]
+    while len(levels[-1]) > 1:
+        previous = levels[-1]
+        levels.append(
+            tuple(
+                tuple((previous[i][axis] + previous[i + 1][axis]) / 2.0 for axis in range(3))
+                for i in range(len(previous) - 1)
+            )
+        )
+    return (
+        tuple(level[0] for level in levels),
+        tuple(level[-1] for level in reversed(levels)),
+    )
+
+
+def _sample_bezier(
+    points: tuple[tuple[float, float, float], ...],
+    tolerance: float,
+    *,
+    depth: int = 0,
+) -> tuple[tuple[float, float, float], ...]:
+    flatness = max(
+        (_point_line_distance(point, points[0], points[-1]) for point in points[1:-1]),
+        default=0.0,
+    )
+    if flatness <= tolerance or depth >= 16:
+        return (points[0], points[-1])
+    left, right = _split_bezier(points)
+    return (
+        *_sample_bezier(left, tolerance, depth=depth + 1)[:-1],
+        *_sample_bezier(right, tolerance, depth=depth + 1),
+    )
+
+
 def _transform_bounds(
     matrix: tuple[float, ...],
     bounds: AxisAlignedBounds,
@@ -873,6 +1080,168 @@ def _transform_bounds(
     return AxisAlignedBounds(
         tuple(min(point[i] for point in points) for i in range(3)),
         tuple(max(point[i] for point in points) for i in range(3)),
+    )
+
+
+def _inverse_affine(
+    matrix: tuple[float, ...],
+    operation_id: str,
+) -> tuple[float, ...]:
+    a, b, c = matrix[0:3]
+    d, e, f = matrix[4:7]
+    g, h, i = matrix[8:11]
+    determinant = (
+        a * (e * i - f * h)
+        - b * (d * i - f * g)
+        + c * (d * h - e * g)
+    )
+    if abs(determinant) <= 1e-12:
+        raise SandboxRealizationError(
+            f"{operation_id}: affine transform must be invertible"
+        )
+    inverse_linear = (
+        (e * i - f * h) / determinant,
+        (c * h - b * i) / determinant,
+        (b * f - c * e) / determinant,
+        (f * g - d * i) / determinant,
+        (a * i - c * g) / determinant,
+        (c * d - a * f) / determinant,
+        (d * h - e * g) / determinant,
+        (b * g - a * h) / determinant,
+        (a * e - b * d) / determinant,
+    )
+    translation = (matrix[3], matrix[7], matrix[11])
+    inverse_translation = tuple(
+        -sum(
+            inverse_linear[row * 3 + column] * translation[column]
+            for column in range(3)
+        )
+        for row in range(3)
+    )
+    return (
+        inverse_linear[0],
+        inverse_linear[1],
+        inverse_linear[2],
+        inverse_translation[0],
+        inverse_linear[3],
+        inverse_linear[4],
+        inverse_linear[5],
+        inverse_translation[1],
+        inverse_linear[6],
+        inverse_linear[7],
+        inverse_linear[8],
+        inverse_translation[2],
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    )
+
+
+def _translated_bounds(
+    bounds: AxisAlignedBounds,
+    offset: Sequence[float],
+) -> AxisAlignedBounds:
+    return AxisAlignedBounds(
+        tuple(bounds.minimum[i] + offset[i] for i in range(3)),
+        tuple(bounds.maximum[i] + offset[i] for i in range(3)),
+    )
+
+
+def _mesh_from_sections(
+    sections: tuple[tuple[tuple[float, float, float], ...], ...],
+    *,
+    closed_profile: bool,
+    cap_ends: bool,
+    operation_id: str,
+    source_kind: str,
+    loss_code: str,
+    tolerance: float,
+) -> tuple[dict[str, object], AxisAlignedBounds]:
+    profile_size = len(sections[0])
+    minimum_size = 3 if closed_profile else 2
+    if profile_size < minimum_size or any(
+        len(section) != profile_size for section in sections
+    ):
+        raise SandboxRealizationError(
+            f"{operation_id}: mesh sections have inconsistent profile sizes"
+        )
+    if len(sections) < 2:
+        raise SandboxRealizationError(
+            f"{operation_id}: mesh construction needs at least two sections"
+        )
+    if any(
+        max(
+            _length(_subtract(second[index], first[index]))
+            for index in range(profile_size)
+        )
+        <= tolerance
+        for first, second in zip(sections, sections[1:])
+    ):
+        raise SandboxRealizationError(
+            f"{operation_id}: adjacent mesh sections must be distinct"
+        )
+    if cap_ends and not closed_profile:
+        raise SandboxRealizationError(
+            f"{operation_id}: end caps require a closed profile"
+        )
+    edge_count = profile_size if closed_profile else profile_size - 1
+    for section in sections:
+        if any(
+            _length(_subtract(section[(index + 1) % profile_size], section[index]))
+            <= tolerance
+            for index in range(edge_count)
+        ):
+            raise SandboxRealizationError(
+                f"{operation_id}: profile contains a degenerate edge"
+            )
+    vertices = tuple(point for section in sections for point in section)
+    if len(vertices) > SandboxAssetPayload.MAX_VERTICES:
+        raise SandboxRealizationError(
+            f"{operation_id}: tessellation exceeds the explicit vertex bound"
+        )
+    faces: list[tuple[int, int, int]] = []
+    for section_index in range(len(sections) - 1):
+        first_base = section_index * profile_size
+        second_base = first_base + profile_size
+        for point_index in range(edge_count):
+            next_index = (point_index + 1) % profile_size
+            first = first_base + point_index
+            first_next = first_base + next_index
+            second = second_base + point_index
+            second_next = second_base + next_index
+            faces.extend(
+                ((first, first_next, second_next), (first, second_next, second))
+            )
+    if cap_ends:
+        last_base = (len(sections) - 1) * profile_size
+        faces.extend(
+            (0, index + 1, index)
+            for index in range(1, profile_size - 1)
+        )
+        faces.extend(
+            (last_base, last_base + index, last_base + index + 1)
+            for index in range(1, profile_size - 1)
+        )
+    if len(faces) > SandboxAssetPayload.MAX_FACES:
+        raise SandboxRealizationError(
+            f"{operation_id}: tessellation exceeds the explicit face bound"
+        )
+    bounds = AxisAlignedBounds(
+        tuple(min(point[i] for point in vertices) for i in range(3)),
+        tuple(max(point[i] for point in vertices) for i in range(3)),
+    )
+    return (
+        {
+            "kind": "mesh",
+            "source_kind": source_kind,
+            "closed_profile": closed_profile,
+            "cap_ends": cap_ends,
+            "vertices": [list(item) for item in vertices],
+            "faces": [list(item) for item in faces],
+            "loss_codes": [loss_code],
+        },
+        bounds,
     )
 
 
@@ -912,30 +1281,343 @@ def _operation_geometry(
             bounds,
         )
     if operation.kind is GeometryOperationKind.CURVE:
-        raw_points = parameters.get("points")
-        if not isinstance(raw_points, list) or len(raw_points) < 2:
-            raise SandboxRealizationError(
-                f"{operation.op_id}: curve points are required"
+        control_points = tuple(
+            _transform_point(matrix, point)
+            for point in _points3(
+                parameters,
+                "points",
+                operation.op_id,
+                minimum=2,
             )
-        points = tuple(
-            _transform_point(matrix, tuple(_finite(item, "point") for item in point))
-            for point in raw_points
-            if isinstance(point, list) and len(point) == 3
         )
-        if len(points) != len(raw_points):
+        basis = parameters.get("basis", "polyline")
+        if basis not in {"polyline", "bezier"}:
             raise SandboxRealizationError(
-                f"{operation.op_id}: every curve point must be a 3-vector"
+                f"{operation.op_id}: curve basis must be polyline or bezier"
             )
         epsilon = program.proposal.tolerance.linear
+        points = (
+            control_points
+            if basis == "polyline"
+            else _sample_bezier(control_points, epsilon)
+        )
         bounds = AxisAlignedBounds(
             tuple(min(point[i] for point in points) - epsilon for i in range(3)),
             tuple(max(point[i] for point in points) + epsilon for i in range(3)),
         )
         return (
             SceneRepresentation.CURVE,
-            {"kind": "polyline", "points": [list(item) for item in points]},
+            {
+                "kind": "polyline",
+                "basis": basis,
+                "control_points": [list(item) for item in control_points],
+                "points": [list(item) for item in points],
+                "sampling_tolerance": epsilon,
+            },
             bounds,
         )
+    if operation.kind is GeometryOperationKind.REVOLVE:
+        axis_start = _transform_point(
+            matrix,
+            _vector3(parameters, "axis_start", operation.op_id),
+        )
+        axis_end = _transform_point(
+            matrix,
+            _vector3(parameters, "axis_end", operation.op_id),
+        )
+        axis = _subtract(axis_end, axis_start)
+        axis_length = _length(axis)
+        if axis_length <= program.proposal.tolerance.linear:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: revolve axis must have positive length"
+            )
+        scale = _uniform_frame_scale(
+            matrix,
+            operation.op_id,
+            program.proposal.tolerance.linear,
+        )
+        start_radius = _number(
+            parameters, "start_radius", operation.op_id
+        ) * scale
+        end_radius = _number(
+            parameters, "end_radius", operation.op_id
+        ) * scale
+        if start_radius < 0 or end_radius < 0 or max(
+            start_radius, end_radius
+        ) <= 0:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: revolve radii must be non-negative with one positive"
+            )
+        unit = tuple(value / axis_length for value in axis)
+        radial_factors = tuple(
+            math.sqrt(max(0.0, 1.0 - value * value)) for value in unit
+        )
+        minimum = tuple(
+            min(
+                axis_start[i] - radial_factors[i] * start_radius,
+                axis_end[i] - radial_factors[i] * end_radius,
+            )
+            for i in range(3)
+        )
+        maximum = tuple(
+            max(
+                axis_start[i] + radial_factors[i] * start_radius,
+                axis_end[i] + radial_factors[i] * end_radius,
+            )
+            for i in range(3)
+        )
+        bounds = AxisAlignedBounds(minimum, maximum)
+        return (
+            SceneRepresentation.ANALYTIC,
+            {
+                "kind": "revolve_linear",
+                "axis_start": list(axis_start),
+                "axis_end": list(axis_end),
+                "start_radius": start_radius,
+                "end_radius": end_radius,
+                "tolerance": program.proposal.tolerance.linear,
+            },
+            bounds,
+        )
+    if operation.kind is GeometryOperationKind.EXTRUSION:
+        profile = tuple(
+            _transform_point(matrix, point)
+            for point in _points3(
+                parameters,
+                "profile",
+                operation.op_id,
+                minimum=3,
+            )
+        )
+        vector = _transform_vector(
+            matrix,
+            _vector3(parameters, "vector", operation.op_id),
+        )
+        tolerance = program.proposal.tolerance.linear
+        if _length(vector) <= tolerance:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: extrusion vector must have positive length"
+            )
+        normal = None
+        for index in range(1, len(profile) - 1):
+            candidate = _cross(
+                _subtract(profile[index], profile[0]),
+                _subtract(profile[index + 1], profile[0]),
+            )
+            if _length(candidate) > tolerance:
+                normal = candidate
+                break
+        if normal is None:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: extrusion profile is degenerate"
+            )
+        normal_length = _length(normal)
+        unit_normal = tuple(value / normal_length for value in normal)
+        if any(
+            abs(_dot(_subtract(point, profile[0]), unit_normal)) > tolerance
+            for point in profile
+        ):
+            raise SandboxRealizationError(
+                f"{operation.op_id}: extrusion profile must be planar"
+            )
+        if abs(_dot(vector, unit_normal)) <= tolerance:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: extrusion vector must leave the profile plane"
+            )
+        vertices = (*profile, *(tuple(point[i] + vector[i] for i in range(3)) for point in profile))
+        bounds = AxisAlignedBounds(
+            tuple(min(point[i] for point in vertices) for i in range(3)),
+            tuple(max(point[i] for point in vertices) for i in range(3)),
+        )
+        return (
+            SceneRepresentation.ANALYTIC,
+            {
+                "kind": "prism",
+                "profile": [list(item) for item in profile],
+                "vector": list(vector),
+                "normal": list(unit_normal),
+                "tolerance": tolerance,
+            },
+            bounds,
+        )
+    if operation.kind is GeometryOperationKind.LOFT:
+        points = _points3(
+            parameters,
+            "profiles",
+            operation.op_id,
+            minimum=4,
+        )
+        profile_size = _integer(
+            parameters,
+            "profile_size",
+            operation.op_id,
+        )
+        if profile_size < 2 or len(points) % profile_size != 0:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: profiles must divide into equal sections"
+            )
+        sections = tuple(
+            tuple(
+                _transform_point(matrix, point)
+                for point in points[start : start + profile_size]
+            )
+            for start in range(0, len(points), profile_size)
+        )
+        geometry, bounds = _mesh_from_sections(
+            sections,
+            closed_profile=_boolean(
+                parameters,
+                "closed_profile",
+                operation.op_id,
+            ),
+            cap_ends=_boolean(
+                parameters,
+                "cap_ends",
+                operation.op_id,
+            ),
+            operation_id=operation.op_id,
+            source_kind="loft",
+            loss_code="loft_tessellated_mesh",
+            tolerance=program.proposal.tolerance.linear,
+        )
+        geometry["profile_size"] = profile_size
+        geometry["section_count"] = len(sections)
+        return SceneRepresentation.MESH, geometry, bounds
+    if operation.kind is GeometryOperationKind.SWEEP:
+        frame_mode = parameters.get("frame_mode")
+        if frame_mode != "fixed":
+            raise SandboxRealizationError(
+                f"{operation.op_id}: sweep frame_mode must explicitly be fixed"
+            )
+        profile = tuple(
+            _transform_point(matrix, point)
+            for point in _points3(
+                parameters,
+                "profile",
+                operation.op_id,
+                minimum=2,
+            )
+        )
+        path = tuple(
+            _transform_point(matrix, point)
+            for point in _points3(
+                parameters,
+                "path",
+                operation.op_id,
+                minimum=2,
+            )
+        )
+        tolerance = program.proposal.tolerance.linear
+        if any(
+            _length(_subtract(second, first)) <= tolerance
+            for first, second in zip(path, path[1:])
+        ):
+            raise SandboxRealizationError(
+                f"{operation.op_id}: sweep path contains a degenerate segment"
+            )
+        sections = tuple(
+            tuple(
+                tuple(
+                    point[axis] + path_point[axis] - path[0][axis]
+                    for axis in range(3)
+                )
+                for point in profile
+            )
+            for path_point in path
+        )
+        geometry, bounds = _mesh_from_sections(
+            sections,
+            closed_profile=_boolean(
+                parameters,
+                "closed_profile",
+                operation.op_id,
+            ),
+            cap_ends=_boolean(
+                parameters,
+                "cap_ends",
+                operation.op_id,
+            ),
+            operation_id=operation.op_id,
+            source_kind="sweep",
+            loss_code="sweep_fixed_frame_tessellated_mesh",
+            tolerance=tolerance,
+        )
+        geometry["frame_mode"] = frame_mode
+        geometry["profile_size"] = len(profile)
+        geometry["section_count"] = len(sections)
+        return SceneRepresentation.MESH, geometry, bounds
+    if operation.kind is GeometryOperationKind.TRANSFORM:
+        if len(operation.input_object_ids) != 1:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: transform requires exactly one input"
+            )
+        source_id = operation.input_object_ids[0]
+        source = objects[source_id]
+        local_matrix = _matrix4(
+            parameters,
+            "matrix",
+            operation.op_id,
+        )
+        frame_inverse = _inverse_affine(matrix, operation.op_id)
+        effective_matrix = _matrix_multiply(
+            _matrix_multiply(matrix, local_matrix),
+            frame_inverse,
+        )
+        inverse_matrix = _inverse_affine(
+            effective_matrix,
+            operation.op_id,
+        )
+        geometry = {
+            "kind": "transform",
+            "input": source_id,
+            "matrix": list(effective_matrix),
+            "inverse_matrix": list(inverse_matrix),
+        }
+        inherited_loss_codes = source.geometry.get("loss_codes")
+        if inherited_loss_codes:
+            geometry["loss_codes"] = inherited_loss_codes
+        return (
+            source.representation,
+            geometry,
+            _transform_bounds(effective_matrix, source.bounds),
+        )
+    if operation.kind is GeometryOperationKind.ARRAY:
+        if len(operation.input_object_ids) != 1:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: array requires exactly one input"
+            )
+        count = _integer(parameters, "count", operation.op_id)
+        if count < 1 or count > _MAX_ARRAY_COUNT:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: array count must be between 1 and {_MAX_ARRAY_COUNT}"
+            )
+        step = _transform_vector(
+            matrix,
+            _vector3(parameters, "step", operation.op_id),
+        )
+        if count > 1 and _length(step) <= program.proposal.tolerance.linear:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: replicated array needs a non-zero step"
+            )
+        offsets = tuple(
+            tuple(index * step[axis] for axis in range(3))
+            for index in range(count)
+        )
+        source_id = operation.input_object_ids[0]
+        source = objects[source_id]
+        bounds = _translated_bounds(source.bounds, offsets[0])
+        for offset in offsets[1:]:
+            bounds = bounds.union(_translated_bounds(source.bounds, offset))
+        geometry = {
+            "kind": "array",
+            "input": source_id,
+            "count": count,
+            "offsets": [list(item) for item in offsets],
+        }
+        inherited_loss_codes = source.geometry.get("loss_codes")
+        if inherited_loss_codes:
+            geometry["loss_codes"] = inherited_loss_codes
+        return source.representation, geometry, bounds
     if operation.kind in {
         GeometryOperationKind.BOOLEAN_UNION,
         GeometryOperationKind.BOOLEAN_DIFFERENCE,
@@ -1611,6 +2293,55 @@ def _point_in_mesh(
     return crossings % 2 == 1
 
 
+def _point_on_segment_2d(
+    point: tuple[float, float],
+    first: tuple[float, float],
+    second: tuple[float, float],
+    tolerance: float,
+) -> bool:
+    cross = (
+        (point[0] - first[0]) * (second[1] - first[1])
+        - (point[1] - first[1]) * (second[0] - first[0])
+    )
+    if abs(cross) > tolerance:
+        return False
+    return (
+        min(first[0], second[0]) - tolerance
+        <= point[0]
+        <= max(first[0], second[0]) + tolerance
+        and min(first[1], second[1]) - tolerance
+        <= point[1]
+        <= max(first[1], second[1]) + tolerance
+    )
+
+
+def _point_in_planar_polygon(
+    point: tuple[float, float, float],
+    profile: Sequence[Sequence[float]],
+    normal: Sequence[float],
+    tolerance: float,
+) -> bool:
+    drop = max(range(3), key=lambda index: abs(normal[index]))
+    axes = tuple(index for index in range(3) if index != drop)
+    target = (point[axes[0]], point[axes[1]])
+    polygon = tuple((item[axes[0]], item[axes[1]]) for item in profile)
+    inside = False
+    for index, first in enumerate(polygon):
+        second = polygon[(index + 1) % len(polygon)]
+        if _point_on_segment_2d(target, first, second, tolerance):
+            return True
+        if (first[1] > target[1]) != (second[1] > target[1]):
+            crossing = (
+                (second[0] - first[0])
+                * (target[1] - first[1])
+                / (second[1] - first[1])
+                + first[0]
+            )
+            if target[0] < crossing:
+                inside = not inside
+    return inside
+
+
 def _contains(
     object_id: str,
     point: tuple[float, float, float],
@@ -1628,6 +2359,53 @@ def _contains(
             point,
             geometry["vertices"],
             geometry["faces"],
+        )
+    if kind == "revolve_linear":
+        axis_start = tuple(geometry["axis_start"])
+        axis = _subtract(geometry["axis_end"], axis_start)
+        axis_length_squared = _dot(axis, axis)
+        parameter = _dot(_subtract(point, axis_start), axis) / axis_length_squared
+        tolerance = geometry["tolerance"]
+        if parameter < -tolerance or parameter > 1.0 + tolerance:
+            return False
+        parameter = max(0.0, min(1.0, parameter))
+        center = tuple(axis_start[i] + parameter * axis[i] for i in range(3))
+        radius = (
+            geometry["start_radius"]
+            + parameter
+            * (geometry["end_radius"] - geometry["start_radius"])
+        )
+        return _length(_subtract(point, center)) <= radius + tolerance
+    if kind == "prism":
+        profile = tuple(tuple(item) for item in geometry["profile"])
+        vector = tuple(geometry["vector"])
+        normal = tuple(geometry["normal"])
+        denominator = _dot(vector, normal)
+        parameter = _dot(_subtract(point, profile[0]), normal) / denominator
+        tolerance = geometry["tolerance"]
+        if parameter < -tolerance or parameter > 1.0 + tolerance:
+            return False
+        base_point = tuple(point[i] - parameter * vector[i] for i in range(3))
+        return _point_in_planar_polygon(
+            base_point,
+            profile,
+            normal,
+            tolerance,
+        )
+    if kind == "transform":
+        local_point = _transform_point(
+            tuple(geometry["inverse_matrix"]),
+            point,
+        )
+        return _contains(geometry["input"], local_point, objects)
+    if kind == "array":
+        return any(
+            _contains(
+                geometry["input"],
+                tuple(point[index] - offset[index] for index in range(3)),
+                objects,
+            )
+            for offset in geometry["offsets"]
         )
     if kind == "difference":
         return _contains(geometry["base"], point, objects) and not any(
@@ -1844,15 +2622,19 @@ def derive_voxel_view(
         raise SandboxRealizationError(
             f"local resolutions name unknown objects: {missing}"
         )
-    loss_codes = tuple(
-        sorted(
-            {
-                "mesh_validation_uses_bounded_sampling"
-                for item in physical
-                if item.representation is SceneRepresentation.MESH
-            }
-        )
-    )
+    loss_code_set: set[str] = set()
+    for item in physical:
+        if item.representation is SceneRepresentation.MESH:
+            loss_code_set.add("mesh_validation_uses_bounded_sampling")
+        declared = item.geometry.get("loss_codes", [])
+        if not isinstance(declared, list) or any(
+            not isinstance(code, str) or not code for code in declared
+        ):
+            raise SandboxRealizationError(
+                f"{item.object_id}: geometry loss codes are malformed"
+            )
+        loss_code_set.update(declared)
+    loss_codes = tuple(sorted(loss_code_set))
     integer_bounds = VoxelBounds(
         tuple(value.start for value in ranges),
         tuple(value.stop - 1 for value in ranges),

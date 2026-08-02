@@ -1,0 +1,36 @@
+name: ArchFlow Verify
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - main
+      - "codex/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project
+        run: python -m pip install -e .
+
+      - name: Architecture firewall
+        run: python tools/archcheck.py
+
+      - name: Unit and integration tests
+        run: python -m unittest discover -s tests

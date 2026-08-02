@@ -55,8 +55,10 @@ class GeometryParameterKind(StrEnum):
     NUMBER = "number"
     INTEGER = "integer"
     BOOLEAN = "boolean"
+    TEXT = "text"
     VECTOR3 = "vector3"
     POINTS3 = "points3"
+    MATRIX4 = "matrix4"
 
 
 class AssemblyKind(StrEnum):
@@ -291,6 +293,8 @@ class GeometryParameter:
         self._validate_value(value)
         if self.kind is GeometryParameterKind.NUMBER:
             value = float(value)
+        elif self.kind is GeometryParameterKind.MATRIX4:
+            value = [float(item) for item in value]
         elif self.kind is GeometryParameterKind.VECTOR3:
             value = [float(item) for item in value]
         elif self.kind is GeometryParameterKind.POINTS3:
@@ -325,6 +329,11 @@ class GeometryParameter:
         elif self.kind is GeometryParameterKind.BOOLEAN:
             if not isinstance(value, bool):
                 raise GeometryProgramError(f"{self.name} must be a boolean")
+        elif self.kind is GeometryParameterKind.TEXT:
+            if not isinstance(value, str) or not value.strip():
+                raise GeometryProgramError(
+                    f"{self.name} must be non-empty text"
+                )
         elif self.kind is GeometryParameterKind.VECTOR3:
             self._validate_vector(value)
         elif self.kind is GeometryParameterKind.POINTS3:
@@ -334,6 +343,22 @@ class GeometryParameter:
                 )
             for point in value:
                 self._validate_vector(point)
+        elif self.kind is GeometryParameterKind.MATRIX4:
+            if not isinstance(value, list) or len(value) != 16:
+                raise GeometryProgramError(
+                    f"{self.name} must contain 16 matrix values"
+                )
+            for item in value:
+                _finite(item, self.name)
+            if tuple(float(item) for item in value[12:]) != (
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            ):
+                raise GeometryProgramError(
+                    f"{self.name} must be an affine matrix"
+                )
 
     def _validate_vector(self, value: object) -> None:
         if not isinstance(value, list) or len(value) != 3:

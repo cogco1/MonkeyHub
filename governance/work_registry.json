@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-07-29",
+  "updated_on": "2026-08-02",
   "phase": "P6 - sandbox-first neutral geometry roadmap active",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -154,13 +154,13 @@
         "P029",
         "P047",
         "P030",
-        "P048"
+        "P048",
+        "P049"
       ],
       "open_cards": [
         "P026",
         "P027",
         "P038",
-        "P049",
         "P050",
         "M024"
       ],
@@ -2018,7 +2018,7 @@
       "id": "P026",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "active",
+      "status": "ready",
       "goal": "Prove one true raw-request-to-usable-building run as a reloadable accepted platform-neutral sandbox artifact.",
       "depends_on": [
         "M002",
@@ -2055,8 +2055,7 @@
         "No-instance-default scan"
       ],
       "card": "docs/mapping/planning/P026-sandbox-prompt-to-usable-gold.md",
-      "evidence": [],
-      "actor": "Codex"
+      "evidence": []
     },
     {
       "id": "P027",
@@ -4708,8 +4707,8 @@
     {
       "id": "P049",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "ready",
+      "stream": "archive",
+      "status": "done",
       "goal": "Implement deterministic sandbox evaluators for the declared geometry function vocabulary without any building-type answer.",
       "depends_on": [
         "P047",
@@ -4736,14 +4735,56 @@
         "Voxel containment property tests",
         "No-instance-default scan"
       ],
-      "card": "docs/mapping/planning/P049-neutral-geometry-function-evaluators.md",
-      "evidence": []
+      "card": "docs/mapping/archive/P049-neutral-geometry-function-evaluators.md",
+      "evidence": [
+        "Machine verification passed architecture firewall and the complete unittest suite.",
+        "373 repository tests passed with 2 explicit external skips; 23 focused geometry/compiler/realization tests passed.",
+        "Evaluator tests prove analytic containment and bounds, bounded deterministic loft/sweep tessellation with loss codes, affine transform/array composition, observation consumption, and independent scene/view/render digest equality.",
+        "Static scan of the new evaluator branches found no building-type, platform, palette, or material defaults."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P049",
+        "actor": "Codex",
+        "verified_at": "2026-08-02T05:30:14.828008+00:00",
+        "contract_sha256": "0d0905b82eea9001f789fe1943abbb858e47a638b6526d16da3753596a5188cd",
+        "scope_sha256": "74eb603d04b05ba87be05e25beeb0feca1b0de7ec2aa739313645df32a6768ce",
+        "commands": [
+          {
+            "argv": [
+              "D:\\ARCHFLOW_V3\\.venv\\Scripts\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "db3bb6e6432afee76e14f93662c7a4a44737dbeaf65966fa04614cd536eb0575",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (99 files, 1.753s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "D:\\ARCHFLOW_V3\\.venv\\Scripts\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "3610cb3314ed3f7dd24e41de8e1d5c741a7f402731b6201ef12052eb3895dc36",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................Executing <Task pending name='Task-2' coro=<PrimaryArchitectLiveSmoke.test_explicit_opt_in_real_model_provider() running at D:\\ARCHFLOW_V4\\tests\\integration\\test_primary_architect_smoke.py:110> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\\Users\\asus\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\asyncio\\base_events.py:459> cb=[_run_until_complete_cb() at C:\\Users\\asus\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\asyncio\\base_events.py:181] created at C:\\Users\\asus\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\asyncio\\runners.py:109> took 0.163 seconds\n...................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 373 tests in 43.916s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-02"
     },
     {
       "id": "P050",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "ready",
+      "status": "active",
       "goal": "Derive GeometryProgramProposal project records from Architect semantics and P023 spatial records instead of any framework-owned template.",
       "depends_on": [
         "P023",
@@ -4772,7 +4813,8 @@
         "No-instance-default scan"
       ],
       "card": "docs/mapping/planning/P050-record-driven-geometry-proposal-producer.md",
-      "evidence": []
+      "evidence": [],
+      "actor": "Codex"
     },
     {
       "id": "M024",
@@ -4806,6 +4848,105 @@
       ],
       "card": "docs/mapping/modify/M024-sandbox-gold-evidence-honesty.md",
       "evidence": []
+    },
+    {
+      "id": "M025",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Close the project-repository subprocess streams and restore truthful warning-free health evidence while aligning the deferred P026 card with its registry dependencies.",
+      "depends_on": [
+        "P036"
+      ],
+      "write_scope": [
+        "tests/test_project_repository.py",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "The cross-process HEAD-lock test closes every subprocess pipe it opens on success and failure paths.",
+        "The focused repository test emits no ResourceWarning under an always-on warning filter.",
+        "The full suite remains green without the prior unclosed-file warning.",
+        "The P026 work card and registry agree that P026 is deferred until M024 and its neutral-geometry prerequisites are complete."
+      ],
+      "tests": [
+        "Focused cross-process HEAD-lock test with ResourceWarning enabled",
+        "Full unittest discovery",
+        "Architecture firewall and scope check"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-W",
+          "always::ResourceWarning",
+          "-m",
+          "unittest",
+          "tests.test_project_repository.ProjectRepositoryTests.test_head_cas_is_exclusive_across_processes"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M025-project-repository-resource-hygiene.md",
+      "evidence": [
+        "Closed the cross-process project-repository test stdout on every wait path; focused ResourceWarning run, 367-test suite with two explicit external skips, compileall, 99-file architecture firewall, scope check, and machine verification passed; P026 card and registry now truthfully defer completion until M024 and neutral-geometry prerequisites."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M025",
+        "actor": "Codex",
+        "verified_at": "2026-07-31T22:25:31.672330+00:00",
+        "contract_sha256": "a04a83df7e47eb3d2e7fd103b9bc38ecf835d07d6f2d1d2f0dc0ca389a20345d",
+        "scope_sha256": "ac4cae3d25aaaf20241faf7a84a9c2cc7902e1e993caf5526b9e93ca839bff7c",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "40b34c80e6d676c63cff398f0bceb0da019948a91ec9d49e4183d42eddf30b4b",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (99 files, 1.028s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-W",
+              "always::ResourceWarning",
+              "-m",
+              "unittest",
+              "tests.test_project_repository.ProjectRepositoryTests.test_head_cas_is_exclusive_across_processes"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "b82d5588c65cf71f38c3389c843d204e9bb93ba4a9dee53a6c7976b933d45499",
+            "stdout_tail": "",
+            "stderr_tail": ".\n----------------------------------------------------------------------\nRan 1 test in 0.503s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "a9f50bbac9f049c925d12b1a8e7af488513e8e10deb173ab1ac1f183411b4906",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s......................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 367 tests in 20.448s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-07-31"
     }
   ]
 }

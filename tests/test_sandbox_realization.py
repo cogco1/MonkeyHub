@@ -424,11 +424,11 @@ class SandboxRealizationTests(unittest.TestCase):
             view.loss_codes,
         )
 
-    def test_unsupported_operation_returns_explicit_rejection(self) -> None:
+    def test_malformed_operation_returns_explicit_rejection(self) -> None:
         projection, program, _ = compiled_room()
         unsupported = GeometryOperation(
-            op_id="unsupported-revolve",
-            kind=GeometryOperationKind.REVOLVE,
+            op_id="malformed-loft",
+            kind=GeometryOperationKind.LOFT,
             output_object_ids=("unsupported-object",),
             input_object_ids=(),
             frame_id="world",
@@ -448,7 +448,7 @@ class SandboxRealizationTests(unittest.TestCase):
         )
         proposal = replace(
             program.proposal,
-            proposal_id="unsupported-proposal",
+            proposal_id="malformed-proposal",
             semantic_bindings=(binding,),
             operations=tuple(
                 sorted(
@@ -472,7 +472,7 @@ class SandboxRealizationTests(unittest.TestCase):
         self.assertIs(result.receipt.status, RealizationStatus.REJECTED)
         self.assertEqual(
             result.receipt.issues[0].code,
-            "sandbox.operation_unsupported",
+            "sandbox.operation_failed",
         )
 
     def test_downstream_dispositions_reload_without_granting_authority(

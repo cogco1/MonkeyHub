@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Mapping
 
-from archflow.realization import HybridScene, SceneRepresentation
+from archflow.realization import HybridScene, SceneObject, SceneRepresentation
 
 
 class SandboxRenderError(ValueError):
@@ -266,10 +266,72 @@ def _box_segments(
     return tuple(segments)
 
 
+def _apply_matrix(
+    matrix: tuple[float, ...],
+    point: Point3,
+) -> Point3:
+    value = (*point, 1.0)
+    return tuple(
+        sum(matrix[row * 4 + column] * value[column] for column in range(4))
+        for row in range(3)
+    )
+
+
+def _object_segments(
+    item: SceneObject,
+    objects: Mapping[str, SceneObject],
+    style: str,
+) -> tuple[Segment3, ...]:
+    geometry = item.geometry
+    if geometry["kind"] == "polyline":
+        points = tuple(tuple(point) for point in geometry["points"])
+        return tuple(
+            (first, second, style)
+            for first, second in zip(points, points[1:])
+        )
+    if geometry["kind"] == "mesh":
+        points = tuple(tuple(point) for point in geometry["vertices"])
+        edges = {
+            tuple(sorted((face[index], face[(index + 1) % len(face)])))
+            for face in geometry["faces"]
+            for index in range(len(face))
+        }
+        return tuple(
+            (points[first], points[second], style)
+            for first, second in sorted(edges)
+        )
+    if geometry["kind"] == "transform":
+        matrix = tuple(geometry["matrix"])
+        return tuple(
+            (_apply_matrix(matrix, first), _apply_matrix(matrix, second), style)
+            for first, second, _ in _object_segments(
+                objects[geometry["input"]],
+                objects,
+                style,
+            )
+        )
+    if geometry["kind"] == "array":
+        source_segments = _object_segments(
+            objects[geometry["input"]],
+            objects,
+            style,
+        )
+        return tuple(
+            (
+                tuple(first[index] + offset[index] for index in range(3)),
+                tuple(second[index] + offset[index] for index in range(3)),
+                style,
+            )
+            for offset in geometry["offsets"]
+            for first, second, _ in source_segments
+        )
+    return _box_segments(item.bounds.minimum, item.bounds.maximum, style)
+
+
 def _scene_segments(scene: HybridScene) -> tuple[Segment3, ...]:
     segments: list[Segment3] = []
+    objects = {item.object_id: item for item in scene.objects}
     for item in scene.objects:
-        geometry = item.geometry
         style = (
             "mesh"
             if item.representation is SceneRepresentation.MESH
@@ -277,27 +339,7 @@ def _scene_segments(scene: HybridScene) -> tuple[Segment3, ...]:
             if item.physical
             else "reference"
         )
-        if geometry["kind"] == "polyline":
-            points = tuple(tuple(point) for point in geometry["points"])
-            segments.extend(
-                (first, second, style)
-                for first, second in zip(points, points[1:])
-            )
-        elif geometry["kind"] == "mesh":
-            points = tuple(tuple(point) for point in geometry["vertices"])
-            edges = {
-                tuple(sorted((face[index], face[(index + 1) % len(face)])))
-                for face in geometry["faces"]
-                for index in range(len(face))
-            }
-            segments.extend(
-                (points[first], points[second], style)
-                for first, second in sorted(edges)
-            )
-        else:
-            segments.extend(
-                _box_segments(item.bounds.minimum, item.bounds.maximum, style)
-            )
+        segments.extend(_object_segments(item, objects, style))
     if not segments:
         raise SandboxRenderError("scene contains no renderable geometry")
     return tuple(segments)

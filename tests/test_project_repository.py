@@ -307,7 +307,10 @@ class ProjectRepositoryTests(unittest.TestCase):
             self.assertEqual(child.stdout.readline().strip(), "RELEASED")
         finally:
             child.stdin.close()
-            child.wait(timeout=10)
+            try:
+                child.wait(timeout=10)
+            finally:
+                child.stdout.close()
 
         accepted = self.repository.compare_and_swap(
             expected=prepared.expected,

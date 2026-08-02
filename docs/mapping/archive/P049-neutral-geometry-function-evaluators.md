@@ -1,7 +1,7 @@
 # P049 — Neutral geometry function evaluators
 
 - Origin: Planning
-- Status: Ready after P047 and P048
+- Status: Done
 - Depends on: P047, P048
 
 ## Goal
@@ -57,3 +57,12 @@ project needs remains Architect-derived project data.
   representation.
 - Stop before widening asset payload authority or bypassing the
   explicit vertex/face bounds.
+
+
+## Completion
+
+- Completed: 2026-08-02
+- Evidence: Machine verification passed architecture firewall and the complete unittest suite.
+- Evidence: 373 repository tests passed with 2 explicit external skips; 23 focused geometry/compiler/realization tests passed.
+- Evidence: Evaluator tests prove analytic containment and bounds, bounded deterministic loft/sweep tessellation with loss codes, affine transform/array composition, observation consumption, and independent scene/view/render digest equality.
+- Evidence: Static scan of the new evaluator branches found no building-type, platform, palette, or material defaults.
