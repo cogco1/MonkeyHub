@@ -25,7 +25,14 @@ from archflow.state.commitments import Commitment
 _MAX_ITEMS = 4096
 _MAX_FACT_JSON_BYTES = 64_000
 _MAX_QUALIFICATION_CHARS = 1_000
-_PORTABLE_REF = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:[^\s\\]+$")
+
+#: Portable ``scheme:path`` logical reference shape.  This constant is the
+#: single source for :func:`require_logical_ref` and for the JSON-Schema
+#: ``pattern`` published to provider contracts; it is expressed with regular
+#: escapes that survive JSON serialization, so never restate it elsewhere.
+PORTABLE_LOGICAL_REF_PATTERN = r"^[A-Za-z][A-Za-z0-9+.-]*:[^\s\\]+$"
+
+_PORTABLE_REF = re.compile(PORTABLE_LOGICAL_REF_PATTERN)
 _LOCAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
 
 

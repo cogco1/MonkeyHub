@@ -21,7 +21,13 @@ from archflow.state.operational_state import require_logical_ref
 
 
 _HEX = frozenset("0123456789abcdef")
-_URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+
+#: Stable ``scheme://`` asset URI prefix shape.  Single source for
+#: :class:`AssetReference` validation and for the JSON-Schema ``pattern``
+#: published to provider contracts; never restate it elsewhere.
+ASSET_URI_PATTERN = r"^[A-Za-z][A-Za-z0-9+.-]*://"
+
+_URI_SCHEME = re.compile(ASSET_URI_PATTERN)
 _MAX_ITEMS = 16_384
 
 

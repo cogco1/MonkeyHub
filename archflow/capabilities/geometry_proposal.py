@@ -37,6 +37,7 @@ from archflow.runtime.geometry_compiler import (
 from archflow.state import SpatialOptionProposal
 from archflow.state.candidate_program import CandidateProgramProjection
 from archflow.state.geometry_program import (
+    ASSET_URI_PATTERN,
     AffineTransform,
     AssemblyKind,
     AssemblyMember,
@@ -57,6 +58,7 @@ from archflow.state.geometry_program import (
     SemanticBinding,
     required_assembly_roles,
 )
+from archflow.state.operational_state import PORTABLE_LOGICAL_REF_PATTERN
 
 
 _AUTHORING_OUTPUT_SCHEMA = "GeometryProposalAuthoringOutput@1"
@@ -123,7 +125,13 @@ def _authoring_output_contract() -> dict[str, object]:
     }
     logical_ref = {
         **text,
-        "description": "Stable logical or project record reference supplied by the request.",
+        "pattern": PORTABLE_LOGICAL_REF_PATTERN,
+        "description": (
+            "Stable logical or project record reference supplied by the "
+            "request, in portable scheme:path form (a scheme prefix, one "
+            "colon, then a stable path). Bare identifiers, absolute machine "
+            "paths, and file: URIs are rejected."
+        ),
     }
     digest = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
     number = {"type": "number"}
@@ -188,7 +196,14 @@ def _authoring_output_contract() -> dict[str, object]:
         {
             "schema": {"const": AssetReference.SCHEMA},
             "asset_id": identifier,
-            "uri": logical_ref,
+            "uri": {
+                **text,
+                "pattern": ASSET_URI_PATTERN,
+                "description": (
+                    "Stable scheme-qualified asset URI (scheme://path); "
+                    "file:// URIs are rejected."
+                ),
+            },
             "media_type": text,
             "sha256": digest,
             "native_unit": {
@@ -1150,6 +1165,23 @@ def _request_payload(
         "candidate_program": projection.to_dict(),
         "required_commitment_refs": list(commitments),
         "available_template_records": list(templates),
+        "available_interface_refs": {
+            "refs": sorted(
+                {
+                    ref
+                    for connection in spatial.connections
+                    for ref in connection.relationship_refs
+                }
+            ),
+            "pattern": PORTABLE_LOGICAL_REF_PATTERN,
+            "description": (
+                "Spatial connection relationship references already present "
+                "in spatial_option_record. Typed state keeps no wider "
+                "interface registry, so every interface_refs value is "
+                "validated only against pattern (portable scheme:path form; "
+                "bare identifiers and machine paths are rejected)."
+            ),
+        },
         "geometry_function_contracts": _FUNCTION_CONTRACTS,
         "repair_issues": [item.to_dict() for item in repair_issues],
         "required_output_schema": _AUTHORING_OUTPUT_SCHEMA,
@@ -1161,6 +1193,7 @@ def _request_payload(
             "GeometryParameter.value_json is canonical compact JSON encoded as a string, not a nested JSON value.",
             "Bind every candidate value and required commitment through semantic bindings.",
             "Include the spatial option record URI in every semantic binding evidence_refs.",
+            "Reference fields are portable scheme:path logical references matching available_interface_refs.pattern; assembly interface_refs may cite the enumerated available_interface_refs.refs and must never be bare identifiers.",
             "When a supplied semantic component requires a hosted assembly, represent its semantic identity and geometry together through semantic_binding_ids and typed assembly members.",
             "For every hosted assembly include all roles named by required_output_contract.required_assembly_roles[kind]; missing or duplicate roles are invalid.",
             "Treat identifier and reference arrays as sets: never duplicate values; lexical order is canonicalized by the protocol and carries no design meaning.",
