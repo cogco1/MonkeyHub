@@ -1,8 +1,8 @@
 # P026 — Sandbox prompt-to-usable Gold slice
 
 - Origin: Planning
-- Status: Active after M002, M004, M024, M026, M027, M028, P018, P024, P025, P029, P030, P047, and P048
-- Depends on: M002, M004, M024, M026, M027, M028, P018, P024, P025, P029, P030, P047, P048
+- Status: Ready after M002, M004, M024, M026, M027, M028, M029, P018, P024, P025, P029, P030, P047, and P048
+- Depends on: M002, M004, M024, M026, M027, M028, M029, P018, P024, P025, P029, P030, P047, P048
 
 ## Goal
 
@@ -105,8 +105,21 @@ platform outputs remain downstream adapters and are not proof authorities.
   a malformed concept or revision may receive one exact-schema repair request
   containing the untouched prior output and precise validation issue. Both
   receipts link and persist, and a provider/model identity change is rejected.
-  This passes deterministic tests but has not yet been exercised by a fresh
-  live invocation, so P026 remains active and is not Gold.
+  This passes deterministic tests; run `gold-agent-cli-007` exercised the fresh
+  concept path successfully without needing that repair.
+- Real Codex Agent CLI run `gold-agent-cli-007` passed the exact concept
+  contract in one call. Geometry round one was rejected for three host cuts
+  that did not depend on their named hosts and an unavailable predecessor;
+  round two repaired all four substantive findings, then was rejected because
+  one numeric-vector `value_json` string contained non-canonical whitespace.
+  Provider identity was retained and canonical HEAD remained version zero.
+- M029 implements semantics-preserving parameter-JSON normalization, and 16
+  focused tests pass. Offline replay of the exact round-two output crosses that
+  failure and then exposes a separate contract defect: assembly
+  `interface_refs` use identifier-shaped values where typed state requires a
+  portable logical reference. M029 remains active because its formal full-suite
+  verification hit the same three-second architecture timing gate twice. P026
+  is therefore still not Gold; no further live call was made.
 
 ## Stop conditions
 

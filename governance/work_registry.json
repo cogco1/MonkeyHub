@@ -2018,7 +2018,7 @@
       "id": "P026",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "active",
+      "status": "ready",
       "goal": "Prove one true raw-request-to-usable-building run as a reloadable accepted platform-neutral sandbox artifact.",
       "depends_on": [
         "M002",
@@ -2027,6 +2027,7 @@
         "M026",
         "M027",
         "M028",
+        "M029",
         "P018",
         "P024",
         "P025",
@@ -2059,8 +2060,7 @@
         "No-instance-default scan"
       ],
       "card": "docs/mapping/planning/P026-sandbox-prompt-to-usable-gold.md",
-      "evidence": [],
-      "actor": "Codex"
+      "evidence": []
     },
     {
       "id": "P027",
@@ -5338,6 +5338,58 @@
         ]
       },
       "completed_on": "2026-08-02"
+    },
+    {
+      "id": "M029",
+      "origin_stream": "modify",
+      "stream": "modify",
+      "status": "active",
+      "goal": "Canonicalize semantically unchanged geometry parameter JSON text at the provider boundary without weakening typed validation.",
+      "depends_on": [
+        "M027",
+        "M028",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "tests/test_geometry_proposal_producer.py",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Syntactically valid GeometryParameter value_json text is parsed and re-encoded canonically before typed construction.",
+        "Whitespace and object-key order changes do not alter the JSON-decoded value or consume a repair round.",
+        "Malformed JSON non-finite values kind mismatches invalid units and geometry compiler invariants remain rejected.",
+        "GeometryParameter retains its strict canonical-state invariant.",
+        "No missing parameter project geometry dependency or platform answer is synthesized."
+      ],
+      "tests": [
+        "Non-canonical valid parameter JSON is accepted and retained canonically",
+        "Malformed JSON and decoded-value type mismatches remain rejected",
+        "Focused producer architecture firewall and full unittest suite"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/modify/M029-geometry-parameter-json-normalization.md",
+      "evidence": [],
+      "actor": "Codex"
     }
   ]
 }

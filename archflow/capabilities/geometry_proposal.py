@@ -1253,10 +1253,18 @@ def _parameter(value: object) -> GeometryParameter:
     _exact(payload, {"schema", "name", "kind", "value_json", "unit"}, "geometry parameter")
     if payload["schema"] != GeometryParameter.SCHEMA:
         raise GeometryProposalProductionError("geometry parameter schema changed")
+    value_json = payload["value_json"]
+    if isinstance(value_json, str):
+        try:
+            decoded_value = json.loads(value_json)
+        except json.JSONDecodeError:
+            pass
+        else:
+            value_json = _canonical_json(decoded_value)
     return GeometryParameter(
         name=payload["name"],
         kind=GeometryParameterKind(payload["kind"]),
-        value_json=payload["value_json"],
+        value_json=value_json,
         unit=None if payload["unit"] is None else LengthUnit(payload["unit"]),
     )
 

@@ -378,6 +378,83 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             tuple(sorted(item.name for item in decoded_operation.parameters)),
         )
 
+    async def test_parameter_json_serialization_is_canonicalized(self) -> None:
+        noncanonical = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        body = noncanonical["proposal_body"]
+        operation = next(
+            item
+            for item in body["operations"]
+            if any(
+                parameter["kind"] == "vector3"
+                for parameter in item["parameters"]
+            )
+        )
+        parameter = next(
+            item
+            for item in operation["parameters"]
+            if item["kind"] == "vector3"
+        )
+        parameter["value_json"] = "[-0.2,3, -0.2]"
+
+        result = await self._produce(_ScriptedProvider((noncanonical,)))
+
+        self.assertIs(result.status, GeometryProposalStatus.ACCEPTED)
+        assert result.proposal is not None
+        decoded_operation = next(
+            item
+            for item in result.proposal.operations
+            if item.op_id == operation["op_id"]
+        )
+        decoded_parameter = next(
+            item
+            for item in decoded_operation.parameters
+            if item.name == parameter["name"]
+        )
+        self.assertEqual(
+            decoded_parameter.value_json,
+            _canonical_json([-0.2, 3.0, -0.2]),
+        )
+
+    async def test_invalid_parameter_json_values_remain_rejected(self) -> None:
+        malformed = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        malformed_parameter = next(
+            parameter
+            for operation in malformed["proposal_body"]["operations"]
+            for parameter in operation["parameters"]
+            if parameter["kind"] == "vector3"
+        )
+        malformed_parameter["value_json"] = "[0,1,"
+        mismatched = json.loads(_canonical_json(malformed))
+        mismatched_parameter = next(
+            parameter
+            for operation in mismatched["proposal_body"]["operations"]
+            for parameter in operation["parameters"]
+            if parameter["kind"] == "vector3"
+        )
+        mismatched_parameter["value_json"] = "true"
+
+        result = await self._produce(
+            _ScriptedProvider((malformed, mismatched)),
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        self.assertIn(
+            "geometry parameter must contain JSON",
+            loaded.rounds[0].issues[0].detail,
+        )
+        self.assertIn(
+            "must be a 3-vector",
+            loaded.rounds[1].issues[0].detail,
+        )
+
     async def test_duplicate_member_role_remains_rejected(self) -> None:
         duplicate = json.loads(
             _canonical_json(proposal_authoring_output(self.proposal))
