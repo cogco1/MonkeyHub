@@ -155,13 +155,13 @@
         "P047",
         "P030",
         "P048",
-        "P049"
+        "P049",
+        "P050"
       ],
       "open_cards": [
         "P026",
         "P027",
         "P038",
-        "P050",
         "M024"
       ],
       "gap": "Typed neutral geometry compilation stable dependency-bound object identity hosted assemblies provenance-bound assets deterministic hybrid-scene realization exact-source-derived sandbox observation five-view rendering and source-bound use-scenario validation are proven; evaluator coverage for the declared function vocabulary is P049, record-driven proposal production is P050, the Gold evidence-honesty repair is M024, and one accepted prompt-to-usable building remains P026 work."
@@ -4783,8 +4783,8 @@
     {
       "id": "P050",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Derive GeometryProgramProposal project records from Architect semantics and P023 spatial records instead of any framework-owned template.",
       "depends_on": [
         "P023",
@@ -4812,9 +4812,47 @@
         "Compiler and realization integration",
         "No-instance-default scan"
       ],
-      "card": "docs/mapping/planning/P050-record-driven-geometry-proposal-producer.md",
-      "evidence": [],
-      "actor": "Codex"
+      "card": "docs/mapping/archive/P050-record-driven-geometry-proposal-producer.md",
+      "evidence": [
+        "Record-driven GeometryProgramProposal producer persists accept/repair/refuse lineage, rejects silent model substitution, compiles and realizes exact-base output; mandatory receipt passed ARCHITECTURE PASS (100 files) and 378 tests with 2 explicit skips."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P050",
+        "actor": "Codex",
+        "verified_at": "2026-08-02T16:42:18.351897+00:00",
+        "contract_sha256": "80ddbf89042e5eb06a3a5c176dd9c564c2d50874dc0072376e1bc923fee79553",
+        "scope_sha256": "e472e3146e2be9e50bca5d7528f8bbe55946a131a794de2e8c9b2b48565f6d21",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "d72cddd1fe4b28f26aa234a9ed01418662ef168376bd054c693cecbb7034a736",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (100 files, 0.899s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "3de37c66d240761dbdfa37402d2507322079420fec2b45beb487a1b291139018",
+            "stdout_tail": "",
+            "stderr_tail": "ucerTests.test_accepted_record_reloads_compiles_and_realizes() done, defined at D:\\ARCHFLOW_V4\\tests\\test_geometry_proposal_producer.py:206> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.125 seconds\n..Executing <Task finished name='Task-23' coro=<GeometryProposalProducerTests.test_out_of_vocabulary_round_is_persisted_and_repaired() done, defined at D:\\ARCHFLOW_V4\\tests\\test_geometry_proposal_producer.py:239> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.156 seconds\n............................................Executing <Task finished name='Task-107' coro=<PrimaryArchitectRuntimeTests.test_repeated_model_plan_returns_reloadable_stop() done, defined at D:\\ARCHFLOW_V4\\tests\\test_primary_architect_provider.py:489> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.125 seconds\n................................................................................................................\n----------------------------------------------------------------------\nRan 378 tests in 32.795s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-02"
     },
     {
       "id": "M024",

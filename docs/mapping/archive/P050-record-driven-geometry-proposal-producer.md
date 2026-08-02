@@ -53,3 +53,9 @@ architectural gap that forced instance answers into framework code.
 - Stop if persistence would bypass the `archflow.project` ports.
 - Stop before granting the producer or the model any hard-gate,
   acceptance, or canonical-write authority.
+
+
+## Completion
+
+- Completed: 2026-08-02
+- Evidence: Record-driven GeometryProgramProposal producer persists accept/repair/refuse lineage, rejects silent model substitution, compiles and realizes exact-base output; mandatory receipt passed ARCHITECTURE PASS (100 files) and 378 tests with 2 explicit skips.

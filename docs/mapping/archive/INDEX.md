@@ -72,6 +72,7 @@ Which completed work has named acceptance evidence?
 | M022 | modify | done | Synchronize generated architecture-layer gaps with completed P048 without overclaiming P026 or broad CAD coverage. | [M022](M022-p048-map-closure.md) |
 | M023 | modify | done | Add a bilingual semantic-to-realization bridge to the main architecture diagram without changing accepted V4 authority semantics. | [M023](M023-semantic-realization-diagram.md) |
 | P049 | planning | done | Implement deterministic sandbox evaluators for the declared geometry function vocabulary without any building-type answer. | [P049](P049-neutral-geometry-function-evaluators.md) |
+| P050 | planning | done | Derive GeometryProgramProposal project records from Architect semantics and P023 spatial records instead of any framework-owned template. | [P050](P050-record-driven-geometry-proposal-producer.md) |
 | M025 | modify | done | Close the project-repository subprocess streams and restore truthful warning-free health evidence while aligning the deferred P026 card with its registry dependencies. | [M025](M025-project-repository-resource-hygiene.md) |
 
 [Back to RMPA](../README.md)
