@@ -691,6 +691,120 @@ class NestedDesignStateTests(unittest.TestCase):
                 (DesignStateLayer.DISCIPLINE, "structure"),
             )
 
+    def _phase_conditioned_tree(
+        self,
+    ) -> tuple[DesignStateTree, DesignStateNode]:
+        from archflow.state.operational_state import ObligationCondition
+
+        root_path = _path((DesignStateLayer.GLOBAL_CONCEPT, "concept"))
+        phase_path = _path(
+            (DesignStateLayer.GLOBAL_CONCEPT, "concept"),
+            (DesignStateLayer.PHASE, "schematic_design"),
+        )
+        obligations = (
+            DesignObligation(
+                obligation_id="close-schematics",
+                statement="Close out schematic-phase work.",
+                source_ref="evidence://obligation/close-schematics",
+                status=ObligationStatus.OPEN,
+                condition=ObligationCondition(
+                    ref="state:phase",
+                    expected_value="schematic_design",
+                ),
+            ),
+            DesignObligation(
+                obligation_id="start-development",
+                statement="Begin design-development checks.",
+                source_ref="evidence://obligation/start-development",
+                status=ObligationStatus.BLOCKED,
+                condition=ObligationCondition(
+                    ref="state:phase",
+                    expected_value="design_development",
+                ),
+            ),
+        )
+        root = DesignStateNode(
+            path=root_path,
+            operational_state=_state(
+                commitments=(_global_commitment(),),
+            ),
+            allowed_authority_ids=("authority-user", "architect"),
+            child_refs=(phase_path.ref,),
+        )
+        phase = DesignStateNode(
+            path=phase_path,
+            operational_state=_state(obligations=obligations),
+            allowed_authority_ids=("authority-user", "architect"),
+        )
+        return (
+            DesignStateTree(
+                branch=_branch(),
+                nodes=(root, phase),
+                interfaces=(),
+            ),
+            phase,
+        )
+
+    def test_phase_change_refreshes_phase_conditioned_readiness(
+        self,
+    ) -> None:
+        from archflow.state.design_state import compile_tree_phase_change
+
+        tree, phase = self._phase_conditioned_tree()
+        transition = compile_tree_phase_change(
+            tree,
+            next_phase="design_development",
+        )
+
+        self.assertEqual(transition.previous_phase, "schematic_design")
+        for node in transition.tree.nodes:
+            self.assertEqual(
+                node.operational_state.phase,
+                "design_development",
+            )
+        next_phase_node = transition.tree.node(transition.remap(phase.ref))
+        statuses = {
+            item.obligation_id: item.status
+            for item in next_phase_node.operational_state.obligations
+        }
+        self.assertEqual(
+            statuses,
+            {
+                "close-schematics": ObligationStatus.BLOCKED,
+                "start-development": ObligationStatus.OPEN,
+            },
+        )
+
+    def test_phase_change_readiness_mismatch_raises_design_state_error(
+        self,
+    ) -> None:
+        from archflow.state.design_state import compile_tree_phase_change
+        from archflow.state.operational_state import ObligationCondition
+
+        tree, phase = self._phase_conditioned_tree()
+        stale = DesignObligation(
+            obligation_id="stale-open",
+            statement="Declared open although it names the previous phase.",
+            source_ref="evidence://obligation/stale-open",
+            status=ObligationStatus.OPEN,
+            condition=ObligationCondition(
+                ref="state:phase",
+                expected_value="schematic_design",
+            ),
+        )
+
+        with self.assertRaisesRegex(
+            DesignStateError,
+            "readiness mismatch",
+        ) as context:
+            compile_tree_phase_change(
+                tree,
+                next_phase="design_development",
+                obligation_target_ref=phase.ref,
+                add_obligations=(stale,),
+            )
+        self.assertIs(type(context.exception), DesignStateError)
+
 
 def _checkpoint(
     *,
