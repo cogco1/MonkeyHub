@@ -23,9 +23,15 @@ class ArchitectureFirewallTests(unittest.TestCase):
         cls.policy = archcheck.load_policy(POLICY_PATH)
 
     def test_clean_repository_passes_inside_fast_budget(self) -> None:
-        started = time.perf_counter()
+        # run_checks is pure in-process work: directory walking, source
+        # reading, AST parsing, and regex matching, with no subprocesses.
+        # Measure process CPU time rather than wall-clock time so the budget
+        # bounds the cost of the checks themselves; wall-clock measurements
+        # here tracked unrelated machine load (0.8s alone, 5.5-6.1s under
+        # parallel load) instead of the code under test.
+        started = time.process_time()
         findings = archcheck.run_checks(ROOT, self.policy)
-        elapsed = time.perf_counter() - started
+        elapsed = time.process_time() - started
         self.assertEqual(findings, ())
         self.assertLess(elapsed, 3.0)
 
