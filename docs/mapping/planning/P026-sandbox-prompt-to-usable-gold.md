@@ -1,8 +1,8 @@
 # P026 — Sandbox prompt-to-usable Gold slice
 
 - Origin: Planning
-- Status: Active after M002, M004, M024, M026, M027, P018, P024, P025, P029, P030, P047, and P048
-- Depends on: M002, M004, M024, M026, M027, P018, P024, P025, P029, P030, P047, P048
+- Status: Active after M002, M004, M024, M026, M027, M028, P018, P024, P025, P029, P030, P047, and P048
+- Depends on: M002, M004, M024, M026, M027, M028, P018, P024, P025, P029, P030, P047, P048
 
 ## Goal
 
@@ -79,11 +79,14 @@ platform outputs remain downstream adapters and are not proof authorities.
   records in a non-canonical role order; typed construction rejected it before
   compilation. The lineage is exhausted, provider identity is retained,
   authority flags remain false, and canonical HEAD remains version zero.
-- P026 is blocked after repeated bounded real-provider geometry exhaustion.
+- P026 was blocked after repeated bounded real-provider geometry exhaustion.
   Continuing requires an explicit choice to normalize keyed object
   collections, strengthen provider guidance further, or authorize a different
   bounded repair policy. No gate was weakened and no additional live call was
   made.
+- Kevin explicitly resumed the blocked objective and authorized M028 to repair
+  the hidden kind-specific assembly-role contract and non-semantic keyed-object
+  ordering before one further bounded live proof.
 
 ## Stop conditions
 

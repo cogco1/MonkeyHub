@@ -2026,6 +2026,7 @@
         "M024",
         "M026",
         "M027",
+        "M028",
         "P018",
         "P024",
         "P025",
@@ -5229,6 +5230,110 @@
             "stderr_sha256": "0898c7be7bd7b1f5f59f813943de9f32aac49e97ec5234cb534fe6ce5c73a1fa",
             "stdout_tail": "",
             "stderr_tail": "....s...s..........................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 387 tests in 20.793s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-02"
+    },
+    {
+      "id": "M028",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Expose kind-specific hosted-assembly roles and canonicalize keyed provider object collections without changing design meaning.",
+      "depends_on": [
+        "M027",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/state/geometry_program.py",
+        "archflow/capabilities/geometry_proposal.py",
+        "tests/test_geometry_proposal_producer.py",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "The provider contract states the exact required role set for door and window assemblies while generic_hosted remains governed by supplied semantics.",
+        "Keyed provider object collections are canonicalized by their existing identity or role key before typed construction.",
+        "Duplicate keys remain rejected and are never silently deduplicated.",
+        "Missing required assembly roles and semantic dependency contradictions remain hard bounded repair issues.",
+        "No building instance answer acceptance authority canonical-write authority or platform authority enters the capability."
+      ],
+      "tests": [
+        "Unsorted unique members parameters and proposal collections canonicalize deterministically",
+        "Duplicate member roles and identity keys remain rejected",
+        "Door and window required-role contract matches the typed state invariant",
+        "Focused producer architecture firewall and full unittest suite"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M028-hosted-assembly-contract-normalization.md",
+      "evidence": [
+        "Exposed one typed required_assembly_roles source for door and window contracts; canonicalized provider parameters members frames assets bindings operations assemblies revisions and retirements by existing keys without deduplication; retained duplicate missing-role function-arity semantic-dependency and authority hard rejection; 14 focused tests, 4-path scope, architecture firewall, and formal three-command verification passed after one documented transient performance-gate retry."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M028",
+        "actor": "Codex",
+        "verified_at": "2026-08-02T18:37:17.324938+00:00",
+        "contract_sha256": "329ddfebec911f63c176924fd27bb57e829e4183dcc2ea5794160be9f3fd41ae",
+        "scope_sha256": "0711255e7ee341e4745baa77ebe99fff5b07d46d27c42a1fe2b8e3dbaa661362",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "3d2d61cdb889dbb1669256e6f38b62adf52884a62e7dc6eb3e48968df6b075d6",
+            "stdout_tail": "",
+            "stderr_tail": "..............\n----------------------------------------------------------------------\nRan 14 tests in 1.198s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "cadec679c447b8680b1cce81578c1f2675663aac05cede73902147650175a170",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (100 files, 0.981s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "dbe69b8bc25aeba43c2b408fcde543180b904c9140c6ff3b40517d39a10ace9e",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s..............................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 391 tests in 18.791s\n\nOK (skipped=2)\n"
           }
         ]
       },

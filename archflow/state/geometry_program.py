@@ -625,6 +625,21 @@ _REQUIRED_ASSEMBLY_ROLES = {
 }
 
 
+def required_assembly_roles(
+    kind: AssemblyKind,
+) -> tuple[AssemblyRole, ...]:
+    """Return the canonical protocol roles required by one assembly kind."""
+
+    if not isinstance(kind, AssemblyKind):
+        raise TypeError("kind must be AssemblyKind")
+    return tuple(
+        sorted(
+            _REQUIRED_ASSEMBLY_ROLES.get(kind, frozenset()),
+            key=lambda item: item.value,
+        )
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class HostedAssembly:
     assembly_id: str
@@ -653,7 +668,7 @@ class HostedAssembly:
             raise GeometryProgramError(
                 "assembly members require unique deterministic roles"
             )
-        required = _REQUIRED_ASSEMBLY_ROLES.get(self.kind, frozenset())
+        required = set(required_assembly_roles(self.kind))
         missing = required - set(roles)
         if missing:
             raise GeometryProgramError(

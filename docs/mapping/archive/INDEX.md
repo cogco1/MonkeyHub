@@ -77,5 +77,6 @@ Which completed work has named acceptance evidence?
 | M025 | modify | done | Close the project-repository subprocess streams and restore truthful warning-free health evidence while aligning the deferred P026 card with its registry dependencies. | [M025](M025-project-repository-resource-hygiene.md) |
 | M026 | modify | done | Make the P050 geometry authoring request self-describing and its repair feedback actionable for real proposal providers. | [M026](M026-geometry-authoring-schema-contract.md) |
 | M027 | modify | done | Separate order-only JSON normalization from substantive geometry dependency rejection at the P050 authoring boundary. | [M027](M027-geometry-authoring-set-normalization.md) |
+| M028 | modify | done | Expose kind-specific hosted-assembly roles and canonicalize keyed provider object collections without changing design meaning. | [M028](M028-hosted-assembly-contract-normalization.md) |
 
 [Back to RMPA](../README.md)

@@ -55,6 +55,7 @@ from archflow.state.geometry_program import (
     ObjectRetirement,
     ObjectRevisionPrecondition,
     SemanticBinding,
+    required_assembly_roles,
 )
 
 
@@ -226,7 +227,12 @@ def _authoring_output_contract() -> dict[str, object]:
                 ),
             ),
             "frame_id": identifier,
-            "parameters": _array_contract(parameter),
+            "parameters": _array_contract(
+                parameter,
+                description=(
+                    "Unique parameter name; order is canonicalized by name."
+                ),
+            ),
             "semantic_binding_ids": _array_contract(identifier, minimum=1, unique=True),
             "asset_id": nullable_identifier,
             "asset_socket_id": nullable_identifier,
@@ -272,7 +278,14 @@ def _authoring_output_contract() -> dict[str, object]:
             },
             "host_object_id": identifier,
             "host_socket_id": identifier,
-            "members": _array_contract(member, minimum=1),
+            "members": _array_contract(
+                member,
+                minimum=1,
+                description=(
+                    "Unique roles; provider order carries no meaning and is "
+                    "canonicalized lexicographically by role."
+                ),
+            ),
             "interface_refs": _array_contract(logical_ref, minimum=1, unique=True),
             "semantic_binding_ids": _array_contract(identifier, minimum=1, unique=True),
             "maturity": {
@@ -281,7 +294,9 @@ def _authoring_output_contract() -> dict[str, object]:
             },
         },
         description=(
-            "A hosted semantic component and its geometry are one typed assembly; bind it to the same semantic binding ids as its member objects."
+            "A hosted semantic component and its geometry are one typed assembly; "
+            "bind it to the same semantic binding ids as its member objects and "
+            "include every role listed by required_assembly_roles[kind]."
         ),
     )
 
@@ -311,13 +326,37 @@ def _authoring_output_contract() -> dict[str, object]:
                     "angular_radians": {"type": "number", "exclusiveMinimum": 0},
                 }
             ),
-            "frames": _array_contract(frame, minimum=1),
-            "assets": _array_contract(asset),
-            "semantic_bindings": _array_contract(binding, minimum=1),
-            "operations": _array_contract(operation, minimum=1),
-            "assemblies": _array_contract(assembly),
-            "revisions": _array_contract(lifecycle(ObjectRevisionPrecondition.SCHEMA)),
-            "retirements": _array_contract(lifecycle(ObjectRetirement.SCHEMA)),
+            "frames": _array_contract(
+                frame,
+                minimum=1,
+                description="Unique frame_id; order is canonicalized by frame_id.",
+            ),
+            "assets": _array_contract(
+                asset,
+                description="Unique asset_id; order is canonicalized by asset_id.",
+            ),
+            "semantic_bindings": _array_contract(
+                binding,
+                minimum=1,
+                description="Unique binding_id; order is canonicalized by binding_id.",
+            ),
+            "operations": _array_contract(
+                operation,
+                minimum=1,
+                description="Unique op_id; order is canonicalized by op_id.",
+            ),
+            "assemblies": _array_contract(
+                assembly,
+                description="Unique assembly_id; order is canonicalized by assembly_id.",
+            ),
+            "revisions": _array_contract(
+                lifecycle(ObjectRevisionPrecondition.SCHEMA),
+                description="Unique object_id; order is canonicalized by object_id.",
+            ),
+            "retirements": _array_contract(
+                lifecycle(ObjectRetirement.SCHEMA),
+                description="Unique object_id; order is canonicalized by object_id.",
+            ),
         }
     )
     output = _strict_object(
@@ -342,6 +381,12 @@ def _authoring_output_contract() -> dict[str, object]:
             "canonical_write": False,
             "platform_mutation": False,
         },
+        "required_assembly_roles": {
+            kind.value: [
+                role.value for role in required_assembly_roles(kind)
+            ]
+            for kind in AssemblyKind
+        },
         "cross_field_invariants": [
             {
                 "field": "proposal_body.operations[*].responds_to_object_ids",
@@ -357,6 +402,11 @@ def _authoring_output_contract() -> dict[str, object]:
                 "field": "proposal_body.operations[*].input_object_ids",
                 "relation": "matches_function_input_arity",
                 "target": "geometry_function_contracts[kind]",
+            },
+            {
+                "field": "proposal_body.assemblies[*].members[*].role",
+                "relation": "contains_all_unique",
+                "target": "required_assembly_roles[kind]",
             },
         ],
     }
@@ -1077,6 +1127,7 @@ def _request_payload(
             "Bind every candidate value and required commitment through semantic bindings.",
             "Include the spatial option record URI in every semantic binding evidence_refs.",
             "When a supplied semantic component requires a hosted assembly, represent its semantic identity and geometry together through semantic_binding_ids and typed assembly members.",
+            "For every hosted assembly include all roles named by required_output_contract.required_assembly_roles[kind]; missing or duplicate roles are invalid.",
             "Treat identifier and reference arrays as sets: never duplicate values; lexical order is canonicalized by the protocol and carries no design meaning.",
             "Every responds_to_object_ids value must also appear in the same operation input_object_ids, and every responds_to_binding_ids value must appear in semantic_binding_ids. A zero-input function therefore has empty responds_to_object_ids.",
             "Do not claim hard-gate, acceptance, canonical-write, or platform authority.",
@@ -1172,13 +1223,13 @@ def _construct_proposal(
         predecessor_program_digest=value["predecessor_program_digest"],
         length_unit=LengthUnit(value["length_unit"]),
         tolerance=GeometryTolerance(tolerance["linear"], tolerance["angular_radians"]),
-        frames=_decode_list(value["frames"], _frame, "frames"),
-        assets=_decode_list(value["assets"], _asset, "assets"),
-        semantic_bindings=_decode_list(value["semantic_bindings"], _binding, "semantic_bindings"),
-        operations=_decode_list(value["operations"], _operation, "operations"),
-        assemblies=_decode_list(value["assemblies"], _assembly, "assemblies"),
-        revisions=_decode_list(value["revisions"], _revision, "revisions"),
-        retirements=_decode_list(value["retirements"], _retirement, "retirements"),
+        frames=_decode_sorted_list(value["frames"], _frame, "frames", lambda item: item.frame_id),
+        assets=_decode_sorted_list(value["assets"], _asset, "assets", lambda item: item.asset_id),
+        semantic_bindings=_decode_sorted_list(value["semantic_bindings"], _binding, "semantic_bindings", lambda item: item.binding_id),
+        operations=_decode_sorted_list(value["operations"], _operation, "operations", lambda item: item.op_id),
+        assemblies=_decode_sorted_list(value["assemblies"], _assembly, "assemblies", lambda item: item.assembly_id),
+        revisions=_decode_sorted_list(value["revisions"], _revision, "revisions", lambda item: item.object_id),
+        retirements=_decode_sorted_list(value["retirements"], _retirement, "retirements", lambda item: item.object_id),
     )
 
 
@@ -1248,7 +1299,12 @@ def _operation(value: object) -> GeometryOperation:
         output_object_ids=_strings_from_json(payload["output_object_ids"], "output_object_ids"),
         input_object_ids=_strings_from_json(payload["input_object_ids"], "input_object_ids"),
         frame_id=payload["frame_id"],
-        parameters=_decode_list(payload["parameters"], _parameter, "parameters"),
+        parameters=_decode_sorted_list(
+            payload["parameters"],
+            _parameter,
+            "parameters",
+            lambda item: item.name,
+        ),
         semantic_binding_ids=_strings_from_json(payload["semantic_binding_ids"], "semantic_binding_ids"),
         asset_id=payload["asset_id"], asset_socket_id=payload["asset_socket_id"],
         asset_scale=None if scale is None else tuple(scale),
@@ -1274,7 +1330,12 @@ def _assembly(value: object) -> HostedAssembly:
     return HostedAssembly(
         assembly_id=payload["assembly_id"], kind=AssemblyKind(payload["kind"]),
         host_object_id=payload["host_object_id"], host_socket_id=payload["host_socket_id"],
-        members=_decode_list(payload["members"], _member, "members"),
+        members=_decode_sorted_list(
+            payload["members"],
+            _member,
+            "members",
+            lambda item: item.role.value,
+        ),
         interface_refs=_strings_from_json(payload["interface_refs"], "interface_refs"),
         semantic_binding_ids=_strings_from_json(payload["semantic_binding_ids"], "semantic_binding_ids"),
         maturity=DetailMaturity(payload["maturity"]),
@@ -1470,6 +1531,15 @@ def _decode_list(value: object, decoder: Any, field: str) -> tuple[Any, ...]:
                 f"{field}[{index}]: {exc}"
             ) from exc
     return tuple(decoded)
+
+
+def _decode_sorted_list(
+    value: object,
+    decoder: Any,
+    field: str,
+    key: Any,
+) -> tuple[Any, ...]:
+    return tuple(sorted(_decode_list(value, decoder, field), key=key))
 
 
 def _canonical_json(value: object) -> str:

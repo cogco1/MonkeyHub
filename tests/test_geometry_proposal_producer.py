@@ -35,7 +35,11 @@ from archflow.state import (
     SpatialOptionProposal,
     SpatialZone,
 )
-from archflow.state.geometry_program import GeometryOperationKind
+from archflow.state.geometry_program import (
+    AssemblyKind,
+    GeometryOperationKind,
+    required_assembly_roles,
+)
 from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from tests.test_sandbox_realization import compiled_room
 
@@ -328,6 +332,118 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             tuple(sorted(decoded_binding.evidence_refs)),
         )
 
+    async def test_unsorted_keyed_objects_are_canonicalized(self) -> None:
+        unsorted = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        body = unsorted["proposal_body"]
+        body["operations"] = list(reversed(body["operations"]))
+        parameterized = next(
+            item for item in body["operations"] if len(item["parameters"]) > 1
+        )
+        parameterized["parameters"] = list(
+            reversed(parameterized["parameters"])
+        )
+        body["assemblies"][0]["members"] = list(
+            reversed(body["assemblies"][0]["members"])
+        )
+
+        result = await self._produce(_ScriptedProvider((unsorted,)))
+
+        self.assertIs(result.status, GeometryProposalStatus.ACCEPTED)
+        assert result.proposal is not None
+        self.assertEqual(
+            tuple(item.op_id for item in result.proposal.operations),
+            tuple(sorted(item.op_id for item in result.proposal.operations)),
+        )
+        self.assertEqual(
+            tuple(
+                item.role.value
+                for item in result.proposal.assemblies[0].members
+            ),
+            tuple(
+                sorted(
+                    item.role.value
+                    for item in result.proposal.assemblies[0].members
+                )
+            ),
+        )
+        decoded_operation = next(
+            item
+            for item in result.proposal.operations
+            if item.op_id == parameterized["op_id"]
+        )
+        self.assertEqual(
+            tuple(item.name for item in decoded_operation.parameters),
+            tuple(sorted(item.name for item in decoded_operation.parameters)),
+        )
+
+    async def test_duplicate_member_role_remains_rejected(self) -> None:
+        duplicate = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        members = duplicate["proposal_body"]["assemblies"][0]["members"]
+        members.append(json.loads(_canonical_json(members[0])))
+
+        result = await self._produce(
+            _ScriptedProvider((duplicate,)),
+            rounds=1,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        issue = loaded.rounds[0].issues[0]
+        self.assertIn("assemblies[0]", issue.detail)
+        self.assertIn("unique deterministic roles", issue.detail)
+
+    async def test_duplicate_proposal_identity_remains_rejected(self) -> None:
+        duplicate = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        operations = duplicate["proposal_body"]["operations"]
+        operations.append(json.loads(_canonical_json(operations[0])))
+
+        result = await self._produce(
+            _ScriptedProvider((duplicate,)),
+            rounds=1,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        self.assertIn(
+            "operations requires unique deterministic identities",
+            loaded.rounds[0].issues[0].detail,
+        )
+
+    async def test_missing_required_assembly_roles_remains_rejected(self) -> None:
+        incomplete = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        members = incomplete["proposal_body"]["assemblies"][0]["members"]
+        incomplete["proposal_body"]["assemblies"][0]["members"] = [
+            next(item for item in members if item["role"] == "leaf")
+        ]
+
+        result = await self._produce(
+            _ScriptedProvider((incomplete,)),
+            rounds=1,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        issue = loaded.rounds[0].issues[0]
+        self.assertIn("assemblies[0]", issue.detail)
+        self.assertIn("hosted assembly lacks required roles", issue.detail)
+
     async def test_duplicate_set_like_json_remains_rejected(self) -> None:
         duplicate = json.loads(
             _canonical_json(proposal_authoring_output(self.proposal))
@@ -482,6 +598,23 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "zero inputs",
             operation["properties"]["input_object_ids"]["description"],
+        )
+        self.assertEqual(
+            contract["required_assembly_roles"],
+            {
+                kind.value: [
+                    role.value for role in required_assembly_roles(kind)
+                ]
+                for kind in AssemblyKind
+            },
+        )
+        self.assertIn(
+            {
+                "field": "proposal_body.assemblies[*].members[*].role",
+                "relation": "contains_all_unique",
+                "target": "required_assembly_roles[kind]",
+            },
+            invariants,
         )
 
 
