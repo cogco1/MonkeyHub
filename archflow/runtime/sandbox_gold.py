@@ -2744,10 +2744,34 @@ def reload_sandbox_gold(
             raise SandboxGoldError("directly accepted concept lineage drifted")
     else:
         rejected = payloads[rejected_ref.uri]
+        # Execution stores a rejected concept whenever usability OR hard
+        # validation produced findings (_finding_codes), so the audit must
+        # accept any-gate-failed records and still fail closed on records
+        # whose passed flags, findings, and summary codes disagree.
+        rejected_findings = list(
+            dict.fromkeys(
+                (
+                    *(
+                        item["code"]
+                        for item in rejected["usability"]["findings"]
+                    ),
+                    *(
+                        item["code"]
+                        for item in rejected["hard_validation"][
+                            "findings"
+                        ]
+                    ),
+                )
+            )
+        )
         if (
-            rejected["usability"]["passed"] is not False
-            or rejected["hard_validation"]["passed"] is not False
-            or not summary["concept_findings"]
+            any(
+                rejected[key]["passed"]
+                is not (not rejected[key]["findings"])
+                for key in ("usability", "hard_validation")
+            )
+            or not rejected_findings
+            or rejected_findings != list(summary["concept_findings"])
             or summary["accepted_variant"] != "revised"
         ):
             raise SandboxGoldError("rejected concept lineage drifted")

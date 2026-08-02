@@ -45,7 +45,12 @@ PROBE_ROOT = (
 )
 
 
-def _semantic_proposal(*, revised: bool, complete_zones: bool) -> dict[str, object]:
+def _semantic_proposal(
+    *,
+    revised: bool,
+    complete_zones: bool,
+    oversized_envelope: bool = False,
+) -> dict[str, object]:
     functions = [
         {
             "function_id": "gathering",
@@ -106,8 +111,8 @@ def _semantic_proposal(*, revised: bool, complete_zones: bool) -> dict[str, obje
             },
         ],
         "envelope": {
-            "width_m": 5,
-            "depth_m": 5,
+            "width_m": 8 if oversized_envelope else 5,
+            "depth_m": 8 if oversized_envelope else 5,
             "clear_height_m": 3,
         },
         "performance_requirements": {
@@ -391,6 +396,7 @@ class _ScriptedArchitectProvider:
         self,
         *,
         concept_has_all_zones: bool = False,
+        concept_oversized_envelope: bool = False,
         repair_first_geometry_round: bool = False,
         substitute_revision_model: bool = False,
         invalid_component_reference: bool = False,
@@ -398,6 +404,7 @@ class _ScriptedArchitectProvider:
         substitute_concept_repair_model: bool = False,
     ) -> None:
         self.concept_has_all_zones = concept_has_all_zones
+        self.concept_oversized_envelope = concept_oversized_envelope
         self.repair_first_geometry_round = repair_first_geometry_round
         self.substitute_revision_model = substitute_revision_model
         self.invalid_component_reference = invalid_component_reference
@@ -431,6 +438,10 @@ class _ScriptedArchitectProvider:
                     True
                     if variant == "revised"
                     else self.concept_has_all_zones
+                ),
+                oversized_envelope=(
+                    variant == "concept"
+                    and self.concept_oversized_envelope
                 ),
             )
             if self.invalid_component_reference:
@@ -636,6 +647,29 @@ class SandboxGoldTests(unittest.TestCase):
             }
             self.assertFalse(claimed_members & members)
             claimed_members.update(members)
+
+    def test_usability_only_rejection_reloads_cleanly(self) -> None:
+        provider = _ScriptedArchitectProvider(
+            concept_has_all_zones=True,
+            concept_oversized_envelope=True,
+        )
+        result = self._execute(provider, run_id="gold-usability-only")
+
+        self.assertIsNotNone(result.rejected_ref)
+        rejected = self.repository.load_json(result.rejected_ref)
+        # Exactly one gate failed: the execution path stored the concept as
+        # rejected, and the reload audit must accept that legitimate record.
+        self.assertFalse(rejected["usability"]["passed"])
+        self.assertTrue(rejected["hard_validation"]["passed"])
+        summary = reload_sandbox_gold(
+            self.repository,
+            run_id="gold-usability-only",
+        )
+        self.assertEqual(
+            summary["concept_findings"],
+            ["usability.size.outside_target"],
+        )
+        self.assertEqual(summary["accepted_variant"], "revised")
 
     def test_scenario_window_beyond_policy_validity_fails_closed(self) -> None:
         provider = _ScriptedArchitectProvider(concept_has_all_zones=True)
