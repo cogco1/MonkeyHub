@@ -2018,7 +2018,7 @@
       "id": "P026",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "ready",
+      "status": "active",
       "goal": "Prove one true raw-request-to-usable-building run as a reloadable accepted platform-neutral sandbox artifact.",
       "depends_on": [
         "M002",
@@ -2045,6 +2045,7 @@
         "The Architect drives state-responsive design transitions.",
         "Architect semantics compile into typed neutral geometry without building-type answers in the kernel.",
         "Parametric geometry typed assemblies and provenance-bound detail assets coexist in one hybrid artifact.",
+        "Every model-authored semantic component has a dedicated binding to one typed hosted assembly without reused member-object identities.",
         "Deterministic sandbox realization supplies validation evidence and paper-ready views without an external platform.",
         "Rejected and accepted candidates reload.",
         "Full review and single-writer boundaries remain distinct."
@@ -2056,7 +2057,8 @@
         "No-instance-default scan"
       ],
       "card": "docs/mapping/planning/P026-sandbox-prompt-to-usable-gold.md",
-      "evidence": []
+      "evidence": [],
+      "actor": "Codex"
     },
     {
       "id": "P027",

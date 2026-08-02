@@ -1,7 +1,7 @@
 # P026 — Sandbox prompt-to-usable Gold slice
 
 - Origin: Planning
-- Status: Ready after M002, M004, M024, M026, P018, P024, P025, P029, P030, P047, and P048
+- Status: Active after M002, M004, M024, M026, P018, P024, P025, P029, P030, P047, and P048
 - Depends on: M002, M004, M024, M026, P018, P024, P025, P029, P030, P047, P048
 
 ## Goal
@@ -22,6 +22,9 @@ platform outputs remain downstream adapters and are not proof authorities.
   but no building-type answers.
 - Parametric geometry, typed door/window assemblies, and provenance-bound
   detail assets coexist in one hybrid building artifact.
+- Every model-authored semantic component becomes a candidate value. Each
+  hosted component has one dedicated semantic binding to one typed assembly,
+  and separate components do not reuse member-object identities.
 - A deterministic sandbox realization supplies spatial validation views and
   paper-ready drawings without requiring an external platform.
 - At least one rejected/revised candidate and one accepted candidate reload.
@@ -44,6 +47,23 @@ platform outputs remain downstream adapters and are not proof authorities.
 - Assembly, asset, geometry-operation, and fixture regressions.
 - Archive, design-state, event-log, and canonical-state reload.
 - Static no-instance-default authority scan.
+
+## Current evidence (2026-08-02)
+
+- Scripted concept/revision runs prove reloadable semantic-component candidate
+  values, dedicated hosted-assembly bindings, distinct member identities, and
+  refusal persistence. The full deterministic suite passes 384 tests with two
+  explicit external skips.
+- Real Codex Agent CLI run `gold-agent-cli-002` was rejected during concept
+  validation before invocation receipts were persisted; it did not change
+  canonical state.
+- Real Codex Agent CLI run `gold-agent-cli-003` persisted the successful model
+  receipt, including one door, two windows, and one hosted storage component,
+  then rejected it because the root `rationale` field was absent. It did not
+  enter geometry production or change canonical state.
+- The exact concept-output contract and pre-validation receipt persistence were
+  added after those failures and pass deterministic tests, but remain unproven
+  against a fresh live provider invocation. P026 is therefore not Gold.
 
 ## Stop conditions
 

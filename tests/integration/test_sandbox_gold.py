@@ -18,6 +18,7 @@ from archflow.project import (
     FilesystemProjectRepository,
     PersistenceArea,
     PersistenceDestination,
+    ProjectRecordRef,
 )
 from archflow.realization.sandbox import SandboxAssetPayload
 from archflow.runtime.sandbox_gold import (
@@ -86,6 +87,24 @@ def _semantic_proposal(*, revised: bool, complete_zones: bool) -> dict[str, obje
         "proposal_id": "revised-shelter" if revised else "concept-shelter",
         "functions": functions,
         "relations": [],
+        "semantic_components": [
+            {
+                "component_id": "daylight-opening",
+                "semantic_kind": "daylight-opening",
+                "function_ids": ["gathering"],
+                "assembly_kind": "window",
+                "intent": "Admit daylight into the gathering room.",
+                "rationale": "The raw request asks for daylight.",
+            },
+            {
+                "component_id": "sheltered-entrance",
+                "semantic_kind": "entrance",
+                "function_ids": ["storage", "gathering"],
+                "assembly_kind": "door",
+                "intent": "Provide one sheltered entrance to the gathering room.",
+                "rationale": "The raw request asks for one sheltered entrance.",
+            },
+        ],
         "envelope": {
             "width_m": 5,
             "depth_m": 5,
@@ -157,13 +176,107 @@ def _geometry_output(request) -> dict[str, object]:
             sorted({asset_uri, *asset_input["provenance_refs"]})
         ),
     )
-    binding = replace(
-        proposal.semantic_bindings[0],
-        candidate_value_ids=tuple(item.value_id for item in projection.values),
+    original_binding = proposal.semantic_bindings[0]
+    component_value_ids = {
+        value.decoded_value["component_id"]: value.value_id
+        for value in projection.values
+        if isinstance(value.decoded_value, dict)
+        and "component_id" in value.decoded_value
+    }
+    if set(component_value_ids) != {"daylight-opening", "sheltered-entrance"}:
+        raise AssertionError("semantic component candidate values are missing")
+    general_value_ids = tuple(
+        value.value_id
+        for value in projection.values
+        if value.value_id not in set(component_value_ids.values())
+    )
+    operation_by_id = {item.op_id: item for item in proposal.operations}
+    window_names = {
+        "clearance": "window-clearance",
+        "frame": "window-frame",
+        "hardware": "window-hardware",
+        "inner": "window-glazing",
+        "opening": "window-opening",
+        "opening-tool": "window-opening-tool",
+    }
+    window_operations = []
+    for source_id, target_id in window_names.items():
+        source_operation = operation_by_id[source_id]
+        remapped_inputs = tuple(
+            sorted(
+                window_names.get(object_id, object_id)
+                for object_id in source_operation.input_object_ids
+            )
+        )
+        window_operations.append(
+            replace(
+                source_operation,
+                op_id=target_id,
+                output_object_ids=(target_id,),
+                input_object_ids=remapped_inputs,
+                semantic_binding_ids=(
+                    "daylight-opening-binding",
+                    "program-binding",
+                ),
+            )
+        )
+    all_object_ids = tuple(
+        sorted(
+            {
+                *original_binding.object_ids,
+                *(item for item in window_names.values()),
+            }
+        )
+    )
+    evidence_refs = tuple(sorted((spatial_uri, asset_uri)))
+    program_binding = replace(
+        original_binding,
+        binding_id="program-binding",
+        object_ids=all_object_ids,
+        candidate_value_ids=general_value_ids,
         commitment_refs=("commitment:maintain-egress",),
-        evidence_refs=tuple(sorted((spatial_uri, asset_uri))),
+        evidence_refs=evidence_refs,
     )
     door = proposal.assemblies[0]
+    door_objects = tuple(
+        sorted(
+            {
+                door.host_object_id,
+                *(
+                    object_id
+                    for member in door.members
+                    for object_id in member.object_ids
+                ),
+            }
+        )
+    )
+    door_binding = replace(
+        original_binding,
+        binding_id="sheltered-entrance-binding",
+        object_ids=door_objects,
+        candidate_value_ids=(component_value_ids["sheltered-entrance"],),
+        commitment_refs=("commitment:maintain-egress",),
+        evidence_refs=evidence_refs,
+    )
+    door = replace(
+        door,
+        semantic_binding_ids=(door_binding.binding_id,),
+    )
+    window_member_objects = (
+        "window-clearance",
+        "window-frame",
+        "window-glazing",
+        "window-hardware",
+        "window-opening",
+    )
+    window_binding = replace(
+        original_binding,
+        binding_id="daylight-opening-binding",
+        object_ids=tuple(sorted({door.host_object_id, *window_member_objects})),
+        candidate_value_ids=(component_value_ids["daylight-opening"],),
+        commitment_refs=("commitment:maintain-egress",),
+        evidence_refs=evidence_refs,
+    )
     window = HostedAssembly(
         assembly_id="daylight-window",
         kind=AssemblyKind.WINDOW,
@@ -172,17 +285,17 @@ def _geometry_output(request) -> dict[str, object]:
         members=tuple(
             sorted(
                 (
-                    AssemblyMember(AssemblyRole.CLEARANCE, ("clearance",)),
-                    AssemblyMember(AssemblyRole.FRAME, ("frame",)),
-                    AssemblyMember(AssemblyRole.GLAZING, ("inner",)),
-                    AssemblyMember(AssemblyRole.HARDWARE, ("hardware",)),
-                    AssemblyMember(AssemblyRole.HOST_CUT, ("opening",)),
+                    AssemblyMember(AssemblyRole.CLEARANCE, ("window-clearance",)),
+                    AssemblyMember(AssemblyRole.FRAME, ("window-frame",)),
+                    AssemblyMember(AssemblyRole.GLAZING, ("window-glazing",)),
+                    AssemblyMember(AssemblyRole.HARDWARE, ("window-hardware",)),
+                    AssemblyMember(AssemblyRole.HOST_CUT, ("window-opening",)),
                 ),
                 key=lambda item: item.role.value,
             )
         ),
         interface_refs=("interface:interior-to-daylight",),
-        semantic_binding_ids=(binding.binding_id,),
+        semantic_binding_ids=(window_binding.binding_id,),
         maturity=DetailMaturity.FUNCTIONAL,
     )
     rebound = replace(
@@ -197,17 +310,70 @@ def _geometry_output(request) -> dict[str, object]:
             for frame in proposal.frames
         ),
         operations=tuple(
-            replace(
-                operation,
-                asset_id=asset_payload.asset_id,
-                asset_socket_id=asset_sockets[0],
+            sorted(
+                (
+                    *(
+                        replace(
+                            operation,
+                            semantic_binding_ids=tuple(
+                                sorted(
+                                    {
+                                        "program-binding",
+                                        *(
+                                            ("sheltered-entrance-binding",)
+                                            if set(operation.output_object_ids)
+                                            & set(door_objects)
+                                            else ()
+                                        ),
+                                        *(
+                                            ("daylight-opening-binding",)
+                                            if door.host_object_id
+                                            in operation.output_object_ids
+                                            else ()
+                                        ),
+                                    }
+                                )
+                            ),
+                            asset_id=asset_payload.asset_id,
+                            asset_socket_id=asset_sockets[0],
+                        )
+                        if operation.asset_id is not None
+                        else replace(
+                            operation,
+                            semantic_binding_ids=tuple(
+                                sorted(
+                                    {
+                                        "program-binding",
+                                        *(
+                                            ("sheltered-entrance-binding",)
+                                            if set(operation.output_object_ids)
+                                            & set(door_objects)
+                                            else ()
+                                        ),
+                                        *(
+                                            ("daylight-opening-binding",)
+                                            if door.host_object_id
+                                            in operation.output_object_ids
+                                            else ()
+                                        ),
+                                    }
+                                )
+                            ),
+                        )
+                        for operation in proposal.operations
+                    ),
+                    *window_operations,
+                ),
+                key=lambda item: item.op_id,
             )
-            if operation.asset_id is not None
-            else operation
-            for operation in proposal.operations
         ),
         assets=(asset,),
-        semantic_bindings=(binding,),
+        semantic_bindings=tuple(
+            sorted(
+                (program_binding, door_binding, window_binding),
+                key=lambda item: item.binding_id,
+            )
+        ),
         assemblies=tuple(
             sorted((door, window), key=lambda item: item.assembly_id)
         ),
@@ -227,10 +393,12 @@ class _ScriptedArchitectProvider:
         concept_has_all_zones: bool = False,
         repair_first_geometry_round: bool = False,
         substitute_revision_model: bool = False,
+        invalid_component_reference: bool = False,
     ) -> None:
         self.concept_has_all_zones = concept_has_all_zones
         self.repair_first_geometry_round = repair_first_geometry_round
         self.substitute_revision_model = substitute_revision_model
+        self.invalid_component_reference = invalid_component_reference
         self.requests = []
         self._geometry_attempts: dict[str, int] = {}
 
@@ -251,6 +419,10 @@ class _ScriptedArchitectProvider:
                 revised=False,
                 complete_zones=self.concept_has_all_zones,
             )
+            if self.invalid_component_reference:
+                output["semantic_components"][0]["function_ids"] = [
+                    "unknown-function"
+                ]
         elif request.request_id.endswith("-revision"):
             output = _semantic_proposal(revised=True, complete_zones=True)
         else:
@@ -398,6 +570,51 @@ class SandboxGoldTests(unittest.TestCase):
         summary = reload_sandbox_gold(self.repository, run_id="gold-direct")
         self.assertEqual(summary["accepted_variant"], "concept")
         self.assertEqual(summary["concept_findings"], [])
+        self.assertEqual(len(summary["semantic_geometry_digest"]), 64)
+        concept_contract = provider.requests[0].payload[
+            "required_output_contract"
+        ]
+        self.assertFalse(concept_contract["additionalProperties"])
+        self.assertEqual(
+            set(concept_contract["required"]),
+            set(concept_contract["properties"]),
+        )
+        self.assertIn("rationale", concept_contract["required"])
+        component_contract = concept_contract["properties"][
+            "semantic_components"
+        ]["items"]
+        self.assertEqual(
+            set(component_contract["required"]),
+            set(component_contract["properties"]),
+        )
+        encoded_contract = json.dumps(concept_contract, sort_keys=True)
+        self.assertNotIn('"default"', encoded_contract)
+        self.assertNotIn('"examples"', encoded_contract)
+        accepted = self.repository.load_json(
+            ProjectRecordRef(**summary["accepted_candidate_ref"])
+        )
+        proposal = accepted["geometry_program"]["proposal"]
+        bindings = {
+            item["binding_id"]: item
+            for item in proposal["semantic_bindings"]
+        }
+        claimed_members = set()
+        for assembly in proposal["assemblies"]:
+            self.assertEqual(len(assembly["semantic_binding_ids"]), 1)
+            binding = bindings[assembly["semantic_binding_ids"][0]]
+            self.assertEqual(len(binding["candidate_value_ids"]), 1)
+            self.assertTrue(
+                binding["candidate_value_ids"][0].startswith(
+                    "semantic-component-"
+                )
+            )
+            members = {
+                object_id
+                for member in assembly["members"]
+                for object_id in member["object_ids"]
+            }
+            self.assertFalse(claimed_members & members)
+            claimed_members.update(members)
 
     def test_revision_cannot_silently_replace_the_model(self) -> None:
         provider = _ScriptedArchitectProvider(
@@ -410,6 +627,36 @@ class SandboxGoldTests(unittest.TestCase):
         ):
             self._execute(provider, run_id="gold-identity-drift")
 
+        self.assertEqual(self.repository.read_head().version, 0)
+
+    def test_invalid_semantic_draft_is_rejected_but_receipt_persists(self) -> None:
+        provider = _ScriptedArchitectProvider(
+            invalid_component_reference=True,
+        )
+
+        with self.assertRaisesRegex(
+            SandboxGoldError,
+            "function_ids are invalid",
+        ):
+            self._execute(provider, run_id="gold-invalid-semantic")
+
+        run = self.repository.load_run("gold-invalid-semantic")
+        records = self.repository.list_json(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_RECORD,
+                run_id=run.run_id,
+            ),
+        )
+        payloads = [self.repository.load_json(ref) for ref in records]
+        invocation = next(
+            item
+            for item in payloads
+            if item.get("schema") == "SandboxArchitectInvocationRecord@1"
+        )
+        self.assertEqual(invocation["variant"], "concept")
+        self.assertEqual(invocation["receipt"]["status"], "success")
+        self.assertFalse(invocation["canonical_write_authority"])
         self.assertEqual(self.repository.read_head().version, 0)
 
 

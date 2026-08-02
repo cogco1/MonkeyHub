@@ -94,7 +94,11 @@ from archflow.state.candidate_program import (
     CandidateProgramValue,
     CandidateValueFacet,
 )
-from archflow.state.geometry_program import digest_value
+from archflow.state.geometry_program import (
+    AssemblyKind,
+    GeometryProgramProposal,
+    digest_value,
+)
 from archflow.state.site_context import SiteBounds
 from archflow.state.spatial import (
     MassingVolume,
@@ -348,6 +352,16 @@ def _concept_output_schema() -> dict[str, object]:
                 "kind": "adjacent|shared|separated",
             }
         ],
+        "semantic_components": [
+            {
+                "component_id": "portable identifier",
+                "semantic_kind": "model-derived portable identifier",
+                "function_ids": ["function identifier"],
+                "assembly_kind": "door|window|generic_hosted|null",
+                "intent": "model-derived text",
+                "rationale": "model-derived text",
+            }
+        ],
         "envelope": {
             "width_m": "positive number derived from the request",
             "depth_m": "positive number derived from the request",
@@ -400,7 +414,198 @@ def _revision_output_schema() -> dict[str, object]:
     }
 
 
+def _strict_contract(
+    properties: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": sorted(properties),
+        "properties": dict(properties),
+    }
+
+
+def _array_contract(
+    items: Mapping[str, object],
+    *,
+    minimum: int = 0,
+    maximum: int,
+    unique: bool = False,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "type": "array",
+        "items": dict(items),
+        "minItems": minimum,
+        "maxItems": maximum,
+    }
+    if unique:
+        result["uniqueItems"] = True
+    return result
+
+
+def _concept_output_contract(*, revision: bool) -> dict[str, object]:
+    identifier = {
+        "type": "string",
+        "pattern": _IDENTIFIER.pattern,
+    }
+    text = {"type": "string", "minLength": 1, "maxLength": 4_000}
+    positive_number = {"type": "number", "exclusiveMinimum": 0}
+    integer = {"type": "integer"}
+    function = _strict_contract(
+        {
+            "function_id": identifier,
+            "label": text,
+            "capacity": {"type": "integer", "minimum": 1, "maximum": 10_000},
+            "area_m2": positive_number,
+        }
+    )
+    relation = _strict_contract(
+        {
+            "source_function_id": identifier,
+            "target_function_id": identifier,
+            "kind": {"enum": ["adjacent", "separated", "shared"]},
+        }
+    )
+    component = _strict_contract(
+        {
+            "component_id": identifier,
+            "semantic_kind": identifier,
+            "function_ids": _array_contract(
+                identifier,
+                minimum=1,
+                maximum=12,
+                unique=True,
+            ),
+            "assembly_kind": {
+                "enum": [
+                    None,
+                    AssemblyKind.DOOR.value,
+                    AssemblyKind.GENERIC_HOSTED.value,
+                    AssemblyKind.WINDOW.value,
+                ]
+            },
+            "intent": text,
+            "rationale": text,
+        }
+    )
+    vector2 = {
+        "type": "array",
+        "items": integer,
+        "minItems": 2,
+        "maxItems": 2,
+    }
+    vector3 = {
+        "type": "array",
+        "items": integer,
+        "minItems": 3,
+        "maxItems": 3,
+    }
+    level = _strict_contract(
+        {
+            "level_id": identifier,
+            "base_y": integer,
+            "height": {"type": "integer", "minimum": 1},
+        }
+    )
+    volume = _strict_contract(
+        {
+            "volume_id": identifier,
+            "minimum": vector3,
+            "maximum": vector3,
+            "level_ids": _array_contract(
+                identifier,
+                minimum=1,
+                maximum=128,
+                unique=True,
+            ),
+        }
+    )
+    zone = _strict_contract(
+        {
+            "zone_id": identifier,
+            "function_ids": _array_contract(
+                identifier,
+                minimum=1,
+                maximum=12,
+                unique=True,
+            ),
+            "level_ids": _array_contract(
+                identifier,
+                minimum=1,
+                maximum=128,
+                unique=True,
+            ),
+            "volume_ids": _array_contract(
+                identifier,
+                minimum=1,
+                maximum=512,
+                unique=True,
+            ),
+        }
+    )
+    return _strict_contract(
+        {
+            "schema": {
+                "const": _PROPOSAL_SCHEMA if revision else _CONCEPT_SCHEMA,
+            },
+            "proposal_id": identifier,
+            "functions": _array_contract(
+                function,
+                minimum=1,
+                maximum=12,
+            ),
+            "relations": _array_contract(relation, maximum=66),
+            "semantic_components": _array_contract(component, maximum=64),
+            "envelope": _strict_contract(
+                {
+                    "width_m": positive_number,
+                    "depth_m": positive_number,
+                    "clear_height_m": positive_number,
+                }
+            ),
+            "performance_requirements": _strict_contract(
+                {
+                    "minimum_clear_height_m": positive_number,
+                    "circulation_min_width_m": positive_number,
+                }
+            ),
+            "spatial_option": _strict_contract(
+                {
+                    "grid_size_m": positive_number,
+                    "footprint_cells": _array_contract(
+                        vector2,
+                        minimum=1,
+                        maximum=4_096,
+                        unique=True,
+                    ),
+                    "levels": _array_contract(
+                        level,
+                        minimum=1,
+                        maximum=128,
+                    ),
+                    "volumes": _array_contract(
+                        volume,
+                        minimum=1,
+                        maximum=512,
+                    ),
+                    "zones": _array_contract(
+                        zone,
+                        minimum=1,
+                        maximum=1_024,
+                    ),
+                    "typology_hypothesis": text,
+                    "rationale": text,
+                }
+            ),
+            "material_strategy": text,
+            "rationale": text,
+        }
+    )
+
+
 async def _model_proposal(
+    repository: FilesystemProjectRepository,
+    run: RunRef,
     provider: AsyncModelProvider,
     request: RawSandboxRequest,
     base: ProjectVersionRef,
@@ -431,9 +636,12 @@ async def _model_proposal(
             "schema": _MODEL_PROMPT_SCHEMA,
             "instructions": (
                 "Act as the state-responsive Architect. Derive project "
-                "functions, capacities, areas, relations, dimensions, and "
-                "performance requirements plus material intent only from "
-                "the raw request. "
+                "functions, capacities, areas, relations, semantic components, "
+                "dimensions, and performance requirements plus material intent "
+                "only from the raw request. A door, window, or other hosted "
+                "component must be declared here as one semantic component so "
+                "the later neutral geometry proposal can bind the same identity "
+                "to its typed assembly and member geometry. "
                 + (
                     "Revise the exact predecessor to answer every supplied "
                     "hard-gate finding while preserving honest spatial "
@@ -443,13 +651,18 @@ async def _model_proposal(
                     "Produce a bounded concept-stage semantic and spatial "
                     "proposal without a platform command or acceptance decision."
                 )
-                + " Return exactly the requested output schema."
+                + " Return exactly the requested output schema. The strict "
+                "required_output_contract is authoritative: include every "
+                "required field, including the root rationale, and add no fields."
             ),
             "context": context,
             "required_output_schema": (
                 _revision_output_schema()
                 if revision
                 else _concept_output_schema()
+            ),
+            "required_output_contract": _concept_output_contract(
+                revision=revision
             ),
             "authority": {
                 "proposal_only": True,
@@ -460,6 +673,26 @@ async def _model_proposal(
         },
     )
     receipt = await provider.invoke(prompt)
+    repository.put_json(
+        run=run,
+        destination=PersistenceDestination(
+            PersistenceArea.RUN_RECORD,
+            run_id=run.run_id,
+        ),
+        record_kind=(
+            "architect-revision-invocation"
+            if revision
+            else "architect-concept-invocation"
+        ),
+        payload={
+            "schema": "SandboxArchitectInvocationRecord@1",
+            "variant": "revised" if revision else "concept",
+            "receipt": receipt.to_dict(),
+            "proposal_only": True,
+            "platform_export_authority": False,
+            "canonical_write_authority": False,
+        },
+    )
     if receipt.status is not ModelInvocationStatus.SUCCESS:
         raise SandboxGoldError(
             f"Architect provider failed: {receipt.error_code}"
@@ -492,6 +725,7 @@ def _validate_proposal(
         "proposal_id",
         "functions",
         "relations",
+        "semantic_components",
         "envelope",
         "performance_requirements",
         "spatial_option",
@@ -528,6 +762,72 @@ def _validate_proposal(
         total_area += _positive_number(function["area_m2"], "area_m2")
     if len(function_ids) != len(set(function_ids)):
         raise SandboxGoldError("function identifiers must be unique")
+
+    components = proposal["semantic_components"]
+    if not isinstance(components, list) or len(components) > 64:
+        raise SandboxGoldError("semantic_components must be a bounded list")
+    component_ids = []
+    known_functions = set(function_ids)
+    allowed_assembly_kinds = {item.value for item in AssemblyKind}
+    for index, item in enumerate(components):
+        component = _mapping(item, f"semantic_components[{index}]")
+        _exact(
+            component,
+            {
+                "component_id",
+                "semantic_kind",
+                "function_ids",
+                "assembly_kind",
+                "intent",
+                "rationale",
+            },
+            f"semantic_components[{index}]",
+        )
+        component_id = _identifier(
+            component["component_id"],
+            f"semantic_components[{index}].component_id",
+        )
+        _identifier(
+            _semantic_component_value_id(component_id),
+            f"semantic_components[{index}] candidate value_id",
+        )
+        component_ids.append(component_id)
+        _identifier(
+            component["semantic_kind"],
+            f"semantic_components[{index}].semantic_kind",
+        )
+        raw_function_ids = component["function_ids"]
+        if not isinstance(raw_function_ids, list) or not raw_function_ids:
+            raise SandboxGoldError(
+                f"semantic_components[{index}].function_ids must be non-empty"
+            )
+        component_function_ids = tuple(
+            _identifier(
+                value,
+                f"semantic_components[{index}].function_ids",
+            )
+            for value in raw_function_ids
+        )
+        if (
+            len(component_function_ids) != len(set(component_function_ids))
+            or not set(component_function_ids) <= known_functions
+        ):
+            raise SandboxGoldError(
+                f"semantic_components[{index}].function_ids are invalid"
+            )
+        component["function_ids"] = sorted(component_function_ids)
+        assembly_kind = component["assembly_kind"]
+        if assembly_kind is not None and assembly_kind not in allowed_assembly_kinds:
+            raise SandboxGoldError(
+                f"semantic_components[{index}].assembly_kind is invalid"
+            )
+        _text(component["intent"], f"semantic_components[{index}].intent")
+        _text(
+            component["rationale"],
+            f"semantic_components[{index}].rationale",
+        )
+    if len(component_ids) != len(set(component_ids)):
+        raise SandboxGoldError("semantic component identifiers must be unique")
 
     relations = proposal["relations"]
     if not isinstance(relations, list) or len(relations) > 66:
@@ -600,6 +900,10 @@ def _validate_proposal(
             item["target_function_id"],
             item["kind"],
         ),
+    )
+    proposal["semantic_components"] = sorted(
+        proposal["semantic_components"],
+        key=lambda item: item["component_id"],
     )
     _mapping(proposal["spatial_option"], "spatial_option")
     return proposal
@@ -782,6 +1086,10 @@ def _spatial_option(
     )
 
 
+def _semantic_component_value_id(component_id: str) -> str:
+    return f"semantic-component-{component_id}"
+
+
 def _projection(
     proposal: Mapping[str, Any],
     receipt: ModelInvocationReceipt,
@@ -799,7 +1107,7 @@ def _projection(
     envelope = proposal["envelope"]
     functions = proposal["functions"]
     relations = proposal["relations"]
-    values = (
+    values = [
         CandidateProgramValue.create(
             value_id="area-program",
             facet=CandidateValueFacet.AREA,
@@ -859,6 +1167,16 @@ def _projection(
             source_refs=source,
             derivation_refs=derivation,
         ),
+    ]
+    values.extend(
+        CandidateProgramValue.create(
+            value_id=_semantic_component_value_id(component["component_id"]),
+            facet=CandidateValueFacet.FUNCTION,
+            value=component,
+            source_refs=source,
+            derivation_refs=derivation,
+        )
+        for component in proposal["semantic_components"]
     )
     developed_digest = _digest(
         {
@@ -889,6 +1207,11 @@ def _projection(
 def _program(proposal: Mapping[str, Any]):
     envelope = proposal["envelope"]
     performance = proposal["performance_requirements"]
+    entrance_count = sum(
+        1
+        for component in proposal["semantic_components"]
+        if component["assembly_kind"] == AssemblyKind.DOOR.value
+    )
     return compile_building_program(
         {
             "use": proposal["proposal_id"],
@@ -900,7 +1223,7 @@ def _program(proposal: Mapping[str, Any]):
             "minimum_clear_height": performance[
                 "minimum_clear_height_m"
             ],
-            "entrance_count": 1,
+            "entrance_count": entrance_count,
             "circulation_min_width": performance[
                 "circulation_min_width_m"
             ],
@@ -909,6 +1232,109 @@ def _program(proposal: Mapping[str, Any]):
             "prohibitions": [],
         }
     )
+
+
+def _validate_semantic_geometry_bindings(
+    proposal: Mapping[str, Any],
+    geometry: GeometryProgramProposal,
+) -> str:
+    """Require one identity across model semantics and hosted geometry."""
+
+    producer_by_object = {
+        object_id: operation
+        for operation in geometry.operations
+        for object_id in operation.output_object_ids
+    }
+    component_binding_ids: set[str] = set()
+    claimed_member_objects: set[str] = set()
+    digest_records: list[dict[str, object]] = []
+    for component in proposal["semantic_components"]:
+        value_id = _semantic_component_value_id(component["component_id"])
+        covering = [
+            binding
+            for binding in geometry.semantic_bindings
+            if value_id in binding.candidate_value_ids
+        ]
+        if not covering:
+            raise SandboxGoldError(
+                f"semantic component {component['component_id']} has no geometry binding"
+            )
+        assembly_kind = component["assembly_kind"]
+        if assembly_kind is None:
+            digest_records.append(
+                {
+                    "component": component,
+                    "binding_ids": sorted(item.binding_id for item in covering),
+                    "assembly": None,
+                }
+            )
+            continue
+        dedicated = [
+            binding
+            for binding in covering
+            if binding.candidate_value_ids == (value_id,)
+        ]
+        if len(dedicated) != 1:
+            raise SandboxGoldError(
+                f"semantic component {component['component_id']} requires exactly "
+                "one dedicated geometry binding"
+            )
+        binding = dedicated[0]
+        component_binding_ids.add(binding.binding_id)
+        assemblies = [
+            assembly
+            for assembly in geometry.assemblies
+            if assembly.kind.value == assembly_kind
+            and assembly.semantic_binding_ids == (binding.binding_id,)
+        ]
+        if len(assemblies) != 1:
+            raise SandboxGoldError(
+                f"semantic component {component['component_id']} requires exactly "
+                f"one bound {assembly_kind} assembly"
+            )
+        assembly = assemblies[0]
+        member_objects = {
+            object_id
+            for member in assembly.members
+            for object_id in member.object_ids
+        }
+        if claimed_member_objects & member_objects:
+            raise SandboxGoldError(
+                "hosted semantic components reuse member geometry identities"
+            )
+        claimed_member_objects.update(member_objects)
+        assembly_objects = {assembly.host_object_id, *member_objects}
+        if not assembly_objects <= set(binding.object_ids):
+            raise SandboxGoldError(
+                f"assembly {assembly.assembly_id} escapes its semantic binding"
+            )
+        for object_id in assembly_objects:
+            producer = producer_by_object.get(object_id)
+            if (
+                producer is None
+                or binding.binding_id not in producer.semantic_binding_ids
+            ):
+                raise SandboxGoldError(
+                    f"assembly {assembly.assembly_id} object {object_id} is not "
+                    "produced under the same semantic binding"
+                )
+        digest_records.append(
+            {
+                "component": component,
+                "binding": binding.to_dict(),
+                "assembly": assembly.to_dict(),
+            }
+        )
+    for assembly in geometry.assemblies:
+        if (
+            len(assembly.semantic_binding_ids) != 1
+            or assembly.semantic_binding_ids[0] not in component_binding_ids
+        ):
+            raise SandboxGoldError(
+                f"hosted assembly {assembly.assembly_id} has no model-authored "
+                "semantic component identity"
+            )
+    return _digest(digest_records)
 
 
 def _approval_policy(
@@ -1293,6 +1719,7 @@ async def _candidate_proof(
         != produced.proposal.proposal_digest
     ):
         raise SandboxGoldError("geometry proposal lineage failed immediate reload")
+    _validate_semantic_geometry_bindings(proposal, loaded_geometry.proposal)
     compilation = compile_geometry_program(
         projection,
         produced.proposal,
@@ -1637,6 +2064,8 @@ async def execute_sandbox_gold(
     )
     asset_payloads = _asset_payloads(repository, asset_payload_refs)
     concept_receipt = await _model_proposal(
+        repository,
+        run,
         provider,
         request,
         run.base,
@@ -1667,6 +2096,8 @@ async def execute_sandbox_gold(
             payload=_candidate_record(concept),
         )
         revision_receipt = await _model_proposal(
+            repository,
+            run,
             provider,
             request,
             run.base,
@@ -1896,8 +2327,12 @@ async def execute_sandbox_gold(
         record_kind="promotion-decision",
         payload=decision_payload,
     )
+    semantic_geometry_digest = _validate_semantic_geometry_bindings(
+        accepted.proposal,
+        accepted.geometry_program.proposal,
+    )
     summary_payload = {
-        "schema": "SandboxGoldRunRecord@4",
+        "schema": "SandboxGoldRunRecord@5",
         "project_id": run.project_id,
         "run_id": run.run_id,
         "base": _base_dict(run.base),
@@ -1924,6 +2359,7 @@ async def execute_sandbox_gold(
         "geometry_program_digest": (
             accepted.geometry_program.program_digest
         ),
+        "semantic_geometry_digest": semantic_geometry_digest,
         "scene_digest": accepted.scene.scene_digest,
         "voxel_view_digest": accepted.voxel_view.view_digest,
         "render_digest": accepted.render_set.render_digest,
@@ -1951,7 +2387,7 @@ async def execute_sandbox_gold(
         payload=summary_payload,
     )
     replacement_state = {
-        "schema": "AcceptedSandboxProjectState@2",
+        "schema": "AcceptedSandboxProjectState@3",
         "phase": "accepted-sandbox",
         "accepted": True,
         "sandbox_gold_ref": summary_ref.uri,
@@ -1968,6 +2404,7 @@ async def execute_sandbox_gold(
         "geometry_program_digest": (
             accepted.geometry_program.program_digest
         ),
+        "semantic_geometry_digest": semantic_geometry_digest,
         "scene_digest": accepted.scene.scene_digest,
         "voxel_view_digest": accepted.voxel_view.view_digest,
         "render_digest": accepted.render_set.render_digest,
@@ -2017,7 +2454,7 @@ def reload_sandbox_gold(
         (ref, repository.load_json(ref))
         for ref in reviews
         if repository.load_json(ref).get("schema")
-        == "SandboxGoldRunRecord@4"
+        == "SandboxGoldRunRecord@5"
     ]
     if len(summaries) != 1:
         raise SandboxGoldError(
@@ -2069,6 +2506,7 @@ def reload_sandbox_gold(
     checked_candidates = [(accepted, summary["accepted_variant"])]
     if rejected_ref is not None:
         checked_candidates.insert(0, (payloads[rejected_ref.uri], "concept"))
+    semantic_geometry_digests: dict[str, str] = {}
     for payload, variant in checked_candidates:
         if (
             payload.get("schema")
@@ -2092,6 +2530,16 @@ def reload_sandbox_gold(
         lineage = load_geometry_proposal_lineage(repository, lineage_ref)
         if lineage.proposal is None:
             raise SandboxGoldError("accepted geometry lineage lost its proposal")
+        candidate_proposal = _validate_proposal(
+            payload["proposal"],
+            revision=variant == "revised",
+        )
+        semantic_geometry_digests[variant] = (
+            _validate_semantic_geometry_bindings(
+                candidate_proposal,
+                lineage.proposal,
+            )
+        )
         CandidateAssembly.from_dict(payload["assembly"])
         scene = HybridScene.from_dict(payload["scene"])
         receipt = SandboxRealizationReceipt.from_dict(
@@ -2128,6 +2576,11 @@ def reload_sandbox_gold(
         or accepted["readiness"]["ready"] is not True
     ):
         raise SandboxGoldError("Gold rejection or acceptance status drifted")
+    if (
+        summary.get("semantic_geometry_digest")
+        != semantic_geometry_digests[summary["accepted_variant"]]
+    ):
+        raise SandboxGoldError("semantic-geometry identity binding drifted")
     if rejected_ref is None:
         if summary["concept_findings"] or summary["accepted_variant"] != "concept":
             raise SandboxGoldError("directly accepted concept lineage drifted")
@@ -2162,6 +2615,8 @@ def reload_sandbox_gold(
         != ProjectRecordRef(**summary["spatial_option_ref"]).uri
         or current.get("geometry_lineage_ref")
         != ProjectRecordRef(**summary["geometry_lineage_ref"]).uri
+        or current.get("semantic_geometry_digest")
+        != summary["semantic_geometry_digest"]
         or summary.get("accepted") is not True
     ):
         raise SandboxGoldError("canonical accepted state does not bind Gold")
