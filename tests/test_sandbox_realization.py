@@ -424,6 +424,101 @@ class SandboxRealizationTests(unittest.TestCase):
             view.loss_codes,
         )
 
+    def test_grounded_scene_passes_the_support_hard_gate(self) -> None:
+        from archflow.validation import compile_building_program
+        from archflow.validation.usability import (
+            UsabilityGate,
+            validate_usability,
+        )
+
+        _, program, payloads = compiled_room()
+        result = realize_geometry(
+            program,
+            workspace_id="sandbox-workspace",
+            asset_payloads=payloads,
+        )
+        assert result.scene is not None
+        view = derive_voxel_view(
+            result.scene,
+            result.receipt,
+            policy=VoxelizationPolicy(default_resolution=1.0),
+        )
+        observation = view.to_observation()
+
+        self.assertEqual(observation.unsupported_cells, ())
+        receipt = validate_usability(
+            compile_building_program(
+                {
+                    "use": "sandbox-room",
+                    "width_blocks": 5,
+                    "depth_blocks": 5,
+                    "required_spaces": ["room"],
+                }
+            ),
+            observation,
+            use_zones=(),
+        )
+        self.assertFalse(
+            [
+                finding
+                for finding in receipt.findings
+                if finding.gate is UsabilityGate.SUPPORT
+            ]
+        )
+
+    def test_floating_component_triggers_the_support_hard_gate(self) -> None:
+        from archflow.adapters.voxel_observation import VoxelBounds
+        from archflow.realization.sandbox import _support_relations
+        from archflow.validation import compile_building_program
+        from archflow.validation.usability import validate_usability
+
+        grounded_slab = tuple(
+            (x, 0, z) for x in range(2) for z in range(2)
+        )
+        floating_plate = tuple(
+            (x, 2, z) for x in range(2) for z in range(2)
+        )
+        occupied = tuple(sorted((*grounded_slab, *floating_plate)))
+        view = DerivedVoxelView(
+            scene_digest="a" * 64,
+            realization_receipt_digest="b" * 64,
+            policy_digest="c" * 64,
+            resolution=1.0,
+            bounds=VoxelBounds((0, 0, 0), (1, 2, 1)),
+            occupied_cells=occupied,
+            walkable_cells=(),
+            opening_cells=(),
+            connected_regions=(),
+            support_relations=_support_relations(set(occupied)),
+            local_detail_samples=(),
+            loss_codes=(),
+            project_id="support-probe",
+            version=0,
+            workspace_id="support-workspace",
+        )
+        observation = view.to_observation()
+
+        self.assertEqual(observation.unsupported_cells, floating_plate)
+        receipt = validate_usability(
+            compile_building_program(
+                {
+                    "use": "support-probe",
+                    "width_blocks": 2,
+                    "depth_blocks": 2,
+                    "required_spaces": ["room"],
+                }
+            ),
+            observation,
+            use_zones=(),
+        )
+        self.assertIn(
+            "usability.support.floating_component",
+            [finding.code for finding in receipt.findings],
+        )
+        # The persisted record schema and digest are unchanged: the analysis
+        # runs only at observation-derivation time.
+        self.assertEqual(DerivedVoxelView.from_dict(view.to_dict()), view)
+
     def test_malformed_operation_returns_explicit_rejection(self) -> None:
         projection, program, _ = compiled_room()
         unsupported = GeometryOperation(

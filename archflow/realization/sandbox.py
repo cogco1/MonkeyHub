@@ -2075,7 +2075,11 @@ class DerivedVoxelView:
             openings=self.opening_cells,
             connected_regions=self.connected_regions,
             support_relations=self.support_relations,
-            unsupported_cells=(),
+            unsupported_cells=_unsupported_occupied_cells(
+                self.occupied_cells,
+                self.support_relations,
+                self.bounds.minimum[1],
+            ),
             unknown_count=0,
             unknowns=(),
         )
@@ -2490,6 +2494,47 @@ def _support_relations(
             if neighbor in occupied:
                 relations.append(SupportRelation(cell, neighbor))
     return tuple(relations)
+
+
+def _unsupported_occupied_cells(
+    occupied: tuple[tuple[int, int, int], ...],
+    support_relations: tuple[SupportRelation, ...],
+    ground_y: int,
+) -> tuple[tuple[int, int, int], ...]:
+    """Derive floating occupied components from the stored support graph.
+
+    Support propagates from every occupied cell on the ground layer of the
+    stored bounds along the stored face-adjacency support relations.  Any
+    occupied cell that no ground-connected component reaches is unsupported,
+    mirroring the scan-path semantics of
+    ``archflow.adapters.voxel_observation._support_graph``.
+    """
+
+    occupied_set = set(occupied)
+    adjacency: dict[
+        tuple[int, int, int],
+        list[tuple[int, int, int]],
+    ] = {}
+    for relation in support_relations:
+        if (
+            relation.first not in occupied_set
+            or relation.second not in occupied_set
+        ):
+            continue
+        adjacency.setdefault(relation.first, []).append(relation.second)
+        adjacency.setdefault(relation.second, []).append(relation.first)
+    grounded = sorted(
+        cell for cell in occupied_set if cell[1] == ground_y
+    )
+    supported = set(grounded)
+    pending = deque(grounded)
+    while pending:
+        current = pending.popleft()
+        for neighbor in adjacency.get(current, ()):
+            if neighbor not in supported:
+                supported.add(neighbor)
+                pending.append(neighbor)
+    return tuple(sorted(occupied_set - supported))
 
 
 def _local_sample(
