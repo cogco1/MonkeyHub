@@ -886,41 +886,76 @@ async def produce_geometry_program_proposal(
             )
             round_status = GeometryProposalRoundStatus.REFUSED
         else:
+            # Collect every independent validation failure of this output so
+            # one bounded repair round reports all of them together.  Failures
+            # that make later checks impossible (unreadable envelope, drifted
+            # body keys) still cascade into a single issue, and any issue
+            # keeps the round rejected.
+            collected: list[GeometryProposalIssue] = []
+            body: Mapping[str, Any] | None = None
             try:
                 selected_templates, body = _authoring_output(receipt.output)
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                collected.append(
+                    GeometryProposalIssue("malformed_model_output", str(exc))
+                )
+            if body is not None:
                 if not set(selected_templates) <= allowed_template_uris:
-                    raise GeometryProposalProductionError(
-                        "model selected a template outside the supplied project records"
+                    collected.append(
+                        GeometryProposalIssue(
+                            "malformed_model_output",
+                            "model selected a template outside the supplied project records",
+                        )
                     )
-                proposal = _proposal_from_body(body, projection)
+                body_errors: list[Exception] = []
+                try:
+                    proposal = _proposal_from_body(
+                        body,
+                        projection,
+                        errors=body_errors,
+                    )
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                    proposal = None
+                    body_errors.append(exc)
+                collected.extend(
+                    GeometryProposalIssue("malformed_model_output", str(item))
+                    for item in body_errors
+                )
+            if proposal is not None:
                 _validate_semantic_coverage(
                     proposal,
                     projection,
                     required_commitment_refs,
                     spatial_option_ref,
+                    issues=collected,
                 )
-                compilation = compile_geometry_program(
-                    projection,
-                    proposal,
-                    active_commitment_refs=required_commitment_refs,
-                    available_asset_digests=assets,
-                    prior_program=prior_program,
-                )
-                compiler_receipt = compilation.receipt.to_dict()
-                if compilation.program is None:
-                    issues = tuple(
-                        GeometryProposalIssue(
-                            f"compiler.{item.code.value}",
-                            f"{item.subject_id}: {item.detail}",
-                        )
-                        for item in compilation.receipt.issues
+            if proposal is not None and not collected:
+                try:
+                    compilation = compile_geometry_program(
+                        projection,
+                        proposal,
+                        active_commitment_refs=required_commitment_refs,
+                        available_asset_digests=assets,
+                        prior_program=prior_program,
+                    )
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                    collected.append(
+                        GeometryProposalIssue("malformed_model_output", str(exc))
                     )
                 else:
-                    issues = ()
-                    round_status = GeometryProposalRoundStatus.ACCEPTED
-                    program = compilation.program
-            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-                issues = (GeometryProposalIssue("malformed_model_output", str(exc)),)
+                    compiler_receipt = compilation.receipt.to_dict()
+                    if compilation.program is None:
+                        collected.extend(
+                            GeometryProposalIssue(
+                                f"compiler.{item.code.value}",
+                                f"{item.subject_id}: {item.detail}",
+                            )
+                            for item in compilation.receipt.issues
+                        )
+                    else:
+                        round_status = GeometryProposalRoundStatus.ACCEPTED
+                        program = compilation.program
+            issues = tuple(collected)
 
         round_receipt = GeometryProposalRoundReceipt(
             round_id=f"geometry-proposal-round-{round_index:02d}",
@@ -1161,7 +1196,11 @@ def _validate_semantic_coverage(
     projection: CandidateProgramProjection,
     commitments: tuple[str, ...],
     spatial_ref: ProjectRecordRef,
+    *,
+    issues: list[GeometryProposalIssue],
 ) -> None:
+    """Append every independent coverage failure; any issue rejects the round."""
+
     candidate_ids = {item.value_id for item in projection.values}
     bound_candidate_ids = {
         value_id for binding in proposal.semantic_bindings for value_id in binding.candidate_value_ids
@@ -1169,26 +1208,37 @@ def _validate_semantic_coverage(
     if bound_candidate_ids != candidate_ids:
         missing = sorted(candidate_ids - bound_candidate_ids)
         extra = sorted(bound_candidate_ids - candidate_ids)
-        raise GeometryProposalProductionError(
-            f"semantic bindings do not exactly cover candidate values; missing={missing}, extra={extra}"
+        issues.append(
+            GeometryProposalIssue(
+                "malformed_model_output",
+                f"semantic bindings do not exactly cover candidate values; missing={missing}, extra={extra}",
+            )
         )
     bound_commitments = {
         ref for binding in proposal.semantic_bindings for ref in binding.commitment_refs
     }
     if not set(commitments) <= bound_commitments:
-        raise GeometryProposalProductionError(
-            "semantic bindings omit required active commitments"
+        issues.append(
+            GeometryProposalIssue(
+                "malformed_model_output",
+                "semantic bindings omit required active commitments",
+            )
         )
     if any(spatial_ref.uri not in binding.evidence_refs for binding in proposal.semantic_bindings):
-        raise GeometryProposalProductionError(
-            "every semantic binding must cite the source spatial option record"
+        issues.append(
+            GeometryProposalIssue(
+                "malformed_model_output",
+                "every semantic binding must cite the source spatial option record",
+            )
         )
 
 
 def _proposal_from_body(
     value: Mapping[str, Any],
     projection: CandidateProgramProjection,
-) -> GeometryProgramProposal:
+    *,
+    errors: list[Exception] | None = None,
+) -> GeometryProgramProposal | None:
     _exact(
         value,
         {
@@ -1200,7 +1250,7 @@ def _proposal_from_body(
     )
     if value["schema"] != _PROPOSAL_BODY_SCHEMA:
         raise GeometryProposalProductionError("geometry proposal body schema changed")
-    return _construct_proposal(value, projection.project_id, projection.run_id, projection.base, projection.projection_digest)
+    return _construct_proposal(value, projection.project_id, projection.run_id, projection.base, projection.projection_digest, errors=errors)
 
 
 def _construct_proposal(
@@ -1209,11 +1259,49 @@ def _construct_proposal(
     run_id: str,
     base: ProjectVersionRef,
     candidate_digest: str,
-) -> GeometryProgramProposal:
-    tolerance = _mapping(value["tolerance"], "geometry tolerance")
-    _exact(tolerance, {"schema", "linear", "angular_radians"}, "geometry tolerance")
-    if tolerance["schema"] != GeometryTolerance.SCHEMA:
-        raise GeometryProposalProductionError("geometry tolerance schema changed")
+    *,
+    errors: list[Exception] | None = None,
+) -> GeometryProgramProposal | None:
+    """Decode one proposal body with the existing per-field checks.
+
+    Without ``errors`` the first failure raises exactly as before, which keeps
+    persisted-record loading unchanged.  With ``errors`` every independent
+    field or element failure is collected and ``None`` is returned so a single
+    round receipt can report all of them together.
+    """
+
+    failures: list[Exception] = []
+
+    def _attempt(decode: Any) -> Any:
+        if errors is None:
+            return decode()
+        try:
+            return decode()
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            failures.append(exc)
+            return None
+
+    def _tolerance() -> GeometryTolerance:
+        tolerance = _mapping(value["tolerance"], "geometry tolerance")
+        _exact(tolerance, {"schema", "linear", "angular_radians"}, "geometry tolerance")
+        if tolerance["schema"] != GeometryTolerance.SCHEMA:
+            raise GeometryProposalProductionError("geometry tolerance schema changed")
+        return GeometryTolerance(tolerance["linear"], tolerance["angular_radians"])
+
+    element_errors = None if errors is None else failures
+    length_unit = _attempt(lambda: LengthUnit(value["length_unit"]))
+    tolerance = _attempt(_tolerance)
+    frames = _attempt(lambda: _decode_sorted_list(value["frames"], _frame, "frames", lambda item: item.frame_id, errors=element_errors))
+    decoded_assets = _attempt(lambda: _decode_sorted_list(value["assets"], _asset, "assets", lambda item: item.asset_id, errors=element_errors))
+    semantic_bindings = _attempt(lambda: _decode_sorted_list(value["semantic_bindings"], _binding, "semantic_bindings", lambda item: item.binding_id, errors=element_errors))
+    operations = _attempt(lambda: _decode_sorted_list(value["operations"], _operation, "operations", lambda item: item.op_id, errors=element_errors))
+    assemblies = _attempt(lambda: _decode_sorted_list(value["assemblies"], _assembly, "assemblies", lambda item: item.assembly_id, errors=element_errors))
+    revisions = _attempt(lambda: _decode_sorted_list(value["revisions"], _revision, "revisions", lambda item: item.object_id, errors=element_errors))
+    retirements = _attempt(lambda: _decode_sorted_list(value["retirements"], _retirement, "retirements", lambda item: item.object_id, errors=element_errors))
+    if failures:
+        assert errors is not None
+        errors.extend(failures)
+        return None
     return GeometryProgramProposal(
         proposal_id=value["proposal_id"],
         project_id=project_id,
@@ -1221,15 +1309,15 @@ def _construct_proposal(
         base=base,
         candidate_program_digest=candidate_digest,
         predecessor_program_digest=value["predecessor_program_digest"],
-        length_unit=LengthUnit(value["length_unit"]),
-        tolerance=GeometryTolerance(tolerance["linear"], tolerance["angular_radians"]),
-        frames=_decode_sorted_list(value["frames"], _frame, "frames", lambda item: item.frame_id),
-        assets=_decode_sorted_list(value["assets"], _asset, "assets", lambda item: item.asset_id),
-        semantic_bindings=_decode_sorted_list(value["semantic_bindings"], _binding, "semantic_bindings", lambda item: item.binding_id),
-        operations=_decode_sorted_list(value["operations"], _operation, "operations", lambda item: item.op_id),
-        assemblies=_decode_sorted_list(value["assemblies"], _assembly, "assemblies", lambda item: item.assembly_id),
-        revisions=_decode_sorted_list(value["revisions"], _revision, "revisions", lambda item: item.object_id),
-        retirements=_decode_sorted_list(value["retirements"], _retirement, "retirements", lambda item: item.object_id),
+        length_unit=length_unit,
+        tolerance=tolerance,
+        frames=frames,
+        assets=decoded_assets,
+        semantic_bindings=semantic_bindings,
+        operations=operations,
+        assemblies=assemblies,
+        revisions=revisions,
+        retirements=retirements,
     )
 
 
@@ -1527,7 +1615,13 @@ def _strings_from_json(value: object, field: str) -> tuple[str, ...]:
     return tuple(sorted(value))
 
 
-def _decode_list(value: object, decoder: Any, field: str) -> tuple[Any, ...]:
+def _decode_list(
+    value: object,
+    decoder: Any,
+    field: str,
+    *,
+    errors: list[Exception] | None = None,
+) -> tuple[Any, ...]:
     if not isinstance(value, list):
         raise TypeError(f"{field} must be a list")
     decoded = []
@@ -1535,9 +1629,11 @@ def _decode_list(value: object, decoder: Any, field: str) -> tuple[Any, ...]:
         try:
             decoded.append(decoder(item))
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise GeometryProposalProductionError(
-                f"{field}[{index}]: {exc}"
-            ) from exc
+            wrapped = GeometryProposalProductionError(f"{field}[{index}]: {exc}")
+            if errors is None:
+                raise wrapped from exc
+            wrapped.__cause__ = exc
+            errors.append(wrapped)
     return tuple(decoded)
 
 
@@ -1546,8 +1642,12 @@ def _decode_sorted_list(
     decoder: Any,
     field: str,
     key: Any,
+    *,
+    errors: list[Exception] | None = None,
 ) -> tuple[Any, ...]:
-    return tuple(sorted(_decode_list(value, decoder, field), key=key))
+    return tuple(
+        sorted(_decode_list(value, decoder, field, errors=errors), key=key)
+    )
 
 
 def _canonical_json(value: object) -> str:
