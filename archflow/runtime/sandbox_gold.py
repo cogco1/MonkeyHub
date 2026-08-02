@@ -13,6 +13,7 @@ import json
 import math
 import re
 from dataclasses import dataclass, replace
+from datetime import timedelta
 from typing import Any, Mapping
 
 from archflow.adapters.model_provider import (
@@ -42,7 +43,8 @@ from archflow.interaction import (
     CandidateApprovalMode,
     CandidateApprovalPolicy,
     CandidateApprovalReceipt,
-    CandidateApprovalSource,
+    PlayerAuthorityError,
+    parse_utc,
 )
 from archflow.project import (
     BranchRef,
@@ -75,11 +77,15 @@ from archflow.runtime.candidate_assembly import (
 )
 from archflow.runtime.geometry_compiler import compile_geometry_program
 from archflow.runtime.player_control import (
+    PlayerControlError,
     assess_candidate_promotion_readiness,
+    issue_disposable_automation_approval,
     validate_candidate_approval,
 )
 from archflow.state import (
     ArtifactRef,
+    BuildPolicy,
+    BuildStagingMode,
     CanonicalState,
     Commitment,
     CommitmentKind,
@@ -87,6 +93,8 @@ from archflow.state import (
     CommitmentStrength,
     CriterionRef,
     OperationalMarkovState,
+    PolicyProvenance,
+    ResourcePolicyMode,
     RevisionPolicy,
 )
 from archflow.state.candidate_program import (
@@ -315,6 +323,8 @@ class SandboxCandidateProof:
     hard_validation: object
     archive: CandidateDerivationArchive
     sandbox_archive: SandboxArchiveRecord
+    build_policy: BuildPolicy
+    build_policy_ref: ProjectRecordRef
     approval: CandidateApprovalReceipt | None = None
     readiness: object | None = None
     aesthetic: object | None = None
@@ -1507,6 +1517,48 @@ def _asset_payloads(
     return tuple(sorted(payloads, key=lambda item: item.asset_id))
 
 
+def _sandbox_build_policy(
+    projection: CandidateProgramProjection,
+    *,
+    authority_id: str,
+    request_ref: ProjectRecordRef,
+    scenario_ref: ProjectRecordRef,
+) -> BuildPolicy:
+    """Compile the disposable sandbox build policy from loaded case inputs."""
+
+    provenance = PolicyProvenance(
+        authority_id=authority_id,
+        source_refs=(request_ref.uri,),
+        assumption_refs=(),
+        compiler_id="sandbox-gold",
+        base_state_sha256=projection.base.require_digest(),
+    )
+    return BuildPolicy(
+        project_id=projection.project_id,
+        run_id=projection.run_id,
+        base=projection.base,
+        brief_digest=request_ref.sha256,
+        program_digest=projection.projection_digest,
+        site_context_digest=scenario_ref.sha256,
+        compiler_id="sandbox-gold",
+        compiler_version="sandbox-gold-1",
+        resource_mode=ResourcePolicyMode.CREATIVE,
+        staging_mode=BuildStagingMode.SINGLE_PASS,
+        disposable_sandbox=True,
+        unbounded_resources=False,
+        policy_provenance=provenance,
+        assumptions=(),
+        availability=(),
+        demands=(),
+        protected_rules=(),
+        budget_limits=(),
+        staging_assumptions=(),
+        constraints=(),
+        obligations=(),
+        evidence_refs=(request_ref.uri, scenario_ref.uri),
+    )
+
+
 def _candidate_assembly(
     projection: CandidateProgramProjection,
     program_digest: str,
@@ -1515,6 +1567,8 @@ def _candidate_assembly(
     *,
     variant: str,
     approval_policy: CandidateApprovalPolicy,
+    build_policy: BuildPolicy,
+    build_policy_ref: str,
     evidence_ref: str,
 ) -> CandidateAssembly:
     payload = {
@@ -1548,17 +1602,6 @@ def _candidate_assembly(
             ),
         ),
     )
-    build_policy_digest = _digest(
-        {
-            "schema": "SandboxBuildPolicy@1",
-            "project_id": projection.project_id,
-            "run_id": projection.run_id,
-            "base": _base_dict(projection.base),
-            "disposable_sandbox": True,
-            "platform_export": False,
-            "evidence_ref": evidence_ref,
-        }
-    )
     policies = tuple(
         sorted(
             (
@@ -1570,11 +1613,8 @@ def _candidate_assembly(
                 ),
                 CandidatePolicyBinding(
                     kind=CandidatePolicyKind.BUILD,
-                    policy_ref=(
-                        f"project://{projection.project_id}/input/"
-                        "sandbox-build-policy.json"
-                    ),
-                    policy_digest=build_policy_digest,
+                    policy_ref=build_policy_ref,
+                    policy_digest=build_policy.policy_digest,
                     evidence_refs=(evidence_ref,),
                 ),
             ),
@@ -1712,8 +1752,10 @@ async def _candidate_proof(
     *,
     variant: str,
     detailed: bool,
-    raw_request_ref: str,
+    request_ref: ProjectRecordRef,
+    scenario_ref: ProjectRecordRef,
     approval_policy: CandidateApprovalPolicy,
+    authority_id: str,
     asset_payload_refs: tuple[ProjectRecordRef, ...],
     asset_payloads: tuple[SandboxAssetPayload, ...],
     predecessor_ref: str | None = None,
@@ -1812,6 +1854,21 @@ async def _candidate_proof(
         spatial_ref,
         observation,
     )
+    build_policy = _sandbox_build_policy(
+        projection,
+        authority_id=authority_id,
+        request_ref=request_ref,
+        scenario_ref=scenario_ref,
+    )
+    build_policy_ref = repository.put_json(
+        run=run,
+        destination=PersistenceDestination(
+            PersistenceArea.RUN_RECORD,
+            run_id=run.run_id,
+        ),
+        record_kind=f"{variant}-sandbox-build-policy",
+        payload=build_policy.to_dict(),
+    )
     assembly = _candidate_assembly(
         projection,
         produced.program.program_digest,
@@ -1819,6 +1876,8 @@ async def _candidate_proof(
         view.view_digest,
         variant=variant,
         approval_policy=approval_policy,
+        build_policy=build_policy,
+        build_policy_ref=build_policy_ref.uri,
         evidence_ref=f"model-receipt:{receipt.receipt_id}",
     )
     review_submission = CandidateSubmission(
@@ -1952,6 +2011,8 @@ async def _candidate_proof(
         hard_validation=hard_validation,
         archive=archive,
         sandbox_archive=sandbox_archive,
+        build_policy=build_policy,
+        build_policy_ref=build_policy_ref,
     )
 
 
@@ -2132,8 +2193,10 @@ async def execute_sandbox_gold(
         run,
         variant="concept",
         detailed=False,
-        raw_request_ref=request_ref.uri,
+        request_ref=request_ref,
+        scenario_ref=scenario_ref,
         approval_policy=policy,
+        authority_id=authority_id,
         asset_payload_refs=asset_payload_refs,
         asset_payloads=asset_payloads,
     )
@@ -2170,8 +2233,10 @@ async def execute_sandbox_gold(
             run,
             variant="revised",
             detailed=True,
-            raw_request_ref=request_ref.uri,
+            request_ref=request_ref,
+            scenario_ref=scenario_ref,
             approval_policy=policy,
+            authority_id=authority_id,
             asset_payload_refs=asset_payload_refs,
             asset_payloads=asset_payloads,
             predecessor_ref=rejected_ref.uri,
@@ -2195,21 +2260,24 @@ async def execute_sandbox_gold(
             f"revised candidate remained rejected: {failed_ref.uri}"
         )
 
-    approval = CandidateApprovalReceipt(
-        candidate_assembly_digest=accepted.assembly.assembly_digest,
-        submission_id=accepted.assembly.submission.submission_id,
-        plan_digest=accepted.assembly.plan.plan_digest,
-        base=run.base,
-        workspace_id=accepted.assembly.submission.workspace_id,
-        policy_ref=policy.policy_ref,
-        policy_digest=policy.policy_digest,
-        authority_id=authority_id,
-        source=CandidateApprovalSource.PREAUTHORIZED_POLICY,
-        authority_identity_receipt_ref=None,
-        approval_event_ref=policy.authorization_event_ref,
-        issued_at_utc=issued_at_utc,
-        valid_until_utc=valid_until_utc,
-    )
+    # The approval must pass the fail-closed issuance gate: dual-policy
+    # (approval + disposable build) authority and the policy validity cap
+    # are checked there, so a scenario window beyond max_validity_seconds
+    # is rejected instead of self-certified.
+    try:
+        approval = issue_disposable_automation_approval(
+            accepted.assembly,
+            policy,
+            accepted.build_policy,
+            build_policy_ref=accepted.build_policy_ref.uri,
+            authority_id=authority_id,
+            issued_at_utc=issued_at_utc,
+            valid_until_utc=valid_until_utc,
+        )
+    except (PlayerAuthorityError, PlayerControlError) as exc:
+        raise SandboxGoldError(
+            f"sandbox approval issuance rejected: {exc}"
+        ) from exc
     validate_candidate_approval(
         accepted.assembly,
         policy,
@@ -2523,6 +2591,16 @@ def reload_sandbox_gold(
         ),
     )
     payloads = {ref.uri: repository.load_json(ref) for ref in candidates}
+    run_records = {
+        ref.uri: repository.load_json(ref)
+        for ref in repository.list_json(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_RECORD,
+                run_id=run.run_id,
+            ),
+        )
+    }
     request_ref = ProjectRecordRef(**summary["raw_request_ref"])
     scenario_ref = ProjectRecordRef(**summary["scenario_ref"])
     policy_ref = ProjectRecordRef(**summary["approval_policy_ref"])
@@ -2594,7 +2672,33 @@ def reload_sandbox_gold(
                 lineage.proposal,
             )
         )
-        CandidateAssembly.from_dict(payload["assembly"])
+        assembly = CandidateAssembly.from_dict(payload["assembly"])
+        build_binding = next(
+            item
+            for item in assembly.policies
+            if item.kind is CandidatePolicyKind.BUILD
+        )
+        build_payload = run_records.get(build_binding.policy_ref)
+        if build_payload is None:
+            raise SandboxGoldError(
+                "candidate build policy record is missing"
+            )
+        try:
+            build_policy = BuildPolicy.from_dict(build_payload)
+        except (TypeError, ValueError) as exc:
+            raise SandboxGoldError(
+                "candidate build policy record is invalid"
+            ) from exc
+        if (
+            build_policy.policy_digest != build_binding.policy_digest
+            or not build_policy.disposable_sandbox
+            or build_policy.project_id != run.project_id
+            or build_policy.run_id != run.run_id
+            or build_policy.base != run.base
+        ):
+            raise SandboxGoldError(
+                "candidate build policy binding drifted"
+            )
         scene = HybridScene.from_dict(payload["scene"])
         receipt = SandboxRealizationReceipt.from_dict(
             payload["realization_receipt"]
@@ -2654,6 +2758,14 @@ def reload_sandbox_gold(
         or approval.approval_event_ref != authorization_event_ref.uri
     ):
         raise SandboxGoldError("persisted approval references do not resolve")
+    if (
+        parse_utc(approval.valid_until_utc)
+        - parse_utc(approval.issued_at_utc)
+        > timedelta(seconds=policy.max_validity_seconds)
+    ):
+        raise SandboxGoldError(
+            "persisted approval exceeds approval policy validity"
+        )
     current = repository.load_current_state()
     if (
         repository.read_head().version != run.base.version + 1
