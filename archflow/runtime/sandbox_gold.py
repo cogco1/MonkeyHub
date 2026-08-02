@@ -26,6 +26,13 @@ from archflow.adapters.sandbox_render import (
     SandboxRenderSet,
     render_paper_views,
 )
+from archflow.capabilities.geometry_proposal import (
+    GeometryProposalPolicy,
+    GeometryProposalProviderIdentity,
+    GeometryProposalStatus,
+    load_geometry_proposal_lineage,
+    produce_geometry_program_proposal,
+)
 from archflow.evaluation.aesthetic import (
     AestheticSnapshot,
     ViewEvidence,
@@ -87,24 +94,15 @@ from archflow.state.candidate_program import (
     CandidateProgramValue,
     CandidateValueFacet,
 )
-from archflow.state.geometry_program import (
-    AffineTransform,
-    AssemblyKind,
-    AssemblyMember,
-    AssemblyRole,
-    AssetReference,
-    CoordinateFrame,
-    DetailMaturity,
-    GeometryOperation,
-    GeometryOperationKind,
-    GeometryParameter,
-    GeometryParameterKind,
-    GeometryProgramProposal,
-    GeometryTolerance,
-    HostedAssembly,
-    LengthUnit,
-    SemanticBinding,
-    digest_value,
+from archflow.state.geometry_program import digest_value
+from archflow.state.site_context import SiteBounds
+from archflow.state.spatial import (
+    MassingVolume,
+    SpatialConnection,
+    SpatialGridBasis,
+    SpatialLevel,
+    SpatialOptionProposal,
+    SpatialZone,
 )
 from archflow.submission import CandidateDelta, CandidateSubmission, Claim
 from archflow.validation import (
@@ -250,12 +248,51 @@ class RawSandboxRequest:
             "platform_script": None,
         }
 
+    @classmethod
+    def from_dict(cls, value: object) -> RawSandboxRequest:
+        payload = _mapping(value, "raw sandbox request")
+        _exact(
+            payload,
+            {
+                "schema",
+                "request_id",
+                "prompt",
+                "geometry_operations",
+                "footprint",
+                "room_list",
+                "topology",
+                "palette",
+                "platform_script",
+            },
+            "raw sandbox request",
+        )
+        if (
+            payload["schema"] != cls.SCHEMA
+            or any(
+                payload[field] is not None
+                for field in (
+                    "geometry_operations",
+                    "footprint",
+                    "room_list",
+                    "topology",
+                    "palette",
+                    "platform_script",
+                )
+            )
+        ):
+            raise SandboxGoldError("raw request contains a staged building answer")
+        return cls(payload["request_id"], payload["prompt"])
+
 
 @dataclass(frozen=True, slots=True)
 class SandboxCandidateProof:
     variant: str
     model_receipt: ModelInvocationReceipt
     proposal: dict[str, Any]
+    spatial_option_ref: ProjectRecordRef
+    geometry_lineage_ref: ProjectRecordRef
+    geometry_round_refs: tuple[ProjectRecordRef, ...]
+    geometry_proposal_ref: ProjectRecordRef
     projection: CandidateProgramProjection
     assembly: CandidateAssembly
     geometry_program: object
@@ -277,10 +314,19 @@ class SandboxCandidateProof:
 @dataclass(frozen=True, slots=True)
 class PersistedSandboxGold:
     summary_ref: ProjectRecordRef
-    rejected_ref: ProjectRecordRef
+    rejected_ref: ProjectRecordRef | None
     accepted_ref: ProjectRecordRef
     decision_ref: ProjectRecordRef
     committed: ProjectVersionRef
+
+
+@dataclass(frozen=True, slots=True)
+class SandboxGoldInputs:
+    request_ref: ProjectRecordRef
+    scenario_ref: ProjectRecordRef
+    approval_policy_ref: ProjectRecordRef
+    authorization_event_ref: ProjectRecordRef
+    asset_payload_refs: tuple[ProjectRecordRef, ...]
 
 
 def _concept_output_schema() -> dict[str, object]:
@@ -303,15 +349,44 @@ def _concept_output_schema() -> dict[str, object]:
             }
         ],
         "envelope": {
-            "width_m": "integer 5..12",
-            "depth_m": "integer 5..12",
-            "clear_height_m": "integer 2..5",
+            "width_m": "positive number derived from the request",
+            "depth_m": "positive number derived from the request",
+            "clear_height_m": "positive number derived from the request",
         },
         "performance_requirements": {
             "minimum_clear_height_m": (
-                "integer 2..3 no greater than the envelope clear height"
+                "positive number no greater than the envelope clear height"
             ),
-            "circulation_min_width_m": "integer 1..2",
+            "circulation_min_width_m": "positive number",
+        },
+        "spatial_option": {
+            "grid_size_m": "positive number",
+            "footprint_cells": [["integer x", "integer z"]],
+            "levels": [
+                {
+                    "level_id": "portable identifier",
+                    "base_y": "integer",
+                    "height": "positive integer",
+                }
+            ],
+            "volumes": [
+                {
+                    "volume_id": "portable identifier",
+                    "minimum": ["integer x", "integer y", "integer z"],
+                    "maximum": ["integer x", "integer y", "integer z"],
+                    "level_ids": ["level identifier"],
+                }
+            ],
+            "zones": [
+                {
+                    "zone_id": "portable identifier",
+                    "function_ids": ["function identifier"],
+                    "level_ids": ["level identifier"],
+                    "volume_ids": ["volume identifier"],
+                }
+            ],
+            "typology_hypothesis": "model-derived text",
+            "rationale": "model-derived text",
         },
         "material_strategy": "short model-derived material intent",
         "rationale": "text",
@@ -322,45 +397,6 @@ def _revision_output_schema() -> dict[str, object]:
     return {
         **_concept_output_schema(),
         "schema": _PROPOSAL_SCHEMA,
-        "performance_requirements": {
-            "minimum_clear_height_m": (
-                "integer 2..3 no greater than either the envelope clear "
-                "height or entry height"
-            ),
-            "circulation_min_width_m": "integer 1..2",
-        },
-        "entry": {
-            "offset_m": "integer inside envelope width",
-            "width_m": "integer 1..2",
-            "height_m": (
-                "integer 2..3 no lower than minimum_clear_height_m"
-            ),
-        },
-        "window": {
-            "offset_m": "integer inside envelope width",
-            "width_m": "integer 1..3",
-            "height_m": "integer 1..2",
-            "sill_m": "integer 1..2",
-        },
-        "detail_asset": {
-            "asset_id": "portable identifier",
-            "uri": "stable archflow:// URI",
-            "media_type": "model/gltf+json",
-            "sockets": ["origin"],
-            "vertices": [
-                [0, 0, 0],
-                [1, 0, 0],
-                [0, 1, 0],
-                [0, 0, 1],
-            ],
-            "faces": [
-                [0, 1, 2],
-                [0, 1, 3],
-                [0, 2, 3],
-                [1, 2, 3],
-            ],
-            "provenance_refs": ["evidence://model/p026-detail"],
-        },
     }
 
 
@@ -400,15 +436,12 @@ async def _model_proposal(
                 "the raw request. "
                 + (
                     "Revise the exact predecessor to answer every supplied "
-                    "hard-gate finding. Add functional door and window "
-                    "assemblies plus one provenance-bound detail asset. "
-                    "Keep performance requirements and geometry parameters "
-                    "mutually consistent."
+                    "hard-gate finding while preserving honest spatial "
+                    "lineage and mutually consistent program requirements."
                     if revision
                     else
-                    "Produce a bounded concept-stage semantic proposal. "
-                    "Do not invent an entry, opening, detail asset, geometry "
-                    "operation, platform command, or acceptance decision."
+                    "Produce a bounded concept-stage semantic and spatial "
+                    "proposal without a platform command or acceptance decision."
                 )
                 + " Return exactly the requested output schema."
             ),
@@ -450,12 +483,11 @@ def _validate_proposal(
         "relations",
         "envelope",
         "performance_requirements",
+        "spatial_option",
         "material_strategy",
         "rationale",
     }
-    expected = common | (
-        {"entry", "window", "detail_asset"} if revision else set()
-    )
+    expected = common
     _exact(proposal, expected, "Architect proposal")
     if proposal["schema"] != (
         _PROPOSAL_SCHEMA if revision else _CONCEPT_SCHEMA
@@ -512,13 +544,11 @@ def _validate_proposal(
         {"width_m", "depth_m", "clear_height_m"},
         "envelope",
     )
-    width = _bounded_integer(envelope["width_m"], "width_m", 5, 12)
-    depth = _bounded_integer(envelope["depth_m"], "depth_m", 5, 12)
-    _bounded_integer(
+    width = _positive_number(envelope["width_m"], "width_m")
+    depth = _positive_number(envelope["depth_m"], "depth_m")
+    clear_height = _positive_number(
         envelope["clear_height_m"],
         "clear_height_m",
-        2,
-        5,
     )
     performance = _mapping(
         proposal["performance_requirements"],
@@ -532,19 +562,15 @@ def _validate_proposal(
         },
         "performance_requirements",
     )
-    minimum_clear_height = _bounded_integer(
+    minimum_clear_height = _positive_number(
         performance["minimum_clear_height_m"],
         "minimum_clear_height_m",
-        2,
-        3,
     )
-    _bounded_integer(
+    _positive_number(
         performance["circulation_min_width_m"],
         "circulation_min_width_m",
-        1,
-        2,
     )
-    if minimum_clear_height > envelope["clear_height_m"]:
+    if minimum_clear_height > clear_height:
         raise SandboxGoldError(
             "minimum clear height exceeds the envelope clear height"
         )
@@ -564,83 +590,184 @@ def _validate_proposal(
             item["kind"],
         ),
     )
-    if not revision:
-        return proposal
-
-    entry = _mapping(proposal["entry"], "entry")
-    _exact(entry, {"offset_m", "width_m", "height_m"}, "entry")
-    entry_width = _bounded_integer(entry["width_m"], "entry width", 1, 2)
-    entry_offset = _bounded_integer(
-        entry["offset_m"], "entry offset", 1, width - 2
-    )
-    entry_height = _bounded_integer(
-        entry["height_m"], "entry height", 2, 3
-    )
-    if entry_offset + entry_width >= width:
-        raise SandboxGoldError("entry exceeds the front host")
-    if entry_height < minimum_clear_height:
-        raise SandboxGoldError(
-            "entry height is below the proposed minimum clear height"
-        )
-
-    window = _mapping(proposal["window"], "window")
-    _exact(
-        window,
-        {"offset_m", "width_m", "height_m", "sill_m"},
-        "window",
-    )
-    window_width = _bounded_integer(
-        window["width_m"], "window width", 1, 3
-    )
-    window_offset = _bounded_integer(
-        window["offset_m"], "window offset", 1, width - 2
-    )
-    window_height = _bounded_integer(
-        window["height_m"], "window height", 1, 2
-    )
-    sill = _bounded_integer(window["sill_m"], "window sill", 1, 2)
-    if (
-        window_offset + window_width >= width
-        or sill + window_height
-        > envelope["clear_height_m"]
-    ):
-        raise SandboxGoldError("window exceeds the back host")
-    _asset_payload(proposal)
+    _mapping(proposal["spatial_option"], "spatial_option")
     return proposal
 
 
-def _asset_payload(proposal: Mapping[str, Any]) -> SandboxAssetPayload:
-    asset = _mapping(proposal["detail_asset"], "detail_asset")
+def _spatial_option(
+    proposal: Mapping[str, Any],
+    receipt: ModelInvocationReceipt,
+) -> SpatialOptionProposal:
+    payload = _mapping(proposal["spatial_option"], "spatial_option")
     _exact(
-        asset,
+        payload,
         {
-            "asset_id",
-            "uri",
-            "media_type",
-            "sockets",
-            "vertices",
-            "faces",
-            "provenance_refs",
+            "grid_size_m",
+            "footprint_cells",
+            "levels",
+            "volumes",
+            "zones",
+            "typology_hypothesis",
+            "rationale",
         },
-        "detail_asset",
+        "spatial_option",
     )
-    _identifier(asset["asset_id"], "asset_id")
-    if (
-        not isinstance(asset["uri"], str)
-        or not asset["uri"].startswith("archflow://")
-        or asset["media_type"] != "model/gltf+json"
-        or asset["sockets"] != ["origin"]
-        or not isinstance(asset["provenance_refs"], list)
-        or not asset["provenance_refs"]
-    ):
-        raise SandboxGoldError("detail asset provenance is invalid")
-    return SandboxAssetPayload(
-        asset_id=asset["asset_id"],
-        vertices=tuple(
-            tuple(float(value) for value in vertex)
-            for vertex in asset["vertices"]
+    source = (f"model-receipt:{receipt.receipt_id}",)
+    raw_cells = payload["footprint_cells"]
+    if not isinstance(raw_cells, list) or not 1 <= len(raw_cells) <= 4_096:
+        raise SandboxGoldError("footprint_cells must contain 1..4096 cells")
+    footprint_cells: list[tuple[int, int]] = []
+    for index, cell in enumerate(raw_cells):
+        if not isinstance(cell, list) or len(cell) != 2:
+            raise SandboxGoldError(f"footprint_cells[{index}] must be [x, z]")
+        footprint_cells.append(
+            (
+                _bounded_integer(cell[0], f"footprint_cells[{index}].x", -1_000_000, 1_000_000),
+                _bounded_integer(cell[1], f"footprint_cells[{index}].z", -1_000_000, 1_000_000),
+            )
+        )
+
+    raw_levels = payload["levels"]
+    if not isinstance(raw_levels, list) or not 1 <= len(raw_levels) <= 128:
+        raise SandboxGoldError("levels must contain 1..128 items")
+    levels = []
+    for index, raw in enumerate(raw_levels):
+        item = _mapping(raw, f"levels[{index}]")
+        _exact(item, {"level_id", "base_y", "height"}, f"levels[{index}]")
+        levels.append(
+            SpatialLevel(
+                _identifier(item["level_id"], "level_id"),
+                _bounded_integer(item["base_y"], "level base_y", -1_000_000, 1_000_000),
+                _bounded_integer(item["height"], "level height", 1, 1_000_000),
+                source,
+            )
+        )
+
+    raw_volumes = payload["volumes"]
+    if not isinstance(raw_volumes, list) or not 1 <= len(raw_volumes) <= 512:
+        raise SandboxGoldError("volumes must contain 1..512 items")
+    volumes = []
+    for index, raw in enumerate(raw_volumes):
+        item = _mapping(raw, f"volumes[{index}]")
+        _exact(
+            item,
+            {"volume_id", "minimum", "maximum", "level_ids"},
+            f"volumes[{index}]",
+        )
+        vectors = []
+        for field in ("minimum", "maximum"):
+            vector = item[field]
+            if not isinstance(vector, list) or len(vector) != 3:
+                raise SandboxGoldError(f"volume {field} must be a 3-vector")
+            vectors.append(
+                tuple(
+                    _bounded_integer(
+                        value,
+                        f"volume {field}",
+                        -1_000_000,
+                        1_000_000,
+                    )
+                    for value in vector
+                )
+            )
+        raw_level_ids = item["level_ids"]
+        if not isinstance(raw_level_ids, list) or not raw_level_ids:
+            raise SandboxGoldError("volume level_ids must be non-empty")
+        volumes.append(
+            MassingVolume(
+                _identifier(item["volume_id"], "volume_id"),
+                SiteBounds(vectors[0], vectors[1]),
+                tuple(_identifier(value, "volume level_id") for value in raw_level_ids),
+                source,
+            )
+        )
+
+    known_functions = {item["function_id"] for item in proposal["functions"]}
+    raw_zones = payload["zones"]
+    if not isinstance(raw_zones, list) or not 1 <= len(raw_zones) <= 1_024:
+        raise SandboxGoldError("zones must contain 1..1024 items")
+    zones = []
+    function_to_zones: dict[str, list[str]] = {}
+    for index, raw in enumerate(raw_zones):
+        item = _mapping(raw, f"zones[{index}]")
+        _exact(
+            item,
+            {"zone_id", "function_ids", "level_ids", "volume_ids"},
+            f"zones[{index}]",
+        )
+        zone_id = _identifier(item["zone_id"], "zone_id")
+        function_ids = item["function_ids"]
+        level_ids = item["level_ids"]
+        volume_ids = item["volume_ids"]
+        if not all(isinstance(values, list) and values for values in (function_ids, level_ids, volume_ids)):
+            raise SandboxGoldError("zone references must be non-empty lists")
+        function_refs = []
+        for function_id in function_ids:
+            function_id = _identifier(function_id, "zone function_id")
+            if function_id not in known_functions:
+                raise SandboxGoldError("zone cites an unknown function")
+            function_to_zones.setdefault(function_id, []).append(zone_id)
+            function_refs.append(f"program-node:{function_id}")
+        zones.append(
+            SpatialZone(
+                zone_id,
+                tuple(sorted(set(function_refs))),
+                tuple(_identifier(value, "zone level_id") for value in level_ids),
+                tuple(_identifier(value, "zone volume_id") for value in volume_ids),
+                source,
+            )
+        )
+
+    connections = []
+    for index, relation in enumerate(proposal["relations"]):
+        source_function = relation["source_function_id"]
+        target_function = relation["target_function_id"]
+        source_zones = sorted(function_to_zones.get(source_function, ()))
+        target_zones = sorted(function_to_zones.get(target_function, ()))
+        if not source_zones or not target_zones:
+            raise SandboxGoldError("relation function lacks a spatial zone")
+        for source_zone in source_zones:
+            for target_zone in target_zones:
+                if source_zone == target_zone:
+                    continue
+                connections.append(
+                    SpatialConnection(
+                        f"relation-{index:03d}-{source_zone}-{target_zone}",
+                        source_zone,
+                        target_zone,
+                        (f"program-relation:{index:03d}:{relation['kind']}",),
+                        False,
+                        source,
+                    )
+                )
+
+    return SpatialOptionProposal(
+        option_id=f"{proposal['proposal_id']}-spatial",
+        label=f"{proposal['proposal_id']} spatial option",
+        program_scenario_ref=None,
+        footprint_range_ref=None,
+        grid_basis=SpatialGridBasis(
+            _positive_number(payload["grid_size_m"], "grid_size_m"),
+            "square-meter",
+            source,
         ),
-        faces=tuple(tuple(face) for face in asset["faces"]),
+        footprint_cells=tuple(sorted(set(footprint_cells))),
+        levels=tuple(sorted(levels, key=lambda item: item.level_id)),
+        volumes=tuple(sorted(volumes, key=lambda item: item.volume_id)),
+        zones=tuple(sorted(zones, key=lambda item: item.zone_id)),
+        connections=tuple(sorted(connections, key=lambda item: item.connection_id)),
+        constraint_responses=(),
+        typology_hypothesis=_text(
+            payload["typology_hypothesis"],
+            "typology_hypothesis",
+        ),
+        palette_refs=(),
+        rationale=_text(payload["rationale"], "spatial rationale"),
+        responds_to_refs=tuple(
+            sorted(f"program-node:{function_id}" for function_id in known_functions)
+        ),
+        expert_advice_refs=(),
+        evidence_refs=source,
     )
 
 
@@ -648,10 +775,16 @@ def _projection(
     proposal: Mapping[str, Any],
     receipt: ModelInvocationReceipt,
     run: RunRef,
+    spatial_option: SpatialOptionProposal,
+    spatial_option_ref: ProjectRecordRef,
 ) -> CandidateProgramProjection:
     proposal_digest = _digest(proposal)
     source = (f"model-receipt:{receipt.receipt_id}",)
-    derivation = (f"architect-proposal:{proposal_digest}",)
+    derivation = (
+        f"architect-proposal:{proposal_digest}",
+        spatial_option.ref,
+        spatial_option_ref.uri,
+    )
     envelope = proposal["envelope"]
     functions = proposal["functions"]
     relations = proposal["relations"]
@@ -735,452 +868,11 @@ def _projection(
         selected_branch_id=f"branch-{proposal_digest[:16]}",
         selected_revision_id=f"revision-{proposal_digest[:16]}",
         selected_revision_digest=proposal_digest,
-        selected_option_ref=f"architect-proposal:{proposal_digest}",
+        selected_option_ref=spatial_option.ref,
         selection_transition_id=f"selection-{proposal_digest[:16]}",
         selection_decision_ref=f"model-receipt:{receipt.receipt_id}",
         values=tuple(sorted(values, key=lambda item: item.value_id)),
     )
-
-
-def _parameter(
-    name: str,
-    kind: GeometryParameterKind,
-    value: object,
-    *,
-    unit: LengthUnit | None = None,
-) -> GeometryParameter:
-    return GeometryParameter.create(
-        name=name,
-        kind=kind,
-        value=value,
-        unit=unit,
-    )
-
-
-def _solid(op_id: str, origin: list[float], size: list[float]) -> GeometryOperation:
-    return GeometryOperation(
-        op_id=op_id,
-        kind=GeometryOperationKind.SOLID,
-        output_object_ids=(op_id,),
-        input_object_ids=(),
-        frame_id="world",
-        parameters=(
-            _parameter(
-                "origin",
-                GeometryParameterKind.VECTOR3,
-                origin,
-                unit=LengthUnit.METER,
-            ),
-            _parameter(
-                "size",
-                GeometryParameterKind.VECTOR3,
-                size,
-                unit=LengthUnit.METER,
-            ),
-        ),
-        semantic_binding_ids=("building-binding",),
-    )
-
-
-def _curve(op_id: str, points: list[list[float]]) -> GeometryOperation:
-    return GeometryOperation(
-        op_id=op_id,
-        kind=GeometryOperationKind.CURVE,
-        output_object_ids=(op_id,),
-        input_object_ids=(),
-        frame_id="world",
-        parameters=(
-            _parameter(
-                "points",
-                GeometryParameterKind.POINTS3,
-                points,
-                unit=LengthUnit.METER,
-            ),
-        ),
-        semantic_binding_ids=("building-binding",),
-    )
-
-
-def _boolean(
-    op_id: str,
-    kind: GeometryOperationKind,
-    inputs: tuple[str, ...],
-    *,
-    base_id: str | None = None,
-) -> GeometryOperation:
-    ordered = tuple(sorted(inputs))
-    parameters = ()
-    if kind is GeometryOperationKind.BOOLEAN_DIFFERENCE:
-        if base_id is None:
-            raise SandboxGoldError("difference requires a base object")
-        parameters = (
-            _parameter(
-                "base_index",
-                GeometryParameterKind.INTEGER,
-                ordered.index(base_id),
-            ),
-        )
-    return GeometryOperation(
-        op_id=op_id,
-        kind=kind,
-        output_object_ids=(op_id,),
-        input_object_ids=ordered,
-        frame_id="world",
-        parameters=parameters,
-        semantic_binding_ids=("building-binding",),
-        responds_to_object_ids=ordered,
-    )
-
-
-def _geometry_proposal(
-    projection: CandidateProgramProjection,
-    proposal: Mapping[str, Any],
-    *,
-    detailed: bool,
-) -> tuple[GeometryProgramProposal, tuple[SandboxAssetPayload, ...]]:
-    envelope = proposal["envelope"]
-    width = envelope["width_m"]
-    depth = envelope["depth_m"]
-    height = envelope["clear_height_m"]
-    operations = [
-        _solid("floor", [0, 0, 0], [width, 1, depth]),
-        _solid("ceiling", [0, height + 1, 0], [width, 1, depth]),
-        _solid("side-east", [width - 1, 1, 0], [1, height, depth]),
-        _solid("side-west", [0, 1, 0], [1, height, depth]),
-    ]
-    assemblies: list[HostedAssembly] = []
-    assets: list[AssetReference] = []
-    payloads: list[SandboxAssetPayload] = []
-    frames = [
-        CoordinateFrame(
-            frame_id="world",
-            parent_frame_id=None,
-            transform_from_parent=AffineTransform.identity(),
-            source_refs=(
-                f"architect-proposal:{_digest(proposal)}",
-            ),
-        )
-    ]
-    if not detailed:
-        operations.extend(
-            (
-                _solid("front-wall", [0, 1, 0], [width, height, 1]),
-                _solid(
-                    "back-wall",
-                    [0, 1, depth - 1],
-                    [width, height, 1],
-                ),
-            )
-        )
-    else:
-        entry = proposal["entry"]
-        window = proposal["window"]
-        operations.extend(
-            (
-                _solid(
-                    "front-host",
-                    [0, 1, 0],
-                    [width, height, 1],
-                ),
-                _solid(
-                    "entry-tool",
-                    [entry["offset_m"], 1, 0],
-                    [entry["width_m"], entry["height_m"], 1],
-                ),
-                _boolean(
-                    "entry-opening",
-                    GeometryOperationKind.BOOLEAN_INTERSECTION,
-                    ("entry-tool", "front-host"),
-                ),
-                _boolean(
-                    "front-wall",
-                    GeometryOperationKind.BOOLEAN_DIFFERENCE,
-                    ("entry-tool", "front-host"),
-                    base_id="front-host",
-                ),
-                _curve(
-                    "entry-clearance",
-                    [
-                        [entry["offset_m"], 1, 1],
-                        [
-                            entry["offset_m"] + entry["width_m"],
-                            1 + entry["height_m"],
-                            3,
-                        ],
-                    ],
-                ),
-                _curve(
-                    "entry-frame",
-                    [
-                        [entry["offset_m"], 1, 0],
-                        [
-                            entry["offset_m"] + entry["width_m"],
-                            entry["height_m"] + 1,
-                            0,
-                        ],
-                    ],
-                ),
-                _curve(
-                    "entry-leaf",
-                    [
-                        [entry["offset_m"], 1, 0],
-                        [
-                            entry["offset_m"] + entry["width_m"],
-                            1,
-                            0,
-                        ],
-                    ],
-                ),
-                _curve(
-                    "entry-hardware",
-                    [
-                        [entry["offset_m"] + 0.2, 2, 0],
-                        [entry["offset_m"] + 0.3, 2, 0],
-                    ],
-                ),
-                _solid(
-                    "back-host",
-                    [0, 1, depth - 1],
-                    [width, height, 1],
-                ),
-                _solid(
-                    "window-tool",
-                    [
-                        window["offset_m"],
-                        1 + window["sill_m"],
-                        depth - 1,
-                    ],
-                    [window["width_m"], window["height_m"], 1],
-                ),
-                _boolean(
-                    "window-opening",
-                    GeometryOperationKind.BOOLEAN_INTERSECTION,
-                    ("back-host", "window-tool"),
-                ),
-                _boolean(
-                    "back-wall",
-                    GeometryOperationKind.BOOLEAN_DIFFERENCE,
-                    ("back-host", "window-tool"),
-                    base_id="back-host",
-                ),
-                _curve(
-                    "window-clearance",
-                    [
-                        [
-                            window["offset_m"],
-                            1 + window["sill_m"],
-                            depth - 2,
-                        ],
-                        [
-                            window["offset_m"] + window["width_m"],
-                            1 + window["sill_m"] + window["height_m"],
-                            depth - 1,
-                        ],
-                    ],
-                ),
-                _curve(
-                    "window-frame",
-                    [
-                        [
-                            window["offset_m"],
-                            1 + window["sill_m"],
-                            depth - 1,
-                        ],
-                        [
-                            window["offset_m"] + window["width_m"],
-                            1 + window["sill_m"] + window["height_m"],
-                            depth - 1,
-                        ],
-                    ],
-                ),
-                _solid(
-                    "window-glazing",
-                    [
-                        window["offset_m"],
-                        1 + window["sill_m"],
-                        depth - 1,
-                    ],
-                    [window["width_m"], window["height_m"], 1],
-                ),
-                _curve(
-                    "window-hardware",
-                    [
-                        [
-                            window["offset_m"] + 0.2,
-                            1 + window["sill_m"],
-                            depth - 1,
-                        ],
-                        [
-                            window["offset_m"] + 0.3,
-                            1 + window["sill_m"],
-                            depth - 1,
-                        ],
-                    ],
-                ),
-            )
-        )
-        assemblies.extend(
-            (
-                HostedAssembly(
-                    assembly_id="entry-assembly",
-                    kind=AssemblyKind.DOOR,
-                    host_object_id="front-host",
-                    host_socket_id="entry-axis",
-                    members=tuple(
-                        sorted(
-                            (
-                                AssemblyMember(
-                                    AssemblyRole.CLEARANCE,
-                                    ("entry-clearance",),
-                                ),
-                                AssemblyMember(
-                                    AssemblyRole.FRAME,
-                                    ("entry-frame",),
-                                ),
-                                AssemblyMember(
-                                    AssemblyRole.HARDWARE,
-                                    ("entry-hardware",),
-                                ),
-                                AssemblyMember(
-                                    AssemblyRole.HOST_CUT,
-                                    ("entry-opening",),
-                                ),
-                                AssemblyMember(
-                                    AssemblyRole.LEAF,
-                                    ("entry-leaf",),
-                                ),
-                            ),
-                            key=lambda item: item.role.value,
-                        )
-                    ),
-                    interface_refs=("interface:outside-to-interior",),
-                    semantic_binding_ids=("building-binding",),
-                    maturity=DetailMaturity.FUNCTIONAL,
-                ),
-                HostedAssembly(
-                    assembly_id="window-assembly",
-                    kind=AssemblyKind.WINDOW,
-                    host_object_id="back-host",
-                    host_socket_id="window-axis",
-                    members=tuple(
-                        sorted(
-                            (
-                                AssemblyMember(
-                                    AssemblyRole.CLEARANCE,
-                                    ("window-clearance",),
-                                ),
-                                AssemblyMember(
-                                    AssemblyRole.FRAME,
-                                    ("window-frame",),
-                                ),
-                                AssemblyMember(
-                                    AssemblyRole.GLAZING,
-                                    ("window-glazing",),
-                                ),
-                                AssemblyMember(
-                                    AssemblyRole.HARDWARE,
-                                    ("window-hardware",),
-                                ),
-                                AssemblyMember(
-                                    AssemblyRole.HOST_CUT,
-                                    ("window-opening",),
-                                ),
-                            ),
-                            key=lambda item: item.role.value,
-                        )
-                    ),
-                    interface_refs=("interface:interior-to-daylight",),
-                    semantic_binding_ids=("building-binding",),
-                    maturity=DetailMaturity.FUNCTIONAL,
-                ),
-            )
-        )
-        payload = _asset_payload(proposal)
-        asset = proposal["detail_asset"]
-        payloads.append(payload)
-        assets.append(
-            AssetReference(
-                asset_id=payload.asset_id,
-                uri=asset["uri"],
-                media_type=asset["media_type"],
-                sha256=payload.payload_digest,
-                native_unit=LengthUnit.METER,
-                sockets=tuple(asset["sockets"]),
-                provenance_refs=tuple(asset["provenance_refs"]),
-            )
-        )
-        frames.append(
-            CoordinateFrame(
-                frame_id="detail-frame",
-                parent_frame_id="world",
-                transform_from_parent=AffineTransform(
-                    (
-                        1.0, 0.0, 0.0, width / 2,
-                        0.0, 1.0, 0.0, 1.0,
-                        0.0, 0.0, 1.0, depth / 2,
-                        0.0, 0.0, 0.0, 1.0,
-                    )
-                ),
-                source_refs=tuple(asset["provenance_refs"]),
-            )
-        )
-        operations.append(
-            GeometryOperation(
-                op_id="detail-instance",
-                kind=GeometryOperationKind.ASSET_INSTANCE,
-                output_object_ids=("detail-instance",),
-                input_object_ids=(),
-                frame_id="detail-frame",
-                parameters=(),
-                semantic_binding_ids=("building-binding",),
-                asset_id=payload.asset_id,
-                asset_socket_id="origin",
-                asset_scale=(0.5, 0.5, 0.5),
-            )
-        )
-    ordered_operations = tuple(
-        sorted(operations, key=lambda item: item.op_id)
-    )
-    object_ids = tuple(
-        sorted(
-            object_id
-            for operation in ordered_operations
-            for object_id in operation.output_object_ids
-        )
-    )
-    geometry = GeometryProgramProposal(
-        proposal_id=(
-            f"geometry-{projection.selected_revision_digest[:20]}"
-        ),
-        project_id=projection.project_id,
-        run_id=projection.run_id,
-        base=projection.base,
-        candidate_program_digest=projection.projection_digest,
-        predecessor_program_digest=None,
-        length_unit=LengthUnit.METER,
-        tolerance=GeometryTolerance(0.001, 0.001),
-        frames=tuple(sorted(frames, key=lambda item: item.frame_id)),
-        assets=tuple(sorted(assets, key=lambda item: item.asset_id)),
-        semantic_bindings=(
-            SemanticBinding(
-                binding_id="building-binding",
-                object_ids=object_ids,
-                candidate_value_ids=tuple(
-                    item.value_id for item in projection.values
-                ),
-                commitment_refs=(_COMMITMENT_REF,),
-                evidence_refs=(
-                    projection.selected_option_ref,
-                    projection.selection_decision_ref,
-                ),
-            ),
-        ),
-        operations=ordered_operations,
-        assemblies=tuple(
-            sorted(assemblies, key=lambda item: item.assembly_id)
-        ),
-    )
-    return geometry, tuple(sorted(payloads, key=lambda item: item.asset_id))
 
 
 def _program(proposal: Mapping[str, Any]):
@@ -1209,24 +901,119 @@ def _program(proposal: Mapping[str, Any]):
 
 
 def _approval_policy(
-    run: RunRef,
+    repository: FilesystemProjectRepository,
+    policy_ref: ProjectRecordRef,
+    authorization_event_ref: ProjectRecordRef,
     *,
     evidence_ref: str,
-) -> CandidateApprovalPolicy:
-    return CandidateApprovalPolicy(
-        policy_ref=(
-            f"project://{run.project_id}/input/"
-            "sandbox-approval-policy.json"
-        ),
-        authority_ids=("sandbox-owner",),
-        mode=CandidateApprovalMode.PREAUTHORIZED_DISPOSABLE,
-        max_validity_seconds=3_600,
-        allows_disposable_automation=True,
-        authorization_event_ref=(
-            f"event://{run.project_id}/sandbox-preauthorization"
-        ),
-        evidence_refs=(evidence_ref,),
+) -> tuple[CandidateApprovalPolicy, str]:
+    policy_payload = _mapping(
+        repository.load_json(policy_ref),
+        "sandbox approval policy input",
     )
+    _exact(
+        policy_payload,
+        {
+            "schema",
+            "authority_ids",
+            "mode",
+            "max_validity_seconds",
+            "allows_disposable_automation",
+        },
+        "sandbox approval policy input",
+    )
+    if policy_payload["schema"] != "SandboxApprovalPolicyInput@1":
+        raise SandboxGoldError("sandbox approval policy schema changed")
+    authority_ids = policy_payload["authority_ids"]
+    if not isinstance(authority_ids, list) or not authority_ids:
+        raise SandboxGoldError("approval policy requires authority_ids")
+    authorities = tuple(
+        _identifier(value, "approval authority_id")
+        for value in authority_ids
+    )
+    event_payload = _mapping(
+        repository.load_json(authorization_event_ref),
+        "sandbox authorization event",
+    )
+    _exact(
+        event_payload,
+        {"schema", "authority_id", "action", "scope", "evidence_refs"},
+        "sandbox authorization event",
+    )
+    if (
+        event_payload["schema"] != "SandboxAuthorizationEvent@1"
+        or event_payload["action"] != "preauthorize-disposable-sandbox"
+        or event_payload["scope"] != "candidate-promotion"
+        or event_payload["authority_id"] not in authorities
+        or not isinstance(event_payload["evidence_refs"], list)
+        or not event_payload["evidence_refs"]
+    ):
+        raise SandboxGoldError("sandbox authorization event is not applicable")
+    authority_id = _identifier(
+        event_payload["authority_id"],
+        "authorization event authority_id",
+    )
+    return CandidateApprovalPolicy(
+        policy_ref=policy_ref.uri,
+        authority_ids=authorities,
+        mode=CandidateApprovalMode(policy_payload["mode"]),
+        max_validity_seconds=policy_payload["max_validity_seconds"],
+        allows_disposable_automation=policy_payload[
+            "allows_disposable_automation"
+        ],
+        authorization_event_ref=authorization_event_ref.uri,
+        evidence_refs=(
+            evidence_ref,
+            policy_ref.uri,
+            authorization_event_ref.uri,
+            *(str(value) for value in event_payload["evidence_refs"]),
+        ),
+    ), authority_id
+
+
+def _asset_payloads(
+    repository: FilesystemProjectRepository,
+    refs: tuple[ProjectRecordRef, ...],
+) -> tuple[SandboxAssetPayload, ...]:
+    payloads = []
+    for ref in refs:
+        payload = _mapping(repository.load_json(ref), "sandbox asset input")
+        _exact(
+            payload,
+            {
+                "schema",
+                "asset_id",
+                "vertices",
+                "faces",
+                "media_type",
+                "native_unit",
+                "sockets",
+                "provenance_refs",
+            },
+            "sandbox asset input",
+        )
+        if (
+            payload["schema"] != "SandboxAssetInput@1"
+            or payload["media_type"] != "model/gltf+json"
+            or payload["native_unit"] != "m"
+            or payload["sockets"] != ["origin"]
+            or not isinstance(payload["provenance_refs"], list)
+            or not payload["provenance_refs"]
+        ):
+            raise SandboxGoldError("sandbox asset input metadata is invalid")
+        payloads.append(
+            SandboxAssetPayload(
+                asset_id=_identifier(payload["asset_id"], "asset_id"),
+                vertices=tuple(
+                    tuple(float(value) for value in vertex)
+                    for vertex in payload["vertices"]
+                ),
+                faces=tuple(tuple(face) for face in payload["faces"]),
+            )
+        )
+    if len({item.asset_id for item in payloads}) != len(payloads):
+        raise SandboxGoldError("sandbox asset ids must be unique")
+    return tuple(sorted(payloads, key=lambda item: item.asset_id))
 
 
 def _candidate_assembly(
@@ -1376,37 +1163,140 @@ def _validation_dict(receipt: object) -> dict[str, object]:
     }
 
 
-def _candidate_proof(
+def _derive_use_zones(
+    spatial: SpatialOptionProposal,
+    spatial_ref: ProjectRecordRef,
+    observation: object,
+) -> tuple[UseZoneEvidence, ...]:
+    volumes = {item.volume_id: item for item in spatial.volumes}
+    derived: list[UseZoneEvidence] = []
+    for zone in spatial.zones:
+        zone_volumes = tuple(volumes[volume_id] for volume_id in zone.volume_ids)
+        matching_regions = []
+        for region in observation.connected_regions:
+            if any(
+                any(
+                    all(
+                        volume.bounds.minimum[axis]
+                        <= float(cell[axis]) + 0.5
+                        <= volume.bounds.maximum[axis]
+                        for axis in range(3)
+                    )
+                    for cell in region.cells
+                )
+                for volume in zone_volumes
+            ):
+                matching_regions.append(region)
+        for program_ref in zone.program_node_refs:
+            prefix = "program-node:"
+            if not program_ref.startswith(prefix):
+                continue
+            space = program_ref[len(prefix):]
+            for region in matching_regions:
+                derived.append(
+                    UseZoneEvidence(
+                        space=space,
+                        region_id=region.region_id,
+                        evidence_refs=(
+                            spatial_ref.uri,
+                            f"spatial-zone:{zone.zone_id}",
+                            *(f"spatial-volume:{item.volume_id}" for item in zone_volumes),
+                            f"sandbox-region:{region.region_id}",
+                        ),
+                    )
+                )
+    return tuple(
+        sorted(
+            derived,
+            key=lambda item: (item.space, item.region_id, item.evidence_refs),
+        )
+    )
+
+
+async def _candidate_proof(
+    repository: FilesystemProjectRepository,
+    provider: AsyncModelProvider,
     receipt: ModelInvocationReceipt,
     run: RunRef,
     *,
     variant: str,
     detailed: bool,
     raw_request_ref: str,
+    approval_policy: CandidateApprovalPolicy,
+    asset_payload_refs: tuple[ProjectRecordRef, ...],
+    asset_payloads: tuple[SandboxAssetPayload, ...],
     predecessor_ref: str | None = None,
 ) -> SandboxCandidateProof:
     assert receipt.output is not None
     proposal = _validate_proposal(receipt.output, revision=detailed)
-    projection = _projection(proposal, receipt, run)
-    geometry_proposal, asset_payloads = _geometry_proposal(
-        projection,
-        proposal,
-        detailed=detailed,
+    spatial = _spatial_option(proposal, receipt)
+    spatial_ref = repository.put_json(
+        run=run,
+        destination=PersistenceDestination(
+            PersistenceArea.RUN_RECORD,
+            run_id=run.run_id,
+        ),
+        record_kind=f"{variant}-spatial-option",
+        payload=spatial.to_dict(),
     )
+    projection = _projection(proposal, receipt, run, spatial, spatial_ref)
+    assets = {item.asset_id: item.payload_digest for item in asset_payloads}
+    produced = await produce_geometry_program_proposal(
+        repository,
+        provider,
+        run=run,
+        destination=PersistenceDestination(
+            PersistenceArea.RUN_RECORD,
+            run_id=run.run_id,
+        ),
+        spatial_option_ref=spatial_ref,
+        projection=projection,
+        required_commitment_refs=(_COMMITMENT_REF,),
+        provider_identity=GeometryProposalProviderIdentity(
+            receipt.provider_id,
+            receipt.model_id,
+            receipt.provider_version,
+            receipt.provider_fingerprint,
+        ),
+        policy=GeometryProposalPolicy(2),
+        template_refs=asset_payload_refs,
+        available_asset_digests=assets,
+    )
+    if (
+        produced.status is not GeometryProposalStatus.ACCEPTED
+        or produced.proposal is None
+        or produced.proposal_ref is None
+        or produced.program is None
+    ):
+        raise SandboxGoldError(
+            "record-driven geometry proposal was not accepted: "
+            f"{produced.status.value}; lineage={produced.lineage_ref.uri}"
+        )
+    loaded_geometry = load_geometry_proposal_lineage(
+        repository,
+        produced.lineage_ref,
+    )
+    if (
+        loaded_geometry.proposal is None
+        or loaded_geometry.proposal.proposal_digest
+        != produced.proposal.proposal_digest
+    ):
+        raise SandboxGoldError("geometry proposal lineage failed immediate reload")
     compilation = compile_geometry_program(
         projection,
-        geometry_proposal,
+        produced.proposal,
         active_commitment_refs=(_COMMITMENT_REF,),
-        available_asset_digests={
-            item.asset_id: item.payload_digest for item in asset_payloads
-        },
+        available_asset_digests=assets,
     )
-    if compilation.program is None:
+    if (
+        compilation.program is None
+        or compilation.program.program_digest != produced.program.program_digest
+    ):
         raise SandboxGoldError(
             f"geometry compilation rejected: {compilation.receipt.issues}"
         )
     realized = realize_geometry(
-        compilation.program,
+        produced.program,
         workspace_id=f"{variant}-sandbox-workspace",
         asset_payloads=asset_payloads,
     )
@@ -1425,24 +1315,14 @@ def _candidate_proof(
     if not observation.connected_regions:
         raise SandboxGoldError("sandbox observation has no walkable region")
     region = observation.connected_regions[0]
-    zones = tuple(
-        UseZoneEvidence(
-            space=item["function_id"],
-            region_id=region.region_id,
-            evidence_refs=(
-                f"sandbox-region:{region.region_id}",
-                f"architect-proposal:{_digest(proposal)}",
-            ),
-        )
-        for item in proposal["functions"]
-    )
-    approval_policy = _approval_policy(
-        run,
-        evidence_ref=raw_request_ref,
+    zones = _derive_use_zones(
+        spatial,
+        spatial_ref,
+        observation,
     )
     assembly = _candidate_assembly(
         projection,
-        compilation.program.program_digest,
+        produced.program.program_digest,
         realized.scene.scene_digest,
         view.view_digest,
         variant=variant,
@@ -1468,7 +1348,7 @@ def _candidate_proof(
         program=validation_program,
         observation=observation,
         candidate_program_digest=projection.projection_digest,
-        geometry_program_digest=compilation.program.program_digest,
+        geometry_program_digest=produced.program.program_digest,
         realization_receipt_digest=realized.receipt.receipt_digest,
         evidence_refs=(
             f"sandbox-scene:{realized.scene.scene_digest}",
@@ -1486,7 +1366,7 @@ def _candidate_proof(
                 zones,
                 observation_binding=binding,
                 candidate_program_digest=projection.projection_digest,
-                geometry_program_digest=compilation.program.program_digest,
+                geometry_program_digest=produced.program.program_digest,
                 realization_receipt_digest=(
                     realized.receipt.receipt_digest
                 ),
@@ -1509,7 +1389,11 @@ def _candidate_proof(
     disposition = (
         CandidateDisposition.REVISED
         if detailed
-        else CandidateDisposition.REJECTED
+        else (
+            CandidateDisposition.ASSEMBLED
+            if decision["passed"]
+            else CandidateDisposition.REJECTED
+        )
     )
     archive = CandidateDerivationArchive(
         assembly=assembly,
@@ -1526,7 +1410,7 @@ def _candidate_proof(
             f"sandbox-voxel:{view.view_digest}",
         ),
         rationale=(
-            "The concept is retained after deterministic hard-gate rejection."
+            "The concept is retained after deterministic hard-gate review."
             if not detailed
             else
             "The exact predecessor was revised against detached hard-gate findings."
@@ -1559,9 +1443,13 @@ def _candidate_proof(
         variant=variant,
         model_receipt=receipt,
         proposal=proposal,
+        spatial_option_ref=spatial_ref,
+        geometry_lineage_ref=produced.lineage_ref,
+        geometry_round_refs=produced.round_refs,
+        geometry_proposal_ref=produced.proposal_ref,
         projection=projection,
         assembly=assembly,
-        geometry_program=compilation.program,
+        geometry_program=produced.program,
         geometry_receipt=compilation.receipt,
         scene=realized.scene,
         realization_receipt=realized.receipt,
@@ -1577,10 +1465,16 @@ def _candidate_proof(
 
 def _candidate_record(proof: SandboxCandidateProof) -> dict[str, object]:
     return {
-        "schema": "SandboxGoldCandidateRecord@1",
+        "schema": "SandboxGoldCandidateRecord@2",
         "variant": proof.variant,
         "model_receipt": proof.model_receipt.to_dict(),
         "proposal": proof.proposal,
+        "spatial_option_ref": _record_dict(proof.spatial_option_ref),
+        "geometry_lineage_ref": _record_dict(proof.geometry_lineage_ref),
+        "geometry_round_refs": [
+            _record_dict(ref) for ref in proof.geometry_round_refs
+        ],
+        "geometry_proposal_ref": _record_dict(proof.geometry_proposal_ref),
         "projection": proof.projection.to_dict(),
         "assembly": proof.assembly.to_dict(),
         "geometry_program": proof.geometry_program.to_dict(),
@@ -1619,14 +1513,81 @@ def _finding_codes(proof: SandboxCandidateProof) -> tuple[str, ...]:
     )
 
 
+def load_sandbox_gold_inputs(
+    repository: FilesystemProjectRepository,
+    *,
+    run: RunRef,
+) -> SandboxGoldInputs:
+    """Discover one complete authorized sandbox case without path guessing."""
+
+    records = repository.list_json(
+        run=run,
+        destination=PersistenceDestination(PersistenceArea.INPUT),
+    )
+    by_schema: dict[str, list[ProjectRecordRef]] = {}
+    for ref in records:
+        schema = repository.load_json(ref).get("schema")
+        if isinstance(schema, str):
+            by_schema.setdefault(schema, []).append(ref)
+
+    def exactly_one(schema: str) -> ProjectRecordRef:
+        matches = by_schema.get(schema, [])
+        if len(matches) != 1:
+            raise SandboxGoldError(
+                f"sandbox case requires exactly one {schema} input"
+            )
+        return matches[0]
+
+    assets = tuple(
+        sorted(
+            by_schema.get("SandboxAssetInput@1", []),
+            key=lambda ref: ref.uri,
+        )
+    )
+    if not assets:
+        raise SandboxGoldError(
+            "sandbox case requires at least one SandboxAssetInput@1 input"
+        )
+    return SandboxGoldInputs(
+        request_ref=exactly_one(RawSandboxRequest.SCHEMA),
+        scenario_ref=exactly_one("SandboxScenarioInput@1"),
+        approval_policy_ref=exactly_one("SandboxApprovalPolicyInput@1"),
+        authorization_event_ref=exactly_one("SandboxAuthorizationEvent@1"),
+        asset_payload_refs=assets,
+    )
+
+
+def _scenario_window(
+    repository: FilesystemProjectRepository,
+    scenario_ref: ProjectRecordRef,
+) -> tuple[str, str]:
+    payload = _mapping(
+        repository.load_json(scenario_ref),
+        "sandbox scenario input",
+    )
+    _exact(
+        payload,
+        {"schema", "issued_at_utc", "valid_until_utc"},
+        "sandbox scenario input",
+    )
+    if payload["schema"] != "SandboxScenarioInput@1":
+        raise SandboxGoldError("sandbox scenario input schema changed")
+    return (
+        _text(payload["issued_at_utc"], "issued_at_utc"),
+        _text(payload["valid_until_utc"], "valid_until_utc"),
+    )
+
+
 async def execute_sandbox_gold(
     repository: FilesystemProjectRepository,
     run: RunRef,
     provider: AsyncModelProvider,
-    request: RawSandboxRequest,
     *,
-    issued_at_utc: str,
-    valid_until_utc: str,
+    request_ref: ProjectRecordRef,
+    scenario_ref: ProjectRecordRef,
+    approval_policy_ref: ProjectRecordRef,
+    authorization_event_ref: ProjectRecordRef,
+    asset_payload_refs: tuple[ProjectRecordRef, ...],
 ) -> PersistedSandboxGold:
     """Run, persist, verify, and atomically promote one sandbox Gold."""
 
@@ -1638,53 +1599,83 @@ async def execute_sandbox_gold(
         raise TypeError("run must be a RunRef")
     if run.base != repository.read_head():
         raise SandboxGoldError("run is not based on current project HEAD")
-    input_ref = repository.put_json(
-        run=run,
-        destination=PersistenceDestination(PersistenceArea.INPUT),
-        record_kind="raw-sandbox-request",
-        payload=request.to_dict(),
+    refs = (
+        request_ref,
+        scenario_ref,
+        approval_policy_ref,
+        authorization_event_ref,
+        *asset_payload_refs,
     )
+    if (
+        any(not isinstance(ref, ProjectRecordRef) for ref in refs)
+        or any(ref.project_id != run.project_id for ref in refs)
+        or tuple(ref.uri for ref in asset_payload_refs)
+        != tuple(sorted(set(ref.uri for ref in asset_payload_refs)))
+    ):
+        raise SandboxGoldError("sandbox input records are invalid or cross-project")
+    request = RawSandboxRequest.from_dict(repository.load_json(request_ref))
+    issued_at_utc, valid_until_utc = _scenario_window(
+        repository,
+        scenario_ref,
+    )
+    policy, authority_id = _approval_policy(
+        repository,
+        approval_policy_ref,
+        authorization_event_ref,
+        evidence_ref=request_ref.uri,
+    )
+    asset_payloads = _asset_payloads(repository, asset_payload_refs)
     concept_receipt = await _model_proposal(
         provider,
         request,
         run.base,
     )
-    concept = _candidate_proof(
+    concept = await _candidate_proof(
+        repository,
+        provider,
         concept_receipt,
         run,
         variant="concept",
         detailed=False,
-        raw_request_ref=input_ref.uri,
+        raw_request_ref=request_ref.uri,
+        approval_policy=policy,
+        asset_payload_refs=asset_payload_refs,
+        asset_payloads=asset_payloads,
     )
     concept_findings = _finding_codes(concept)
-    if not concept_findings:
-        raise SandboxGoldError(
-            "concept stage unexpectedly passed; no honest revision trace exists"
+    rejected_ref: ProjectRecordRef | None = None
+    if concept_findings:
+        rejected_ref = repository.put_json(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_CANDIDATE,
+                run_id=run.run_id,
+            ),
+            record_kind="sandbox-candidate-rejected",
+            payload=_candidate_record(concept),
         )
-    rejected_ref = repository.put_json(
-        run=run,
-        destination=PersistenceDestination(
-            PersistenceArea.RUN_CANDIDATE,
-            run_id=run.run_id,
-        ),
-        record_kind="sandbox-candidate-rejected",
-        payload=_candidate_record(concept),
-    )
-    revision_receipt = await _model_proposal(
-        provider,
-        request,
-        run.base,
-        concept=concept.proposal,
-        findings=concept_findings,
-    )
-    accepted = _candidate_proof(
-        revision_receipt,
-        run,
-        variant="revised",
-        detailed=True,
-        raw_request_ref=input_ref.uri,
-        predecessor_ref=rejected_ref.uri,
-    )
+        revision_receipt = await _model_proposal(
+            provider,
+            request,
+            run.base,
+            concept=concept.proposal,
+            findings=concept_findings,
+        )
+        accepted = await _candidate_proof(
+            repository,
+            provider,
+            revision_receipt,
+            run,
+            variant="revised",
+            detailed=True,
+            raw_request_ref=request_ref.uri,
+            approval_policy=policy,
+            asset_payload_refs=asset_payload_refs,
+            asset_payloads=asset_payloads,
+            predecessor_ref=rejected_ref.uri,
+        )
+    else:
+        accepted = concept
     if (
         not accepted.usability_receipt.passed
         or not accepted.hard_validation.passed
@@ -1702,7 +1693,6 @@ async def execute_sandbox_gold(
             f"revised candidate remained rejected: {failed_ref.uri}"
         )
 
-    policy = _approval_policy(run, evidence_ref=input_ref.uri)
     approval = CandidateApprovalReceipt(
         candidate_assembly_digest=accepted.assembly.assembly_digest,
         submission_id=accepted.assembly.submission.submission_id,
@@ -1711,7 +1701,7 @@ async def execute_sandbox_gold(
         workspace_id=accepted.assembly.submission.workspace_id,
         policy_ref=policy.policy_ref,
         policy_digest=policy.policy_digest,
-        authority_id="sandbox-owner",
+        authority_id=authority_id,
         source=CandidateApprovalSource.PREAUTHORIZED_POLICY,
         authority_identity_receipt_ref=None,
         approval_event_ref=policy.authorization_event_ref,
@@ -1730,8 +1720,8 @@ async def execute_sandbox_gold(
         kind=CommitmentKind.MAINTENANCE,
         strength=CommitmentStrength.HARD,
         status=CommitmentStatus.ACTIVE,
-        authority_id="sandbox-owner",
-        authorized_by="sandbox-owner",
+        authority_id=authority_id,
+        authorized_by=authority_id,
         source_event_ref=policy.authorization_event_ref,
         satisfaction_criterion=CriterionRef(
             criterion_id="criterion-maintain-egress",
@@ -1739,7 +1729,7 @@ async def execute_sandbox_gold(
             subject_refs=(_COMMITMENT_REF,),
         ),
         activation_criterion=None,
-        evidence_refs=(input_ref.uri,),
+        evidence_refs=(request_ref.uri,),
         scope_refs=(_COMMITMENT_REF,),
         revision_policy=RevisionPolicy.OWNER_ONLY,
         permitted_authority_ids=(),
@@ -1751,7 +1741,7 @@ async def execute_sandbox_gold(
         compiler_version="sandbox-gold-1",
         phase="candidate-review",
         commitments=(commitment,),
-        evidence_refs=(input_ref.uri,),
+        evidence_refs=(request_ref.uri,),
     )
     observation = CriterionObservation(
         observation_id="observation-maintain-egress",
@@ -1890,20 +1880,31 @@ async def execute_sandbox_gold(
         payload=decision_payload,
     )
     summary_payload = {
-        "schema": "SandboxGoldRunRecord@1",
+        "schema": "SandboxGoldRunRecord@3",
         "project_id": run.project_id,
         "run_id": run.run_id,
         "base": _base_dict(run.base),
-        "raw_request_ref": _record_dict(input_ref),
-        "rejected_candidate_ref": _record_dict(rejected_ref),
+        "raw_request_ref": _record_dict(request_ref),
+        "scenario_ref": _record_dict(scenario_ref),
+        "approval_policy_ref": _record_dict(approval_policy_ref),
+        "authorization_event_ref": _record_dict(authorization_event_ref),
+        "asset_payload_refs": [
+            _record_dict(ref) for ref in asset_payload_refs
+        ],
+        "rejected_candidate_ref": (
+            None if rejected_ref is None else _record_dict(rejected_ref)
+        ),
         "accepted_candidate_ref": _record_dict(accepted_ref),
         "promotion_decision_ref": _record_dict(decision_ref),
         "concept_findings": list(concept_findings),
-        "provider_id": revision_receipt.provider_id,
-        "model_id": revision_receipt.model_id,
+        "accepted_variant": accepted.variant,
+        "provider_id": accepted.model_receipt.provider_id,
+        "model_id": accepted.model_receipt.model_id,
         "model_provider_fingerprint": (
-            revision_receipt.provider_fingerprint
+            accepted.model_receipt.provider_fingerprint
         ),
+        "spatial_option_ref": _record_dict(accepted.spatial_option_ref),
+        "geometry_lineage_ref": _record_dict(accepted.geometry_lineage_ref),
         "candidate_program_digest": (
             accepted.projection.projection_digest
         ),
@@ -1937,11 +1938,16 @@ async def execute_sandbox_gold(
         payload=summary_payload,
     )
     replacement_state = {
-        "schema": "AcceptedSandboxProjectState@1",
+        "schema": "AcceptedSandboxProjectState@2",
         "phase": "accepted-sandbox",
         "accepted": True,
         "sandbox_gold_ref": summary_ref.uri,
         "accepted_candidate_ref": accepted_ref.uri,
+        "scenario_ref": scenario_ref.uri,
+        "approval_policy_ref": approval_policy_ref.uri,
+        "authorization_event_ref": authorization_event_ref.uri,
+        "spatial_option_ref": accepted.spatial_option_ref.uri,
+        "geometry_lineage_ref": accepted.geometry_lineage_ref.uri,
         "candidate_program_digest": (
             accepted.projection.projection_digest
         ),
@@ -1997,7 +2003,7 @@ def reload_sandbox_gold(
         (ref, repository.load_json(ref))
         for ref in reviews
         if repository.load_json(ref).get("schema")
-        == "SandboxGoldRunRecord@1"
+        == "SandboxGoldRunRecord@3"
     ]
     if len(summaries) != 1:
         raise SandboxGoldError(
@@ -2012,19 +2018,44 @@ def reload_sandbox_gold(
         ),
     )
     payloads = {ref.uri: repository.load_json(ref) for ref in candidates}
-    rejected_ref = ProjectRecordRef(**summary["rejected_candidate_ref"])
+    request_ref = ProjectRecordRef(**summary["raw_request_ref"])
+    scenario_ref = ProjectRecordRef(**summary["scenario_ref"])
+    policy_ref = ProjectRecordRef(**summary["approval_policy_ref"])
+    authorization_event_ref = ProjectRecordRef(
+        **summary["authorization_event_ref"]
+    )
+    asset_refs = tuple(
+        ProjectRecordRef(**item) for item in summary["asset_payload_refs"]
+    )
+    RawSandboxRequest.from_dict(repository.load_json(request_ref))
+    _scenario_window(repository, scenario_ref)
+    policy, _ = _approval_policy(
+        repository,
+        policy_ref,
+        authorization_event_ref,
+        evidence_ref=request_ref.uri,
+    )
+    _asset_payloads(repository, asset_refs)
+    rejected_value = summary["rejected_candidate_ref"]
+    rejected_ref = (
+        None
+        if rejected_value is None
+        else ProjectRecordRef(**rejected_value)
+    )
     accepted_ref = ProjectRecordRef(**summary["accepted_candidate_ref"])
-    if rejected_ref.uri not in payloads or accepted_ref.uri not in payloads:
-        raise SandboxGoldError("candidate archive reference is missing")
-    rejected = payloads[rejected_ref.uri]
-    accepted = payloads[accepted_ref.uri]
-    for payload, variant in (
-        (rejected, "concept"),
-        (accepted, "revised"),
+    if (
+        accepted_ref.uri not in payloads
+        or (rejected_ref is not None and rejected_ref.uri not in payloads)
     ):
+        raise SandboxGoldError("candidate archive reference is missing")
+    accepted = payloads[accepted_ref.uri]
+    checked_candidates = [(accepted, summary["accepted_variant"])]
+    if rejected_ref is not None:
+        checked_candidates.insert(0, (payloads[rejected_ref.uri], "concept"))
+    for payload, variant in checked_candidates:
         if (
             payload.get("schema")
-            != "SandboxGoldCandidateRecord@1"
+            != "SandboxGoldCandidateRecord@2"
             or payload.get("variant") != variant
             or payload.get("canonical_write_authority") is not False
             or payload.get("platform_export_authority") is not False
@@ -2034,6 +2065,14 @@ def reload_sandbox_gold(
         projection = CandidateProgramProjection.from_dict(
             payload["projection"]
         )
+        spatial_ref = ProjectRecordRef(**payload["spatial_option_ref"])
+        spatial = SpatialOptionProposal.from_dict(
+            repository.load_json(spatial_ref)
+        )
+        lineage_ref = ProjectRecordRef(**payload["geometry_lineage_ref"])
+        lineage = load_geometry_proposal_lineage(repository, lineage_ref)
+        if lineage.proposal is None:
+            raise SandboxGoldError("accepted geometry lineage lost its proposal")
         CandidateAssembly.from_dict(payload["assembly"])
         scene = HybridScene.from_dict(payload["scene"])
         receipt = SandboxRealizationReceipt.from_dict(
@@ -2056,24 +2095,51 @@ def reload_sandbox_gold(
             != payload["geometry_program"][
                 "proposal"
             ]["candidate_program_digest"]
+            or projection.selected_option_ref != spatial.ref
+            or digest_value(payload["geometry_program"]["proposal"])
+            != lineage.proposal.proposal_digest
         ):
             raise SandboxGoldError("candidate exact binding drifted")
     if (
-        rejected["usability"]["passed"] is not False
-        or rejected["hard_validation"]["passed"] is not False
-        or accepted["usability"]["passed"] is not True
+        accepted["usability"]["passed"] is not True
         or accepted["hard_validation"]["passed"] is not True
         or accepted["approval"] is None
         or accepted["readiness"]["ready"] is not True
     ):
         raise SandboxGoldError("Gold rejection or acceptance status drifted")
-    CandidateApprovalReceipt.from_dict(accepted["approval"])
+    if rejected_ref is None:
+        if summary["concept_findings"] or summary["accepted_variant"] != "concept":
+            raise SandboxGoldError("directly accepted concept lineage drifted")
+    else:
+        rejected = payloads[rejected_ref.uri]
+        if (
+            rejected["usability"]["passed"] is not False
+            or rejected["hard_validation"]["passed"] is not False
+            or not summary["concept_findings"]
+            or summary["accepted_variant"] != "revised"
+        ):
+            raise SandboxGoldError("rejected concept lineage drifted")
+    approval = CandidateApprovalReceipt.from_dict(accepted["approval"])
+    if (
+        approval.policy_ref != policy_ref.uri
+        or approval.policy_digest != policy.policy_digest
+        or approval.approval_event_ref != authorization_event_ref.uri
+    ):
+        raise SandboxGoldError("persisted approval references do not resolve")
     current = repository.load_current_state()
     if (
         repository.read_head().version != run.base.version + 1
         or current.get("sandbox_gold_ref") != summary_ref.uri
         or current.get("accepted_candidate_ref") != accepted_ref.uri
         or current.get("scene_digest") != summary["scene_digest"]
+        or current.get("scenario_ref") != scenario_ref.uri
+        or current.get("approval_policy_ref") != policy_ref.uri
+        or current.get("authorization_event_ref")
+        != authorization_event_ref.uri
+        or current.get("spatial_option_ref")
+        != ProjectRecordRef(**summary["spatial_option_ref"]).uri
+        or current.get("geometry_lineage_ref")
+        != ProjectRecordRef(**summary["geometry_lineage_ref"]).uri
         or summary.get("accepted") is not True
     ):
         raise SandboxGoldError("canonical accepted state does not bind Gold")

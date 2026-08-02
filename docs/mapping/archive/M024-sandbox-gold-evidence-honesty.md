@@ -58,3 +58,9 @@ card's.
   rather than derivation.
 - Stop before treating this repair as P026 completion evidence; P026
   closes on its own card after this repair lands.
+
+
+## Completion
+
+- Completed: 2026-08-02
+- Evidence: Replaced framework-owned sandbox geometry with P050 record-driven production; derived use zones from spatial records and realized regions; persisted and reload-checked scenario, approval policy, authorization event, semantic, geometry, and rejected lineage under probes/p026-sandbox-gold; 3 focused integration/static tests passed and machine verification passed 2 commands.

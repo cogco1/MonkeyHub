@@ -156,13 +156,13 @@
         "P030",
         "P048",
         "P049",
-        "P050"
+        "P050",
+        "M024"
       ],
       "open_cards": [
         "P026",
         "P027",
-        "P038",
-        "M024"
+        "P038"
       ],
       "gap": "Typed neutral geometry compilation stable dependency-bound object identity hosted assemblies provenance-bound assets deterministic hybrid-scene realization exact-source-derived sandbox observation five-view rendering and source-bound use-scenario validation are proven; evaluator coverage for the declared function vocabulary is P049, record-driven proposal production is P050, the Gold evidence-honesty repair is M024, and one accepted prompt-to-usable building remains P026 work."
     },
@@ -4857,8 +4857,8 @@
     {
       "id": "M024",
       "origin_stream": "modify",
-      "stream": "modify",
-      "status": "ready",
+      "stream": "archive",
+      "status": "done",
       "goal": "Replace sandbox_gold's framework-owned geometry template and fabricated evidence with record-driven derivation and genuine review outcomes.",
       "depends_on": [
         "P049",
@@ -4884,8 +4884,47 @@
         "Full reload and restart-reload chain",
         "No-instance-default scan over sandbox_gold"
       ],
-      "card": "docs/mapping/modify/M024-sandbox-gold-evidence-honesty.md",
-      "evidence": []
+      "card": "docs/mapping/archive/M024-sandbox-gold-evidence-honesty.md",
+      "evidence": [
+        "Replaced framework-owned sandbox geometry with P050 record-driven production; derived use zones from spatial records and realized regions; persisted and reload-checked scenario, approval policy, authorization event, semantic, geometry, and rejected lineage under probes/p026-sandbox-gold; 3 focused integration/static tests passed and machine verification passed 2 commands."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M024",
+        "actor": "Codex",
+        "verified_at": "2026-08-02T17:12:04.154983+00:00",
+        "contract_sha256": "146ae5731ad7c131882e8e776a1ca213fa9b59ee4eba3b55853e8f1026ee82b3",
+        "scope_sha256": "d2fa2685aef57b46fcaa51b41c748fc469bac829e7fb4944642aa67aa2d7f737",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "aca7078b10c1123494d59df4e24a3cad4977cbcc388f4de5e0225d3b63a22c06",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (100 files, 0.941s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "57c40fdae8a9c66eb1bde34c06cff6950e0a3123140016aef52244ce13d5529c",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s...................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 380 tests in 17.033s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-02"
     },
     {
       "id": "M025",
