@@ -22,6 +22,7 @@ from archflow.project import (
 from archflow.realization.sandbox import SandboxAssetPayload
 from archflow.runtime.sandbox_gold import (
     RawSandboxRequest,
+    SandboxGoldError,
     execute_sandbox_gold,
     load_sandbox_gold_inputs,
     reload_sandbox_gold,
@@ -225,9 +226,11 @@ class _ScriptedArchitectProvider:
         *,
         concept_has_all_zones: bool = False,
         repair_first_geometry_round: bool = False,
+        substitute_revision_model: bool = False,
     ) -> None:
         self.concept_has_all_zones = concept_has_all_zones
         self.repair_first_geometry_round = repair_first_geometry_round
+        self.substitute_revision_model = substitute_revision_model
         self.requests = []
         self._geometry_attempts: dict[str, int] = {}
 
@@ -259,7 +262,12 @@ class _ScriptedArchitectProvider:
             status=ModelInvocationStatus.SUCCESS,
             request=request,
             provider_id="scripted-architect",
-            model_id="scripted-model",
+            model_id=(
+                "silent-replacement"
+                if self.substitute_revision_model
+                and request.request_id.endswith("-revision")
+                else "scripted-model"
+            ),
             provider_version="1.0",
             provider_fingerprint="scripted-architect-fingerprint",
             input_bytes=len(request.payload_json.encode("utf-8")),
@@ -390,6 +398,19 @@ class SandboxGoldTests(unittest.TestCase):
         summary = reload_sandbox_gold(self.repository, run_id="gold-direct")
         self.assertEqual(summary["accepted_variant"], "concept")
         self.assertEqual(summary["concept_findings"], [])
+
+    def test_revision_cannot_silently_replace_the_model(self) -> None:
+        provider = _ScriptedArchitectProvider(
+            substitute_revision_model=True,
+        )
+
+        with self.assertRaisesRegex(
+            SandboxGoldError,
+            "silent substitution rejected",
+        ):
+            self._execute(provider, run_id="gold-identity-drift")
+
+        self.assertEqual(self.repository.read_head().version, 0)
 
 
 if __name__ == "__main__":

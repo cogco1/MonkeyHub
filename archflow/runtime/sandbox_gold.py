@@ -470,6 +470,17 @@ async def _model_proposal(
     return receipt
 
 
+def _provider_identity(
+    receipt: ModelInvocationReceipt,
+) -> GeometryProposalProviderIdentity:
+    return GeometryProposalProviderIdentity(
+        receipt.provider_id,
+        receipt.model_id,
+        receipt.provider_version,
+        receipt.provider_fingerprint,
+    )
+
+
 def _validate_proposal(
     value: object,
     *,
@@ -1630,6 +1641,7 @@ async def execute_sandbox_gold(
         request,
         run.base,
     )
+    run_provider_identity = _provider_identity(concept_receipt)
     concept = await _candidate_proof(
         repository,
         provider,
@@ -1661,6 +1673,11 @@ async def execute_sandbox_gold(
             concept=concept.proposal,
             findings=concept_findings,
         )
+        if not run_provider_identity.matches(revision_receipt):
+            raise SandboxGoldError(
+                "Architect provider or model identity changed; "
+                "silent substitution rejected"
+            )
         accepted = await _candidate_proof(
             repository,
             provider,
@@ -1880,7 +1897,7 @@ async def execute_sandbox_gold(
         payload=decision_payload,
     )
     summary_payload = {
-        "schema": "SandboxGoldRunRecord@3",
+        "schema": "SandboxGoldRunRecord@4",
         "project_id": run.project_id,
         "run_id": run.run_id,
         "base": _base_dict(run.base),
@@ -1898,11 +1915,7 @@ async def execute_sandbox_gold(
         "promotion_decision_ref": _record_dict(decision_ref),
         "concept_findings": list(concept_findings),
         "accepted_variant": accepted.variant,
-        "provider_id": accepted.model_receipt.provider_id,
-        "model_id": accepted.model_receipt.model_id,
-        "model_provider_fingerprint": (
-            accepted.model_receipt.provider_fingerprint
-        ),
+        "provider_identity": run_provider_identity.to_dict(),
         "spatial_option_ref": _record_dict(accepted.spatial_option_ref),
         "geometry_lineage_ref": _record_dict(accepted.geometry_lineage_ref),
         "candidate_program_digest": (
@@ -1943,6 +1956,7 @@ async def execute_sandbox_gold(
         "accepted": True,
         "sandbox_gold_ref": summary_ref.uri,
         "accepted_candidate_ref": accepted_ref.uri,
+        "provider_identity": run_provider_identity.to_dict(),
         "scenario_ref": scenario_ref.uri,
         "approval_policy_ref": approval_policy_ref.uri,
         "authorization_event_ref": authorization_event_ref.uri,
@@ -2003,7 +2017,7 @@ def reload_sandbox_gold(
         (ref, repository.load_json(ref))
         for ref in reviews
         if repository.load_json(ref).get("schema")
-        == "SandboxGoldRunRecord@3"
+        == "SandboxGoldRunRecord@4"
     ]
     if len(summaries) != 1:
         raise SandboxGoldError(
@@ -2026,6 +2040,9 @@ def reload_sandbox_gold(
     )
     asset_refs = tuple(
         ProjectRecordRef(**item) for item in summary["asset_payload_refs"]
+    )
+    provider_identity = GeometryProposalProviderIdentity.from_dict(
+        summary["provider_identity"]
     )
     RawSandboxRequest.from_dict(repository.load_json(request_ref))
     _scenario_window(repository, scenario_ref)
@@ -2061,7 +2078,9 @@ def reload_sandbox_gold(
             or payload.get("platform_export_authority") is not False
         ):
             raise SandboxGoldError("candidate record authority drifted")
-        ModelInvocationReceipt.from_dict(payload["model_receipt"])
+        model_receipt = ModelInvocationReceipt.from_dict(
+            payload["model_receipt"]
+        )
         projection = CandidateProgramProjection.from_dict(
             payload["projection"]
         )
@@ -2098,6 +2117,8 @@ def reload_sandbox_gold(
             or projection.selected_option_ref != spatial.ref
             or digest_value(payload["geometry_program"]["proposal"])
             != lineage.proposal.proposal_digest
+            or not provider_identity.matches(model_receipt)
+            or lineage.lineage.provider_identity != provider_identity
         ):
             raise SandboxGoldError("candidate exact binding drifted")
     if (
@@ -2131,6 +2152,7 @@ def reload_sandbox_gold(
         repository.read_head().version != run.base.version + 1
         or current.get("sandbox_gold_ref") != summary_ref.uri
         or current.get("accepted_candidate_ref") != accepted_ref.uri
+        or current.get("provider_identity") != provider_identity.to_dict()
         or current.get("scene_digest") != summary["scene_digest"]
         or current.get("scenario_ref") != scenario_ref.uri
         or current.get("approval_policy_ref") != policy_ref.uri
