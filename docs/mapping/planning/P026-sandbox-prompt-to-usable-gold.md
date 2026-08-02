@@ -70,6 +70,20 @@ platform outputs remain downstream adapters and are not proof authorities.
   substantive object-response/input contradiction. It did not change
   canonical state. M027 owns the narrow protocol repair; no third geometry
   call was made.
+- Real Codex Agent CLI run `gold-agent-cli-005` also passed the exact concept
+  contract and persisted one entrance door, two daylight windows, and one
+  integrated hosted storage component. Geometry round one authored a window
+  with glazing only and was rejected for missing the required clearance,
+  frame, hardware, and host-cut roles. Round two received that repair issue and
+  authored a door with all five required unique roles, but listed the member
+  records in a non-canonical role order; typed construction rejected it before
+  compilation. The lineage is exhausted, provider identity is retained,
+  authority flags remain false, and canonical HEAD remains version zero.
+- P026 is blocked after repeated bounded real-provider geometry exhaustion.
+  Continuing requires an explicit choice to normalize keyed object
+  collections, strengthen provider guidance further, or authorize a different
+  bounded repair policy. No gate was weakened and no additional live call was
+  made.
 
 ## Stop conditions
 
