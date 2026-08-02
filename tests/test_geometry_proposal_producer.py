@@ -13,6 +13,7 @@ from archflow.adapters.model_provider import (
 )
 from archflow.capabilities.geometry_proposal import (
     _FUNCTION_CONTRACTS,
+    _authoring_output_contract,
     GeometryProposalPolicy,
     GeometryProposalProviderIdentity,
     GeometryProposalStatus,
@@ -267,6 +268,33 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             repair_issues[0]["code"],
             "malformed_model_output",
         )
+        self.assertIn("operations[0]", repair_issues[0]["detail"])
+
+    async def test_top_level_and_nested_drift_receive_path_specific_repair(
+        self,
+    ) -> None:
+        valid = proposal_authoring_output(self.proposal)
+        top_level = json.loads(_canonical_json(valid))
+        top_level["geometry_functions"] = top_level.pop("proposal_body")
+        nested = json.loads(_canonical_json(valid))
+        nested["proposal_body"]["operations"][0].pop("asset_scale")
+        provider = _ScriptedProvider(
+            (
+                top_level,
+                nested,
+                valid,
+            )
+        )
+
+        result = await self._produce(provider, rounds=3)
+
+        self.assertIs(result.status, GeometryProposalStatus.ACCEPTED)
+        first_repair = provider.requests[1].payload["repair_issues"][0]
+        self.assertIn("missing=['proposal_body']", first_repair["detail"])
+        self.assertIn("unexpected=['geometry_functions']", first_repair["detail"])
+        second_repair = provider.requests[2].payload["repair_issues"][0]
+        self.assertIn("operations[0]", second_repair["detail"])
+        self.assertIn("missing=['asset_scale']", second_repair["detail"])
 
     async def test_provider_refusal_persists_without_fallback(self) -> None:
         provider = _ScriptedProvider(
@@ -305,6 +333,68 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(_FUNCTION_CONTRACTS),
             {item.value for item in GeometryOperationKind},
+        )
+
+    def test_authoring_request_contract_exposes_exact_generic_topology(
+        self,
+    ) -> None:
+        contract = _authoring_output_contract()
+        root = contract["json_schema"]
+        self.assertFalse(root["additionalProperties"])
+        self.assertEqual(
+            set(root["required"]),
+            {"schema", "selected_template_refs", "proposal_body"},
+        )
+        body = root["properties"]["proposal_body"]
+        self.assertFalse(body["additionalProperties"])
+        self.assertEqual(
+            set(body["required"]),
+            {
+                "schema",
+                "proposal_id",
+                "predecessor_program_digest",
+                "length_unit",
+                "tolerance",
+                "frames",
+                "assets",
+                "semantic_bindings",
+                "operations",
+                "assemblies",
+                "revisions",
+                "retirements",
+            },
+        )
+        operation = body["properties"]["operations"]["items"]
+        self.assertEqual(
+            set(operation["required"]),
+            {
+                "schema",
+                "op_id",
+                "kind",
+                "output_object_ids",
+                "input_object_ids",
+                "frame_id",
+                "parameters",
+                "semantic_binding_ids",
+                "asset_id",
+                "asset_socket_id",
+                "asset_scale",
+                "responds_to_object_ids",
+                "responds_to_frame_ids",
+                "responds_to_binding_ids",
+            },
+        )
+        encoded = _canonical_json(contract)
+        self.assertNotIn('"default"', encoded)
+        self.assertNotIn('"examples"', encoded)
+        self.assertEqual(
+            contract["authority"],
+            {
+                "proposal_only": True,
+                "hard_gate": False,
+                "canonical_write": False,
+                "platform_mutation": False,
+            },
         )
 
 

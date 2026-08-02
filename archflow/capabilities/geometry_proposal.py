@@ -77,6 +77,254 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
 }
 
 
+def _strict_object(
+    properties: Mapping[str, object],
+    *,
+    description: str | None = None,
+) -> dict[str, object]:
+    contract: dict[str, object] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(properties),
+        "properties": dict(properties),
+    }
+    if description is not None:
+        contract["description"] = description
+    return contract
+
+
+def _array_contract(
+    items: Mapping[str, object],
+    *,
+    minimum: int = 0,
+    unique: bool = False,
+    description: str | None = None,
+) -> dict[str, object]:
+    contract: dict[str, object] = {
+        "type": "array",
+        "items": dict(items),
+        "minItems": minimum,
+    }
+    if unique:
+        contract["uniqueItems"] = True
+    if description is not None:
+        contract["description"] = description
+    return contract
+
+
+def _authoring_output_contract() -> dict[str, object]:
+    """Expose the exact generic parser topology without a building answer."""
+
+    text = {"type": "string", "minLength": 1}
+    identifier = {
+        **text,
+        "description": "Portable identifier; use only identities authored in this proposal or supplied records.",
+    }
+    logical_ref = {
+        **text,
+        "description": "Stable logical or project record reference supplied by the request.",
+    }
+    digest = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    number = {"type": "number"}
+    string_list = _array_contract(
+        identifier,
+        unique=True,
+        description="Unique lexicographically sorted identifiers.",
+    )
+    ref_list = _array_contract(
+        logical_ref,
+        unique=True,
+        description="Unique lexicographically sorted references.",
+    )
+    vector3 = _array_contract(number, minimum=3)
+    vector3["maxItems"] = 3
+    matrix4 = _array_contract(number, minimum=16)
+    matrix4["maxItems"] = 16
+    nullable_identifier = {
+        "anyOf": [{"type": "null"}, identifier],
+    }
+    nullable_digest = {"anyOf": [{"type": "null"}, digest]}
+    nullable_unit = {
+        "anyOf": [
+            {"type": "null"},
+            {"type": "string", "enum": [item.value for item in LengthUnit]},
+        ]
+    }
+
+    transform = _strict_object(
+        {
+            "schema": {"const": AffineTransform.SCHEMA},
+            "matrix": matrix4,
+        }
+    )
+    frame = _strict_object(
+        {
+            "schema": {"const": CoordinateFrame.SCHEMA},
+            "frame_id": identifier,
+            "parent_frame_id": nullable_identifier,
+            "transform_from_parent": transform,
+            "source_refs": _array_contract(logical_ref, minimum=1, unique=True),
+        }
+    )
+    parameter = _strict_object(
+        {
+            "schema": {"const": GeometryParameter.SCHEMA},
+            "name": identifier,
+            "kind": {
+                "type": "string",
+                "enum": [item.value for item in GeometryParameterKind],
+            },
+            "value_json": {
+                "type": "string",
+                "description": (
+                    "Canonical compact JSON text encoding the typed value; for example a vector is encoded as the string [x,y,z], not as a JSON array field."
+                ),
+            },
+            "unit": nullable_unit,
+        }
+    )
+    asset = _strict_object(
+        {
+            "schema": {"const": AssetReference.SCHEMA},
+            "asset_id": identifier,
+            "uri": logical_ref,
+            "media_type": text,
+            "sha256": digest,
+            "native_unit": {
+                "type": "string",
+                "enum": [item.value for item in LengthUnit],
+            },
+            "sockets": _array_contract(identifier, minimum=1, unique=True),
+            "provenance_refs": _array_contract(logical_ref, minimum=1, unique=True),
+        }
+    )
+    binding = _strict_object(
+        {
+            "schema": {"const": SemanticBinding.SCHEMA},
+            "binding_id": identifier,
+            "object_ids": _array_contract(identifier, minimum=1, unique=True),
+            "candidate_value_ids": _array_contract(identifier, minimum=1, unique=True),
+            "commitment_refs": ref_list,
+            "evidence_refs": _array_contract(logical_ref, minimum=1, unique=True),
+        }
+    )
+    operation = _strict_object(
+        {
+            "schema": {"const": GeometryOperation.SCHEMA},
+            "op_id": identifier,
+            "kind": {
+                "type": "string",
+                "enum": [item.value for item in GeometryOperationKind],
+            },
+            "output_object_ids": _array_contract(identifier, minimum=1, unique=True),
+            "input_object_ids": string_list,
+            "frame_id": identifier,
+            "parameters": _array_contract(parameter),
+            "semantic_binding_ids": _array_contract(identifier, minimum=1, unique=True),
+            "asset_id": nullable_identifier,
+            "asset_socket_id": nullable_identifier,
+            "asset_scale": {"anyOf": [{"type": "null"}, vector3]},
+            "responds_to_object_ids": string_list,
+            "responds_to_frame_ids": string_list,
+            "responds_to_binding_ids": string_list,
+        },
+        description=(
+            "Use asset fields only for asset_instance. Parameter names and kinds must exactly follow geometry_function_contracts[kind]."
+        ),
+    )
+    member = _strict_object(
+        {
+            "schema": {"const": AssemblyMember.SCHEMA},
+            "role": {
+                "type": "string",
+                "enum": [item.value for item in AssemblyRole],
+            },
+            "object_ids": _array_contract(identifier, minimum=1, unique=True),
+        }
+    )
+    assembly = _strict_object(
+        {
+            "schema": {"const": HostedAssembly.SCHEMA},
+            "assembly_id": identifier,
+            "kind": {
+                "type": "string",
+                "enum": [item.value for item in AssemblyKind],
+            },
+            "host_object_id": identifier,
+            "host_socket_id": identifier,
+            "members": _array_contract(member, minimum=1),
+            "interface_refs": _array_contract(logical_ref, minimum=1, unique=True),
+            "semantic_binding_ids": _array_contract(identifier, minimum=1, unique=True),
+            "maturity": {
+                "type": "string",
+                "enum": [item.value for item in DetailMaturity],
+            },
+        },
+        description=(
+            "A hosted semantic component and its geometry are one typed assembly; bind it to the same semantic binding ids as its member objects."
+        ),
+    )
+
+    def lifecycle(schema: str) -> dict[str, object]:
+        return _strict_object(
+            {
+                "schema": {"const": schema},
+                "object_id": identifier,
+                "expected_digest": digest,
+                "reason_refs": _array_contract(logical_ref, minimum=1, unique=True),
+            }
+        )
+
+    proposal_body = _strict_object(
+        {
+            "schema": {"const": _PROPOSAL_BODY_SCHEMA},
+            "proposal_id": identifier,
+            "predecessor_program_digest": nullable_digest,
+            "length_unit": {
+                "type": "string",
+                "enum": [item.value for item in LengthUnit],
+            },
+            "tolerance": _strict_object(
+                {
+                    "schema": {"const": GeometryTolerance.SCHEMA},
+                    "linear": {"type": "number", "exclusiveMinimum": 0},
+                    "angular_radians": {"type": "number", "exclusiveMinimum": 0},
+                }
+            ),
+            "frames": _array_contract(frame, minimum=1),
+            "assets": _array_contract(asset),
+            "semantic_bindings": _array_contract(binding, minimum=1),
+            "operations": _array_contract(operation, minimum=1),
+            "assemblies": _array_contract(assembly),
+            "revisions": _array_contract(lifecycle(ObjectRevisionPrecondition.SCHEMA)),
+            "retirements": _array_contract(lifecycle(ObjectRetirement.SCHEMA)),
+        }
+    )
+    output = _strict_object(
+        {
+            "schema": {"const": _AUTHORING_OUTPUT_SCHEMA},
+            "selected_template_refs": _array_contract(
+                logical_ref,
+                unique=True,
+                description=(
+                    "Unique lexicographically sorted project URIs selected only from available_template_records."
+                ),
+            ),
+            "proposal_body": proposal_body,
+        }
+    )
+    return {
+        "schema": "GeometryProposalAuthoringContract@1",
+        "json_schema": output,
+        "authority": {
+            "proposal_only": True,
+            "hard_gate": False,
+            "canonical_write": False,
+            "platform_mutation": False,
+        },
+    }
+
+
 class GeometryProposalProductionError(ValueError):
     """Inputs, records, or provider output violate the producer contract."""
 
@@ -783,11 +1031,15 @@ def _request_payload(
         "geometry_function_contracts": _FUNCTION_CONTRACTS,
         "repair_issues": [item.to_dict() for item in repair_issues],
         "required_output_schema": _AUTHORING_OUTPUT_SCHEMA,
+        "required_output_contract": _authoring_output_contract(),
         "instructions": [
             "Author geometry only from supplied project records and candidate values.",
+            "Return exactly the keys and nested field shapes in required_output_contract.json_schema; do not invent aliases such as geometry_nodes or geometry_functions.",
             "Use only declared geometry function kinds and explicit parameters.",
+            "GeometryParameter.value_json is canonical compact JSON encoded as a string, not a nested JSON value.",
             "Bind every candidate value and required commitment through semantic bindings.",
             "Include the spatial option record URI in every semantic binding evidence_refs.",
+            "When a supplied semantic component requires a hosted assembly, represent its semantic identity and geometry together through semantic_binding_ids and typed assembly members.",
             "Do not claim hard-gate, acceptance, canonical-write, or platform authority.",
             "No framework fallback or unstated building dimension will be supplied.",
         ],
@@ -1133,8 +1385,14 @@ def _mapping(value: object, field: str) -> Mapping[str, Any]:
 
 
 def _exact(value: Mapping[str, Any], fields: set[str], label: str) -> None:
-    if set(value) != fields:
-        raise GeometryProposalProductionError(f"{label} schema drifted")
+    actual = set(value)
+    if actual != fields:
+        missing = sorted(fields - actual)
+        unexpected = sorted(actual - fields)
+        raise GeometryProposalProductionError(
+            f"{label}: field mismatch; missing={missing}; "
+            f"unexpected={unexpected}"
+        )
 
 
 def _strings(values: tuple[str, ...], field: str, *, allow_empty: bool = False) -> tuple[str, ...]:
@@ -1156,7 +1414,15 @@ def _strings_from_json(value: object, field: str) -> tuple[str, ...]:
 def _decode_list(value: object, decoder: Any, field: str) -> tuple[Any, ...]:
     if not isinstance(value, list):
         raise TypeError(f"{field} must be a list")
-    return tuple(decoder(item) for item in value)
+    decoded = []
+    for index, item in enumerate(value):
+        try:
+            decoded.append(decoder(item))
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise GeometryProposalProductionError(
+                f"{field}[{index}]: {exc}"
+            ) from exc
+    return tuple(decoded)
 
 
 def _canonical_json(value: object) -> str:

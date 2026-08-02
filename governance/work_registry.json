@@ -2024,6 +2024,7 @@
         "M002",
         "M004",
         "M024",
+        "M026",
         "P018",
         "P024",
         "P025",
@@ -5024,6 +5025,108 @@
         ]
       },
       "completed_on": "2026-07-31"
+    },
+    {
+      "id": "M026",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make the P050 geometry authoring request self-describing and its repair feedback actionable for real proposal providers.",
+      "depends_on": [
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "tests/test_geometry_proposal_producer.py",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "The request carries an exact machine-readable output contract for the envelope and every GeometryProgramProposal body field.",
+        "The contract describes typed operations bindings assemblies assets frames tolerances retirements and revision preconditions without supplying any building answer.",
+        "Malformed provider output produces field-specific bounded repair issues that are supplied to the next round.",
+        "A provider can author a valid proposal using only project records function contracts and the supplied output contract.",
+        "Hard-gate acceptance canonical-write and platform authority remain absent and no parser fallback rewrites model output."
+      ],
+      "tests": [
+        "Exact authoring-contract shape and no-instance-default scan",
+        "Top-level and nested field-drift repair feedback",
+        "Request-only scripted provider accept and repair rounds",
+        "Full architecture firewall and unittest suite"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M026-geometry-authoring-schema-contract.md",
+      "evidence": [
+        "Added an exact machine-readable GeometryProposal authoring contract covering every parsed frame tolerance parameter asset binding operation hosted assembly revision and retirement field without instance defaults; top-level and nested drift now return path-specific bounded repair issues and no parser fallback; 7 focused tests, 5-path scope check, ARCHITECTURE PASS (100 files), and 383 full tests with 2 explicit skips passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M026",
+        "actor": "Codex",
+        "verified_at": "2026-08-02T17:32:49.582080+00:00",
+        "contract_sha256": "dd144e7d36b4f136c2386f2b5ed8c62fb6d58c5ca60992f9ff941df0c01183eb",
+        "scope_sha256": "c37fcd846f73af397cc36aa78ba3abae12249b8cedf59635f441a214a02aa94b",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "910619e97a571d23fbccde54563250b0a96f016076b69890db7d9109d5ce380f",
+            "stdout_tail": "",
+            "stderr_tail": ".......\n----------------------------------------------------------------------\nRan 7 tests in 0.554s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "a3bf879c3ca7f9eb096c65ff4f156ae56ebab4b3ae9594327b25b946e23258fc",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (100 files, 0.915s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d7cc654db82596c546d77772461c4683165617b0a564883937e890915fa20ed0",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s......................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 383 tests in 19.199s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-02"
     }
   ]
 }
