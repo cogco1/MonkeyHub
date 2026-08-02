@@ -637,6 +637,61 @@ class SandboxGoldTests(unittest.TestCase):
             self.assertFalse(claimed_members & members)
             claimed_members.update(members)
 
+    def test_scenario_window_beyond_policy_validity_fails_closed(self) -> None:
+        provider = _ScriptedArchitectProvider(concept_has_all_zones=True)
+        request_ref, scenario_ref, policy_ref, event_ref, asset_refs = self.inputs
+        scenario = self.repository.load_json(scenario_ref)
+        # The approval policy caps validity at 3600 seconds; declare ten years.
+        excessive = dict(scenario, valid_until_utc="2036-08-02T10:00:00Z")
+        excessive_ref = self.repository.put_json(
+            run=self.repository.load_run("input-bootstrap"),
+            destination=PersistenceDestination(PersistenceArea.INPUT),
+            record_kind="sandbox-scenario-excessive",
+            payload=excessive,
+        )
+        run = self.repository.create_run("gold-excessive-window")
+
+        with self.assertRaisesRegex(
+            SandboxGoldError,
+            "approval issuance rejected",
+        ):
+            asyncio.run(
+                execute_sandbox_gold(
+                    self.repository,
+                    run,
+                    provider,
+                    request_ref=request_ref,
+                    scenario_ref=excessive_ref,
+                    approval_policy_ref=policy_ref,
+                    authorization_event_ref=event_ref,
+                    asset_payload_refs=asset_refs,
+                )
+            )
+
+        self.assertEqual(self.repository.read_head().version, 0)
+
+    def test_approval_binds_persisted_build_policy_record(self) -> None:
+        provider = _ScriptedArchitectProvider(concept_has_all_zones=True)
+        self._execute(provider, run_id="gold-build-policy")
+
+        summary = reload_sandbox_gold(self.repository, run_id="gold-build-policy")
+        accepted = self.repository.load_json(
+            ProjectRecordRef(**summary["accepted_candidate_ref"])
+        )
+        build_binding = next(
+            item
+            for item in accepted["assembly"]["policies"]
+            if item["kind"] == "build"
+        )
+        prefix = f"project://{self.repository.layout.project_id}/"
+        self.assertTrue(build_binding["policy_ref"].startswith(prefix))
+        relative_path = build_binding["policy_ref"][len(prefix):]
+        record_path = self.repository.layout.root / relative_path
+        self.assertTrue(record_path.is_file())
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        self.assertEqual(record["schema"], "BuildPolicy@1")
+        self.assertTrue(record["disposable_sandbox"])
+
     def test_revision_cannot_silently_replace_the_model(self) -> None:
         provider = _ScriptedArchitectProvider(
             substitute_revision_model=True,
