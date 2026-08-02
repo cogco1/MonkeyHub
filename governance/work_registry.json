@@ -2025,6 +2025,7 @@
         "M004",
         "M024",
         "M026",
+        "M027",
         "P018",
         "P024",
         "P025",
@@ -5125,6 +5126,109 @@
             "stderr_sha256": "d7cc654db82596c546d77772461c4683165617b0a564883937e890915fa20ed0",
             "stdout_tail": "",
             "stderr_tail": "....s...s......................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 383 tests in 19.199s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-02"
+    },
+    {
+      "id": "M027",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Separate order-only JSON normalization from substantive geometry dependency rejection at the P050 authoring boundary.",
+      "depends_on": [
+        "M026",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "tests/test_geometry_proposal_producer.py",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Unique order-insensitive identifier and reference lists from provider JSON are canonicalized lexicographically before typed construction.",
+        "Duplicate identifiers and references remain rejected rather than silently deduplicated.",
+        "Object response ids remain a subset of operation inputs and binding response ids remain a subset of semantic bindings; violations remain hard repair issues.",
+        "The machine contract states the response-subset and zero-input operation invariants without supplying a building answer.",
+        "Proposal hard-gate canonical-write platform and acceptance authority remain unchanged."
+      ],
+      "tests": [
+        "Unsorted unique set-like JSON fields canonicalize deterministically",
+        "Duplicate set-like JSON fields are rejected",
+        "Response-subset violations remain path-specific repair issues",
+        "Exact generic contract and full architecture suite"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M027-geometry-authoring-set-normalization.md",
+      "evidence": [
+        "Canonicalized unique order-insensitive provider identifier/reference arrays without deduplication; retained duplicate and response-subset hard rejection; exposed machine-readable response/input/binding invariants; 10 focused tests, scope check, architecture firewall, and formal three-command verification passed. Real run gold-agent-cli-004 remains rejected evidence and was not retried."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M027",
+        "actor": "Codex",
+        "verified_at": "2026-08-02T18:03:05.533656+00:00",
+        "contract_sha256": "c6411a393cd21e65b1af5f70a4152245851606f846dd2df1038bb6ed219f2181",
+        "scope_sha256": "9477231e929e7e007d00f29c35e535a8e21d263c61057740696617092aacd991",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "eefdc8f39c5a83821fb5505eabdd2dbce32011228222b5b9a1c10ea5ed2acff0",
+            "stdout_tail": "",
+            "stderr_tail": "..........\n----------------------------------------------------------------------\nRan 10 tests in 0.855s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "c3333616de5a535e06801c451f99e3b39bee55c5b9d2c0999691933e7061fc4a",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (100 files, 0.859s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "0898c7be7bd7b1f5f59f813943de9f32aac49e97ec5234cb534fe6ce5c73a1fa",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s..........................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 387 tests in 20.793s\n\nOK (skipped=2)\n"
           }
         ]
       },

@@ -61,7 +61,7 @@ These are the main responsibility chains. Individual cards retain their exact fa
 | Retirement | Replacement-first removal of old ownership | 0 | [R](mapping/retirement/INDEX.md) |
 | Modify | Scoped repair of the active path | 0 | [M](mapping/modify/INDEX.md) |
 | Planning | Not implemented or not yet accepted | 5 | [P](mapping/planning/INDEX.md) |
-| Archive | Completed and evidenced work | 70 | [A](mapping/archive/INDEX.md) |
+| Archive | Completed and evidenced work | 71 | [A](mapping/archive/INDEX.md) |
 
 R, M, and P are parallel ledgers, not mandatory runtime stages. Archive is
 the cleared construction record, not a fourth execution phase.

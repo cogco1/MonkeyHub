@@ -296,6 +296,80 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("operations[0]", second_repair["detail"])
         self.assertIn("missing=['asset_scale']", second_repair["detail"])
 
+    async def test_unsorted_set_like_json_is_canonicalized(self) -> None:
+        unsorted = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        binding = unsorted["proposal_body"]["semantic_bindings"][0]
+        binding["candidate_value_ids"] = list(
+            reversed(binding["candidate_value_ids"])
+        )
+        binding["evidence_refs"] = list(reversed(binding["evidence_refs"]))
+        operation = next(
+            item
+            for item in unsorted["proposal_body"]["operations"]
+            if len(item["input_object_ids"]) > 1
+        )
+        operation["input_object_ids"] = list(
+            reversed(operation["input_object_ids"])
+        )
+
+        result = await self._produce(_ScriptedProvider((unsorted,)))
+
+        self.assertIs(result.status, GeometryProposalStatus.ACCEPTED)
+        assert result.proposal is not None
+        decoded_binding = result.proposal.semantic_bindings[0]
+        self.assertEqual(
+            decoded_binding.candidate_value_ids,
+            tuple(sorted(decoded_binding.candidate_value_ids)),
+        )
+        self.assertEqual(
+            decoded_binding.evidence_refs,
+            tuple(sorted(decoded_binding.evidence_refs)),
+        )
+
+    async def test_duplicate_set_like_json_remains_rejected(self) -> None:
+        duplicate = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        binding = duplicate["proposal_body"]["semantic_bindings"][0]
+        binding["evidence_refs"].append(binding["evidence_refs"][0])
+
+        result = await self._produce(
+            _ScriptedProvider((duplicate,)),
+            rounds=1,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        self.assertIn("semantic_bindings[0]", loaded.rounds[0].issues[0].detail)
+        self.assertIn("duplicate values", loaded.rounds[0].issues[0].detail)
+
+    async def test_response_subset_contradiction_remains_rejected(self) -> None:
+        invalid = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        operation = invalid["proposal_body"]["operations"][0]
+        self.assertEqual(operation["input_object_ids"], [])
+        operation["responds_to_object_ids"] = ["unconsumed-object"]
+
+        result = await self._produce(
+            _ScriptedProvider((invalid,)),
+            rounds=1,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        issue = loaded.rounds[0].issues[0]
+        self.assertIn("operations[0]", issue.detail)
+        self.assertIn("object responses must name operation inputs", issue.detail)
+
     async def test_provider_refusal_persists_without_fallback(self) -> None:
         provider = _ScriptedProvider(
             (ModelInvocationStatus.BUDGET_EXHAUSTED,)
@@ -395,6 +469,19 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
                 "canonical_write": False,
                 "platform_mutation": False,
             },
+        )
+        invariants = contract["cross_field_invariants"]
+        self.assertIn(
+            {
+                "field": "proposal_body.operations[*].responds_to_object_ids",
+                "relation": "subset_of",
+                "target": "proposal_body.operations[*].input_object_ids",
+            },
+            invariants,
+        )
+        self.assertIn(
+            "zero inputs",
+            operation["properties"]["input_object_ids"]["description"],
         )
 
 

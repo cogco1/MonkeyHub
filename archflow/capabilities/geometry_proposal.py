@@ -217,16 +217,36 @@ def _authoring_output_contract() -> dict[str, object]:
                 "enum": [item.value for item in GeometryOperationKind],
             },
             "output_object_ids": _array_contract(identifier, minimum=1, unique=True),
-            "input_object_ids": string_list,
+            "input_object_ids": _array_contract(
+                identifier,
+                unique=True,
+                description=(
+                    "Unique identifiers for objects consumed by this operation. "
+                    "Keep empty when geometry_function_contracts[kind] allows zero inputs."
+                ),
+            ),
             "frame_id": identifier,
             "parameters": _array_contract(parameter),
             "semantic_binding_ids": _array_contract(identifier, minimum=1, unique=True),
             "asset_id": nullable_identifier,
             "asset_socket_id": nullable_identifier,
             "asset_scale": {"anyOf": [{"type": "null"}, vector3]},
-            "responds_to_object_ids": string_list,
+            "responds_to_object_ids": _array_contract(
+                identifier,
+                unique=True,
+                description=(
+                    "Semantic dependency subset of input_object_ids; never name "
+                    "an object that this operation does not consume."
+                ),
+            ),
             "responds_to_frame_ids": string_list,
-            "responds_to_binding_ids": string_list,
+            "responds_to_binding_ids": _array_contract(
+                identifier,
+                unique=True,
+                description=(
+                    "Semantic dependency subset of semantic_binding_ids."
+                ),
+            ),
         },
         description=(
             "Use asset fields only for asset_instance. Parameter names and kinds must exactly follow geometry_function_contracts[kind]."
@@ -322,6 +342,23 @@ def _authoring_output_contract() -> dict[str, object]:
             "canonical_write": False,
             "platform_mutation": False,
         },
+        "cross_field_invariants": [
+            {
+                "field": "proposal_body.operations[*].responds_to_object_ids",
+                "relation": "subset_of",
+                "target": "proposal_body.operations[*].input_object_ids",
+            },
+            {
+                "field": "proposal_body.operations[*].responds_to_binding_ids",
+                "relation": "subset_of",
+                "target": "proposal_body.operations[*].semantic_binding_ids",
+            },
+            {
+                "field": "proposal_body.operations[*].input_object_ids",
+                "relation": "matches_function_input_arity",
+                "target": "geometry_function_contracts[kind]",
+            },
+        ],
     }
 
 
@@ -1040,6 +1077,8 @@ def _request_payload(
             "Bind every candidate value and required commitment through semantic bindings.",
             "Include the spatial option record URI in every semantic binding evidence_refs.",
             "When a supplied semantic component requires a hosted assembly, represent its semantic identity and geometry together through semantic_binding_ids and typed assembly members.",
+            "Treat identifier and reference arrays as sets: never duplicate values; lexical order is canonicalized by the protocol and carries no design meaning.",
+            "Every responds_to_object_ids value must also appear in the same operation input_object_ids, and every responds_to_binding_ids value must appear in semantic_binding_ids. A zero-input function therefore has empty responds_to_object_ids.",
             "Do not claim hard-gate, acceptance, canonical-write, or platform authority.",
             "No framework fallback or unstated building dimension will be supplied.",
         ],
@@ -1408,7 +1447,15 @@ def _strings(values: tuple[str, ...], field: str, *, allow_empty: bool = False) 
 def _strings_from_json(value: object, field: str) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise TypeError(f"{field} must be a list")
-    return tuple(value)
+    if any(not isinstance(item, str) or not item for item in value):
+        raise GeometryProposalProductionError(
+            f"{field} contains invalid text"
+        )
+    if len(value) != len(set(value)):
+        raise GeometryProposalProductionError(
+            f"{field} contains duplicate values"
+        )
+    return tuple(sorted(value))
 
 
 def _decode_list(value: object, decoder: Any, field: str) -> tuple[Any, ...]:

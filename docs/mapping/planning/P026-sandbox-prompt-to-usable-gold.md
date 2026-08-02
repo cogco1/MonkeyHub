@@ -1,8 +1,8 @@
 # P026 — Sandbox prompt-to-usable Gold slice
 
 - Origin: Planning
-- Status: Active after M002, M004, M024, M026, P018, P024, P025, P029, P030, P047, and P048
-- Depends on: M002, M004, M024, M026, P018, P024, P025, P029, P030, P047, P048
+- Status: Active after M002, M004, M024, M026, M027, P018, P024, P025, P029, P030, P047, and P048
+- Depends on: M002, M004, M024, M026, M027, P018, P024, P025, P029, P030, P047, P048
 
 ## Goal
 
@@ -64,6 +64,12 @@ platform outputs remain downstream adapters and are not proof authorities.
 - The exact concept-output contract and pre-validation receipt persistence were
   added after those failures and pass deterministic tests, but remain unproven
   against a fresh live provider invocation. P026 is therefore not Gold.
+- Real Codex Agent CLI run `gold-agent-cli-004` passed the exact concept
+  contract and persisted six semantic components, then exhausted two geometry
+  rounds: the first on order-only semantic-binding ids and the second on a
+  substantive object-response/input contradiction. It did not change
+  canonical state. M027 owns the narrow protocol repair; no third geometry
+  call was made.
 
 ## Stop conditions
 
