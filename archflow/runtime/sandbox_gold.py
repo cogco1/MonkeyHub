@@ -164,7 +164,12 @@ def _mapping(value: object, field: str) -> dict[str, Any]:
 
 def _exact(value: Mapping[str, Any], fields: set[str], field: str) -> None:
     if set(value) != fields:
-        raise SandboxGoldError(f"{field} schema drifted")
+        missing = sorted(fields - set(value))
+        unexpected = sorted(set(value) - fields)
+        raise SandboxGoldError(
+            f"{field} schema drifted; missing={missing}; "
+            f"unexpected={unexpected}"
+        )
 
 
 def _identifier(value: object, field: str) -> str:
@@ -614,93 +619,142 @@ async def _model_proposal(
     findings: tuple[str, ...] = (),
 ) -> ModelInvocationReceipt:
     revision = concept is not None
-    context = {
-        "raw_request": request.to_dict(),
-        "exact_base": _base_dict(base),
-        "predecessor": concept,
-        "hard_gate_findings": list(findings),
-    }
-    context_digest = _digest(context)
-    prompt = ModelInvocationRequest.create(
-        request_id=(
-            f"{request.request_id}-revision"
-            if revision
-            else f"{request.request_id}-concept"
-        ),
-        phase=ModelPhase.ACTION_PROPOSAL,
-        checkpoint_digest=(
-            _digest(concept) if revision else base.require_digest()
-        ),
-        context_digest=context_digest,
-        payload={
-            "schema": _MODEL_PROMPT_SCHEMA,
-            "instructions": (
-                "Act as the state-responsive Architect. Derive project "
-                "functions, capacities, areas, relations, semantic components, "
-                "dimensions, and performance requirements plus material intent "
-                "only from the raw request. A door, window, or other hosted "
-                "component must be declared here as one semantic component so "
-                "the later neutral geometry proposal can bind the same identity "
-                "to its typed assembly and member geometry. "
-                + (
-                    "Revise the exact predecessor to answer every supplied "
-                    "hard-gate finding while preserving honest spatial "
-                    "lineage and mutually consistent program requirements."
+    variant = "revised" if revision else "concept"
+    previous_output: dict[str, Any] | None = None
+    previous_ref: ProjectRecordRef | None = None
+    repair_issues: tuple[str, ...] = ()
+    initial_identity: GeometryProposalProviderIdentity | None = None
+    for round_index in range(1, 3):
+        context = {
+            "raw_request": request.to_dict(),
+            "exact_base": _base_dict(base),
+            "predecessor": concept,
+            "hard_gate_findings": list(findings),
+            "authoring_previous_output": previous_output,
+            "authoring_repair_issues": list(repair_issues),
+        }
+        prompt = ModelInvocationRequest.create(
+            request_id=(
+                f"{request.request_id}-{variant}"
+                if round_index == 1
+                else f"{request.request_id}-{variant}-authoring-{round_index:02d}"
+            ),
+            phase=ModelPhase.ACTION_PROPOSAL,
+            checkpoint_digest=(
+                _digest(previous_output)
+                if previous_output is not None
+                else (_digest(concept) if revision else base.require_digest())
+            ),
+            context_digest=_digest(context),
+            payload={
+                "schema": _MODEL_PROMPT_SCHEMA,
+                "authoring_variant": variant,
+                "authoring_round": round_index,
+                "repair_issues": list(repair_issues),
+                "previous_output": previous_output,
+                "instructions": (
+                    "Act as the state-responsive Architect. Derive project "
+                    "functions, capacities, areas, relations, semantic components, "
+                    "dimensions, and performance requirements plus material intent "
+                    "only from the raw request. A door, window, or other hosted "
+                    "component must be declared here as one semantic component so "
+                    "the later neutral geometry proposal can bind the same identity "
+                    "to its typed assembly and member geometry. "
+                    + (
+                        "Revise the exact predecessor to answer every supplied "
+                        "hard-gate finding while preserving honest spatial "
+                        "lineage and mutually consistent program requirements."
+                        if revision
+                        else
+                        "Produce a bounded concept-stage semantic and spatial "
+                        "proposal without a platform command or acceptance decision."
+                    )
+                    + (
+                        " Repair the exact previous output against every authoring "
+                        "repair issue; do not redesign unrelated values."
+                        if repair_issues
+                        else ""
+                    )
+                    + " Return exactly the requested output schema. The strict "
+                    "required_output_contract is authoritative: include every "
+                    "required field, including the root rationale, and add no fields."
+                ),
+                "context": context,
+                "required_output_schema": (
+                    _revision_output_schema()
                     if revision
-                    else
-                    "Produce a bounded concept-stage semantic and spatial "
-                    "proposal without a platform command or acceptance decision."
-                )
-                + " Return exactly the requested output schema. The strict "
-                "required_output_contract is authoritative: include every "
-                "required field, including the root rationale, and add no fields."
-            ),
-            "context": context,
-            "required_output_schema": (
-                _revision_output_schema()
-                if revision
-                else _concept_output_schema()
-            ),
-            "required_output_contract": _concept_output_contract(
-                revision=revision
-            ),
-            "authority": {
-                "proposal_only": True,
-                "hard_gate_waiver": False,
-                "acceptance": False,
-                "canonical_write": False,
+                    else _concept_output_schema()
+                ),
+                "required_output_contract": _concept_output_contract(
+                    revision=revision
+                ),
+                "authority": {
+                    "proposal_only": True,
+                    "hard_gate_waiver": False,
+                    "acceptance": False,
+                    "canonical_write": False,
+                },
             },
-        },
-    )
-    receipt = await provider.invoke(prompt)
-    repository.put_json(
-        run=run,
-        destination=PersistenceDestination(
-            PersistenceArea.RUN_RECORD,
-            run_id=run.run_id,
-        ),
-        record_kind=(
-            "architect-revision-invocation"
-            if revision
-            else "architect-concept-invocation"
-        ),
-        payload={
-            "schema": "SandboxArchitectInvocationRecord@1",
-            "variant": "revised" if revision else "concept",
-            "receipt": receipt.to_dict(),
-            "proposal_only": True,
-            "platform_export_authority": False,
-            "canonical_write_authority": False,
-        },
-    )
-    if receipt.status is not ModelInvocationStatus.SUCCESS:
-        raise SandboxGoldError(
-            f"Architect provider failed: {receipt.error_code}"
         )
-    if receipt.output is None:
-        raise SandboxGoldError("Architect provider returned no proposal")
-    _validate_proposal(receipt.output, revision=revision)
-    return receipt
+        receipt = await provider.invoke(prompt)
+        issue: str | None = None
+        identity = _provider_identity(receipt)
+        if initial_identity is None:
+            initial_identity = identity
+        elif identity != initial_identity:
+            issue = (
+                "Architect provider or model identity changed during authoring; "
+                "silent substitution rejected"
+            )
+        if issue is None and receipt.status is not ModelInvocationStatus.SUCCESS:
+            issue = f"Architect provider failed: {receipt.error_code}"
+        output = receipt.output
+        if issue is None and output is None:
+            issue = "Architect provider returned no proposal"
+        if issue is None:
+            assert output is not None
+            try:
+                _validate_proposal(
+                    json.loads(_canonical_json(output)),
+                    revision=revision,
+                )
+            except SandboxGoldError as exc:
+                issue = str(exc)
+        invocation_ref = repository.put_json(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_RECORD,
+                run_id=run.run_id,
+            ),
+            record_kind=f"architect-{variant}-invocation-{round_index:02d}",
+            payload={
+                "schema": "SandboxArchitectInvocationRecord@2",
+                "variant": variant,
+                "round_index": round_index,
+                "predecessor_invocation_ref": (
+                    None if previous_ref is None else previous_ref.uri
+                ),
+                "repair_issues": list(repair_issues),
+                "validation_issue": issue,
+                "receipt": receipt.to_dict(),
+                "proposal_only": True,
+                "platform_export_authority": False,
+                "canonical_write_authority": False,
+            },
+        )
+        if issue is None:
+            return receipt
+        if (
+            identity != initial_identity
+            or receipt.status is not ModelInvocationStatus.SUCCESS
+            or output is None
+            or round_index == 2
+        ):
+            raise SandboxGoldError(issue)
+        previous_output = output
+        previous_ref = invocation_ref
+        repair_issues = (issue,)
+    raise AssertionError("bounded Architect authoring loop did not terminate")
 
 
 def _provider_identity(

@@ -25,6 +25,10 @@ platform outputs remain downstream adapters and are not proof authorities.
 - Every model-authored semantic component becomes a candidate value. Each
   hosted component has one dedicated semantic binding to one typed assembly,
   and separate components do not reuse member-object identities.
+- A malformed Architect concept or revision receives at most one exact-contract
+  repair round. Both receipts, the predecessor reference, and the validation
+  issue persist; the framework neither fills semantic fields nor permits a
+  silent provider/model substitution.
 - A deterministic sandbox realization supplies spatial validation views and
   paper-ready drawings without requiring an external platform.
 - At least one rejected/revised candidate and one accepted candidate reload.
@@ -45,6 +49,8 @@ platform outputs remain downstream adapters and are not proof authorities.
 
 - Deterministic neutral-geometry and sandbox realization Gold.
 - Assembly, asset, geometry-operation, and fixture regressions.
+- Bounded semantic-authoring repair, receipt lineage, and provider-identity
+  retention regressions.
 - Archive, design-state, event-log, and canonical-state reload.
 - Static no-instance-default authority scan.
 
@@ -52,7 +58,7 @@ platform outputs remain downstream adapters and are not proof authorities.
 
 - Scripted concept/revision runs prove reloadable semantic-component candidate
   values, dedicated hosted-assembly bindings, distinct member identities, and
-  refusal persistence. The full deterministic suite passes 384 tests with two
+  refusal persistence. The full deterministic suite passes 393 tests with two
   explicit external skips.
 - Real Codex Agent CLI run `gold-agent-cli-002` was rejected during concept
   validation before invocation receipts were persisted; it did not change
@@ -62,8 +68,8 @@ platform outputs remain downstream adapters and are not proof authorities.
   then rejected it because the root `rationale` field was absent. It did not
   enter geometry production or change canonical state.
 - The exact concept-output contract and pre-validation receipt persistence were
-  added after those failures and pass deterministic tests, but remain unproven
-  against a fresh live provider invocation. P026 is therefore not Gold.
+  added after those failures and passed deterministic tests. At that point they
+  remained unproven against a fresh live provider invocation.
 - Real Codex Agent CLI run `gold-agent-cli-004` passed the exact concept
   contract and persisted six semantic components, then exhausted two geometry
   rounds: the first on order-only semantic-binding ids and the second on a
@@ -80,13 +86,27 @@ platform outputs remain downstream adapters and are not proof authorities.
   compilation. The lineage is exhausted, provider identity is retained,
   authority flags remain false, and canonical HEAD remains version zero.
 - P026 was blocked after repeated bounded real-provider geometry exhaustion.
-  Continuing requires an explicit choice to normalize keyed object
-  collections, strengthen provider guidance further, or authorize a different
-  bounded repair policy. No gate was weakened and no additional live call was
-  made.
+  That block required an explicit choice among normalizing keyed object
+  collections, strengthening provider guidance further, or authorizing a
+  different bounded repair policy. No gate was weakened.
 - Kevin explicitly resumed the blocked objective and authorized M028 to repair
   the hidden kind-specific assembly-role contract and non-semantic keyed-object
   ordering before one further bounded live proof.
+- M028 now exposes kind-specific required assembly roles from the same typed
+  state source used by validation and canonicalizes keyed provider collections
+  without deduplicating or weakening rejection rules. Its formal verification
+  passed before the next live run.
+- Real Codex Agent CLI run `gold-agent-cli-006` retained the expected provider,
+  model, version, and fingerprint, but its otherwise coherent five-component
+  concept omitted `semantic_kind` from every component. Exact validation
+  rejected it before geometry production; the invocation receipt persisted and
+  canonical HEAD remains version zero.
+- P026 now has a deterministic, two-round maximum Architect authoring protocol:
+  a malformed concept or revision may receive one exact-schema repair request
+  containing the untouched prior output and precise validation issue. Both
+  receipts link and persist, and a provider/model identity change is rejected.
+  This passes deterministic tests but has not yet been exercised by a fresh
+  live invocation, so P026 remains active and is not Gold.
 
 ## Stop conditions
 

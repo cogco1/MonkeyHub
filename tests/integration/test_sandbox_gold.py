@@ -394,13 +394,20 @@ class _ScriptedArchitectProvider:
         repair_first_geometry_round: bool = False,
         substitute_revision_model: bool = False,
         invalid_component_reference: bool = False,
+        omit_semantic_kind_first: bool = False,
+        substitute_concept_repair_model: bool = False,
     ) -> None:
         self.concept_has_all_zones = concept_has_all_zones
         self.repair_first_geometry_round = repair_first_geometry_round
         self.substitute_revision_model = substitute_revision_model
         self.invalid_component_reference = invalid_component_reference
+        self.omit_semantic_kind_first = omit_semantic_kind_first
+        self.substitute_concept_repair_model = (
+            substitute_concept_repair_model
+        )
         self.requests = []
         self._geometry_attempts: dict[str, int] = {}
+        self._semantic_attempts: dict[str, int] = {}
 
     async def invoke(self, request) -> ModelInvocationReceipt:
         self.requests.append(request)
@@ -414,17 +421,24 @@ class _ScriptedArchitectProvider:
                 output["proposal_body"]["operations"][0]["kind"] = (
                     "undeclared_building_primitive"
                 )
-        elif request.request_id.endswith("-concept"):
+        elif request.payload.get("authoring_variant") in {"concept", "revised"}:
+            variant = request.payload["authoring_variant"]
+            attempt = self._semantic_attempts.get(variant, 0) + 1
+            self._semantic_attempts[variant] = attempt
             output = _semantic_proposal(
-                revised=False,
-                complete_zones=self.concept_has_all_zones,
+                revised=variant == "revised",
+                complete_zones=(
+                    True
+                    if variant == "revised"
+                    else self.concept_has_all_zones
+                ),
             )
             if self.invalid_component_reference:
                 output["semantic_components"][0]["function_ids"] = [
                     "unknown-function"
                 ]
-        elif request.request_id.endswith("-revision"):
-            output = _semantic_proposal(revised=True, complete_zones=True)
+            if self.omit_semantic_kind_first and attempt == 1:
+                output["semantic_components"][0].pop("semantic_kind")
         else:
             raise AssertionError(f"unexpected model request: {request.request_id}")
         output_json = json.dumps(output, sort_keys=True, separators=(",", ":"))
@@ -436,8 +450,15 @@ class _ScriptedArchitectProvider:
             provider_id="scripted-architect",
             model_id=(
                 "silent-replacement"
-                if self.substitute_revision_model
-                and request.request_id.endswith("-revision")
+                if (
+                    self.substitute_revision_model
+                    and request.payload.get("authoring_variant") == "revised"
+                )
+                or (
+                    self.substitute_concept_repair_model
+                    and request.payload.get("authoring_variant") == "concept"
+                    and request.payload.get("authoring_round") == 2
+                )
                 else "scripted-model"
             ),
             provider_version="1.0",
@@ -649,14 +670,115 @@ class SandboxGoldTests(unittest.TestCase):
             ),
         )
         payloads = [self.repository.load_json(ref) for ref in records]
-        invocation = next(
+        invocations = sorted(
+            (
             item
             for item in payloads
-            if item.get("schema") == "SandboxArchitectInvocationRecord@1"
+            if item.get("schema") == "SandboxArchitectInvocationRecord@2"
+            ),
+            key=lambda item: item["round_index"],
         )
-        self.assertEqual(invocation["variant"], "concept")
-        self.assertEqual(invocation["receipt"]["status"], "success")
-        self.assertFalse(invocation["canonical_write_authority"])
+        self.assertEqual(len(invocations), 2)
+        self.assertEqual(invocations[0]["variant"], "concept")
+        self.assertEqual(invocations[0]["receipt"]["status"], "success")
+        self.assertIn("function_ids are invalid", invocations[0]["validation_issue"])
+        self.assertEqual(
+            invocations[1]["repair_issues"],
+            [invocations[0]["validation_issue"]],
+        )
+        self.assertFalse(invocations[1]["canonical_write_authority"])
+        self.assertEqual(self.repository.read_head().version, 0)
+
+    def test_missing_semantic_field_repairs_without_silent_fill(self) -> None:
+        provider = _ScriptedArchitectProvider(
+            concept_has_all_zones=True,
+            omit_semantic_kind_first=True,
+        )
+
+        result = self._execute(provider, run_id="gold-semantic-schema-repair")
+
+        self.assertEqual(result.committed.version, 1)
+        semantic_requests = [
+            request
+            for request in provider.requests
+            if request.payload.get("authoring_variant") == "concept"
+        ]
+        self.assertEqual(len(semantic_requests), 2)
+        repair = semantic_requests[1].payload
+        self.assertEqual(repair["authoring_round"], 2)
+        self.assertIn("semantic_kind", repair["repair_issues"][0])
+        self.assertNotIn(
+            "semantic_kind",
+            repair["previous_output"]["semantic_components"][0],
+        )
+        run = self.repository.load_run("gold-semantic-schema-repair")
+        records = self.repository.list_json(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_RECORD,
+                run_id=run.run_id,
+            ),
+        )
+        invocations = sorted(
+            (
+                self.repository.load_json(ref)
+                for ref in records
+                if self.repository.load_json(ref).get("schema")
+                == "SandboxArchitectInvocationRecord@2"
+            ),
+            key=lambda item: item["round_index"],
+        )
+        self.assertEqual(len(invocations), 2)
+        self.assertIsNotNone(invocations[0]["validation_issue"])
+        self.assertIsNone(invocations[1]["validation_issue"])
+        self.assertEqual(
+            invocations[1]["predecessor_invocation_ref"],
+            next(
+                ref.uri
+                for ref in records
+                if self.repository.load_json(ref) == invocations[0]
+            ),
+        )
+        reload_sandbox_gold(
+            FilesystemProjectRepository.open(self.repository.layout.root),
+            run_id="gold-semantic-schema-repair",
+        )
+
+    def test_semantic_authoring_repair_rejects_model_substitution(self) -> None:
+        provider = _ScriptedArchitectProvider(
+            concept_has_all_zones=True,
+            omit_semantic_kind_first=True,
+            substitute_concept_repair_model=True,
+        )
+
+        with self.assertRaisesRegex(
+            SandboxGoldError,
+            "silent substitution rejected",
+        ):
+            self._execute(provider, run_id="gold-authoring-identity-drift")
+
+        run = self.repository.load_run("gold-authoring-identity-drift")
+        records = self.repository.list_json(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_RECORD,
+                run_id=run.run_id,
+            ),
+        )
+        invocations = sorted(
+            (
+                self.repository.load_json(ref)
+                for ref in records
+                if self.repository.load_json(ref).get("schema")
+                == "SandboxArchitectInvocationRecord@2"
+            ),
+            key=lambda item: item["round_index"],
+        )
+        self.assertEqual(len(invocations), 2)
+        self.assertIn(
+            "silent substitution rejected",
+            invocations[1]["validation_issue"],
+        )
         self.assertEqual(self.repository.read_head().version, 0)
 
 
