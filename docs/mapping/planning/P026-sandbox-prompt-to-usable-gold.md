@@ -1,7 +1,7 @@
 # P026 — Sandbox prompt-to-usable Gold slice
 
 - Origin: Planning
-- Status: Ready after M002, M004, M024, M026, M027, M028, M029, M031, P018, P024, P025, P029, P030, P047, and P048
+- Status: Active after M002, M004, M024, M026, M027, M028, M029, M031, P018, P024, P025, P029, P030, P047, and P048
 - Depends on: M002, M004, M024, M026, M027, M028, M029, M031, P018, P024, P025, P029, P030, P047, P048
 
 ## Goal
@@ -121,6 +121,12 @@ platform outputs remain downstream adapters and are not proof authorities.
   failure and exposes a separate contract defect: assembly `interface_refs`
   use identifier-shaped values where typed state requires a portable logical
   reference. P026 is therefore still not Gold; no further live call was made.
+- M031 selectively integrated Claude commits `942ae1d`, `b564a21`, and
+  `0e31622` under a sandbox-only write scope. Floating occupancy now derives
+  from persisted support relations, approvals use the durable policy issuance
+  gate, and reload recomputes rejection semantics consistently. Focused,
+  architecture, and full-suite verification passed; Claude's repository,
+  design-state, geometry-contract, and CPU-timing commits remain unmerged.
 
 ## Stop conditions
 

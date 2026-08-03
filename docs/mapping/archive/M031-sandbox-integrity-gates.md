@@ -1,7 +1,7 @@
 # M031 — Sandbox integrity gates
 
 - Origin: Modify
-- Status: Active
+- Status: Done
 - Depends on: M004, P048
 
 ## Goal
@@ -44,3 +44,9 @@ policy binding, and make reload rejection semantics match execution.
 - Stop before synthesizing support, approval, or evidence.
 - Stop if reload becomes weaker than execution-time validation.
 - Stop if any change requires project, repository, or design-state ownership.
+
+
+## Completion
+
+- Completed: 2026-08-03
+- Evidence: Cherry-picked only Claude commits 942ae1d b564a21 and 0e31622 under an explicit sandbox-only scope; derived floating occupancy from persisted support relations, issued approvals through the durable policy gate, and aligned reload rejection semantics; 18 focused tests, scope check, architecture firewall, and formal full discovery passed.

@@ -80,5 +80,6 @@ Which completed work has named acceptance evidence?
 | M028 | modify | done | Expose kind-specific hosted-assembly roles and canonicalize keyed provider object collections without changing design meaning. | [M028](M028-hosted-assembly-contract-normalization.md) |
 | M029 | modify | done | Canonicalize semantically unchanged geometry parameter JSON text at the provider boundary without weakening typed validation. | [M029](M029-geometry-parameter-json-normalization.md) |
 | M030 | modify | done | Reuse one AST index per file so the mandatory architecture firewall meets its unchanged wall-clock budget deterministically. | [M030](M030-architecture-firewall-single-pass.md) |
+| M031 | modify | done | Integrate sandbox support approval and reload integrity repairs without weakening evidence or authority boundaries. | [M031](M031-sandbox-integrity-gates.md) |
 
 [Back to RMPA](../README.md)

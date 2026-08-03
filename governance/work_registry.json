@@ -2018,7 +2018,7 @@
       "id": "P026",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "ready",
+      "status": "active",
       "goal": "Prove one true raw-request-to-usable-building run as a reloadable accepted platform-neutral sandbox artifact.",
       "depends_on": [
         "M002",
@@ -2061,7 +2061,8 @@
         "No-instance-default scan"
       ],
       "card": "docs/mapping/planning/P026-sandbox-prompt-to-usable-gold.md",
-      "evidence": []
+      "evidence": [],
+      "actor": "Codex"
     },
     {
       "id": "P027",
@@ -5547,8 +5548,8 @@
     {
       "id": "M031",
       "origin_stream": "modify",
-      "stream": "modify",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Integrate sandbox support approval and reload integrity repairs without weakening evidence or authority boundaries.",
       "depends_on": [
         "M004",
@@ -5595,9 +5596,61 @@
           "tests"
         ]
       ],
-      "card": "docs/mapping/modify/M031-sandbox-integrity-gates.md",
-      "evidence": [],
-      "actor": "Codex"
+      "card": "docs/mapping/archive/M031-sandbox-integrity-gates.md",
+      "evidence": [
+        "Cherry-picked only Claude commits 942ae1d b564a21 and 0e31622 under an explicit sandbox-only scope; derived floating occupancy from persisted support relations, issued approvals through the durable policy gate, and aligned reload rejection semantics; 18 focused tests, scope check, architecture firewall, and formal full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M031",
+        "actor": "Codex",
+        "verified_at": "2026-08-03T20:00:56.389988+00:00",
+        "contract_sha256": "044fef44558356ad6de3106c8a078fff30df133ea20d9f29d65e2a2525a1f91e",
+        "scope_sha256": "694893083d59e4f59dc1748c99f7084ccd0d5041fe18dd6e8db1fdd428ec2819",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_sandbox_realization",
+              "tests.integration.test_sandbox_gold"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "58a5109e48e5be4094f7097c203b42a5b78a883d285ef4d8bb62187b6b6be949",
+            "stdout_tail": "",
+            "stderr_tail": "..................\n----------------------------------------------------------------------\nRan 18 tests in 8.815s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "53b7b9294676d4693f55161d3625273666f521cf282abddc163335fdfd613c24",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (100 files, 0.518s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "5644ef87aa1409e3f1b8a504702d571b5407cbfc43e8df63c609f6ec13c4d499",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.............................................................................................................................................................................................................................Executing <Task finished name='Task-38' coro=<GeometryProposalProducerTests.test_accepted_record_reloads_compiles_and_realizes() done, defined at D:\\ARCHFLOW_V4\\tests\\test_geometry_proposal_producer.py:211> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.156 seconds\n...........................................................................................................................................................................\n----------------------------------------------------------------------\nRan 401 tests in 38.551s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-03"
     }
   ]
 }
