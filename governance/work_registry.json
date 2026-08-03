@@ -2018,7 +2018,7 @@
       "id": "P026",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "active",
+      "status": "ready",
       "goal": "Prove one true raw-request-to-usable-building run as a reloadable accepted platform-neutral sandbox artifact.",
       "depends_on": [
         "M002",
@@ -2028,6 +2028,7 @@
         "M027",
         "M028",
         "M029",
+        "M031",
         "P018",
         "P024",
         "P025",
@@ -2060,8 +2061,7 @@
         "No-instance-default scan"
       ],
       "card": "docs/mapping/planning/P026-sandbox-prompt-to-usable-gold.md",
-      "evidence": [],
-      "actor": "Codex"
+      "evidence": []
     },
     {
       "id": "P027",
@@ -5543,6 +5543,61 @@
         ]
       },
       "completed_on": "2026-08-03"
+    },
+    {
+      "id": "M031",
+      "origin_stream": "modify",
+      "stream": "modify",
+      "status": "active",
+      "goal": "Integrate sandbox support approval and reload integrity repairs without weakening evidence or authority boundaries.",
+      "depends_on": [
+        "M004",
+        "P048"
+      ],
+      "write_scope": [
+        "archflow/realization/sandbox.py",
+        "archflow/runtime/sandbox_gold.py",
+        "tests/test_sandbox_realization.py",
+        "tests/integration/test_sandbox_gold.py",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Floating occupied cells are derived from the grounded persisted support graph without fabricated support.",
+        "Approvals are issued through the existing disposable automation gate and bind a persisted BuildPolicy record by URI and digest.",
+        "Reload verifies approval window policy binding and receipt consistency at least as strictly as execution.",
+        "Rejected concepts are identified from recomputed non-empty finding codes matching the persisted summary regardless of emitting hard gate.",
+        "Artifact digests authority separation and canonical-write boundaries remain unchanged."
+      ],
+      "tests": [
+        "Grounded and floating support graph observations",
+        "Approval issuance expiry policy binding and reload rejection",
+        "Usability-only and mixed-gate rejected-candidate reload",
+        "Focused sandbox architecture firewall and full unittest suite"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_sandbox_realization",
+          "tests.integration.test_sandbox_gold"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/modify/M031-sandbox-integrity-gates.md",
+      "evidence": [],
+      "actor": "Codex"
     }
   ]
 }
