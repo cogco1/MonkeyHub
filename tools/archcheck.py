@@ -36,6 +36,28 @@ class Finding:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _SourceIndex:
+    nodes: tuple[ast.AST, ...]
+    parents: dict[ast.AST, ast.AST]
+
+
+def _index_tree(tree: ast.AST) -> _SourceIndex:
+    """Index one syntax tree once for every architecture check."""
+
+    nodes: list[ast.AST] = []
+    parents: dict[ast.AST, ast.AST] = {}
+    stack = [tree]
+    while stack:
+        node = stack.pop()
+        nodes.append(node)
+        children = tuple(ast.iter_child_nodes(node))
+        for child in children:
+            parents[child] = node
+        stack.extend(reversed(children))
+    return _SourceIndex(tuple(nodes), parents)
+
+
 def load_policy(path: Path) -> dict[str, Any]:
     try:
         policy = json.loads(path.read_text(encoding="utf-8"))
@@ -173,8 +195,8 @@ def _parse(path: Path, root: Path) -> tuple[ast.Module | None, Finding | None]:
         return None, Finding(relative, line, "PARSE_ERROR", str(exc))
 
 
-def _import_targets(tree: ast.AST) -> Iterator[tuple[str, int]]:
-    for node in ast.walk(tree):
+def _import_targets(nodes: Iterable[ast.AST]) -> Iterator[tuple[str, int]]:
+    for node in nodes:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 yield alias.name, node.lineno
@@ -195,10 +217,10 @@ def _source_matches(relative: str, prefix: str) -> bool:
 
 def check_imports(
     relative: str,
-    tree: ast.AST,
+    index: _SourceIndex,
     policy: dict[str, Any],
 ) -> Iterator[Finding]:
-    for target, line in _import_targets(tree):
+    for target, line in _import_targets(index.nodes):
         if _module_matches(target, "probes"):
             yield Finding(
                 relative,
@@ -221,14 +243,14 @@ def check_imports(
 
 def check_instance_answers(
     relative: str,
-    tree: ast.AST,
+    index: _SourceIndex,
     policy: dict[str, Any],
 ) -> Iterator[Finding]:
     forbidden_literals = tuple(
         item.casefold() for item in policy["forbidden_instance_literals"]
     )
     forbidden_identifiers = set(policy["forbidden_framework_identifiers"])
-    for node in ast.walk(tree):
+    for node in index.nodes:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             folded = node.value.casefold()
             for forbidden in forbidden_literals:
@@ -324,20 +346,16 @@ def _allowed_write(
 
 def check_filesystem_writes(
     relative: str,
-    tree: ast.AST,
+    index: _SourceIndex,
     policy: dict[str, Any],
 ) -> Iterator[Finding]:
-    parents: dict[ast.AST, ast.AST] = {}
-    for parent in ast.walk(tree):
-        for child in ast.iter_child_nodes(parent):
-            parents[child] = parent
-    for node in ast.walk(tree):
+    for node in index.nodes:
         if not isinstance(node, ast.Call):
             continue
         operation = _write_operation(node)
         if operation is None:
             continue
-        function = _enclosing_function(node, parents)
+        function = _enclosing_function(node, index.parents)
         if not _allowed_write(relative, function, operation, policy):
             yield Finding(
                 relative,
@@ -349,7 +367,7 @@ def check_filesystem_writes(
 
 def check_authority_symbols(
     relative: str,
-    tree: ast.AST,
+    index: _SourceIndex,
     policy: dict[str, Any],
 ) -> Iterator[Finding]:
     patterns = tuple(re.compile(item) for item in policy["authority_symbol_patterns"])
@@ -357,7 +375,7 @@ def check_authority_symbols(
         (item["path"], item["symbol"])
         for item in policy["allowed_authority_symbols"]
     }
-    for node in ast.walk(tree):
+    for node in index.nodes:
         if not isinstance(node, (ast.ClassDef, ast.FunctionDef)):
             continue
         if not any(pattern.fullmatch(node.name) for pattern in patterns):
@@ -373,13 +391,13 @@ def check_authority_symbols(
 
 def check_commit_soft_gate_leak(
     relative: str,
-    tree: ast.AST,
+    index: _SourceIndex,
     policy: dict[str, Any],
 ) -> Iterator[Finding]:
     if not _source_matches(relative, "archflow/commit"):
         return
     forbidden = set(policy["forbidden_commit_symbols"])
-    for node in ast.walk(tree):
+    for node in index.nodes:
         if isinstance(node, ast.Name):
             name = node.id
         elif isinstance(node, ast.Attribute):
@@ -434,12 +452,13 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[Finding, ...]:
             findings.append(parse_finding)
             continue
         assert tree is not None
+        index = _index_tree(tree)
         checks: Iterable[Iterable[Finding]] = (
-            check_imports(relative, tree, policy),
-            check_instance_answers(relative, tree, policy),
-            check_filesystem_writes(relative, tree, policy),
-            check_authority_symbols(relative, tree, policy),
-            check_commit_soft_gate_leak(relative, tree, policy),
+            check_imports(relative, index, policy),
+            check_instance_answers(relative, index, policy),
+            check_filesystem_writes(relative, index, policy),
+            check_authority_symbols(relative, index, policy),
+            check_commit_soft_gate_leak(relative, index, policy),
         )
         for result in checks:
             findings.extend(result)

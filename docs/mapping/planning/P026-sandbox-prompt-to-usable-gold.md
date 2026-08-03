@@ -1,7 +1,7 @@
 # P026 — Sandbox prompt-to-usable Gold slice
 
 - Origin: Planning
-- Status: Ready after M002, M004, M024, M026, M027, M028, M029, P018, P024, P025, P029, P030, P047, and P048
+- Status: Active after M002, M004, M024, M026, M027, M028, M029, P018, P024, P025, P029, P030, P047, and P048
 - Depends on: M002, M004, M024, M026, M027, M028, M029, P018, P024, P025, P029, P030, P047, P048
 
 ## Goal
@@ -113,13 +113,14 @@ platform outputs remain downstream adapters and are not proof authorities.
   round two repaired all four substantive findings, then was rejected because
   one numeric-vector `value_json` string contained non-canonical whitespace.
   Provider identity was retained and canonical HEAD remained version zero.
-- M029 implements semantics-preserving parameter-JSON normalization, and 16
-  focused tests pass. Offline replay of the exact round-two output crosses that
-  failure and then exposes a separate contract defect: assembly
-  `interface_refs` use identifier-shaped values where typed state requires a
-  portable logical reference. M029 remains active because its formal full-suite
-  verification hit the same three-second architecture timing gate twice. P026
-  is therefore still not Gold; no further live call was made.
+- M029 implements semantics-preserving parameter-JSON normalization. M030
+  removed repeated AST walks while retaining the original three-second
+  wall-clock architecture gate and every finding. Both cards passed formal
+  focused, architecture, and full-suite verification and are archived.
+- Offline replay of the exact round-two output now crosses the parameter-JSON
+  failure and exposes a separate contract defect: assembly `interface_refs`
+  use identifier-shaped values where typed state requires a portable logical
+  reference. P026 is therefore still not Gold; no further live call was made.
 
 ## Stop conditions
 

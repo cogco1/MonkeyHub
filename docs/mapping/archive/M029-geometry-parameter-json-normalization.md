@@ -1,8 +1,8 @@
 # M029 — Geometry parameter JSON normalization
 
 - Origin: Modify
-- Status: Active
-- Depends on: M027, M028, P050
+- Status: Done
+- Depends on: M027, M028, M030, P050
 
 ## Goal
 
@@ -48,9 +48,19 @@ weakening typed geometry validation.
   three-second architecture performance test took 5.48 and 5.76 seconds inside
   two full-suite runs. All other tests passed with two explicit external skips;
   the mandatory repeated-failure stop condition prevents a third attempt.
+- M030 subsequently removed repeated AST walks while retaining the original
+  three-second wall-clock gate and all architecture checks. Its formal
+  verification passed, so M029 can be verified again without changing its
+  geometry contract or acceptance boundary.
 
 ## Stop conditions
 
 - Stop if normalization changes the value produced by JSON decoding.
 - Stop before repairing a missing parameter or substantive geometry error.
 - Stop before increasing P026 live repair rounds or weakening hard gates.
+
+
+## Completion
+
+- Completed: 2026-08-03
+- Evidence: Canonicalized syntactically valid GeometryParameter value_json text at the provider decoding boundary without changing decoded values or strict typed-state canonicality; malformed JSON and type mismatches remain rejected; 16 focused producer tests, architecture firewall, and full discovery passed after M030 retained and optimized the original wall-clock gate.

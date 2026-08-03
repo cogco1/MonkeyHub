@@ -78,5 +78,7 @@ Which completed work has named acceptance evidence?
 | M026 | modify | done | Make the P050 geometry authoring request self-describing and its repair feedback actionable for real proposal providers. | [M026](M026-geometry-authoring-schema-contract.md) |
 | M027 | modify | done | Separate order-only JSON normalization from substantive geometry dependency rejection at the P050 authoring boundary. | [M027](M027-geometry-authoring-set-normalization.md) |
 | M028 | modify | done | Expose kind-specific hosted-assembly roles and canonicalize keyed provider object collections without changing design meaning. | [M028](M028-hosted-assembly-contract-normalization.md) |
+| M029 | modify | done | Canonicalize semantically unchanged geometry parameter JSON text at the provider boundary without weakening typed validation. | [M029](M029-geometry-parameter-json-normalization.md) |
+| M030 | modify | done | Reuse one AST index per file so the mandatory architecture firewall meets its unchanged wall-clock budget deterministically. | [M030](M030-architecture-firewall-single-pass.md) |
 
 [Back to RMPA](../README.md)

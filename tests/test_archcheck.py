@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -28,6 +29,21 @@ class ArchitectureFirewallTests(unittest.TestCase):
         elapsed = time.perf_counter() - started
         self.assertEqual(findings, ())
         self.assertLess(elapsed, 3.0)
+
+    def test_source_index_covers_nodes_and_exact_parents(self) -> None:
+        tree = ast.parse(
+            "def outer():\n"
+            "    value = 1\n"
+            "    return value\n"
+        )
+
+        index = archcheck._index_tree(tree)
+
+        self.assertEqual(set(index.nodes), set(ast.walk(tree)))
+        self.assertEqual(len(index.nodes), len(set(index.nodes)))
+        for parent in index.nodes:
+            for child in ast.iter_child_nodes(parent):
+                self.assertIs(index.parents[child], parent)
 
     def test_reverse_import_instance_answer_writer_and_authority_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-02",
+  "updated_on": "2026-08-03",
   "phase": "P6 - sandbox-first neutral geometry roadmap active",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -2018,7 +2018,7 @@
       "id": "P026",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "ready",
+      "status": "active",
       "goal": "Prove one true raw-request-to-usable-building run as a reloadable accepted platform-neutral sandbox artifact.",
       "depends_on": [
         "M002",
@@ -2060,7 +2060,8 @@
         "No-instance-default scan"
       ],
       "card": "docs/mapping/planning/P026-sandbox-prompt-to-usable-gold.md",
-      "evidence": []
+      "evidence": [],
+      "actor": "Codex"
     },
     {
       "id": "P027",
@@ -5342,12 +5343,13 @@
     {
       "id": "M029",
       "origin_stream": "modify",
-      "stream": "modify",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Canonicalize semantically unchanged geometry parameter JSON text at the provider boundary without weakening typed validation.",
       "depends_on": [
         "M027",
         "M028",
+        "M030",
         "P050"
       ],
       "write_scope": [
@@ -5387,9 +5389,160 @@
           "tests"
         ]
       ],
-      "card": "docs/mapping/modify/M029-geometry-parameter-json-normalization.md",
-      "evidence": [],
-      "actor": "Codex"
+      "card": "docs/mapping/archive/M029-geometry-parameter-json-normalization.md",
+      "evidence": [
+        "Canonicalized syntactically valid GeometryParameter value_json text at the provider decoding boundary without changing decoded values or strict typed-state canonicality; malformed JSON and type mismatches remain rejected; 16 focused producer tests, architecture firewall, and full discovery passed after M030 retained and optimized the original wall-clock gate."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M029",
+        "actor": "Codex",
+        "verified_at": "2026-08-03T19:57:56.169824+00:00",
+        "contract_sha256": "9badffe9867ddb05f6640e450e03bf1fe739c4a102c03815de85e63a44e589d1",
+        "scope_sha256": "44d24e7e3d7152e2e059ab1839de0c56a5e8a0ee813b7b73e6adef5e1af338de",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "71d4ebfd012e13e81fbfda9c0243a1f65e44f5d7f6ad4f53d5c0e51ced38dde5",
+            "stdout_tail": "",
+            "stderr_tail": "................\n----------------------------------------------------------------------\nRan 16 tests in 1.555s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "c06eeaae5e1189bfca24b585056232b627aec973b01d0e5a8653118a0712513d",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (100 files, 0.546s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "8adcaddd55cf3797545e0dfb03c99d2831a26ea82bed8781b5b7312dbafaad8c",
+            "stdout_tail": "",
+            "stderr_tail": "sts.test_accepted_record_reloads_compiles_and_realizes() done, defined at D:\\ARCHFLOW_V4\\tests\\test_geometry_proposal_producer.py:211> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.125 seconds\n..Executing <Task finished name='Task-38' coro=<GeometryProposalProducerTests.test_duplicate_member_role_remains_rejected() done, defined at D:\\ARCHFLOW_V4\\tests\\test_geometry_proposal_producer.py:458> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 1.000 seconds\n......Executing <Task finished name='Task-67' coro=<GeometryProposalProducerTests.test_out_of_vocabulary_round_is_persisted_and_repaired() done, defined at D:\\ARCHFLOW_V4\\tests\\test_geometry_proposal_producer.py:244> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.125 seconds\n.................................................................................................................................................................\n----------------------------------------------------------------------\nRan 396 tests in 40.076s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-03"
+    },
+    {
+      "id": "M030",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Reuse one AST index per file so the mandatory architecture firewall meets its unchanged wall-clock budget deterministically.",
+      "depends_on": [
+        "P045"
+      ],
+      "write_scope": [
+        "tools/archcheck.py",
+        "tests/test_archcheck.py",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Every source file is parsed once and its AST nodes and parent links are indexed once per run_checks call.",
+        "All existing architecture checks consume the shared index without dropping or weakening findings.",
+        "The existing perf_counter wall-clock threshold remains 3.0 seconds and is not replaced by CPU time.",
+        "Probe policy JSON output and CLI exit semantics remain unchanged."
+      ],
+      "tests": [
+        "Existing positive and adversarial architecture firewall tests",
+        "Shared index node and parent coverage",
+        "Standalone architecture check and full unittest suite"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_archcheck"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M030-architecture-firewall-single-pass.md",
+      "evidence": [
+        "Reused one AST node and parent index per source file without changing policies findings files or the 3.0-second perf_counter gate; focused tests passed, archcheck covered 100 files in 0.522 seconds unprofiled and 1.205 seconds under cProfile, function calls fell from about 18.9 million to 4.8 million, and formal three-command verification including full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M030",
+        "actor": "Codex",
+        "verified_at": "2026-08-03T19:56:41.087073+00:00",
+        "contract_sha256": "f989cfcb48c219a99c23bc83f026b053d2d5750eb9583a638c6961fc6ae7722b",
+        "scope_sha256": "da15859205371d40a29ca45c1f6ae92bb695cd169ae0a7f0b37c8dd1ddcd737d",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_archcheck"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "7276d754de7c2771cd5f863fbe881b8721137ce0d20c8e8aae04406677c1e550",
+            "stdout_tail": "",
+            "stderr_tail": ".......\n----------------------------------------------------------------------\nRan 7 tests in 1.285s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "c41e5ec1db1a6dafe0ffc3eeb61eb4f034da4718b23492a80d099afb36546200",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (100 files, 0.524s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "f0d78ae9d8577e832d9cd0921f9f333c1307f8a60c9ac15b144e4d882471cfbe",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s..........................................................................................................................................................................................................................Executing <Task finished name='Task-29' coro=<GeometryProposalProducerTests.test_accepted_record_reloads_compiles_and_realizes() done, defined at D:\\ARCHFLOW_V4\\tests\\test_geometry_proposal_producer.py:211> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.125 seconds\n.........................................................................................................................................................................\n----------------------------------------------------------------------\nRan 396 tests in 47.602s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-03"
     }
   ]
 }
