@@ -84,5 +84,7 @@ Which completed work has named acceptance evidence?
 | P052 | planning | done | Add an explicit cross-platform external runtime for active ArchFlow projects while preserving P036 as the sole project writer and probes as promoted evidence. | [P052](P052-external-project-runtime.md) |
 | M032 | modify | done | Make geometry interface reference publication and enforcement match typed state and supplied spatial records exactly. | [M032](M032-geometry-interface-reference-contract.md) |
 | P053 | planning | done | Provide provider-neutral production responsibility isolation, shadow execution, exact-base atomic handover, and stale-result rejection without fallback or canonical-write authority. | [P053](P053-production-responsibility-handover.md) |
+| M033 | modify | done | Make Codex history compaction recoverable from bounded current repository contracts without making transcripts or hook output authoritative. | [M033](M033-context-compaction-recovery.md) |
+| M034 | modify | done | Make the M033 acceptance test follow registry-owned card paths and the current active-card set across completion. | [M034](M034-context-hook-lifecycle-test.md) |
 
 [Back to RMPA](../README.md)

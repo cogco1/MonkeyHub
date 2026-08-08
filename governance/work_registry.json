@@ -273,10 +273,11 @@
         "P036",
         "M013",
         "P045",
-        "P046"
+        "P046",
+        "M033"
       ],
       "open_cards": [],
-      "gap": "Machine-bound completion, the mandatory architecture firewall, and bounded read-only Agent context are proven; new invariants must still be added explicitly as the architecture expands."
+      "gap": "Machine-bound completion the architecture firewall and P046 bounded context are proven; M033 governs lifecycle recovery after compaction while future invariants must still be added explicitly as the architecture expands."
     },
     {
       "id": "L15",
@@ -519,7 +520,8 @@
         "P036",
         "M013",
         "P045",
-        "P046"
+        "P046",
+        "M033"
       ],
       "purpose": "Make architecture rules executable, bind completion evidence to the verified source state, and give each Agent only its bounded work context."
     }
@@ -6022,6 +6024,220 @@
             "stderr_sha256": "ef576c23ccf24278a9aee4ac58b825455cd0819d6911d430cdec88eaec311856",
             "stdout_tail": "",
             "stderr_tail": "....s...s......................................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 431 tests in 134.451s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-08"
+    },
+    {
+      "id": "M033",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make Codex history compaction recoverable from bounded current repository contracts without making transcripts or hook output authoritative.",
+      "depends_on": [
+        "P046",
+        "M013"
+      ],
+      "write_scope": [
+        ".codex/config.toml",
+        ".codex/hooks/context_recovery.py",
+        "tests/test_context_recovery_hook.py",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Project config uses body-after-prefix compaction scope and a preservation prompt without guessing the model context window or auto-compaction threshold.",
+        "PreCompact regenerates P046 context for every active work card and stops when recovery context cannot be built.",
+        "Compact SessionStart injects bounded current commit dirty paths active-card contracts evidence labels and capsule digests before continuation.",
+        "The hook reads no transcript or raw history and writes no project cache checkpoint temporary or canonical artifact.",
+        "Hook context is explicitly non-authoritative and requires current-state refresh before modification.",
+        "Fixed registry and git state produce bounded portable secret-free recovery output.",
+        "Invalid events missing contracts and capsule failures fail closed while project hooks remain subject to Codex trust review."
+      ],
+      "tests": [
+        "Project config TOML and hook matcher contract",
+        "PreCompact success invalid-event rejection and read-only behavior",
+        "Compact SessionStart bounded recovery content and authority disclaimer",
+        "No transcript absolute machine path secret or project write",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_context_recovery_hook"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M033-context-compaction-recovery.md",
+      "evidence": [
+        "Added fail-closed PreCompact capsule verification and compact SessionStart bounded recovery from P046; four focused hook tests, architecture firewall, and full unittest discovery passed without transcript ingestion or checkpoint writes."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M033",
+        "actor": "Codex",
+        "verified_at": "2026-08-08T10:59:33.531066+00:00",
+        "contract_sha256": "b4c1463159e45bab3ddb6bdacac86a2092994ee44ce9b033ee20b0cdbde3bf55",
+        "scope_sha256": "541efd7c3263100b215eb43845c4f079d95fadc3a71e784c3cb723bf35b85700",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_context_recovery_hook"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "0f44664474d660d9c9ae146763b10d15430b074701560cd77adcdb4c1e4c44f6",
+            "stdout_tail": "",
+            "stderr_tail": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.754s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "0738f4245bb2ca7c23d34bca229371687b0ddab4bdbaad3eb55955b15a3c0c30",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.483s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "ac7bb110d5a2397ba8e79e9ab6d1d86058c967ee87a26f33f0c3bc20c34701c9",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s..........................................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 435 tests in 133.762s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-08"
+    },
+    {
+      "id": "M034",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make the M033 acceptance test follow registry-owned card paths and the current active-card set across completion.",
+      "depends_on": [
+        "M033",
+        "M015"
+      ],
+      "write_scope": [
+        "tests/test_context_recovery_hook.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The guarded M033 card path comes from its current registry item after planning-to-archive movement.",
+        "Expected recovery cards come from the current registry active set without hard-coded M033 or M034 state.",
+        "Both PreCompact and compact SessionStart still prove coverage of every active work card.",
+        "M033 implementation configuration authority labels and production behavior remain unchanged.",
+        "Focused tests pass while M034 is active and after M034 is archived."
+      ],
+      "tests": [
+        "Registry-owned completed-card path",
+        "Current active-card coverage in both hook events",
+        "Focused suite before and after completion",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_context_recovery_hook"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M034-context-hook-lifecycle-test.md",
+      "evidence": [
+        "Replaced M033 lifecycle hard-coding with registry-owned card paths and the current active-card set; focused tests, architecture firewall, and full discovery passed before completion."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M034",
+        "actor": "Codex",
+        "verified_at": "2026-08-08T11:03:55.400896+00:00",
+        "contract_sha256": "c56aece05975163eca3765d981022e04cdb962102e2d07fa7cfa43bab2db4cba",
+        "scope_sha256": "be3c55a765279c7f61f0d23e5bcdd6b901cebfba09963b4f195e29b024c9e2ae",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_context_recovery_hook"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e758efbcd6a49caa2c383f5104bb2e591ae81dacef391eb2da8b069ed0bcae7b",
+            "stdout_tail": "",
+            "stderr_tail": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.757s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "aebb4906e5ef6ac36e23993bf94ec446d9e4ae1e6c1905dfdbb82504ef118f80",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.469s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "fbe97419454bd7fb1747c4bd16a63c71e6824b6fb75ce59cd1daed1335e8ecec",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s..........................................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 435 tests in 142.365s\n\nOK (skipped=2)\n"
           }
         ]
       },

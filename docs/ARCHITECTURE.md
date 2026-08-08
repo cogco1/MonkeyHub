@@ -337,6 +337,22 @@ P026 Gold runtime away from their direct provider injection. Each responsibility
 needs a later isolated shadow-and-cutover card before the new router is part of
 that production chain.
 
+### Compaction recovery boundary
+
+P046 remains the source of bounded Agent work context. M033 connects that
+read-only capsule to Codex lifecycle hooks without making a transcript or hook
+output authoritative. `PreCompact` regenerates every active-card capsule and
+fails closed if recovery cannot be built. After compaction,
+`SessionStart(source=compact)` injects only the current commit, dirty path names,
+active-card planning contract, verification label, and capsule digest before
+the immediate continuation.
+
+The recovery hook reads no transcript and writes no checkpoint, project record,
+cache, or temporary artifact. It does not select work, claim completion, or set
+a model context window. The compacted summary and injected context are
+orientation only; current repository state and machine verification remain the
+authorities. Project-local hooks require explicit Codex trust review.
+
 ### Test hierarchy
 
 Framework unit tests under `tests/` verify contracts, reducers, authority

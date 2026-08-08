@@ -1,0 +1,34 @@
+model_auto_compact_token_limit_scope = "body_after_prefix"
+tool_output_token_limit = 6000
+compact_prompt = """
+Preserve the active work-card id, goal, actor, write scope, acceptance tests,
+stop conditions, current git commit and dirty paths, machine-verification
+status, rejected alternatives, unresolved risks, and the exact next command.
+Keep planning claims distinct from verified evidence. Never upgrade an
+unverified claim, infer success from a missing tool result, revive a rejected
+path, or treat the compacted summary as project authority.
+"""
+
+[features]
+hooks = true
+
+[[hooks.PreCompact]]
+matcher = "^(manual|auto)$"
+
+[[hooks.PreCompact.hooks]]
+type = "command"
+command = 'python3 "$(git rev-parse --show-toplevel)/.codex/hooks/context_recovery.py"'
+command_windows = 'python "$(git rev-parse --show-toplevel)/.codex/hooks/context_recovery.py"'
+timeout = 15
+statusMessage = "Verifying ArchFlow recovery context"
+
+[[hooks.SessionStart]]
+matcher = "^compact$"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = 'python3 "$(git rev-parse --show-toplevel)/.codex/hooks/context_recovery.py"'
+command_windows = 'python "$(git rev-parse --show-toplevel)/.codex/hooks/context_recovery.py"'
+timeout = 15
+statusMessage = "Restoring bounded ArchFlow context"
+additionalContextLimit = 2500
