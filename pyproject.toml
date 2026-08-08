@@ -9,6 +9,9 @@ description = "Bounded architectural agency with controlled state promotion"
 requires-python = ">=3.12"
 dependencies = []
 
+[project.scripts]
+archflow-runtime = "archflow.project.runtime:main"
+
 [tool.setuptools.packages.find]
 include = ["archflow*"]
 exclude = ["tests*", "probes*", "governance*", "docs*", "tools*"]

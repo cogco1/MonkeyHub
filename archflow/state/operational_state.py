@@ -25,7 +25,14 @@ from archflow.state.commitments import Commitment
 _MAX_ITEMS = 4096
 _MAX_FACT_JSON_BYTES = 64_000
 _MAX_QUALIFICATION_CHARS = 1_000
-_PORTABLE_REF = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:[^\s\\]+$")
+#: Portable ``scheme:path`` logical-reference shape. This is the single source
+#: for typed validation and provider-facing JSON Schema publication.
+PORTABLE_LOGICAL_REF_PATTERN = (
+    r"^(?![Ff][Ii][Ll][Ee]:)(?![A-Za-z]:[\\/])"
+    r"[A-Za-z][A-Za-z0-9+.-]*:[^\s\\]+$"
+)
+
+_PORTABLE_REF = re.compile(PORTABLE_LOGICAL_REF_PATTERN)
 _LOCAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
 
 
@@ -83,7 +90,7 @@ def _text(value: object, field: str) -> str:
 
 def require_logical_ref(value: object, field: str) -> str:
     text = _text(value, field)
-    if text.startswith("file:") or re.match(r"^[A-Za-z]:[\\/]", text):
+    if text.lower().startswith("file:") or re.match(r"^[A-Za-z]:[\\/]", text):
         raise ValueError(f"{field} cannot be an absolute machine path")
     if _PORTABLE_REF.fullmatch(text) is None:
         raise ValueError(f"{field} must be a portable logical reference")

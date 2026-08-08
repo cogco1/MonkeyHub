@@ -33,6 +33,7 @@ from archflow.state import (
     SpatialGridBasis,
     SpatialLevel,
     SpatialOptionProposal,
+    SpatialConnection,
     SpatialZone,
 )
 from archflow.state.geometry_program import (
@@ -134,8 +135,24 @@ def _spatial_option() -> SpatialOptionProposal:
                 ("main-volume",),
                 evidence,
             ),
+            SpatialZone(
+                "entry-zone",
+                ("program-node:main",),
+                ("ground",),
+                ("main-volume",),
+                evidence,
+            ),
         ),
-        connections=(),
+        connections=(
+            SpatialConnection(
+                connection_id="outside-to-room",
+                source_zone_id="entry-zone",
+                target_zone_id="main-zone",
+                relationship_refs=("interface:outside-to-room",),
+                directed=False,
+                source_refs=evidence,
+            ),
+        ),
         constraint_responses=(),
         typology_hypothesis="Project supplied typology hypothesis",
         palette_refs=(),
@@ -239,6 +256,74 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             self.repository.load_json(result.proposal_ref)[
                 "hard_gate_authority"
             ]
+        )
+
+    async def test_request_publishes_and_enforces_available_interfaces(self) -> None:
+        provider = _ScriptedProvider(
+            (proposal_authoring_output(self.proposal),)
+        )
+        result = await self._produce(provider, rounds=1)
+
+        self.assertIs(result.status, GeometryProposalStatus.ACCEPTED)
+        payload = provider.requests[0].payload
+        self.assertEqual(
+            payload["available_interface_refs"]["refs"],
+            ["interface:outside-to-room"],
+        )
+        body = payload["required_output_contract"]["json_schema"][
+            "properties"
+        ]["proposal_body"]
+        interface_item = body["properties"]["assemblies"]["items"][
+            "properties"
+        ]["interface_refs"]["items"]
+        self.assertEqual(interface_item["enum"], ["interface:outside-to-room"])
+
+    async def test_unavailable_interface_is_persisted_before_compilation(self) -> None:
+        invalid = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        invalid["proposal_body"]["assemblies"][0]["interface_refs"] = [
+            "interface:not-supplied"
+        ]
+        result = await self._produce(
+            _ScriptedProvider((invalid,)),
+            rounds=1,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        self.assertEqual(
+            loaded.rounds[0].issues[0].code,
+            "malformed_model_output",
+        )
+        self.assertIn(
+            "absent from the supplied spatial option",
+            loaded.rounds[0].issues[0].detail,
+        )
+        self.assertIsNone(loaded.rounds[0].compiler_receipt_json)
+
+    async def test_bare_interface_is_rejected_by_the_published_typed_shape(self) -> None:
+        invalid = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        invalid["proposal_body"]["assemblies"][0]["interface_refs"] = [
+            "outside-to-room"
+        ]
+        result = await self._produce(
+            _ScriptedProvider((invalid,)),
+            rounds=1,
+        )
+
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        self.assertIn(
+            "portable logical reference",
+            loaded.rounds[0].issues[0].detail,
         )
 
     async def test_out_of_vocabulary_round_is_persisted_and_repaired(self) -> None:

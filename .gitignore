@@ -12,3 +12,4 @@ venv/
 !.env.example
 *.log
 *.egg-info/
+config/runtime.json

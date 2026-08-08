@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-03",
+  "updated_on": "2026-08-04",
   "phase": "P6 - sandbox-first neutral geometry roadmap active",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -18,7 +18,7 @@
     "evaluation": "aesthetic_vector_proven",
     "commit": "in_memory_proven",
     "adapters": "voxel_observation_and_cli_retrieval_proven",
-    "project": "persistence_boundary_skeleton_proven"
+    "project": "persistence_and_external_runtime_boundary_proven"
   },
   "architecture_layers": [
     {
@@ -308,9 +308,10 @@
         "P043",
         "P018",
         "M014",
-        "P022"
+        "P022",
+        "P052"
       ],
-      "purpose": "Define identity and ownership before adding one atomic project repository and routing every retained record through it."
+      "purpose": "Define identity and ownership before adding one atomic project repository, routing every retained record through it, and injecting an explicit external runtime root without changing authority."
     },
     {
       "name": "Commitment-safe state",
@@ -2029,6 +2030,7 @@
         "M028",
         "M029",
         "M031",
+        "M032",
         "P018",
         "P024",
         "P025",
@@ -5651,6 +5653,242 @@
         ]
       },
       "completed_on": "2026-08-03"
+    },
+    {
+      "id": "P052",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Add an explicit cross-platform external runtime for active ArchFlow projects while preserving P036 as the sole project writer and probes as promoted evidence.",
+      "depends_on": [
+        "M006",
+        "P035",
+        "P036",
+        "P037"
+      ],
+      "write_scope": [
+        ".codex/cloud/",
+        ".devcontainer/",
+        ".github/workflows/verify.yml",
+        ".gitignore",
+        "AGENTS.md",
+        "README.md",
+        "pyproject.toml",
+        "archflow/project/",
+        "config/",
+        "governance/architecture_policy.json",
+        "governance/work_registry.json",
+        "tests/test_project_runtime.py",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "RuntimeConfig@1 supplies absolute distinct workspace cache and temp roots and rejects roots inside the source checkout.",
+        "Project roots resolve only under workspace/projects while cache and temp remain explicitly non-canonical.",
+        "Runtime initialization creates only assigned external roots and project records still flow through P036.",
+        "One external project initializes verifies reopens and retains exact HEAD identity outside the Git checkout.",
+        "Existing probes remain unchanged and continue to load as frozen regression evidence.",
+        "Codespaces Codex Cloud and CI share credential-free setup architecture and deterministic test gates.",
+        "No database shared global Artifact Store Drive bridge model call or automatic probe promotion is introduced."
+      ],
+      "tests": [
+        "Runtime config validation and safe path resolution",
+        "External project bootstrap verify reopen and exact HEAD identity",
+        "Checkout non-pollution and existing probe reload",
+        "Cloud script syntax and config JSON validation",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_project_runtime"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/P052-external-project-runtime.md",
+      "evidence": [
+        "Added explicit RuntimeConfig@1 and external project bootstrap through unchanged P036; verified credential-free Codex/Codespaces/CI setup, six focused runtime tests, architecture firewall, full suite, exact HEAD reopen, and unchanged promoted probes."
+      ],
+      "on_complete": {
+        "modules": {
+          "project": "persistence_and_external_runtime_boundary_proven"
+        }
+      },
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P052",
+        "actor": "Codex",
+        "verified_at": "2026-08-04T21:08:40.571440+00:00",
+        "contract_sha256": "90a7a58c840f083007b57bd2d26a54291ee2120210d3ce0ab198ab1fd92b080e",
+        "scope_sha256": "89b5bcd5d49c09dcb7c9681c160dadc45cd79c454e977e17f6c48a9cfc2aaa88",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_project_runtime"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "3b4125dbd5e7f4356789c8aaf8a361dce9b02e49454dbb719b1a5f10e6f016e4",
+            "stdout_tail": "",
+            "stderr_tail": "......\n----------------------------------------------------------------------\nRan 6 tests in 0.128s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "6744ffff46a2ec66abed2152f0e2de8f8b5a51181c0427dc3c64c7cce66110a1",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (101 files, 0.523s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "0745f6b446f8851da068baa90cc66a11a6369a033cb4aa271a425a1da7cc5141",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s..............................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 407 tests in 32.981s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-04"
+    },
+    {
+      "id": "M032",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make geometry interface reference publication and enforcement match typed state and supplied spatial records exactly.",
+      "depends_on": [
+        "M029",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "archflow/state/geometry_program.py",
+        "archflow/state/operational_state.py",
+        "tests/test_geometry_proposal_contract.py",
+        "tests/test_geometry_proposal_producer.py",
+        "tests/integration/test_sandbox_gold.py",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "One exported portable logical-reference pattern drives typed validation and the provider JSON Schema while asset URI syntax remains separate.",
+        "Every request enumerates interface refs derived only from supplied spatial-option connections and exact semantic-component candidate records.",
+        "Hosted assembly interface_refs must be valid portable refs and exact members of the request enumeration.",
+        "Bare machine-local and unavailable refs fail before compilation with a precise persisted issue.",
+        "Pre-M032 run-007 records reload without rewriting stored payloads.",
+        "The framework invents selects and semantically normalizes no interface."
+      ],
+      "tests": [
+        "Published Schema and typed reference pattern equality",
+        "Request enumeration from supplied spatial records only",
+        "Exact available-reference membership acceptance and rejection",
+        "Read-only run-007 lineage compatibility",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_contract",
+          "tests.test_geometry_proposal_producer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M032-geometry-interface-reference-contract.md",
+      "evidence": [
+        "Published one machine-checkable portable-reference source to typed validation and provider Schema, enumerated only supplied spatial and semantic-component candidate refs, enforced exact membership before compilation, preserved read-only run-007 reload, and passed 32 focused tests, scope, architecture, and formal full-suite verification."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M032",
+        "actor": "Codex",
+        "verified_at": "2026-08-04T21:35:10.546999+00:00",
+        "contract_sha256": "d09cecee8e870c38b726a24556c2a3e0ef9120868e1ceeb1802713c480580ec5",
+        "scope_sha256": "0ea4ca6100644b8d641df8b4ce76643fe01c4a08279ace5442c34383b0da3723",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_contract",
+              "tests.test_geometry_proposal_producer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d1e6e812188f32a6d2742dd089fbde55ae63bf00d6c9a0633b20e8998cacd53f",
+            "stdout_tail": "",
+            "stderr_tail": "......................\n----------------------------------------------------------------------\nRan 22 tests in 1.662s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "a704b28360407259d44c7610123a6af27f2136f6e2f8b37b36c684ce7eaf521c",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (101 files, 0.498s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "652887e5e5dbeabaf33083a7746d54f94edb4ce64d6c3771dbc4730d95483776",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s....................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 413 tests in 36.944s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-04"
     }
   ]
 }

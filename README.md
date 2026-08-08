@@ -20,6 +20,8 @@ Start here:
   evidence that never acquire framework generation authority.
 - [Project document boundary](archflow/project/README.md) — project identity,
   layout, logical references, and the fail-closed persistence ports.
+- [External runtime configuration](config/README.md) — explicit workspace,
+  cache, and temp roots for active projects outside the checkout.
 
 Current phase: **P3 dual-state architecture realignment**. The repository
 proves the bounded control skeleton, one Minecraft MCP adapter, read-only voxel
@@ -44,8 +46,21 @@ The case input and every generated state, receipt, workspace artifact, and
 manifest stay under `probes/test_library/`. The command is synthetic and does
 not claim that a library was architecturally designed or found usable.
 
-Concrete project requests and framework-produced design/run evidence belong
-under `probes/<project_id>/`, not in `archflow/` or `tests/`.
-P035 currently defines this ownership without writing files. If an output does
-not have one named project destination, development stops for an ownership
-decision instead of creating an improvised framework path.
+For an active project, copy the credential-free runtime example and initialize
+an external project root:
+
+```powershell
+Copy-Item config/runtime.example.json config/runtime.json
+archflow-runtime --config config/runtime.json init
+archflow-runtime --config config/runtime.json bootstrap-project `
+  --project-id my-building `
+  --prompt "Design a building from the supplied brief."
+```
+
+Active project records then live under the configured
+`workspace/projects/<project_id>/`. Explicitly promoted regression or paper
+evidence belongs under `probes/<project_id>/`; tests keep disposable output in
+temporary directories. All project writes use P036 and the same project
+layout, regardless of physical root. If an output does not have one named
+destination, development stops for an ownership decision instead of creating
+an improvised path.

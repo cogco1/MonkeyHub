@@ -190,6 +190,18 @@ def _geometry_output(request) -> dict[str, object]:
     }
     if set(component_value_ids) != {"daylight-opening", "sheltered-entrance"}:
         raise AssertionError("semantic component candidate values are missing")
+    component_interface_refs = {
+        value.decoded_value["component_id"]: value.ref
+        for value in projection.values
+        if isinstance(value.decoded_value, dict)
+        and "component_id" in value.decoded_value
+        and value.decoded_value.get("assembly_kind") is not None
+    }
+    if set(component_interface_refs) != {
+        "daylight-opening",
+        "sheltered-entrance",
+    }:
+        raise AssertionError("semantic component interface refs are missing")
     general_value_ids = tuple(
         value.value_id
         for value in projection.values
@@ -265,6 +277,7 @@ def _geometry_output(request) -> dict[str, object]:
     )
     door = replace(
         door,
+        interface_refs=(component_interface_refs["sheltered-entrance"],),
         semantic_binding_ids=(door_binding.binding_id,),
     )
     window_member_objects = (
@@ -299,7 +312,7 @@ def _geometry_output(request) -> dict[str, object]:
                 key=lambda item: item.role.value,
             )
         ),
-        interface_refs=("interface:interior-to-daylight",),
+        interface_refs=(component_interface_refs["daylight-opening"],),
         semantic_binding_ids=(window_binding.binding_id,),
         maturity=DetailMaturity.FUNCTIONAL,
     )

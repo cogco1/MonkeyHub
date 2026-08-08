@@ -45,6 +45,16 @@
       "reason": "The durable project repository is the sole project-document filesystem writer."
     },
     {
+      "path": "archflow/project/runtime.py",
+      "function": "initialize_runtime",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "external_runtime_root",
+      "owner": "P052",
+      "reason": "Creates only explicitly configured external workspace, cache, and temp roots; project documents still flow through P036."
+    },
+    {
       "path": "archflow/workspace/manager.py",
       "function": "__init__",
       "operations": [

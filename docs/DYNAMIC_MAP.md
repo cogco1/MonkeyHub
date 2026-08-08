@@ -7,7 +7,7 @@
 ## Current state
 
 - Phase: **P6 - sandbox-first neutral geometry roadmap active**
-- Registry updated: **2026-08-03**
+- Registry updated: **2026-08-04**
 - Product capability: **runtime=brief_clarification_and_repair_loop_proven; adapters=voxel_observation_and_cli_retrieval_proven**
 - Next bounded transition: finish active work: P026
 
@@ -40,7 +40,7 @@ These are the main responsibility chains. Individual cards retain their exact fa
 
 | Lane | Main chain | Purpose |
 | --- | --- | --- |
-| Project document persistence | [P019](mapping/archive/P019-dual-state-architecture-map.md) → [M006](mapping/archive/M006-project-workspace-boundary-cleanup.md) → [P035](mapping/archive/P035-project-persistence-boundary-skeleton.md) → [M007](mapping/archive/M007-project-state-identity-and-authority-seam.md) → [P036](mapping/archive/P036-durable-project-repository.md) → [P037](mapping/archive/P037-pantheon-project-envelope-probe.md) → [P020](mapping/archive/P020-building-scoped-brief-evidence.md) → [P043](mapping/archive/P043-phase-independent-human-clarification.md) → [P018](mapping/archive/P018-event-log-and-state-rebuild.md) → [M014](mapping/archive/M014-canonical-digest-identity.md) → [P022](mapping/archive/P022-operational-design-controller.md) | Define identity and ownership before adding one atomic project repository and routing every retained record through it. |
+| Project document persistence | [P019](mapping/archive/P019-dual-state-architecture-map.md) → [M006](mapping/archive/M006-project-workspace-boundary-cleanup.md) → [P035](mapping/archive/P035-project-persistence-boundary-skeleton.md) → [M007](mapping/archive/M007-project-state-identity-and-authority-seam.md) → [P036](mapping/archive/P036-durable-project-repository.md) → [P037](mapping/archive/P037-pantheon-project-envelope-probe.md) → [P020](mapping/archive/P020-building-scoped-brief-evidence.md) → [P043](mapping/archive/P043-phase-independent-human-clarification.md) → [P018](mapping/archive/P018-event-log-and-state-rebuild.md) → [M014](mapping/archive/M014-canonical-digest-identity.md) → [P022](mapping/archive/P022-operational-design-controller.md) → [P052](mapping/archive/P052-external-project-runtime.md) | Define identity and ownership before adding one atomic project repository, routing every retained record through it, and injecting an explicit external runtime root without changing authority. |
 | Commitment-safe state | [P019](mapping/archive/P019-dual-state-architecture-map.md) → [P015](mapping/archive/P015-typed-commitment-contract.md) → [P035](mapping/archive/P035-project-persistence-boundary-skeleton.md) → [M007](mapping/archive/M007-project-state-identity-and-authority-seam.md) → [P016](mapping/archive/P016-commitment-compiler-and-locking.md) → [P041](mapping/archive/P041-decision-operator-state-closure.md) → [M008](mapping/archive/M008-operational-state-v1-compatibility.md) → [M009](mapping/archive/M009-operational-state-epistemics-and-dependency-effects.md) → [P017](mapping/archive/P017-commitment-monitor-and-dependency.md) → [P018](mapping/archive/P018-event-log-and-state-rebuild.md) | Compile typed design moves into sufficient branch-local state, make past commitments executable there, and reconstruct formal versions. |
 | Building-scoped retrieval | [P019](mapping/archive/P019-dual-state-architecture-map.md) → [P028](mapping/archive/P028-building-scoped-cli-retrieval.md) → [M009](mapping/archive/M009-operational-state-epistemics-and-dependency-effects.md) → [P020](mapping/archive/P020-building-scoped-brief-evidence.md) → [P043](mapping/archive/P043-phase-independent-human-clarification.md) → [P021](mapping/archive/P021-program-capacity-area-relations.md) | Retrieve evidence per building, then compile it into program facts without global answers. |
 | Brief to spatial candidate | [P019](mapping/archive/P019-dual-state-architecture-map.md) → [P028](mapping/archive/P028-building-scoped-cli-retrieval.md) → [M009](mapping/archive/M009-operational-state-epistemics-and-dependency-effects.md) → [P020](mapping/archive/P020-building-scoped-brief-evidence.md) → [P043](mapping/archive/P043-phase-independent-human-clarification.md) → [P021](mapping/archive/P021-program-capacity-area-relations.md) → [P032](mapping/archive/P032-site-context-compiler.md) → [P034](mapping/archive/P034-resource-constructability-compiler.md) → [P039](mapping/archive/P039-design-maturity-stage-gates.md) → [P022](mapping/archive/P022-operational-design-controller.md) → [P023](mapping/archive/P023-spatial-topology-footprint-proposals.md) → [P033](mapping/archive/P033-design-option-portfolio.md) → [P040](mapping/archive/P040-design-development-coordination.md) → [P024](mapping/archive/P024-candidate-assembly-handoff.md) | Derive one building through ordered maturity gates without writing its dimensions, rooms, topology, or discipline answers into the framework. |
@@ -61,7 +61,7 @@ These are the main responsibility chains. Individual cards retain their exact fa
 | Retirement | Replacement-first removal of old ownership | 0 | [R](mapping/retirement/INDEX.md) |
 | Modify | Scoped repair of the active path | 0 | [M](mapping/modify/INDEX.md) |
 | Planning | Not implemented or not yet accepted | 5 | [P](mapping/planning/INDEX.md) |
-| Archive | Completed and evidenced work | 75 | [A](mapping/archive/INDEX.md) |
+| Archive | Completed and evidenced work | 77 | [A](mapping/archive/INDEX.md) |
 
 R, M, and P are parallel ledgers, not mandatory runtime stages. Archive is
 the cleared construction record, not a fourth execution phase.
@@ -89,7 +89,7 @@ the cleared construction record, not a fourth execution phase.
 | [evaluation](../archflow/evaluation/README.md) | aesthetic_vector_proven | Read-only multi-objective observations |
 | [commit](../archflow/commit/README.md) | in_memory_proven | Single-writer canonical promotion |
 | [adapters](../archflow/adapters/README.md) | voxel_observation_and_cli_retrieval_proven | External MCP/CLI/model/storage boundaries |
-| [project](../archflow/project/README.md) | persistence_boundary_skeleton_proven | Project identity, layout, references, and persistence ports |
+| [project](../archflow/project/README.md) | persistence_and_external_runtime_boundary_proven | Project identity, layout, references, and persistence ports |
 
 ## Promotion boundary
 

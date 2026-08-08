@@ -37,6 +37,7 @@ from archflow.runtime.geometry_compiler import (
 from archflow.state import SpatialOptionProposal
 from archflow.state.candidate_program import CandidateProgramProjection
 from archflow.state.geometry_program import (
+    ASSET_URI_PATTERN,
     AffineTransform,
     AssemblyKind,
     AssemblyMember,
@@ -57,6 +58,7 @@ from archflow.state.geometry_program import (
     SemanticBinding,
     required_assembly_roles,
 )
+from archflow.state.operational_state import PORTABLE_LOGICAL_REF_PATTERN
 
 
 _AUTHORING_OUTPUT_SCHEMA = "GeometryProposalAuthoringOutput@1"
@@ -113,7 +115,9 @@ def _array_contract(
     return contract
 
 
-def _authoring_output_contract() -> dict[str, object]:
+def _authoring_output_contract(
+    available_interface_refs: tuple[str, ...] | None = None,
+) -> dict[str, object]:
     """Expose the exact generic parser topology without a building answer."""
 
     text = {"type": "string", "minLength": 1}
@@ -123,8 +127,16 @@ def _authoring_output_contract() -> dict[str, object]:
     }
     logical_ref = {
         **text,
-        "description": "Stable logical or project record reference supplied by the request.",
+        "pattern": PORTABLE_LOGICAL_REF_PATTERN,
+        "description": (
+            "Stable logical or project record reference supplied by the request "
+            "in portable scheme:path form; bare identifiers, machine paths, "
+            "and file: URIs are rejected."
+        ),
     }
+    interface_ref = dict(logical_ref)
+    if available_interface_refs is not None:
+        interface_ref["enum"] = list(available_interface_refs)
     digest = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
     number = {"type": "number"}
     string_list = _array_contract(
@@ -188,7 +200,14 @@ def _authoring_output_contract() -> dict[str, object]:
         {
             "schema": {"const": AssetReference.SCHEMA},
             "asset_id": identifier,
-            "uri": logical_ref,
+            "uri": {
+                **text,
+                "pattern": ASSET_URI_PATTERN,
+                "description": (
+                    "Stable scheme-qualified asset URI (scheme://path); "
+                    "file:// URIs are rejected."
+                ),
+            },
             "media_type": text,
             "sha256": digest,
             "native_unit": {
@@ -286,7 +305,7 @@ def _authoring_output_contract() -> dict[str, object]:
                     "canonicalized lexicographically by role."
                 ),
             ),
-            "interface_refs": _array_contract(logical_ref, minimum=1, unique=True),
+            "interface_refs": _array_contract(interface_ref, minimum=1, unique=True),
             "semantic_binding_ids": _array_contract(identifier, minimum=1, unique=True),
             "maturity": {
                 "type": "string",
@@ -834,6 +853,10 @@ async def produce_geometry_program_proposal(
         for ref in template_refs
     )
     allowed_template_uris = frozenset(ref.uri for ref in template_refs)
+    available_interface_refs = _available_interface_refs(
+        spatial_option,
+        projection,
+    )
     round_refs: list[ProjectRecordRef] = []
     repair_issues: tuple[GeometryProposalIssue, ...] = ()
     assets = {} if available_asset_digests is None else dict(available_asset_digests)
@@ -846,6 +869,7 @@ async def produce_geometry_program_proposal(
             required_commitment_refs,
             template_payloads,
             repair_issues,
+            available_interface_refs,
         )
         request = ModelInvocationRequest.create(
             request_id=f"geometry-proposal-{run.run_id}-{round_index:02d}",
@@ -898,6 +922,7 @@ async def produce_geometry_program_proposal(
                     projection,
                     required_commitment_refs,
                     spatial_option_ref,
+                    available_interface_refs,
                 )
                 compilation = compile_geometry_program(
                     projection,
@@ -1105,6 +1130,7 @@ def _request_payload(
     commitments: tuple[str, ...],
     templates: tuple[dict[str, object], ...],
     repair_issues: tuple[GeometryProposalIssue, ...],
+    available_interface_refs: tuple[str, ...],
 ) -> dict[str, object]:
     return {
         "schema": "GeometryProposalAuthoringRequest@1",
@@ -1115,10 +1141,21 @@ def _request_payload(
         "candidate_program": projection.to_dict(),
         "required_commitment_refs": list(commitments),
         "available_template_records": list(templates),
+        "available_interface_refs": {
+            "refs": list(available_interface_refs),
+            "pattern": PORTABLE_LOGICAL_REF_PATTERN,
+            "description": (
+                "Exact interface references already present in the supplied "
+                "spatial-option connection records. Hosted assemblies may cite "
+                "only these values."
+            ),
+        },
         "geometry_function_contracts": _FUNCTION_CONTRACTS,
         "repair_issues": [item.to_dict() for item in repair_issues],
         "required_output_schema": _AUTHORING_OUTPUT_SCHEMA,
-        "required_output_contract": _authoring_output_contract(),
+        "required_output_contract": _authoring_output_contract(
+            available_interface_refs
+        ),
         "instructions": [
             "Author geometry only from supplied project records and candidate values.",
             "Return exactly the keys and nested field shapes in required_output_contract.json_schema; do not invent aliases such as geometry_nodes or geometry_functions.",
@@ -1126,6 +1163,7 @@ def _request_payload(
             "GeometryParameter.value_json is canonical compact JSON encoded as a string, not a nested JSON value.",
             "Bind every candidate value and required commitment through semantic bindings.",
             "Include the spatial option record URI in every semantic binding evidence_refs.",
+            "Every assembly interface_refs value must be selected exactly from available_interface_refs.refs and match available_interface_refs.pattern.",
             "When a supplied semantic component requires a hosted assembly, represent its semantic identity and geometry together through semantic_binding_ids and typed assembly members.",
             "For every hosted assembly include all roles named by required_output_contract.required_assembly_roles[kind]; missing or duplicate roles are invalid.",
             "Treat identifier and reference arrays as sets: never duplicate values; lexical order is canonicalized by the protocol and carries no design meaning.",
@@ -1161,6 +1199,7 @@ def _validate_semantic_coverage(
     projection: CandidateProgramProjection,
     commitments: tuple[str, ...],
     spatial_ref: ProjectRecordRef,
+    available_interface_refs: tuple[str, ...],
 ) -> None:
     candidate_ids = {item.value_id for item in projection.values}
     bound_candidate_ids = {
@@ -1183,6 +1222,41 @@ def _validate_semantic_coverage(
         raise GeometryProposalProductionError(
             "every semantic binding must cite the source spatial option record"
         )
+    used_interface_refs = {
+        ref for assembly in proposal.assemblies for ref in assembly.interface_refs
+    }
+    unavailable = sorted(used_interface_refs - set(available_interface_refs))
+    if unavailable:
+        raise GeometryProposalProductionError(
+            "assembly interface_refs are absent from the supplied spatial "
+            f"option; unavailable={unavailable}"
+        )
+
+
+def _available_interface_refs(
+    spatial: SpatialOptionProposal,
+    projection: CandidateProgramProjection,
+) -> tuple[str, ...]:
+    """Return only interface facts already present in supplied records."""
+
+    return tuple(
+        sorted(
+            {
+                *(
+                    ref
+                    for connection in spatial.connections
+                    for ref in connection.relationship_refs
+                ),
+                *(
+                    value.ref
+                    for value in projection.values
+                    if isinstance(value.decoded_value, dict)
+                    and "component_id" in value.decoded_value
+                    and value.decoded_value.get("assembly_kind") is not None
+                ),
+            }
+        )
+    )
 
 
 def _proposal_from_body(

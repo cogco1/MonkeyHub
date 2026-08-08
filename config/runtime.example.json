@@ -1,0 +1,6 @@
+{
+  "schema": "ArchFlowRuntimeConfig@1",
+  "workspace_root": "D:/ARCHFLOW_RUNTIME/workspace",
+  "cache_root": "D:/ARCHFLOW_RUNTIME/cache",
+  "temp_root": "D:/ARCHFLOW_RUNTIME/temp"
+}

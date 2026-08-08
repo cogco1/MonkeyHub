@@ -211,11 +211,18 @@ and their derivation trace belong to the individual building run.
 capability discovery, validation, archive formats, execution boundaries, and
 the generic runner.
 
-A concrete building investigation lives under `probes/<project_id>/`. Its
-production project envelope is:
+A concrete building uses one project envelope at either an explicit active
+runtime root or an explicitly promoted probe root:
 
 ```text
-probes/<project_id>/
+active:   <workspace_root>/projects/<project_id>/
+promoted: probes/<project_id>/
+```
+
+Both locations have the exact same P036 project envelope:
+
+```text
+<project_root>/
 ├─ project.json          immutable project identity and format schema
 ├─ HEAD                  mutable canonical pointer; single-writer CAS only
 ├─ input/                authorized external inputs; never generated answers
@@ -232,6 +239,20 @@ versioned framework output. Candidate work remains under its run; only the
 single-writer commit boundary may append a canonical snapshot and event, then
 compare-and-swap `HEAD`. No persistent building output belongs in a
 repository-level `.runs/` directory.
+
+P052 selects the physical root without changing logical identity or authority.
+`RuntimeConfig@1` supplies absolute, distinct workspace, cache, and temp roots;
+it rejects any overlap with the source checkout. Only
+`workspace/projects/<project_id>/` may become a project envelope, and P036
+remains its sole writer. Cache and temp are explicitly non-canonical. A Codex
+Cloud `/tmp` runtime is disposable setup state, not durable project evidence.
+
+Active runs are not automatically copied into Git. Promotion into
+`probes/<project_id>/` is a separate reviewed operation that preserves content
+identity and selects compact regression or publication evidence. Existing
+probes remain frozen baselines. The zoning-city comparison that motivated this
+boundary is recorded in
+[`mapping/P052-zoning-city-to-building-runtime.md`](mapping/P052-zoning-city-to-building-runtime.md).
 
 The side-effect-free contracts in [`archflow/project/`](../archflow/project/)
 define this identity, layout, logical-reference, and persistence-port boundary.
@@ -290,7 +311,7 @@ Framework unit tests under `tests/` verify contracts, reducers, authority
 guards, and failure behavior. Their temporary files are disposable test
 mechanics, not building artifacts.
 
-A building integration test is different: it is opened as
+A committed building integration test is different: it is opened as
 `probes/<project_id>/`. The generic runner reads only `input/`, invokes public
 `archflow` modules, and writes candidate state, receipts, workspaces, artifacts,
 and the final run manifest only under that project. The case contains no Python

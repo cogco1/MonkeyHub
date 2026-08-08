@@ -19,6 +19,13 @@ runs, prepares accepted canonical transitions, atomically compare-and-swaps
 pre-commit records after a crash. Producers receive its sink interfaces and
 an assigned `PersistenceDestination`; they never choose a path.
 
+P052 adds only the external-root selection seam. `RuntimePaths` loads three
+explicit absolute roots for workspace, rebuildable cache, and temporary data.
+An active project resolves to `workspace/projects/<project_id>/` and is then
+created by the unchanged P036 repository. The runtime layer does not store an
+absolute path in `project.json`, add another writer, or change `HEAD` authority.
+Committed probes use the same envelope and remain explicitly promoted evidence.
+
 Canonical crash order is:
 
 1. write immutable decision receipt and candidate records;
@@ -48,3 +55,7 @@ Known ownership:
 
 If an output does not fit exactly one row, stop before writing and ask the
 project owner to assign it.
+
+Cache and temp data do not fit this table because they are not project records.
+They live only under the explicit external roots in `config/runtime*.json` and
+may be deleted or rebuilt without changing canonical project state.

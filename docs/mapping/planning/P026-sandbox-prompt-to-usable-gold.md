@@ -1,8 +1,8 @@
 # P026 — Sandbox prompt-to-usable Gold slice
 
 - Origin: Planning
-- Status: Active after M002, M004, M024, M026, M027, M028, M029, M031, P018, P024, P025, P029, P030, P047, and P048
-- Depends on: M002, M004, M024, M026, M027, M028, M029, M031, P018, P024, P025, P029, P030, P047, P048
+- Status: Active after M002, M004, M024, M026, M027, M028, M029, M031, M032, P018, P024, P025, P029, P030, P047, and P048
+- Depends on: M002, M004, M024, M026, M027, M028, M029, M031, M032, P018, P024, P025, P029, P030, P047, P048
 
 ## Goal
 

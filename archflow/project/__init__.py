@@ -45,6 +45,15 @@ from archflow.project.repository import (
     RecoveryReport,
     StaleProjectHead,
 )
+from archflow.project.runtime import (
+    RUNTIME_CONFIG_SCHEMA,
+    RuntimeConfigError,
+    RuntimeInitializationReceipt,
+    RuntimePaths,
+    bootstrap_external_project,
+    initialize_runtime,
+    load_runtime_config,
+)
 
 __all__ = [
     "ArtifactSink",
@@ -72,9 +81,16 @@ __all__ = [
     "PromotionAuthorityError",
     "RecordSink",
     "RecoveryReport",
+    "RUNTIME_CONFIG_SCHEMA",
+    "RuntimeConfigError",
+    "RuntimeInitializationReceipt",
+    "RuntimePaths",
     "RunLayout",
     "RunRef",
     "StaleProjectHead",
     "bootstrap_raw_request_project",
+    "bootstrap_external_project",
+    "initialize_runtime",
+    "load_runtime_config",
     "require_destination",
 ]
