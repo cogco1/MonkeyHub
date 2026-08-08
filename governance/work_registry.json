@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-04",
+  "updated_on": "2026-08-08",
   "phase": "P6 - sandbox-first neutral geometry roadmap active",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -292,6 +292,19 @@
         "P031"
       ],
       "gap": "Minecraft transport mutation receipts and recovery exist, but neutral-artifact equivalence loss reporting and platform exporters do not; Rhino Revit and agentic CAD remain adapter classes rather than dependencies."
+    },
+    {
+      "id": "L16",
+      "name": "Production responsibility ownership",
+      "status": "proven",
+      "responsibility": "Keep each production responsibility under one explicit active provider with shadow isolation exact-base handover no fallback and stale-result rejection.",
+      "evidence_cards": [
+        "P014",
+        "P036",
+        "P053"
+      ],
+      "open_cards": [],
+      "gap": "The provider-neutral control plane is proven, but existing production responsibilities still require separate shadow-and-cutover cards that remove their direct provider injection before claiming runtime migration."
     }
   ],
   "roadmap_lanes": [
@@ -488,6 +501,15 @@
         "P014"
       ],
       "purpose": "Keep V3 as explicit read-only evidence/capabilities with ownership handover and no fallback."
+    },
+    {
+      "name": "Production responsibility isolation",
+      "cards": [
+        "P014",
+        "P036",
+        "P053"
+      ],
+      "purpose": "Register implementations without authority run replacements in shadow and switch exactly one active provider by monotonic exact-base handover with no fallback or canonical-write power."
     },
     {
       "name": "Development architecture governance",
@@ -5889,6 +5911,121 @@
         ]
       },
       "completed_on": "2026-08-04"
+    },
+    {
+      "id": "P053",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Provide provider-neutral production responsibility isolation, shadow execution, exact-base atomic handover, and stale-result rejection without fallback or canonical-write authority.",
+      "depends_on": [
+        "P014",
+        "P036"
+      ],
+      "write_scope": [
+        "archflow/production/",
+        "tests/test_production_responsibility.py",
+        "docs/decisions/ADR-001-single-production-owner.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Each responsibility has one contract owner and zero or one active provider binding.",
+        "Registration and shadow execution grant neither production nor canonical-write authority.",
+        "Only a verified provider can become active through an exact-base handover that increments a monotonic authority epoch.",
+        "Stale and concurrent handovers fail closed and receipt preparation completes before binding mutation.",
+        "In-flight provider results must match the current responsibility provider epoch and binding digest before acceptance.",
+        "Provider failure returns a named failure and never invokes a shadow verified or retired fallback.",
+        "Returning to a prior provider creates a new epoch and cannot produce ABA ambiguity.",
+        "Stable serialization excludes handlers process handles machine paths and canonical writers.",
+        "P053 returns typed values chooses no persistence path and leaves project writes to P036."
+      ],
+      "tests": [
+        "Registration lifecycle and unavailable no-fallback resolution",
+        "Exact-base stale and concurrent handover behavior",
+        "Receipt-before-mutation failure safety",
+        "Old-epoch result rejection and no fallback on provider failure",
+        "Shadow and canonical-write authority isolation",
+        "A to B to A monotonic epoch behavior",
+        "Serialization surface exclusion",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_production_responsibility"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/P053-production-responsibility-handover.md",
+      "evidence": [
+        "18 focused production-responsibility tests, architecture firewall, and full unittest discovery passed under the machine verification receipt."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P053",
+        "actor": "Codex",
+        "verified_at": "2026-08-08T10:30:24.382539+00:00",
+        "contract_sha256": "a609f4583eb52217458d9714e236e8d38992367589bdd3cc27d2d39e68b51e94",
+        "scope_sha256": "f21d22b8193249276edd1ecb2bd54cbf18d327c2fc75cd59fced9bf2be39d2be",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_production_responsibility"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "98ea402db7b97462d0214b82d1b2df836ec5990adfeb73bb24606244b7c7ad77",
+            "stdout_tail": "",
+            "stderr_tail": "..................\n----------------------------------------------------------------------\nRan 18 tests in 0.007s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "d0d33f8ae10483c9333875d15e8b89fe59c2ddf7ded8ae7ff566653e56bb0e0f",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.521s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "ef576c23ccf24278a9aee4ac58b825455cd0819d6911d430cdec88eaec311856",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s......................................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 431 tests in 134.451s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-08"
     }
   ]
 }

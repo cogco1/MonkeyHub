@@ -85,6 +85,15 @@ history-distinct states with the same future-relevant content must admit an
 equivalent rebased operator result. Neither digest gives `D_v,k` canonical write
 authority.
 
+The trusted provider adapter receives only the request and a bounded authority
+token. Lifecycle qualification and activation require a separate reconciler
+object capability; the public router facade carries no mutation or signing API.
+Control-plane-issued authority tokens and frozen invocation envelopes are
+HMAC-authenticated for the life of that in-memory control plane; portable
+provider receipts reject machine-local paths and non-JSON object keys before
+downstream reconciliation. An adversarial provider must remain out of process
+behind the trusted adapter because Python naming is not a security sandbox.
+
 ### P042 compiled-building probe
 
 P042 tested the compiler against one research-capable Agent's project-scoped
@@ -304,6 +313,29 @@ design, candidate generation, or Minecraft validation.
 Framework tests may use neutral mechanical fixtures. Cross-case behavior is
 proved with at least two non-isomorphic data packages, but neither package can
 become a fallback answer.
+
+### Production responsibility control plane
+
+Provider registration and production authority are separate. P053 defines one
+provider-neutral responsibility control plane with one contract owner, zero or
+one active provider, explicit `registered -> shadow -> verified -> active ->
+retired` lifecycle, and a monotonic authority epoch. Shadow providers may see
+the same bounded request but receive neither production nor canonical-write
+authority.
+
+An exact-base handover prepares its complete receipt before replacing the
+binding, retires the previous provider and activates the verified target in one
+critical section, and increments the epoch. Provider results must be checked
+against the current provider identity, epoch, and binding digest after execution
+so an in-flight result cannot survive a cutover. Active-provider failure is a
+named unavailable outcome; it never calls a shadow or retired fallback.
+
+This is a control-plane contract, not another persistence path. Its states,
+tokens, and receipts are typed return values; P036 remains the only project
+writer. P053 does not yet migrate `PrimaryArchitect`, geometry authoring, or the
+P026 Gold runtime away from their direct provider injection. Each responsibility
+needs a later isolated shadow-and-cutover card before the new router is part of
+that production chain.
 
 ### Test hierarchy
 

@@ -83,5 +83,6 @@ Which completed work has named acceptance evidence?
 | M031 | modify | done | Integrate sandbox support approval and reload integrity repairs without weakening evidence or authority boundaries. | [M031](M031-sandbox-integrity-gates.md) |
 | P052 | planning | done | Add an explicit cross-platform external runtime for active ArchFlow projects while preserving P036 as the sole project writer and probes as promoted evidence. | [P052](P052-external-project-runtime.md) |
 | M032 | modify | done | Make geometry interface reference publication and enforcement match typed state and supplied spatial records exactly. | [M032](M032-geometry-interface-reference-contract.md) |
+| P053 | planning | done | Provide provider-neutral production responsibility isolation, shadow execution, exact-base atomic handover, and stale-result rejection without fallback or canonical-write authority. | [P053](P053-production-responsibility-handover.md) |
 
 [Back to RMPA](../README.md)
