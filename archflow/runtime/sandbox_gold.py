@@ -28,6 +28,7 @@ from archflow.adapters.sandbox_render import (
     render_paper_views,
 )
 from archflow.capabilities.geometry_proposal import (
+    GeometryProposalIssue,
     GeometryProposalPolicy,
     GeometryProposalProviderIdentity,
     GeometryProposalStatus,
@@ -142,6 +143,7 @@ _CONCEPT_SCHEMA = "SandboxArchitectConcept@1"
 _PROPOSAL_SCHEMA = "SandboxArchitectProposal@1"
 _MODEL_PROMPT_SCHEMA = "SandboxArchitectPrompt@1"
 _COMMITMENT_REF = "commitment:maintain-egress"
+_SANDBOX_VOXEL_RESOLUTION_M = 1.0
 
 
 class SandboxGoldError(RuntimeError):
@@ -626,7 +628,7 @@ async def _model_proposal(
     base: ProjectVersionRef,
     *,
     concept: dict[str, Any] | None = None,
-    findings: tuple[str, ...] = (),
+    findings: tuple[dict[str, object], ...] = (),
 ) -> ModelInvocationReceipt:
     revision = concept is not None
     variant = "revised" if revision else "concept"
@@ -1279,23 +1281,144 @@ def _program(proposal: Mapping[str, Any]):
     return compile_building_program(
         {
             "use": proposal["proposal_id"],
-            "width_blocks": envelope["width_m"],
-            "depth_blocks": envelope["depth_m"],
+            "width_blocks": _validation_cells(
+                envelope["width_m"],
+                "envelope.width_m",
+            ),
+            "depth_blocks": _validation_cells(
+                envelope["depth_m"],
+                "envelope.depth_m",
+            ),
             "required_spaces": [
                 item["function_id"] for item in proposal["functions"]
             ],
-            "minimum_clear_height": performance[
-                "minimum_clear_height_m"
-            ],
+            "minimum_clear_height": _validation_cells(
+                performance["minimum_clear_height_m"],
+                "performance_requirements.minimum_clear_height_m",
+            ),
             "entrance_count": entrance_count,
-            "circulation_min_width": performance[
-                "circulation_min_width_m"
-            ],
+            "circulation_min_width": _validation_cells(
+                performance["circulation_min_width_m"],
+                "performance_requirements.circulation_min_width_m",
+            ),
             "hard_requirements": ["maintain-evidence-bound-egress"],
             "soft_preferences": [proposal["material_strategy"]],
             "prohibitions": [],
         }
     )
+
+
+def _geometry_realization_requirements(
+    proposal: Mapping[str, Any],
+    projection: CandidateProgramProjection,
+) -> tuple[dict[str, object], ...]:
+    value_refs = {item.value_id: item.ref for item in projection.values}
+    dimension_ref = value_refs["dimension-envelope"]
+    performance_ref = value_refs["performance-requirements"]
+    function_ref = value_refs["function-program"]
+    envelope = proposal["envelope"]
+    performance = proposal["performance_requirements"]
+    door_refs = sorted(
+        value_refs[_semantic_component_value_id(component["component_id"])]
+        for component in proposal["semantic_components"]
+        if component["assembly_kind"] == AssemblyKind.DOOR.value
+    )
+
+    def requirement(
+        requirement_id: str,
+        source_refs: list[str],
+        property_name: str,
+        relation: str,
+        threshold: object,
+        unit: str,
+    ) -> dict[str, object]:
+        return {
+            "schema": "GeometryRealizationRequirement@1",
+            "requirement_id": requirement_id,
+            "source_refs": sorted(set(source_refs)),
+            "property": property_name,
+            "relation": relation,
+            "threshold_json": _canonical_json(threshold),
+            "unit": unit,
+        }
+
+    requirements = [
+        requirement(
+            "validation-voxel-resolution",
+            ["runtime-policy:sandbox-validation-view"],
+            "validation_voxel_resolution_m",
+            "exact",
+            _SANDBOX_VOXEL_RESOLUTION_M,
+            "meter",
+        ),
+        requirement(
+            "footprint-depth",
+            [dimension_ref],
+            "footprint_depth_cells",
+            "exact",
+            _validation_cells(envelope["depth_m"], "envelope.depth_m"),
+            "sandbox-cell",
+        ),
+        requirement(
+            "footprint-width",
+            [dimension_ref],
+            "footprint_width_cells",
+            "exact",
+            _validation_cells(envelope["width_m"], "envelope.width_m"),
+            "sandbox-cell",
+        ),
+        requirement(
+            "minimum-circulation-width",
+            [performance_ref],
+            "connected_region_minimum_width_cells",
+            "minimum",
+            _validation_cells(
+                performance["circulation_min_width_m"],
+                "performance_requirements.circulation_min_width_m",
+            ),
+            "sandbox-cell",
+        ),
+        requirement(
+            "minimum-clear-height",
+            [performance_ref],
+            "walkable_clear_height_cells",
+            "minimum",
+            _validation_cells(
+                performance["minimum_clear_height_m"],
+                "performance_requirements.minimum_clear_height_m",
+            ),
+            "sandbox-cell",
+        ),
+        requirement(
+            "minimum-exterior-entrances",
+            door_refs or [function_ref],
+            "exterior_entrance_columns",
+            "minimum",
+            len(door_refs),
+            "count",
+        ),
+    ]
+    requirements.extend(
+        requirement(
+            f"use-zone-{item['function_id']}",
+            [function_ref],
+            "bound_observed_region_for_function",
+            "required",
+            {"function_id": item["function_id"], "minimum_regions": 1},
+            "logical-region",
+        )
+        for item in proposal["functions"]
+    )
+    return tuple(
+        sorted(requirements, key=lambda item: str(item["requirement_id"]))
+    )
+
+
+def _validation_cells(value: object, field: str) -> int:
+    """Conservatively quantize a meter threshold onto the sandbox voxel grid."""
+
+    meters = _positive_number(value, field)
+    return math.ceil(meters / _SANDBOX_VOXEL_RESOLUTION_M)
 
 
 def _validate_semantic_geometry_bindings(
@@ -1759,6 +1882,8 @@ async def _candidate_proof(
     asset_payload_refs: tuple[ProjectRecordRef, ...],
     asset_payloads: tuple[SandboxAssetPayload, ...],
     predecessor_ref: str | None = None,
+    repair_findings: tuple[Mapping[str, object], ...] = (),
+    prior_geometry_program: CompiledGeometryProgram | None = None,
 ) -> SandboxCandidateProof:
     assert receipt.output is not None
     proposal = _validate_proposal(receipt.output, revision=detailed)
@@ -1794,6 +1919,12 @@ async def _candidate_proof(
         policy=GeometryProposalPolicy(2),
         template_refs=asset_payload_refs,
         available_asset_digests=assets,
+        realization_requirements=_geometry_realization_requirements(
+            proposal,
+            projection,
+        ),
+        initial_repair_issues=_geometry_repair_issues(repair_findings),
+        prior_program=prior_geometry_program,
     )
     if (
         produced.status is not GeometryProposalStatus.ACCEPTED
@@ -1821,6 +1952,7 @@ async def _candidate_proof(
         produced.proposal,
         active_commitment_refs=(_COMMITMENT_REF,),
         available_asset_digests=assets,
+        prior_program=prior_geometry_program,
     )
     if (
         compilation.program is None
@@ -1841,14 +1973,13 @@ async def _candidate_proof(
     view = derive_voxel_view(
         realized.scene,
         realized.receipt,
-        policy=VoxelizationPolicy(default_resolution=1.0),
+        policy=VoxelizationPolicy(
+            default_resolution=_SANDBOX_VOXEL_RESOLUTION_M
+        ),
     )
     render_set = render_paper_views(realized.scene)
     validation_program = _program(proposal)
     observation = replace(view.to_observation(), base_state=run.base)
-    if not observation.connected_regions:
-        raise SandboxGoldError("sandbox observation has no walkable region")
-    region = observation.connected_regions[0]
     zones = _derive_use_zones(
         spatial,
         spatial_ref,
@@ -2066,6 +2197,60 @@ def _finding_codes(proof: SandboxCandidateProof) -> tuple[str, ...]:
     )
 
 
+def _repair_findings(
+    proof: SandboxCandidateProof,
+) -> tuple[dict[str, object], ...]:
+    records = [
+        {
+            "schema": "SandboxRepairFinding@1",
+            "source": "usability",
+            "code": item.code,
+            "message": item.message,
+            "measured": item.measured,
+            "threshold": item.threshold,
+            "evidence_refs": list(item.evidence_refs),
+        }
+        for item in proof.usability_receipt.findings
+    ]
+    records.extend(
+        {
+            "schema": "SandboxRepairFinding@1",
+            "source": "hard_validation",
+            "code": item.code,
+            "message": item.message,
+            "measured": None,
+            "threshold": None,
+            "evidence_refs": list(item.evidence_refs),
+        }
+        for item in proof.hard_validation.findings
+    )
+    return tuple(
+        sorted(
+            records,
+            key=lambda item: (
+                str(item["source"]),
+                str(item["code"]),
+                str(item["message"]),
+            ),
+        )
+    )
+
+
+def _geometry_repair_issues(
+    findings: tuple[Mapping[str, object], ...],
+) -> tuple[GeometryProposalIssue, ...]:
+    """Preserve exact sandbox evidence at the downstream geometry boundary."""
+
+    issues = tuple(
+        GeometryProposalIssue(
+            code=f"sandbox.{item['source']}.{item['code']}",
+            detail=_canonical_json(dict(item)),
+        )
+        for item in findings
+    )
+    return tuple(sorted(issues, key=lambda item: (item.code, item.detail)))
+
+
 def load_sandbox_gold_inputs(
     repository: FilesystemProjectRepository,
     *,
@@ -2212,6 +2397,7 @@ async def execute_sandbox_gold(
             record_kind="sandbox-candidate-rejected",
             payload=_candidate_record(concept),
         )
+        repair_findings = _repair_findings(concept)
         revision_receipt = await _model_proposal(
             repository,
             run,
@@ -2219,7 +2405,7 @@ async def execute_sandbox_gold(
             request,
             run.base,
             concept=concept.proposal,
-            findings=concept_findings,
+            findings=repair_findings,
         )
         if not run_provider_identity.matches(revision_receipt):
             raise SandboxGoldError(
@@ -2240,6 +2426,8 @@ async def execute_sandbox_gold(
             asset_payload_refs=asset_payload_refs,
             asset_payloads=asset_payloads,
             predecessor_ref=rejected_ref.uri,
+            repair_findings=repair_findings,
+            prior_geometry_program=concept.geometry_program,
         )
     else:
         accepted = concept

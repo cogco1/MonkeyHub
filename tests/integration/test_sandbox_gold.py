@@ -21,9 +21,11 @@ from archflow.project import (
     ProjectRecordRef,
 )
 from archflow.realization.sandbox import SandboxAssetPayload
+from archflow.runtime.geometry_compiler import compile_geometry_program
 from archflow.runtime.sandbox_gold import (
     RawSandboxRequest,
     SandboxGoldError,
+    _program,
     execute_sandbox_gold,
     load_sandbox_gold_inputs,
     reload_sandbox_gold,
@@ -36,6 +38,8 @@ from archflow.state.geometry_program import (
     DetailMaturity,
     HostedAssembly,
     LengthUnit,
+    ObjectRetirement,
+    ObjectRevisionPrecondition,
 )
 from tests.test_sandbox_realization import compiled_room
 
@@ -396,6 +400,63 @@ def _geometry_output(request) -> dict[str, object]:
             sorted((door, window), key=lambda item: item.assembly_id)
         ),
     )
+    predecessor = request.payload.get("available_predecessor_program")
+    if predecessor is not None:
+        revision_reason = ("finding:sandbox-geometry-revision",)
+        rebound = replace(
+            rebound,
+            operations=tuple(
+                replace(
+                    operation,
+                    responds_to_object_ids=operation.input_object_ids,
+                    responds_to_frame_ids=(operation.frame_id,),
+                    responds_to_binding_ids=operation.semantic_binding_ids,
+                )
+                for operation in rebound.operations
+            ),
+            predecessor_program_digest=None,
+            revisions=(),
+            retirements=(),
+        )
+        current = compile_geometry_program(
+            projection,
+            rebound,
+            active_commitment_refs=("commitment:maintain-egress",),
+            available_asset_digests={asset.asset_id: asset.sha256},
+        )
+        if current.program is None:
+            raise AssertionError(current.receipt.to_dict())
+        prior_objects = {
+            item["object_id"]: item["object_digest"]
+            for item in predecessor["objects"]
+        }
+        current_objects = {
+            item.object_id: item.object_digest
+            for item in current.program.objects
+        }
+        rebound = replace(
+            rebound,
+            predecessor_program_digest=request.payload[
+                "available_predecessor_program_digest"
+            ],
+            revisions=tuple(
+                ObjectRevisionPrecondition(
+                    object_id=object_id,
+                    expected_digest=prior_objects[object_id],
+                    reason_refs=revision_reason,
+                )
+                for object_id in sorted(set(prior_objects) & set(current_objects))
+                if prior_objects[object_id] != current_objects[object_id]
+            ),
+            retirements=tuple(
+                ObjectRetirement(
+                    object_id=object_id,
+                    expected_digest=prior_objects[object_id],
+                    reason_refs=revision_reason,
+                )
+                for object_id in sorted(set(prior_objects) - set(current_objects))
+            ),
+        )
     return proposal_authoring_output(
         rebound,
         selected_template_refs=(asset_uri,),
@@ -415,6 +476,7 @@ class _ScriptedArchitectProvider:
         invalid_component_reference: bool = False,
         omit_semantic_kind_first: bool = False,
         substitute_concept_repair_model: bool = False,
+        block_first_candidate: bool = False,
     ) -> None:
         self.concept_has_all_zones = concept_has_all_zones
         self.concept_oversized_envelope = concept_oversized_envelope
@@ -425,13 +487,16 @@ class _ScriptedArchitectProvider:
         self.substitute_concept_repair_model = (
             substitute_concept_repair_model
         )
+        self.block_first_candidate = block_first_candidate
         self.requests = []
         self._geometry_attempts: dict[str, int] = {}
         self._semantic_attempts: dict[str, int] = {}
+        self._geometry_request_count = 0
 
     async def invoke(self, request) -> ModelInvocationReceipt:
         self.requests.append(request)
         if request.payload.get("schema") == "GeometryProposalAuthoringRequest@1":
+            self._geometry_request_count += 1
             checkpoint = request.checkpoint_digest
             attempt = self._geometry_attempts.get(checkpoint, 0) + 1
             self._geometry_attempts[checkpoint] = attempt
@@ -441,6 +506,23 @@ class _ScriptedArchitectProvider:
                 output["proposal_body"]["operations"][0]["kind"] = (
                     "undeclared_building_primitive"
                 )
+            if self.block_first_candidate and self._geometry_request_count == 1:
+                output = json.loads(json.dumps(output))
+                body = output["proposal_body"]
+                blocker = next(
+                    json.loads(json.dumps(operation))
+                    for operation in body["operations"]
+                    if operation["op_id"] == "outer"
+                )
+                blocker["op_id"] = "blocking-solid"
+                blocker["output_object_ids"] = ["blocking-solid"]
+                body["operations"].append(blocker)
+                program_binding = next(
+                    binding
+                    for binding in body["semantic_bindings"]
+                    if binding["binding_id"] == "program-binding"
+                )
+                program_binding["object_ids"].append("blocking-solid")
         elif request.payload.get("authoring_variant") in {"concept", "revised"}:
             variant = request.payload["authoring_variant"]
             attempt = self._semantic_attempts.get(variant, 0) + 1
@@ -547,6 +629,94 @@ class SandboxGoldTests(unittest.TestCase):
         )
         self.inputs = _copy_case_inputs(self.repository)
 
+    def test_validation_program_conservatively_quantizes_meter_values(self) -> None:
+        proposal = _semantic_proposal(
+            revised=False,
+            complete_zones=True,
+        )
+        proposal["envelope"] = {
+            "width_m": 5.01,
+            "depth_m": 4.01,
+            "clear_height_m": 3.0,
+        }
+        proposal["performance_requirements"] = {
+            "minimum_clear_height_m": 2.4,
+            "circulation_min_width_m": 1.2,
+        }
+
+        program = _program(proposal)
+
+        self.assertEqual(program.footprint.width_blocks, 6)
+        self.assertEqual(program.footprint.depth_blocks, 5)
+        self.assertEqual(program.minimum_clear_height, 3)
+        self.assertEqual(program.circulation_min_width, 2)
+
+    def test_promoted_live_agent_gold_and_prior_rejection_reload(self) -> None:
+        repository = FilesystemProjectRepository.open(PROBE_ROOT)
+        summary = reload_sandbox_gold(
+            repository,
+            run_id="gold-agent-cli-020",
+        )
+
+        self.assertTrue(summary["accepted"])
+        self.assertEqual(summary["accepted_variant"], "concept")
+        self.assertEqual(summary["concept_findings"], [])
+        self.assertEqual(
+            summary["provider_identity"]["provider_id"],
+            "codex-agent-cli",
+        )
+        self.assertEqual(
+            summary["provider_identity"]["model_id"],
+            "gpt-5.6-sol",
+        )
+        self.assertEqual(repository.read_head().version, 1)
+        accepted = repository.load_json(
+            ProjectRecordRef(**summary["accepted_candidate_ref"])
+        )
+        self.assertTrue(accepted["usability"]["passed"])
+        self.assertTrue(accepted["hard_validation"]["passed"])
+        self.assertTrue(accepted["readiness"]["ready"])
+        self.assertEqual(len(accepted["render_set"]["views"]), 5)
+        self.assertFalse(accepted["platform_export_authority"])
+        self.assertFalse(accepted["canonical_write_authority"])
+        self.assertEqual(
+            {
+                item["component_id"]
+                for item in accepted["proposal"]["semantic_components"]
+            },
+            {
+                "daylight-window-east",
+                "daylight-window-west",
+                "entrance-door",
+                "storage-cabinetry",
+            },
+        )
+        self.assertEqual(
+            {item["kind"] for item in accepted["geometry_program"]["proposal"]["assemblies"]},
+            {"door", "window"},
+        )
+
+        rejected_run = repository.load_run("gold-agent-cli-019")
+        rejected_payloads = [
+            repository.load_json(ref)
+            for ref in repository.list_json(
+                run=rejected_run,
+                destination=PersistenceDestination(
+                    PersistenceArea.RUN_CANDIDATE,
+                    run_id=rejected_run.run_id,
+                ),
+            )
+        ]
+        self.assertTrue(
+            any(
+                payload.get("variant") == "revised"
+                and payload.get("sandbox_archive", {}).get("disposition")
+                == "rejected"
+                and not payload.get("usability", {}).get("passed", True)
+                for payload in rejected_payloads
+            )
+        )
+
     def test_runtime_has_no_framework_owned_geometry_template(self) -> None:
         runtime_path = (
             Path(__file__).resolve().parents[2]
@@ -624,6 +794,51 @@ class SandboxGoldTests(unittest.TestCase):
             set(concept_contract["required"]),
             set(concept_contract["properties"]),
         )
+        geometry_request = next(
+            request
+            for request in provider.requests
+            if request.payload.get("schema")
+            == "GeometryProposalAuthoringRequest@1"
+        )
+        realization_requirements = geometry_request.payload[
+            "realization_contract"
+        ]["required_properties"]
+        by_id = {
+            item["requirement_id"]: item
+            for item in realization_requirements
+            if item["schema"] == "GeometryRealizationRequirement@1"
+        }
+        self.assertEqual(by_id["minimum-clear-height"]["threshold_json"], "2")
+        self.assertEqual(
+            by_id["validation-voxel-resolution"],
+            {
+                "schema": "GeometryRealizationRequirement@1",
+                "requirement_id": "validation-voxel-resolution",
+                "source_refs": ["runtime-policy:sandbox-validation-view"],
+                "property": "validation_voxel_resolution_m",
+                "relation": "exact",
+                "threshold_json": "1.0",
+                "unit": "meter",
+            },
+        )
+        self.assertEqual(
+            by_id["minimum-circulation-width"]["threshold_json"],
+            "1",
+        )
+        self.assertEqual(
+            by_id["minimum-exterior-entrances"]["threshold_json"],
+            "1",
+        )
+        self.assertEqual(
+            {
+                item["requirement_id"]
+                for item in realization_requirements
+                if item.get("property")
+                == "bound_observed_region_for_function"
+            },
+            {"use-zone-gathering", "use-zone-storage"},
+        )
+
         self.assertIn("rationale", concept_contract["required"])
         component_contract = concept_contract["properties"][
             "semantic_components"
@@ -660,6 +875,85 @@ class SandboxGoldTests(unittest.TestCase):
             }
             self.assertFalse(claimed_members & members)
             claimed_members.update(members)
+
+    def test_empty_walkable_candidate_becomes_revision_evidence(self) -> None:
+        provider = _ScriptedArchitectProvider(
+            concept_has_all_zones=True,
+            block_first_candidate=True,
+        )
+        result = self._execute(provider, run_id="gold-empty-walkable-repair")
+
+        self.assertEqual(result.committed.version, 1)
+        self.assertIsNotNone(result.rejected_ref)
+        summary = reload_sandbox_gold(
+            self.repository,
+            run_id="gold-empty-walkable-repair",
+        )
+        self.assertEqual(summary["accepted_variant"], "revised")
+        self.assertIn(
+            "usability.connectivity.disconnected",
+            summary["concept_findings"],
+        )
+        rejected = self.repository.load_json(result.rejected_ref)
+        self.assertFalse(rejected["usability"]["passed"])
+        self.assertEqual(
+            rejected["sandbox_archive"]["disposition"],
+            "rejected",
+        )
+        self.assertIsNotNone(rejected["sandbox_archive"]["scene_digest"])
+        revision_request = next(
+            request
+            for request in provider.requests
+            if request.payload.get("authoring_variant") == "revised"
+        )
+        repair_findings = revision_request.payload["context"][
+            "hard_gate_findings"
+        ]
+        connectivity = next(
+            item
+            for item in repair_findings
+            if item["code"] == "usability.connectivity.disconnected"
+        )
+        self.assertEqual(connectivity["source"], "usability")
+        self.assertEqual(connectivity["measured"], "0 connected regions")
+        self.assertEqual(connectivity["threshold"], "exactly 1 connected region")
+        self.assertIsInstance(connectivity["evidence_refs"], list)
+        revised_geometry_request = next(
+            request
+            for request in provider.requests
+            if request.payload.get("schema")
+            == "GeometryProposalAuthoringRequest@1"
+            and request.payload["repair_issues"]
+            and any(
+                item["code"]
+                == "sandbox.usability.usability.connectivity.disconnected"
+                for item in request.payload["repair_issues"]
+            )
+        )
+        geometry_connectivity = next(
+            item
+            for item in revised_geometry_request.payload["repair_issues"]
+            if item["code"]
+            == "sandbox.usability.usability.connectivity.disconnected"
+        )
+        self.assertEqual(
+            json.loads(geometry_connectivity["detail"]),
+            connectivity,
+        )
+        predecessor = revised_geometry_request.payload[
+            "available_predecessor_program"
+        ]
+        self.assertIsNotNone(predecessor)
+        self.assertEqual(
+            revised_geometry_request.payload[
+                "available_predecessor_program_digest"
+            ],
+            rejected["geometry_receipt"]["compiled_program_digest"],
+        )
+        self.assertEqual(
+            predecessor["proposal_digest"],
+            rejected["geometry_program"]["proposal_digest"],
+        )
 
     def test_usability_only_rejection_reloads_cleanly(self) -> None:
         provider = _ScriptedArchitectProvider(

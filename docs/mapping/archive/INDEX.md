@@ -34,6 +34,7 @@ Which completed work has named acceptance evidence?
 | P023 | planning | done | Generate alternative building-scoped schematic topology, level, massing, and footprint proposals from current design state. | [P023](P023-spatial-topology-footprint-proposals.md) |
 | P024 | planning | done | Assemble a selected and coordinated design-development state into candidate, validation, and MCP handoff without legacy reverse authority. | [P024](P024-candidate-assembly-handoff.md) |
 | P025 | planning | done | Define player confirmation, preview, revision, pause, undo, materials, and selection authority. | [P025](P025-player-authority-interface.md) |
+| P026 | planning | done | Prove one true raw-request-to-usable-building run as a reloadable accepted platform-neutral sandbox artifact. | [P026](P026-sandbox-prompt-to-usable-gold.md) |
 | P028 | planning | done | Expose bounded building-scoped CLI retrieval with provenance, no fallback, and no state-writing authority. | [P028](P028-building-scoped-cli-retrieval.md) |
 | P029 | planning | done | Connect one real asynchronous model provider to the Primary Architect protocol and dynamic capabilities. | [P029](P029-primary-architect-model-provider.md) |
 | P030 | planning | done | Validate deterministic voxel use scenarios beyond minimal static usability gates. | [P030](P030-voxel-use-scenario-validation.md) |
@@ -86,5 +87,16 @@ Which completed work has named acceptance evidence?
 | P053 | planning | done | Provide provider-neutral production responsibility isolation, shadow execution, exact-base atomic handover, and stale-result rejection without fallback or canonical-write authority. | [P053](P053-production-responsibility-handover.md) |
 | M033 | modify | done | Make Codex history compaction recoverable from bounded current repository contracts without making transcripts or hook output authoritative. | [M033](M033-context-compaction-recovery.md) |
 | M034 | modify | done | Make the M033 acceptance test follow registry-owned card paths and the current active-card set across completion. | [M034](M034-context-hook-lifecycle-test.md) |
+| M035 | modify | done | Publish and enforce the geometry predecessor and hosted-assembly relations required by the compiler at the model authoring boundary. | [M035](M035-geometry-relational-authoring-contract.md) |
+| M036 | modify | done | Publish and enforce dedicated semantic-binding and assembly identity requirements for hosted model-authored components before geometry acceptance. | [M036](M036-hosted-component-binding-contract.md) |
+| M037 | modify | done | Publish terminal-geometry occupancy and project-required walkable-void semantics at the geometry authoring boundary. | [M037](M037-terminal-geometry-walkability-contract.md) |
+| M038 | modify | done | Carry exact project-derived realization thresholds into geometry authoring without transferring hard-gate authority or inventing geometry. | [M038](M038-realization-threshold-contract.md) |
+| M039 | modify | done | Make derived sandbox voxels retain thin terminal material without treating openable door leaves as permanent walkability obstructions. | [M039](M039-thin-geometry-voxelization.md) |
+| M040 | modify | done | Replace ambiguous geometry function hints with exact structured authoring contracts and reject unsupported typed parameter combinations before compilation. | [M040](M040-machine-readable-geometry-function-contracts.md) |
+| M041 | modify | done | Publish the sandbox kernel coordinate convention as an exact geometry authoring contract so providers cannot silently exchange Y-up and Z-up interpretations. | [M041](M041-geometry-coordinate-convention.md) |
+| M042 | modify | done | Expose conservative sandbox voxel clear-height exterior-opening and host-cut semantics before model geometry is authored. | [M042](M042-sandbox-validation-view-authoring-contract.md) |
+| M043 | modify | done | Carry exact rejected sandbox measurements and evidence through semantic revision into the first geometry-authoring request for the revised candidate. | [M043](M043-sandbox-findings-to-geometry-repair.md) |
+| M044 | modify | done | Make revised sandbox geometry a true state transition by supplying the exact rejected compiled program as its predecessor. | [M044](M044-incremental-geometry-predecessor.md) |
+| M045 | modify | done | Synchronize generated architecture-layer claims with completed P026 evidence without closing downstream terrain export or Pantheon-scale work. | [M045](M045-p026-architecture-claim-sync.md) |
 
 [Back to RMPA](../README.md)

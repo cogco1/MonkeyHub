@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-08",
+  "updated_on": "2026-08-10",
   "phase": "P6 - sandbox-first neutral geometry roadmap active",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -10,7 +10,7 @@
   },
   "modules": {
     "state": "design_brief_commitment_transition_and_markov_state_proven",
-    "runtime": "brief_clarification_and_repair_loop_proven",
+    "runtime": "prompt_to_accepted_sandbox_gold_proven",
     "workspace": "p1_proven",
     "capabilities": "state_responsive_experts_and_retrieval_proven",
     "submission": "obligation_repair_proven",
@@ -24,7 +24,7 @@
     {
       "id": "L0",
       "name": "Raw brief and authority",
-      "status": "partial",
+      "status": "proven",
       "responsibility": "Compile prompt, evidence, ambiguity, authority, and commitments without inventing a design answer.",
       "evidence_cards": [
         "P001",
@@ -37,10 +37,11 @@
         "P020",
         "M012",
         "P043",
-        "P029"
+        "P029",
+        "P026"
       ],
       "open_cards": [],
-      "gap": "Exact-base brief phase-independent clarification and one real model provider are proven without choosing form; the accepted prompt-to-usable sandbox run remains open."
+      "gap": "Exact-base brief compilation phase-independent clarification real-model authoring and one accepted raw-request-to-sandbox-building Gold are proven without moving design authority into the framework."
     },
     {
       "id": "L1",
@@ -80,7 +81,7 @@
     {
       "id": "L3",
       "name": "Schematic design, design development, and candidate realization",
-      "status": "partial",
+      "status": "proven",
       "responsibility": "Turn the current program and site state into schematic alternatives, coordinate a selected branch through design development, and only then assemble an executable candidate.",
       "evidence_cards": [
         "P002",
@@ -89,15 +90,16 @@
         "P040",
         "P024",
         "P047",
-        "P048"
+        "P048",
+        "P026"
       ],
       "open_cards": [],
-      "gap": "Schematic alternatives selected-branch design development candidate assembly typed platform-neutral geometry compilation and deterministic sandbox realization are proven; one accepted raw-request-to-usable-building Gold remains P026 work."
+      "gap": "Schematic alternatives selected-branch design development candidate assembly typed platform-neutral geometry compilation deterministic sandbox realization and one accepted raw-request-to-usable-building Gold are proven."
     },
     {
       "id": "L4",
       "name": "Candidate review and promotion",
-      "status": "partial",
+      "status": "proven",
       "responsibility": "Keep hard usability, commitment completion, soft evaluation, and single-writer promotion distinct.",
       "evidence_cards": [
         "P001",
@@ -110,10 +112,11 @@
         "P017",
         "P018",
         "P024",
-        "P030"
+        "P030",
+        "P026"
       ],
       "open_cards": [],
-      "gap": "Candidate assembly hard gates source-bound realized-scene use-scenario validation typed commitments monitoring append-only reconstruction and separated promotion authorities are proven; one accepted raw-request-to-usable-building Gold remains P026 work."
+      "gap": "Candidate assembly hard gates source-bound realized-scene use-scenario validation typed commitments monitoring append-only reconstruction separated promotion authorities and one accepted real-model Gold are proven."
     },
     {
       "id": "L5",
@@ -157,14 +160,14 @@
         "P048",
         "P049",
         "P050",
-        "M024"
+        "M024",
+        "P026"
       ],
       "open_cards": [
-        "P026",
         "P027",
         "P038"
       ],
-      "gap": "Typed neutral geometry compilation stable dependency-bound object identity hosted assemblies provenance-bound assets deterministic hybrid-scene realization exact-source-derived sandbox observation five-view rendering and source-bound use-scenario validation are proven; evaluator coverage for the declared function vocabulary is P049, record-driven proposal production is P050, the Gold evidence-honesty repair is M024, and one accepted prompt-to-usable building remains P026 work."
+      "gap": "Typed neutral geometry compilation stable dependency-bound object identity hosted assemblies provenance-bound assets deterministic hybrid-scene realization exact-source-derived sandbox observation five-view rendering source-bound use-scenario validation and one accepted prompt-to-usable building Gold are proven; uneven terrain adaptation remains P027 and Pantheon-scale longitudinal evidence remains P038."
     },
     {
       "id": "L8",
@@ -2042,8 +2045,8 @@
     {
       "id": "P026",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Prove one true raw-request-to-usable-building run as a reloadable accepted platform-neutral sandbox artifact.",
       "depends_on": [
         "M002",
@@ -2086,9 +2089,80 @@
         "Full state and archive reload",
         "No-instance-default scan"
       ],
-      "card": "docs/mapping/planning/P026-sandbox-prompt-to-usable-gold.md",
-      "evidence": [],
-      "actor": "Codex"
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.integration.test_sandbox_gold"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/P026-sandbox-prompt-to-usable-gold.md",
+      "evidence": [
+        "Accepted real Codex Agent CLI run gold-agent-cli-020 from one raw qualitative request into a reloadable semantic-plus-geometry sandbox building: 4 semantic components, 30 scene objects, typed door and window assemblies, 73 occupied and 9 walkable cells, one connected region, two exterior openings, five SVG views, passing usability hard validation approval commitment monitoring and readiness; fresh reopen succeeded and P036 atomically advanced HEAD 0 to 1 while prior live rejected run 019 remains reloadable; 13 integration tests, architecture firewall, and deterministic full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P026",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T18:10:05.369120+00:00",
+        "contract_sha256": "75aee22f2fa206e60c495669a1fafae30223fee06fa9465f75b356af3626bed5",
+        "scope_sha256": "a1ef5e71e36fbaa7874b949994eb0f3dfbbe7b803e120fc0d768375efc7a7138",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.integration.test_sandbox_gold"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "defe4e2b0f20320ec8012b2c7d2cfafdfccb7bf34596e2c2d588a014ca76bebe",
+            "stdout_tail": "",
+            "stderr_tail": ".............\n----------------------------------------------------------------------\nRan 13 tests in 3.702s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "c02dc8b2850c4fe16e321d731c970578331adb14c7eb6d2c8c39631f7059bad6",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.513s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "524d757a557d99ad5ddb7c66878d96a27a6cf8d7f245eda765e0fe9d0da944b4",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s............................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 447 tests in 17.858s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
     },
     {
       "id": "P027",
@@ -6242,6 +6316,1174 @@
         ]
       },
       "completed_on": "2026-08-08"
+    },
+    {
+      "id": "M035",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Publish and enforce the geometry predecessor and hosted-assembly relations required by the compiler at the model authoring boundary.",
+      "depends_on": [
+        "M032",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "tests/test_geometry_proposal_producer.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Every geometry-authoring request publishes the exact available predecessor digest and constrains proposal_body.predecessor_program_digest to that value including null for an initial proposal.",
+        "The machine-readable cross-field contract states that an assembly host object remains distinct from every member object.",
+        "The machine-readable cross-field contract states that every host_cut member object is produced by an operation whose input_object_ids contains the assembly host_object_id.",
+        "Human-readable instructions are generated from the same relations and do not add a hidden alternate rule.",
+        "Initial and prior-program proposals retain exact compiler behavior with no inferred predecessor or geometry fallback.",
+        "Existing persisted P026 receipts remain read-only and reloadable.",
+        "No compiler hard gate retry count model identity or canonical-write authority changes."
+      ],
+      "tests": [
+        "Initial predecessor null publication and Schema constraint",
+        "Prior-program predecessor digest publication and Schema constraint",
+        "Hosted-cut dependency cross-field contract publication",
+        "Accepted and rejected proposal compiler behavior remains unchanged",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M035-geometry-relational-authoring-contract.md",
+      "evidence": [
+        "Published exact predecessor const and shared machine-readable hosted-assembly relational invariants at the provider boundary; retained compiler gates and bounded rounds; 22 focused producer tests, architecture firewall, and deterministic full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M035",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T15:07:45.478754+00:00",
+        "contract_sha256": "6c7582cc5cd73d0d3cc8324431a95e1135c9ebaf4b5ec867ecb60e11dbc8f9d7",
+        "scope_sha256": "414d95f2b7a5906d9f6da6b7465565ef9c1b3c9662541815d7c9df96c0173365",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "f5e469d918ab6ada1a96946afc3c53f59e4ef5e492888f87563e7704ef94a6fc",
+            "stdout_tail": "",
+            "stderr_tail": "......................\n----------------------------------------------------------------------\nRan 22 tests in 1.958s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "72fd64d79b5c86731c31cf0c162b17a71d3a6b9099b7fac025d4bf405c017ae4",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.500s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "fadd53f6f4d865132f9a8067a9f33bc4a4f7268ae2f65155a9413abdcae87070",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s...................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 438 tests in 17.479s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-09"
+    },
+    {
+      "id": "M036",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Publish and enforce dedicated semantic-binding and assembly identity requirements for hosted model-authored components before geometry acceptance.",
+      "depends_on": [
+        "M035",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "tests/test_geometry_proposal_producer.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Hosted-component requirements derive only from supplied candidate values that carry component_id and non-null assembly_kind.",
+        "Each request enumerates the exact candidate value interface and assembly kind requiring one dedicated semantic binding and one matching assembly.",
+        "A dedicated binding contains exactly that component candidate value and the matching assembly names only that binding.",
+        "Hosted member object identities are disjoint across components and every host and member object remains covered and produced under its dedicated binding.",
+        "Violations persist as bounded repair issues before geometry lineage can be accepted while runtime exact semantic-geometry validation remains intact.",
+        "No component geometry binding assembly or object identity is invented by the framework and no retry or hard gate is weakened."
+      ],
+      "tests": [
+        "Exact hosted-component requirement publication from supplied candidate values",
+        "Shared aggregate binding rejection before compiler acceptance",
+        "Non-hosted and ordinary candidate values create no hosted requirement",
+        "Existing accepted geometry proposal behavior remains unchanged",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer",
+          "tests.integration.test_sandbox_gold"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M036-hosted-component-binding-contract.md",
+      "evidence": [
+        "Derived exact hosted-component binding requirements from supplied candidate values, published them in each authoring request and contract, rejected aggregate shared bindings before geometry acceptance, and retained runtime revalidation; 34 focused/integration tests, architecture firewall, and deterministic full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M036",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T15:23:12.852052+00:00",
+        "contract_sha256": "8e696865bdf082ac14cc978ec7e4f93a66cf3e10c837d647902a4bc38e818c00",
+        "scope_sha256": "7ee532456f0842ce67f9550e4a04374a18f133ca0d7b804cc085fb51ad036296",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer",
+              "tests.integration.test_sandbox_gold"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "ccc507b8ad9fabdf5c8edd8f20d2957c16a7aae3030f3bfb4c528f5725b4e43f",
+            "stdout_tail": "",
+            "stderr_tail": "..................................\n----------------------------------------------------------------------\nRan 34 tests in 4.682s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "0738f4245bb2ca7c23d34bca229371687b0ddab4bdbaad3eb55955b15a3c0c30",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.483s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "365737d13841cc96d227f0d9300337849136fbbb33d06a3f239f407a11925417",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s.....................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 440 tests in 18.230s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-09"
+    },
+    {
+      "id": "M037",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Publish terminal-geometry occupancy and project-required walkable-void semantics at the geometry authoring boundary.",
+      "depends_on": [
+        "M036",
+        "P048",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "tests/test_geometry_proposal_producer.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Every geometry request publishes the exact terminal-object rule used by deterministic sandbox realization.",
+        "A terminal solid is described as occupied material volume rather than an abstract room or envelope.",
+        "Boolean and host-cut scope is explicit so cutting one host cannot imply cutting an unrelated terminal solid.",
+        "The supplied maintain-egress commitment publishes a requirement for at least one connected walkable region with supported clearance.",
+        "Human guidance is emitted from the same machine-readable realization contract.",
+        "Runtime realization and usability remain the proof authorities and no geometry or void is authored by the framework."
+      ],
+      "tests": [
+        "Terminal physical-object and solid occupancy contract publication",
+        "Maintain-egress walkable-region requirement publication",
+        "Instruction equality with the machine-readable realization contract",
+        "Existing proposal acceptance and rejection behavior remains unchanged",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer",
+          "tests.integration.test_sandbox_gold"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M037-terminal-geometry-walkability-contract.md",
+      "evidence": [
+        "Published P048 terminal physical-object, terminal-solid occupancy, boolean and host-cut scope semantics plus the supplied maintain-egress walkable-region requirement from one machine-readable contract; runtime usability remains authoritative; 36 focused/integration tests, architecture firewall, and deterministic full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M037",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T15:47:36.522274+00:00",
+        "contract_sha256": "abe7a98b70a6eeda5f0532312903a436581ba4576329eed97d9bddf55fae31cc",
+        "scope_sha256": "352327f25d9439a91e8c09633d19aa4cc856a71fd2427ba40fe9d3ceb59f2dc6",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer",
+              "tests.integration.test_sandbox_gold"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "366e2efc42782c01c612adb8d37b32c43164d25e052b0fcb825ab0f5f12d714d",
+            "stdout_tail": "",
+            "stderr_tail": "....................................\n----------------------------------------------------------------------\nRan 36 tests in 5.172s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "7762b1ffa20469adc3f2fea9ec99b00e6e0af237d0af90740f4f32dd92db7a84",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.494s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "276add9e5bbfaa8658f5d04d897a7652d868953c7c73209bef0a0a2ae954d7d4",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s.......................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 442 tests in 17.929s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-09"
+    },
+    {
+      "id": "M038",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Carry exact project-derived realization thresholds into geometry authoring without transferring hard-gate authority or inventing geometry.",
+      "depends_on": [
+        "M037",
+        "P026",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "archflow/runtime/sandbox_gold.py",
+        "tests/test_geometry_proposal_producer.py",
+        "tests/integration/test_sandbox_gold.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "The geometry producer accepts only exact deterministic GeometryRealizationRequirement@1 values with canonical JSON thresholds and supplied source references.",
+        "P026 derives footprint clear-height circulation entrance and per-function zone thresholds from the current model-authored proposal and its candidate values.",
+        "Continuous meter requirements use the same conservative voxel quantization source as runtime validation.",
+        "Every geometry request publishes the exact threshold records and instructs the model to treat them as hard targets.",
+        "Runtime realization usability and use-scenario validators remain the only proof authorities.",
+        "No requirement supplies geometry operations topology component identities or a framework-authored building answer."
+      ],
+      "tests": [
+        "Exact requirement schema canonical threshold and source validation",
+        "Geometry request publication and deterministic ordering",
+        "P026 meter-to-cell footprint clearance circulation and entrance targets",
+        "Per-function observed-region target publication",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer",
+          "tests.integration.test_sandbox_gold"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M038-realization-threshold-contract.md",
+      "evidence": [
+        "Added exact canonical GeometryRealizationRequirement@1 inputs, derived P026 footprint clearance circulation entrance and use-zone targets from current model semantics using the same conservative voxel quantization, and published them without hard-gate authority; 37 focused/integration tests, architecture firewall, and deterministic full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M038",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T16:06:44.719806+00:00",
+        "contract_sha256": "995bc03db620bc928a7b6158f63280a8d8f39c8d69a6af13e9db9bc8d4a9bbe0",
+        "scope_sha256": "fffde9102959b25e57ae83063c2248acd0c7d313c4f4f10e9b71d1b0ba78c128",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer",
+              "tests.integration.test_sandbox_gold"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e840659d2e8107e75273dd3618a9ad5f920c0cfade92042e694bfa53a3c2c116",
+            "stdout_tail": "",
+            "stderr_tail": ".....................................\n----------------------------------------------------------------------\nRan 37 tests in 5.305s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "7762b1ffa20469adc3f2fea9ec99b00e6e0af237d0af90740f4f32dd92db7a84",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.494s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e53344682628a4ebc8e3c23d772e07aa0a3d211ad0c69b04402d5d6b1d8abf66",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s........................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 443 tests in 20.206s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
+    },
+    {
+      "id": "M039",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make derived sandbox voxels retain thin terminal material without treating openable door leaves as permanent walkability obstructions.",
+      "depends_on": [
+        "M038",
+        "P048"
+      ],
+      "write_scope": [
+        "archflow/realization/sandbox.py",
+        "tests/test_sandbox_realization.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "A physical analytic AABB occupies every voxel cell with positive-volume overlap rather than only cells whose centers lie inside it.",
+        "Non-AABB geometry uses bounded overlap-local sampling and never falls back to its whole bounding box.",
+        "Openable door-leaf geometry remains in the canonical HybridScene but is excluded from the static derived occupancy set.",
+        "Host-cut opening evidence is sampled with the same overlap-aware method.",
+        "Thin floors and walls survive 1m validation voxelization while exact scene geometry remains canonical.",
+        "Voxel budgets support graphs usability gates and canonical-write authority remain unchanged."
+      ],
+      "tests": [
+        "Thin analytic slab positive-overlap occupancy",
+        "Exact boundary contact does not occupy an adjacent cell",
+        "Mesh occupancy remains geometry sampled rather than bounding-box filled",
+        "Existing room opening walkability and support gates",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_sandbox_realization",
+          "tests.integration.test_sandbox_gold"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M039-thin-geometry-voxelization.md",
+      "evidence": [
+        "Changed derived voxel occupancy from center-only to positive-overlap analytic sampling with bounded overlap-local sampling for non-AABBs, retained door leaves in the scene while excluding them from static occupancy, and proved run-014 offline improvement from 4/2/0 occupied-walkable-openings to 60/17/4; 21 focused/integration tests, architecture firewall, and deterministic full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M039",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T16:31:26.951594+00:00",
+        "contract_sha256": "79458f9f87581037da0612db9aa385afa18704e7c6558ca4f2767e384962a0ad",
+        "scope_sha256": "d2692ebe5913eb564ab7340895f76e741e22b0fb9f69c1c2bcb56fec9a63e993",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_sandbox_realization",
+              "tests.integration.test_sandbox_gold"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "5f11614ec8c6c25b0f0fce56cb493d9052209b878f24f700b0c201a176fd7183",
+            "stdout_tail": "",
+            "stderr_tail": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 3.190s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "9972f2b14457f50ddedfbfc5e184fdf56d8c1bfe580324708d7120c0ec54db4d",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.490s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "fb279177ad7280d223759c930b666c10d1bbcab305520f43c6132acadf92b996",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s.........................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 444 tests in 17.892s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
+    },
+    {
+      "id": "M040",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Replace ambiguous geometry function hints with exact structured authoring contracts and reject unsupported typed parameter combinations before compilation.",
+      "depends_on": [
+        "M039",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "tests/test_geometry_proposal_producer.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Every declared geometry operation kind publishes structured minimum and maximum input arity and parameter records.",
+        "Each parameter record identifies its name GeometryParameterKind required status exact unit and allowed canonical value_json strings.",
+        "The request distinguishes the parameter kind field from semantic choices encoded in value_json.",
+        "Typed proposals with missing extra wrong-kind wrong-unit or disallowed function parameters are rejected with an actionable repair issue.",
+        "The generic kernel gains no building-type answer fallback geometry hard gate or canonical-write authority."
+      ],
+      "tests": [
+        "Declared function vocabulary and structured curve and solid contracts",
+        "Disallowed typed curve basis becomes a persisted repair issue",
+        "Existing accepted proposal compilation and realization",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M040-machine-readable-geometry-function-contracts.md",
+      "evidence": [
+        "Published exact structured input-arity and parameter contracts for every neutral geometry function, distinguished parameter kind from canonical semantic value_json, and added pre-compile rejection for missing extra wrong-kind wrong-unit and disallowed values; 26 focused tests, architecture firewall, and deterministic full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M040",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T16:53:07.532466+00:00",
+        "contract_sha256": "7126af8af479bbbc228b47de79f42899649a9204f007d9407e78a685a9ddf62c",
+        "scope_sha256": "cb0ba311e5d24a7eb9500743c109862cb8ab1a13814b31cf7efc034c1c3ece97",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "b34f3531e4240e491a12f5ef2f42acdef0ddb74e6ba3987d38aabda0f2a4ea8c",
+            "stdout_tail": "",
+            "stderr_tail": "..........................\n----------------------------------------------------------------------\nRan 26 tests in 2.506s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "103c2383e6b37af4c89ee292e7c15cb61e98e8dccda2b90a377a75bf3cfd4a7b",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.488s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "65ce876d7fe0432d333581758da09f4916d989178aad9d211cbbe4b8cb531d89",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s..........................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 445 tests in 18.078s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
+    },
+    {
+      "id": "M041",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Publish the sandbox kernel coordinate convention as an exact geometry authoring contract so providers cannot silently exchange Y-up and Z-up interpretations.",
+      "depends_on": [
+        "M040",
+        "P048",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "tests/test_geometry_proposal_producer.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Every geometry request identifies a right-handed xyz convention with Y vertical and XZ as the horizontal footprint plane.",
+        "Footprint cells spatial bounds vector parameters and solid size fields publish their exact axis order.",
+        "The instruction identifies solid origin index one as elevation and size index one as height and forbids treating Z as vertical.",
+        "The same coordinate contract appears in the output contract and request context.",
+        "No adapter rotates model geometry after the fact and no building-specific answer enters the framework."
+      ],
+      "tests": [
+        "Exact request and output-contract coordinate convention",
+        "Explicit Y-up and Z-horizontal authoring instruction",
+        "Existing accepted proposal compilation and realization",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M041-geometry-coordinate-convention.md",
+      "evidence": [
+        "Published one exact right-handed Y-up XZ-footprint coordinate contract across request and output guidance after run 016 proved the prior convention was hidden by authoring roof door and floor geometry as Z-up; 26 focused tests, architecture firewall, and deterministic full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M041",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T17:09:20.464782+00:00",
+        "contract_sha256": "58205c8dfa8d21ec223c957f67e9be659b2784f09b03a3f9658404a0fa6d7227",
+        "scope_sha256": "134fb7e5a4accb5d2f2e157b7ee2d58966cbbf87c44a238137c17a9b12e4db7f",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "55db726dc32049b2817e0078e2fd204c72efd8f4f5ee50fd7c5dd63fa0aacc18",
+            "stdout_tail": "",
+            "stderr_tail": "..........................\n----------------------------------------------------------------------\nRan 26 tests in 2.377s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "bf524c91342f687d5b8dfd924dc3d28416958a14e90317c8954aaae73a264be3",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.499s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "2400b1b97911e797361b0d271a51e7ba642845d2dfc0c25986c4320c99013312",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s..........................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 445 tests in 16.910s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
+    },
+    {
+      "id": "M042",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Expose conservative sandbox voxel clear-height exterior-opening and host-cut semantics before model geometry is authored.",
+      "depends_on": [
+        "M041",
+        "P026",
+        "P048",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "archflow/runtime/sandbox_gold.py",
+        "tests/test_geometry_proposal_producer.py",
+        "tests/integration/test_sandbox_gold.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "P026 publishes the exact validation voxel resolution as a sourced realization requirement.",
+        "Geometry authoring states that every positive-volume physical overlap occupies a validation cell.",
+        "Clear height is the positive-Y cell offset to the nearest occupied blocker and must meet the supplied integer-cell threshold.",
+        "An exterior entrance aperture must be unoccupied walkable and touch an XZ boundary column of the derived occupied envelope.",
+        "Every host_cut member is a boolean-intersection aperture volume of its named host and a cutter rather than a residual difference result.",
+        "No runtime geometry is repaired invented or granted hard-gate authority."
+      ],
+      "tests": [
+        "Residual boolean output rejected as a host-cut aperture",
+        "Exact P026 voxel resolution requirement publication",
+        "Existing sandbox opening and clear-height validation",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer",
+          "tests.integration.test_sandbox_gold"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M042-sandbox-validation-view-authoring-contract.md",
+      "evidence": [
+        "Published the exact 1m P026 validation resolution, positive-overlap occupancy, integer clear-height offset, exterior opening-column, and aperture-volume host-cut rules; rejected residual difference outputs as host cuts before compilation after run 017 exposed both hidden semantics; 39 focused/integration tests, architecture firewall, and deterministic full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M042",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T17:25:24.915099+00:00",
+        "contract_sha256": "c94da6f7948bf96c6672328c6a97c3695b8699e3ca9567994483a911946186f2",
+        "scope_sha256": "d284320640774edf46113e281874e20d7d9a6cdc2f7e002bb771d26d78874af6",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer",
+              "tests.integration.test_sandbox_gold"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "ed3ee0410161946801263f923b7462323de7490e78c2762a415d7cf84482e8a5",
+            "stdout_tail": "",
+            "stderr_tail": ".......................................\n----------------------------------------------------------------------\nRan 39 tests in 5.734s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "d7e670f0bf52d59b6b0b22574c06473e211c21dc54710833f81dcb131b14d49c",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.504s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "fb60a81056ffc7b9db8c36fe9d8fb73af44492895d597d7b9adfdb60e2141cf9",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s...........................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 446 tests in 18.731s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
+    },
+    {
+      "id": "M043",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Carry exact rejected sandbox measurements and evidence through semantic revision into the first geometry-authoring request for the revised candidate.",
+      "depends_on": [
+        "M042",
+        "P026",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "archflow/runtime/sandbox_gold.py",
+        "tests/integration/test_sandbox_gold.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "P026 supplies the same immutable SandboxRepairFinding tuple to semantic revision and geometry revision.",
+        "The geometry producer accepts typed initial repair issues without granting hard-gate or canonical-write authority.",
+        "Each geometry issue retains source code message measured threshold and evidence references as canonical JSON.",
+        "The first revised geometry request contains exact prior sandbox issues while bounded parser or compiler repair remains available.",
+        "Concept geometry requests contain no fabricated repair issues."
+      ],
+      "tests": [
+        "Zero-walkable rejection sends the same structured connectivity finding to semantic and geometry revision",
+        "Existing bounded geometry repair behavior",
+        "Accepted and rejected candidate persistence and reload",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer",
+          "tests.integration.test_sandbox_gold"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M043-sandbox-findings-to-geometry-repair.md",
+      "evidence": [
+        "Preserved each rejected SandboxRepairFinding as a canonical typed initial GeometryProposalIssue so the same source code message measured threshold and evidence refs now reach semantic and geometry revision; 39 focused/integration tests, architecture firewall, and deterministic full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M043",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T17:41:37.059209+00:00",
+        "contract_sha256": "ebee8954d154ed43ae45ff51b444af3b79d7f88b723c02c34d09ce8fd9668054",
+        "scope_sha256": "87c669465336fdb77ed0e52ed66d9e041f046adeeac73a7fe218165af5f3e36c",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer",
+              "tests.integration.test_sandbox_gold"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "9cccc8693b26b82a366220753e2a918273492515ed9a73fde28b4498f1e68c27",
+            "stdout_tail": "",
+            "stderr_tail": ".......................................\n----------------------------------------------------------------------\nRan 39 tests in 5.544s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "7762b1ffa20469adc3f2fea9ec99b00e6e0af237d0af90740f4f32dd92db7a84",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.494s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "7ee95b74619775738cf8d802822d4a071f48cb948ddca0bbddee26a31c5c8414",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s...........................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 446 tests in 18.514s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
+    },
+    {
+      "id": "M044",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make revised sandbox geometry a true state transition by supplying the exact rejected compiled program as its predecessor.",
+      "depends_on": [
+        "M043",
+        "P026",
+        "P047",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "archflow/runtime/sandbox_gold.py",
+        "tests/test_geometry_proposal_producer.py",
+        "tests/integration/test_sandbox_gold.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "A geometry request with prior_program publishes its exact digest and complete compiled predecessor program.",
+        "The authoring contract requires stable identities revision preconditions retirements and dependency responses relative to the predecessor.",
+        "P026 passes rejected concept geometry into revised geometry while preserving the rejected candidate record.",
+        "The compiler remains authority for predecessor stale revision retirement and dependency checks.",
+        "Initial concept geometry has no predecessor or fabricated lifecycle records."
+      ],
+      "tests": [
+        "Exact full predecessor and digest publication",
+        "Rejected candidate geometry becomes revised candidate predecessor",
+        "Revision preconditions and retirement for a removed blocker",
+        "Accepted and rejected candidate persistence and reload",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_geometry_proposal_producer",
+          "tests.integration.test_sandbox_gold"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M044-incremental-geometry-predecessor.md",
+      "evidence": [
+        "Published the complete compiled predecessor beside its exact digest, passed rejected concept geometry into revised P026 production, and kept both producer and runtime consistency compilation bound to the same prior; deterministic tests prove exact revision preconditions and blocker retirement; 39 focused/integration tests, architecture firewall, and full discovery passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M044",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T17:59:30.665543+00:00",
+        "contract_sha256": "2d35e1c364d157edbe470cb1972ede1ad01aa4860cc503aad7bf0e93460fd497",
+        "scope_sha256": "6d89e17c7d748a47e72f182dff8f4b5f966741b0cda7ab70da9c0fb3277c30b0",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_geometry_proposal_producer",
+              "tests.integration.test_sandbox_gold"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "01b13e22f2eb9f9ea5faef3a0b699370f3605afeec15f8badeb75a66d3e8dbbe",
+            "stdout_tail": "",
+            "stderr_tail": ".......................................\n----------------------------------------------------------------------\nRan 39 tests in 5.361s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "9a067864e193ee638913db49d932c15035cf7bdd97eb77d7ce2ed0be70a9b697",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.493s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d06ea2e164c708ea8e055275f146115f1623acfb3ddd3b99fe9b079452dcc93f",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.........................s...........................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 446 tests in 17.959s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
+    },
+    {
+      "id": "M045",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Synchronize generated architecture-layer claims with completed P026 evidence without closing downstream terrain export or Pantheon-scale work.",
+      "depends_on": [
+        "P026"
+      ],
+      "write_scope": [
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "L0 L3 and L4 cite P026 and no longer claim its accepted Gold remains open.",
+        "L7 records accepted sandbox Gold while retaining P027 and P038 as open boundaries.",
+        "The runtime summary identifies prompt-to-accepted-sandbox-Gold proof without claiming external platform export.",
+        "Generated map and indexes match the registry source of truth."
+      ],
+      "tests": [
+        "Dynamic map generation and registry governance tests",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_devctl"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M045-p026-architecture-claim-sync.md",
+      "evidence": [
+        "Synchronized generated architecture claims with completed P026: L0 L3 and L4 now cite the accepted real-model Gold, L7 retains P027 terrain and P038 Pantheon-scale boundaries, runtime summary remains platform-neutral; devctl governance tests and architecture firewall passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M045",
+        "actor": "Codex",
+        "verified_at": "2026-08-09T18:13:49.497638+00:00",
+        "contract_sha256": "1056d1d39c2cd469766b8c59044b5e31450c656c9b3e99bd94d325fb98f83559",
+        "scope_sha256": "af092fd5c044613138081aa015f68eadffac9f38c1e937241e118f080ab002a5",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_devctl"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "7113536c72d5d673a77ce6a4c04be54391051045425b2dead2f7474ce5f36392",
+            "stdout_tail": "",
+            "stderr_tail": "..............\n----------------------------------------------------------------------\nRan 14 tests in 1.104s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "d1dc3e4416e8b62720e4bf1f659a96fdaea4730185740919599ae8fb14b47d57",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (103 files, 0.503s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
     }
   ]
 }

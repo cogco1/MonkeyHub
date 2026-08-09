@@ -41,6 +41,10 @@ from archflow.state.geometry_program import (
     GeometryOperationKind,
     required_assembly_roles,
 )
+from archflow.state.candidate_program import (
+    CandidateProgramValue,
+    CandidateValueFacet,
+)
 from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from tests.test_sandbox_realization import compiled_room
 
@@ -212,7 +216,14 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             semantic_bindings=(binding,),
         )
 
-    async def _produce(self, provider, *, rounds: int = 2):
+    async def _produce(
+        self,
+        provider,
+        *,
+        rounds: int = 2,
+        prior_program=None,
+        realization_requirements=(),
+    ):
         return await produce_geometry_program_proposal(
             self.repository,
             provider,
@@ -223,6 +234,8 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             required_commitment_refs=(COMMITMENT,),
             provider_identity=IDENTITY,
             policy=GeometryProposalPolicy(rounds),
+            prior_program=prior_program,
+            realization_requirements=realization_requirements,
         )
 
     async def test_accepted_record_reloads_compiles_and_realizes(self) -> None:
@@ -277,6 +290,299 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             "properties"
         ]["interface_refs"]["items"]
         self.assertEqual(interface_item["enum"], ["interface:outside-to-room"])
+
+    async def test_request_publishes_exact_relational_compiler_contract(self) -> None:
+        supplied_requirement = {
+            "schema": "GeometryRealizationRequirement@1",
+            "requirement_id": "minimum-clear-height",
+            "source_refs": ["candidate-value:minimum-clear-height"],
+            "property": "walkable_clear_height_cells",
+            "relation": "minimum",
+            "threshold_json": "3",
+            "unit": "sandbox-cell",
+        }
+        provider = _ScriptedProvider((proposal_authoring_output(self.proposal),))
+        result = await self._produce(
+            provider,
+            rounds=1,
+            realization_requirements=(supplied_requirement,),
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.ACCEPTED)
+        payload = provider.requests[0].payload
+        self.assertIsNone(payload["available_predecessor_program_digest"])
+        self.assertEqual(
+            payload["geometry_coordinate_convention"],
+            {
+                "schema": "GeometryCoordinateConvention@1",
+                "handedness": "right-handed",
+                "axis_order": ["x", "y", "z"],
+                "axes": {
+                    "x": "horizontal width",
+                    "y": "vertical up and height",
+                    "z": "horizontal depth",
+                },
+                "footprint_cell_order": ["x", "z"],
+                "spatial_bounds_order": ["x", "y", "z"],
+                "vector_parameter_order": ["x", "y", "z"],
+                "size_parameter_order": [
+                    "width_x",
+                    "height_y",
+                    "depth_z",
+                ],
+            },
+        )
+        self.assertEqual(
+            payload["required_output_contract"]["coordinate_convention"],
+            payload["geometry_coordinate_convention"],
+        )
+        self.assertTrue(
+            any(
+                "Never reinterpret Z as vertical" in instruction
+                for instruction in payload["instructions"]
+            )
+        )
+        body = payload["required_output_contract"]["json_schema"][
+            "properties"
+        ]["proposal_body"]
+        self.assertIsNone(
+            body["properties"]["predecessor_program_digest"]["const"]
+        )
+        invariants = {
+            item.get("id"): item
+            for item in payload["required_output_contract"][
+                "cross_field_invariants"
+            ]
+            if "id" in item
+        }
+        self.assertEqual(
+            invariants["predecessor_matches_available_program"]["target"],
+            "available_predecessor_program_digest",
+        )
+        self.assertEqual(
+            invariants["assembly_host_is_not_a_member"]["relation"],
+            "not_member_of",
+        )
+        self.assertEqual(
+            invariants["host_cut_depends_on_named_host"]["relation"],
+            "produced_by_operation_with_input",
+        )
+        for invariant in invariants.values():
+            self.assertIn(invariant["instruction"], payload["instructions"])
+        realization = payload["realization_contract"]
+        self.assertEqual(
+            realization["terminal_physical_rule"],
+            "output_not_consumed_and_not_reference_and_not_curve",
+        )
+        self.assertEqual(
+            realization["terminal_solid_semantics"],
+            "occupied_material_volume",
+        )
+        self.assertEqual(
+            realization["host_cut_scope"],
+            "aperture_volume_equals_host_intersection_cutter",
+        )
+        self.assertEqual(
+            realization["required_properties"],
+            [
+                supplied_requirement,
+                {
+                    "schema": "GeometryRealizationPropertyRequirement@1",
+                    "source_ref": COMMITMENT,
+                    "property": "connected_walkable_region",
+                    "minimum_count": 1,
+                    "support": "occupied_material_below",
+                    "clearance": "empty_space_above",
+                }
+            ],
+        )
+        self.assertEqual(
+            payload["required_output_contract"]["realization_contract"],
+            realization,
+        )
+        for instruction in realization["instructions"]:
+            self.assertIn(instruction, payload["instructions"])
+
+    async def test_noncanonical_realization_threshold_is_rejected(self) -> None:
+        requirement = {
+            "schema": "GeometryRealizationRequirement@1",
+            "requirement_id": "minimum-clear-height",
+            "source_refs": ["candidate-value:minimum-clear-height"],
+            "property": "walkable_clear_height_cells",
+            "relation": "minimum",
+            "threshold_json": "{\"cells\": 3}",
+            "unit": "sandbox-cell",
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "threshold_json is not canonical",
+        ):
+            await self._produce(
+                _ScriptedProvider((proposal_authoring_output(self.proposal),)),
+                rounds=1,
+                realization_requirements=(requirement,),
+            )
+
+    async def test_prior_program_digest_is_published_as_exact_predecessor(self) -> None:
+        _, prior_program, _ = compiled_room()
+        revision = replace(
+            self.proposal,
+            proposal_id="revision-proposal",
+            predecessor_program_digest=prior_program.program_digest,
+        )
+        provider = _ScriptedProvider((proposal_authoring_output(revision),))
+        result = await self._produce(
+            provider,
+            rounds=1,
+            prior_program=prior_program,
+        )
+
+        payload = provider.requests[0].payload
+        self.assertEqual(
+            payload["available_predecessor_program_digest"],
+            prior_program.program_digest,
+        )
+        self.assertEqual(
+            payload["available_predecessor_program"],
+            prior_program.to_dict(),
+        )
+        self.assertTrue(
+            any(
+                "revise that exact geometry program instead of redrawing"
+                in instruction
+                for instruction in payload["instructions"]
+            )
+        )
+        body = payload["required_output_contract"]["json_schema"][
+            "properties"
+        ]["proposal_body"]
+        self.assertEqual(
+            body["properties"]["predecessor_program_digest"]["const"],
+            prior_program.program_digest,
+        )
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        self.assertNotIn(
+            "compiler.predecessor_mismatch",
+            {issue.code for issue in loaded.rounds[0].issues},
+        )
+
+    async def test_host_cut_without_host_dependency_remains_rejected(self) -> None:
+        invalid = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        opening = next(
+            item
+            for item in invalid["proposal_body"]["operations"]
+            if "opening" in item["output_object_ids"]
+        )
+        opening["input_object_ids"].remove("shell")
+        result = await self._produce(
+            _ScriptedProvider((invalid,)),
+            rounds=1,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        self.assertIn(
+            "host-cut geometry does not depend on its named host",
+            loaded.rounds[0].issues[0].detail,
+        )
+
+    async def test_hosted_component_requires_dedicated_binding(self) -> None:
+        component = CandidateProgramValue.create(
+            value_id="semantic-component-entry-door",
+            facet=CandidateValueFacet.FUNCTION,
+            value={
+                "component_id": "entry-door",
+                "assembly_kind": "door",
+                "semantic_kind": "primary-entrance",
+            },
+            source_refs=(EVIDENCE,),
+            derivation_refs=(self.option.ref,),
+        )
+        self.projection = replace(
+            self.projection,
+            values=tuple(
+                sorted(
+                    (*self.projection.values, component),
+                    key=lambda item: item.value_id,
+                )
+            ),
+        )
+        aggregate = replace(
+            self.proposal.semantic_bindings[0],
+            candidate_value_ids=tuple(
+                sorted(
+                    (
+                        *self.proposal.semantic_bindings[0].candidate_value_ids,
+                        component.value_id,
+                    )
+                )
+            ),
+        )
+        proposal = replace(
+            self.proposal,
+            candidate_program_digest=self.projection.projection_digest,
+            semantic_bindings=(aggregate,),
+        )
+        provider = _ScriptedProvider((proposal_authoring_output(proposal),))
+        result = await self._produce(provider, rounds=1)
+
+        requirement = provider.requests[0].payload[
+            "required_hosted_component_bindings"
+        ]
+        self.assertEqual(
+            requirement,
+            [
+                {
+                    "schema": "HostedSemanticComponentBindingRequirement@1",
+                    "candidate_value_id": component.value_id,
+                    "component_id": "entry-door",
+                    "assembly_kind": "door",
+                    "interface_ref": component.ref,
+                    "dedicated_binding_count": 1,
+                    "matching_assembly_count": 1,
+                }
+            ],
+        )
+        self.assertEqual(
+            provider.requests[0].payload["required_output_contract"][
+                "required_hosted_component_bindings"
+            ],
+            requirement,
+        )
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        self.assertEqual(
+            loaded.rounds[0].issues[0].code,
+            "malformed_model_output",
+        )
+        self.assertIn(
+            "requires exactly one dedicated semantic binding",
+            loaded.rounds[0].issues[0].detail,
+        )
+
+    async def test_ordinary_values_publish_no_hosted_component_requirement(self) -> None:
+        provider = _ScriptedProvider((proposal_authoring_output(self.proposal),))
+        result = await self._produce(provider, rounds=1)
+
+        self.assertIs(result.status, GeometryProposalStatus.ACCEPTED)
+        self.assertEqual(
+            provider.requests[0].payload[
+                "required_hosted_component_bindings"
+            ],
+            [],
+        )
 
     async def test_unavailable_interface_is_persisted_before_compilation(self) -> None:
         invalid = json.loads(
@@ -686,6 +992,107 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             set(_FUNCTION_CONTRACTS),
             {item.value for item in GeometryOperationKind},
         )
+        curve = _FUNCTION_CONTRACTS["curve"]
+        self.assertEqual(
+            curve["input_arity"],
+            {"minimum": 0, "maximum": 0},
+        )
+        basis = next(
+            item for item in curve["parameters"] if item["name"] == "basis"
+        )
+        self.assertEqual(basis["kind"], "text")
+        self.assertFalse(basis["required"])
+        self.assertEqual(
+            basis["allowed_value_json"],
+            ['"bezier"', '"polyline"'],
+        )
+        solid = _FUNCTION_CONTRACTS["solid"]
+        self.assertEqual(
+            {(item["name"], item["kind"], item["unit"])
+             for item in solid["parameters"]},
+            {("origin", "vector3", "meter"), ("size", "vector3", "meter")},
+        )
+
+    async def test_typed_but_unsupported_function_parameter_is_repaired(
+        self,
+    ) -> None:
+        unsupported = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        curve = next(
+            operation
+            for operation in unsupported["proposal_body"]["operations"]
+            if operation["kind"] == "curve"
+        )
+        curve["parameters"].append(
+            {
+                "schema": "GeometryParameter@1",
+                "name": "basis",
+                "kind": "text",
+                "value_json": '"nurbs"',
+                "unit": None,
+            }
+        )
+        curve["parameters"] = sorted(
+            curve["parameters"], key=lambda item: item["name"]
+        )
+
+        result = await self._produce(
+            _ScriptedProvider((unsupported,)),
+            rounds=1,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        issue = loaded.rounds[0].issues[0]
+        self.assertEqual(issue.code, "malformed_model_output")
+        self.assertIn("value_json must be one of", issue.detail)
+        self.assertIn('received=\'"nurbs"\'', issue.detail)
+
+    async def test_host_cut_residual_boolean_is_rejected(self) -> None:
+        residual = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        body = residual["proposal_body"]
+        host_cut_id = next(
+            object_id
+            for assembly in body["assemblies"]
+            for member in assembly["members"]
+            if member["role"] == "host_cut"
+            for object_id in member["object_ids"]
+        )
+        operation = next(
+            item
+            for item in body["operations"]
+            if host_cut_id in item["output_object_ids"]
+        )
+        operation["kind"] = "boolean_difference"
+        operation["parameters"] = [
+            {
+                "schema": "GeometryParameter@1",
+                "name": "base_index",
+                "kind": "integer",
+                "value_json": "0",
+                "unit": None,
+            }
+        ]
+
+        result = await self._produce(
+            _ScriptedProvider((residual,)),
+            rounds=1,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        issue = loaded.rounds[0].issues[0]
+        self.assertIn("boolean_intersection aperture volume", issue.detail)
+        self.assertIn("not a residual boolean result", issue.detail)
 
     def test_authoring_request_contract_exposes_exact_generic_topology(
         self,

@@ -274,6 +274,39 @@ def compiled_room(*, include_asset: bool = False):
 
 
 class SandboxRealizationTests(unittest.TestCase):
+    def test_thin_aabb_uses_positive_cell_overlap_not_center_only(self) -> None:
+        from archflow.realization.sandbox import (
+            AxisAlignedBounds,
+            SceneObject,
+            SceneRepresentation,
+            _canonical_json,
+            _contains,
+            _intersects_cell,
+        )
+
+        bounds = AxisAlignedBounds((0.0, 0.0, 0.0), (2.0, 0.2, 2.0))
+        slab = SceneObject(
+            object_id="thin-slab",
+            producer_op_id="thin-slab-op",
+            source_object_digest="a" * 64,
+            representation=SceneRepresentation.ANALYTIC,
+            geometry_json=_canonical_json(
+                {"kind": "aabb", "bounds": bounds.to_dict()}
+            ),
+            bounds=bounds,
+            semantic_binding_ids=("binding-slab",),
+            physical=True,
+        )
+        objects = {slab.object_id: slab}
+
+        self.assertFalse(_contains(slab.object_id, (0.5, 0.5, 0.5), objects))
+        self.assertTrue(
+            _intersects_cell(slab.object_id, (0, 0, 0), 1.0, objects)
+        )
+        self.assertFalse(
+            _intersects_cell(slab.object_id, (2, 0, 0), 1.0, objects)
+        )
+
     def test_mesh_occupancy_samples_actual_mesh_not_bounding_box(
         self,
     ) -> None:
@@ -345,6 +378,11 @@ class SandboxRealizationTests(unittest.TestCase):
         self.assertIsNotNone(first.scene)
         assert first.scene is not None
         self.assertEqual(first.scene.scene_digest, second.scene.scene_digest)
+        self.assertFalse(first.scene.object("leaf").physical)
+        self.assertEqual(
+            first.scene.object("leaf").producer_op_id,
+            "leaf",
+        )
         self.assertEqual(
             HybridScene.from_dict(first.scene.to_dict()),
             first.scene,

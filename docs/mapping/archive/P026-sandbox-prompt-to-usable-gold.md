@@ -1,7 +1,7 @@
 # P026 — Sandbox prompt-to-usable Gold slice
 
 - Origin: Planning
-- Status: Active after M002, M004, M024, M026, M027, M028, M029, M031, M032, P018, P024, P025, P029, P030, P047, and P048
+- Status: Done after M002, M004, M024, M026, M027, M028, M029, M031, M032, P018, P024, P025, P029, P030, P047, and P048
 - Depends on: M002, M004, M024, M026, M027, M028, M029, M031, M032, P018, P024, P025, P029, P030, P047, P048
 
 ## Goal
@@ -127,6 +127,25 @@ platform outputs remain downstream adapters and are not proof authorities.
   gate, and reload recomputes rejection semantics consistently. Focused,
   architecture, and full-suite verification passed; Claude's repository,
   design-state, geometry-contract, and CPU-timing commits remain unmerged.
+- M035-M044 then converted every live failure into a bounded generic contract:
+  predecessor and hosted relations, dedicated semantic/assembly identity,
+  terminal occupancy, exact realization thresholds, thin-material sampling,
+  structured function parameters, Y-up coordinates, conservative validation
+  semantics, sandbox-finding propagation, and exact geometry predecessors.
+- Real Codex Agent CLI run `gold-agent-cli-020` is the accepted live Gold. A
+  raw qualitative request produced four semantic components, 30 scene objects,
+  one door and two typed window assemblies, 73 occupied cells, nine walkable
+  cells, one connected region, two exterior opening cells, and five SVG views.
+  Usability, source-bound hard validation, approval, commitment monitoring, and
+  promotion readiness all passed. A fresh repository reopen reloaded the exact
+  summary, provider/model identity remained `codex-agent-cli` /
+  `gpt-5.6-sol`, and P036 atomically advanced HEAD from version 0 to version 1.
+  Platform export and canonical-write authority flags remain false on the
+  candidate evidence.
+- Live runs `gold-agent-cli-016` through `019` remain persisted rejected
+  evidence. Run `019` reloads a revised rejected candidate with its exact
+  usability and hard-validation failures, proving that run `020` did not erase
+  or relabel prior negative evidence.
 
 ## Stop conditions
 
@@ -134,3 +153,9 @@ platform outputs remain downstream adapters and are not proof authorities.
 - Stop if exact geometry-program/realization binding or exact-base cannot be
   proven.
 - Stop before treating a platform export as acceptance evidence.
+
+
+## Completion
+
+- Completed: 2026-08-10
+- Evidence: Accepted real Codex Agent CLI run gold-agent-cli-020 from one raw qualitative request into a reloadable semantic-plus-geometry sandbox building: 4 semantic components, 30 scene objects, typed door and window assemblies, 73 occupied and 9 walkable cells, one connected region, two exterior openings, five SVG views, passing usability hard validation approval commitment monitoring and readiness; fresh reopen succeeded and P036 atomically advanced HEAD 0 to 1 while prior live rejected run 019 remains reloadable; 13 integration tests, architecture firewall, and deterministic full discovery passed.

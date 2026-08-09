@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping, Protocol
@@ -64,19 +65,200 @@ from archflow.state.operational_state import PORTABLE_LOGICAL_REF_PATTERN
 _AUTHORING_OUTPUT_SCHEMA = "GeometryProposalAuthoringOutput@1"
 _PROPOSAL_BODY_SCHEMA = "GeometryProgramProposalBody@1"
 _PROPOSAL_RECORD_SCHEMA = "GeometryProgramProposalRecord@1"
+
+
+def _function_parameter(
+    name: str,
+    kind: GeometryParameterKind,
+    *,
+    required: bool = True,
+    unit: LengthUnit | None = None,
+    allowed_values: tuple[object, ...] = (),
+) -> dict[str, object]:
+    return {
+        "schema": "GeometryFunctionParameterContract@1",
+        "name": name,
+        "kind": kind.value,
+        "required": required,
+        "unit": None if unit is None else unit.value,
+        "allowed_value_json": [
+            json.dumps(
+                value,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            for value in allowed_values
+        ],
+    }
+
+
+def _function_contract(
+    *,
+    minimum_inputs: int,
+    maximum_inputs: int | None,
+    parameters: tuple[dict[str, object], ...] = (),
+    placement_fields: tuple[str, ...] = (),
+) -> dict[str, object]:
+    return {
+        "schema": "GeometryFunctionContract@1",
+        "input_arity": {
+            "minimum": minimum_inputs,
+            "maximum": maximum_inputs,
+        },
+        "parameters": list(parameters),
+        "placement_fields": list(placement_fields),
+    }
+
+
+_METER = LengthUnit.METER
+_GEOMETRY_COORDINATE_CONVENTION: dict[str, object] = {
+    "schema": "GeometryCoordinateConvention@1",
+    "handedness": "right-handed",
+    "axis_order": ["x", "y", "z"],
+    "axes": {
+        "x": "horizontal width",
+        "y": "vertical up and height",
+        "z": "horizontal depth",
+    },
+    "footprint_cell_order": ["x", "z"],
+    "spatial_bounds_order": ["x", "y", "z"],
+    "vector_parameter_order": ["x", "y", "z"],
+    "size_parameter_order": ["width_x", "height_y", "depth_z"],
+}
 _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
-    "array": {"inputs": 1, "parameters": ["count:integer", "step:vector3"]},
-    "asset_instance": {"inputs": 0, "placement_fields": ["asset_id", "asset_socket_id", "asset_scale"]},
-    "boolean_difference": {"inputs": "2+", "parameters": ["base_index:integer"]},
-    "boolean_intersection": {"inputs": "2+", "parameters": []},
-    "boolean_union": {"inputs": "2+", "parameters": []},
-    "curve": {"inputs": 0, "parameters": ["basis:text(polyline|bezier)", "points:points3"]},
-    "extrusion": {"inputs": 0, "parameters": ["profile:points3", "vector:vector3"]},
-    "loft": {"inputs": 0, "parameters": ["cap_ends:boolean", "closed_profile:boolean", "profile_size:integer", "profiles:points3"]},
-    "revolve": {"inputs": 0, "parameters": ["axis_end:vector3", "axis_start:vector3", "end_radius:number", "start_radius:number"]},
-    "solid": {"inputs": 0, "parameters": ["origin:vector3", "size:vector3"]},
-    "sweep": {"inputs": 0, "parameters": ["cap_ends:boolean", "closed_profile:boolean", "frame_mode:text(fixed)", "path:points3", "profile:points3"]},
-    "transform": {"inputs": 1, "parameters": ["matrix:matrix4"]},
+    "array": _function_contract(
+        minimum_inputs=1,
+        maximum_inputs=1,
+        parameters=(
+            _function_parameter("count", GeometryParameterKind.INTEGER),
+            _function_parameter(
+                "step", GeometryParameterKind.VECTOR3, unit=_METER
+            ),
+        ),
+    ),
+    "asset_instance": _function_contract(
+        minimum_inputs=0,
+        maximum_inputs=0,
+        placement_fields=("asset_id", "asset_socket_id", "asset_scale"),
+    ),
+    "boolean_difference": _function_contract(
+        minimum_inputs=2,
+        maximum_inputs=None,
+        parameters=(
+            _function_parameter("base_index", GeometryParameterKind.INTEGER),
+        ),
+    ),
+    "boolean_intersection": _function_contract(
+        minimum_inputs=2,
+        maximum_inputs=None,
+    ),
+    "boolean_union": _function_contract(
+        minimum_inputs=2,
+        maximum_inputs=None,
+    ),
+    "curve": _function_contract(
+        minimum_inputs=0,
+        maximum_inputs=0,
+        parameters=(
+            _function_parameter(
+                "basis",
+                GeometryParameterKind.TEXT,
+                required=False,
+                allowed_values=("bezier", "polyline"),
+            ),
+            _function_parameter(
+                "points", GeometryParameterKind.POINTS3, unit=_METER
+            ),
+        ),
+    ),
+    "extrusion": _function_contract(
+        minimum_inputs=0,
+        maximum_inputs=0,
+        parameters=(
+            _function_parameter(
+                "profile", GeometryParameterKind.POINTS3, unit=_METER
+            ),
+            _function_parameter(
+                "vector", GeometryParameterKind.VECTOR3, unit=_METER
+            ),
+        ),
+    ),
+    "loft": _function_contract(
+        minimum_inputs=0,
+        maximum_inputs=0,
+        parameters=(
+            _function_parameter("cap_ends", GeometryParameterKind.BOOLEAN),
+            _function_parameter(
+                "closed_profile", GeometryParameterKind.BOOLEAN
+            ),
+            _function_parameter(
+                "profile_size", GeometryParameterKind.INTEGER
+            ),
+            _function_parameter(
+                "profiles", GeometryParameterKind.POINTS3, unit=_METER
+            ),
+        ),
+    ),
+    "revolve": _function_contract(
+        minimum_inputs=0,
+        maximum_inputs=0,
+        parameters=(
+            _function_parameter(
+                "axis_end", GeometryParameterKind.VECTOR3, unit=_METER
+            ),
+            _function_parameter(
+                "axis_start", GeometryParameterKind.VECTOR3, unit=_METER
+            ),
+            _function_parameter(
+                "end_radius", GeometryParameterKind.NUMBER, unit=_METER
+            ),
+            _function_parameter(
+                "start_radius", GeometryParameterKind.NUMBER, unit=_METER
+            ),
+        ),
+    ),
+    "solid": _function_contract(
+        minimum_inputs=0,
+        maximum_inputs=0,
+        parameters=(
+            _function_parameter(
+                "origin", GeometryParameterKind.VECTOR3, unit=_METER
+            ),
+            _function_parameter(
+                "size", GeometryParameterKind.VECTOR3, unit=_METER
+            ),
+        ),
+    ),
+    "sweep": _function_contract(
+        minimum_inputs=0,
+        maximum_inputs=0,
+        parameters=(
+            _function_parameter("cap_ends", GeometryParameterKind.BOOLEAN),
+            _function_parameter(
+                "closed_profile", GeometryParameterKind.BOOLEAN
+            ),
+            _function_parameter(
+                "frame_mode",
+                GeometryParameterKind.TEXT,
+                allowed_values=("fixed",),
+            ),
+            _function_parameter(
+                "path", GeometryParameterKind.POINTS3, unit=_METER
+            ),
+            _function_parameter(
+                "profile", GeometryParameterKind.POINTS3, unit=_METER
+            ),
+        ),
+    ),
+    "transform": _function_contract(
+        minimum_inputs=1,
+        maximum_inputs=1,
+        parameters=(
+            _function_parameter("matrix", GeometryParameterKind.MATRIX4),
+        ),
+    ),
 }
 
 
@@ -115,8 +297,242 @@ def _array_contract(
     return contract
 
 
+def _relational_authoring_invariants() -> tuple[dict[str, str], ...]:
+    """Publish compiler relations and their model guidance from one source."""
+
+    return (
+        {
+            "id": "predecessor_matches_available_program",
+            "field": "proposal_body.predecessor_program_digest",
+            "relation": "equals",
+            "target": "available_predecessor_program_digest",
+            "instruction": (
+                "Set proposal_body.predecessor_program_digest exactly to "
+                "available_predecessor_program_digest; null means this is an "
+                "initial proposal and no predecessor is available."
+            ),
+        },
+        {
+            "id": "assembly_host_is_not_a_member",
+            "field": "proposal_body.assemblies[*].host_object_id",
+            "relation": "not_member_of",
+            "target": "proposal_body.assemblies[*].members[*].object_ids",
+            "instruction": (
+                "Keep each assembly host_object_id distinct from every object_id "
+                "listed by that assembly's members."
+            ),
+        },
+        {
+            "id": "host_cut_depends_on_named_host",
+            "field": (
+                "proposal_body.assemblies[*].members[role=host_cut].object_ids[*]"
+            ),
+            "relation": "produced_by_operation_with_input",
+            "target": "proposal_body.assemblies[*].host_object_id",
+            "instruction": (
+                "For every host_cut member object, its producing operation must "
+                "include that assembly's host_object_id in input_object_ids."
+            ),
+        },
+        {
+            "id": "host_cut_is_aperture_volume",
+            "field": (
+                "proposal_body.assemblies[*].members[role=host_cut].object_ids[*]"
+            ),
+            "relation": "produced_by_boolean_intersection",
+            "target": "named_host_intersected_with_explicit_cutter_volume",
+            "instruction": (
+                "Every host_cut member must be the boolean_intersection output "
+                "of its named host and an explicit cutter: it represents the "
+                "aperture volume used as opening evidence, never host-minus-cutter, "
+                "cutter-minus-host, or a residual wall. Author a separate "
+                "boolean_difference output when residual host material is needed."
+            ),
+        },
+        {
+            "id": "hosted_component_has_dedicated_binding_and_assembly",
+            "field": "required_hosted_component_bindings[*]",
+            "relation": "realized_by_exact_dedicated_binding_and_assembly",
+            "target": (
+                "proposal_body.semantic_bindings + proposal_body.assemblies + "
+                "proposal_body.operations"
+            ),
+            "instruction": (
+                "For every required_hosted_component_bindings item, create "
+                "exactly one semantic binding whose candidate_value_ids equals "
+                "[candidate_value_id], then exactly one assembly of assembly_kind "
+                "whose semantic_binding_ids equals [that binding_id]. Keep member "
+                "object ids disjoint between requirements; include each assembly "
+                "host and member object in that binding.object_ids and in the "
+                "semantic_binding_ids of its producing operation."
+            ),
+        },
+    )
+
+
+def _realization_authoring_contract(
+    commitments: tuple[str, ...],
+    supplied_requirements: tuple[dict[str, object], ...],
+) -> dict[str, object]:
+    instructions = [
+        (
+            "Treat every unconsumed non-reference non-curve output object as "
+            "terminal physical geometry in deterministic realization."
+        ),
+        (
+            "A terminal solid occupies its full origin-plus-size volume as "
+            "material; it is not an abstract room or envelope. Consume solids "
+            "through explicit boolean operations when the terminal result must "
+            "contain usable void."
+        ),
+        (
+            "Boolean results affect only their explicit output and inputs; a "
+            "host_cut member does not automatically cut an unrelated terminal "
+            "solid."
+        ),
+        (
+            "The validation voxel resolution is supplied as an exact realization "
+            "requirement. Physical geometry occupies every cell with positive-volume "
+            "overlap, even when most of that cell is empty."
+        ),
+        (
+            "Clear height is the integer Y-cell offset from each walkable cell to "
+            "the nearest occupied cell above. A minimum N requires that nearest "
+            "blocker offset to be at least N under positive-overlap occupancy."
+        ),
+        (
+            "An exterior entrance is counted only where a host_cut aperture-volume "
+            "cell is unoccupied, walkable, and lies on the minimum or maximum X or "
+            "Z column of the derived occupied envelope."
+        ),
+    ]
+    required_properties: list[dict[str, object]] = [
+        dict(item) for item in supplied_requirements
+    ]
+    if "commitment:maintain-egress" in commitments:
+        walkable_instruction = (
+            "The supplied commitment:maintain-egress requires terminal geometry "
+            "to realize at least one connected walkable region with occupied "
+            "support below and clear space above; do not leave a full-envelope "
+            "terminal solid filling the required use zones."
+        )
+        instructions.append(walkable_instruction)
+        required_properties.append(
+            {
+                "schema": "GeometryRealizationPropertyRequirement@1",
+                "source_ref": "commitment:maintain-egress",
+                "property": "connected_walkable_region",
+                "minimum_count": 1,
+                "support": "occupied_material_below",
+                "clearance": "empty_space_above",
+            }
+        )
+    return {
+        "schema": "GeometryRealizationAuthoringContract@1",
+        "terminal_physical_rule": (
+            "output_not_consumed_and_not_reference_and_not_curve"
+        ),
+        "terminal_solid_semantics": "occupied_material_volume",
+        "boolean_scope": "explicit_inputs_and_result_only",
+        "host_cut_scope": "aperture_volume_equals_host_intersection_cutter",
+        "voxel_occupancy_rule": "positive_volume_overlap",
+        "clear_height_rule": "nearest_occupied_positive_y_cell_offset",
+        "exterior_opening_rule": (
+            "host_cut_cell_and_unoccupied_and_walkable_and_envelope_xz_boundary"
+        ),
+        "required_properties": required_properties,
+        "instructions": instructions,
+        "proof_authority": "deterministic_runtime_realization_and_usability",
+    }
+
+
+def _realization_requirements(
+    values: tuple[Mapping[str, object], ...],
+) -> tuple[dict[str, object], ...]:
+    if not isinstance(values, tuple):
+        raise GeometryProposalProductionError(
+            "realization_requirements must be a tuple"
+        )
+    normalized: list[dict[str, object]] = []
+    for index, value in enumerate(values):
+        if not isinstance(value, Mapping) or set(value) != {
+            "schema",
+            "requirement_id",
+            "source_refs",
+            "property",
+            "relation",
+            "threshold_json",
+            "unit",
+        }:
+            raise GeometryProposalProductionError(
+                f"realization_requirements[{index}] schema drifted"
+            )
+        if value["schema"] != "GeometryRealizationRequirement@1":
+            raise GeometryProposalProductionError(
+                f"realization_requirements[{index}] schema changed"
+            )
+        requirement_id = value["requirement_id"]
+        property_name = value["property"]
+        relation = value["relation"]
+        unit = value["unit"]
+        if (
+            not isinstance(requirement_id, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", requirement_id)
+            is None
+            or not isinstance(property_name, str)
+            or not property_name
+            or relation not in {"exact", "minimum", "required"}
+            or not isinstance(unit, str)
+            or not unit
+        ):
+            raise GeometryProposalProductionError(
+                f"realization_requirements[{index}] contains invalid fields"
+            )
+        source_refs = value["source_refs"]
+        if (
+            not isinstance(source_refs, list)
+            or not source_refs
+            or source_refs != sorted(set(source_refs))
+            or any(
+                not isinstance(ref, str)
+                or re.fullmatch(PORTABLE_LOGICAL_REF_PATTERN, ref) is None
+                for ref in source_refs
+            )
+        ):
+            raise GeometryProposalProductionError(
+                f"realization_requirements[{index}] source_refs are invalid"
+            )
+        threshold_json = value["threshold_json"]
+        if not isinstance(threshold_json, str):
+            raise GeometryProposalProductionError(
+                f"realization_requirements[{index}] threshold_json must be text"
+            )
+        try:
+            threshold = json.loads(threshold_json)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise GeometryProposalProductionError(
+                f"realization_requirements[{index}] threshold_json is invalid"
+            ) from exc
+        if _canonical_json(threshold) != threshold_json:
+            raise GeometryProposalProductionError(
+                f"realization_requirements[{index}] threshold_json is not canonical"
+            )
+        normalized.append(dict(value))
+    normalized.sort(key=lambda item: str(item["requirement_id"]))
+    ids = [str(item["requirement_id"]) for item in normalized]
+    if len(ids) != len(set(ids)):
+        raise GeometryProposalProductionError(
+            "realization requirement ids must be unique"
+        )
+    return tuple(normalized)
+
+
 def _authoring_output_contract(
     available_interface_refs: tuple[str, ...] | None = None,
+    *,
+    expected_predecessor_program_digest: str | None = None,
+    required_hosted_component_bindings: tuple[dict[str, object], ...] = (),
+    realization_contract: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Expose the exact generic parser topology without a building answer."""
 
@@ -156,7 +572,6 @@ def _authoring_output_contract(
     nullable_identifier = {
         "anyOf": [{"type": "null"}, identifier],
     }
-    nullable_digest = {"anyOf": [{"type": "null"}, digest]}
     nullable_unit = {
         "anyOf": [
             {"type": "null"},
@@ -333,7 +748,14 @@ def _authoring_output_contract(
         {
             "schema": {"const": _PROPOSAL_BODY_SCHEMA},
             "proposal_id": identifier,
-            "predecessor_program_digest": nullable_digest,
+            "predecessor_program_digest": {
+                "const": expected_predecessor_program_digest,
+                "description": (
+                    "Exact predecessor published as "
+                    "available_predecessor_program_digest; null only for an "
+                    "initial proposal."
+                ),
+            },
             "length_unit": {
                 "type": "string",
                 "enum": [item.value for item in LengthUnit],
@@ -406,6 +828,13 @@ def _authoring_output_contract(
             ]
             for kind in AssemblyKind
         },
+        "required_hosted_component_bindings": [
+            dict(item) for item in required_hosted_component_bindings
+        ],
+        "realization_contract": (
+            {} if realization_contract is None else dict(realization_contract)
+        ),
+        "coordinate_convention": _GEOMETRY_COORDINATE_CONVENTION,
         "cross_field_invariants": [
             {
                 "field": "proposal_body.operations[*].responds_to_object_ids",
@@ -427,6 +856,7 @@ def _authoring_output_contract(
                 "relation": "contains_all_unique",
                 "target": "required_assembly_roles[kind]",
             },
+            *_relational_authoring_invariants(),
         ],
     }
 
@@ -828,6 +1258,8 @@ async def produce_geometry_program_proposal(
     template_refs: tuple[ProjectRecordRef, ...] = (),
     available_asset_digests: Mapping[str, str] | None = None,
     prior_program: CompiledGeometryProgram | None = None,
+    realization_requirements: tuple[Mapping[str, object], ...] = (),
+    initial_repair_issues: tuple[GeometryProposalIssue, ...] = (),
 ) -> GeometryProposalProductionResult:
     """Author, compile, and persist bounded proposal rounds without fallback."""
 
@@ -857,8 +1289,28 @@ async def produce_geometry_program_proposal(
         spatial_option,
         projection,
     )
+    expected_predecessor_program_digest = (
+        None if prior_program is None else prior_program.program_digest
+    )
+    required_hosted_component_bindings = _hosted_component_requirements(
+        projection
+    )
+    exact_realization_requirements = _realization_requirements(
+        realization_requirements
+    )
+    if not isinstance(initial_repair_issues, tuple) or any(
+        not isinstance(item, GeometryProposalIssue)
+        for item in initial_repair_issues
+    ):
+        raise GeometryProposalProductionError(
+            "initial_repair_issues must contain GeometryProposalIssue values"
+        )
+    realization_contract = _realization_authoring_contract(
+        required_commitment_refs,
+        exact_realization_requirements,
+    )
     round_refs: list[ProjectRecordRef] = []
-    repair_issues: tuple[GeometryProposalIssue, ...] = ()
+    repair_issues = initial_repair_issues
     assets = {} if available_asset_digests is None else dict(available_asset_digests)
 
     for round_index in range(1, policy.maximum_rounds + 1):
@@ -870,6 +1322,10 @@ async def produce_geometry_program_proposal(
             template_payloads,
             repair_issues,
             available_interface_refs,
+            expected_predecessor_program_digest,
+            required_hosted_component_bindings,
+            realization_contract,
+            prior_program,
         )
         request = ModelInvocationRequest.create(
             request_id=f"geometry-proposal-{run.run_id}-{round_index:02d}",
@@ -917,12 +1373,14 @@ async def produce_geometry_program_proposal(
                         "model selected a template outside the supplied project records"
                     )
                 proposal = _proposal_from_body(body, projection)
+                _validate_function_contracts(proposal)
                 _validate_semantic_coverage(
                     proposal,
                     projection,
                     required_commitment_refs,
                     spatial_option_ref,
                     available_interface_refs,
+                    required_hosted_component_bindings,
                 )
                 compilation = compile_geometry_program(
                     projection,
@@ -1131,6 +1589,10 @@ def _request_payload(
     templates: tuple[dict[str, object], ...],
     repair_issues: tuple[GeometryProposalIssue, ...],
     available_interface_refs: tuple[str, ...],
+    expected_predecessor_program_digest: str | None,
+    required_hosted_component_bindings: tuple[dict[str, object], ...],
+    realization_contract: Mapping[str, object],
+    prior_program: CompiledGeometryProgram | None,
 ) -> dict[str, object]:
     return {
         "schema": "GeometryProposalAuthoringRequest@1",
@@ -1139,6 +1601,16 @@ def _request_payload(
             "proposal": spatial.to_dict(),
         },
         "candidate_program": projection.to_dict(),
+        "available_predecessor_program_digest": (
+            expected_predecessor_program_digest
+        ),
+        "available_predecessor_program": (
+            None if prior_program is None else prior_program.to_dict()
+        ),
+        "required_hosted_component_bindings": [
+            dict(item) for item in required_hosted_component_bindings
+        ],
+        "realization_contract": dict(realization_contract),
         "required_commitment_refs": list(commitments),
         "available_template_records": list(templates),
         "available_interface_refs": {
@@ -1151,21 +1623,37 @@ def _request_payload(
             ),
         },
         "geometry_function_contracts": _FUNCTION_CONTRACTS,
+        "geometry_coordinate_convention": _GEOMETRY_COORDINATE_CONVENTION,
         "repair_issues": [item.to_dict() for item in repair_issues],
         "required_output_schema": _AUTHORING_OUTPUT_SCHEMA,
         "required_output_contract": _authoring_output_contract(
-            available_interface_refs
+            available_interface_refs,
+            expected_predecessor_program_digest=(
+                expected_predecessor_program_digest
+            ),
+            required_hosted_component_bindings=(
+                required_hosted_component_bindings
+            ),
+            realization_contract=realization_contract,
         ),
         "instructions": [
             "Author geometry only from supplied project records and candidate values.",
+            "When available_predecessor_program is present, revise that exact geometry program instead of redrawing from scratch: preserve stable identities, copy its digest to predecessor_program_digest, add exact revision preconditions for changed retained objects, exact retirements for removed objects, and dependency responses required by the compiler.",
             "Return exactly the keys and nested field shapes in required_output_contract.json_schema; do not invent aliases such as geometry_nodes or geometry_functions.",
             "Use only declared geometry function kinds and explicit parameters.",
+            "For every operation parameter, copy kind from geometry_function_contracts[kind].parameters[*].kind; semantic choices such as polyline, bezier, or fixed belong in canonical value_json and are never parameter kind values.",
+            "Use geometry_coordinate_convention exactly: Y is vertical up, XZ is the horizontal footprint plane, every vector is [x,y,z], solid origin[1] is elevation, and solid size[1] is height. Never reinterpret Z as vertical.",
             "GeometryParameter.value_json is canonical compact JSON encoded as a string, not a nested JSON value.",
             "Bind every candidate value and required commitment through semantic bindings.",
             "Include the spatial option record URI in every semantic binding evidence_refs.",
             "Every assembly interface_refs value must be selected exactly from available_interface_refs.refs and match available_interface_refs.pattern.",
             "When a supplied semantic component requires a hosted assembly, represent its semantic identity and geometry together through semantic_binding_ids and typed assembly members.",
             "For every hosted assembly include all roles named by required_output_contract.required_assembly_roles[kind]; missing or duplicate roles are invalid.",
+            *(
+                invariant["instruction"]
+                for invariant in _relational_authoring_invariants()
+            ),
+            *realization_contract["instructions"],
             "Treat identifier and reference arrays as sets: never duplicate values; lexical order is canonicalized by the protocol and carries no design meaning.",
             "Every responds_to_object_ids value must also appear in the same operation input_object_ids, and every responds_to_binding_ids value must appear in semantic_binding_ids. A zero-input function therefore has empty responds_to_object_ids.",
             "Do not claim hard-gate, acceptance, canonical-write, or platform authority.",
@@ -1200,6 +1688,7 @@ def _validate_semantic_coverage(
     commitments: tuple[str, ...],
     spatial_ref: ProjectRecordRef,
     available_interface_refs: tuple[str, ...],
+    required_hosted_component_bindings: tuple[dict[str, object], ...],
 ) -> None:
     candidate_ids = {item.value_id for item in projection.values}
     bound_candidate_ids = {
@@ -1231,6 +1720,190 @@ def _validate_semantic_coverage(
             "assembly interface_refs are absent from the supplied spatial "
             f"option; unavailable={unavailable}"
         )
+    _validate_host_cut_apertures(proposal)
+    _validate_hosted_component_bindings(
+        proposal,
+        required_hosted_component_bindings,
+    )
+
+
+def _validate_function_contracts(
+    proposal: GeometryProgramProposal,
+) -> None:
+    """Reject typed-but-unsupported parameter combinations before compilation."""
+
+    for operation in proposal.operations:
+        contract = _FUNCTION_CONTRACTS[operation.kind.value]
+        raw_parameters = contract["parameters"]
+        assert isinstance(raw_parameters, list)
+        expected = {str(item["name"]): item for item in raw_parameters}
+        actual = {item.name: item for item in operation.parameters}
+        missing = sorted(
+            name
+            for name, item in expected.items()
+            if bool(item["required"]) and name not in actual
+        )
+        extra = sorted(set(actual) - set(expected))
+        if missing or extra:
+            raise GeometryProposalProductionError(
+                f"{operation.op_id}: {operation.kind.value} parameters do not "
+                f"match the function contract; missing={missing}, extra={extra}"
+            )
+        for name, parameter in actual.items():
+            parameter_contract = expected[name]
+            expected_kind = str(parameter_contract["kind"])
+            if parameter.kind.value != expected_kind:
+                raise GeometryProposalProductionError(
+                    f"{operation.op_id}.{name}: parameter kind must be "
+                    f"{expected_kind}; received={parameter.kind.value}"
+                )
+            expected_unit = parameter_contract["unit"]
+            actual_unit = None if parameter.unit is None else parameter.unit.value
+            if actual_unit != expected_unit:
+                raise GeometryProposalProductionError(
+                    f"{operation.op_id}.{name}: parameter unit must be "
+                    f"{expected_unit!r}; received={actual_unit!r}"
+                )
+            allowed = parameter_contract["allowed_value_json"]
+            assert isinstance(allowed, list)
+            if allowed and parameter.value_json not in allowed:
+                raise GeometryProposalProductionError(
+                    f"{operation.op_id}.{name}: value_json must be one of "
+                    f"{allowed}; received={parameter.value_json!r}"
+                )
+
+
+def _validate_hosted_component_bindings(
+    proposal: GeometryProgramProposal,
+    requirements: tuple[dict[str, object], ...],
+) -> None:
+    producer_by_object = {
+        object_id: operation
+        for operation in proposal.operations
+        for object_id in operation.output_object_ids
+    }
+    claimed_member_objects: set[str] = set()
+    for requirement in requirements:
+        value_id = str(requirement["candidate_value_id"])
+        component_id = str(requirement["component_id"])
+        assembly_kind = AssemblyKind(str(requirement["assembly_kind"]))
+        dedicated = [
+            binding
+            for binding in proposal.semantic_bindings
+            if binding.candidate_value_ids == (value_id,)
+        ]
+        if len(dedicated) != 1:
+            raise GeometryProposalProductionError(
+                f"hosted component {component_id} requires exactly one "
+                f"dedicated semantic binding with candidate_value_ids=['{value_id}']"
+            )
+        binding = dedicated[0]
+        assemblies = [
+            assembly
+            for assembly in proposal.assemblies
+            if assembly.kind is assembly_kind
+            and assembly.semantic_binding_ids == (binding.binding_id,)
+        ]
+        if len(assemblies) != 1:
+            raise GeometryProposalProductionError(
+                f"hosted component {component_id} requires exactly one "
+                f"{assembly_kind.value} assembly bound only to {binding.binding_id}"
+            )
+        assembly = assemblies[0]
+        member_objects = {
+            object_id
+            for member in assembly.members
+            for object_id in member.object_ids
+        }
+        reused = sorted(claimed_member_objects & member_objects)
+        if reused:
+            raise GeometryProposalProductionError(
+                "hosted component assemblies reuse member object identities; "
+                f"reused={reused}"
+            )
+        claimed_member_objects.update(member_objects)
+        assembly_objects = {assembly.host_object_id, *member_objects}
+        uncovered = sorted(assembly_objects - set(binding.object_ids))
+        if uncovered:
+            raise GeometryProposalProductionError(
+                f"hosted component {component_id} assembly objects escape its "
+                f"dedicated binding; uncovered={uncovered}"
+            )
+        wrong_producers = sorted(
+            object_id
+            for object_id in assembly_objects
+            if object_id not in producer_by_object
+            or binding.binding_id
+            not in producer_by_object[object_id].semantic_binding_ids
+        )
+        if wrong_producers:
+            raise GeometryProposalProductionError(
+                f"hosted component {component_id} assembly objects are not "
+                "produced under its dedicated binding; "
+                f"objects={wrong_producers}"
+            )
+
+
+def _validate_host_cut_apertures(
+    proposal: GeometryProgramProposal,
+) -> None:
+    producer_by_object = {
+        object_id: operation
+        for operation in proposal.operations
+        for object_id in operation.output_object_ids
+    }
+    for assembly in proposal.assemblies:
+        invalid = sorted(
+            object_id
+            for object_id in assembly.objects_for(AssemblyRole.HOST_CUT)
+            if object_id not in producer_by_object
+            or producer_by_object[object_id].kind
+            is not GeometryOperationKind.BOOLEAN_INTERSECTION
+        )
+        if invalid:
+            raise GeometryProposalProductionError(
+                f"assembly {assembly.assembly_id} host_cut must be a "
+                "boolean_intersection aperture volume, not a residual boolean "
+                f"result; objects={invalid}"
+            )
+
+
+def _hosted_component_requirements(
+    projection: CandidateProgramProjection,
+) -> tuple[dict[str, object], ...]:
+    requirements: list[dict[str, object]] = []
+    for value in projection.values:
+        decoded = value.decoded_value
+        if not isinstance(decoded, dict) or "component_id" not in decoded:
+            continue
+        assembly_value = decoded.get("assembly_kind")
+        if assembly_value is None:
+            continue
+        component_id = decoded["component_id"]
+        if not isinstance(component_id, str) or not component_id:
+            raise GeometryProposalProductionError(
+                f"candidate value {value.value_id} has an invalid component_id"
+            )
+        try:
+            assembly_kind = AssemblyKind(assembly_value)
+        except (TypeError, ValueError) as exc:
+            raise GeometryProposalProductionError(
+                f"candidate value {value.value_id} has an invalid assembly_kind"
+            ) from exc
+        requirements.append(
+            {
+                "schema": "HostedSemanticComponentBindingRequirement@1",
+                "candidate_value_id": value.value_id,
+                "component_id": component_id,
+                "assembly_kind": assembly_kind.value,
+                "interface_ref": value.ref,
+                "dedicated_binding_count": 1,
+                "matching_assembly_count": 1,
+            }
+        )
+    return tuple(
+        sorted(requirements, key=lambda item: str(item["candidate_value_id"]))
+    )
 
 
 def _available_interface_refs(

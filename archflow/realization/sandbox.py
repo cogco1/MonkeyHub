@@ -30,6 +30,7 @@ from archflow.runtime.geometry_compiler import (
 )
 from archflow.state import ArtifactRef, StateRef
 from archflow.state.geometry_program import (
+    AssemblyKind,
     AssemblyRole,
     GeometryOperation,
     GeometryOperationKind,
@@ -1814,6 +1815,12 @@ def realize_geometry(
         for role in (AssemblyRole.HOST_CUT, AssemblyRole.CLEARANCE)
         for object_id in assembly.objects_for(role)
     }
+    reference_ids.update(
+        object_id
+        for assembly in program.proposal.assemblies
+        if assembly.kind is AssemblyKind.DOOR
+        for object_id in assembly.objects_for(AssemblyRole.LEAF)
+    )
     opening_ids = {
         object_id
         for assembly in program.proposal.assemblies
@@ -2442,6 +2449,58 @@ def _sample_point(
     return tuple((value + 0.5) * resolution for value in cell)
 
 
+def _intersects_cell(
+    object_id: str,
+    cell: tuple[int, int, int],
+    resolution: float,
+    objects: Mapping[str, SceneObject],
+) -> bool:
+    """Conservatively sample positive-volume geometry/cell overlap."""
+
+    item = objects[object_id]
+    cell_minimum = tuple(value * resolution for value in cell)
+    cell_maximum = tuple(value + resolution for value in cell_minimum)
+    overlap_minimum = tuple(
+        max(item.bounds.minimum[index], cell_minimum[index])
+        for index in range(3)
+    )
+    overlap_maximum = tuple(
+        min(item.bounds.maximum[index], cell_maximum[index])
+        for index in range(3)
+    )
+    if any(
+        overlap_maximum[index] <= overlap_minimum[index]
+        for index in range(3)
+    ):
+        return False
+    if item.geometry["kind"] == "aabb":
+        return True
+
+    samples: list[tuple[float, ...]] = []
+    for index in range(3):
+        minimum = overlap_minimum[index]
+        maximum = overlap_maximum[index]
+        span = maximum - minimum
+        margin = min(span / 4.0, resolution * 1e-6)
+        samples.append(
+            tuple(
+                sorted(
+                    {
+                        minimum + margin,
+                        (minimum + maximum) / 2.0,
+                        maximum - margin,
+                    }
+                )
+            )
+        )
+    return any(
+        _contains(object_id, (x, y, z), objects)
+        for x in samples[0]
+        for y in samples[1]
+        for z in samples[2]
+    )
+
+
 def _regions(
     walkable: set[tuple[int, int, int]],
     openings: set[tuple[int, int, int]],
@@ -2618,9 +2677,10 @@ def derive_voxel_view(
         for y in ranges[1]
         for z in ranges[2]
         if any(
-            _contains(
+            _intersects_cell(
                 item.object_id,
-                _sample_point((x, y, z), policy.default_resolution),
+                (x, y, z),
+                policy.default_resolution,
                 objects,
             )
             for item in physical
@@ -2642,9 +2702,10 @@ def derive_voxel_view(
         cell
         for object_id in scene.opening_object_ids
         for cell in all_cells
-        if _contains(
+        if _intersects_cell(
             object_id,
-            _sample_point(cell, policy.default_resolution),
+            cell,
+            policy.default_resolution,
             objects,
         )
         and cell not in occupied
