@@ -1,11 +1,5 @@
 """Read-only deterministic validation."""
 
-from archflow.validation.candidate_program import (
-    LegacyProgramFieldMap,
-    LegacyProgramProjection,
-    LegacyProgramProjectionError,
-    project_legacy_building_program,
-)
 from archflow.validation.engine import (
     ArtifactPresentValidator,
     AuthorizedCommitmentClaimsValidator,
@@ -21,15 +15,11 @@ __all__ = [
     "ArtifactPresentValidator",
     "AuthorizedCommitmentClaimsValidator",
     "Finding",
-    "LegacyProgramFieldMap",
-    "LegacyProgramProjection",
-    "LegacyProgramProjectionError",
     "ObligationDischargeValidator",
     "RequiredClaimsValidator",
     "Severity",
     "ValidationReceipt",
     "Validator",
     "compile_building_program",
-    "project_legacy_building_program",
     "validate_submission",
 ]

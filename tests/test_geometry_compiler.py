@@ -1,20 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import unittest
 
-from archflow.project import ProjectVersionRef
 from archflow.runtime.geometry_compiler import (
     AssetSubstitutionReceipt,
     GeometryCompileStatus,
     GeometryIssueCode,
     compile_geometry_program,
 )
-from archflow.state.candidate_program import (
-    CandidateProgramProjection,
-    CandidateProgramValue,
-    CandidateValueFacet,
-)
+from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.geometry_program import (
     AffineTransform,
     AssemblyKind,
@@ -38,73 +34,33 @@ from archflow.state.geometry_program import (
 
 EVIDENCE = "evidence:geometry-compiler"
 COMMITMENT = "commitment:maintain-egress"
-BASE = ProjectVersionRef("demo", 3, "a" * 64)
+from tests.test_design_development import _coordinated_state
 
 
-def _value(
-    value_id: str,
-    facet: CandidateValueFacet,
-    value: object,
-) -> CandidateProgramValue:
-    return CandidateProgramValue.create(
-        value_id=value_id,
-        facet=facet,
-        value=value,
-        source_refs=(EVIDENCE,),
-        derivation_refs=("option:selected",),
+def _state(*, width: float = 6.0) -> DevelopedDesignState:
+    state = _coordinated_state()[3]
+    if width == 6.0:
+        return state
+    proposal = state.selected_schematic.option.proposal
+    components = tuple(
+        replace(
+            item,
+            revision=item.revision + 1,
+            intent=f"{item.intent} Width decision {width}.",
+        )
+        if item.component_id == "building"
+        else item
+        for item in proposal.components
     )
-
-
-def _projection(*, width: float = 6.0) -> CandidateProgramProjection:
-    return CandidateProgramProjection(
-        project_id="demo",
-        run_id="run",
-        base=BASE,
-        developed_state_digest="b" * 64,
-        portfolio_id="portfolio",
-        portfolio_digest="c" * 64,
-        selected_branch_id="branch",
-        selected_revision_id="revision",
-        selected_revision_digest="d" * 64,
-        selected_option_ref="option:selected",
-        selection_transition_id="selection",
-        selection_decision_ref="decision:selected",
-        values=tuple(
-            sorted(
-                (
-                    _value(
-                        "area",
-                        CandidateValueFacet.AREA,
-                        {"value": 30, "unit": "square-meter"},
-                    ),
-                    _value(
-                        "coordinate",
-                        CandidateValueFacet.COORDINATE,
-                        [[0, 0], [1, 0]],
-                    ),
-                    _value(
-                        "dimension",
-                        CandidateValueFacet.DIMENSION,
-                        {"width": width},
-                    ),
-                    _value(
-                        "function",
-                        CandidateValueFacet.FUNCTION,
-                        {"use": "project-supplied"},
-                    ),
-                    _value(
-                        "material",
-                        CandidateValueFacet.MATERIAL,
-                        {"surface": "project-supplied"},
-                    ),
-                    _value(
-                        "topology",
-                        CandidateValueFacet.TOPOLOGY,
-                        {"connects": ["inside", "outside"]},
-                    ),
-                ),
-                key=lambda item: item.value_id,
-            )
+    option = replace(
+        state.selected_schematic.option,
+        proposal=replace(proposal, components=components),
+    )
+    return replace(
+        state,
+        selected_schematic=replace(
+            state.selected_schematic,
+            option=option,
         ),
     )
 
@@ -146,7 +102,7 @@ def _operation(
 
 
 def _proposal(
-    projection: CandidateProgramProjection,
+    state: DevelopedDesignState,
     *,
     wall_width: float = 6.0,
     predecessor: str | None = None,
@@ -237,8 +193,8 @@ def _proposal(
     )
     binding = SemanticBinding(
         binding_id="building-binding",
+        component_id="building",
         object_ids=object_ids,
-        candidate_value_ids=("dimension", "topology"),
         commitment_refs=(COMMITMENT,),
         evidence_refs=(EVIDENCE,),
     )
@@ -260,10 +216,10 @@ def _proposal(
     )
     return GeometryProgramProposal(
         proposal_id="geometry-proposal",
-        project_id="demo",
-        run_id="run",
-        base=BASE,
-        candidate_program_digest=projection.projection_digest,
+        project_id=state.project_id,
+        run_id=state.run_id,
+        base=state.base,
+        design_state_digest=state.state_digest,
         predecessor_program_digest=predecessor,
         length_unit=LengthUnit.METER,
         tolerance=GeometryTolerance(0.001, 0.001),
@@ -289,10 +245,10 @@ def _codes(result) -> set[GeometryIssueCode]:
 
 class GeometryCompilerTests(unittest.TestCase):
     def test_graph_compiles_in_dependency_order_with_stable_objects(self) -> None:
-        projection = _projection()
-        proposal = _proposal(projection)
+        state = _state()
+        proposal = _proposal(state)
         result = compile_geometry_program(
-            projection,
+            state,
             proposal,
             active_commitment_refs=(COMMITMENT,),
         )
@@ -314,18 +270,18 @@ class GeometryCompilerTests(unittest.TestCase):
     def test_changed_host_invalidates_dependents_until_acknowledged(
         self,
     ) -> None:
-        projection = _projection()
+        state = _state()
         initial = compile_geometry_program(
-            projection,
-            _proposal(projection),
+            state,
+            _proposal(state),
             active_commitment_refs=(COMMITMENT,),
         )
         assert initial.program is not None
 
         unacknowledged = compile_geometry_program(
-            projection,
+            state,
             _proposal(
-                projection,
+                state,
                 wall_width=7.0,
                 predecessor=initial.program.program_digest,
             ),
@@ -359,14 +315,14 @@ class GeometryCompilerTests(unittest.TestCase):
             for object_id in sorted(revision_ids)
         )
         acknowledged_proposal = _proposal(
-            projection,
+            state,
             wall_width=7.0,
             predecessor=initial.program.program_digest,
             revisions=revisions,
             respond_to_dependencies=True,
         )
         acknowledged = compile_geometry_program(
-            projection,
+            state,
             acknowledged_proposal,
             active_commitment_refs=(COMMITMENT,),
             prior_program=initial.program,
@@ -390,20 +346,20 @@ class GeometryCompilerTests(unittest.TestCase):
         )
 
     def test_changed_semantics_cannot_reuse_old_geometry_silently(self) -> None:
-        initial_projection = _projection(width=6.0)
+        initial_state = _state(width=6.0)
         initial = compile_geometry_program(
-            initial_projection,
-            _proposal(initial_projection),
+            initial_state,
+            _proposal(initial_state),
             active_commitment_refs=(COMMITMENT,),
         )
         assert initial.program is not None
-        changed_projection = _projection(width=8.0)
+        changed_state = _state(width=8.0)
         changed_proposal = _proposal(
-            changed_projection,
+            changed_state,
             predecessor=initial.program.program_digest,
         )
         result = compile_geometry_program(
-            changed_projection,
+            changed_state,
             changed_proposal,
             active_commitment_refs=(COMMITMENT,),
             prior_program=initial.program,
@@ -420,7 +376,7 @@ class GeometryCompilerTests(unittest.TestCase):
     def test_missing_asset_is_red_and_lossy_substitution_is_explicit(
         self,
     ) -> None:
-        projection = _projection()
+        state = _state()
         requested = AssetReference(
             asset_id="requested-detail",
             uri="project://demo/assets/requested-detail",
@@ -446,12 +402,12 @@ class GeometryCompilerTests(unittest.TestCase):
             asset_id=requested.asset_id,
         )
         proposal = _proposal(
-            projection,
+            state,
             assets=(replacement, requested),
             extra_operations=(detail_operation,),
         )
         missing = compile_geometry_program(
-            projection,
+            state,
             proposal,
             active_commitment_refs=(COMMITMENT,),
             available_asset_digests={
@@ -469,7 +425,7 @@ class GeometryCompilerTests(unittest.TestCase):
             evidence_refs=("evidence:reviewed-substitution",),
         )
         compiled = compile_geometry_program(
-            projection,
+            state,
             proposal,
             active_commitment_refs=(COMMITMENT,),
             available_asset_digests={
@@ -489,7 +445,7 @@ class GeometryCompilerTests(unittest.TestCase):
     def test_parametric_profile_and_array_remain_generic_operations(
         self,
     ) -> None:
-        projection = _projection()
+        state = _state()
         profile = GeometryOperation(
             op_id="detail-profile",
             kind=GeometryOperationKind.CURVE,
@@ -522,9 +478,9 @@ class GeometryCompilerTests(unittest.TestCase):
             semantic_binding_ids=("building-binding",),
         )
         result = compile_geometry_program(
-            projection,
+            state,
             _proposal(
-                projection,
+                state,
                 extra_operations=(repeated, profile),
             ),
             active_commitment_refs=(COMMITMENT,),
@@ -539,7 +495,7 @@ class GeometryCompilerTests(unittest.TestCase):
     def test_unresolved_operation_is_an_explicit_rejection_receipt(
         self,
     ) -> None:
-        projection = _projection()
+        state = _state()
         broken = _operation(
             op_id="broken",
             kind=GeometryOperationKind.TRANSFORM,
@@ -547,8 +503,8 @@ class GeometryCompilerTests(unittest.TestCase):
             inputs=("missing-input",),
         )
         result = compile_geometry_program(
-            projection,
-            _proposal(projection, extra_operations=(broken,)),
+            state,
+            _proposal(state, extra_operations=(broken,)),
             active_commitment_refs=(COMMITMENT,),
         )
         self.assertIs(

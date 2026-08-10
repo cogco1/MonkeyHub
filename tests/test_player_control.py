@@ -36,7 +36,7 @@ from archflow.runtime.player_control import (
     cancel_candidate_control,
     create_candidate_preview,
     create_revision_proposal,
-    inspect_candidate_program,
+    inspect_candidate_components,
     issue_disposable_automation_approval,
     issue_human_candidate_approval,
     open_candidate_control,
@@ -209,7 +209,7 @@ def _revised(assembly: CandidateAssembly) -> CandidateAssembly:
     payload["operations"][0]["origin"][0] = 1
     plan = CandidateExecutablePlan.create(
         plan_id="candidate-plan-revised",
-        projection=assembly.projection,
+        state=assembly.design_state,
         payload=payload,
         bindings=assembly.plan.bindings,
     )
@@ -266,12 +266,12 @@ class PlayerControlTests(unittest.TestCase):
     def test_preview_reports_impact_before_any_world_write(self) -> None:
         assembly = _assembly()
         preview = _preview(assembly)
-        inspection = inspect_candidate_program(assembly)
+        inspection = inspect_candidate_components(assembly)
         payload = preview.to_dict()
 
         self.assertEqual(
-            {item.facet.value for item in inspection.values},
-            {"area", "function"},
+            {item.component_id for item in inspection.components},
+            {"building", "primary-support", "primary-surface"},
         )
         self.assertFalse(
             inspection.to_dict()["generation_authority"]

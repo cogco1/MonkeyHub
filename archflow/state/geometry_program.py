@@ -383,17 +383,17 @@ class GeometryParameter:
 @dataclass(frozen=True, slots=True)
 class SemanticBinding:
     binding_id: str
+    component_id: str
     object_ids: tuple[str, ...]
-    candidate_value_ids: tuple[str, ...]
     commitment_refs: tuple[str, ...]
     evidence_refs: tuple[str, ...]
 
-    SCHEMA = "GeometrySemanticBinding@1"
+    SCHEMA = "GeometrySemanticBinding@2"
 
     def __post_init__(self) -> None:
         require_identifier(self.binding_id, "binding_id")
+        require_identifier(self.component_id, "component_id")
         _ids(self.object_ids, "binding object_ids")
-        _ids(self.candidate_value_ids, "candidate_value_ids")
         _refs(
             self.commitment_refs,
             "binding commitment_refs",
@@ -409,8 +409,8 @@ class SemanticBinding:
         return {
             "schema": self.SCHEMA,
             "binding_id": self.binding_id,
+            "component_id": self.component_id,
             "object_ids": list(self.object_ids),
-            "candidate_value_ids": list(self.candidate_value_ids),
             "commitment_refs": list(self.commitment_refs),
             "evidence_refs": list(self.evidence_refs),
         }
@@ -775,7 +775,7 @@ class GeometryProgramProposal:
     project_id: str
     run_id: str
     base: ProjectVersionRef
-    candidate_program_digest: str
+    design_state_digest: str
     predecessor_program_digest: str | None
     length_unit: LengthUnit
     tolerance: GeometryTolerance
@@ -787,7 +787,7 @@ class GeometryProgramProposal:
     revisions: tuple[ObjectRevisionPrecondition, ...] = ()
     retirements: tuple[ObjectRetirement, ...] = ()
 
-    SCHEMA = "GeometryProgramProposal@1"
+    SCHEMA = "GeometryProgramProposal@2"
 
     def __post_init__(self) -> None:
         require_identifier(self.proposal_id, "proposal_id")
@@ -799,10 +799,10 @@ class GeometryProgramProposal:
             raise GeometryProgramError("proposal and base disagree")
         object.__setattr__(
             self,
-            "candidate_program_digest",
+            "design_state_digest",
             require_sha256(
-                self.candidate_program_digest,
-                "candidate_program_digest",
+                self.design_state_digest,
+                "design_state_digest",
             ),
         )
         if self.predecessor_program_digest is not None:
@@ -898,7 +898,7 @@ class GeometryProgramProposal:
             "project_id": self.project_id,
             "run_id": self.run_id,
             "base": _base_to_dict(self.base),
-            "candidate_program_digest": self.candidate_program_digest,
+            "design_state_digest": self.design_state_digest,
             "predecessor_program_digest": self.predecessor_program_digest,
             "length_unit": self.length_unit.value,
             "tolerance": self.tolerance.to_dict(),

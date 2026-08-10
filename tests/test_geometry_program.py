@@ -183,8 +183,8 @@ class GeometryProgramContractTests(unittest.TestCase):
         )
         binding = SemanticBinding(
             binding_id="binding",
+            component_id="building",
             object_ids=("solid",),
-            candidate_value_ids=("dimension",),
             commitment_refs=(),
             evidence_refs=(EVIDENCE,),
         )
@@ -202,7 +202,7 @@ class GeometryProgramContractTests(unittest.TestCase):
             project_id="demo",
             run_id="run",
             base=ProjectVersionRef("demo", 1, "b" * 64),
-            candidate_program_digest="c" * 64,
+            design_state_digest="c" * 64,
             predecessor_program_digest=None,
             length_unit=LengthUnit.METER,
             tolerance=GeometryTolerance(0.001, 0.001),

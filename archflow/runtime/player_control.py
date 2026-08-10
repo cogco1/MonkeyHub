@@ -39,10 +39,12 @@ from archflow.runtime.world_recovery import (
     WorldMutationStatus,
     WorldMutationTrace,
 )
-from archflow.state import BuildPolicy, Commitment, OperationalMarkovState
-from archflow.state.candidate_program import (
-    CandidateProgramValue,
-    CandidateValueFacet,
+from archflow.state import (
+    BuildPolicy,
+    Commitment,
+    DesignComponent,
+    DevelopedComponent,
+    OperationalMarkovState,
 )
 from archflow.state.operational_state import require_logical_ref
 from archflow.submission import CandidateSubmission
@@ -421,17 +423,18 @@ class CandidatePreviewReceipt:
 
 
 @dataclass(frozen=True, slots=True)
-class CandidateProgramInspection:
-    """Exact candidate values selected for player review, not recompilation."""
+class CandidateComponentInspection:
+    """Exact semantic components selected for review, not recompilation."""
 
     candidate_assembly_digest: str
     submission_id: str
     plan_digest: str
     base: ProjectVersionRef
-    requested_facets: tuple[CandidateValueFacet, ...]
-    values: tuple[CandidateProgramValue, ...]
+    requested_component_ids: tuple[str, ...]
+    components: tuple[DesignComponent, ...]
+    developments: tuple[DevelopedComponent, ...]
 
-    SCHEMA = "CandidateProgramInspection@1"
+    SCHEMA = "CandidateComponentInspection@1"
 
     def __post_init__(self) -> None:
         _sha(self.candidate_assembly_digest, "candidate_assembly_digest")
@@ -441,31 +444,42 @@ class CandidateProgramInspection:
             raise TypeError("base must be ProjectVersionRef")
         self.base.require_digest()
         if (
-            not isinstance(self.requested_facets, tuple)
-            or not self.requested_facets
-            or any(
-                not isinstance(item, CandidateValueFacet)
-                for item in self.requested_facets
-            )
-            or len(self.requested_facets) != len(set(self.requested_facets))
+            not isinstance(self.requested_component_ids, tuple)
+            or not self.requested_component_ids
+            or len(self.requested_component_ids)
+            != len(set(self.requested_component_ids))
         ):
             raise PlayerControlError(
-                "requested_facets must be unique candidate facets"
+                "requested_component_ids must be unique component identities"
             )
+        for component_id in self.requested_component_ids:
+            require_identifier(component_id, "requested_component_id")
         if (
-            not isinstance(self.values, tuple)
-            or not self.values
+            not isinstance(self.components, tuple)
+            or not self.components
             or any(
-                not isinstance(item, CandidateProgramValue)
-                for item in self.values
-            )
-            or any(
-                item.facet not in self.requested_facets
-                for item in self.values
+                not isinstance(item, DesignComponent)
+                for item in self.components
             )
         ):
             raise PlayerControlError(
-                "inspection values must match the requested facets"
+                "inspection requires semantic design components"
+            )
+        component_ids = tuple(item.component_id for item in self.components)
+        if set(component_ids) != set(self.requested_component_ids):
+            raise PlayerControlError(
+                "inspection components must match the requested identities"
+            )
+        if not isinstance(self.developments, tuple) or any(
+            not isinstance(item, DevelopedComponent)
+            for item in self.developments
+        ):
+            raise TypeError("developments contains an invalid item")
+        if not {item.component_id for item in self.developments} <= set(
+            component_ids
+        ):
+            raise PlayerControlError(
+                "inspection development is not owned by a requested component"
             )
 
     @property
@@ -483,10 +497,11 @@ class CandidateProgramInspection:
             "submission_id": self.submission_id,
             "plan_digest": self.plan_digest,
             "base": _base_dict(self.base),
-            "requested_facets": [
-                item.value for item in self.requested_facets
+            "requested_component_ids": list(self.requested_component_ids),
+            "components": [item.to_dict() for item in self.components],
+            "developments": [
+                item.to_dict() for item in self.developments
             ],
-            "values": [item.to_dict() for item in self.values],
             "generation_authority": False,
             "world_write_authority": False,
             "canonical_write_authority": False,
@@ -859,32 +874,43 @@ def create_candidate_preview(
     )
 
 
-def inspect_candidate_program(
+def inspect_candidate_components(
     assembly: CandidateAssembly,
     *,
-    facets: tuple[CandidateValueFacet, ...] = (
-        CandidateValueFacet.FUNCTION,
-        CandidateValueFacet.AREA,
-    ),
-) -> CandidateProgramInspection:
-    """Expose project-derived values without inventing or changing them."""
+    component_ids: tuple[str, ...] = (),
+) -> CandidateComponentInspection:
+    """Expose the candidate's real semantic-component records unchanged."""
 
     if not isinstance(assembly, CandidateAssembly):
         raise TypeError("assembly must be CandidateAssembly")
-    if not isinstance(facets, tuple) or any(
-        not isinstance(item, CandidateValueFacet) for item in facets
-    ):
-        raise TypeError("facets must contain CandidateValueFacet values")
-    selected = tuple(
-        item for item in assembly.projection.values if item.facet in facets
+    if not isinstance(component_ids, tuple):
+        raise TypeError("component_ids must be a tuple")
+    available = {
+        item.component_id: item
+        for item in assembly.design_state.selected_schematic.option.proposal.components
+    }
+    selected_ids = component_ids or tuple(sorted(available))
+    if len(selected_ids) != len(set(selected_ids)):
+        raise PlayerControlError("component_ids contains duplicates")
+    unknown = set(selected_ids) - set(available)
+    if unknown:
+        raise PlayerControlError(
+            f"unknown candidate component identities: {sorted(unknown)}"
+        )
+    selected = tuple(available[item] for item in selected_ids)
+    selected_developments = tuple(
+        item
+        for item in assembly.design_state.components
+        if item.component_id in set(selected_ids)
     )
-    return CandidateProgramInspection(
+    return CandidateComponentInspection(
         candidate_assembly_digest=assembly.assembly_digest,
         submission_id=assembly.submission.submission_id,
         plan_digest=assembly.plan.plan_digest,
         base=assembly.plan.base,
-        requested_facets=facets,
-        values=selected,
+        requested_component_ids=selected_ids,
+        components=selected,
+        developments=selected_developments,
     )
 
 

@@ -38,7 +38,7 @@ from archflow.realization import (
 from tests.test_geometry_compiler import (
     COMMITMENT,
     EVIDENCE,
-    _projection,
+    _state,
 )
 
 
@@ -144,7 +144,7 @@ def _asset_payload() -> SandboxAssetPayload:
 
 
 def compiled_room(*, include_asset: bool = False):
-    projection = _projection()
+    state = _state()
     operations = [
         _solid("clearance", "clearance", [0, 1, 2], [2, 2, 1]),
         _curve("frame", "frame", [[0, 1, 2], [0, 3, 2]]),
@@ -217,10 +217,10 @@ def compiled_room(*, include_asset: bool = False):
     )
     proposal = GeometryProgramProposal(
         proposal_id="sandbox-room",
-        project_id=projection.project_id,
-        run_id=projection.run_id,
-        base=projection.base,
-        candidate_program_digest=projection.projection_digest,
+        project_id=state.project_id,
+        run_id=state.run_id,
+        base=state.base,
+        design_state_digest=state.state_digest,
         predecessor_program_digest=None,
         length_unit=LengthUnit.METER,
         tolerance=GeometryTolerance(0.001, 0.001),
@@ -236,8 +236,8 @@ def compiled_room(*, include_asset: bool = False):
         semantic_bindings=(
             SemanticBinding(
                 binding_id="room-binding",
+                component_id="building",
                 object_ids=object_ids,
-                candidate_value_ids=("dimension", "topology"),
                 commitment_refs=(COMMITMENT,),
                 evidence_refs=(EVIDENCE,),
             ),
@@ -263,14 +263,14 @@ def compiled_room(*, include_asset: bool = False):
         ),
     )
     compiled = compile_geometry_program(
-        projection,
+        state,
         proposal,
         active_commitment_refs=(COMMITMENT,),
         available_asset_digests=available_assets,
     )
     if compiled.program is None:
         raise AssertionError(compiled.receipt.issues)
-    return projection, compiled.program, payloads
+    return state, compiled.program, payloads
 
 
 class SandboxRealizationTests(unittest.TestCase):
@@ -558,7 +558,7 @@ class SandboxRealizationTests(unittest.TestCase):
         self.assertEqual(DerivedVoxelView.from_dict(view.to_dict()), view)
 
     def test_malformed_operation_returns_explicit_rejection(self) -> None:
-        projection, program, _ = compiled_room()
+        design_state, program, _ = compiled_room()
         unsupported = GeometryOperation(
             op_id="malformed-loft",
             kind=GeometryOperationKind.LOFT,
@@ -591,7 +591,7 @@ class SandboxRealizationTests(unittest.TestCase):
             ),
         )
         compiled = compile_geometry_program(
-            projection,
+            design_state,
             proposal,
             active_commitment_refs=(COMMITMENT,),
         )

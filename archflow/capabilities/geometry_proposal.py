@@ -1,7 +1,7 @@
 """Record-driven, provider-neutral geometry proposal authoring.
 
-The capability binds model-authored neutral geometry to an exact candidate
-projection and a persisted spatial option.  It may compile and retain proposal
+The capability binds model-authored neutral geometry to an exact developed
+design state and a persisted spatial option.  It may compile and retain proposal
 rounds, but it has no hard-gate, acceptance, canonical-write, or platform
 mutation authority.
 """
@@ -35,8 +35,7 @@ from archflow.runtime.geometry_compiler import (
     CompiledGeometryProgram,
     compile_geometry_program,
 )
-from archflow.state import SpatialOptionProposal
-from archflow.state.candidate_program import CandidateProgramProjection
+from archflow.state import DevelopedDesignState, SpatialOptionProposal
 from archflow.state.geometry_program import (
     ASSET_URI_PATTERN,
     AffineTransform,
@@ -359,8 +358,8 @@ def _relational_authoring_invariants() -> tuple[dict[str, str], ...]:
             ),
             "instruction": (
                 "For every required_hosted_component_bindings item, create "
-                "exactly one semantic binding whose candidate_value_ids equals "
-                "[candidate_value_id], then exactly one assembly of assembly_kind "
+                "exactly one semantic binding whose component_id equals "
+                "the required component_id, then exactly one assembly of assembly_kind "
                 "whose semantic_binding_ids equals [that binding_id]. Keep member "
                 "object ids disjoint between requirements; include each assembly "
                 "host and member object in that binding.object_ids and in the "
@@ -637,8 +636,8 @@ def _authoring_output_contract(
         {
             "schema": {"const": SemanticBinding.SCHEMA},
             "binding_id": identifier,
+            "component_id": identifier,
             "object_ids": _array_contract(identifier, minimum=1, unique=True),
-            "candidate_value_ids": _array_contract(identifier, minimum=1, unique=True),
             "commitment_refs": ref_list,
             "evidence_refs": _array_contract(logical_ref, minimum=1, unique=True),
         }
@@ -993,7 +992,7 @@ class GeometryProposalRoundReceipt:
     round_index: int
     status: GeometryProposalRoundStatus
     spatial_option_ref: ProjectRecordRef
-    candidate_program_digest: str
+    design_state_digest: str
     request: ModelInvocationRequest
     model_receipt: ModelInvocationReceipt
     selected_template_refs: tuple[str, ...]
@@ -1001,7 +1000,7 @@ class GeometryProposalRoundReceipt:
     proposal_digest: str | None
     compiler_receipt_json: str | None
 
-    SCHEMA = "GeometryProposalRoundReceipt@1"
+    SCHEMA = "GeometryProposalRoundReceipt@2"
 
     def __post_init__(self) -> None:
         if not isinstance(self.round_id, str) or not self.round_id:
@@ -1012,7 +1011,7 @@ class GeometryProposalRoundReceipt:
             raise TypeError("status must be GeometryProposalRoundStatus")
         if not isinstance(self.spatial_option_ref, ProjectRecordRef):
             raise TypeError("spatial_option_ref must be ProjectRecordRef")
-        _sha256(self.candidate_program_digest, "candidate_program_digest")
+        _sha256(self.design_state_digest, "design_state_digest")
         if not isinstance(self.request, ModelInvocationRequest):
             raise TypeError("request must be ModelInvocationRequest")
         if not isinstance(self.model_receipt, ModelInvocationReceipt):
@@ -1047,7 +1046,7 @@ class GeometryProposalRoundReceipt:
             "round_index": self.round_index,
             "status": self.status.value,
             "spatial_option_ref": _record_dict(self.spatial_option_ref),
-            "candidate_program_digest": self.candidate_program_digest,
+            "design_state_digest": self.design_state_digest,
             "request": self.request.to_dict(),
             "model_receipt": self.model_receipt.to_dict(),
             "selected_template_refs": list(self.selected_template_refs),
@@ -1068,7 +1067,7 @@ class GeometryProposalRoundReceipt:
             payload,
             {
                 "schema", "round_id", "round_index", "status",
-                "spatial_option_ref", "candidate_program_digest", "request",
+                "spatial_option_ref", "design_state_digest", "request",
                 "model_receipt", "selected_template_refs", "issues",
                 "proposal_digest", "compiler_receipt", "derivation_only",
                 "hard_gate_authority", "canonical_write_authority",
@@ -1093,7 +1092,7 @@ class GeometryProposalRoundReceipt:
             round_index=payload["round_index"],
             status=GeometryProposalRoundStatus(payload["status"]),
             spatial_option_ref=_record_from_dict(payload["spatial_option_ref"]),
-            candidate_program_digest=payload["candidate_program_digest"],
+            design_state_digest=payload["design_state_digest"],
             request=ModelInvocationRequest.from_dict(payload["request"]),
             model_receipt=ModelInvocationReceipt.from_dict(payload["model_receipt"]),
             selected_template_refs=_strings_from_json(
@@ -1116,14 +1115,14 @@ class GeometryProposalLineage:
     base: ProjectVersionRef
     spatial_option_ref: ProjectRecordRef
     spatial_option_digest: str
-    candidate_program_digest: str
+    design_state_digest: str
     required_commitment_refs: tuple[str, ...]
     provider_identity: GeometryProposalProviderIdentity
     round_refs: tuple[ProjectRecordRef, ...]
     accepted_proposal_ref: ProjectRecordRef | None
     accepted_proposal_digest: str | None
 
-    SCHEMA = "GeometryProposalLineage@1"
+    SCHEMA = "GeometryProposalLineage@2"
 
     def __post_init__(self) -> None:
         if not isinstance(self.lineage_id, str) or not self.lineage_id:
@@ -1135,7 +1134,7 @@ class GeometryProposalLineage:
         if self.spatial_option_ref.project_id != self.project_id:
             raise GeometryProposalProductionError("lineage source project disagrees")
         _sha256(self.spatial_option_digest, "spatial_option_digest")
-        _sha256(self.candidate_program_digest, "candidate_program_digest")
+        _sha256(self.design_state_digest, "design_state_digest")
         _strings(self.required_commitment_refs, "required_commitment_refs")
         if not isinstance(self.provider_identity, GeometryProposalProviderIdentity):
             raise TypeError("provider_identity is invalid")
@@ -1161,7 +1160,7 @@ class GeometryProposalLineage:
             "base": _base_dict(self.base),
             "spatial_option_ref": _record_dict(self.spatial_option_ref),
             "spatial_option_digest": self.spatial_option_digest,
-            "candidate_program_digest": self.candidate_program_digest,
+            "design_state_digest": self.design_state_digest,
             "required_commitment_refs": list(self.required_commitment_refs),
             "provider_identity": self.provider_identity.to_dict(),
             "round_refs": [_record_dict(item) for item in self.round_refs],
@@ -1182,7 +1181,7 @@ class GeometryProposalLineage:
             {
                 "schema", "lineage_id", "status", "project_id", "run_id",
                 "base", "spatial_option_ref", "spatial_option_digest",
-                "candidate_program_digest", "required_commitment_refs",
+                "design_state_digest", "required_commitment_refs",
                 "provider_identity", "round_refs", "accepted_proposal_ref",
                 "accepted_proposal_digest", "proposal_only",
                 "hard_gate_authority", "canonical_write_authority",
@@ -1208,7 +1207,7 @@ class GeometryProposalLineage:
             base=_base_from_dict(payload["base"]),
             spatial_option_ref=_record_from_dict(payload["spatial_option_ref"]),
             spatial_option_digest=payload["spatial_option_digest"],
-            candidate_program_digest=payload["candidate_program_digest"],
+            design_state_digest=payload["design_state_digest"],
             required_commitment_refs=_strings_from_json(
                 payload["required_commitment_refs"], "required_commitment_refs"
             ),
@@ -1251,7 +1250,7 @@ async def produce_geometry_program_proposal(
     run: RunRef,
     destination: PersistenceDestination,
     spatial_option_ref: ProjectRecordRef,
-    projection: CandidateProgramProjection,
+    design_state: DevelopedDesignState,
     required_commitment_refs: tuple[str, ...],
     provider_identity: GeometryProposalProviderIdentity,
     policy: GeometryProposalPolicy,
@@ -1268,7 +1267,7 @@ async def produce_geometry_program_proposal(
         run,
         destination,
         spatial_option_ref,
-        projection,
+        design_state,
         required_commitment_refs,
         provider_identity,
         policy,
@@ -1276,9 +1275,12 @@ async def produce_geometry_program_proposal(
     )
     spatial_payload = repository.load_json(spatial_option_ref)
     spatial_option = SpatialOptionProposal.from_dict(spatial_payload)
-    if spatial_option.ref != projection.selected_option_ref:
+    if (
+        spatial_option
+        != design_state.selected_schematic.option.proposal
+    ):
         raise GeometryProposalProductionError(
-            "candidate projection does not select the supplied spatial option record"
+            "developed design state does not select the supplied spatial option record"
         )
     template_payloads = tuple(
         {"ref": _record_dict(ref), "payload": repository.load_json(ref)}
@@ -1287,14 +1289,11 @@ async def produce_geometry_program_proposal(
     allowed_template_uris = frozenset(ref.uri for ref in template_refs)
     available_interface_refs = _available_interface_refs(
         spatial_option,
-        projection,
     )
     expected_predecessor_program_digest = (
         None if prior_program is None else prior_program.program_digest
     )
-    required_hosted_component_bindings = _hosted_component_requirements(
-        projection
-    )
+    required_hosted_component_bindings: tuple[dict[str, object], ...] = ()
     exact_realization_requirements = _realization_requirements(
         realization_requirements
     )
@@ -1317,7 +1316,7 @@ async def produce_geometry_program_proposal(
         request_payload = _request_payload(
             spatial_option_ref,
             spatial_option,
-            projection,
+            design_state,
             required_commitment_refs,
             template_payloads,
             repair_issues,
@@ -1330,7 +1329,7 @@ async def produce_geometry_program_proposal(
         request = ModelInvocationRequest.create(
             request_id=f"geometry-proposal-{run.run_id}-{round_index:02d}",
             phase=ModelPhase.ACTION_PROPOSAL,
-            checkpoint_digest=projection.projection_digest,
+            checkpoint_digest=design_state.state_digest,
             context_digest=_digest(request_payload),
             payload=request_payload,
         )
@@ -1372,18 +1371,18 @@ async def produce_geometry_program_proposal(
                     raise GeometryProposalProductionError(
                         "model selected a template outside the supplied project records"
                     )
-                proposal = _proposal_from_body(body, projection)
+                proposal = _proposal_from_body(body, design_state)
                 _validate_function_contracts(proposal)
                 _validate_semantic_coverage(
                     proposal,
-                    projection,
+                    design_state,
                     required_commitment_refs,
                     spatial_option_ref,
                     available_interface_refs,
                     required_hosted_component_bindings,
                 )
                 compilation = compile_geometry_program(
-                    projection,
+                    design_state,
                     proposal,
                     active_commitment_refs=required_commitment_refs,
                     available_asset_digests=assets,
@@ -1410,7 +1409,7 @@ async def produce_geometry_program_proposal(
             round_index=round_index,
             status=round_status,
             spatial_option_ref=spatial_option_ref,
-            candidate_program_digest=projection.projection_digest,
+            design_state_digest=design_state.state_digest,
             request=request,
             model_receipt=receipt,
             selected_template_refs=selected_templates,
@@ -1450,7 +1449,7 @@ async def produce_geometry_program_proposal(
                 GeometryProposalStatus.ACCEPTED,
                 spatial_option_ref,
                 spatial_option.proposal_digest,
-                projection,
+                design_state,
                 required_commitment_refs,
                 provider_identity,
                 tuple(round_refs),
@@ -1473,7 +1472,7 @@ async def produce_geometry_program_proposal(
                 GeometryProposalStatus.REFUSED,
                 spatial_option_ref,
                 spatial_option.proposal_digest,
-                projection,
+                design_state,
                 required_commitment_refs,
                 provider_identity,
                 tuple(round_refs),
@@ -1497,7 +1496,7 @@ async def produce_geometry_program_proposal(
         GeometryProposalStatus.EXHAUSTED,
         spatial_option_ref,
         spatial_option.proposal_digest,
-        projection,
+        design_state,
         required_commitment_refs,
         provider_identity,
         tuple(round_refs),
@@ -1526,7 +1525,7 @@ def load_geometry_proposal_lineage(
     if tuple(item.round_index for item in rounds) != tuple(range(1, len(rounds) + 1)):
         raise GeometryProposalProductionError("proposal round lineage is not contiguous")
     if any(
-        item.candidate_program_digest != lineage.candidate_program_digest
+        item.design_state_digest != lineage.design_state_digest
         or item.spatial_option_ref != lineage.spatial_option_ref
         for item in rounds
     ):
@@ -1537,7 +1536,7 @@ def load_geometry_proposal_lineage(
         proposal = _proposal_from_record(proposal_payload)
         if proposal.proposal_digest != lineage.accepted_proposal_digest:
             raise GeometryProposalProductionError("accepted proposal digest drifted")
-        if proposal.candidate_program_digest != lineage.candidate_program_digest:
+        if proposal.design_state_digest != lineage.design_state_digest:
             raise GeometryProposalProductionError("accepted proposal base drifted")
     return LoadedGeometryProposalLineage(lineage, rounds, proposal)
 
@@ -1546,24 +1545,29 @@ def _validate_inputs(
     run: RunRef,
     destination: PersistenceDestination,
     spatial_option_ref: ProjectRecordRef,
-    projection: CandidateProgramProjection,
+    design_state: DevelopedDesignState,
     commitment_refs: tuple[str, ...],
     provider_identity: GeometryProposalProviderIdentity,
     policy: GeometryProposalPolicy,
     template_refs: tuple[ProjectRecordRef, ...],
 ) -> None:
-    if not isinstance(run, RunRef) or not isinstance(projection, CandidateProgramProjection):
-        raise TypeError("run and projection must be typed values")
+    if not isinstance(run, RunRef) or not isinstance(
+        design_state,
+        DevelopedDesignState,
+    ):
+        raise TypeError("run and design_state must be typed values")
     if destination.area is not PersistenceArea.RUN_RECORD or destination.run_id != run.run_id:
         raise GeometryProposalProductionError(
             "geometry proposals require the assigned run-record destination"
         )
     if (
-        projection.project_id != run.project_id
-        or projection.run_id != run.run_id
-        or projection.base != run.base
+        design_state.project_id != run.project_id
+        or design_state.run_id != run.run_id
+        or design_state.base != run.base
     ):
-        raise GeometryProposalProductionError("projection and run are not exact-base peers")
+        raise GeometryProposalProductionError(
+            "design state and run are not exact-base peers"
+        )
     if spatial_option_ref.project_id != run.project_id:
         raise GeometryProposalProductionError("spatial option crosses project boundary")
     _strings(commitment_refs, "required_commitment_refs")
@@ -1584,7 +1588,7 @@ def _validate_inputs(
 def _request_payload(
     spatial_ref: ProjectRecordRef,
     spatial: SpatialOptionProposal,
-    projection: CandidateProgramProjection,
+    design_state: DevelopedDesignState,
     commitments: tuple[str, ...],
     templates: tuple[dict[str, object], ...],
     repair_issues: tuple[GeometryProposalIssue, ...],
@@ -1600,7 +1604,7 @@ def _request_payload(
             "ref": _record_dict(spatial_ref),
             "proposal": spatial.to_dict(),
         },
-        "candidate_program": projection.to_dict(),
+        "developed_design_state": design_state.to_dict(),
         "available_predecessor_program_digest": (
             expected_predecessor_program_digest
         ),
@@ -1637,14 +1641,14 @@ def _request_payload(
             realization_contract=realization_contract,
         ),
         "instructions": [
-            "Author geometry only from supplied project records and candidate values.",
+            "Author geometry only from the supplied design state and project records.",
             "When available_predecessor_program is present, revise that exact geometry program instead of redrawing from scratch: preserve stable identities, copy its digest to predecessor_program_digest, add exact revision preconditions for changed retained objects, exact retirements for removed objects, and dependency responses required by the compiler.",
             "Return exactly the keys and nested field shapes in required_output_contract.json_schema; do not invent aliases such as geometry_nodes or geometry_functions.",
             "Use only declared geometry function kinds and explicit parameters.",
             "For every operation parameter, copy kind from geometry_function_contracts[kind].parameters[*].kind; semantic choices such as polyline, bezier, or fixed belong in canonical value_json and are never parameter kind values.",
             "Use geometry_coordinate_convention exactly: Y is vertical up, XZ is the horizontal footprint plane, every vector is [x,y,z], solid origin[1] is elevation, and solid size[1] is height. Never reinterpret Z as vertical.",
             "GeometryParameter.value_json is canonical compact JSON encoded as a string, not a nested JSON value.",
-            "Bind every candidate value and required commitment through semantic bindings.",
+            "Bind every realized geometry object to exactly one supplied semantic component_id; never infer identity from labels or screenshots.",
             "Include the spatial option record URI in every semantic binding evidence_refs.",
             "Every assembly interface_refs value must be selected exactly from available_interface_refs.refs and match available_interface_refs.pattern.",
             "When a supplied semantic component requires a hosted assembly, represent its semantic identity and geometry together through semantic_binding_ids and typed assembly members.",
@@ -1684,21 +1688,28 @@ def _authoring_output(value: object) -> tuple[tuple[str, ...], Mapping[str, Any]
 
 def _validate_semantic_coverage(
     proposal: GeometryProgramProposal,
-    projection: CandidateProgramProjection,
+    design_state: DevelopedDesignState,
     commitments: tuple[str, ...],
     spatial_ref: ProjectRecordRef,
     available_interface_refs: tuple[str, ...],
     required_hosted_component_bindings: tuple[dict[str, object], ...],
 ) -> None:
-    candidate_ids = {item.value_id for item in projection.values}
-    bound_candidate_ids = {
-        value_id for binding in proposal.semantic_bindings for value_id in binding.candidate_value_ids
+    component_ids = {
+        item.component_id
+        for item in design_state.selected_schematic.option.proposal.components
     }
-    if bound_candidate_ids != candidate_ids:
-        missing = sorted(candidate_ids - bound_candidate_ids)
-        extra = sorted(bound_candidate_ids - candidate_ids)
+    bound_component_ids = tuple(
+        binding.component_id for binding in proposal.semantic_bindings
+    )
+    extra = sorted(set(bound_component_ids) - component_ids)
+    if extra:
         raise GeometryProposalProductionError(
-            f"semantic bindings do not exactly cover candidate values; missing={missing}, extra={extra}"
+            "semantic bindings name components absent from the selected "
+            f"design state; extra={extra}"
+        )
+    if len(bound_component_ids) != len(set(bound_component_ids)):
+        raise GeometryProposalProductionError(
+            "each semantic component may own at most one geometry binding"
         )
     bound_commitments = {
         ref for binding in proposal.semantic_bindings for ref in binding.commitment_refs
@@ -1784,18 +1795,17 @@ def _validate_hosted_component_bindings(
     }
     claimed_member_objects: set[str] = set()
     for requirement in requirements:
-        value_id = str(requirement["candidate_value_id"])
         component_id = str(requirement["component_id"])
         assembly_kind = AssemblyKind(str(requirement["assembly_kind"]))
         dedicated = [
             binding
             for binding in proposal.semantic_bindings
-            if binding.candidate_value_ids == (value_id,)
+            if binding.component_id == component_id
         ]
         if len(dedicated) != 1:
             raise GeometryProposalProductionError(
                 f"hosted component {component_id} requires exactly one "
-                f"dedicated semantic binding with candidate_value_ids=['{value_id}']"
+                "dedicated semantic binding with that component_id"
             )
         binding = dedicated[0]
         assemblies = [
@@ -1868,47 +1878,8 @@ def _validate_host_cut_apertures(
             )
 
 
-def _hosted_component_requirements(
-    projection: CandidateProgramProjection,
-) -> tuple[dict[str, object], ...]:
-    requirements: list[dict[str, object]] = []
-    for value in projection.values:
-        decoded = value.decoded_value
-        if not isinstance(decoded, dict) or "component_id" not in decoded:
-            continue
-        assembly_value = decoded.get("assembly_kind")
-        if assembly_value is None:
-            continue
-        component_id = decoded["component_id"]
-        if not isinstance(component_id, str) or not component_id:
-            raise GeometryProposalProductionError(
-                f"candidate value {value.value_id} has an invalid component_id"
-            )
-        try:
-            assembly_kind = AssemblyKind(assembly_value)
-        except (TypeError, ValueError) as exc:
-            raise GeometryProposalProductionError(
-                f"candidate value {value.value_id} has an invalid assembly_kind"
-            ) from exc
-        requirements.append(
-            {
-                "schema": "HostedSemanticComponentBindingRequirement@1",
-                "candidate_value_id": value.value_id,
-                "component_id": component_id,
-                "assembly_kind": assembly_kind.value,
-                "interface_ref": value.ref,
-                "dedicated_binding_count": 1,
-                "matching_assembly_count": 1,
-            }
-        )
-    return tuple(
-        sorted(requirements, key=lambda item: str(item["candidate_value_id"]))
-    )
-
-
 def _available_interface_refs(
     spatial: SpatialOptionProposal,
-    projection: CandidateProgramProjection,
 ) -> tuple[str, ...]:
     """Return only interface facts already present in supplied records."""
 
@@ -1920,13 +1891,6 @@ def _available_interface_refs(
                     for connection in spatial.connections
                     for ref in connection.relationship_refs
                 ),
-                *(
-                    value.ref
-                    for value in projection.values
-                    if isinstance(value.decoded_value, dict)
-                    and "component_id" in value.decoded_value
-                    and value.decoded_value.get("assembly_kind") is not None
-                ),
             }
         )
     )
@@ -1934,7 +1898,7 @@ def _available_interface_refs(
 
 def _proposal_from_body(
     value: Mapping[str, Any],
-    projection: CandidateProgramProjection,
+    design_state: DevelopedDesignState,
 ) -> GeometryProgramProposal:
     _exact(
         value,
@@ -1947,7 +1911,13 @@ def _proposal_from_body(
     )
     if value["schema"] != _PROPOSAL_BODY_SCHEMA:
         raise GeometryProposalProductionError("geometry proposal body schema changed")
-    return _construct_proposal(value, projection.project_id, projection.run_id, projection.base, projection.projection_digest)
+    return _construct_proposal(
+        value,
+        design_state.project_id,
+        design_state.run_id,
+        design_state.base,
+        design_state.state_digest,
+    )
 
 
 def _construct_proposal(
@@ -1955,7 +1925,7 @@ def _construct_proposal(
     project_id: str,
     run_id: str,
     base: ProjectVersionRef,
-    candidate_digest: str,
+    design_state_digest: str,
 ) -> GeometryProgramProposal:
     tolerance = _mapping(value["tolerance"], "geometry tolerance")
     _exact(tolerance, {"schema", "linear", "angular_radians"}, "geometry tolerance")
@@ -1966,7 +1936,7 @@ def _construct_proposal(
         project_id=project_id,
         run_id=run_id,
         base=base,
-        candidate_program_digest=candidate_digest,
+        design_state_digest=design_state_digest,
         predecessor_program_digest=value["predecessor_program_digest"],
         length_unit=LengthUnit(value["length_unit"]),
         tolerance=GeometryTolerance(tolerance["linear"], tolerance["angular_radians"]),
@@ -2018,13 +1988,13 @@ def _parameter(value: object) -> GeometryParameter:
 
 def _binding(value: object) -> SemanticBinding:
     payload = _mapping(value, "semantic binding")
-    _exact(payload, {"schema", "binding_id", "object_ids", "candidate_value_ids", "commitment_refs", "evidence_refs"}, "semantic binding")
+    _exact(payload, {"schema", "binding_id", "component_id", "object_ids", "commitment_refs", "evidence_refs"}, "semantic binding")
     if payload["schema"] != SemanticBinding.SCHEMA:
         raise GeometryProposalProductionError("semantic binding schema changed")
     return SemanticBinding(
         binding_id=payload["binding_id"],
+        component_id=payload["component_id"],
         object_ids=_strings_from_json(payload["object_ids"], "binding object_ids"),
-        candidate_value_ids=_strings_from_json(payload["candidate_value_ids"], "candidate_value_ids"),
         commitment_refs=_strings_from_json(payload["commitment_refs"], "commitment_refs"),
         evidence_refs=_strings_from_json(payload["evidence_refs"], "evidence_refs"),
     )
@@ -2164,7 +2134,7 @@ def _proposal_from_record(value: object) -> GeometryProgramProposal:
     ):
         raise GeometryProposalProductionError("geometry proposal record acquired forbidden authority")
     proposal = _mapping(payload["proposal"], "geometry proposal")
-    _exact(proposal, {"schema", "proposal_id", "project_id", "run_id", "base", "candidate_program_digest", "predecessor_program_digest", "length_unit", "tolerance", "frames", "assets", "semantic_bindings", "operations", "assemblies", "revisions", "retirements", "generation_authority", "hard_gate_authority", "canonical_write_authority"}, "geometry proposal")
+    _exact(proposal, {"schema", "proposal_id", "project_id", "run_id", "base", "design_state_digest", "predecessor_program_digest", "length_unit", "tolerance", "frames", "assets", "semantic_bindings", "operations", "assemblies", "revisions", "retirements", "generation_authority", "hard_gate_authority", "canonical_write_authority"}, "geometry proposal")
     if (
         proposal["schema"] != GeometryProgramProposal.SCHEMA
         or proposal["generation_authority"] is not False
@@ -2178,7 +2148,7 @@ def _proposal_from_record(value: object) -> GeometryProgramProposal:
         proposal["project_id"],
         proposal["run_id"],
         _base_from_dict(proposal["base"]),
-        proposal["candidate_program_digest"],
+        proposal["design_state_digest"],
     )
 
 
@@ -2203,7 +2173,7 @@ def _persist_lineage(
     status: GeometryProposalStatus,
     spatial_ref: ProjectRecordRef,
     spatial_digest: str,
-    projection: CandidateProgramProjection,
+    design_state: DevelopedDesignState,
     commitments: tuple[str, ...],
     identity: GeometryProposalProviderIdentity,
     round_refs: tuple[ProjectRecordRef, ...],
@@ -2211,14 +2181,14 @@ def _persist_lineage(
     proposal_digest: str | None,
 ) -> ProjectRecordRef:
     lineage = GeometryProposalLineage(
-        lineage_id=f"geometry-proposal-lineage-{projection.projection_digest[:20]}",
+        lineage_id=f"geometry-proposal-lineage-{design_state.state_digest[:20]}",
         status=status,
         project_id=run.project_id,
         run_id=run.run_id,
         base=run.base,
         spatial_option_ref=spatial_ref,
         spatial_option_digest=spatial_digest,
-        candidate_program_digest=projection.projection_digest,
+        design_state_digest=design_state.state_digest,
         required_commitment_refs=commitments,
         provider_identity=identity,
         round_refs=round_refs,

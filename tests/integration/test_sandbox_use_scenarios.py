@@ -31,13 +31,13 @@ from archflow.validation.use_scenarios import (
     VerticalCirculationEvidence,
 )
 from archflow.validation.usability import UseZoneEvidence
-from tests.test_geometry_compiler import COMMITMENT, EVIDENCE, _projection
+from tests.test_geometry_compiler import COMMITMENT, EVIDENCE, _state
 from tests.test_sandbox_realization import _boolean, _curve, _solid
 from tests.test_usability_validation import program_with
 
 
 def _compiled_multilevel():
-    projection = _projection()
+    design_state = _state()
     operations = (
         _solid("clearance", "clearance", [0, 1, 1], [2, 2, 1]),
         _curve("frame", "frame", [[0, 1, 1], [0, 3, 1]]),
@@ -74,10 +74,10 @@ def _compiled_multilevel():
     )
     proposal = GeometryProgramProposal(
         proposal_id="multilevel-sandbox",
-        project_id=projection.project_id,
-        run_id=projection.run_id,
-        base=projection.base,
-        candidate_program_digest=projection.projection_digest,
+        project_id=design_state.project_id,
+        run_id=design_state.run_id,
+        base=design_state.base,
+        design_state_digest=design_state.state_digest,
         predecessor_program_digest=None,
         length_unit=LengthUnit.METER,
         tolerance=GeometryTolerance(0.001, 0.001),
@@ -93,8 +93,8 @@ def _compiled_multilevel():
         semantic_bindings=(
             SemanticBinding(
                 binding_id="room-binding",
+                component_id="building",
                 object_ids=object_ids,
-                candidate_value_ids=("dimension", "topology"),
                 commitment_refs=(COMMITMENT,),
                 evidence_refs=(EVIDENCE,),
             ),
@@ -120,20 +120,20 @@ def _compiled_multilevel():
         ),
     )
     result = compile_geometry_program(
-        projection,
+        design_state,
         proposal,
         active_commitment_refs=(COMMITMENT,),
     )
     if result.program is None:
         raise AssertionError(result.receipt.issues)
-    return projection, result.program
+    return design_state, result.program
 
 
 class SandboxUseScenarioIntegrationTests(unittest.TestCase):
     def test_exact_sandbox_vertical_route_passes_and_isolated_red_fails(
         self,
     ) -> None:
-        projection, geometry_program = _compiled_multilevel()
+        design_state, geometry_program = _compiled_multilevel()
         realized = realize_geometry(
             geometry_program,
             workspace_id="sandbox-workspace",
@@ -156,7 +156,7 @@ class SandboxUseScenarioIntegrationTests(unittest.TestCase):
             binding_id="p048-sandbox-observation",
             program=program,
             observation=observation,
-            candidate_program_digest=projection.projection_digest,
+            design_state_digest=design_state.state_digest,
             geometry_program_digest=geometry_program.program_digest,
             realization_receipt_digest=realized.receipt.receipt_digest,
             evidence_refs=(
@@ -208,7 +208,7 @@ class SandboxUseScenarioIntegrationTests(unittest.TestCase):
                     observation,
                     zones,
                     observation_binding=binding,
-                    candidate_program_digest=projection.projection_digest,
+                    design_state_digest=design_state.state_digest,
                     geometry_program_digest=geometry_program.program_digest,
                     realization_receipt_digest=(
                         realized.receipt.receipt_digest
@@ -226,7 +226,7 @@ class SandboxUseScenarioIntegrationTests(unittest.TestCase):
                     observation,
                     zones,
                     observation_binding=binding,
-                    candidate_program_digest=projection.projection_digest,
+                    design_state_digest=design_state.state_digest,
                     geometry_program_digest=geometry_program.program_digest,
                     realization_receipt_digest=(
                         realized.receipt.receipt_digest

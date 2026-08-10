@@ -10,7 +10,7 @@
   },
   "modules": {
     "state": "design_brief_commitment_transition_and_markov_state_proven",
-    "runtime": "prompt_to_accepted_sandbox_gold_proven",
+    "runtime": "unified_semantic_geometry_candidate_path_proven",
     "workspace": "p1_proven",
     "capabilities": "state_responsive_experts_and_retrieval_proven",
     "submission": "obligation_repair_proven",
@@ -91,10 +91,11 @@
         "P024",
         "P047",
         "P048",
-        "P026"
+        "P026",
+        "P051"
       ],
       "open_cards": [],
-      "gap": "Schematic alternatives selected-branch design development candidate assembly typed platform-neutral geometry compilation deterministic sandbox realization and one accepted raw-request-to-usable-building Gold are proven."
+      "gap": "Schematic alternatives, selected-branch coordination, stable semantic component identity, progressive refinement, and direct candidate assembly from the developed design state are proven."
     },
     {
       "id": "L4",
@@ -161,13 +162,14 @@
         "P049",
         "P050",
         "M024",
-        "P026"
+        "P026",
+        "P051"
       ],
       "open_cards": [
         "P027",
         "P038"
       ],
-      "gap": "Typed neutral geometry compilation stable dependency-bound object identity hosted assemblies provenance-bound assets deterministic hybrid-scene realization exact-source-derived sandbox observation five-view rendering source-bound use-scenario validation and one accepted prompt-to-usable building Gold are proven; uneven terrain adaptation remains P027 and Pantheon-scale longitudinal evidence remains P038."
+      "gap": "Direct component-to-geometry binding and deterministic sandbox realization are proven; P027 remains responsible for uneven-terrain adaptation and P038 for Pantheon-scale longitudinal evidence."
     },
     {
       "id": "L8",
@@ -186,7 +188,7 @@
     {
       "id": "L9",
       "name": "Instance-answer isolation",
-      "status": "partial",
+      "status": "proven",
       "responsibility": "Keep dimensions, rooms, topology, palette, and coordinates inside one building derivation.",
       "evidence_cards": [
         "M002",
@@ -195,10 +197,11 @@
         "P020",
         "P021",
         "P023",
-        "P024"
+        "P024",
+        "P051"
       ],
       "open_cards": [],
-      "gap": "Brief, program, and spatial alternatives are reusable and instance-safe; candidate realization must preserve the same boundary in downstream P024."
+      "gap": "Brief, program, spatial, component, candidate, and geometry records remain building-scoped with no duplicate candidate projection or framework-owned instance answer path."
     },
     {
       "id": "L10",
@@ -374,7 +377,8 @@
         "P023",
         "P033",
         "P040",
-        "P024"
+        "P024",
+        "P051"
       ],
       "purpose": "Derive one building through ordered maturity gates without writing its dimensions, rooms, topology, or discipline answers into the framework."
     },
@@ -401,6 +405,7 @@
         "P047",
         "P048",
         "P026",
+        "P051",
         "P038"
       ],
       "purpose": "Keep probes as thin building-run callers while the framework derives project answers compiles neutral geometry validates the sandbox artifact and owns no instance defaults."
@@ -480,6 +485,7 @@
         "M024",
         "P026",
         "P027",
+        "P051",
         "P038"
       ],
       "purpose": "Compile Architect semantics into generic geometry operations typed assemblies and provenance-bound assets then validate render repair and accept the building without an external platform."
@@ -2847,7 +2853,8 @@
       "depends_on": [
         "P026",
         "P031",
-        "P033"
+        "P033",
+        "P051"
       ],
       "write_scope": [
         "probes/test_pantheon/",
@@ -5751,6 +5758,133 @@
         ]
       },
       "completed_on": "2026-08-03"
+    },
+    {
+      "id": "P051",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Unify semantic component identity and progressive geometry while deleting the flat candidate projection and P026-only semantic bypass.",
+      "depends_on": [
+        "P022",
+        "P023",
+        "P024",
+        "P040",
+        "P047",
+        "P050",
+        "P053"
+      ],
+      "write_scope": [
+        "archflow/state/",
+        "archflow/capabilities/",
+        "archflow/runtime/",
+        "archflow/realization/",
+        "archflow/validation/",
+        "tests/",
+        "probes/p026-sandbox-gold/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "One component tree owns stable ids parent-child semantics maturity unresolved children evidence and coarse volume relations.",
+        "P022 remains the control tree while P040 developments reference the same component identities.",
+        "Geometry bindings name component ids directly and every generated object has one owner.",
+        "Same-id staged expansion adds child geometry and invalidates only its dependency closure.",
+        "CandidateProgramProjection candidate-value bindings and the P026-only semantic-components production path are removed.",
+        "Candidate geometry validation inspection and realization consume real design records directly.",
+        "Historical P026 data cannot become a production fallback or second schema authority.",
+        "P036 and P053 authority boundaries remain unchanged."
+      ],
+      "tests": [
+        "Coarse to schematic to detailed component expansion",
+        "Sibling preservation and local invalidation",
+        "Invalid tree ownership revision and retirement rejection",
+        "Real-state candidate and geometry compilation without projection",
+        "Static bypass absence",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_semantic_geometry_tree",
+          "tests.test_geometry_compiler",
+          "tests.test_geometry_proposal_producer",
+          "tests.test_candidate_assembly"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/P051-unified-progressive-semantic-geometry.md",
+      "evidence": [
+        "Unified selected schematic DesignComponent identities with coarse volume ownership and progressive same-id transitions; candidate assembly and geometry proposal/compiler now consume DevelopedDesignState directly; deleted CandidateProgramProjection, its validator, and the P026 sandbox_gold semantic-components runtime bypass; old P026 records fail closed as historical data only; 436 tests passed with 2 skips, compileall passed, architecture firewall passed 100 files, P051 scope passed 34 paths, git diff check passed, and the P051 verification receipt passed all 3 commands."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P051",
+        "actor": "Codex",
+        "verified_at": "2026-08-10T02:05:15.744524+00:00",
+        "contract_sha256": "db4e86d1e7f1e55cd453843ddda8a0ce1c19c2cf4f5c5c6868b1e84c5e9d2881",
+        "scope_sha256": "c3ea890c55cf785be2d58d1a9110286a40b802c242bb7ba7ff6b04c0fab10794",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_semantic_geometry_tree",
+              "tests.test_geometry_compiler",
+              "tests.test_geometry_proposal_producer",
+              "tests.test_candidate_assembly"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "7f2ca83929e51f601830d846c77af723538c7000ce8c5cdc8a264d2a31ef6e47",
+            "stdout_tail": "",
+            "stderr_tail": ".........................................\n----------------------------------------------------------------------\nRan 41 tests in 2.735s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "71126f6d7cbdc2b370a7ef75e7ef97747d200d968a5926d3be33bce33bea6994",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (100 files, 0.544s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "92e02cc902b3f05b7bfcde339fd10ec5759960f3e1e846d70c20fa5174787f91",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s.................................................................................................................................................................................................................................................Executing <Task finished name='Task-129' coro=<GeometryProposalProducerTests.test_unsorted_keyed_objects_are_canonicalized() done, defined at D:\\ARCHFLOW_V4\\tests\\test_geometry_proposal_producer.py:693> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.500 seconds\n..........................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 436 tests in 133.921s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
     },
     {
       "id": "P052",

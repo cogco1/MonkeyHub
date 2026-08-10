@@ -7,6 +7,7 @@ import unittest
 
 from archflow.capabilities.geometry_proposal import (
     _authoring_output_contract,
+    GeometryProposalProductionError,
     load_geometry_proposal_lineage,
 )
 from archflow.project import ProjectRecordRef
@@ -79,19 +80,14 @@ class GeometryProposalReferenceContractTests(unittest.TestCase):
         (PROBE_ROOT / RUN_007_LINEAGE.relative_path).exists(),
         "run gold-agent-cli-007 probe records are not present",
     )
-    def test_pre_contract_run_007_lineage_reloads_without_rewrite(self) -> None:
-        loaded = load_geometry_proposal_lineage(
-            _ReadOnlyProbeRepository(PROBE_ROOT),
-            RUN_007_LINEAGE,
-        )
-
-        self.assertEqual(loaded.lineage.status.value, "exhausted")
-        self.assertEqual(len(loaded.rounds), 2)
-        self.assertIsNone(loaded.proposal)
-        for round_receipt in loaded.rounds:
-            self.assertNotIn(
-                "available_interface_refs",
-                round_receipt.request.payload,
+    def test_pre_contract_run_007_is_historical_data_only(self) -> None:
+        with self.assertRaisesRegex(
+            GeometryProposalProductionError,
+            "design_state_digest",
+        ):
+            load_geometry_proposal_lineage(
+                _ReadOnlyProbeRepository(PROBE_ROOT),
+                RUN_007_LINEAGE,
             )
 
 

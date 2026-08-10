@@ -28,6 +28,8 @@ from archflow.project import (
 )
 from archflow.realization import realize_geometry
 from archflow.state import (
+    ComponentMaturity,
+    DesignComponent,
     MassingVolume,
     SiteBounds,
     SpatialGridBasis,
@@ -40,10 +42,6 @@ from archflow.state.geometry_program import (
     AssemblyKind,
     GeometryOperationKind,
     required_assembly_roles,
-)
-from archflow.state.candidate_program import (
-    CandidateProgramValue,
-    CandidateValueFacet,
 )
 from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from tests.test_sandbox_realization import compiled_room
@@ -147,6 +145,41 @@ def _spatial_option() -> SpatialOptionProposal:
                 evidence,
             ),
         ),
+        components=(
+            DesignComponent(
+                component_id="building",
+                parent_component_id=None,
+                semantic_kind="building",
+                intent="Own the selected schematic massing.",
+                maturity=ComponentMaturity.SCHEMATIC,
+                revision=0,
+                volume_ids=("main-volume",),
+                unresolved_child_roles=(),
+                source_refs=evidence,
+            ),
+            DesignComponent(
+                component_id="primary-support",
+                parent_component_id="building",
+                semantic_kind="structural-support",
+                intent="Carry the selected schematic massing.",
+                maturity=ComponentMaturity.SCHEMATIC,
+                revision=0,
+                volume_ids=(),
+                unresolved_child_roles=(),
+                source_refs=evidence,
+            ),
+            DesignComponent(
+                component_id="primary-surface",
+                parent_component_id="building",
+                semantic_kind="enclosure-surface",
+                intent="Resolve the selected schematic envelope.",
+                maturity=ComponentMaturity.SCHEMATIC,
+                revision=0,
+                volume_ids=(),
+                unresolved_child_roles=(),
+                source_refs=evidence,
+            ),
+        ),
         connections=(
             SpatialConnection(
                 connection_id="outside-to-room",
@@ -189,30 +222,32 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             record_kind="spatial-option",
             payload=self.option.to_dict(),
         )
-        original_projection, original_program, _ = compiled_room()
-        values = tuple(
-            replace(item, derivation_refs=(self.option.ref,))
-            for item in original_projection.values
-        )
-        self.projection = replace(
-            original_projection,
-            base=self.run.base,
-            selected_option_ref=self.option.ref,
-            values=values,
+        original_state, original_program, _ = compiled_room()
+        self.design_state = replace(
+            original_state,
+            selected_schematic=replace(
+                original_state.selected_schematic,
+                project_id=self.run.project_id,
+                run_id=self.run.run_id,
+                base=self.run.base,
+                option=replace(
+                    original_state.selected_schematic.option,
+                    proposal=self.option,
+                ),
+            ),
         )
         original_binding = original_program.proposal.semantic_bindings[0]
         binding = replace(
             original_binding,
-            candidate_value_ids=tuple(
-                item.value_id for item in self.projection.values
-            ),
             commitment_refs=(COMMITMENT,),
             evidence_refs=(EVIDENCE, self.option_ref.uri),
         )
         self.proposal = replace(
             original_program.proposal,
+            project_id=self.run.project_id,
+            run_id=self.run.run_id,
             base=self.run.base,
-            candidate_program_digest=self.projection.projection_digest,
+            design_state_digest=self.design_state.state_digest,
             semantic_bindings=(binding,),
         )
 
@@ -230,7 +265,7 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             run=self.run,
             destination=self.destination,
             spatial_option_ref=self.option_ref,
-            projection=self.projection,
+            design_state=self.design_state,
             required_commitment_refs=(COMMITMENT,),
             provider_identity=IDENTITY,
             policy=GeometryProposalPolicy(rounds),
@@ -495,92 +530,26 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             loaded.rounds[0].issues[0].detail,
         )
 
-    async def test_hosted_component_requires_dedicated_binding(self) -> None:
-        component = CandidateProgramValue.create(
-            value_id="semantic-component-entry-door",
-            facet=CandidateValueFacet.FUNCTION,
-            value={
-                "component_id": "entry-door",
-                "assembly_kind": "door",
-                "semantic_kind": "primary-entrance",
-            },
-            source_refs=(EVIDENCE,),
-            derivation_refs=(self.option.ref,),
-        )
-        self.projection = replace(
-            self.projection,
-            values=tuple(
-                sorted(
-                    (*self.projection.values, component),
-                    key=lambda item: item.value_id,
-                )
-            ),
-        )
-        aggregate = replace(
-            self.proposal.semantic_bindings[0],
-            candidate_value_ids=tuple(
-                sorted(
-                    (
-                        *self.proposal.semantic_bindings[0].candidate_value_ids,
-                        component.value_id,
-                    )
-                )
-            ),
-        )
-        proposal = replace(
-            self.proposal,
-            candidate_program_digest=self.projection.projection_digest,
-            semantic_bindings=(aggregate,),
-        )
-        provider = _ScriptedProvider((proposal_authoring_output(proposal),))
-        result = await self._produce(provider, rounds=1)
-
-        requirement = provider.requests[0].payload[
-            "required_hosted_component_bindings"
-        ]
-        self.assertEqual(
-            requirement,
-            [
-                {
-                    "schema": "HostedSemanticComponentBindingRequirement@1",
-                    "candidate_value_id": component.value_id,
-                    "component_id": "entry-door",
-                    "assembly_kind": "door",
-                    "interface_ref": component.ref,
-                    "dedicated_binding_count": 1,
-                    "matching_assembly_count": 1,
-                }
-            ],
-        )
-        self.assertEqual(
-            provider.requests[0].payload["required_output_contract"][
-                "required_hosted_component_bindings"
-            ],
-            requirement,
-        )
-        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
-        loaded = load_geometry_proposal_lineage(
-            self.repository,
-            result.lineage_ref,
-        )
-        self.assertEqual(
-            loaded.rounds[0].issues[0].code,
-            "malformed_model_output",
-        )
-        self.assertIn(
-            "requires exactly one dedicated semantic binding",
-            loaded.rounds[0].issues[0].detail,
-        )
-
-    async def test_ordinary_values_publish_no_hosted_component_requirement(self) -> None:
+    async def test_components_are_supplied_directly_without_projection_rules(
+        self,
+    ) -> None:
         provider = _ScriptedProvider((proposal_authoring_output(self.proposal),))
         result = await self._produce(provider, rounds=1)
 
         self.assertIs(result.status, GeometryProposalStatus.ACCEPTED)
+        payload = provider.requests[0].payload
+        self.assertNotIn("candidate_program", payload)
         self.assertEqual(
-            provider.requests[0].payload[
-                "required_hosted_component_bindings"
-            ],
+            {
+                item["component_id"]
+                for item in payload["developed_design_state"][
+                    "selected_schematic"
+                ]["option"]["proposal"]["components"]
+            },
+            {"building", "primary-support", "primary-surface"},
+        )
+        self.assertEqual(
+            payload["required_hosted_component_bindings"],
             [],
         )
 
@@ -696,9 +665,7 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             _canonical_json(proposal_authoring_output(self.proposal))
         )
         binding = unsorted["proposal_body"]["semantic_bindings"][0]
-        binding["candidate_value_ids"] = list(
-            reversed(binding["candidate_value_ids"])
-        )
+        binding["object_ids"] = list(reversed(binding["object_ids"]))
         binding["evidence_refs"] = list(reversed(binding["evidence_refs"]))
         operation = next(
             item
@@ -715,8 +682,8 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
         assert result.proposal is not None
         decoded_binding = result.proposal.semantic_bindings[0]
         self.assertEqual(
-            decoded_binding.candidate_value_ids,
-            tuple(sorted(decoded_binding.candidate_value_ids)),
+            decoded_binding.object_ids,
+            tuple(sorted(decoded_binding.object_ids)),
         )
         self.assertEqual(
             decoded_binding.evidence_refs,

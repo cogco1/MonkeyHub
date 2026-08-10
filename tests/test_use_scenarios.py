@@ -36,7 +36,7 @@ def _binding(program, observation) -> ScenarioObservationBinding:
         binding_id="sandbox-observation-binding",
         program=program,
         observation=observation,
-        candidate_program_digest="c" * 64,
+        design_state_digest="c" * 64,
         geometry_program_digest="d" * 64,
         realization_receipt_digest="e" * 64,
         evidence_refs=("receipt:sandbox-realization",),
@@ -49,7 +49,7 @@ def _validator(program, observation, zones) -> UseScenarioValidator:
         observation,
         zones,
         observation_binding=_binding(program, observation),
-        candidate_program_digest="c" * 64,
+        design_state_digest="c" * 64,
         geometry_program_digest="d" * 64,
         realization_receipt_digest="e" * 64,
     )
@@ -220,7 +220,7 @@ class UseScenarioTests(unittest.TestCase):
             self.observation,
             (_zone("main_room"),),
             observation_binding=binding,
-            candidate_program_digest="c" * 64,
+            design_state_digest="c" * 64,
             geometry_program_digest="d" * 64,
             realization_receipt_digest="e" * 64,
         )
@@ -244,7 +244,7 @@ class UseScenarioTests(unittest.TestCase):
                 geometry_program_digest="f" * 64,
                 observation_digest="0" * 64,
             ),
-            candidate_program_digest="c" * 64,
+            design_state_digest="c" * 64,
             geometry_program_digest="d" * 64,
             realization_receipt_digest="e" * 64,
         )

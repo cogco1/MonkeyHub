@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Mapping
 
 from archflow.project.refs import require_identifier
-from archflow.state.candidate_program import CandidateProgramProjection
+from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.geometry_program import (
     AssemblyRole,
     AssetReference,
@@ -26,7 +26,10 @@ class GeometryCompilationError(ValueError):
 
 class GeometryIssueCode(StrEnum):
     EXACT_BASE_MISMATCH = "exact_base_mismatch"
-    UNKNOWN_CANDIDATE_VALUE = "unknown_candidate_value"
+    UNKNOWN_COMPONENT = "unknown_component"
+    DUPLICATE_COMPONENT_BINDING = "duplicate_component_binding"
+    AMBIGUOUS_OBJECT_OWNER = "ambiguous_object_owner"
+    UNOWNED_OBJECT = "unowned_object"
     INACTIVE_COMMITMENT = "inactive_commitment"
     UNKNOWN_FRAME = "unknown_frame"
     FRAME_CYCLE = "frame_cycle"
@@ -178,11 +181,12 @@ class CompiledGeometryProgram:
     proposal: GeometryProgramProposal
     operation_order: tuple[str, ...]
     frame_digests: tuple[tuple[str, str], ...]
+    component_digests: tuple[tuple[str, str], ...]
     semantic_binding_digests: tuple[tuple[str, str], ...]
     objects: tuple[CompiledGeometryObject, ...]
     asset_substitutions: tuple[AssetSubstitutionReceipt, ...]
 
-    SCHEMA = "CompiledGeometryProgram@1"
+    SCHEMA = "CompiledGeometryProgram@2"
 
     def __post_init__(self) -> None:
         if not isinstance(self.proposal, GeometryProgramProposal):
@@ -197,6 +201,7 @@ class CompiledGeometryProgram:
                 "operation_order must cover every operation exactly once"
             )
         self._digest_pairs(self.frame_digests, "frame_digests")
+        self._digest_pairs(self.component_digests, "component_digests")
         self._digest_pairs(
             self.semantic_binding_digests,
             "semantic_binding_digests",
@@ -256,6 +261,10 @@ class CompiledGeometryProgram:
             "frame_digests": [
                 {"frame_id": key, "digest": value}
                 for key, value in self.frame_digests
+            ],
+            "component_digests": [
+                {"component_id": key, "digest": value}
+                for key, value in self.component_digests
             ],
             "semantic_binding_digests": [
                 {"binding_id": key, "digest": value}
@@ -427,25 +436,47 @@ def _frame_digests(
 
 
 def _semantic_digests(
-    projection: CandidateProgramProjection,
+    state: DevelopedDesignState,
     proposal: GeometryProgramProposal,
     active_commitment_refs: frozenset[str],
     issues: list[GeometryIssue],
-) -> dict[str, str]:
-    values = {item.value_id: item for item in projection.values}
+) -> tuple[dict[str, str], dict[str, str]]:
+    components = {
+        item.component_id: item
+        for item in state.selected_schematic.option.proposal.components
+    }
+    developments = {item.component_id: item for item in state.components}
+    component_digests = {
+        component_id: digest_value(
+            {
+                "component": component.to_dict(),
+                "development": (
+                    developments[component_id].to_dict()
+                    if component_id in developments
+                    else None
+                ),
+            }
+        )
+        for component_id, component in components.items()
+    }
     result: dict[str, str] = {}
+    bound_components: set[str] = set()
     for binding in proposal.semantic_bindings:
-        value_refs: list[str] = []
-        for value_id in binding.candidate_value_ids:
-            if value_id not in values:
-                _issue(
-                    issues,
-                    GeometryIssueCode.UNKNOWN_CANDIDATE_VALUE,
-                    binding.binding_id,
-                    f"semantic binding names unknown candidate value {value_id}",
-                )
-            else:
-                value_refs.append(values[value_id].ref)
+        if binding.component_id not in components:
+            _issue(
+                issues,
+                GeometryIssueCode.UNKNOWN_COMPONENT,
+                binding.binding_id,
+                "semantic binding names a component absent from the selected design",
+            )
+        elif binding.component_id in bound_components:
+            _issue(
+                issues,
+                GeometryIssueCode.DUPLICATE_COMPONENT_BINDING,
+                binding.binding_id,
+                "one component cannot own multiple geometry bindings",
+            )
+        bound_components.add(binding.component_id)
         for commitment_ref in binding.commitment_refs:
             if commitment_ref not in active_commitment_refs:
                 _issue(
@@ -457,10 +488,12 @@ def _semantic_digests(
         result[binding.binding_id] = digest_value(
             {
                 "binding": binding.to_dict(),
-                "candidate_value_refs": value_refs,
+                "component_digest": component_digests.get(
+                    binding.component_id
+                ),
             }
         )
-    return result
+    return result, component_digests
 
 
 def _resolve_assets(
@@ -545,6 +578,20 @@ def _operation_graph(
     assets = {item.asset_id for item in proposal.assets}
     operations = {item.op_id: item for item in proposal.operations}
     producer_by_object: dict[str, str] = {}
+    owner_by_object: dict[str, str] = {}
+
+    for binding in proposal.semantic_bindings:
+        for object_id in binding.object_ids:
+            prior_owner = owner_by_object.get(object_id)
+            if prior_owner is not None:
+                _issue(
+                    issues,
+                    GeometryIssueCode.AMBIGUOUS_OBJECT_OWNER,
+                    object_id,
+                    "geometry object is owned by more than one semantic component",
+                )
+            else:
+                owner_by_object[object_id] = binding.component_id
 
     for operation in proposal.operations:
         if operation.frame_id not in frame_digests:
@@ -617,6 +664,13 @@ def _operation_graph(
                 binding.binding_id,
                 "semantic binding names an object with no producer",
             )
+    for object_id in sorted(set(producer_by_object) - set(owner_by_object)):
+        _issue(
+            issues,
+            GeometryIssueCode.UNOWNED_OBJECT,
+            object_id,
+            "produced geometry object has no semantic component owner",
+        )
 
     dependencies: dict[str, set[str]] = {
         item.op_id: set() for item in proposal.operations
@@ -916,7 +970,7 @@ def _validate_revision(
 
 
 def compile_geometry_program(
-    projection: CandidateProgramProjection,
+    state: DevelopedDesignState,
     proposal: GeometryProgramProposal,
     *,
     active_commitment_refs: tuple[str, ...] = (),
@@ -926,8 +980,8 @@ def compile_geometry_program(
 ) -> GeometryCompilationResult:
     """Compile a proposal or return a detached, explicit rejection receipt."""
 
-    if not isinstance(projection, CandidateProgramProjection):
-        raise TypeError("projection must be CandidateProgramProjection")
+    if not isinstance(state, DevelopedDesignState):
+        raise TypeError("state must be DevelopedDesignState")
     if not isinstance(proposal, GeometryProgramProposal):
         raise TypeError("proposal must be GeometryProgramProposal")
     if not isinstance(active_commitment_refs, tuple):
@@ -959,22 +1013,21 @@ def compile_geometry_program(
 
     issues: list[GeometryIssue] = []
     if (
-        proposal.project_id != projection.project_id
-        or proposal.run_id != projection.run_id
-        or proposal.base != projection.base
-        or proposal.candidate_program_digest
-        != projection.projection_digest
+        proposal.project_id != state.project_id
+        or proposal.run_id != state.run_id
+        or proposal.base != state.base
+        or proposal.design_state_digest != state.state_digest
     ):
         _issue(
             issues,
             GeometryIssueCode.EXACT_BASE_MISMATCH,
             proposal.proposal_id,
-            "geometry proposal and candidate projection are not exact-base peers",
+            "geometry proposal and developed design state are not exact-base peers",
         )
 
     frame_digests = _frame_digests(proposal, issues)
-    semantic_digests = _semantic_digests(
-        projection,
+    semantic_digests, component_digests = _semantic_digests(
+        state,
         proposal,
         frozenset(active_refs),
         issues,
@@ -1042,6 +1095,7 @@ def compile_geometry_program(
         proposal=proposal,
         operation_order=operation_order,
         frame_digests=tuple(sorted(frame_digests.items())),
+        component_digests=tuple(sorted(component_digests.items())),
         semantic_binding_digests=tuple(sorted(semantic_digests.items())),
         objects=objects,
         asset_substitutions=used_substitutions,

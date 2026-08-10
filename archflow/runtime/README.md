@@ -230,11 +230,11 @@ project `HEAD`, candidate state, MCP, and external worlds remain untouched.
 ## Developed-design candidate assembly
 
 `candidate_assembly.py` accepts only a coordinated, non-invalidated P040
-design-development state. It projects the selected branch, exact revision,
-functions, areas, topology, dimensions, materials, coordinates, component
-details, sources, and derivation references into
-`CandidateProgramProjection@1`; missing build facets fail closed instead of
-receiving framework defaults.
+design-development state. It does not create a second candidate-program value
+table. The executable plan binds each JSON leaf directly to the selected
+schematic, stable `design-component:*` identities, developed-component records,
+or explicit evidence, while the candidate archive embeds the exact
+`DevelopedDesignState@1` snapshot it consumed.
 
 The executable MCP payload remains project-authored. Every scalar or empty
 container in that payload has a JSON-pointer provenance binding, and the
@@ -244,15 +244,13 @@ no hard-usability, commitment-monitor, aesthetic-winner, approval, or
 canonical-write verdict.
 
 Build and approval policies are mandatory exact bindings, but candidate
-assembly never fabricates an approval receipt. Existing P005 validators may
-receive a one-way `BuildingProgram@1` projection only through an explicit map
-for every legacy field, including empty lists and footprint tolerance. The
-adapter has no defaults and no reverse compiler, so it cannot recover the old
-program contract as a generation kernel.
+assembly never fabricates an approval receipt. Validation-specific views must
+be derived from named project records at their own boundary; there is no
+reverse compiler from validator inputs into generation state.
 
 Rejected and revised candidates may be stored as full immutable derivation
 archives through the generic P036 run-candidate destination. Reload verifies
-the complete projection, plan, policy, submission, and execution bindings
+the complete design state, plan, policy, submission, and execution bindings
 while project `HEAD` remains unchanged. Independent hard gates, commitment
 monitoring, read-only aesthetic observations, approval, and the P008
 single-writer committer still run downstream.
@@ -260,9 +258,10 @@ single-writer committer still run downstream.
 ## Neutral geometry compilation
 
 `geometry_compiler.py` deterministically checks a project-authored
-`GeometryProgramProposal@1` against the exact P024 candidate projection. Every
-operation output must be covered by an evidence- or commitment-backed semantic
-binding. Coordinate frames and object inputs form acyclic dependency graphs;
+`GeometryProgramProposal@2` against the exact `DevelopedDesignState@1`. Every
+operation output must have exactly one evidence- or commitment-backed semantic
+binding whose `component_id` exists in the selected component tree. Coordinate
+frames and object inputs form acyclic dependency graphs;
 the compiler derives one deterministic operation order and content digest for
 every stable object.
 

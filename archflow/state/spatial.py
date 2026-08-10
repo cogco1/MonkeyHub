@@ -39,6 +39,15 @@ class ConstraintResponseStatus(StrEnum):
     NOT_APPLICABLE = "not_applicable"
 
 
+class ComponentMaturity(StrEnum):
+    """Current semantic-geometry resolution of one stable component."""
+
+    MASSING = "massing"
+    SCHEMATIC = "schematic"
+    DEVELOPED = "developed"
+    DETAILED = "detailed"
+
+
 def _text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise SpatialProposalError(f"{field} must be non-empty text")
@@ -530,6 +539,125 @@ class SpatialConstraintResponse:
 
 
 @dataclass(frozen=True, slots=True)
+class DesignComponent:
+    """One stable semantic component and its current coarse geometry."""
+
+    component_id: str
+    parent_component_id: str | None
+    semantic_kind: str
+    intent: str
+    maturity: ComponentMaturity
+    revision: int
+    volume_ids: tuple[str, ...]
+    unresolved_child_roles: tuple[str, ...]
+    source_refs: tuple[str, ...]
+
+    SCHEMA = "DesignComponent@1"
+
+    def __post_init__(self) -> None:
+        require_local_id(self.component_id, "component_id")
+        if self.parent_component_id is not None:
+            require_local_id(
+                self.parent_component_id,
+                "parent_component_id",
+            )
+            if self.parent_component_id == self.component_id:
+                raise SpatialProposalError("component cannot parent itself")
+        require_local_id(self.semantic_kind, "semantic_kind")
+        _text(self.intent, "component intent")
+        if not isinstance(self.maturity, ComponentMaturity):
+            raise TypeError("maturity must be ComponentMaturity")
+        if (
+            not isinstance(self.revision, int)
+            or isinstance(self.revision, bool)
+            or self.revision < 0
+        ):
+            raise SpatialProposalError(
+                "component revision must be non-negative"
+            )
+        _ids(self.volume_ids, "component volume_ids", allow_empty=True)
+        _ids(
+            self.unresolved_child_roles,
+            "unresolved_child_roles",
+            allow_empty=True,
+        )
+        _refs(self.source_refs, "component source_refs")
+
+    @property
+    def identity_ref(self) -> str:
+        return f"design-component:{self.component_id}"
+
+    @property
+    def component_digest(self) -> str:
+        return _digest(self.to_dict())
+
+    @property
+    def ref(self) -> str:
+        return (
+            f"{self.identity_ref}:r{self.revision}:"
+            f"{self.component_digest}"
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "component_id": self.component_id,
+            "parent_component_id": self.parent_component_id,
+            "semantic_kind": self.semantic_kind,
+            "intent": self.intent,
+            "maturity": self.maturity.value,
+            "revision": self.revision,
+            "volume_ids": list(self.volume_ids),
+            "unresolved_child_roles": list(
+                self.unresolved_child_roles
+            ),
+            "source_refs": list(self.source_refs),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> DesignComponent:
+        payload = _mapping(value, "design component")
+        _exact(
+            payload,
+            {
+                "schema",
+                "component_id",
+                "parent_component_id",
+                "semantic_kind",
+                "intent",
+                "maturity",
+                "revision",
+                "volume_ids",
+                "unresolved_child_roles",
+                "source_refs",
+            },
+            "design component",
+        )
+        if payload["schema"] != cls.SCHEMA:
+            raise SpatialProposalError("design component schema changed")
+        return cls(
+            component_id=payload["component_id"],
+            parent_component_id=payload["parent_component_id"],
+            semantic_kind=payload["semantic_kind"],
+            intent=payload["intent"],
+            maturity=ComponentMaturity(payload["maturity"]),
+            revision=payload["revision"],
+            volume_ids=_strings_from_json(
+                payload["volume_ids"],
+                "component volume_ids",
+            ),
+            unresolved_child_roles=_strings_from_json(
+                payload["unresolved_child_roles"],
+                "unresolved_child_roles",
+            ),
+            source_refs=_strings_from_json(
+                payload["source_refs"],
+                "component source_refs",
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class SpatialOptionProposal:
     """One Architect-authored schematic answer, never a framework default."""
 
@@ -542,6 +670,7 @@ class SpatialOptionProposal:
     levels: tuple[SpatialLevel, ...]
     volumes: tuple[MassingVolume, ...]
     zones: tuple[SpatialZone, ...]
+    components: tuple[DesignComponent, ...]
     connections: tuple[SpatialConnection, ...]
     constraint_responses: tuple[SpatialConstraintResponse, ...]
     typology_hypothesis: str
@@ -551,7 +680,7 @@ class SpatialOptionProposal:
     expert_advice_refs: tuple[str, ...]
     evidence_refs: tuple[str, ...]
 
-    SCHEMA = "SpatialOptionProposal@1"
+    SCHEMA = "SpatialOptionProposal@2"
 
     def __post_init__(self) -> None:
         require_local_id(self.option_id, "option_id")
@@ -577,20 +706,30 @@ class SpatialOptionProposal:
         _tuple(self.levels, SpatialLevel, "levels")
         _tuple(self.volumes, MassingVolume, "volumes")
         _tuple(self.zones, SpatialZone, "zones")
+        _tuple(self.components, DesignComponent, "components")
         _tuple(self.connections, SpatialConnection, "connections")
         _tuple(
             self.constraint_responses,
             SpatialConstraintResponse,
             "constraint_responses",
         )
-        if not self.levels or not self.volumes or not self.zones:
+        if (
+            not self.levels
+            or not self.volumes
+            or not self.zones
+            or not self.components
+        ):
             raise SpatialProposalError(
-                "schematic option requires levels volumes and zones"
+                "schematic option requires levels volumes zones and components"
             )
         for values, field in (
             (tuple(item.level_id for item in self.levels), "level ids"),
             (tuple(item.volume_id for item in self.volumes), "volume ids"),
             (tuple(item.zone_id for item in self.zones), "zone ids"),
+            (
+                tuple(item.component_id for item in self.components),
+                "component ids",
+            ),
             (
                 tuple(item.connection_id for item in self.connections),
                 "connection ids",
@@ -611,6 +750,51 @@ class SpatialOptionProposal:
             ),
         ):
             _unique(values, field)
+        component_by_id = {
+            item.component_id: item for item in self.components
+        }
+        roots = tuple(
+            item
+            for item in self.components
+            if item.parent_component_id is None
+        )
+        if len(roots) != 1:
+            raise SpatialProposalError(
+                "component tree requires exactly one root"
+            )
+        for component in self.components:
+            parent_id = component.parent_component_id
+            if parent_id is not None and parent_id not in component_by_id:
+                raise SpatialProposalError(
+                    "component parent is absent from the same option"
+                )
+            seen = {component.component_id}
+            cursor = component
+            while cursor.parent_component_id is not None:
+                parent_id = cursor.parent_component_id
+                if parent_id in seen:
+                    raise SpatialProposalError(
+                        "component ancestry contains a cycle"
+                    )
+                seen.add(parent_id)
+                cursor = component_by_id[parent_id]
+        known_volume_ids = {item.volume_id for item in self.volumes}
+        volume_owners: dict[str, str] = {}
+        for component in self.components:
+            for volume_id in component.volume_ids:
+                if volume_id not in known_volume_ids:
+                    raise SpatialProposalError(
+                        "component names an unknown massing volume"
+                    )
+                if volume_id in volume_owners:
+                    raise SpatialProposalError(
+                        "massing volume has multiple semantic owners"
+                    )
+                volume_owners[volume_id] = component.component_id
+        if set(volume_owners) != known_volume_ids:
+            raise SpatialProposalError(
+                "every massing volume requires one semantic owner"
+            )
         _text(self.typology_hypothesis, "typology_hypothesis")
         _refs(self.palette_refs, "palette_refs", allow_empty=True)
         _text(self.rationale, "rationale")
@@ -627,6 +811,7 @@ class SpatialOptionProposal:
             *(item.source_refs for item in self.levels),
             *(item.source_refs for item in self.volumes),
             *(item.source_refs for item in self.zones),
+            *(item.source_refs for item in self.components),
             *(item.source_refs for item in self.connections),
             *(
                 item.source_refs
@@ -663,6 +848,9 @@ class SpatialOptionProposal:
             "levels": [item.to_dict() for item in self.levels],
             "volumes": [item.to_dict() for item in self.volumes],
             "zones": [item.to_dict() for item in self.zones],
+            "components": [
+                item.to_dict() for item in self.components
+            ],
             "connections": [
                 item.to_dict() for item in self.connections
             ],
@@ -698,6 +886,7 @@ class SpatialOptionProposal:
                 "levels",
                 "volumes",
                 "zones",
+                "components",
                 "connections",
                 "constraint_responses",
                 "typology_hypothesis",
@@ -728,6 +917,7 @@ class SpatialOptionProposal:
         levels = payload["levels"]
         volumes = payload["volumes"]
         zones = payload["zones"]
+        components = payload["components"]
         connections = payload["connections"]
         responses = payload["constraint_responses"]
         for item, field in (
@@ -735,6 +925,7 @@ class SpatialOptionProposal:
             (levels, "levels"),
             (volumes, "volumes"),
             (zones, "zones"),
+            (components, "components"),
             (connections, "connections"),
             (responses, "constraint_responses"),
         ):
@@ -755,6 +946,9 @@ class SpatialOptionProposal:
                 MassingVolume.from_dict(item) for item in volumes
             ),
             zones=tuple(SpatialZone.from_dict(item) for item in zones),
+            components=tuple(
+                DesignComponent.from_dict(item) for item in components
+            ),
             connections=tuple(
                 SpatialConnection.from_dict(item)
                 for item in connections
@@ -782,6 +976,163 @@ class SpatialOptionProposal:
                 "evidence_refs",
             ),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ComponentTransitionReceipt:
+    """Deterministic proof of stable-ID progressive component refinement."""
+
+    predecessor_proposal_digest: str
+    current_proposal_digest: str
+    changed_component_ids: tuple[str, ...]
+    invalidated_component_ids: tuple[str, ...]
+    preserved_component_ids: tuple[str, ...]
+    retired_component_ids: tuple[str, ...]
+
+    SCHEMA = "ComponentTransitionReceipt@1"
+
+    def __post_init__(self) -> None:
+        for value, field in (
+            (self.predecessor_proposal_digest, "predecessor_proposal_digest"),
+            (self.current_proposal_digest, "current_proposal_digest"),
+        ):
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(char not in "0123456789abcdef" for char in value.lower())
+            ):
+                raise SpatialProposalError(f"{field} must be a SHA-256 digest")
+        for values, field in (
+            (self.changed_component_ids, "changed_component_ids"),
+            (self.invalidated_component_ids, "invalidated_component_ids"),
+            (self.preserved_component_ids, "preserved_component_ids"),
+            (self.retired_component_ids, "retired_component_ids"),
+        ):
+            _ids(values, field, allow_empty=True)
+            if values != tuple(sorted(values)):
+                raise SpatialProposalError(f"{field} must be sorted")
+        if set(self.invalidated_component_ids) & set(
+            self.preserved_component_ids
+        ):
+            raise SpatialProposalError(
+                "component cannot be both invalidated and preserved"
+            )
+
+    @property
+    def receipt_digest(self) -> str:
+        return _digest(self.to_dict())
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "predecessor_proposal_digest": self.predecessor_proposal_digest,
+            "current_proposal_digest": self.current_proposal_digest,
+            "changed_component_ids": list(self.changed_component_ids),
+            "invalidated_component_ids": list(
+                self.invalidated_component_ids
+            ),
+            "preserved_component_ids": list(self.preserved_component_ids),
+            "retired_component_ids": list(self.retired_component_ids),
+            "canonical_write_authority": False,
+        }
+
+
+def compile_component_transition(
+    predecessor: SpatialOptionProposal,
+    current: SpatialOptionProposal,
+    *,
+    retired_component_ids: tuple[str, ...] = (),
+) -> ComponentTransitionReceipt:
+    """Validate one local refinement without creating a second design tree."""
+
+    if not isinstance(predecessor, SpatialOptionProposal) or not isinstance(
+        current,
+        SpatialOptionProposal,
+    ):
+        raise TypeError("predecessor and current must be SpatialOptionProposal")
+    if predecessor.option_id != current.option_id:
+        raise SpatialProposalError(
+            "component refinement cannot cross schematic option identity"
+        )
+    _ids(retired_component_ids, "retired_component_ids", allow_empty=True)
+    if retired_component_ids != tuple(sorted(retired_component_ids)):
+        raise SpatialProposalError("retired_component_ids must be sorted")
+
+    before = {item.component_id: item for item in predecessor.components}
+    after = {item.component_id: item for item in current.components}
+    removed = set(before) - set(after)
+    retired = set(retired_component_ids)
+    if removed != retired:
+        raise SpatialProposalError(
+            "removed components require an exact explicit retirement set"
+        )
+
+    maturity_rank = {
+        ComponentMaturity.MASSING: 0,
+        ComponentMaturity.SCHEMATIC: 1,
+        ComponentMaturity.DEVELOPED: 2,
+        ComponentMaturity.DETAILED: 3,
+    }
+    changed: set[str] = set(retired)
+    for component_id in sorted(set(before) & set(after)):
+        old = before[component_id]
+        new = after[component_id]
+        if (
+            old.parent_component_id != new.parent_component_id
+            or old.semantic_kind != new.semantic_kind
+        ):
+            raise SpatialProposalError(
+                f"stable component identity changed meaning: {component_id}"
+            )
+        if maturity_rank[new.maturity] < maturity_rank[old.maturity]:
+            raise SpatialProposalError(
+                f"component maturity regressed: {component_id}"
+            )
+        if old == new:
+            continue
+        if new.revision != old.revision + 1:
+            raise SpatialProposalError(
+                f"changed component requires revision +1: {component_id}"
+            )
+        changed.add(component_id)
+    for component_id in sorted(set(after) - set(before)):
+        if after[component_id].revision != 0:
+            raise SpatialProposalError(
+                f"new component must start at revision 0: {component_id}"
+            )
+        changed.add(component_id)
+
+    invalidated = set(changed)
+
+    def include_descendants(
+        component_id: str,
+        components: dict[str, DesignComponent],
+    ) -> None:
+        direct = {
+            item.component_id
+            for item in components.values()
+            if item.parent_component_id == component_id
+        }
+        additions = direct - invalidated
+        invalidated.update(additions)
+        for child_id in sorted(additions):
+            include_descendants(child_id, components)
+
+    for component_id in sorted(changed):
+        include_descendants(component_id, after)
+        include_descendants(component_id, before)
+
+    surviving_ids = set(after)
+    return ComponentTransitionReceipt(
+        predecessor_proposal_digest=predecessor.proposal_digest,
+        current_proposal_digest=current.proposal_digest,
+        changed_component_ids=tuple(sorted(changed)),
+        invalidated_component_ids=tuple(sorted(invalidated)),
+        preserved_component_ids=tuple(
+            sorted(surviving_ids - invalidated)
+        ),
+        retired_component_ids=tuple(sorted(retired)),
+    )
 
 
 @dataclass(frozen=True, slots=True)

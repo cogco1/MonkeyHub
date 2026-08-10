@@ -58,7 +58,7 @@ def _operation(
 
 
 def _compile_with(*operations: GeometryOperation):
-    projection, program, _ = compiled_room()
+    design_state, program, _ = compiled_room()
     binding = replace(
         program.proposal.semantic_bindings[0],
         object_ids=tuple(
@@ -82,7 +82,7 @@ def _compile_with(*operations: GeometryOperation):
         ),
     )
     result = compile_geometry_program(
-        projection,
+        design_state,
         proposal,
         active_commitment_refs=(COMMITMENT,),
     )

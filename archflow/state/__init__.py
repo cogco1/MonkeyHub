@@ -191,7 +191,10 @@ from archflow.state.site_context import (
     SiteUnknownTopic,
 )
 from archflow.state.spatial import (
+    ComponentMaturity,
+    ComponentTransitionReceipt,
     ConstraintResponseStatus,
+    DesignComponent,
     FootprintCell,
     MassingVolume,
     SchematicOption,
@@ -203,6 +206,7 @@ from archflow.state.spatial import (
     SpatialOptionProposal,
     SpatialProposalError,
     SpatialZone,
+    compile_component_transition,
 )
 
 __all__ = [
@@ -232,6 +236,8 @@ __all__ = [
     "CommitmentStatus",
     "CommitmentStrength",
     "CommitmentTransitionError",
+    "ComponentMaturity",
+    "ComponentTransitionReceipt",
     "ConstraintResponseStatus",
     "ConstructabilityConstraint",
     "ConstructabilityTopic",
@@ -245,6 +251,7 @@ __all__ = [
     "DependencyEffect",
     "DependencyEdge",
     "DesignObligation",
+    "DesignComponent",
     "DesignBrief",
     "DesignMaturityError",
     "DesignMaturityState",
@@ -361,6 +368,7 @@ __all__ = [
     "DESIGN_PHASES",
     "DESIGN_STATE_LAYERS",
     "compile_backward_revision",
+    "compile_component_transition",
     "combine_branches",
     "compile_selected_branch_handoff",
     "compile_decision_operator",

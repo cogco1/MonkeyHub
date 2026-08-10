@@ -18,12 +18,10 @@ from archflow.project import (
 )
 from archflow.project.refs import require_identifier
 from archflow.state import ArtifactRef
-from archflow.state.candidate_program import (
-    CandidateProgramProjection,
-    CandidateProgramValue,
-    compile_candidate_program,
+from archflow.state.developed_design import (
+    DevelopedDesignState,
+    DevelopmentCoordinationStatus,
 )
-from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.operational_state import require_logical_ref
 from archflow.submission import (
     CandidateDelta,
@@ -230,10 +228,10 @@ class PlanValueBinding:
     """Derivation for one scalar or empty container in the MCP payload."""
 
     json_pointer: str
-    candidate_value_refs: tuple[str, ...]
+    design_refs: tuple[str, ...]
     evidence_refs: tuple[str, ...]
 
-    SCHEMA = "PlanValueBinding@1"
+    SCHEMA = "PlanValueBinding@2"
 
     def __post_init__(self) -> None:
         if (
@@ -243,9 +241,9 @@ class PlanValueBinding:
             raise CandidateAssemblyError(
                 "json_pointer must be an absolute JSON pointer"
             )
-        _ids(
-            self.candidate_value_refs,
-            "plan candidate_value_refs",
+        _refs(
+            self.design_refs,
+            "plan design_refs",
             allow_empty=True,
         )
         _refs(
@@ -253,16 +251,16 @@ class PlanValueBinding:
             "plan evidence_refs",
             allow_empty=True,
         )
-        if not self.candidate_value_refs and not self.evidence_refs:
+        if not self.design_refs and not self.evidence_refs:
             raise CandidateAssemblyError(
-                "every plan value needs candidate or evidence provenance"
+                "every plan value needs design or evidence provenance"
             )
 
     def to_dict(self) -> dict[str, object]:
         return {
             "schema": self.SCHEMA,
             "json_pointer": self.json_pointer,
-            "candidate_value_refs": list(self.candidate_value_refs),
+            "design_refs": list(self.design_refs),
             "evidence_refs": list(self.evidence_refs),
         }
 
@@ -274,7 +272,7 @@ class PlanValueBinding:
             {
                 "schema",
                 "json_pointer",
-                "candidate_value_refs",
+                "design_refs",
                 "evidence_refs",
             },
             "plan value binding",
@@ -283,9 +281,9 @@ class PlanValueBinding:
             raise CandidateAssemblyError("plan value binding schema changed")
         return cls(
             json_pointer=payload["json_pointer"],
-            candidate_value_refs=_strings(
-                payload["candidate_value_refs"],
-                "candidate_value_refs",
+            design_refs=_strings(
+                payload["design_refs"],
+                "design_refs",
             ),
             evidence_refs=_strings(payload["evidence_refs"], "evidence_refs"),
         )
@@ -299,11 +297,11 @@ class CandidateExecutablePlan:
     project_id: str
     run_id: str
     base: ProjectVersionRef
-    candidate_program_digest: str
+    design_state_digest: str
     payload_json: str
     bindings: tuple[PlanValueBinding, ...]
 
-    SCHEMA = "CandidateExecutablePlan@1"
+    SCHEMA = "CandidateExecutablePlan@2"
 
     def __post_init__(self) -> None:
         require_identifier(self.plan_id, "plan_id")
@@ -314,7 +312,7 @@ class CandidateExecutablePlan:
             or self.base.project_id != self.project_id
         ):
             raise CandidateAssemblyError("plan and base disagree")
-        _sha(self.candidate_program_digest, "candidate_program_digest")
+        _sha(self.design_state_digest, "design_state_digest")
         if not isinstance(self.payload_json, str):
             raise TypeError("payload_json must be text")
         try:
@@ -357,16 +355,16 @@ class CandidateExecutablePlan:
         cls,
         *,
         plan_id: str,
-        projection: CandidateProgramProjection,
+        state: DevelopedDesignState,
         payload: Mapping[str, Any],
         bindings: tuple[PlanValueBinding, ...],
     ) -> CandidateExecutablePlan:
         return cls(
             plan_id=plan_id,
-            project_id=projection.project_id,
-            run_id=projection.run_id,
-            base=projection.base,
-            candidate_program_digest=projection.projection_digest,
+            project_id=state.project_id,
+            run_id=state.run_id,
+            base=state.base,
+            design_state_digest=state.state_digest,
             payload_json=_canonical_json(dict(payload)),
             bindings=tuple(
                 sorted(bindings, key=lambda item: item.json_pointer)
@@ -391,7 +389,7 @@ class CandidateExecutablePlan:
             "project_id": self.project_id,
             "run_id": self.run_id,
             "base": _base_to_dict(self.base),
-            "candidate_program_digest": self.candidate_program_digest,
+            "design_state_digest": self.design_state_digest,
             "payload_json": self.payload_json,
             "plan_digest": self.plan_digest,
             "bindings": [item.to_dict() for item in self.bindings],
@@ -410,7 +408,7 @@ class CandidateExecutablePlan:
                 "project_id",
                 "run_id",
                 "base",
-                "candidate_program_digest",
+                "design_state_digest",
                 "payload_json",
                 "plan_digest",
                 "bindings",
@@ -427,9 +425,7 @@ class CandidateExecutablePlan:
             project_id=payload["project_id"],
             run_id=payload["run_id"],
             base=_base_from_dict(payload["base"]),
-            candidate_program_digest=payload[
-                "candidate_program_digest"
-            ],
+            design_state_digest=payload["design_state_digest"],
             payload_json=payload["payload_json"],
             bindings=tuple(
                 PlanValueBinding.from_dict(item) for item in bindings
@@ -554,29 +550,42 @@ def _submission_from_dict(value: object) -> CandidateSubmission:
     )
 
 
+def _design_refs(state: DevelopedDesignState) -> set[str]:
+    """Logical identities exposed to executable-plan provenance bindings."""
+
+    schematic = state.selected_schematic
+    return {
+        schematic.ref,
+        schematic.option.ref,
+        schematic.selection_decision_ref,
+        *(item.identity_ref for item in schematic.option.proposal.components),
+        *(item.ref for item in state.components),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class CandidateAssembly:
-    projection: CandidateProgramProjection
+    design_state: DevelopedDesignState
     plan: CandidateExecutablePlan
     policies: tuple[CandidatePolicyBinding, ...]
     submission: CandidateSubmission
 
-    SCHEMA = "CandidateAssembly@1"
+    SCHEMA = "CandidateAssembly@2"
 
     def __post_init__(self) -> None:
-        if not isinstance(self.projection, CandidateProgramProjection):
-            raise TypeError("projection must be CandidateProgramProjection")
+        if not isinstance(self.design_state, DevelopedDesignState):
+            raise TypeError("design_state must be DevelopedDesignState")
         if not isinstance(self.plan, CandidateExecutablePlan):
             raise TypeError("plan must be CandidateExecutablePlan")
         if (
-            self.plan.project_id != self.projection.project_id
-            or self.plan.run_id != self.projection.run_id
-            or self.plan.base != self.projection.base
-            or self.plan.candidate_program_digest
-            != self.projection.projection_digest
+            self.plan.project_id != self.design_state.project_id
+            or self.plan.run_id != self.design_state.run_id
+            or self.plan.base != self.design_state.base
+            or self.plan.design_state_digest
+            != self.design_state.state_digest
         ):
             raise CandidateAssemblyError(
-                "candidate projection and executable plan disagree"
+                "design state and executable plan disagree"
             )
         if not isinstance(self.policies, tuple) or any(
             not isinstance(item, CandidatePolicyBinding)
@@ -595,23 +604,21 @@ class CandidateAssembly:
             raise CandidateAssemblyError(
                 "candidate requires explicit build and approval policies"
             )
-        known_values = {
-            item.value_id for item in self.projection.values
-        }
+        known_refs = _design_refs(self.design_state)
         referenced = {
-            value_id
+            design_ref
             for binding in self.plan.bindings
-            for value_id in binding.candidate_value_refs
+            for design_ref in binding.design_refs
         }
-        unknown = referenced - known_values
+        unknown = referenced - known_refs
         if unknown:
             raise CandidateAssemblyError(
-                f"plan references unknown candidate values: {sorted(unknown)}"
+                f"plan references unknown design identities: {sorted(unknown)}"
             )
         if not isinstance(self.submission, CandidateSubmission):
             raise TypeError("submission must be CandidateSubmission")
         if (
-            self.submission.base != self.projection.base
+            self.submission.base != self.design_state.base
             or self.submission.delta.artifacts_add
         ):
             raise CandidateAssemblyError(
@@ -629,7 +636,7 @@ class CandidateAssembly:
     def to_dict(self) -> dict[str, object]:
         return {
             "schema": self.SCHEMA,
-            "projection": self.projection.to_dict(),
+            "design_state": self.design_state.to_dict(),
             "plan": self.plan.to_dict(),
             "policies": [item.to_dict() for item in self.policies],
             "submission": _submission_to_dict(self.submission),
@@ -647,7 +654,7 @@ class CandidateAssembly:
             payload,
             {
                 "schema",
-                "projection",
+                "design_state",
                 "plan",
                 "policies",
                 "submission",
@@ -674,8 +681,8 @@ class CandidateAssembly:
                 "candidate assembly acquired downstream authority"
             )
         return cls(
-            projection=CandidateProgramProjection.from_dict(
-                payload["projection"]
+            design_state=DevelopedDesignState.from_dict(
+                payload["design_state"]
             ),
             plan=CandidateExecutablePlan.from_dict(payload["plan"]),
             policies=tuple(
@@ -941,20 +948,25 @@ def assemble_candidate(
     plan_payload: Mapping[str, Any],
     plan_bindings: tuple[PlanValueBinding, ...],
     policies: tuple[CandidatePolicyBinding, ...],
-    additional_values: tuple[CandidateProgramValue, ...] = (),
     evidence_refs: tuple[str, ...],
 ) -> CandidateAssembly:
     """Assemble one candidate without validating, executing, or committing it."""
 
     require_identifier(workspace_id, "workspace_id")
     _refs(evidence_refs, "candidate assembly evidence_refs")
-    projection = compile_candidate_program(
-        state,
-        additional_values=additional_values,
-    )
+    if not isinstance(state, DevelopedDesignState):
+        raise TypeError("state must be DevelopedDesignState")
+    if (
+        state.coordination_status
+        is not DevelopmentCoordinationStatus.COORDINATED
+        or state.latest_invalidation is not None
+    ):
+        raise CandidateAssemblyError(
+            "candidate requires a coordinated non-invalidated design state"
+        )
     plan = CandidateExecutablePlan.create(
         plan_id=plan_id,
-        projection=projection,
+        state=state,
         payload=plan_payload,
         bindings=plan_bindings,
     )
@@ -962,28 +974,49 @@ def assemble_candidate(
         sorted(policies, key=lambda item: item.kind.value)
     )
     candidate_seed = {
-        "projection": projection.projection_digest,
+        "design_state": state.state_digest,
         "plan": plan.plan_digest,
         "policies": [item.to_dict() for item in ordered_policies],
         "workspace_id": workspace_id,
     }
     submission_id = f"candidate-{_digest(candidate_seed)[:20]}"
+    developments = {item.component_id: item for item in state.components}
     claims = tuple(
         Claim(
-            key=f"candidate.{item.value_id}",
-            value=item.value_json,
+            key=f"component.{component.component_id}",
+            value=_canonical_json(
+                {
+                    "component": component.to_dict(),
+                    "development": (
+                        developments[component.component_id].to_dict()
+                        if component.component_id in developments
+                        else None
+                    ),
+                }
+            ),
             evidence_refs=tuple(
-                dict.fromkeys((*item.source_refs, *item.derivation_refs))
+                dict.fromkeys(
+                    (
+                        *component.source_refs,
+                        state.selected_schematic.ref,
+                        state.selected_schematic.option.ref,
+                        *(
+                            developments[component.component_id].evidence_refs
+                            if component.component_id in developments
+                            else ()
+                        ),
+                    )
+                )
             ),
         )
-        for item in projection.values
+        for component in state.selected_schematic.option.proposal.components
     )
     all_evidence = tuple(
         dict.fromkeys(
             (
                 *evidence_refs,
-                projection.selected_option_ref,
-                projection.selection_decision_ref,
+                state.selected_schematic.option.ref,
+                state.selected_schematic.selection_decision_ref,
                 *(
                     ref
                     for item in ordered_policies
@@ -999,7 +1032,7 @@ def assemble_candidate(
     )
     submission = CandidateSubmission(
         submission_id=submission_id,
-        base=projection.base,
+        base=state.base,
         workspace_id=workspace_id,
         intent=(
             "Review the exact coordinated design-development state as a "
@@ -1011,7 +1044,7 @@ def assemble_candidate(
         unresolved=unresolved,
     )
     return CandidateAssembly(
-        projection=projection,
+        design_state=state,
         plan=plan,
         policies=ordered_policies,
         submission=submission,
@@ -1085,9 +1118,9 @@ def persist_candidate_archive(
             "candidate archive requires its run candidate destination"
         )
     if (
-        archive.assembly.projection.project_id != run.project_id
-        or archive.assembly.projection.run_id != run.run_id
-        or archive.assembly.projection.base != run.base
+        archive.assembly.design_state.project_id != run.project_id
+        or archive.assembly.design_state.run_id != run.run_id
+        or archive.assembly.design_state.base != run.base
     ):
         raise CandidateAssemblyError(
             "candidate archive does not belong to the supplied run"
@@ -1105,7 +1138,7 @@ def load_candidate_archive(
     ref: ProjectRecordRef,
 ) -> CandidateDerivationArchive:
     archive = CandidateDerivationArchive.from_dict(loader.load_json(ref))
-    if archive.assembly.projection.project_id != ref.project_id:
+    if archive.assembly.design_state.project_id != ref.project_id:
         raise CandidateAssemblyError(
             "candidate archive record belongs to another project"
         )

@@ -228,7 +228,6 @@ def _component(
         component_id=component_id,
         revision=0,
         discipline=discipline,
-        component_kind=f"project_{discipline.value}_system",
         attributes=(
             DevelopedAttribute(
                 key="project_resolution",

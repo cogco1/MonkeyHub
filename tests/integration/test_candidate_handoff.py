@@ -17,7 +17,6 @@ from archflow.runtime.candidate_assembly import (
     persist_candidate_archive,
 )
 from tests.test_candidate_assembly import (
-    _legacy_values,
     _plan_bindings,
     _policies,
 )
@@ -57,7 +56,6 @@ class CandidateHandoffIntegrationTests(unittest.TestCase):
                 },
                 plan_bindings=_plan_bindings(),
                 policies=_policies(),
-                additional_values=_legacy_values(state),
                 evidence_refs=(EVIDENCE,),
             )
             archive = CandidateDerivationArchive(
@@ -90,7 +88,7 @@ class CandidateHandoffIntegrationTests(unittest.TestCase):
             self.assertEqual(loaded, archive)
             self.assertEqual(reopened.read_head(), before)
             self.assertEqual(
-                loaded.assembly.projection.developed_state_digest,
+                loaded.assembly.design_state.state_digest,
                 state.state_digest,
             )
             self.assertEqual(

@@ -705,13 +705,12 @@ class DevelopedComponent:
     component_id: str
     revision: int
     discipline: DevelopmentDiscipline
-    component_kind: str
     attributes: tuple[DevelopedAttribute, ...]
     schematic_dependency_refs: tuple[str, ...]
     requirement_refs: tuple[str, ...]
     evidence_refs: tuple[str, ...]
 
-    SCHEMA = "DevelopedComponent@1"
+    SCHEMA = "DevelopedComponent@2"
 
     def __post_init__(self) -> None:
         require_identifier(self.component_id, "component_id")
@@ -725,7 +724,6 @@ class DevelopedComponent:
             )
         if not isinstance(self.discipline, DevelopmentDiscipline):
             raise TypeError("discipline must be DevelopmentDiscipline")
-        require_identifier(self.component_kind, "component_kind")
         if not isinstance(self.attributes, tuple) or not self.attributes:
             raise DevelopedDesignError("component requires attributes")
         if any(
@@ -759,7 +757,6 @@ class DevelopedComponent:
             "component_id": self.component_id,
             "revision": self.revision,
             "discipline": self.discipline.value,
-            "component_kind": self.component_kind,
             "attributes": [item.to_dict() for item in self.attributes],
             "schematic_dependency_refs": list(
                 self.schematic_dependency_refs
@@ -778,7 +775,6 @@ class DevelopedComponent:
                 "component_id",
                 "revision",
                 "discipline",
-                "component_kind",
                 "attributes",
                 "schematic_dependency_refs",
                 "requirement_refs",
@@ -795,7 +791,6 @@ class DevelopedComponent:
             component_id=payload["component_id"],
             revision=payload["revision"],
             discipline=DevelopmentDiscipline(payload["discipline"]),
-            component_kind=payload["component_kind"],
             attributes=tuple(
                 DevelopedAttribute.from_dict(item) for item in attributes
             ),
@@ -1379,6 +1374,16 @@ class DevelopedDesignState:
         component_map = {
             item.component_id: item for item in self.components
         }
+        schematic_component_ids = {
+            item.component_id
+            for item in self.selected_schematic.option.proposal.components
+        }
+        unknown_component_ids = set(component_map) - schematic_component_ids
+        if unknown_component_ids:
+            raise DevelopedDesignError(
+                "developed component does not exist in the selected "
+                f"semantic component tree: {sorted(unknown_component_ids)}"
+            )
         selected_refs = {
             self.selected_schematic.ref,
             self.selected_schematic.option.ref,

@@ -52,7 +52,7 @@ class ScenarioObservationBinding:
 
     binding_id: str
     source: ScenarioObservationSource
-    candidate_program_digest: str
+    design_state_digest: str
     geometry_program_digest: str
     source_receipt_digest: str
     validation_program_digest: str
@@ -63,7 +63,7 @@ class ScenarioObservationBinding:
     workspace_id: str
     evidence_refs: tuple[str, ...]
 
-    SCHEMA = "ScenarioObservationBinding@1"
+    SCHEMA = "ScenarioObservationBinding@2"
 
     def __post_init__(self) -> None:
         for field, value in (
@@ -77,7 +77,7 @@ class ScenarioObservationBinding:
         if not isinstance(self.source, ScenarioObservationSource):
             raise TypeError("source must be ScenarioObservationSource")
         for field in (
-            "candidate_program_digest",
+            "design_state_digest",
             "geometry_program_digest",
             "source_receipt_digest",
             "validation_program_digest",
@@ -112,7 +112,7 @@ class ScenarioObservationBinding:
         binding_id: str,
         program: BuildingProgram,
         observation: VoxelObservation,
-        candidate_program_digest: str,
+        design_state_digest: str,
         geometry_program_digest: str,
         realization_receipt_digest: str,
         evidence_refs: tuple[str, ...],
@@ -124,7 +124,7 @@ class ScenarioObservationBinding:
         return cls(
             binding_id=binding_id,
             source=ScenarioObservationSource.SANDBOX_REALIZATION,
-            candidate_program_digest=candidate_program_digest,
+            design_state_digest=design_state_digest,
             geometry_program_digest=geometry_program_digest,
             source_receipt_digest=realization_receipt_digest,
             validation_program_digest=_content_digest(program.to_json()),
@@ -141,7 +141,7 @@ class ScenarioObservationBinding:
             "schema": self.SCHEMA,
             "binding_id": self.binding_id,
             "source": self.source.value,
-            "candidate_program_digest": self.candidate_program_digest,
+            "design_state_digest": self.design_state_digest,
             "geometry_program_digest": self.geometry_program_digest,
             "source_receipt_digest": self.source_receipt_digest,
             "validation_program_digest": self.validation_program_digest,
@@ -219,7 +219,7 @@ class UseScenarioValidator:
     observation: VoxelObservation
     use_zones: tuple[UseZoneEvidence, ...]
     observation_binding: ScenarioObservationBinding | None = None
-    candidate_program_digest: str | None = None
+    design_state_digest: str | None = None
     geometry_program_digest: str | None = None
     realization_receipt_digest: str | None = None
     vertical_circulation: tuple[VerticalCirculationEvidence, ...] = ()
@@ -244,7 +244,7 @@ class UseScenarioValidator:
                 "observation_binding must be ScenarioObservationBinding"
             )
         for field in (
-            "candidate_program_digest",
+            "design_state_digest",
             "geometry_program_digest",
             "realization_receipt_digest",
         ):
@@ -300,7 +300,7 @@ class UseScenarioValidator:
         if binding is None or any(
             value is None
             for value in (
-                self.candidate_program_digest,
+                self.design_state_digest,
                 self.geometry_program_digest,
                 self.realization_receipt_digest,
             )
@@ -327,7 +327,7 @@ class UseScenarioValidator:
                 ),
             )
         expected = {
-            "candidate_program_digest": self.candidate_program_digest,
+            "design_state_digest": self.design_state_digest,
             "geometry_program_digest": self.geometry_program_digest,
             "source_receipt_digest": self.realization_receipt_digest,
             "validation_program_digest": _content_digest(

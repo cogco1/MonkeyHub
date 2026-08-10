@@ -82,6 +82,7 @@ Which completed work has named acceptance evidence?
 | M029 | modify | done | Canonicalize semantically unchanged geometry parameter JSON text at the provider boundary without weakening typed validation. | [M029](M029-geometry-parameter-json-normalization.md) |
 | M030 | modify | done | Reuse one AST index per file so the mandatory architecture firewall meets its unchanged wall-clock budget deterministically. | [M030](M030-architecture-firewall-single-pass.md) |
 | M031 | modify | done | Integrate sandbox support approval and reload integrity repairs without weakening evidence or authority boundaries. | [M031](M031-sandbox-integrity-gates.md) |
+| P051 | planning | done | Unify semantic component identity and progressive geometry while deleting the flat candidate projection and P026-only semantic bypass. | [P051](P051-unified-progressive-semantic-geometry.md) |
 | P052 | planning | done | Add an explicit cross-platform external runtime for active ArchFlow projects while preserving P036 as the sole project writer and probes as promoted evidence. | [P052](P052-external-project-runtime.md) |
 | M032 | modify | done | Make geometry interface reference publication and enforcement match typed state and supplied spatial records exactly. | [M032](M032-geometry-interface-reference-contract.md) |
 | P053 | planning | done | Provide provider-neutral production responsibility isolation, shadow execution, exact-base atomic handover, and stale-result rejection without fallback or canonical-write authority. | [P053](P053-production-responsibility-handover.md) |
