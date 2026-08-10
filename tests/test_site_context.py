@@ -131,11 +131,9 @@ class SiteContextTests(unittest.TestCase):
         for field in (
             "generation_authority",
             "world_write_authority",
-            "foundation_selected",
-            "grading_selected",
-            "relocation_selected",
         ):
             self.assertFalse(context.to_dict()[field])
+        self.assertEqual(context.to_dict()["schema"], "SiteContext@2")
 
     def test_unknown_and_uneven_context_create_obligations_not_answers(
         self,
@@ -187,9 +185,12 @@ class SiteContextTests(unittest.TestCase):
             "resolve.site.observation-coverage",
             obligation_ids,
         )
-        self.assertFalse(context.to_dict()["foundation_selected"])
-        self.assertFalse(context.to_dict()["grading_selected"])
-        self.assertFalse(context.to_dict()["relocation_selected"])
+        self.assertFalse(
+            any(
+                key.endswith("_selected")
+                for key in context.to_dict()
+            )
+        )
 
         unknown_payload = deepcopy(payload)
         unknown_payload["ground_model"] = {

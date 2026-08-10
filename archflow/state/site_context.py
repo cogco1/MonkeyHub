@@ -322,7 +322,7 @@ class SiteUnknown:
 
 @dataclass(frozen=True, slots=True)
 class SiteContext:
-    """SiteContext@1 is observed design input, not a chosen response."""
+    """Observed site input with no design-response vocabulary or authority."""
 
     project_id: str
     run_id: str
@@ -346,7 +346,7 @@ class SiteContext:
     obligations: tuple[DesignObligation, ...]
     evidence_refs: tuple[str, ...]
 
-    SCHEMA = "SiteContext@1"
+    SCHEMA = "SiteContext@2"
 
     def __post_init__(self) -> None:
         require_identifier(self.project_id, "project_id")
@@ -476,9 +476,6 @@ class SiteContext:
             "evidence_refs": list(self.evidence_refs),
             "generation_authority": False,
             "world_write_authority": False,
-            "foundation_selected": False,
-            "grading_selected": False,
-            "relocation_selected": False,
         }
 
     @classmethod
@@ -511,9 +508,6 @@ class SiteContext:
                 "evidence_refs",
                 "generation_authority",
                 "world_write_authority",
-                "foundation_selected",
-                "grading_selected",
-                "relocation_selected",
             },
             "site context",
         )
@@ -524,12 +518,9 @@ class SiteContext:
             for field in (
                 "generation_authority",
                 "world_write_authority",
-                "foundation_selected",
-                "grading_selected",
-                "relocation_selected",
             )
         ):
-            raise ValueError("site context cannot gain response authority")
+            raise ValueError("site context cannot gain write authority")
         base = _mapping(payload["base"], "base")
         _exact(
             base,

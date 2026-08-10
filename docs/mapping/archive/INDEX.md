@@ -35,6 +35,7 @@ Which completed work has named acceptance evidence?
 | P024 | planning | done | Assemble a selected and coordinated design-development state into candidate, validation, and MCP handoff without legacy reverse authority. | [P024](P024-candidate-assembly-handoff.md) |
 | P025 | planning | done | Define player confirmation, preview, revision, pause, undo, materials, and selection authority. | [P025](P025-player-authority-interface.md) |
 | P026 | planning | done | Prove one true raw-request-to-usable-building run as a reloadable accepted platform-neutral sandbox artifact. | [P026](P026-sandbox-prompt-to-usable-gold.md) |
+| P027 | planning | done | Extend the accepted sandbox slice to uneven site geometry without a fixed site-response answer. | [P027](P027-uneven-terrain-adaptation.md) |
 | P028 | planning | done | Expose bounded building-scoped CLI retrieval with provenance, no fallback, and no state-writing authority. | [P028](P028-building-scoped-cli-retrieval.md) |
 | P029 | planning | done | Connect one real asynchronous model provider to the Primary Architect protocol and dynamic capabilities. | [P029](P029-primary-architect-model-provider.md) |
 | P030 | planning | done | Validate deterministic voxel use scenarios beyond minimal static usability gates. | [P030](P030-voxel-use-scenario-validation.md) |
@@ -101,5 +102,7 @@ Which completed work has named acceptance evidence?
 | M043 | modify | done | Carry exact rejected sandbox measurements and evidence through semantic revision into the first geometry-authoring request for the revised candidate. | [M043](M043-sandbox-findings-to-geometry-repair.md) |
 | M044 | modify | done | Make revised sandbox geometry a true state transition by supplying the exact rejected compiled program as its predecessor. | [M044](M044-incremental-geometry-predecessor.md) |
 | M045 | modify | done | Synchronize generated architecture-layer claims with completed P026 evidence without closing downstream terrain export or Pantheon-scale work. | [M045](M045-p026-architecture-claim-sync.md) |
+| M046 | modify | done | Make the compaction recovery acceptance test valid when the registry has no active work card, without inventing write scope or changing hook behavior. | [M046](M046-zero-active-context-hook-test.md) |
+| M047 | modify | done | Remove fixed site-response vocabulary from SiteContext so the framework stores observations and obligations while project-authored semantics name possible design strategies. | [M047](M047-generic-site-response-boundary.md) |
 
 [Back to RMPA](../README.md)

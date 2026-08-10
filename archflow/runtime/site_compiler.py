@@ -188,9 +188,8 @@ def _compile_obligations(
             obligations,
             obligation_id="resolve.site.ground-response",
             statement=(
-                "The Architect must resolve the uneven-ground relationship "
-                "without the framework selecting grading, relocation, or "
-                "foundation."
+                "The Architect must resolve the uneven-ground relationship; "
+                "the site compiler provides no design response."
             ),
             source_ref=source_ref,
         )

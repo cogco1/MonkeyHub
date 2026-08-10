@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -54,6 +55,18 @@ def _run_hook(payload: dict[str, object]) -> dict[str, object]:
     if result.returncode != 0:
         raise AssertionError(result.stderr)
     return json.loads(result.stdout)
+
+
+def _hook_module():
+    spec = importlib.util.spec_from_file_location(
+        "archflow_context_recovery_test",
+        HOOK,
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError("context recovery hook cannot be imported")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class ContextRecoveryHookTests(unittest.TestCase):
@@ -126,13 +139,37 @@ class ContextRecoveryHookTests(unittest.TestCase):
         self.assertIn("ARCHFLOW COMPACTION RECOVERY @1", context)
         self.assertIn("orientation only", context)
         self.assertIn("Git HEAD:", context)
-        for item_id in _active_ids():
+        active_ids = _active_ids()
+        for item_id in active_ids:
             self.assertIn(f"Active card {item_id}", context)
-        self.assertIn("Write scope:", context)
-        self.assertIn("Stop conditions:", context)
-        self.assertIn("P046 capsule sha256:", context)
+        if active_ids:
+            self.assertIn("Write scope:", context)
+            self.assertIn("Stop conditions:", context)
+            self.assertIn("P046 capsule sha256:", context)
+        else:
+            self.assertIn("Active work cards: none", context)
+            self.assertNotIn("Write scope:", context)
+            self.assertNotIn("P046 capsule sha256:", context)
         self.assertNotIn("must-not-be-read", context)
         self.assertNotIn(str(ROOT), context)
+
+    def test_zero_active_card_context_does_not_fabricate_authority(self):
+        context = _hook_module().render_context(
+            {
+                "git": {
+                    "branch": "test-branch",
+                    "head": "a" * 40,
+                    "dirty_paths": (),
+                },
+                "active_cards": (),
+            }
+        )
+
+        self.assertIn("Active work cards: none", context)
+        self.assertNotIn("Active card ", context)
+        self.assertNotIn("Write scope:", context)
+        self.assertNotIn("Stop conditions:", context)
+        self.assertNotIn("P046 capsule sha256:", context)
 
     def test_invalid_event_fails_closed_without_echoing_input(self):
         output = _run_hook(

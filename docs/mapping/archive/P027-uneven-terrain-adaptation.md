@@ -1,7 +1,7 @@
 # P027 — Uneven-terrain adaptation slice
 
 - Origin: Planning
-- Status: Ready after P026
+- Status: Done
 - Depends on: P026
 
 ## Goal
@@ -40,3 +40,11 @@ Platform deployment remains downstream.
 - Stop before modifying any valued external model or world.
 - Stop if an optional platform adapter cannot prove observation order around
   external writes.
+
+
+## Completion
+
+- Completed: 2026-08-10
+- Evidence: Typed exact-base terrain alternatives, explicit Architect selection, contact validation, and unchanged-plan stop receipts are implemented in archflow/runtime/terrain_adaptation.py and archflow/capabilities/terrain.py.
+- Evidence: probes/p027-terrain-adaptation reloads observed uneven terrain, rejected grading and relocation, selected elevated support, one semantic-geometry tree, an exact neutral scene, eight passing contacts, and one failed unchanged plan.
+- Evidence: python tools/devctl.py verify P027 passed ARCHITECTURE PASS for 104 files and 461 unittest cases with 3 skips.

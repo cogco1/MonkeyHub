@@ -163,12 +163,11 @@
         "M024",
         "P026",
         "P051",
-        "P038"
-      ],
-      "open_cards": [
+        "P038",
         "P027"
       ],
-      "gap": "Direct component-to-geometry binding and deterministic sandbox realization are proven; P027 remains responsible for uneven-terrain adaptation and P038 for Pantheon-scale longitudinal evidence."
+      "open_cards": [],
+      "gap": "Direct component-to-geometry binding, deterministic sandbox realization, Pantheon-scale longitudinal flow, and explicit uneven-terrain alternatives with exact contact validation are proven; external-platform execution and structurally engineered terrain adaptation remain downstream."
     },
     {
       "id": "L8",
@@ -211,10 +210,11 @@
         "P002",
         "P004",
         "P032",
-        "P034"
+        "P034",
+        "M047"
       ],
       "open_cards": [],
-      "gap": "Authorized SiteContext and resource/build-policy compilation are proven without prescribing a response; spatial response remains downstream Architect work."
+      "gap": "SiteContext retains observations and generic response obligations only; resource and build-policy compilation remain separate, while project strategy semantics stay downstream Architect work."
     },
     {
       "id": "L11",
@@ -454,7 +454,7 @@
         "P031",
         "P027"
       ],
-      "purpose": "Add reversible control compile and validate a neutral hybrid artifact prove sandbox Gold save and stage it then address uneven site geometry."
+      "purpose": "Add reversible control, compile and validate a neutral hybrid artifact, prove sandbox Gold, save and stage it, and preserve explicit uneven-site alternatives with exact contact evidence."
     },
     {
       "name": "World authority and recovery",
@@ -2170,8 +2170,8 @@
     {
       "id": "P027",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "ready",
+      "stream": "archive",
+      "status": "done",
       "goal": "Extend the accepted sandbox slice to uneven site geometry without a fixed site-response answer.",
       "depends_on": [
         "P026"
@@ -2195,8 +2195,49 @@
         "Repeated-defect stop receipt",
         "Sandbox and canonical preservation"
       ],
-      "card": "docs/mapping/planning/P027-uneven-terrain-adaptation.md",
-      "evidence": []
+      "card": "docs/mapping/archive/P027-uneven-terrain-adaptation.md",
+      "evidence": [
+        "Typed exact-base terrain alternatives, explicit Architect selection, contact validation, and unchanged-plan stop receipts are implemented in archflow/runtime/terrain_adaptation.py and archflow/capabilities/terrain.py.",
+        "probes/p027-terrain-adaptation reloads observed uneven terrain, rejected grading and relocation, selected elevated support, one semantic-geometry tree, an exact neutral scene, eight passing contacts, and one failed unchanged plan.",
+        "python tools/devctl.py verify P027 passed ARCHITECTURE PASS for 104 files and 461 unittest cases with 3 skips."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P027",
+        "actor": "Codex",
+        "verified_at": "2026-08-10T03:32:17.167931+00:00",
+        "contract_sha256": "36044f9b2365bddfb1af4170803fcedfd894cafa9f1c8dd71b09fde323e1d2ee",
+        "scope_sha256": "3c520cf1a7b93f6c84cab8d5ebf01417b325d71c92fdd3e7ecb185df11fe60b7",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "a4538fa3d709292b0b60d18a734e6193ead29ab878366b2f0b3e07308c1d22bc",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (104 files, 0.558s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "92b9d4c3ba51dc9922440888d7cc59bc2997122e8a2406d6c094e7efb4127142",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s..............................s........................................................................................................................................................................................................................Executing <Task finished name='Task-55' coro=<GeometryProposalProducerTests.test_invalid_parameter_json_values_remain_rejected() done, defined at D:\\ARCHFLOW_V4\\tests\\test_geometry_proposal_producer.py:778> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.266 seconds\n.............................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 461 tests in 17.029s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
     },
     {
       "id": "P028",
@@ -7689,6 +7730,219 @@
             "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "stdout_tail": "ARCHITECTURE PASS (103 files, 0.503s)\n",
             "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
+    },
+    {
+      "id": "M046",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make the compaction recovery acceptance test valid when the registry has no active work card, without inventing write scope or changing hook behavior.",
+      "depends_on": [
+        "M034"
+      ],
+      "write_scope": [
+        "tests/test_context_recovery_hook.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A zero-active-card recovery names that state and does not fabricate a card.",
+        "Write scope stop conditions and capsule claims remain mandatory whenever at least one active card exists.",
+        "Coverage continues to derive the expected card set from the registry.",
+        "The production hook and project configuration remain unchanged."
+      ],
+      "tests": [
+        "Focused context recovery hook suite with no active card",
+        "Architecture firewall",
+        "Full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_context_recovery_hook"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M046-zero-active-context-hook-test.md",
+      "evidence": [
+        "tests/test_context_recovery_hook.py now derives active-card assertions conditionally and directly exercises a synthetic zero-active-card recovery without changing the production hook.",
+        "Focused context recovery tests passed 5 cases; architecture firewall passed; full discovery passed 462 tests with 3 skips."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M046",
+        "actor": "Codex",
+        "verified_at": "2026-08-10T03:38:50.034805+00:00",
+        "contract_sha256": "e4a73741db7effac5304927c91ca6c99f990b9f0354628120eb1c094b2402848",
+        "scope_sha256": "1c13fa9654789a65e51ba6a68122a0eff4dbca2d427a29f7a182a4bdf6183256",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_context_recovery_hook"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "a91240947e2839f1386a89c656d9ce3a2119da4f0961846cc4394edda3aa0317",
+            "stdout_tail": "",
+            "stderr_tail": ".....\n----------------------------------------------------------------------\nRan 5 tests in 0.890s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3fdb2c70b7ad5b30bf6bcaaabaa86b7b3dc532f71b7c92a9056578887be08e0",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (104 files, 0.675s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "316a2687849cf19202327e21ecc33234863417fa3d5ece78d3100632da6b53c6",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s..............................s......................................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 462 tests in 17.227s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
+    },
+    {
+      "id": "M047",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Remove fixed site-response vocabulary from SiteContext so the framework stores observations and obligations while project-authored semantics name possible design strategies.",
+      "depends_on": [
+        "P027"
+      ],
+      "write_scope": [
+        "archflow/state/site_context.py",
+        "archflow/runtime/site_compiler.py",
+        "archflow/runtime/terrain_adaptation.py",
+        "archflow/capabilities/terrain.py",
+        "tests/test_site_context.py",
+        "tests/integration/test_terrain_adaptation_flow.py",
+        "probes/p027-terrain-adaptation/",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Current SiteContext records contain no fixed grading relocation foundation or other response-selection fields.",
+        "Uneven ground still creates a generic Architect-owned response obligation.",
+        "P027 strategy codes and expert identities remain project data.",
+        "The migrated P027 probe reloads with exact semantic-geometry and contact evidence."
+      ],
+      "tests": [
+        "Site-context schema and round-trip tests",
+        "P027 data-isolation and reload tests",
+        "Architecture firewall and full unittest discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_site_context",
+          "tests.integration.test_terrain_adaptation_flow"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M047-generic-site-response-boundary.md",
+      "evidence": [
+        "SiteContext@2 removes all fixed response-selection fields and the site compiler now emits a generic Architect-owned ground-response obligation.",
+        "TerrainResponseOption@2 stores project-authored strategy_code plus explicit resolved obligation ids; the framework no longer registers or enumerates grading, siting, support, or other strategy experts.",
+        "The migrated P027 probe keeps its selected strategy and exact semantic geometry while reloading 8 passing contacts and the failed unchanged-plan stop; 12 focused tests, architecture firewall, and 462 full tests passed with 3 skips."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M047",
+        "actor": "Codex",
+        "verified_at": "2026-08-10T03:51:58.033691+00:00",
+        "contract_sha256": "9700a7561252097c3b45715e9e67db6dd3b247e1972796e72c2f2343a92677a5",
+        "scope_sha256": "0a44084475e77f1c93882e295c2c06cb2ee57ca23e896094f52981b70288d642",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_site_context",
+              "tests.integration.test_terrain_adaptation_flow"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "a5be5162cba385a6a989d3e91a52b76e470268dba227d7c7dc8ebb3b100db068",
+            "stdout_tail": "",
+            "stderr_tail": "............\n----------------------------------------------------------------------\nRan 12 tests in 0.129s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "3b4fea43d8536eede61d2e338bd143fe34a425773667691abb3f62568810d86f",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (104 files, 0.641s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "17faacda15961972c40b0aa267fd9daf44c858798d1905bad6928c4318b173ff",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s..............................s......................................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 462 tests in 16.950s\n\nOK (skipped=3)\n"
           }
         ]
       },
