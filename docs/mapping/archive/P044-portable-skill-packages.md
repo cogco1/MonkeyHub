@@ -101,3 +101,9 @@ or hidden expert order.
   external world directly.
 - Stop if packaging copies project/probe data into framework modules.
 - Stop if cross-provider support requires duplicating architectural logic.
+
+
+## Completion
+
+- Completed: 2026-08-10
+- Evidence: Implemented provider-neutral SkillSpec@1 packages with explicit-root content-addressed loading, current ContextSlice discovery, detached bounded advice/exact-base proposal execution, authority-preserving receipts, thin Codex/Claude/Kimi exports, a generic obligation-review package, deterministic CLI controls, and fail-closed tamper/instance-answer checks. Targeted 11 tests pass; full regression passes 473 tests with 2 skips; architecture firewall passes 109 files; generated Codex SKILL.md passes the skill-creator validator.

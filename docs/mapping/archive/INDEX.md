@@ -60,6 +60,7 @@ Which completed work has named acceptance evidence?
 | M011 | modify | done | Swap the obligation and verified-transition return-arrow heights at D_v,k without crossing. | [M011](M011-diagram-return-arrow-order.md) |
 | M012 | modify | done | Allow exact-base DecisionOperator compilation to apply valid lifecycle transitions to commitments already present in operational state. | [M012](M012-commitment-transition-operator.md) |
 | P043 | planning | done | Add phase-independent exact-base human clarification requests and authority receipts without conflating them with candidate approval. | [P043](P043-phase-independent-human-clarification.md) |
+| P044 | planning | done | Package state-responsive ArchFlow capabilities as provider-neutral versioned Skills with thin model-surface adapters and no transfer of runtime authority. | [P044](P044-portable-skill-packages.md) |
 | M013 | modify | done | Bind work-card completion to machine-executed verification receipts that become stale when the verified contract or source state changes. | [M013](M013-receipt-bound-work-completion.md) |
 | P045 | planning | done | Compile V4 architecture invariants into one fast mandatory firewall for framework contamination import direction persistence authority and hard-soft-single-writer separation. | [P045](P045-architecture-firewall.md) |
 | P046 | planning | done | Generate a bounded work-card context capsule so an Agent receives the current responsibility contracts evidence and tests without full repository ingestion. | [P046](P046-agent-context-capsule.md) |

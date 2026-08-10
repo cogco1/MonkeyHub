@@ -58,7 +58,7 @@
     {
       "id": "L2",
       "name": "Operational design state and experts",
-      "status": "partial",
+      "status": "proven",
       "responsibility": "Advance branch-local D_v,k through Architect proposals, verified transitions, and state-responsive experts.",
       "evidence_cards": [
         "P006",
@@ -71,12 +71,11 @@
         "P043",
         "P039",
         "P022",
-        "P029"
-      ],
-      "open_cards": [
+        "P029",
         "P044"
       ],
-      "gap": "The nested exact-base resumable controller state-responsive expert loop and real Primary Architect provider are proven; portable Skill packaging remains open."
+      "open_cards": [],
+      "gap": "The nested exact-base resumable controller, state-responsive expert and Skill discovery, real Primary Architect provider, and provider-neutral content-addressed Skill surfaces are proven without transferring runtime authority to a host adapter."
     },
     {
       "id": "L3",
@@ -3449,8 +3448,8 @@
     {
       "id": "P044",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "ready",
+      "stream": "archive",
+      "status": "done",
       "goal": "Package state-responsive ArchFlow capabilities as provider-neutral versioned Skills with thin model-surface adapters and no transfer of runtime authority.",
       "depends_on": [
         "P006",
@@ -3492,8 +3491,47 @@
         "Tamper duplicate missing reference and schema rejection",
         "No instance-answer scan"
       ],
-      "card": "docs/mapping/planning/P044-portable-skill-packages.md",
-      "evidence": []
+      "card": "docs/mapping/archive/P044-portable-skill-packages.md",
+      "evidence": [
+        "Implemented provider-neutral SkillSpec@1 packages with explicit-root content-addressed loading, current ContextSlice discovery, detached bounded advice/exact-base proposal execution, authority-preserving receipts, thin Codex/Claude/Kimi exports, a generic obligation-review package, deterministic CLI controls, and fail-closed tamper/instance-answer checks. Targeted 11 tests pass; full regression passes 473 tests with 2 skips; architecture firewall passes 109 files; generated Codex SKILL.md passes the skill-creator validator."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P044",
+        "actor": "codex",
+        "verified_at": "2026-08-10T04:14:59.106310+00:00",
+        "contract_sha256": "bccbbc1d00bc9ca5c34dfd83b5156281f5aa2729449ed12ebf4559822a4bd0d4",
+        "scope_sha256": "f11e547911d2a07ab7fb43918b9b9c80586fad605370747b6775eddad7c7174c",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e321bd4076d988d660943a74221ff1a8cbe9fb834e4b55605f680fbfe38f22cc",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (109 files, 0.647s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "7a649bd07b79782777b09b202698228089dff98dccfe1395c9ed2ea2fdf5922e",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s................................................................................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 473 tests in 137.462s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
     },
     {
       "id": "M013",

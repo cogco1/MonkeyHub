@@ -6,6 +6,6 @@ Which capability is not yet implemented or accepted?
 
 | ID | Origin | Status | Goal | Card |
 | --- | --- | --- | --- | --- |
-| P044 | planning | ready | Package state-responsive ArchFlow capabilities as provider-neutral versioned Skills with thin model-surface adapters and no transfer of runtime authority. | [P044](P044-portable-skill-packages.md) |
+| - | - | - | No cards | - |
 
 [Back to RMPA](../README.md)
