@@ -38,6 +38,7 @@ Which completed work has named acceptance evidence?
 | P028 | planning | done | Expose bounded building-scoped CLI retrieval with provenance, no fallback, and no state-writing authority. | [P028](P028-building-scoped-cli-retrieval.md) |
 | P029 | planning | done | Connect one real asynchronous model provider to the Primary Architect protocol and dynamic capabilities. | [P029](P029-primary-architect-model-provider.md) |
 | P030 | planning | done | Validate deterministic voxel use scenarios beyond minimal static usability gates. | [P030](P030-voxel-use-scenario-validation.md) |
+| P031 | planning | done | Add material accounting staged realization neutral save/share and optional downstream platform exports. | [P031](P031-player-save-material-build.md) |
 | P032 | planning | done | Compile an authorized building-scoped SiteContext before spatial design without prescribing grading, relocation, or foundation answers. | [P032](P032-site-context-compiler.md) |
 | P033 | planning | done | Preserve a reloadable portfolio of alternative design branches, lineage, trade-offs, and explicit selection authority. | [P033](P033-design-option-portfolio.md) |
 | P034 | planning | done | Compile building-scoped resource, material, build-mode, staging, and constructability constraints before topology selection. | [P034](P034-resource-constructability-compiler.md) |

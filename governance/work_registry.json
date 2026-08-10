@@ -127,11 +127,10 @@
       "evidence_cards": [
         "P043",
         "P025",
-        "M004"
-      ],
-      "open_cards": [
+        "M004",
         "P031"
       ],
+      "open_cards": [],
       "gap": "Phase-independent exact-base clarification and pause/resume are proven; P025 and M004 still own candidate-stage controls and approval, while P031 owns staged save/share."
     },
     {
@@ -242,11 +241,10 @@
         "P002",
         "M003",
         "P025",
-        "M018"
-      ],
-      "open_cards": [
+        "M018",
         "P031"
       ],
+      "open_cards": [],
       "gap": "Durable partial-write detection compensation outcomes and restart reconciliation are proven for the Minecraft adapter; deployment remains downstream of an accepted neutral artifact and platform equivalence receipts."
     },
     {
@@ -293,11 +291,10 @@
       "evidence_cards": [
         "P002",
         "M003",
-        "M018"
-      ],
-      "open_cards": [
+        "M018",
         "P031"
       ],
+      "open_cards": [],
       "gap": "Minecraft transport mutation receipts and recovery exist, but neutral-artifact equivalence loss reporting and platform exporters do not; Rhino Revit and agentic CAD remain adapter classes rather than dependencies."
     },
     {
@@ -2390,8 +2387,8 @@
     {
       "id": "P031",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "ready",
+      "stream": "archive",
+      "status": "done",
       "goal": "Add material accounting staged realization neutral save/share and optional downstream platform exports.",
       "depends_on": [
         "M003",
@@ -2425,8 +2422,47 @@
         "Imported authority rejection",
         "Multiplayer explicitly out of scope"
       ],
-      "card": "docs/mapping/planning/P031-player-save-material-build.md",
-      "evidence": []
+      "card": "docs/mapping/archive/P031-player-save-material-build.md",
+      "evidence": [
+        "ARCHITECTURE PASS (102 files); 449 tests passed with 2 explicit skips; material ranges and cumulative stage needs, exact-plan controls, neutral five-view package, explicit platform equivalence/loss receipts, P036 export persistence, and digest-stable reload verified."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P031",
+        "actor": "Codex",
+        "verified_at": "2026-08-10T02:31:34.610599+00:00",
+        "contract_sha256": "95383d78d3b22ed8a2bfcd8182ef6f39d310c27dd90e0a7d96cb31c53dd75a5a",
+        "scope_sha256": "ebcfce512cad5b657e6f9e223a43bf2e5436849f821f9f53feb240e400a626d0",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "c9d9dacf1ea3ee3584de7dc0b27e96bfe09bde7b531b2f114ad9f635f58e2bae",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (102 files, 0.541s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d94c9ae19e8ae3eb0f1459651fa355f2786e6f61bc75784977b89b92a3cc776f",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s........................................................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 449 tests in 134.721s\n\nOK (skipped=2)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
     },
     {
       "id": "P032",
