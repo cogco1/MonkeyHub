@@ -48,6 +48,7 @@ Which completed work has named acceptance evidence?
 | M007 | modify | done | Separate project canonical identity from run/branch identity and retire duplicate hard and legacy-program authority. | [M007](M007-project-state-identity-and-authority-seam.md) |
 | P036 | planning | done | Implement the single durable project repository behind the P035 persistence ports. | [P036](P036-durable-project-repository.md) |
 | P037 | planning | done | Create a Pantheon data-only project probe through generic durable project modules without encoding an architectural answer. | [P037](P037-pantheon-project-envelope-probe.md) |
+| P038 | planning | done | Prove the Pantheon probe as a longitudinal raw-request-to-usable-building workflow without framework-owned instance answers. | [P038](P038-pantheon-longitudinal-full-flow.md) |
 | P039 | planning | done | Enforce architectural design maturity as deterministic deliverable gates while keeping expert discovery dynamic inside the current phase. | [P039](P039-design-maturity-stage-gates.md) |
 | P040 | planning | done | Coordinate an Architect-selected schematic branch through design development before candidate assembly. | [P040](P040-design-development-coordination.md) |
 | P041 | planning | done | Compile typed exact-base design operators through deterministic dependency closure into the next branch-local operational Markov state. | [P041](P041-decision-operator-state-closure.md) |

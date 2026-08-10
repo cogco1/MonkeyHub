@@ -162,11 +162,11 @@
         "P050",
         "M024",
         "P026",
-        "P051"
+        "P051",
+        "P038"
       ],
       "open_cards": [
-        "P027",
-        "P038"
+        "P027"
       ],
       "gap": "Direct component-to-geometry binding and deterministic sandbox realization are proven; P027 remains responsible for uneven-terrain adaptation and P038 for Pantheon-scale longitudinal evidence."
     },
@@ -2883,8 +2883,8 @@
     {
       "id": "P038",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "ready",
+      "stream": "archive",
+      "status": "done",
       "goal": "Prove the Pantheon probe as a longitudinal raw-request-to-usable-building workflow without framework-owned instance answers.",
       "depends_on": [
         "P026",
@@ -2913,8 +2913,47 @@
         "Neutral geometry sandbox paper-view and use validation",
         "Full project restart"
       ],
-      "card": "docs/mapping/planning/P038-pantheon-longitudinal-full-flow.md",
-      "evidence": []
+      "card": "docs/mapping/archive/P038-pantheon-longitudinal-full-flow.md",
+      "evidence": [
+        "Real Codex Agent CLI authored a project-scoped Pantheon recipe; P036 persisted provenance, alternatives, selected and rejected revisions, exact semantic-bound geometry, hard usability validation, five paper views, and a P031 neutral package; restart reload passed with HEAD v0 and no external-platform or canonical-write claim; 18 focused Pantheon tests, architecture firewall over 102 files, and P038 verification passed."
+      ],
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P038",
+        "actor": "Codex",
+        "verified_at": "2026-08-10T03:04:43.469986+00:00",
+        "contract_sha256": "f8e18412de2089a1bebba21d5281e8063ef17e5f1cbaec85cf84280518bd6b87",
+        "scope_sha256": "3f84821a1d74d93d0e4b0a69bd9fd737706d07c6b4968f9f7683510889c86b29",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "01fa7d7ec6413794708337dbcf747c19327a382b9f3e69a177703824fe8fbd71",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (102 files, 0.643s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "469a54107b1787838d7d6aeb38a60c7f96128435151638d2c94d372d23817733",
+            "stdout_tail": "",
+            "stderr_tail": "....s...s..............................s..............................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 454 tests in 16.715s\n\nOK (skipped=3)\n"
+          }
+        ]
+      },
+      "completed_on": "2026-08-10"
     },
     {
       "id": "P039",

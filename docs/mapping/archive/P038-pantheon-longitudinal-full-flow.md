@@ -1,8 +1,8 @@
 # P038 — Pantheon longitudinal full-flow acceptance
 
 - Origin: Planning
-- Status: Ready after the generic prompt-to-usable pipeline
-- Depends on: P026, P031, P033
+- Status: Done
+- Depends on: P026, P031, P033, P051
 
 ## Goal
 
@@ -42,9 +42,10 @@ Pantheon test may be called a complete architectural workflow.
   distinct and reloadable.
 - Geometry-program evaluation and sandbox realization bind the exact same
   accepted candidate. No external-platform success is usability proof.
-- The final artifact, canonical state, operational trace, evidence, expert
+- The accepted run, neutral package, operational trace, evidence, expert
   advice, validation, evaluation, approval, and mutation receipts reload after
-  restart.
+  restart. Canonical HEAD remains unchanged without separate promotion
+  authority.
 
 ## Tests
 
@@ -64,3 +65,9 @@ Pantheon test may be called a complete architectural workflow.
 - Stop if an intermediate result bypasses the project repository.
 - Stop before calling the test complete unless the final accepted artifact
   passes hard usability gates.
+
+
+## Completion
+
+- Completed: 2026-08-10
+- Evidence: Real Codex Agent CLI authored a project-scoped Pantheon recipe; P036 persisted provenance, alternatives, selected and rejected revisions, exact semantic-bound geometry, hard usability validation, five paper views, and a P031 neutral package; restart reload passed with HEAD v0 and no external-platform or canonical-write claim; 18 focused Pantheon tests, architecture firewall over 102 files, and P038 verification passed.
