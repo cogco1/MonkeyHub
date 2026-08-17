@@ -105,5 +105,15 @@ Which completed work has named acceptance evidence?
 | M045 | modify | done | Synchronize generated architecture-layer claims with completed P026 evidence without closing downstream terrain export or Pantheon-scale work. | [M045](M045-p026-architecture-claim-sync.md) |
 | M046 | modify | done | Make the compaction recovery acceptance test valid when the registry has no active work card, without inventing write scope or changing hook behavior. | [M046](M046-zero-active-context-hook-test.md) |
 | M047 | modify | done | Remove fixed site-response vocabulary from SiteContext so the framework stores observations and obligations while project-authored semantics name possible design strategies. | [M047](M047-generic-site-response-boundary.md) |
+| M048 | modify | done | Synchronize the downstream-adapter architecture claim with P031's proven export-equivalence receipts without claiming that any platform exporter exists. | [M048](M048-downstream-export-claim-sync.md) |
+| M049 | modify | done | Correct the P051 production overclaim while preserving its valid invariants and register one bounded semantic-geometry production-closure chain. | [M049](M049-semantic-geometry-production-truth.md) |
+| P054 | planning | done | Author one typed SpatialOptionProposal whose DesignComponent tree and coarse geometry are born together under existing P051 ownership invariants. | [P054](P054-typed-semantic-spatial-authoring.md) |
+| P055 | planning | done | Compile component and detailed neutral geometry changes as one exact-base lifecycle transaction with explicit dependency invalidation. | [P055](P055-joint-semantic-geometry-lifecycle.md) |
+| P056 | planning | done | Provide one recoverable official prompt-to-building runtime using P053 provider authority P036 persistence and an Agent CLI implementation behind an API-ready port. | [P056](P056-durable-production-runtime.md) |
+| M050 | modify | done | Quarantine FakeVoxel arbitrary MCP plans and direct provider injection after the formal runtime owns their production responsibilities. | [M050](M050-quarantine-production-bypasses.md) |
+| P057 | planning | done | Derive a rebuildable ComponentIndex and bounded task context without creating another semantic tree or authority. | [P057](P057-derived-component-task-index.md) |
+| P058 | planning | done | Prove a fresh three-stage semantic-geometry dome and Pantheon-scale prompt run through the formal generic runtime without frozen-answer reuse. | [P058](P058-fresh-progressive-dome-pantheon-proof.md) |
+| M051 | modify | done | Remove machine-absolute artifact identities from the retained synthetic test_library probe without restoring it to production. | [M051](M051-portable-synthetic-probe-artifact-refs.md) |
+| M052 | modify | done | Synchronize generated governance claims with the completed semantic-geometry production closure without expanding evidence. | [M052](M052-semantic-geometry-closure-claim-sync.md) |
 
 [Back to RMPA](../README.md)

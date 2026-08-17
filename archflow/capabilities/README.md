@@ -84,7 +84,7 @@ design authority.
 
 ## Schematic spatial proposals
 
-`spatial.py` compiles Architect-authored `SpatialOptionProposal@1` values; it
+`spatial.py` compiles Architect-authored `SpatialOptionProposal@2` values; it
 does not contain a building-type lookup, standard footprint, typology fallback,
 room arrangement, material palette, or coordinate generator. Concrete levels,
 footprint cells, massing volumes, function zones, topology links, typology
@@ -106,6 +106,23 @@ must not pretend to resolve it. At least two structurally distinct options are
 required and emitted in stable ID order solely for reproducibility. The option
 set has no ranking, selection, hard-usability, design-development, execution,
 world-write, or canonical-write authority.
+
+## Semantic-spatial authoring
+
+`semantic_spatial_authoring.py` places a typed provider boundary immediately
+before the deterministic spatial compiler. One bounded request carries the
+current operational digest, phase gate, program, site context, build policy,
+and a machine-facing output contract. The provider must return the existing
+`SpatialOptionProposal@2`; no parallel semantic record is introduced.
+
+The proposal creates its `DesignComponent` tree and coarse massing volumes in
+one object. Construction and compilation reject a missing or cyclic parent,
+an unknown, multiply-owned, or unowned volume, an unknown source, a stale base,
+and a mismatched provider receipt before the result can enter an option set.
+The returned receipt is proposal-only and carries no selection, persistence,
+validation, execution, or canonical-write authority. Agent CLI, a scripted
+test provider, and a later API adapter therefore share one `AsyncModelProvider`
+port without changing the domain contract.
 
 ## Design-development coordination
 

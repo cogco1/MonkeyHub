@@ -1,6 +1,6 @@
-"""Run the P1 fake walking skeleton."""
+"""Delegate ``python -m archflow.runtime`` to the formal project runtime."""
 
-from archflow.runtime.walking_skeleton import main
+from archflow.project.runtime import main
 
 
 raise SystemExit(main())

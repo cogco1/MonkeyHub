@@ -1,7 +1,7 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-10",
-  "phase": "P6 - sandbox-first neutral geometry roadmap active",
+  "updated_on": "2026-08-16",
+  "phase": "P7 - semantic geometry production closure proven",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
     "modify": "Defects in the active path are repaired without widening scope.",
@@ -10,7 +10,7 @@
   },
   "modules": {
     "state": "design_brief_commitment_transition_and_markov_state_proven",
-    "runtime": "unified_semantic_geometry_candidate_path_proven",
+    "runtime": "semantic_geometry_production_closure_proven",
     "workspace": "p1_proven",
     "capabilities": "state_responsive_experts_and_retrieval_proven",
     "submission": "obligation_repair_proven",
@@ -91,10 +91,16 @@
         "P047",
         "P048",
         "P026",
-        "P051"
+        "P051",
+        "P054",
+        "P055",
+        "P056",
+        "M050",
+        "P057",
+        "P058"
       ],
       "open_cards": [],
-      "gap": "Schematic alternatives, selected-branch coordination, stable semantic component identity, progressive refinement, and direct candidate assembly from the developed design state are proven."
+      "gap": "Schematic alternatives, selected-branch coordination, provider-neutral semantic-spatial co-authoring, stable component identity, single coarse-geometry ownership, joint component-and-detailed-geometry lifecycle compilation, durable runtime persistence, legacy-route isolation, derived task context, direct candidate assembly, and fresh longitudinal generation are proven through P058; live-provider reliability, external-platform equivalence, and engineering or fabrication validation are not claimed here."
     },
     {
       "id": "L4",
@@ -148,7 +154,7 @@
     {
       "id": "L7",
       "name": "Neutral geometry and sandbox realization",
-      "status": "partial",
+      "status": "proven",
       "responsibility": "Compile Architect semantics into generic geometry operations assemblies and assets then realize validate and render the exact candidate without an external platform.",
       "evidence_cards": [
         "P004",
@@ -163,10 +169,14 @@
         "P026",
         "P051",
         "P038",
-        "P027"
+        "P027",
+        "P055",
+        "P056",
+        "M050",
+        "P058"
       ],
       "open_cards": [],
-      "gap": "Direct component-to-geometry binding, deterministic sandbox realization, Pantheon-scale longitudinal flow, and explicit uneven-terrain alternatives with exact contact validation are proven; external-platform execution and structurally engineered terrain adaptation remain downstream."
+      "gap": "Direct component-to-geometry binding, exact-base joint semantic-geometry lifecycle compilation, deterministic sandbox realization, durable formal runtime, bypass quarantine, fresh Pantheon-scale prompt-driven proof, and explicit uneven-terrain alternatives with exact contact validation are proven; external-platform execution and structurally engineered terrain adaptation remain downstream and unproven."
     },
     {
       "id": "L8",
@@ -218,7 +228,7 @@
     {
       "id": "L11",
       "name": "Design option portfolio and lineage",
-      "status": "partial",
+      "status": "proven",
       "responsibility": "Preserve multiple branch-local alternatives, their lineage, trade-offs, and human or Architect selection without automatic winner authority.",
       "evidence_cards": [
         "P007",
@@ -291,10 +301,11 @@
         "P002",
         "M003",
         "M018",
-        "P031"
+        "P031",
+        "M048"
       ],
       "open_cards": [],
-      "gap": "Minecraft transport mutation receipts and recovery exist, but neutral-artifact equivalence loss reporting and platform exporters do not; Rhino Revit and agentic CAD remain adapter classes rather than dependencies."
+      "gap": "P031 proves source-bound exact lossy and failed platform-export receipts plus durable export persistence, but no concrete platform exporter or format-specific equivalence validation exists; Rhino Revit and agentic CAD remain adapter classes rather than dependencies."
     },
     {
       "id": "L16",
@@ -304,10 +315,12 @@
       "evidence_cards": [
         "P014",
         "P036",
-        "P053"
+        "P053",
+        "P056",
+        "M050"
       ],
       "open_cards": [],
-      "gap": "The provider-neutral control plane is proven, but existing production responsibilities still require separate shadow-and-cutover cards that remove their direct provider injection before claiming runtime migration."
+      "gap": "The provider-neutral control plane, formal-runtime adoption, exact-base P053 resolution, no-fallback behavior, and direct-provider-injection quarantine are proven; optional live-provider availability remains environment-dependent and requires separate evidence."
     }
   ],
   "roadmap_lanes": [
@@ -493,7 +506,8 @@
         "M003",
         "M018",
         "P048",
-        "P031"
+        "P031",
+        "M048"
       ],
       "purpose": "Translate accepted neutral artifacts into Minecraft schem Rhino Revit agentic CAD or other targets with explicit equivalence or loss receipts and no reverse design authority."
     },
@@ -529,6 +543,20 @@
         "M033"
       ],
       "purpose": "Make architecture rules executable, bind completion evidence to the verified source state, and give each Agent only its bounded work context."
+    },
+    {
+      "name": "Semantic geometry production closure",
+      "cards": [
+        "P051",
+        "M049",
+        "P054",
+        "P055",
+        "P056",
+        "M050",
+        "P057",
+        "P058"
+      ],
+      "purpose": "Preserve the proven component and geometry invariants, then add typed co-authoring, one joint lifecycle, one durable runtime, isolated providers, derived task context, and fresh proof without creating another design or persistence authority."
     }
   ],
   "items": [
@@ -7985,6 +8013,838 @@
         ]
       },
       "completed_on": "2026-08-10"
+    },
+    {
+      "id": "M048",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Synchronize the downstream-adapter architecture claim with P031's proven export-equivalence receipts without claiming that any platform exporter exists.",
+      "depends_on": [
+        "P031"
+      ],
+      "write_scope": [
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "L15 credits P031 for explicit exact lossy and failed platform-export receipts.",
+        "L15 remains partial and identifies concrete platform exporters and format-specific equivalence verification as unimplemented.",
+        "No Minecraft Rhino Revit or other external platform execution is performed or claimed.",
+        "The generated dynamic map and stream indexes match the registry source of truth."
+      ],
+      "tests": [
+        "Dynamic-map generation and registry governance tests",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_devctl"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M048-downstream-export-claim-sync.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M048",
+        "actor": "Codex",
+        "verified_at": "2026-08-15T03:03:12.814740+00:00",
+        "contract_sha256": "b19fc0f35b69d4bba2178dc69443698f0e0ef2c6209f1defe3c5a40b2ddd3537",
+        "scope_sha256": "ee0584dfe300a12c425e1da36a12814b86196d5f2a7bab5c69349165cd250324",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_devctl"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "b04ecea3649b1261b8b0a7cea28ccf482ba3bdcaa9dde2f011ef69fd4d3b026b",
+            "stdout_tail": "",
+            "stderr_tail": "..............\n----------------------------------------------------------------------\nRan 14 tests in 1.666s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "facdadec940e08b138ebecc2ef9db0954721011f52868f9eb10bff00a67c422e",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (109 files, 0.500s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-15",
+      "evidence": [
+        "Corrected L15 to credit P031's source-bound exact lossy and failed export receipts plus durable export persistence while keeping concrete exporters and format-specific equivalence validation explicitly open.",
+        "M048 machine verification passed 14 devctl tests and the architecture firewall; full discovery passed 473 tests with 3 explicit skips; compileall and explicit three-path scope checks passed without external platform execution."
+      ]
+    },
+    {
+      "id": "M049",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Correct the P051 production overclaim while preserving its valid invariants and register one bounded semantic-geometry production-closure chain.",
+      "depends_on": [
+        "M048",
+        "P051",
+        "P053"
+      ],
+      "write_scope": [
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "P051 remains accepted for stable component identity single geometry ownership and exact-predecessor refinement.",
+        "No claim treats P051 as a production semantic-spatial author joint lifecycle or runnable prompt-to-building entrypoint.",
+        "P054 through P058 and M050 form one dependency-ordered production-closure lane.",
+        "Active compatibility and probe routes are named without granting frozen evidence FakeVoxel or arbitrary MCP payloads production authority.",
+        "P036 remains the only project persistence authority and P053 remains the only provider handover authority.",
+        "Generated map and stream indexes match the registry."
+      ],
+      "tests": [
+        "Registry and generated-map governance tests",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_devctl"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M049-semantic-geometry-production-truth.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M049",
+        "actor": "Codex",
+        "verified_at": "2026-08-16T06:25:31.594662+00:00",
+        "contract_sha256": "e2a224d0e1efc908ab891147d32f644f569244581ece3747e8093782a7a86f27",
+        "scope_sha256": "bb33417dcfd217370aa1739b463608b1fc5e4bd897267c0c4c9441a9ea15ba4a",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_devctl"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "df2a27fa3c4a14ba35aa98f093b8f3611d311f1904e1e47947c4cc2140780a24",
+            "stdout_tail": "",
+            "stderr_tail": "..............\n----------------------------------------------------------------------\nRan 14 tests in 1.136s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "c03359587b8d264ce88c6673e107ba4c57374980b2a143e5ead455eb24180f2c",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (109 files, 0.506s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-16",
+      "evidence": [
+        "Corrected runtime, L3, L7, and L16 claims so P051 retains its proven identity and ownership invariants while production authoring, joint lifecycle, durable runtime, route quarantine, derived context, and fresh proof remain explicit open work.",
+        "Registered dependency-ordered P054-P058 and M050 cards with P036 as sole persistence authority, P053 as sole provider handover authority, and explicit separation of active, compatibility, and probe routes; M049 machine verification passed 14 governance tests and the architecture firewall."
+      ]
+    },
+    {
+      "id": "P054",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Author one typed SpatialOptionProposal whose DesignComponent tree and coarse geometry are born together under existing P051 ownership invariants.",
+      "depends_on": [
+        "M049",
+        "P029",
+        "P051"
+      ],
+      "write_scope": [
+        "archflow/adapters/model_provider.py",
+        "archflow/capabilities/",
+        "archflow/runtime/",
+        "archflow/state/",
+        "tests/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A provider-neutral typed producer returns the existing SpatialOptionProposal and chooses no persistence path.",
+        "Components and coarse volumes are generated together with exactly one owner for every volume.",
+        "Malformed stale cyclic multiply-owned unowned and unknown-source provider results fail closed.",
+        "Scripted Agent CLI and later API providers share one typed boundary without gaining domain authority."
+      ],
+      "tests": [
+        "Coarse dome and portico semantic-volume co-authoring",
+        "Malformed ownership topology source and stale-base rejection",
+        "Provider-neutral replay and architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_semantic_spatial_authoring"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P054-typed-semantic-spatial-authoring.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P054",
+        "actor": "Codex",
+        "verified_at": "2026-08-16T06:35:25.837984+00:00",
+        "contract_sha256": "6de5c98ea7fd092a8f36bf46d7b516e59953e5aeda8363517b9a5d7e9ae44aa9",
+        "scope_sha256": "0d48a6587e4fd79462c010d9195bb7b1658895b6b6b7890570220facc43ac49b",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_semantic_spatial_authoring"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "ddfa74e3436e1c180e0924521a78de04885c5592e5082596cc9c7f5bc6ff16e6",
+            "stdout_tail": "",
+            "stderr_tail": "......\n----------------------------------------------------------------------\nRan 6 tests in 0.113s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "dab7d48bceb103959baa7c53e35dc64f83445af52ea7fc9aeb06005e1b07f05d",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (110 files, 0.515s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-16",
+      "evidence": [
+        "Implemented a bounded SemanticSpatialAuthoringPrompt and provider-neutral AsyncModelProvider turn that returns the existing SpatialOptionProposal@2; DesignComponent semantics and coarse MassingVolume geometry are authored in one object with no writer or path capability.",
+        "Deterministic validation now rejects stale state/context, mismatched provider receipts, malformed envelopes, missing or cyclic parents, duplicate or absent volume ownership, and unknown sources with named receipts; 6 focused tests, 479 full tests with 3 explicit skips, compileall, the 110-file architecture firewall, and the 110-production-file V3 boundary passed."
+      ]
+    },
+    {
+      "id": "P055",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Compile component and detailed neutral geometry changes as one exact-base lifecycle transaction with explicit dependency invalidation.",
+      "depends_on": [
+        "P054",
+        "P051",
+        "P036"
+      ],
+      "write_scope": [
+        "archflow/state/",
+        "archflow/runtime/",
+        "archflow/realization/",
+        "tests/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "One transaction binds predecessor component and geometry digests and returns successor records plus one joint receipt.",
+        "Component creation revision and retirement have matching geometry lifecycle evidence and cannot partially apply.",
+        "Dependency invalidation is explicit and unaffected siblings retain their digests.",
+        "The compiler returns typed values only and P036 remains the later persistence authority."
+      ],
+      "tests": [
+        "Three-stage dome lifecycle and sibling preservation",
+        "Stale half-transition orphan retirement and ownership rejection",
+        "Architecture firewall and full unit discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_semantic_geometry_lifecycle"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P055-joint-semantic-geometry-lifecycle.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P055",
+        "actor": "Codex",
+        "verified_at": "2026-08-16T06:45:31.393166+00:00",
+        "contract_sha256": "0b86be52d1c00a44c3fc64f8362188ad67e8dd5b057f1ae91342b64aa5a5778d",
+        "scope_sha256": "def7ce6b7d315824c9b3151a4bbb35c881b7d387ee3dfa00fd60149eec4d9a68",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_semantic_geometry_lifecycle"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "c6f6baf53939d9c27de60fb48fb1ad9b0bab75790dea6d67ec3850f4ee6403ac",
+            "stdout_tail": "",
+            "stderr_tail": ".....\n----------------------------------------------------------------------\nRan 5 tests in 0.070s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "4f75045b1701f7a1249127fcda167b904e74c38bae5fe8349258d0f460d05dab",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (111 files, 0.515s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-16",
+      "evidence": [
+        "Implemented a pure exact-base SemanticGeometryLifecycle transaction that composes the existing component transition and geometry compiler, exposes both successors only on joint success, and carries no path, persistence, or canonical-write authority.",
+        "Invalidated components now require changed geometry or explicit revalidation; exact geometry retirement and preserved direct-object digests are enforced. Five focused lifecycle tests cover three-stage dome refinement, sibling preservation, half-transition rejection, exact-base mismatch, and paired retirement; 484 full tests with 3 explicit skips, compileall, architecture firewall, and V3 boundary passed."
+      ]
+    },
+    {
+      "id": "P056",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Provide one recoverable official prompt-to-building runtime using P053 provider authority P036 persistence and an Agent CLI implementation behind an API-ready port.",
+      "depends_on": [
+        "P055",
+        "P052",
+        "P053"
+      ],
+      "write_scope": [
+        "archflow/project/",
+        "archflow/runtime/",
+        "archflow/production/",
+        "pyproject.toml",
+        "tests/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The official CLI starts or resumes a named prompt-to-building run from an explicit runtime root.",
+        "All retained records have one P036-owned destination and no repository runs default or machine path becomes stable identity.",
+        "Authoring and geometry providers resolve through P053 and stale results fail before compare-and-swap.",
+        "Agent CLI and later API implementations share one typed provider port.",
+        "Interrupted runs resume without replaying accepted transitions."
+      ],
+      "tests": [
+        "Scripted prompt-to-sandbox run and interruption recovery",
+        "P036 layout stale CAS provider epoch unavailable provider and resume rejection",
+        "Console smoke architecture firewall and full unit discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_production_runtime"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P056-durable-production-runtime.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P056",
+        "actor": "Codex",
+        "verified_at": "2026-08-16T07:49:17.194579+00:00",
+        "contract_sha256": "bd2095152bfac929a40ed0ea5f61f2fbe9d8d9c6c51d7ff072f205b385828ca3",
+        "scope_sha256": "0c5d1c556eb39bf75ad8b57c2331164921994930e3860389adb65a22359b088a",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_production_runtime"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "9d99c53dc3faba976b6489786d988f64f182b959d754c6ce36bf1eb55562ee30",
+            "stdout_tail": "",
+            "stderr_tail": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.449s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "2b818038b602df65ecc33d41edec28b1f06fa18a6c5988caa738b27b23da9209",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (118 files, 0.546s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-16",
+      "evidence": [
+        "Official run-project CLI starts and resumes an explicit P052/P036 project using P053-authorized scripted provider evidence: first run performed four typed model invocations, persisted semantic-spatial selection, developed state, neutral geometry and sandbox receipts, and second run resumed with zero provider replay. Focused production and recovery boundary passed 49 tests; full discovery passed 517 tests with 3 explicit opt-in skips; ARCHITECTURE PASS 118 files; V3 boundary PASS 118 production files and 2 frozen oracles; P056 verification PASS."
+      ]
+    },
+    {
+      "id": "M050",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Quarantine FakeVoxel arbitrary MCP plans and direct provider injection after the formal runtime owns their production responsibilities.",
+      "depends_on": [
+        "P056",
+        "P031",
+        "P053"
+      ],
+      "write_scope": [
+        "archflow/runtime/",
+        "archflow/adapters/",
+        "archflow/production/",
+        "tests/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The runtime module cannot execute FakeArchitect or FakeVoxel as production.",
+        "Fake providers have test-only authority and arbitrary MCP plans cannot become design input.",
+        "Active Primary Architect and geometry authoring resolve providers only through P053.",
+        "Retired routes never become fallback and downstream adapters gain no design or persistence authority."
+      ],
+      "tests": [
+        "Fake production entry and arbitrary MCP payload rejection",
+        "Direct-provider bypass rejection and no fallback",
+        "Compatibility diagnostics architecture firewall and full unit discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_production_route_quarantine"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M050-quarantine-production-bypasses.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M050",
+        "actor": "codex",
+        "verified_at": "2026-08-16T08:19:45.157776+00:00",
+        "contract_sha256": "b2a82e6aa079814d7aa95a989d5e0969b4ad529308a0cf3d6756c0466ea4df4d",
+        "scope_sha256": "aeaea397a68c7668abbefb63132183109cf5f346951b8b14b7f73544103f6341",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_production_route_quarantine"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "296ccca15f43335f8fcfac8c28cf06b06c5865e6dc4265b0d931a7cb5f3678e1",
+            "stdout_tail": "",
+            "stderr_tail": "......\n----------------------------------------------------------------------\nRan 6 tests in 0.291s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "f34dd1687fb902cd4e4e626a2053395482a094f0e1ea35fd0f05899d384e69ed",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (116 files, 0.524s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-16",
+      "evidence": [
+        "Formal runtime module delegates to the P056 run-project CLI; Primary Architect and ProductionRootCompiler reject direct providers unless P053-authorized; marked test-only providers cannot activate; active provider failure has no fallback; typed MinecraftExportRequest binds downstream translation to a project-owned neutral package and acceptance record with zero design, validation, persistence, or canonical-write authority, while raw plan methods remain compatibility-only. M050 focused and recovery verification passed 78 tests; full discovery passed 523 tests with 3 explicit opt-in skips; ARCHITECTURE PASS 116 files; V3 boundary PASS 116 production files and 2 frozen oracles; explicit work-card scope PASS 24 paths."
+      ]
+    },
+    {
+      "id": "P057",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Derive a rebuildable ComponentIndex and bounded task context without creating another semantic tree or authority.",
+      "depends_on": [
+        "P055",
+        "P022"
+      ],
+      "write_scope": [
+        "archflow/state/",
+        "archflow/runtime/",
+        "archflow/project/",
+        "tests/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "ComponentIndex is deterministically rebuildable from authoritative component control geometry dependency and lifecycle records.",
+        "The index owns no parentage design fact or canonical state and cannot diverge from DesignComponent.",
+        "Task contexts are component-local include explicit dependencies and reject stale source digests.",
+        "Any durable derived snapshot uses P036 and deletion loses no canonical information."
+      ],
+      "tests": [
+        "Deterministic rebuild local slicing dependency inclusion and stale rejection",
+        "Delete-and-rebuild equivalence and no divergent parentage",
+        "Architecture firewall and full unit discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_component_index"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P057-derived-component-task-index.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P057",
+        "actor": "codex",
+        "verified_at": "2026-08-16T08:34:35.797081+00:00",
+        "contract_sha256": "e952cb6ba60c091d0bd93530b81f5d5b64efe010f51f2df2b99488b0ada2869d",
+        "scope_sha256": "e62fe53830e558c54529926f02b1663ffd7b52124650cd8690813b05cf3b9c95",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_component_index"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "074108e8b699c27a0d9ebf188d62f8f2912be2603e008464edaa46f5a6ab03e2",
+            "stdout_tail": "",
+            "stderr_tail": ".....\n----------------------------------------------------------------------\nRan 5 tests in 0.166s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "027f40ce42f6e0e8efa5721c17ce680994da256858f827e6b21e4aa335c61ae3",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (117 files, 0.522s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-16",
+      "evidence": [
+        "Derived ComponentIndex and bounded task contexts from exact P022 control tree, DesignComponent composition records, developed dependencies/tasks, compiled semantic bindings/objects, and P055 lifecycle receipts; stale or contradictory inputs fail closed, parentage remains embedded DesignComponent authority, P036 run-record snapshots are optional and regenerable. Focused 5 tests, P057 verification, scope PASS 4 paths, ARCHITECTURE PASS 117 files, full discovery 528 tests with 2 explicit skips, V3 boundary, and diff check passed."
+      ]
+    },
+    {
+      "id": "P058",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Prove a fresh three-stage semantic-geometry dome and Pantheon-scale prompt run through the formal generic runtime without frozen-answer reuse.",
+      "depends_on": [
+        "P056",
+        "M050",
+        "P057",
+        "P038"
+      ],
+      "write_scope": [
+        "probes/p058-progressive-pantheon/",
+        "tests/integration/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Three dome stages preserve component identity with matching semantic geometry lifecycle dependency and validation evidence.",
+        "Pantheon proof starts from raw input and cannot load P026 or P038 final output as its answer.",
+        "The probe contains no case-specific generator validator or fallback.",
+        "Accepted sandbox evidence binds exact P036 run state and P053 provider epochs.",
+        "Scripted and optional live Agent CLI evidence are claimed separately and honestly."
+      ],
+      "tests": [
+        "Three-stage dome longitudinal integration",
+        "Fresh raw-input-to-sandbox Pantheon integration",
+        "Frozen-output case-code provenance and architecture firewalls"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.integration.test_progressive_pantheon_proof"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P058-fresh-progressive-dome-pantheon-proof.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P058",
+        "actor": "codex",
+        "verified_at": "2026-08-16T09:05:24.747194+00:00",
+        "contract_sha256": "6934a68cad9548a7c99976914837870a4d6fa939c7b3cb490caf7dac08d22fd6",
+        "scope_sha256": "4a1c141e11a2a3af128a8048e1f930518a4e7a5bedb236c00eefe21b7cecbb99",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.integration.test_progressive_pantheon_proof"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "ebcdc49fe25b1092daff85fb544870d3c83570a25a76d325a06bda1ea5b71abe",
+            "stdout_tail": "",
+            "stderr_tail": "...\n----------------------------------------------------------------------\nRan 3 tests in 53.714s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "176751e1840bd5848fbc23cb42653ba3aefe7e04e9bdc3c00688a1a6ac776352",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (117 files, 0.603s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-16",
+      "evidence": [
+        "Fresh raw-input scripted-provider proof produced three stable-identity dome stages and a Pantheon-scale accepted sandbox artifact through P053/P036; the probe contains no case Python and explicitly limits validation to artifact presence. Exact P058 verification passed 3 integration tests and ARCHITECTURE PASS 117 files. A clean relocated full discovery exposed a pre-existing machine-path leak in the legacy test_library probe, recorded separately rather than hidden or attributed to P058."
+      ]
+    },
+    {
+      "id": "M051",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Remove machine-absolute artifact identities from the retained synthetic test_library probe without restoring it to production.",
+      "depends_on": [
+        "M006",
+        "P036",
+        "M050"
+      ],
+      "write_scope": [
+        "tools/probe_smoke.py",
+        "tests/test_probe_hierarchy.py",
+        "probes/test_library/runs/framework-smoke-002/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Persisted synthetic smoke records use project-relative logical artifact references and contain no drive letter or machine-absolute path.",
+        "The compatibility adapter may use a local file URI only inside its supplied speculative workspace before record serialization.",
+        "Physical containment is checked before a local artifact reference is converted to a portable project reference.",
+        "New compatibility runs use the probe project identity instead of the retired pre-M007 project:run pseudo-identity.",
+        "Relocating a clean repository snapshot does not invalidate the retained probe hierarchy test.",
+        "The repair does not restore FakeVoxel the synthetic smoke or direct file references to the production runtime."
+      ],
+      "tests": [
+        "Retained probe digest containment and logical-reference validation",
+        "Full discovery in a relocated clean snapshot with opt-in live model smoke disabled explicitly",
+        "Architecture firewall V3 boundary scope and diff checks"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_probe_hierarchy"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M051-portable-synthetic-probe-artifact-refs.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M051",
+        "actor": "codex",
+        "verified_at": "2026-08-16T09:28:54.887896+00:00",
+        "contract_sha256": "72f0c6e71d1d0dfc50685eb15cd0e743fb62a367b44bd3d82bd644965f99d576",
+        "scope_sha256": "108433e79b35d29d6e643f3a83af77b2610ea21f4b54fb5a03747b76189e5756",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_probe_hierarchy"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "661d65c4b52265e095c881df72ed4481af57f89aa5e52ff0705fc6d532fd4c8f",
+            "stdout_tail": "",
+            "stderr_tail": "......\n----------------------------------------------------------------------\nRan 6 tests in 0.082s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "1b5ec4fa0735b61f1ff0365cb070a97396952258b18b38cf9a90971a3bdbc65a",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (117 files, 0.559s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-16",
+      "evidence": [
+        "Retained synthetic evidence now stores project-relative logical artifact URIs only; new compatibility runs validate workspace containment, serialize portable project identity, and no longer use the retired project:run pseudo-identity. Focused 6 tests and M051 verification passed; relocated clean-snapshot discovery passed 532 tests with 3 explicit opt-in skips; ARCHITECTURE PASS 117 files, V3 boundary PASS 117 production files and 2 frozen oracles, scope PASS 12 paths, and diff check passed."
+      ]
+    },
+    {
+      "id": "M052",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Synchronize generated governance claims with the completed semantic-geometry production closure without expanding evidence.",
+      "depends_on": [
+        "P056",
+        "M050",
+        "P057",
+        "P058",
+        "M051"
+      ],
+      "write_scope": [
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The phase and runtime module no longer claim that the completed production closure is pending.",
+        "L3 L7 and L16 remove only gaps closed by P056 M050 P057 and P058.",
+        "Remaining external-platform live-model engineering and fabrication limits stay explicit and are not promoted to proven claims.",
+        "The generated map and ledgers agree with the registry and have no active or ready work after completion."
+      ],
+      "tests": [
+        "Registry and generated-map contract tests",
+        "Architecture firewall and diff check"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_devctl"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M052-semantic-geometry-closure-claim-sync.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M052",
+        "actor": "codex",
+        "verified_at": "2026-08-16T09:34:20.898339+00:00",
+        "contract_sha256": "276fba2bea4fb9b62d022f49db92554eb1124d5d7716d91736594f85c53718c4",
+        "scope_sha256": "1f19ff135b446a860c86250a804ca868be794367799c7cfbc853e1a631c6d393",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_devctl"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "dfc93076530ce33398bbd825f93936956bf339028c9a042c77a133e5b6c96fc5",
+            "stdout_tail": "",
+            "stderr_tail": "..............\n----------------------------------------------------------------------\nRan 14 tests in 1.156s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "97d0ffc4802698f1f5df3ada57330697c779249bd1029630b94b5ab4290b69c1",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (117 files, 0.566s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-16",
+      "evidence": [
+        "Synchronized the P7 phase, runtime module, and L3/L7/L16 closure claims with completed P056-M051 evidence while retaining explicit live-provider, external-platform, engineering, and fabrication limits. Focused 14 registry tests, M052 verification, ARCHITECTURE PASS 117 files, scope PASS 6 paths, and diff check passed."
+      ]
     }
   ]
 }

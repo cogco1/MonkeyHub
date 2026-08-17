@@ -16,6 +16,7 @@ from archflow.adapters.model_provider import (
     ModelProviderSpec,
     create_codex_cli_model_provider,
 )
+from archflow.production import ProviderIdentity, activate_model_provider
 from archflow.runtime.design_controller import prepare_design_turn
 from archflow.runtime.primary_architect import (
     PrimaryArchitectReceipt,
@@ -32,6 +33,20 @@ from tests.test_design_controller import _checkpoint, _experts
 
 def _hash(label: str) -> str:
     return hashlib.sha256(label.encode("utf-8")).hexdigest()
+
+
+def _authorize(provider):  # type: ignore[no-untyped-def]
+    return activate_model_provider(
+        provider,
+        identity=ProviderIdentity(
+            provider_id="fake-model-provider",
+            version="test-1",
+            fingerprint=_hash("fake-provider"),
+        ),
+        responsibility_id="model.primary-architect-test",
+        contract_owner_id="tests.primary-architect",
+        verification_evidence_refs=("evidence://primary-architect-test",),
+    )
 
 
 def _request(
@@ -405,7 +420,7 @@ class PrimaryArchitectRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.checkpoint,
             self.prepared,
             self.registry,
-            provider,
+            _authorize(provider),
             history_event_ref="design-event:model-turn",
         )
 
@@ -446,7 +461,7 @@ class PrimaryArchitectRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.checkpoint,
             self.prepared,
             self.registry,
-            provider,
+            _authorize(provider),
             history_event_ref="design-event:model-timeout",
         )
 
@@ -475,7 +490,7 @@ class PrimaryArchitectRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.checkpoint,
             self.prepared,
             self.registry,
-            provider,
+            _authorize(provider),
             history_event_ref="design-event:model-unknown-capability",
         )
 
@@ -493,7 +508,7 @@ class PrimaryArchitectRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.checkpoint,
             self.prepared,
             self.registry,
-            ScriptedArchitectProvider(self.operator),
+            _authorize(ScriptedArchitectProvider(self.operator)),
             history_event_ref="design-event:model-first-plan",
         )
         self.assertIsNotNone(first.controller_result)
@@ -523,7 +538,7 @@ class PrimaryArchitectRuntimeTests(unittest.IsolatedAsyncioTestCase):
             next_checkpoint,
             prepared_again,
             self.registry,
-            ScriptedArchitectProvider(repeated_operator),
+            _authorize(ScriptedArchitectProvider(repeated_operator)),
             history_event_ref="design-event:model-repeated-plan",
         )
 

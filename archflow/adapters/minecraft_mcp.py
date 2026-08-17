@@ -7,7 +7,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from archflow.adapters.mcp_stdio import McpClientError, StdioMcpClient
 from archflow.state import ArtifactRef, CanonicalState
@@ -40,6 +40,101 @@ class MinecraftMcpConfig:
     allow_compensation: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class MinecraftExportRequest:
+    """Typed downstream translation request bound to an accepted neutral package."""
+
+    request_id: str
+    source_artifact: ArtifactRef
+    acceptance_receipt_ref: str
+    payload_json: str
+
+    SCHEMA = "MinecraftExportRequest@1"
+    NEUTRAL_MEDIA_TYPE = "application/vnd.archflow.neutral-building+json"
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.request_id, str)
+            or not self.request_id.strip()
+            or len(self.request_id) > 160
+        ):
+            raise ValueError("request_id must be bounded non-empty text")
+        if not isinstance(self.source_artifact, ArtifactRef):
+            raise TypeError("source_artifact must be ArtifactRef")
+        if (
+            self.source_artifact.media_type != self.NEUTRAL_MEDIA_TYPE
+            or not self.source_artifact.uri.startswith("project://")
+        ):
+            raise ValueError(
+                "source_artifact must be a project-owned neutral building package"
+            )
+        if (
+            not isinstance(self.acceptance_receipt_ref, str)
+            or not self.acceptance_receipt_ref.startswith("project://")
+        ):
+            raise ValueError(
+                "acceptance_receipt_ref must be a project-owned record"
+            )
+        if not isinstance(self.payload_json, str):
+            raise TypeError("payload_json must be text")
+        try:
+            payload = json.loads(self.payload_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError("payload_json must contain JSON") from exc
+        if not isinstance(payload, dict) or not payload:
+            raise ValueError("translated plan must be a non-empty object")
+        if _canonical_json(payload).decode("utf-8") != self.payload_json:
+            raise ValueError("translated plan must be canonical JSON")
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        request_id: str,
+        source_artifact: ArtifactRef,
+        acceptance_receipt_ref: str,
+        translated_plan: Mapping[str, Any],
+    ) -> "MinecraftExportRequest":
+        if not isinstance(translated_plan, Mapping):
+            raise TypeError("translated_plan must be a mapping")
+        return cls(
+            request_id=request_id,
+            source_artifact=source_artifact,
+            acceptance_receipt_ref=acceptance_receipt_ref,
+            payload_json=_canonical_json(dict(translated_plan)).decode("utf-8"),
+        )
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        value = json.loads(self.payload_json)
+        if not isinstance(value, dict):
+            raise AssertionError("validated translated plan stopped being an object")
+        return value
+
+    @property
+    def plan_sha256(self) -> str:
+        return hashlib.sha256(self.payload_json.encode("utf-8")).hexdigest()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "request_id": self.request_id,
+            "source_artifact": {
+                "artifact_id": self.source_artifact.artifact_id,
+                "uri": self.source_artifact.uri,
+                "media_type": self.source_artifact.media_type,
+                "sha256": self.source_artifact.sha256,
+            },
+            "acceptance_receipt_ref": self.acceptance_receipt_ref,
+            "payload_json": self.payload_json,
+            "plan_sha256": self.plan_sha256,
+            "design_authority": False,
+            "validation_authority": False,
+            "canonical_write_authority": False,
+            "persistence_authority": False,
+        }
+
+
 class MinecraftMcpAdapter:
     """Turns a structured build plan into a workspace-owned evidence artifact.
 
@@ -53,14 +148,49 @@ class MinecraftMcpAdapter:
     def __init__(self, config: MinecraftMcpConfig) -> None:
         self._config = config
 
+    def preview_export(
+        self,
+        state: CanonicalState,
+        workspace: WorkspaceRef,
+        request: MinecraftExportRequest,
+    ) -> ArtifactRef:
+        """Preview only a typed neutral-package downstream request."""
+
+        if not isinstance(request, MinecraftExportRequest):
+            raise TypeError(
+                "request must be MinecraftExportRequest; raw MCP payloads are compatibility-only"
+            )
+        return self.preview(state, workspace, request)
+
+    def build_export(
+        self,
+        state: CanonicalState,
+        workspace: WorkspaceRef,
+        request: MinecraftExportRequest,
+    ) -> ArtifactRef:
+        """Execute only a typed neutral-package downstream request."""
+
+        if not isinstance(request, MinecraftExportRequest):
+            raise TypeError(
+                "request must be MinecraftExportRequest; raw MCP payloads are compatibility-only"
+            )
+        return self.build(state, workspace, request)
+
     def preview(
         self,
         state: CanonicalState,
         workspace: WorkspaceRef,
-        plan: dict[str, Any],
+        plan: dict[str, Any] | MinecraftExportRequest,
     ) -> ArtifactRef:
+        """Compatibility surface; formal downstream routes use ``preview_export``."""
+        export_request = (
+            plan if isinstance(plan, MinecraftExportRequest) else None
+        )
         self._check_base(state, workspace)
-        frozen_plan = _freeze_json_object(plan, "plan")
+        frozen_plan = _freeze_json_object(
+            plan.payload if export_request is not None else plan,
+            "plan",
+        )
         phase = "initialize"
         try:
             with self._client() as client:
@@ -76,6 +206,7 @@ class MinecraftMcpAdapter:
                 state,
                 workspace,
                 plan=frozen_plan,
+                export_request=export_request,
                 server={
                     "name": server.name,
                     "version": server.version,
@@ -96,10 +227,17 @@ class MinecraftMcpAdapter:
         self,
         state: CanonicalState,
         workspace: WorkspaceRef,
-        plan: dict[str, Any],
+        plan: dict[str, Any] | MinecraftExportRequest,
     ) -> ArtifactRef:
+        """Compatibility surface; formal downstream routes use ``build_export``."""
+        export_request = (
+            plan if isinstance(plan, MinecraftExportRequest) else None
+        )
         self._check_base(state, workspace)
-        frozen_plan = _freeze_json_object(plan, "plan")
+        frozen_plan = _freeze_json_object(
+            plan.payload if export_request is not None else plan,
+            "plan",
+        )
         if not self._config.allow_world_write:
             self._fail(
                 state,
@@ -257,6 +395,7 @@ class MinecraftMcpAdapter:
                 state,
                 workspace,
                 plan=frozen_plan,
+                export_request=export_request,
                 server={
                     "name": server.name,
                     "version": server.version,
@@ -450,6 +589,7 @@ class MinecraftMcpAdapter:
         workspace: WorkspaceRef,
         *,
         plan: dict[str, Any] | None = None,
+        export_request: MinecraftExportRequest | None = None,
         server: dict[str, str] | None = None,
         session: dict[str, Any] | None = None,
         preview: dict[str, Any] | None = None,
@@ -495,6 +635,9 @@ class MinecraftMcpAdapter:
             "prompt": state.goal.prompt if state.goal is not None else None,
             "plan_sha256": hashlib.sha256(plan_encoded).hexdigest(),
             "build_plan": plan,
+            "export_request": (
+                None if export_request is None else export_request.to_dict()
+            ),
             "mcp_server": server,
             "session": _bounded_value(session),
             "preview": _bounded_value(preview),

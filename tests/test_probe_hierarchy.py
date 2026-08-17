@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import hashlib
+import tempfile
 import unittest
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
+
+from tools.probe_smoke import run_probe_smoke
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +16,41 @@ RUN_ID = "framework-smoke-002"
 
 
 class ProbeHierarchyTests(unittest.TestCase):
+    def test_new_smoke_serializes_portable_artifact_identity(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="portable-probe-",
+            dir=ROOT / "probes",
+        ) as directory:
+            probe = Path(directory)
+            request = json.loads(
+                (PROBE / "input" / "request.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            request["project_id"] = probe.name
+            input_root = probe / "input"
+            input_root.mkdir()
+            (input_root / "request.json").write_text(
+                json.dumps(
+                    request,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            record_path = run_probe_smoke(probe, "portable-smoke")
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            artifact_uri = record["artifacts"][0]["uri"]
+
+            parsed = urlsplit(artifact_uri)
+            self.assertEqual(parsed.scheme, "project")
+            self.assertEqual(unquote(parsed.netloc), probe.name)
+            self.assertNotIn("file:///", record_path.read_text(encoding="utf-8"))
+            self.assertNotIn(str(ROOT), record_path.read_text(encoding="utf-8"))
+
     def test_probe_root_is_data_not_a_python_package(self) -> None:
         self.assertFalse((ROOT / "probes" / "__init__.py").exists())
         for source in (ROOT / "archflow").rglob("*.py"):
@@ -119,13 +157,18 @@ class ProbeHierarchyTests(unittest.TestCase):
                 item["sha256"],
             )
         for artifact in record["artifacts"]:
-            prefix = "file:///"
-            self.assertTrue(artifact["uri"].startswith(prefix))
-            path = Path(
-                unquote(artifact["uri"][len(prefix) :])
-            ).resolve()
+            parsed = urlsplit(artifact["uri"])
+            self.assertEqual(parsed.scheme, "project")
+            self.assertEqual(unquote(parsed.netloc), PROBE.name)
+            relative = unquote(parsed.path).lstrip("/")
+            path = (PROBE / relative).resolve()
             path.relative_to(run_root)
             self.assertTrue(path.is_file())
+
+        for path in run_root.rglob("*.json"):
+            payload = path.read_text(encoding="utf-8")
+            self.assertNotIn("file:///", payload, path)
+            self.assertNotIn(str(ROOT), payload, path)
 
         leaked = tuple(
             path

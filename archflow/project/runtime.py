@@ -8,6 +8,7 @@ or persist machine paths into project identity.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,8 @@ from archflow.project.bootstrap import (
     ProjectBootstrapResult,
     bootstrap_raw_request_project,
 )
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.refs import require_identifier
 
 
@@ -224,6 +227,149 @@ def bootstrap_external_project(
     )
 
 
+def run_external_production(
+    paths: RuntimePaths,
+    *,
+    project_id: str,
+    prompt: str,
+    run_id: str,
+    context_path: Path | None,
+    agent_executable: str,
+    model_id: str,
+    provider_version: str,
+    timeout_seconds: float,
+):
+    """Start or resume the formal P053/P036 root production path."""
+
+    from archflow.capabilities.geometry_proposal import (
+        GeometryProposalProviderIdentity,
+    )
+    from archflow.production import (
+        InvocationEvidenceCollector,
+        activate_codex_agent_cli_provider,
+    )
+    from archflow.runtime.production_compiler import ProductionRootCompiler
+    from archflow.runtime.production_runtime import (
+        ProductionAuthoringContext,
+        run_or_resume_production_step,
+    )
+
+    root = paths.project(project_id)
+    if (root / "project.json").exists():
+        repository = FilesystemProjectRepository.open(root)
+        run = repository.load_run(run_id)
+        request = _find_raw_request(repository, run, prompt)
+    else:
+        bootstrapped = bootstrap_external_project(
+            paths,
+            project_id=project_id,
+            prompt=prompt,
+            run_id=run_id,
+        )
+        repository = FilesystemProjectRepository.open(root)
+        run = bootstrapped.run
+        request = bootstrapped.request
+    context_ref, context = _production_context(
+        repository,
+        run,
+        context_path=context_path,
+        context_type=ProductionAuthoringContext,
+    )
+    collector = InvocationEvidenceCollector()
+    provider = activate_codex_agent_cli_provider(
+        executable=agent_executable,
+        model_id=model_id,
+        version=provider_version,
+        responsibility_id="model.production-root",
+        contract_owner_id="archflow.production-root",
+        verification_evidence_refs=(context_ref.uri,),
+        timeout_seconds=timeout_seconds,
+        envelope_observer=collector.observe,
+    )
+    active = provider.router.state("model.production-root").active_provider
+    if active is None:
+        raise RuntimeConfigError("configured production provider is not active")
+    compiler = ProductionRootCompiler(
+        repository=repository,
+        context_ref=context_ref,
+        context=context,
+        provider=provider,
+        evidence_collector=collector,
+        geometry_provider_identity=GeometryProposalProviderIdentity(
+            provider_id=active.provider_id,
+            model_id=model_id,
+            provider_version=active.version,
+            provider_fingerprint=active.fingerprint,
+        ),
+    )
+    return asyncio.run(
+        run_or_resume_production_step(
+            repository,
+            run=run,
+            raw_request=request,
+            prompt=prompt,
+            step_id="initial-semantic-geometry",
+            compiler=compiler,
+        )
+    )
+
+
+def _find_raw_request(repository, run, prompt: str):  # type: ignore[no-untyped-def]
+    matches = []
+    for ref in repository.list_json(
+        run=run,
+        destination=PersistenceDestination(PersistenceArea.INPUT),
+    ):
+        payload = repository.load_json(ref)
+        if payload == {"schema": "RawProjectRequest@1", "prompt": prompt}:
+            matches.append(ref)
+    if len(matches) != 1:
+        raise RuntimeConfigError(
+            "existing run requires exactly one immutable raw request matching prompt"
+        )
+    return matches[0]
+
+
+def _production_context(
+    repository,
+    run,
+    *,
+    context_path: Path | None,
+    context_type,
+):  # type: ignore[no-untyped-def]
+    destination = PersistenceDestination(
+        PersistenceArea.RUN_RECORD,
+        run_id=run.run_id,
+    )
+    if context_path is not None:
+        try:
+            payload = json.loads(context_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeConfigError(
+                f"cannot read production context: {context_path}"
+            ) from exc
+        context = context_type.from_dict(payload)
+        context.require_run(run)
+        ref = repository.put_json(
+            run=run,
+            destination=destination,
+            record_kind="production-authoring-context",
+            payload=context.to_dict(),
+        )
+        return ref, context
+    matches = []
+    for ref in repository.list_json(run=run, destination=destination):
+        payload = repository.load_json(ref)
+        if payload.get("schema") == context_type.SCHEMA:
+            matches.append((ref, context_type.from_dict(payload)))
+    if len(matches) != 1:
+        raise RuntimeConfigError(
+            "run/resume requires exactly one P036 production authoring context"
+        )
+    matches[0][1].require_run(run)
+    return matches[0]
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Initialize an explicit external ArchFlow runtime."
@@ -236,6 +382,15 @@ def _parser() -> argparse.ArgumentParser:
     project.add_argument("--project-id", required=True)
     project.add_argument("--prompt", required=True)
     project.add_argument("--run-id", default="bootstrap-001")
+    production = subparsers.add_parser("run-project")
+    production.add_argument("--project-id", required=True)
+    production.add_argument("--prompt", required=True)
+    production.add_argument("--run-id", default="production-001")
+    production.add_argument("--context", type=Path)
+    production.add_argument("--agent-executable", default="codex")
+    production.add_argument("--model", required=True)
+    production.add_argument("--provider-version", default="agent-cli")
+    production.add_argument("--timeout-seconds", type=float, default=60.0)
     return parser
 
 
@@ -247,7 +402,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if args.command == "init":
         payload: Mapping[str, Any] = initialize_runtime(paths).to_dict()
-    else:
+    elif args.command == "bootstrap-project":
         result = bootstrap_external_project(
             paths,
             project_id=args.project_id,
@@ -265,6 +420,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             },
             "canonical_authority": "FilesystemProjectRepository",
         }
+    else:
+        result = run_external_production(
+            paths,
+            project_id=args.project_id,
+            prompt=args.prompt,
+            run_id=args.run_id,
+            context_path=args.context,
+            agent_executable=args.agent_executable,
+            model_id=args.model,
+            provider_version=args.provider_version,
+            timeout_seconds=args.timeout_seconds,
+        )
+        payload = result.to_dict()
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return 0
 

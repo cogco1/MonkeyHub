@@ -13,7 +13,7 @@ import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -89,7 +89,7 @@ def run_probe_smoke(probe_root: Path, run_id: str) -> Path:
 
     state = initial_state(
         request["prompt"],
-        run_id=f"{request['project_id']}:{run_id}",
+        run_id=str(request["project_id"]),
         must=("artifact.loadable", "use.requested"),
     )
     store = InMemoryStateStore(state)
@@ -121,6 +121,7 @@ def run_probe_smoke(probe_root: Path, run_id: str) -> Path:
         status = "committed"
     final_state = store.read()
     artifacts = []
+    artifact_uris: dict[str, str] = {}
     for artifact in final_state.artifacts:
         artifact_path = _file_uri_path(artifact.uri)
         try:
@@ -129,10 +130,16 @@ def run_probe_smoke(probe_root: Path, run_id: str) -> Path:
             raise ProbeSmokeError(
                 "framework artifact escaped the probe run directory"
             ) from exc
+        portable_uri = _project_artifact_uri(
+            artifact_path,
+            project_root=root,
+            project_id=str(request["project_id"]),
+        )
+        artifact_uris[artifact.artifact_id] = portable_uri
         artifacts.append(
             {
                 "artifact_id": artifact.artifact_id,
-                "uri": artifact.uri,
+                "uri": portable_uri,
                 "media_type": artifact.media_type,
                 "sha256": artifact.sha256,
             }
@@ -178,7 +185,7 @@ def run_probe_smoke(probe_root: Path, run_id: str) -> Path:
         ),
         _write_record(
             run_root / "canonical-state.json",
-            _canonical_state_json(final_state),
+            _canonical_state_json(final_state, artifact_uris),
             run_root,
         ),
     ]
@@ -316,7 +323,10 @@ def _validation_json(receipt: ValidationReceipt) -> dict[str, object]:
     }
 
 
-def _canonical_state_json(state: CanonicalState) -> dict[str, object]:
+def _canonical_state_json(
+    state: CanonicalState,
+    artifact_uris: dict[str, str],
+) -> dict[str, object]:
     return {
         "schema": "ProbeCanonicalStateSnapshot@1",
         "ref": _state_ref_json(state.ref),
@@ -327,8 +337,8 @@ def _canonical_state_json(state: CanonicalState) -> dict[str, object]:
             "forbid": list(state.goal.forbid),
         },
         "program": (
-            json.loads(state.program.to_json())
-            if state.program is not None
+            json.loads(state.legacy_program_view.to_json())
+            if state.legacy_program_view is not None
             else None
         ),
         "facts": [
@@ -351,7 +361,7 @@ def _canonical_state_json(state: CanonicalState) -> dict[str, object]:
         "artifacts": [
             {
                 "artifact_id": item.artifact_id,
-                "uri": item.uri,
+                "uri": artifact_uris[item.artifact_id],
                 "media_type": item.media_type,
                 "sha256": item.sha256,
             }
@@ -406,6 +416,24 @@ def _file_uri_path(uri: str) -> Path:
     if not uri.startswith(prefix):
         raise ProbeSmokeError("smoke artifact must use a local file URI")
     return Path(unquote(uri[len(prefix) :])).resolve()
+
+
+def _project_artifact_uri(
+    path: Path,
+    *,
+    project_root: Path,
+    project_id: str,
+) -> str:
+    try:
+        relative = path.resolve().relative_to(project_root.resolve())
+    except ValueError as exc:
+        raise ProbeSmokeError(
+            "smoke artifact escaped the project directory"
+        ) from exc
+    return (
+        f"project://{quote(project_id, safe='')}/"
+        f"{quote(relative.as_posix(), safe='/._-')}"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

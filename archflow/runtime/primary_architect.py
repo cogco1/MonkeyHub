@@ -14,12 +14,12 @@ from enum import StrEnum
 from typing import Any, Mapping
 
 from archflow.adapters.model_provider import (
-    AsyncModelProvider,
     ModelInvocationReceipt,
     ModelInvocationRequest,
     ModelInvocationStatus,
     ModelPhase,
 )
+from archflow.production import AuthorizedAsyncModelProvider
 from archflow.capabilities.experts import (
     ExpertAdvice,
     ExpertReceipt,
@@ -183,7 +183,7 @@ async def run_primary_architect_turn(
     checkpoint: DesignControllerCheckpoint,
     prepared: PreparedDesignTurn,
     registry: ExpertRegistry,
-    provider: AsyncModelProvider,
+    provider: AuthorizedAsyncModelProvider,
     *,
     history_event_ref: str,
 ) -> PrimaryArchitectTurn:
@@ -197,6 +197,10 @@ async def run_primary_architect_turn(
         raise DesignControllerError("prepared turn is stale")
     if not isinstance(registry, ExpertRegistry):
         raise TypeError("registry must be ExpertRegistry")
+    if not isinstance(provider, AuthorizedAsyncModelProvider):
+        raise TypeError(
+            "provider must be P053-authorized; direct provider injection is retired"
+        )
     require_logical_ref(history_event_ref, "history_event_ref")
 
     selection_request = ModelInvocationRequest.create(

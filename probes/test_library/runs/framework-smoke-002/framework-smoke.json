@@ -5,7 +5,7 @@
       "artifact_id": "artifact-8bc0519e4fbbd8c7c48e",
       "media_type": "application/vnd.archflow.fake-voxel+json",
       "sha256": "8bc0519e4fbbd8c7c48e7fd1d11b558f49ba3e0fd7368392bd7fc4fe9ca6e29a",
-      "uri": "file:///D:/ARCHFLOW_V4/probes/test_library/runs/framework-smoke-002/workspaces/w-0-622e57f41ce8/building.voxel.json"
+      "uri": "project://test_library/runs/framework-smoke-002/workspaces/w-0-622e57f41ce8/building.voxel.json"
     }
   ],
   "canonical_state": {
@@ -46,7 +46,7 @@
     },
     {
       "path": "canonical-state.json",
-      "sha256": "e74d1d1dfc7dfe588972c8568c362da330a0409a2ad0d8b9b75cb55a1324c1b8"
+      "sha256": "60052dc3d711471371cf33ee3201a01cb16e822d7fb6b589ee71be96bd4cc89b"
     },
     {
       "path": "commit.json",

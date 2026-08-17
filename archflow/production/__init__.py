@@ -1,5 +1,16 @@
 """Provider-neutral production responsibility control plane."""
 
+from .provider_runtime import (
+    AuthorizedAsyncModelProvider,
+    InvocationEvidenceCollector,
+    activate_codex_agent_cli_provider,
+    activate_model_provider,
+    activate_provider_from_spec,
+    bind_async_model_provider,
+    model_responsibility_contract,
+    provider_identity_from_spec,
+)
+
 from .responsibility import (
     ContractConflict,
     DuplicateProvider,
@@ -30,14 +41,18 @@ from .responsibility import (
     UnknownResponsibility,
     create_responsibility_control_plane,
 )
-
 __all__ = [
+    "AuthorizedAsyncModelProvider",
+    "activate_codex_agent_cli_provider",
+    "activate_model_provider",
+    "activate_provider_from_spec",
     "ContractConflict",
     "DuplicateProvider",
     "HandoverDecision",
     "HandoverReceipt",
     "InvalidInvocationEnvelope",
     "InvalidProviderReceipt",
+    "InvocationEvidenceCollector",
     "InvocationEnvelope",
     "NoProductionAuthority",
     "ProviderIdentity",
@@ -59,5 +74,8 @@ __all__ = [
     "StaleHandover",
     "UnknownProvider",
     "UnknownResponsibility",
+    "bind_async_model_provider",
     "create_responsibility_control_plane",
+    "model_responsibility_contract",
+    "provider_identity_from_spec",
 ]

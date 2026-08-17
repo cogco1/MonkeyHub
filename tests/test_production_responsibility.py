@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import threading
@@ -8,7 +9,14 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from unittest.mock import patch
 
+from archflow.adapters.model_provider import (
+    ModelInvocationReceipt,
+    ModelInvocationRequest,
+    ModelInvocationStatus,
+    ModelPhase,
+)
 from archflow.production import (
+    AuthorizedAsyncModelProvider,
     ContractConflict,
     HandoverDecision,
     InvalidInvocationEnvelope,
@@ -19,13 +27,18 @@ from archflow.production import (
     ProviderInvocationFailed,
     ProviderLifecycleError,
     ProviderMode,
+    ProviderUnavailable,
     ResponsibilityContract,
     ResponsibilityRouter,
     ResolutionStatus,
     StaleAuthority,
     StaleHandover,
     UnknownProvider,
+    activate_codex_agent_cli_provider,
+    activate_model_provider,
+    bind_async_model_provider,
     create_responsibility_control_plane,
+    model_responsibility_contract,
 )
 
 
@@ -258,6 +271,40 @@ class ProductionResponsibilityTests(unittest.TestCase):
 
                 with self.assertRaises(InvalidProviderReceipt):
                     router.invoke(_contract().responsibility_id, {"x": 1})
+
+    def test_portable_regex_contract_is_not_misclassified_as_unc_path(self):
+        router, reconciler = create_responsibility_control_plane()
+        identity = _identity("portable-regex")
+        pattern = r"^(?![Ff][Ii][Ll][Ee]:)(?![A-Za-z]:[\\/])[A-Za-z]+$"
+        router.register(
+            _contract(),
+            identity,
+            lambda request, authority: {"portable_pattern": pattern},
+        )
+        self._verify(reconciler, identity)
+        self._activate(router, reconciler, identity)
+
+        envelope = router.invoke(_contract().responsibility_id, {"x": 1})
+
+        self.assertEqual(pattern, envelope.provider_receipt["portable_pattern"])
+        router.validate_envelope(envelope)
+
+    def test_file_uri_prohibition_text_is_not_itself_a_file_uri(self):
+        router, reconciler = create_responsibility_control_plane()
+        identity = _identity("file-uri-prose")
+        prose = "Machine paths, file: URIs, and file:// URIs are rejected."
+        router.register(
+            _contract(),
+            identity,
+            lambda request, authority: {"instructions": prose},
+        )
+        self._verify(reconciler, identity)
+        self._activate(router, reconciler, identity)
+
+        envelope = router.invoke(_contract().responsibility_id, {"x": 1})
+
+        self.assertEqual(prose, envelope.provider_receipt["instructions"])
+        router.validate_envelope(envelope)
 
     def test_handover_receipt_rejects_contradictory_transition_evidence(self):
         router, reconciler, identity, _, _ = self._registered_router()
@@ -562,6 +609,366 @@ class ProductionResponsibilityTests(unittest.TestCase):
                 verification_evidence_refs=("evidence:file:///D:/private/x.txt",),
                 reason="portable approval",
             )
+
+
+class AsyncProductionResponsibilityTests(unittest.IsolatedAsyncioTestCase):
+    def _activate(self, router, reconciler, identity):  # type: ignore[no-untyped-def]
+        reconciler.qualify_provider(
+            _contract().responsibility_id,
+            identity,
+            expected_mode=ProviderMode.REGISTERED,
+            target_mode=ProviderMode.SHADOW,
+            evidence_refs=("evidence:async-shadow",),
+        )
+        reconciler.qualify_provider(
+            _contract().responsibility_id,
+            identity,
+            expected_mode=ProviderMode.SHADOW,
+            target_mode=ProviderMode.VERIFIED,
+            evidence_refs=("evidence:async-verified",),
+        )
+        return reconciler.activate(
+            HandoverDecision(
+                responsibility_id=_contract().responsibility_id,
+                expected_binding_digest=router.state(
+                    _contract().responsibility_id
+                ).binding_digest,
+                target_provider=identity,
+                verification_evidence_refs=("evidence:async-cutover",),
+                reason="activate async provider",
+            )
+        )
+
+    async def test_async_provider_receives_bounded_active_authority(self):
+        router, reconciler = create_responsibility_control_plane()
+        identity = _identity("async")
+        observed = []
+
+        async def handler(request, authority):  # type: ignore[no-untyped-def]
+            await asyncio.sleep(0)
+            observed.append(authority)
+            return {"request": request, "epoch": authority.authority_epoch}
+
+        router.register(_contract(), identity, handler)
+        self._activate(router, reconciler, identity)
+
+        envelope = await router.invoke_async(
+            _contract().responsibility_id,
+            {"step": "spatial"},
+        )
+
+        self.assertEqual(1, len(observed))
+        self.assertTrue(observed[0].production_authority)
+        self.assertEqual(1, envelope.provider_receipt["epoch"])
+        self.assertEqual(
+            router.state(_contract().responsibility_id),
+            router.validate_envelope(envelope),
+        )
+
+    async def test_async_result_is_rejected_after_inflight_cutover(self):
+        router, reconciler = create_responsibility_control_plane()
+        identity_a = _identity("async-a")
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_handler(request, authority):  # type: ignore[no-untyped-def]
+            started.set()
+            await release.wait()
+            return {"provider": "a"}
+
+        router.register(_contract(), identity_a, slow_handler)
+        self._activate(router, reconciler, identity_a)
+        identity_b = _identity("async-b")
+        router.register(
+            _contract(),
+            identity_b,
+            lambda request, authority: {"provider": "b"},
+        )
+        reconciler.qualify_provider(
+            _contract().responsibility_id,
+            identity_b,
+            expected_mode=ProviderMode.REGISTERED,
+            target_mode=ProviderMode.SHADOW,
+            evidence_refs=("evidence:b-shadow",),
+        )
+        reconciler.qualify_provider(
+            _contract().responsibility_id,
+            identity_b,
+            expected_mode=ProviderMode.SHADOW,
+            target_mode=ProviderMode.VERIFIED,
+            evidence_refs=("evidence:b-verified",),
+        )
+
+        task = asyncio.create_task(
+            router.invoke_async(
+                _contract().responsibility_id,
+                {"step": "geometry"},
+            )
+        )
+        await asyncio.wait_for(started.wait(), timeout=1)
+        reconciler.activate(
+            HandoverDecision(
+                responsibility_id=_contract().responsibility_id,
+                expected_binding_digest=router.state(
+                    _contract().responsibility_id
+                ).binding_digest,
+                target_provider=identity_b,
+                verification_evidence_refs=("evidence:b-cutover",),
+                reason="replace in-flight async provider",
+            )
+        )
+        release.set()
+
+        with self.assertRaises(StaleAuthority):
+            await task
+
+    async def test_async_shadow_has_no_production_authority(self):
+        router, reconciler = create_responsibility_control_plane()
+        identity = _identity("async-shadow")
+
+        async def handler(request, authority):  # type: ignore[no-untyped-def]
+            return {"production": authority.production_authority}
+
+        router.register(_contract(), identity, handler)
+        reconciler.qualify_provider(
+            _contract().responsibility_id,
+            identity,
+            expected_mode=ProviderMode.REGISTERED,
+            target_mode=ProviderMode.SHADOW,
+            evidence_refs=("evidence:async-shadow",),
+        )
+
+        envelope = await router.invoke_shadow_async(
+            _contract().responsibility_id,
+            identity,
+            {"step": "qualification"},
+        )
+
+        self.assertFalse(envelope.provider_receipt["production"])
+        with self.assertRaises(NoProductionAuthority):
+            router.validate_envelope(envelope)
+
+    async def test_async_failure_does_not_call_verified_fallback(self):
+        router, reconciler = create_responsibility_control_plane()
+        active = _identity("async-fail")
+        shadow = _identity("async-unused")
+        fallback_calls = []
+
+        async def failing(request, authority):  # type: ignore[no-untyped-def]
+            await asyncio.sleep(0)
+            raise ValueError("async failure")
+
+        router.register(_contract(), active, failing)
+        self._activate(router, reconciler, active)
+        router.register(
+            _contract(),
+            shadow,
+            lambda request, authority: fallback_calls.append(request) or {"ok": True},
+        )
+        reconciler.qualify_provider(
+            _contract().responsibility_id,
+            shadow,
+            expected_mode=ProviderMode.REGISTERED,
+            target_mode=ProviderMode.SHADOW,
+            evidence_refs=("evidence:unused-shadow",),
+        )
+
+        with self.assertRaisesRegex(ProviderInvocationFailed, "ValueError"):
+            await router.invoke_async(
+                _contract().responsibility_id,
+                {"step": "spatial"},
+            )
+        self.assertEqual([], fallback_calls)
+
+
+RESPONSIBILITY_ID = "model.semantic-spatial"
+MODEL_CONTRACT = model_responsibility_contract(
+    responsibility_id=RESPONSIBILITY_ID,
+    contract_owner_id="archflow.semantic-spatial",
+)
+MODEL_IDENTITY = ProviderIdentity(
+    provider_id="provider.scripted",
+    version="1.0.0",
+    fingerprint=hashlib.sha256(b"scripted-provider").hexdigest(),
+)
+
+
+def _request() -> ModelInvocationRequest:
+    return ModelInvocationRequest.create(
+        request_id="semantic-spatial-request",
+        phase=ModelPhase.SPATIAL_PROPOSAL,
+        checkpoint_digest=hashlib.sha256(b"checkpoint").hexdigest(),
+        context_digest=hashlib.sha256(b"context").hexdigest(),
+        payload={"schema": "TestSemanticSpatialPrompt@1"},
+    )
+
+
+def _model_receipt(
+    request: ModelInvocationRequest,
+    *,
+    identity: ProviderIdentity = MODEL_IDENTITY,
+) -> ModelInvocationReceipt:
+    output = {"schema": "TestSemanticSpatialOutput@1"}
+    encoded = json.dumps(output, sort_keys=True, separators=(",", ":"))
+    return ModelInvocationReceipt(
+        receipt_id="scripted-model-receipt",
+        status=ModelInvocationStatus.SUCCESS,
+        request=request,
+        provider_id=identity.provider_id,
+        model_id="scripted-model",
+        provider_version=identity.version,
+        provider_fingerprint=identity.fingerprint,
+        input_bytes=len(request.payload_json.encode("utf-8")),
+        output_bytes=len(encoded.encode("utf-8")),
+        output_sha256=hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+        output_json=encoded,
+    )
+
+
+class _ScriptedModelProvider:
+    def __init__(self, receipt_factory=_model_receipt) -> None:  # type: ignore[no-untyped-def]
+        self.receipt_factory = receipt_factory
+        self.requests = []
+
+    async def invoke(self, request):  # type: ignore[no-untyped-def]
+        self.requests.append(request)
+        return self.receipt_factory(request)
+
+
+def _active(provider):  # type: ignore[no-untyped-def]
+    router, reconciler = create_responsibility_control_plane()
+    router.register(
+        MODEL_CONTRACT,
+        MODEL_IDENTITY,
+        bind_async_model_provider(provider),
+    )
+    reconciler.qualify_provider(
+        RESPONSIBILITY_ID,
+        MODEL_IDENTITY,
+        expected_mode=ProviderMode.REGISTERED,
+        target_mode=ProviderMode.SHADOW,
+        evidence_refs=("evidence:model-shadow",),
+    )
+    reconciler.qualify_provider(
+        RESPONSIBILITY_ID,
+        MODEL_IDENTITY,
+        expected_mode=ProviderMode.SHADOW,
+        target_mode=ProviderMode.VERIFIED,
+        evidence_refs=("evidence:model-verified",),
+    )
+    reconciler.activate(
+        HandoverDecision(
+            responsibility_id=RESPONSIBILITY_ID,
+            expected_binding_digest=router.state(
+                RESPONSIBILITY_ID
+            ).binding_digest,
+            target_provider=MODEL_IDENTITY,
+            verification_evidence_refs=("evidence:model-cutover",),
+            reason="activate typed model provider",
+        )
+    )
+    return router
+
+
+class AuthorizedModelProviderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_active_provider_is_api_neutral_and_exactly_bound(self):
+        provider = _ScriptedModelProvider()
+        envelopes = []
+        authorized = AuthorizedAsyncModelProvider(
+            _active(provider),
+            RESPONSIBILITY_ID,
+            envelopes.append,
+        )
+        request = _request()
+
+        receipt = await authorized.invoke(request)
+
+        self.assertEqual(request, receipt.request)
+        self.assertEqual(MODEL_IDENTITY.provider_id, receipt.provider_id)
+        self.assertEqual([request], provider.requests)
+        self.assertEqual(1, len(envelopes))
+        self.assertEqual(
+            request.to_dict(),
+            envelopes[0].provider_receipt["request"],
+        )
+
+    async def test_provider_identity_drift_is_rejected_after_envelope(self):
+        other = replace(
+            MODEL_IDENTITY,
+            fingerprint=hashlib.sha256(b"other-build").hexdigest(),
+        )
+        provider = _ScriptedModelProvider(
+            lambda request: _model_receipt(request, identity=other)
+        )
+        envelopes = []
+        authorized = AuthorizedAsyncModelProvider(
+            _active(provider),
+            RESPONSIBILITY_ID,
+            envelopes.append,
+        )
+
+        with self.assertRaisesRegex(InvalidProviderReceipt, "identity disagrees"):
+            await authorized.invoke(_request())
+        self.assertEqual([], envelopes)
+
+    async def test_request_drift_is_rejected_after_envelope(self):
+        stale = replace(_request(), request_id="stale-spatial-request")
+        provider = _ScriptedModelProvider(
+            lambda request: _model_receipt(stale)
+        )
+        authorized = AuthorizedAsyncModelProvider(
+            _active(provider),
+            RESPONSIBILITY_ID,
+        )
+
+        with self.assertRaisesRegex(
+            InvalidProviderReceipt,
+            "exact invocation request",
+        ):
+            await authorized.invoke(_request())
+
+    async def test_unavailable_responsibility_never_calls_provider(self):
+        provider = _ScriptedModelProvider()
+        router, _ = create_responsibility_control_plane()
+        router.register(
+            MODEL_CONTRACT,
+            MODEL_IDENTITY,
+            bind_async_model_provider(provider),
+        )
+        authorized = AuthorizedAsyncModelProvider(router, RESPONSIBILITY_ID)
+
+        with self.assertRaises(ProviderUnavailable):
+            await authorized.invoke(_request())
+        self.assertEqual([], provider.requests)
+
+    async def test_provider_neutral_activation_accepts_api_shaped_adapter(self):
+        provider = _ScriptedModelProvider()
+        authorized = activate_model_provider(
+            provider,
+            identity=MODEL_IDENTITY,
+            responsibility_id=RESPONSIBILITY_ID,
+            contract_owner_id="archflow.semantic-spatial",
+            verification_evidence_refs=("evidence:configured-api-provider",),
+        )
+
+        receipt = await authorized.invoke(_request())
+
+        self.assertEqual(MODEL_IDENTITY.provider_id, receipt.provider_id)
+        self.assertEqual([_request()], provider.requests)
+
+    def test_agent_cli_is_only_one_configured_provider_implementation(self):
+        authorized = activate_codex_agent_cli_provider(
+            executable="codex",
+            model_id="gpt-test",
+            version="test-cli",
+            responsibility_id=RESPONSIBILITY_ID,
+            contract_owner_id="archflow.semantic-spatial",
+            verification_evidence_refs=("evidence:configured-agent-cli",),
+        )
+
+        active = authorized.router.state(RESPONSIBILITY_ID).active_provider
+        assert active is not None
+        self.assertEqual("codex-agent-cli", active.provider_id)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,9 @@ See the current flow in
 Current status: P1 `run_once` proves one bounded attempt: fork workspace, let a
 Fake Architect build, validate, evaluate, and either reject without drift or
 commit exactly one version. This is a walking skeleton, not a production
-orchestrator.
+orchestrator. It remains importable for compatibility tests, but
+`python -m archflow.runtime` delegates to the same formal P056 project CLI as
+`archflow-runtime`; it cannot execute the fake route as production.
 
 ## Obligation-driven repair
 
@@ -277,6 +279,48 @@ receipt whose requested and replacement digests are both explicit. Successful
 compilation still supplies no geometry executor, external-tool handle,
 hard-usability verdict, or canonical writer.
 
+`semantic_geometry_lifecycle.py` composes that compiler with the existing
+`compile_component_transition()` boundary. One transaction binds the exact
+predecessor and current developed-design digests, component-proposal digests,
+and predecessor geometry-program digest. It exposes a successor component
+proposal and compiled program only when both halves pass.
+
+The first accepted geometry program is not forced through a fictional
+predecessor. `bind_initial_semantic_geometry()` instead binds the selected
+component proposal, exact developed-design state, and already compiled initial
+program in a root receipt. Later revisions use the predecessor-bearing joint
+lifecycle. Both receipt forms enter the same P036 checkpoint protocol.
+
+Every surviving invalidated component must either own a changed geometry
+subtree or carry an explicit revalidation. Retired components require an exact
+removed geometry subtree, while a preserved component must retain its direct
+object ownership and object digests. Geometry dependency acknowledgements,
+object revision preconditions, and retirements remain the geometry compiler's
+responsibility; the joint receipt records their result without weakening them.
+A rejected semantic or geometry half returns receipts but no successor, writer,
+path, persistence authority, or canonical-write authority. P036 is therefore
+the only later boundary allowed to retain a compiled transaction.
+
+`production_runtime.py` and `project/production_transition.py` provide that
+later boundary without moving compilation authority into persistence. A
+successful P055 result is retained as separate immutable design-state,
+component-proposal, geometry-program, lifecycle-receipt, and P053-envelope run
+records. `ProductionRunCheckpoint@2` contains only their logical references,
+the accepted transition digest, and an exact-base intent digest that can be
+looked up before any provider or compiler replay. Records written before an
+interruption remain orphans until the checkpoint is durable; retrying the same
+intent is content-addressed and idempotent.
+
+`production_runtime.py` reloads the already compiled current project state;
+it has no generation, selection, persistence, or canonical-write authority.
+`production_compiler.py` asks the P053-authorized provider for two P054
+semantic-spatial alternatives, compiles them into the existing option set,
+requests one bounded Architect selection, initializes the existing developed
+design branch with explicit unresolved discipline obligations, authors the
+initial neutral geometry through P050, and deterministically realizes the
+result in the sandbox. It uses `bind_initial_semantic_geometry()` for the root
+and predecessor-bearing lifecycle receipts only for later revisions.
+
 ## Player authority and reversible controls
 
 `player_control.py` is a UI-neutral boundary for candidate preview, approval,
@@ -399,6 +443,32 @@ The temporary production-facing route may use
 `create_codex_cli_model_provider()` instead of an API adapter. It is isolated,
 ephemeral, read-only, and proposal-only. API migration is an adapter
 substitution behind `AsyncModelProvider`, not a controller rewrite.
+`archflow.production.AuthorizedAsyncModelProvider` now places that same port
+behind P053: async handlers receive a bounded signed token only in their
+trusted closure, and the router rechecks the authority epoch after the awaited
+call. The wrapper then requires an exact request and provider identity match.
+`activate_model_provider()` applies the same P053 activation sequence to any
+`AsyncModelProvider`; `activate_codex_agent_cli_provider()` is only today's
+configured implementation. The P056 run loop captures validated envelopes and
+persists them with the joint transition through P036.
+
+M050 closes the remaining active-path ambiguity: `run_primary_architect_turn()`
+accepts only `AuthorizedAsyncModelProvider`, marked test-only providers cannot
+be activated, and the formal root compiler already rejects direct provider
+objects. Historical raw Minecraft plans remain a compatibility adapter surface;
+new downstream calls use `MinecraftExportRequest@1`, which binds the translated
+plan to a project-owned neutral package and acceptance record and carries no
+design, validation, persistence, or canonical-write authority.
+
+The official `archflow-runtime run-project` command starts or resumes a named
+run under the explicit P052 runtime roots. A supplied context JSON is parsed as
+`ProductionAuthoringContext@1` and ingested immediately through P036; its
+machine-local source path never enters stable identity. On resume the command
+discovers that P036 record and uses the raw-request, step, and context record
+digests as its pre-provider idempotency key. A completed run therefore returns
+without invoking Agent CLI. This proves a scripted prompt-to-sandbox path and
+the Agent CLI configuration seam; optional live model evidence and a fresh
+Pantheon-scale accepted proof remain P058 work.
 
 ## Append-only event history and state reconstruction
 

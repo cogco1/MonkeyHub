@@ -563,6 +563,59 @@ class SpatialCompilationResult:
     receipt: SpatialCompilationReceipt
 
 
+def validate_spatial_authoring_context(
+    *,
+    state: OperationalMarkovState,
+    maturity: DesignMaturityState,
+    phase_gate: PhaseGateReceipt,
+    program: DesignProgram,
+    site_context: SiteContext,
+    build_policy: BuildPolicy,
+) -> None:
+    """Require one current schematic-authoring context without generating it."""
+
+    _require_bound_inputs(
+        state=state,
+        maturity=maturity,
+        phase_gate=phase_gate,
+        program=program,
+        site_context=site_context,
+        build_policy=build_policy,
+    )
+
+
+def validate_spatial_option(
+    *,
+    state: OperationalMarkovState,
+    maturity: DesignMaturityState,
+    phase_gate: PhaseGateReceipt,
+    program: DesignProgram,
+    site_context: SiteContext,
+    build_policy: BuildPolicy,
+    proposal: SpatialOptionProposal,
+) -> SchematicOption:
+    """Validate one authored option without selecting or persisting it."""
+
+    validate_spatial_authoring_context(
+        state=state,
+        maturity=maturity,
+        phase_gate=phase_gate,
+        program=program,
+        site_context=site_context,
+        build_policy=build_policy,
+    )
+    if not isinstance(proposal, SpatialOptionProposal):
+        raise TypeError("proposal must be SpatialOptionProposal")
+    return _validate_option(
+        proposal,
+        state=state,
+        phase_gate=phase_gate,
+        program=program,
+        site_context=site_context,
+        build_policy=build_policy,
+    )
+
+
 def compile_spatial_options(
     *,
     state: OperationalMarkovState,
@@ -575,7 +628,7 @@ def compile_spatial_options(
 ) -> SpatialCompilationResult:
     """Validate alternative proposals without generating or selecting one."""
 
-    _require_bound_inputs(
+    validate_spatial_authoring_context(
         state=state,
         maturity=maturity,
         phase_gate=phase_gate,

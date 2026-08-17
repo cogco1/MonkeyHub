@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import inspect
 import json
 import re
 import secrets
@@ -10,7 +11,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import PurePosixPath, PureWindowsPath
 from threading import Lock
-from typing import Any, Generic, TypeVar
+from typing import Any, Awaitable, Generic, TypeVar
 
 
 RequestT = TypeVar("RequestT")
@@ -23,6 +24,9 @@ _SCHEMA_REF = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{1,127}@[1-9][0-9]*$")
 _EMBEDDED_WINDOWS_PATH = re.compile(r"(?i)(?:^|[^A-Za-z0-9])[a-z]:[\\/]")
 _EMBEDDED_POSIX_PATH = re.compile(r"(?:^|[\s\"'=(])/(?:[^/\s]+/?)+")
 _EMBEDDED_UNC_PATH = re.compile(r"(?:^|[^\\])\\\\[^\s]+")
+_EMBEDDED_FILE_URI = re.compile(
+    r"(?i)(?:^|[^A-Za-z0-9])file:(?://[^\s]|/[^/\s]|[A-Za-z]:[\\/])"
+)
 _CONTROL_PLANE_FACTORY_KEY = object()
 
 
@@ -117,11 +121,16 @@ def _require_text(label: str, value: str) -> None:
 
 
 def _looks_machine_local(value: str) -> bool:
+    if value.startswith("^") and value.endswith("$"):
+        try:
+            re.compile(value)
+        except re.error:
+            pass
+        else:
+            return False
     lowered = value.lower()
     return (
-        lowered.startswith("file:")
-        or " file:" in lowered
-        or "file://" in lowered
+        _EMBEDDED_FILE_URI.search(value) is not None
         or lowered.startswith("\\\\")
         or _EMBEDDED_WINDOWS_PATH.search(value) is not None
         or _EMBEDDED_POSIX_PATH.search(value) is not None
@@ -549,7 +558,10 @@ class InvocationEnvelope:
 @dataclass(frozen=True, slots=True)
 class _RuntimeProvider(Generic[RequestT, ReceiptT]):
     registration: ProviderRegistration
-    handler: Callable[[RequestT, ProductionAuthorityToken], ReceiptT]
+    handler: Callable[
+        [RequestT, ProductionAuthorityToken],
+        ReceiptT | Awaitable[ReceiptT],
+    ]
 
 
 class _ResponsibilityControlPlane(Generic[RequestT, ReceiptT]):
@@ -601,7 +613,10 @@ class _ResponsibilityControlPlane(Generic[RequestT, ReceiptT]):
         self,
         contract: ResponsibilityContract,
         provider: ProviderIdentity,
-        handler: Callable[[RequestT, ProductionAuthorityToken], ReceiptT],
+        handler: Callable[
+            [RequestT, ProductionAuthorityToken],
+            ReceiptT | Awaitable[ReceiptT],
+        ],
     ) -> ProviderRegistration:
         if not callable(handler):
             raise TypeError("provider handler must be callable")
@@ -823,9 +838,62 @@ class _ResponsibilityControlPlane(Generic[RequestT, ReceiptT]):
         assert runtime is not None
         try:
             provider_receipt = runtime.handler(request, authority)
+            if inspect.isawaitable(provider_receipt):
+                close = getattr(provider_receipt, "close", None)
+                if callable(close):
+                    close()
+                raise TypeError(
+                    "async provider handler requires invoke_async"
+                )
         except Exception as exc:
             raise ProviderInvocationFailed(
                 responsibility_id, authority.provider, exc
+            ) from exc
+        provider_receipt_json, provider_receipt_digest = (
+            self._freeze_provider_receipt(provider_receipt)
+        )
+        with self._lock:
+            self._validate_authority_locked(authority)
+            return self._make_envelope(
+                authority,
+                provider_receipt_json,
+                provider_receipt_digest,
+            )
+
+    async def invoke_async(
+        self,
+        responsibility_id: str,
+        request: RequestT,
+    ) -> InvocationEnvelope:
+        """Invoke one active sync or async provider with post-await stale checks."""
+
+        with self._lock:
+            resolution, runtime = self._resolve_locked(responsibility_id)
+            authority = (
+                None
+                if resolution.active_provider is None
+                else self._issue_authority_locked(
+                    resolution.state,
+                    resolution.active_provider,
+                    production_authority=True,
+                )
+            )
+        if resolution.status is ResolutionStatus.UNAVAILABLE:
+            raise ProviderUnavailable(
+                f"responsibility {responsibility_id} is unavailable: "
+                f"{resolution.unavailable_reason}"
+            )
+        assert authority is not None
+        assert runtime is not None
+        try:
+            provider_receipt = runtime.handler(request, authority)
+            if inspect.isawaitable(provider_receipt):
+                provider_receipt = await provider_receipt
+        except Exception as exc:
+            raise ProviderInvocationFailed(
+                responsibility_id,
+                authority.provider,
+                exc,
             ) from exc
         provider_receipt_json, provider_receipt_digest = (
             self._freeze_provider_receipt(provider_receipt)
@@ -861,8 +929,58 @@ class _ResponsibilityControlPlane(Generic[RequestT, ReceiptT]):
             )
         try:
             provider_receipt = runtime.handler(request, authority)
+            if inspect.isawaitable(provider_receipt):
+                close = getattr(provider_receipt, "close", None)
+                if callable(close):
+                    close()
+                raise TypeError(
+                    "async provider handler requires invoke_shadow_async"
+                )
         except Exception as exc:
             raise ProviderInvocationFailed(responsibility_id, provider, exc) from exc
+        provider_receipt_json, provider_receipt_digest = (
+            self._freeze_provider_receipt(provider_receipt)
+        )
+        with self._lock:
+            return self._make_envelope(
+                authority,
+                provider_receipt_json,
+                provider_receipt_digest,
+            )
+
+    async def invoke_shadow_async(
+        self,
+        responsibility_id: str,
+        provider: ProviderIdentity,
+        request: RequestT,
+    ) -> InvocationEnvelope:
+        """Invoke a shadow/verified async provider without production authority."""
+
+        with self._lock:
+            state = self._require_state_locked(responsibility_id)
+            runtime = self._require_provider_locked(responsibility_id, provider)
+            if runtime.registration.mode not in {
+                ProviderMode.SHADOW,
+                ProviderMode.VERIFIED,
+            }:
+                raise ProviderLifecycleError(
+                    "shadow invocation requires a shadow or verified provider"
+                )
+            authority = self._issue_authority_locked(
+                state,
+                provider,
+                production_authority=False,
+            )
+        try:
+            provider_receipt = runtime.handler(request, authority)
+            if inspect.isawaitable(provider_receipt):
+                provider_receipt = await provider_receipt
+        except Exception as exc:
+            raise ProviderInvocationFailed(
+                responsibility_id,
+                provider,
+                exc,
+            ) from exc
         provider_receipt_json, provider_receipt_digest = (
             self._freeze_provider_receipt(provider_receipt)
         )
@@ -1034,7 +1152,10 @@ class ResponsibilityRouter(Generic[RequestT, ReceiptT]):
         self,
         contract: ResponsibilityContract,
         provider: ProviderIdentity,
-        handler: Callable[[RequestT, ProductionAuthorityToken], ReceiptT],
+        handler: Callable[
+            [RequestT, ProductionAuthorityToken],
+            ReceiptT | Awaitable[ReceiptT],
+        ],
     ) -> ProviderRegistration:
         return self.__control.register(contract, provider, handler)
 
@@ -1058,6 +1179,13 @@ class ResponsibilityRouter(Generic[RequestT, ReceiptT]):
     ) -> InvocationEnvelope:
         return self.__control.invoke(responsibility_id, request)
 
+    async def invoke_async(
+        self,
+        responsibility_id: str,
+        request: RequestT,
+    ) -> InvocationEnvelope:
+        return await self.__control.invoke_async(responsibility_id, request)
+
     def invoke_shadow(
         self,
         responsibility_id: str,
@@ -1065,6 +1193,18 @@ class ResponsibilityRouter(Generic[RequestT, ReceiptT]):
         request: RequestT,
     ) -> InvocationEnvelope:
         return self.__control.invoke_shadow(responsibility_id, provider, request)
+
+    async def invoke_shadow_async(
+        self,
+        responsibility_id: str,
+        provider: ProviderIdentity,
+        request: RequestT,
+    ) -> InvocationEnvelope:
+        return await self.__control.invoke_shadow_async(
+            responsibility_id,
+            provider,
+            request,
+        )
 
     def validate_envelope(
         self,

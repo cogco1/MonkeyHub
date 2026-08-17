@@ -35,6 +35,46 @@ adapters. Screenshots are readonly visual and aesthetic evidence only. A
 platform execution receipt therefore cannot accept a candidate or advance
 canonical state.
 
+P051 proves the existing identity and compiler invariants at this bridge: one
+stable `DesignComponent` tree owns coarse volumes, detailed geometry objects
+bind to those component ids, and exact-predecessor refinement preserves
+unaffected siblings. P054 now adds a bounded provider-neutral authoring request
+whose accepted output is the existing `SpatialOptionProposal@2`; the component
+tree and coarse massing volumes are produced together and deterministic
+validation rejects stale, cyclic, multiply-owned, unowned, and unknown-source
+results. P054 alone does **not** prove that component and detailed geometry
+changes persist through an official runtime. P055 compiles those two
+successors as one exact-base value transaction: semantic invalidation must be
+answered by changed geometry or explicit revalidation, retirements must remove
+their exact geometry subtree, and preserved siblings keep direct object
+digests. Any semantic or geometry failure exposes no successor. P056 now owns
+the P053/P036 CLI, root binding, recovery, and scripted sandbox proof. M050
+isolates bypass routes. P057 derives a disposable `ComponentIndex` and bounded
+component task context from the exact control tree, `DesignComponent` records,
+development dependencies, obligations, semantic bindings, compiled objects,
+and lifecycle receipt. The index embeds each authoritative `DesignComponent`
+instead of inventing parentage, rejects stale source digests, and can be
+deleted and rebuilt without losing design state. P058 closes the fresh
+longitudinal proof boundary with a new P036 project: a P053-authorized
+deterministic provider produces a coarse radial hall and dome through the
+formal runtime, then P055 deepens the same component identities through an
+explicit oculus and a bounded coffer field. Every stage has exact lifecycle,
+geometry, sandbox realization, artifact-presence validation, and reloadable
+P036 evidence. The proof loads no prior Pantheon or sandbox Gold answer.
+
+Until that chain is complete, three routes must not be conflated:
+
+- the intended active route is typed semantic-spatial authoring, joint
+  semantic-geometry lifecycle compilation, P053 provider resolution, and P036
+  persistence;
+- Fake Architect/FakeVoxel and arbitrary MCP-plan paths are compatibility or
+  test routes only and have no production authority;
+- `python -m archflow.runtime` delegates to the formal P056 CLI; active Primary
+  Architect and geometry authoring accept only P053-authorized providers, while
+  downstream Minecraft work begins at a typed neutral-package export request;
+- P026/P038 and later probes are evidence packages, not frozen design answers
+  that production may reload as generated output.
+
 ## One protocol, two state scopes, one evidence trace
 
 V4 separates three things that the earlier diagram conflated:
@@ -332,10 +372,39 @@ named unavailable outcome; it never calls a shadow or retired fallback.
 
 This is a control-plane contract, not another persistence path. Its states,
 tokens, and receipts are typed return values; P036 remains the only project
-writer. P053 does not yet migrate `PrimaryArchitect`, geometry authoring, or the
-P026 Gold runtime away from their direct provider injection. Each responsibility
-needs a later isolated shadow-and-cutover card before the new router is part of
-that production chain.
+writer. P056 adds async active and shadow invocation with the same post-call
+epoch and binding validation, plus an `AuthorizedAsyncModelProvider` that
+checks the P053 envelope, exact model request, and provider identity before a
+model receipt re-enters P029/P054 code. The authority token remains inside the
+trusted adapter closure and never reaches Agent CLI or a future API adapter.
+
+The P056 persistence loop retains an initial root binding or successful P055
+transaction as immutable
+P036 run records and then writes one reference-only checkpoint. Its intent
+digest is computed from the exact run base, step id, immutable raw-request
+reference, and current-context record references, so resume can short-circuit
+before provider invocation. A validated P053 envelope is evidence in that
+record set; Agent CLI and later API adapters share the same activation function
+and `AsyncModelProvider` port. Orphan run records from a pre-checkpoint
+interruption never become completion evidence.
+
+`archflow-runtime run-project` is the formal P052/P053/P036 entry. It ingests
+an explicitly supplied typed current-project context into P036, generates two
+P054 semantic/coarse-geometry alternatives, compiles the existing option set,
+records one model Architect selection, initializes the existing developed
+design branch with unresolved discipline obligations, authors P050 neutral
+geometry, and realizes it in the deterministic sandbox before the root
+checkpoint is published. Resume reuses the durable context and checkpoint and
+does not call the configured provider. This is not permission to infer missing
+site, program, or policy facts from an empty prompt; those remain current
+project state. M050 makes direct Primary Architect injection fail closed,
+prevents marked test providers from activation, and keeps raw Minecraft plans
+behind the compatibility method while `preview_export` and `build_export`
+require `MinecraftExportRequest@1`. P058 supplies the fresh Pantheon-scale
+scripted-provider proof and records live Agent CLI as not run; its accepted
+sandbox disposition proves artifact presence only, not architectural
+usability, structural performance, fabrication, or external-platform
+equivalence.
 
 ### Compaction recovery boundary
 
@@ -363,11 +432,14 @@ A committed building integration test is different: it is opened as
 `probes/<project_id>/`. The generic runner reads only `input/`, invokes public
 `archflow` modules, and writes candidate state, receipts, workspaces, artifacts,
 and the final run manifest only under that project. The case contains no Python
-package marker or alternative implementation. Until P020 and P018 implement
-the production manifest and persistent canonical/event stores, the synthetic
+package marker or alternative implementation. The retained synthetic
 `test_library` smoke intentionally exercises only `input/` and
 `runs/<run_id>/`; it demonstrates storage direction without claiming
-architectural design intelligence.
+architectural design intelligence. Its compatibility adapter may emit a local
+file URI only inside the supplied speculative workspace. Before retained
+records are written, containment is checked and that transient location
+becomes a project-relative logical URI, so committed evidence remains portable
+across repository roots and machines.
 
 ## Design maturity graph and inner operational loop
 
