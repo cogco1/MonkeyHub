@@ -44,3 +44,9 @@ reloaded answer.
 - Staged-derivation integration test: identity stability, array instance
   counts, voxel scale, reload provenance.
 - Architecture V3 scope diff, compileall, full discovery.
+
+
+## Completion
+
+- Completed: 2026-08-28
+- Evidence: scripted-provider monument derivation promoted: root step plus three P055 stages on eleven stable component identities; 36 authored operations expand through typed arrays (incl. 8 radial rings) into 308 realized instances and 37,013 occupied voxel cells; machine-local fidelity vs the frozen golden at declared half scale reaches plan IoU 0.865 and elevation IoU 0.949 with no fitted value; full voxelized proof retained behind ARCHFLOW_SLOW_MONUMENT with promoted probe evidence; fast protocol-chain test and ARCHITECTURE PASS

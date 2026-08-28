@@ -516,3 +516,38 @@ full-fidelity, and V3-execution claims: V3 reproduces its own golden
 byte-for-byte, and the V4 claim is only that transcribed canon-ratio
 massing agrees with the frozen envelope at the reported levels.
 Full-fidelity replay and live-provider re-derivation remain out of scope.
+
+## M065 + P065 monument-scale staged derivation — 2026-08-28
+
+M065 makes repetition a first-class geometry citizen: beside the retained
+linear array, a generic `radial_array` operation replicates one input
+about an explicit axis and center by an explicit angle step, with exact
+rotated union bounds, per-replica inverse-rotation voxel membership, and
+fail-closed degenerate inputs. Neither operation carries any typology or
+placement default.
+
+P065 proves golden-complexity derivation through the formal runtime with a
+scripted provider (explicitly not a live-model claim). From raw project
+input, four provider calls compile the coarse half-scale monument
+(portico, rotunda, dome at drum span 46 on a 49 x 64 site); three P055
+exact-predecessor stages then deepen the same eleven component identities:
+colonnade and axial entry; interior recess and aedicula rings with the
+dome oculus; five radial coffer rings with an attic ornament ring.
+Thirty-six authored operations expand through typed arrays into 308
+realized instances, and the promoted probe retains 37,013 occupied voxel
+cells at stage three with per-stage scenes, receipts, voxel views, and
+artifact-presence validations.
+
+Two digest-stability lessons are retained in the proof rather than worked
+around: numeric parameters must canonicalise identically through the
+authoring-output round trip, and revising a component reopens all of its
+bound geometry — every operation of a revised component must acknowledge
+its changed binding and carry an exact prior-digest precondition, with
+acknowledgments kept cumulative across stages.
+
+A machine-local fidelity receipt measures the derived envelope against the
+frozen golden at the declared half scale with no value fitted to the
+occupancy grid: plan-footprint IoU 0.865, elevation-silhouette IoU 0.949,
+bounding box 48 x 47 x 62 against the downsampled 49 x 47 x 64. The
+receipt denies reproduction and full-fidelity claims; a live-model
+monument run remains a separately evidenced future card.

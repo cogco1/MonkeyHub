@@ -10526,8 +10526,8 @@
     {
       "id": "P065",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Prove that staged derivation plus typed repetition reaches golden-sample complexity: a scripted P053 provider derives a monument-class drum-and-dome building through the formal runtime in bounded stages on stable component identities, realizing hundreds of typed instances through arrays, with voxel-scale evidence and an explicit scripted-versus-live claim boundary.",
       "depends_on": [
         "P058",
@@ -10570,13 +10570,46 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P065-monument-scale-derivation.md",
-      "on_complete": {
-        "modules": {
-          "realization": "monument_scale_repetition_proven"
-        }
+      "card": "docs/mapping/archive/P065-monument-scale-derivation.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P065",
+        "actor": "codex",
+        "verified_at": "2026-08-28T12:12:38.782477+00:00",
+        "contract_sha256": "95e0c5a3533cb8b8ea974b1a12c9b6734f8e3f8983aa26204c1f84dea4973a16",
+        "scope_sha256": "dcf01c61438775264913c3cd1e55ae61ff11369525dfb4e252b536bd65c4acb5",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.integration.test_monument_derivation"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d54ea9e9d617efb14f234862ff6dc5203a9592ea341fc899c284a6188bcbdd11",
+            "stdout_tail": "",
+            "stderr_tail": "s.\n----------------------------------------------------------------------\nRan 2 tests in 0.529s\n\nOK (skipped=1)\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "99cdc0fac28950b1cd420bbd8b236fbee633350952e05c48ae94218a444b8d5a",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (124 files, 0.781s)\n",
+            "stderr_tail": ""
+          }
+        ]
       },
-      "actor": "codex"
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "scripted-provider monument derivation promoted: root step plus three P055 stages on eleven stable component identities; 36 authored operations expand through typed arrays (incl. 8 radial rings) into 308 realized instances and 37,013 occupied voxel cells; machine-local fidelity vs the frozen golden at declared half scale reaches plan IoU 0.865 and elevation IoU 0.949 with no fitted value; full voxelized proof retained behind ARCHFLOW_SLOW_MONUMENT with promoted probe evidence; fast protocol-chain test and ARCHITECTURE PASS"
+      ]
     }
   ]
 }

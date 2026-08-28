@@ -1314,8 +1314,146 @@ def _run_proof(root: Path) -> dict[str, object]:
     }
 
 
+class MonumentLifecycleFastTests(unittest.TestCase):
+    """Protocol-chain verification without per-stage voxelization."""
+
+    def test_stage_lifecycles_compile_and_arrays_expand(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / PROJECT_ID
+            bootstrapped = bootstrap_raw_request_project(
+                root,
+                project_id=PROJECT_ID,
+                prompt=PROMPT,
+                run_id=RUN_ID,
+                synthetic_test=False,
+            )
+            repository = FilesystemProjectRepository.open(root)
+            run = bootstrapped.run
+            context = _rebase_context(_monument_context(), run)
+            destination = PersistenceDestination(
+                PersistenceArea.RUN_RECORD, run_id=run.run_id
+            )
+            context_ref = repository.put_json(
+                run=run,
+                destination=destination,
+                record_kind="production-authoring-context",
+                payload=context.to_dict(),
+            )
+            provider = _MonumentScriptedProvider(context)
+            collector = InvocationEvidenceCollector()
+            authorized = activate_model_provider(
+                provider,
+                identity=ProviderIdentity(
+                    provider_id=IDENTITY.provider_id,
+                    version=IDENTITY.provider_version,
+                    fingerprint=IDENTITY.provider_fingerprint,
+                ),
+                responsibility_id="model.production-root",
+                contract_owner_id="archflow.production-root",
+                verification_evidence_refs=(context_ref.uri,),
+                envelope_observer=collector.observe,
+            )
+            compiler = ProductionRootCompiler(
+                repository=repository,
+                context_ref=context_ref,
+                context=context,
+                provider=authorized,
+                evidence_collector=collector,
+                geometry_provider_identity=IDENTITY,
+            )
+            runtime = asyncio.run(
+                run_or_resume_production_step(
+                    repository,
+                    run=run,
+                    raw_request=bootstrapped.request,
+                    prompt=PROMPT,
+                    step_id="monument-root",
+                    compiler=compiler,
+                )
+            )
+            state_record = next(
+                item
+                for item in runtime.archive.records
+                if item.role is ProductionRecordRole.DESIGN_STATE
+            )
+            state = DevelopedDesignState.from_dict(state_record.content)
+            from archflow.runtime.geometry_compiler import (
+                compile_geometry_program,
+            )
+
+            prior = compile_geometry_program(
+                state,
+                provider.generated_geometry,
+                active_commitment_refs=(COMMITMENT_REF,),
+            ).program
+            self.assertIsNotNone(prior)
+            for stage in (1, 2, 3):
+                current = _next_state(state, stage=stage)
+                lifecycle = compile_semantic_geometry_lifecycle(
+                    transaction_id=f"monument-stage-{stage}",
+                    predecessor_state=state,
+                    current_state=current,
+                    predecessor_proposal=(
+                        state.selected_schematic.option.proposal
+                    ),
+                    current_proposal=(
+                        current.selected_schematic.option.proposal
+                    ),
+                    prior_program=prior,
+                    geometry_proposal=_monument_geometry(
+                        current, stage=stage, prior=prior
+                    ),
+                    revalidated_component_ids=(
+                        ("main-entry",)
+                        if stage == 2
+                        else ("oculus",) if stage == 3 else ()
+                    ),
+                    active_commitment_refs=(COMMITMENT_REF,),
+                )
+                self.assertIs(
+                    SemanticGeometryLifecycleStatus.COMPILED,
+                    lifecycle.receipt.status,
+                    lifecycle.receipt.issues,
+                )
+                state, prior = current, lifecycle.geometry_program
+        result = realize_geometry(prior, workspace_id="monument-fast")
+        self.assertEqual("realized", result.receipt.status.value)
+        instances = _instance_count(result.scene)
+        self.assertGreaterEqual(instances, 300, f"instances={instances}")
+        import json as _json
+
+        radial = [
+            item.object_id
+            for item in result.scene.objects
+            if item.physical
+            and _json.loads(item.geometry_json).get("kind") == "radial_array"
+        ]
+        self.assertGreaterEqual(len(radial), 7, radial)
+        components = {
+            item.component_id
+            for item in state.selected_schematic.option.proposal.components
+        }
+        self.assertEqual(
+            {
+                "building", "dome", "portico", "rotunda", "colonnade",
+                "main-entry", "recess-ring", "aedicula-ring", "oculus",
+                "coffers", "statuary-ring",
+            },
+            components,
+        )
+
+
 class MonumentDerivationTests(unittest.TestCase):
     def test_four_stage_monument_reaches_instance_and_voxel_scale(self):
+        import os
+
+        if not os.environ.get("ARCHFLOW_SLOW_MONUMENT"):
+            self.skipTest(
+                "set ARCHFLOW_SLOW_MONUMENT=1 for the full voxelized "
+                "four-stage run (about thirty minutes); the promoted "
+                "p065-monument-derivation probe retains its executed "
+                "evidence"
+            )
         with tempfile.TemporaryDirectory() as temporary:
             manifest = _run_proof(Path(temporary) / PROJECT_ID)
         self.assertEqual(4, manifest["provider_invocations"])
