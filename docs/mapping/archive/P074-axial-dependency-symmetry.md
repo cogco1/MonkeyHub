@@ -42,3 +42,9 @@ self-check must be compiled from that same basis.
 Measurement math (zero for symmetric groups, exact offsets for
 asymmetric ones, typed empty-group failure); derived-origin centering;
 architecture scope and discovery.
+
+
+## Completion
+
+- Completed: 2026-08-28
+- Evidence: Defect quantified on retained scenes and persisted as typed FAIL findings beside them (colonnade +0.65 m, rotunda plinth +0.50 m, beams +0.90 m off the committed axis; three stages). Fix: commitment:primary-axis-center added as a typed HARD commitment the runtime enforces (required-commitment-absent rejection observed live); all bindings answer it; colonnade/cap/beam/plinth origins derived center-out from the axis. Re-derivation p074-monument-symmetric/monument-002: 4 stages, 308 instances, axial_group_offsets exactly 0.000 for all five groups at stages 1-3 (PASS records retained). CAD rebuild EQUIVALENT (max dev 0.346 m) with semantics verified; IFC re-export VERIFIED; symmetric front elevation captured. tests/test_symmetry.py (8) green; archcheck PASS.

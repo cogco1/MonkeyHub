@@ -679,3 +679,37 @@ typed partial-representation note — never silently approximated. GUIDs
 derive from content keys and no timestamps are written, so the export
 is bit-deterministic; validation re-reads the file and matches element
 names, semantics, and mapped multiplicities against the program.
+
+## P074 axial dependency and symmetry self-check — 2026-08-29
+
+The user's eye caught what no gate measured: the monument's front
+elevation was asymmetric. Measurement confirmed and extended the
+finding on the retained scenes — the colonnade group sat +0.65 m off
+the committed axis, the beam row +0.90 m (overhanging the portico roof
+on one side), and the plinth +0.50 m, a defect the eye had missed. The
+typed FAIL findings were persisted beside the old scenes, which were
+never rewritten.
+
+The repair is the dependency pattern, not a number patch. The primary
+axis became a typed HARD commitment the runtime itself enforces — the
+first compile attempt was rejected with "required commitment is absent
+from current state" until the axis existed as a commitment with an
+authority and evidence. Every semantic binding now answers it, so
+revising the axis reopens the dependent geometry through the existing
+closure; the row origins are derived center-out from the axis
+(origin = axis − ((count−1)·step + width)/2), so the numbers cannot
+drift because they are never stored; and the self-check compiles from
+the same basis — a generic axial-symmetry measurement over realized
+scene bounds, with axis, subjects, and tolerance supplied by the
+project. One basis, three projections: derivation, reopening,
+criterion.
+
+The re-derived monument (fresh probe, four stages, 308 instances,
+root selection digest identical to the original run — determinism
+holding across the fix) measures exactly zero offset for all five
+groups at every stage. The CAD rebuild stays equivalent at 0.346 m
+maximum deviation with semantics verified, the IFC re-export validates,
+and the front elevation is symmetric. The episode is the paper's
+self-check argument in one page: a criterion absent means a defect
+passes; a criterion compiled from the basis catches a quarter of a
+metre.

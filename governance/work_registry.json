@@ -11152,8 +11152,8 @@
     {
       "id": "P074",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Close the axial dependency and self-check gap exposed by the monument's asymmetric front elevation: the primary axis becomes a named commitment bound by the axial components, colonnade row origins are derived center-out from the axis instead of free literals, a generic axial-symmetry measurement reports each named group's center offset from a project-supplied axis plane, typed FAIL findings are persisted beside the retained asymmetric scenes, and the re-derived symmetric monument plus rebuilt CAD realization provide the paired PASS evidence.",
       "depends_on": [
         "P065",
@@ -11198,9 +11198,46 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P074-axial-dependency-symmetry.md",
+      "card": "docs/mapping/archive/P074-axial-dependency-symmetry.md",
       "on_complete": {},
-      "actor": "codex"
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P074",
+        "actor": "codex",
+        "verified_at": "2026-08-28T16:44:10.138372+00:00",
+        "contract_sha256": "03545e77c5520240b179d36ac30d8d13d8867275605abac98176039a78089f1c",
+        "scope_sha256": "46da34bc5b232ba7a34a7ed6a437a3877b0324f05809fa83a5f778a5a1fc5fb2",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_symmetry"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "a68a1eaac0727b99355330a354a5c236bcb72073f27e9a92b5320e08ac1300f9",
+            "stdout_tail": "",
+            "stderr_tail": "........\n----------------------------------------------------------------------\nRan 8 tests in 0.166s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "eacfe1e9607099545af4416edf45fdd695c4927f9c446f77968e3bc6fcdbc88a",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (131 files, 0.818s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "Defect quantified on retained scenes and persisted as typed FAIL findings beside them (colonnade +0.65 m, rotunda plinth +0.50 m, beams +0.90 m off the committed axis; three stages). Fix: commitment:primary-axis-center added as a typed HARD commitment the runtime enforces (required-commitment-absent rejection observed live); all bindings answer it; colonnade/cap/beam/plinth origins derived center-out from the axis. Re-derivation p074-monument-symmetric/monument-002: 4 stages, 308 instances, axial_group_offsets exactly 0.000 for all five groups at stages 1-3 (PASS records retained). CAD rebuild EQUIVALENT (max dev 0.346 m) with semantics verified; IFC re-export VERIFIED; symmetric front elevation captured. tests/test_symmetry.py (8) green; archcheck PASS."
+      ]
     }
   ]
 }
