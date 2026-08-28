@@ -17,9 +17,11 @@ from archflow.capabilities.geometry_proposal import (
     GeometryProposalPolicy,
     GeometryProposalProviderIdentity,
     GeometryProposalStatus,
+    load_compiled_geometry_program,
     load_geometry_proposal_lineage,
     produce_geometry_program_proposal,
     proposal_authoring_output,
+    proposal_edit_authoring_output,
 )
 from archflow.project import (
     FilesystemProjectRepository,
@@ -257,7 +259,9 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
         *,
         rounds: int = 2,
         prior_program=None,
+        required_geometry_component_ids=(),
         realization_requirements=(),
+        rejected_round_ref=None,
     ):
         return await produce_geometry_program_proposal(
             self.repository,
@@ -270,7 +274,11 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             provider_identity=IDENTITY,
             policy=GeometryProposalPolicy(rounds),
             prior_program=prior_program,
+            required_geometry_component_ids=(
+                required_geometry_component_ids
+            ),
             realization_requirements=realization_requirements,
+            rejected_round_ref=rejected_round_ref,
         )
 
     async def test_accepted_record_reloads_compiles_and_realizes(self) -> None:
@@ -466,7 +474,10 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             proposal_id="revision-proposal",
             predecessor_program_digest=prior_program.program_digest,
         )
-        provider = _ScriptedProvider((proposal_authoring_output(revision),))
+        edit_output = proposal_edit_authoring_output(prior_program, revision)
+        provider = _ScriptedProvider(
+            (edit_output,)
+        )
         result = await self._produce(
             provider,
             rounds=1,
@@ -482,16 +493,47 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             payload["available_predecessor_program"],
             prior_program.to_dict(),
         )
+        revision_contract = payload["predecessor_revision_contract"]
+        self.assertEqual(
+            revision_contract["predecessor_program_digest"],
+            prior_program.program_digest,
+        )
+        self.assertEqual(
+            {
+                (item["object_id"], item["expected_digest"])
+                for item in revision_contract["object_revision_tokens"]
+            },
+            {
+                (item.object_id, item.object_digest)
+                for item in prior_program.objects
+            },
+        )
+        self.assertEqual(
+            payload["required_output_contract"][
+                "predecessor_revision_contract"
+            ],
+            revision_contract,
+        )
         self.assertTrue(
             any(
-                "revise that exact geometry program instead of redrawing"
+                "Return one GeometryProgramEditAuthoringOutput@1"
                 in instruction
                 for instruction in payload["instructions"]
             )
         )
+        self.assertTrue(
+            any(
+                "never guess a predecessor digest" in instruction
+                for instruction in payload["instructions"]
+            )
+        )
+        self.assertEqual(
+            payload["required_output_schema"],
+            "GeometryProgramEditAuthoringOutput@1",
+        )
         body = payload["required_output_contract"]["json_schema"][
             "properties"
-        ]["proposal_body"]
+        ]["edit_body"]
         self.assertEqual(
             body["properties"]["predecessor_program_digest"]["const"],
             prior_program.program_digest,
@@ -504,6 +546,126 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             "compiler.predecessor_mismatch",
             {issue.code for issue in loaded.rounds[0].issues},
         )
+        self.assertEqual(edit_output["edit_body"]["frame_upserts"], [])
+        self.assertEqual(edit_output["edit_body"]["operation_upserts"], [])
+        self.assertLess(
+            len(_canonical_json(edit_output)),
+            len(_canonical_json(proposal_authoring_output(revision))),
+        )
+
+    async def test_revision_full_snapshot_path_is_quarantined(self) -> None:
+        _, prior_program, _ = compiled_room()
+        revision = replace(
+            self.proposal,
+            proposal_id="legacy-full-revision",
+            predecessor_program_digest=prior_program.program_digest,
+        )
+        provider = _ScriptedProvider((proposal_authoring_output(revision),))
+
+        result = await self._produce(
+            provider,
+            rounds=1,
+            prior_program=prior_program,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        self.assertEqual(
+            loaded.rounds[0].issues[0].code,
+            "malformed_model_output",
+        )
+        self.assertIn(
+            "field mismatch",
+            loaded.rounds[0].issues[0].detail,
+        )
+
+    async def test_compiler_repair_receives_exact_rejected_typed_edit(self) -> None:
+        _, prior_program, _ = compiled_room()
+        revision = replace(
+            self.proposal,
+            proposal_id="revision-missing-preconditions",
+            predecessor_program_digest=prior_program.program_digest,
+        )
+        rejected = proposal_edit_authoring_output(prior_program, revision)
+        rejected["edit_body"]["revisions"] = []
+        provider = _ScriptedProvider((rejected, rejected))
+
+        result = await self._produce(
+            provider,
+            rounds=2,
+            prior_program=prior_program,
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        repair_context = provider.requests[1].payload["repair_context"]
+        self.assertEqual(repair_context["rejected_output"], rejected)
+        self.assertIsNotNone(repair_context["rejected_proposal_digest"])
+        self.assertEqual(
+            repair_context["issues"],
+            provider.requests[1].payload["repair_issues"],
+        )
+        self.assertTrue(
+            any(
+                issue["code"].startswith("compiler.")
+                for issue in repair_context["issues"]
+            )
+        )
+
+    async def test_rejected_round_can_resume_one_exact_repair_request(self) -> None:
+        rejected = json.loads(
+            _canonical_json(proposal_authoring_output(self.proposal))
+        )
+        rejected["proposal_body"]["operations"][0]["kind"] = (
+            "undeclared_building_primitive"
+        )
+        first = await self._produce(
+            _ScriptedProvider((rejected,)),
+            rounds=1,
+        )
+        provider = _ScriptedProvider((proposal_authoring_output(self.proposal),))
+
+        resumed = await self._produce(
+            provider,
+            rounds=1,
+            rejected_round_ref=first.round_refs[0],
+        )
+
+        self.assertIs(resumed.status, GeometryProposalStatus.ACCEPTED)
+        self.assertEqual(len(provider.requests), 1)
+        payload = provider.requests[0].payload
+        context = payload["repair_context"]
+        self.assertEqual(
+            context["rejected_round_ref"],
+            first.round_refs[0].uri,
+        )
+        self.assertEqual(context["rejected_output"], rejected)
+        self.assertEqual(context["issues"], payload["repair_issues"])
+        self.assertTrue(
+            any(
+                "complete replacement" in instruction
+                for instruction in payload["instructions"]
+            )
+        )
+
+    async def test_compiled_program_reload_is_exact_and_rejects_tampering(self) -> None:
+        _, program, _ = compiled_room()
+
+        loaded = load_compiled_geometry_program(program.to_dict())
+
+        self.assertEqual(loaded, program)
+        self.assertEqual(loaded.program_digest, program.program_digest)
+        tampered = json.loads(json.dumps(program.to_dict()))
+        tampered["proposal_digest"] = "0" * 64
+        with self.assertRaisesRegex(ValueError, "proposal digest changed"):
+            load_compiled_geometry_program(tampered)
+
+        authoritative = json.loads(json.dumps(program.to_dict()))
+        authoritative["execution_authority"] = True
+        with self.assertRaisesRegex(ValueError, "forbidden authority"):
+            load_compiled_geometry_program(authoritative)
 
     async def test_host_cut_without_host_dependency_remains_rejected(self) -> None:
         invalid = json.loads(
@@ -539,6 +701,18 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(result.status, GeometryProposalStatus.ACCEPTED)
         payload = provider.requests[0].payload
         self.assertNotIn("candidate_program", payload)
+        self.assertNotIn(
+            "proposal",
+            payload["spatial_option_record"],
+        )
+        self.assertEqual(
+            payload["spatial_option_record"]["proposal_digest"],
+            self.option.proposal_digest,
+        )
+        self.assertEqual(
+            payload["spatial_option_record"]["proposal_path"],
+            "developed_design_state.selected_schematic.option.proposal",
+        )
         self.assertEqual(
             {
                 item["component_id"]
@@ -551,6 +725,38 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             payload["required_hosted_component_bindings"],
             [],
+        )
+
+    async def test_required_changed_component_cannot_disappear_to_pass_compiler(
+        self,
+    ) -> None:
+        provider = _ScriptedProvider((proposal_authoring_output(self.proposal),))
+
+        result = await self._produce(
+            provider,
+            rounds=1,
+            required_geometry_component_ids=("primary-support",),
+        )
+
+        self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
+        payload = provider.requests[0].payload
+        self.assertEqual(
+            payload["required_geometry_component_ids"],
+            ["primary-support"],
+        )
+        self.assertEqual(
+            payload["required_output_contract"][
+                "required_geometry_component_ids"
+            ],
+            ["primary-support"],
+        )
+        loaded = load_geometry_proposal_lineage(
+            self.repository,
+            result.lineage_ref,
+        )
+        self.assertIn(
+            "missing=['primary-support']",
+            loaded.rounds[0].issues[0].detail,
         )
 
     async def test_unavailable_interface_is_persisted_before_compilation(self) -> None:
@@ -633,6 +839,23 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             "malformed_model_output",
         )
         self.assertIn("operations[0]", repair_issues[0]["detail"])
+        self.assertIsNone(provider.requests[0].payload["repair_context"])
+        repair_context = provider.requests[1].payload["repair_context"]
+        self.assertEqual(
+            repair_context["schema"],
+            "GeometryProposalRepairContext@1",
+        )
+        self.assertEqual(repair_context["rejected_output"], invalid)
+        self.assertEqual(repair_context["issues"], repair_issues)
+        self.assertEqual(
+            repair_context["rejected_output_digest"],
+            hashlib.sha256(
+                _canonical_json(invalid).encode("utf-8")
+            ).hexdigest(),
+        )
+        self.assertIsNone(repair_context["rejected_proposal_digest"])
+        self.assertFalse(repair_context["output_patch_authority"])
+        self.assertFalse(repair_context["validation_authority"])
 
     async def test_top_level_and_nested_drift_receive_path_specific_repair(
         self,

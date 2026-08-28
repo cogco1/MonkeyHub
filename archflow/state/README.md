@@ -33,6 +33,22 @@ Revisions bind the exact predecessor program and prior object digests.
 Retirements are explicit. These contracts allow dependency-local invalidation
 without silently replacing or deleting an accepted stable object.
 
+`component_family.py` adds a manifest over those existing values; it is not a
+second family tree or geometry language. Every family instance binds one
+existing `DesignComponent`, exact project/base and geometry-program digest,
+family revision, frame, native unit, scale, parameter references, sockets,
+anchors, interfaces, dependencies, semantic bindings, operations, assemblies,
+assets, and provenance. `SpatialOptionProposal.components` remains the only
+component hierarchy.
+
+Parametric families identify exact parameters already present in generic
+geometry operations and may reuse `HostedAssembly`; their scale remains
+identity so dimensional change occurs through project-authored parameters.
+External mesh families bind immutable `AssetReference` content and may place
+and explicitly scale it, but expose no internal parametric edit surface.
+Hybrid families retain both channels under the same component binding. None of
+these records owns geometry generation, persistence, review, or promotion.
+
 P016 keeps interpreted values in typed `IntentTerm` objects while authorization
 continues to use the P015 commitment lifecycle. A proposed term has no hard
 authority. Only a named confirmation can produce an active lock, and revision

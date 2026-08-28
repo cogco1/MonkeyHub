@@ -240,6 +240,7 @@ def activate_codex_agent_cli_provider(
     verification_evidence_refs: tuple[str, ...],
     provider_id: str = "codex-agent-cli",
     timeout_seconds: float = 60.0,
+    reasoning_effort: str = "medium",
     envelope_observer: Callable[[InvocationEnvelope], None] | None = None,
 ) -> AuthorizedAsyncModelProvider:
     """Configure today's Agent CLI implementation without granting it authority."""
@@ -250,6 +251,7 @@ def activate_codex_agent_cli_provider(
         version=version,
         provider_id=provider_id,
         timeout_seconds=timeout_seconds,
+        reasoning_effort=reasoning_effort,
     )
     return activate_provider_from_spec(
         provider,

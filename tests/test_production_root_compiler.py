@@ -36,11 +36,17 @@ from archflow.project import (
     bootstrap_external_project,
 )
 from archflow.project.digests import canonical_json_sha256
+from archflow.project.production_transition import (
+    load_failed_production_attempts,
+    load_production_transition,
+)
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.project.runtime import main, run_external_production
 from archflow.runtime.production_compiler import (
+    ProductionRootCompilationError,
     ProductionRootCompiler,
     SchematicSelectionStatus,
+    schematic_option_decision_projection,
     schematic_selection_output,
     select_schematic_option,
 )
@@ -49,6 +55,8 @@ from archflow.runtime.production_runtime import (
     ProductionAuthoringContext,
     ProductionContextError,
     ProductionRuntimeError,
+    ProductionRuntimeStepFailed,
+    ProductionStepCompilationFailed,
     run_or_resume_production_step,
 )
 from archflow.state import ComponentMaturity, DesignComponent
@@ -70,7 +78,11 @@ from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from tests.test_sandbox_realization import compiled_room
 from tests.test_semantic_spatial_authoring import _ScriptedProvider
 from tests.test_spatial_proposals import _inputs, _proposal as _spatial
-from tests.test_production_transition import _compiled_transition
+from tests.test_production_transition import (
+    _compiled_transition,
+    _failed_envelope,
+    _success_envelope,
+)
 
 
 IDENTITY = GeometryProposalProviderIdentity(
@@ -244,15 +256,29 @@ def _with_components(proposal):  # type: ignore[no-untyped-def]
 
 
 class _ProductionProvider:
-    def __init__(self, options) -> None:  # type: ignore[no-untyped-def]
+    def __init__(
+        self,
+        options,
+        *,
+        spatial_mutator=None,
+    ) -> None:  # type: ignore[no-untyped-def]
         self.options = iter(options)
         self.calls = []
+        self.spatial_mutator = spatial_mutator
+        self.current_spatial_option = None
 
     async def invoke(self, request):  # type: ignore[no-untyped-def]
         self.calls.append(request)
         schema = request.payload["schema"]
         if schema == "SemanticSpatialAuthoringPrompt@1":
-            output = semantic_spatial_authoring_output(request, next(self.options))
+            if "repair_feedback" in request.payload:
+                option = self.current_spatial_option
+            else:
+                option = next(self.options)
+                self.current_spatial_option = option
+            output = semantic_spatial_authoring_output(request, option)
+            if self.spatial_mutator is not None:
+                output = self.spatial_mutator(output)
         elif schema == "SchematicOptionSelectionPrompt@1":
             output = schematic_selection_output(
                 request,
@@ -301,6 +327,29 @@ class _ProductionProvider:
             output_bytes=len(encoded.encode("utf-8")),
             output_sha256=hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
             output_json=encoded,
+        )
+
+
+class _SpatialTimeoutProvider:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def invoke(self, request):  # type: ignore[no-untyped-def]
+        self.calls.append(request)
+        return ModelInvocationReceipt(
+            receipt_id=f"timeout-{len(self.calls):02d}",
+            status=ModelInvocationStatus.TIMEOUT,
+            request=request,
+            provider_id=IDENTITY.provider_id,
+            model_id=IDENTITY.model_id,
+            provider_version=IDENTITY.provider_version,
+            provider_fingerprint=IDENTITY.provider_fingerprint,
+            input_bytes=len(request.payload_json.encode("utf-8")),
+            output_bytes=0,
+            output_sha256=None,
+            duration_ms=300_000,
+            error_code="model.timeout",
+            message="provider exceeded deadline",
         )
 
 
@@ -457,6 +506,70 @@ class ProductionSelectionTests(unittest.IsolatedAsyncioTestCase):
         assert result.option is not None
         self.assertEqual("hall-option", result.option.option_id)
         self.assertFalse(result.receipt.to_dict()["selection_authority"])
+        contract = provider.requests[0].payload["output_contract"]
+        self.assertEqual(
+            "SchematicOptionSelectionContract@1",
+            contract["schema"],
+        )
+        self.assertEqual(
+            self.option_set.option_set_digest,
+            contract["fixed_values"]["exact_option_set_digest"],
+        )
+        self.assertEqual(
+            {"courtyard-option", "hall-option"},
+            set(contract["allowed_option_ids"]),
+        )
+        self.assertFalse(contract["option_mutation_authority"])
+        payload = provider.requests[0].payload
+        self.assertNotIn("options", payload)
+        projections = payload["option_decision_projections"]
+        self.assertEqual(
+            ["courtyard-option", "hall-option"],
+            [item["option_id"] for item in projections],
+        )
+        self.assertEqual(
+            [item.option_digest for item in self.option_set.options],
+            [item["option_digest"] for item in projections],
+        )
+        projection_contract = payload["option_projection_contract"]
+        self.assertEqual(
+            self.option_set.option_set_digest,
+            projection_contract["source_option_set_digest"],
+        )
+        self.assertTrue(projection_contract["projection_is_not_an_option"])
+        self.assertTrue(
+            projection_contract["original_options_remain_authoritative"]
+        )
+        self.assertFalse(projection_contract["option_mutation_authority"])
+
+    def test_decision_projection_is_deterministic_bounded_and_non_authoritative(
+        self,
+    ) -> None:
+        option = self.option_set.options[0]
+        projection = schematic_option_decision_projection(option)
+
+        self.assertEqual(
+            projection,
+            schematic_option_decision_projection(option),
+        )
+        self.assertEqual(option.option_digest, projection["option_digest"])
+        self.assertEqual(
+            option.proposal.proposal_digest,
+            projection["proposal_digest"],
+        )
+        self.assertEqual(
+            len(option.proposal.footprint_cells),
+            projection["footprint_cell_count"],
+        )
+        self.assertNotIn("evidence_refs", projection)
+        self.assertNotIn("responds_to_refs", projection)
+        self.assertTrue(projection["decision_projection_only"])
+        self.assertFalse(projection["option_mutation_authority"])
+        self.assertFalse(projection["validation_authority"])
+        self.assertLess(
+            len(json.dumps(projection, separators=(",", ":"))),
+            len(json.dumps(option.to_dict(), separators=(",", ":"))),
+        )
 
     async def test_unknown_or_stale_selection_is_rejected(self) -> None:
         unknown = _ScriptedProvider(
@@ -494,6 +607,26 @@ class ProductionSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             "schematic_selection.stale_option_set",
             stale_result.receipt.error_code,
+        )
+
+        field_drift = _ScriptedProvider(
+            lambda request: {
+                "schema": "SchematicOptionSelectionOutput@1",
+                "selected_option_id": "hall-option",
+                "selected_proposal_digest": "0" * 64,
+                "rationale": "Choose one supplied option.",
+            }
+        )
+        drift_result = await select_schematic_option(
+            field_drift,
+            request_id="field-drift-selection",
+            option_set=self.option_set,
+            raw_request=self.raw_request,
+        )
+        self.assertEqual(
+            "schematic_selection.fields_mismatch:"
+            "missing=exact_option_set_digest;extra=selected_proposal_digest",
+            drift_result.receipt.error_code,
         )
 
 
@@ -553,14 +686,302 @@ class ProductionRootCompilerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(4, len(compiled.invocation_envelopes))
         self.assertEqual(4, len(provider.calls))
+        alternative = provider.calls[1].payload["alternative_context"]
+        self.assertEqual(
+            ["single-level-option"],
+            alternative["excluded_option_ids"],
+        )
+        self.assertTrue(alternative["complete_alternative_required"])
+        self.assertFalse(alternative["option_mutation_authority"])
         schemas = {payload["schema"] for payload in repository.records.values()}
         self.assertIn("HybridSandboxScene@1", schemas)
         self.assertIn("SandboxRealizationReceipt@1", schemas)
+
+    async def test_semantic_rejection_preserves_exact_code_and_message(self):
+        context, options = _context_and_options()
+        repository = _MemoryRepository()
+        context_ref = repository.put_json(
+            run=context.run,
+            destination=None,
+            record_kind="production-context",
+            payload=context.to_dict(),
+        )
+        raw_ref = ProjectRecordRef(
+            project_id=context.run.project_id,
+            relative_path="input/raw-request-" + "b" * 64 + ".json",
+            sha256="b" * 64,
+            media_type="application/json",
+        )
+        repository.records[raw_ref] = {
+            "schema": "RawProjectRequest@1",
+            "prompt": "Design from this current project state.",
+        }
+
+        def false_hard_verdict(output):  # type: ignore[no-untyped-def]
+            payload = dict(output)
+            proposal = dict(payload["proposal"])
+            proposal["hard_usability_verdict"] = False
+            payload["proposal"] = proposal
+            return payload
+
+        collector = InvocationEvidenceCollector()
+        provider = _ProductionProvider(
+            options,
+            spatial_mutator=false_hard_verdict,
+        )
+        authorized = activate_model_provider(
+            provider,
+            identity=ProviderIdentity(
+                provider_id=IDENTITY.provider_id,
+                version=IDENTITY.provider_version,
+                fingerprint=IDENTITY.provider_fingerprint,
+            ),
+            responsibility_id="model.production-root",
+            contract_owner_id="archflow.production-root",
+            verification_evidence_refs=(context_ref.uri,),
+            envelope_observer=collector.observe,
+        )
+        compiler = ProductionRootCompiler(
+            repository=repository,
+            context_ref=context_ref,
+            context=context,
+            provider=authorized,
+            evidence_collector=collector,
+            geometry_provider_identity=IDENTITY,
+        )
+
+        with self.assertRaises(ProductionRootCompilationError) as error:
+            await compiler.compile(
+                run=context.run,
+                raw_request=raw_ref,
+                prompt="Design from this current project state.",
+            )
+
+        self.assertEqual(
+            "spatial_authoring.proposal_rejected",
+            error.exception.error_code,
+        )
+        self.assertIn(
+            "SpatialProposalError: spatial proposal acquired forbidden authority",
+            str(error.exception),
+        )
+        self.assertEqual(2, len(collector.since(0)))
+
+    async def test_one_model_authored_repair_can_reach_the_original_option_set(self):
+        context, options = _context_and_options()
+        repository = _MemoryRepository()
+        context_ref = repository.put_json(
+            run=context.run,
+            destination=None,
+            record_kind="production-context",
+            payload=context.to_dict(),
+        )
+        raw_ref = ProjectRecordRef(
+            project_id=context.run.project_id,
+            relative_path="input/raw-request-" + "c" * 64 + ".json",
+            sha256="c" * 64,
+            media_type="application/json",
+        )
+        repository.records[raw_ref] = {
+            "schema": "RawProjectRequest@1",
+            "prompt": "Design from this current project state.",
+        }
+        mutations = 0
+
+        def reject_first(output):  # type: ignore[no-untyped-def]
+            nonlocal mutations
+            mutations += 1
+            if mutations != 1:
+                return output
+            payload = dict(output)
+            proposal = dict(payload["proposal"])
+            proposal["evidence_refs"] = [
+                *proposal["evidence_refs"],
+                "evidence:unknown",
+            ]
+            payload["proposal"] = proposal
+            return payload
+
+        collector = InvocationEvidenceCollector()
+        provider = _ProductionProvider(options, spatial_mutator=reject_first)
+        authorized = activate_model_provider(
+            provider,
+            identity=ProviderIdentity(
+                provider_id=IDENTITY.provider_id,
+                version=IDENTITY.provider_version,
+                fingerprint=IDENTITY.provider_fingerprint,
+            ),
+            responsibility_id="model.production-root",
+            contract_owner_id="archflow.production-root",
+            verification_evidence_refs=(context_ref.uri,),
+            envelope_observer=collector.observe,
+        )
+        compiler = ProductionRootCompiler(
+            repository=repository,
+            context_ref=context_ref,
+            context=context,
+            provider=authorized,
+            evidence_collector=collector,
+            geometry_provider_identity=IDENTITY,
+        )
+
+        compiled = await compiler.compile(
+            run=context.run,
+            raw_request=raw_ref,
+            prompt="Design from this current project state.",
+        )
+
+        self.assertEqual(5, len(provider.calls))
+        self.assertEqual(5, len(compiled.invocation_envelopes))
+        self.assertIn("repair_feedback", provider.calls[1].payload)
+        authoring = [
+            payload
+            for payload in repository.records.values()
+            if payload.get("schema") == "SemanticSpatialAuthoringReceipt@1"
+        ]
+        self.assertEqual(3, len(authoring))
+        self.assertEqual(
+            ["rejected", "accepted", "accepted"],
+            [item["status"] for item in authoring],
+        )
+        self.assertEqual(
+            "two-level-option",
+            compiled.current_design_state.selected_schematic.option.option_id,
+        )
+
+    async def test_provider_failure_is_not_retried(self):
+        context, _ = _context_and_options()
+        repository = _MemoryRepository()
+        context_ref = repository.put_json(
+            run=context.run,
+            destination=None,
+            record_kind="production-context",
+            payload=context.to_dict(),
+        )
+        raw_ref = ProjectRecordRef(
+            project_id=context.run.project_id,
+            relative_path="input/raw-request-" + "d" * 64 + ".json",
+            sha256="d" * 64,
+            media_type="application/json",
+        )
+        repository.records[raw_ref] = {
+            "schema": "RawProjectRequest@1",
+            "prompt": "Design from this current project state.",
+        }
+        collector = InvocationEvidenceCollector()
+        provider = _SpatialTimeoutProvider()
+        authorized = activate_model_provider(
+            provider,
+            identity=ProviderIdentity(
+                provider_id=IDENTITY.provider_id,
+                version=IDENTITY.provider_version,
+                fingerprint=IDENTITY.provider_fingerprint,
+            ),
+            responsibility_id="model.production-root",
+            contract_owner_id="archflow.production-root",
+            verification_evidence_refs=(context_ref.uri,),
+            envelope_observer=collector.observe,
+        )
+        compiler = ProductionRootCompiler(
+            repository=repository,
+            context_ref=context_ref,
+            context=context,
+            provider=authorized,
+            evidence_collector=collector,
+            geometry_provider_identity=IDENTITY,
+        )
+
+        with self.assertRaises(ProductionRootCompilationError) as error:
+            await compiler.compile(
+                run=context.run,
+                raw_request=raw_ref,
+                prompt="Design from this current project state.",
+            )
+
+        self.assertEqual("model.timeout", error.exception.error_code)
+        self.assertEqual(1, len(provider.calls))
+        self.assertEqual(1, len(collector.since(0)))
+
+    async def test_duplicate_option_ids_become_typed_production_rejection(self):
+        context, options = _context_and_options()
+        duplicate_second = replace(
+            options[1],
+            option_id=options[0].option_id,
+        )
+        repository = _MemoryRepository()
+        context_ref = repository.put_json(
+            run=context.run,
+            destination=None,
+            record_kind="production-context",
+            payload=context.to_dict(),
+        )
+        raw_ref = ProjectRecordRef(
+            project_id=context.run.project_id,
+            relative_path="input/raw-request-" + "e" * 64 + ".json",
+            sha256="e" * 64,
+            media_type="application/json",
+        )
+        repository.records[raw_ref] = {
+            "schema": "RawProjectRequest@1",
+            "prompt": "Design from this current project state.",
+        }
+        collector = InvocationEvidenceCollector()
+        provider = _ProductionProvider((options[0], duplicate_second))
+        authorized = activate_model_provider(
+            provider,
+            identity=ProviderIdentity(
+                provider_id=IDENTITY.provider_id,
+                version=IDENTITY.provider_version,
+                fingerprint=IDENTITY.provider_fingerprint,
+            ),
+            responsibility_id="model.production-root",
+            contract_owner_id="archflow.production-root",
+            verification_evidence_refs=(context_ref.uri,),
+            envelope_observer=collector.observe,
+        )
+        compiler = ProductionRootCompiler(
+            repository=repository,
+            context_ref=context_ref,
+            context=context,
+            provider=authorized,
+            evidence_collector=collector,
+            geometry_provider_identity=IDENTITY,
+        )
+
+        with self.assertRaises(ProductionRootCompilationError) as error:
+            await compiler.compile(
+                run=context.run,
+                raw_request=raw_ref,
+                prompt="Design from this current project state.",
+            )
+
+        self.assertEqual(
+            "spatial_authoring.option_set_rejected",
+            error.exception.error_code,
+        )
+        self.assertIn("option ids contains duplicates", str(error.exception))
+        self.assertEqual(2, len(provider.calls))
+        self.assertEqual(2, len(collector.since(0)))
+        self.assertIn("alternative_context", provider.calls[1].payload)
+        authoring = [
+            payload
+            for payload in repository.records.values()
+            if payload.get("schema") == "SemanticSpatialAuthoringReceipt@1"
+        ]
+        self.assertEqual(["accepted", "accepted"], [item["status"] for item in authoring])
 
 
 class _ScriptedCompiler:
     def __init__(self) -> None:
         self.calls = 0
+
+    def invocation_evidence_cursor(self) -> int:
+        return 0
+
+    def invocation_evidence_since(self, cursor):  # type: ignore[no-untyped-def]
+        if cursor != 0:
+            raise ValueError("unexpected evidence cursor")
+        return ()
 
     async def compile(self, *, run, raw_request, prompt):  # type: ignore[no-untyped-def]
         self.calls += 1
@@ -572,9 +993,44 @@ class _UnavailableCompiler:
     def __init__(self) -> None:
         self.calls = 0
 
+    def invocation_evidence_cursor(self) -> int:
+        return 0
+
+    def invocation_evidence_since(self, cursor):  # type: ignore[no-untyped-def]
+        if cursor != 0:
+            raise ValueError("unexpected evidence cursor")
+        return ()
+
     async def compile(self, **kwargs):  # type: ignore[no-untyped-def]
         self.calls += 1
         raise ProviderUnavailable("configured provider is unavailable")
+
+
+class _FailedProductionCompiler:
+    def __init__(
+        self,
+        envelope,
+        *,
+        error_code="production.provider_failed",
+    ) -> None:  # type: ignore[no-untyped-def]
+        self.calls = 0
+        self.envelope = envelope
+        self.error_code = error_code
+
+    def invocation_evidence_cursor(self) -> int:
+        return 0
+
+    def invocation_evidence_since(self, cursor):  # type: ignore[no-untyped-def]
+        if cursor != 0:
+            raise ValueError("unexpected evidence cursor")
+        return (self.envelope,)
+
+    async def compile(self, **kwargs):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        raise ProductionStepCompilationFailed(
+            "semantic-spatial authoring stopped after provider evidence",
+            error_code=self.error_code,
+        )
 
 
 class ProductionRuntimeTests(unittest.IsolatedAsyncioTestCase):
@@ -661,6 +1117,93 @@ class ProductionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(recovered.resumed)
         self.assertEqual(1, scripted.calls)
+
+    async def test_validated_provider_failure_is_durable_and_retryable(self):
+        failed = _FailedProductionCompiler(await _failed_envelope())
+        with self.assertRaises(ProductionRuntimeStepFailed) as first_error:
+            await run_or_resume_production_step(
+                self.repo,
+                run=self.run,
+                raw_request=self.request,
+                prompt=self.prompt,
+                step_id="semantic-geometry-001",
+                compiler=failed,
+            )
+        with self.assertRaises(ProductionRuntimeStepFailed) as second_error:
+            await run_or_resume_production_step(
+                self.repo,
+                run=self.run,
+                raw_request=self.request,
+                prompt=self.prompt,
+                step_id="semantic-geometry-001",
+                compiler=failed,
+            )
+
+        first = first_error.exception.attempt
+        second = second_error.exception.attempt
+        self.assertEqual(0, first.receipt.attempt_index)
+        self.assertEqual(1, second.receipt.attempt_index)
+        self.assertEqual(first.ref.uri, second.receipt.retry_of_ref)
+        self.assertEqual(2, failed.calls)
+        self.assertIsNone(
+            load_production_transition(
+                self.repo,
+                run=self.run,
+                intent_digest=first.receipt.intent_digest,
+            )
+        )
+
+        reopened = FilesystemProjectRepository.open(self.root)
+        attempts = load_failed_production_attempts(
+            reopened,
+            run=reopened.load_run(self.run.run_id),
+            intent_digest=first.receipt.intent_digest,
+            step_id="semantic-geometry-001",
+        )
+        self.assertEqual((first.ref, second.ref), tuple(item.ref for item in attempts))
+
+        recovered = await run_or_resume_production_step(
+            reopened,
+            run=reopened.load_run(self.run.run_id),
+            raw_request=self.request,
+            prompt=self.prompt,
+            step_id="semantic-geometry-001",
+            compiler=_ScriptedCompiler(),
+        )
+        self.assertFalse(recovered.resumed)
+
+    async def test_validated_pipeline_rejection_is_durable_without_completion(self):
+        rejected = _FailedProductionCompiler(
+            await _success_envelope(),
+            error_code="production.compilation_failed",
+        )
+        with self.assertRaises(ProductionRuntimeStepFailed) as error:
+            await run_or_resume_production_step(
+                self.repo,
+                run=self.run,
+                raw_request=self.request,
+                prompt=self.prompt,
+                step_id="semantic-geometry-rejected",
+                compiler=rejected,
+            )
+
+        attempt = error.exception.attempt
+        self.assertEqual("pipeline_rejected", attempt.receipt.failure_class)
+        self.assertEqual(0, attempt.receipt.attempt_index)
+        self.assertIsNone(
+            load_production_transition(
+                self.repo,
+                run=self.run,
+                intent_digest=attempt.receipt.intent_digest,
+            )
+        )
+        reloaded = load_failed_production_attempts(
+            FilesystemProjectRepository.open(self.root),
+            run=self.run,
+            intent_digest=attempt.receipt.intent_digest,
+            step_id="semantic-geometry-rejected",
+        )
+        self.assertEqual((attempt.ref,), tuple(item.ref for item in reloaded))
 
     async def test_prompt_must_match_immutable_raw_request(self):
         compiler = _ScriptedCompiler()

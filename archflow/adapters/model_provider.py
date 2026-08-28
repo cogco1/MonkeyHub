@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping, Protocol
@@ -118,6 +119,10 @@ class ModelProviderSpec:
                 "isolated_working_directory": (
                     self.isolated_working_directory
                 ),
+                "timeout_seconds": float(self.timeout_seconds),
+                "max_input_bytes": self.max_input_bytes,
+                "max_output_bytes": self.max_output_bytes,
+                "max_output_tokens": self.max_output_tokens,
             }
         )
 
@@ -224,13 +229,15 @@ class ModelInvocationReceipt:
     input_bytes: int
     output_bytes: int
     output_sha256: str | None
+    duration_ms: int = 0
     output_json: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
     error_code: str | None = None
     message: str | None = None
 
-    SCHEMA = "ModelInvocationReceipt@1"
+    SCHEMA = "ModelInvocationReceipt@2"
+    LEGACY_SCHEMA = "ModelInvocationReceipt@1"
 
     def __post_init__(self) -> None:
         require_identifier(self.receipt_id, "receipt_id")
@@ -248,6 +255,7 @@ class ModelInvocationReceipt:
         for value, field in (
             (self.input_bytes, "input_bytes"),
             (self.output_bytes, "output_bytes"),
+            (self.duration_ms, "duration_ms"),
         ):
             if type(value) is not int or value < 0:
                 raise ValueError(f"{field} must be non-negative")
@@ -297,6 +305,7 @@ class ModelInvocationReceipt:
             "input_bytes": self.input_bytes,
             "output_bytes": self.output_bytes,
             "output_sha256": self.output_sha256,
+            "duration_ms": self.duration_ms,
             "output": self.output,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
@@ -307,7 +316,7 @@ class ModelInvocationReceipt:
     @classmethod
     def from_dict(cls, value: object) -> ModelInvocationReceipt:
         payload = _mapping(value, "model receipt")
-        expected = {
+        base_expected = {
             "schema",
             "receipt_id",
             "status",
@@ -325,7 +334,16 @@ class ModelInvocationReceipt:
             "error_code",
             "message",
         }
-        if set(payload) != expected or payload["schema"] != cls.SCHEMA:
+        schema = payload.get("schema")
+        if schema == cls.SCHEMA:
+            expected = base_expected | {"duration_ms"}
+            duration_ms = payload.get("duration_ms")
+        elif schema == cls.LEGACY_SCHEMA:
+            expected = base_expected
+            duration_ms = 0
+        else:
+            raise ValueError("model receipt schema drifted")
+        if set(payload) != expected:
             raise ValueError("model receipt schema drifted")
         output = payload["output"]
         if output is not None:
@@ -341,6 +359,7 @@ class ModelInvocationReceipt:
             input_bytes=payload["input_bytes"],
             output_bytes=payload["output_bytes"],
             output_sha256=payload["output_sha256"],
+            duration_ms=duration_ms,
             output_json=(
                 None if output is None else _canonical_json(output)
             ),
@@ -372,6 +391,7 @@ class AsyncJsonCommandModelProvider:
     ) -> ModelInvocationReceipt:
         if not isinstance(request, ModelInvocationRequest):
             raise TypeError("request must be ModelInvocationRequest")
+        started = time.monotonic()
         input_data = (_canonical_json(request.to_dict()) + "\n").encode(
             "utf-8"
         )
@@ -382,6 +402,7 @@ class AsyncJsonCommandModelProvider:
                 "model.input_budget_exhausted",
                 f"input exceeds {self.spec.max_input_bytes} bytes",
                 input_bytes=len(input_data),
+                duration_ms=_duration_ms(started),
             )
         if self.spec.isolated_working_directory:
             with tempfile.TemporaryDirectory(
@@ -391,14 +412,16 @@ class AsyncJsonCommandModelProvider:
                     request,
                     input_data,
                     working_directory,
+                    started,
                 )
-        return await self._invoke_command(request, input_data, None)
+        return await self._invoke_command(request, input_data, None, started)
 
     async def _invoke_command(
         self,
         request: ModelInvocationRequest,
         input_data: bytes,
         working_directory: str | None,
+        started: float,
     ) -> ModelInvocationReceipt:
         creation_flags = (
             getattr(__import__("subprocess"), "CREATE_NO_WINDOW", 0)
@@ -421,6 +444,7 @@ class AsyncJsonCommandModelProvider:
                 "model.provider_unavailable",
                 "configured model provider executable was not found",
                 input_bytes=len(input_data),
+                duration_ms=_duration_ms(started),
             )
         except OSError as exc:
             return self._failure(
@@ -429,6 +453,7 @@ class AsyncJsonCommandModelProvider:
                 "model.provider_os_error",
                 f"{type(exc).__name__}: {exc}",
                 input_bytes=len(input_data),
+                duration_ms=_duration_ms(started),
             )
         try:
             stdout, stderr = await asyncio.wait_for(
@@ -444,6 +469,7 @@ class AsyncJsonCommandModelProvider:
                 "model.timeout",
                 f"provider exceeded {self.spec.timeout_seconds:g} seconds",
                 input_bytes=len(input_data),
+                duration_ms=_duration_ms(started),
             )
         output_digest = hashlib.sha256(stdout).hexdigest()
         if len(stdout) > self.spec.max_output_bytes:
@@ -455,6 +481,7 @@ class AsyncJsonCommandModelProvider:
                 input_bytes=len(input_data),
                 output_bytes=len(stdout),
                 output_sha256=output_digest,
+                duration_ms=_duration_ms(started),
             )
         if process.returncode != 0:
             error = stderr.decode("utf-8", errors="replace")[:500]
@@ -466,6 +493,7 @@ class AsyncJsonCommandModelProvider:
                 input_bytes=len(input_data),
                 output_bytes=len(stdout),
                 output_sha256=output_digest,
+                duration_ms=_duration_ms(started),
             )
         try:
             decoded_output = stdout.decode("utf-8")
@@ -495,6 +523,7 @@ class AsyncJsonCommandModelProvider:
                 input_bytes=len(input_data),
                 output_bytes=len(stdout),
                 output_sha256=output_digest,
+                duration_ms=_duration_ms(started),
             )
         if output_tokens > self.spec.max_output_tokens:
             return self._failure(
@@ -510,6 +539,7 @@ class AsyncJsonCommandModelProvider:
                 output_sha256=output_digest,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                duration_ms=_duration_ms(started),
             )
         return self._success(
             request,
@@ -519,6 +549,7 @@ class AsyncJsonCommandModelProvider:
             output_sha256=output_digest,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            duration_ms=_duration_ms(started),
         )
 
     def _parse_output(
@@ -565,6 +596,7 @@ class AsyncJsonCommandModelProvider:
             ModelInvocationStatus.SUCCESS,
             metrics["output_sha256"],
             None,
+            metrics["duration_ms"],
         )
         return ModelInvocationReceipt(
             receipt_id=f"model-{_digest(identity)[:24]}",
@@ -592,12 +624,14 @@ class AsyncJsonCommandModelProvider:
         output_sha256: str | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
+        duration_ms: int = 0,
     ) -> ModelInvocationReceipt:
         identity = self._identity(
             request,
             status,
             output_sha256,
             error_code,
+            duration_ms,
         )
         return ModelInvocationReceipt(
             receipt_id=f"model-{_digest(identity)[:24]}",
@@ -610,6 +644,7 @@ class AsyncJsonCommandModelProvider:
             input_bytes=input_bytes,
             output_bytes=output_bytes,
             output_sha256=output_sha256,
+            duration_ms=duration_ms,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             error_code=error_code,
@@ -622,6 +657,7 @@ class AsyncJsonCommandModelProvider:
         status: ModelInvocationStatus,
         output_sha256: str | None,
         error_code: str | None,
+        duration_ms: int,
     ) -> dict[str, object]:
         return {
             "request": request.to_dict(),
@@ -629,6 +665,7 @@ class AsyncJsonCommandModelProvider:
             "status": status.value,
             "output_sha256": output_sha256,
             "error_code": error_code,
+            "duration_ms": duration_ms,
         }
 
 
@@ -654,10 +691,13 @@ def create_codex_cli_model_provider(
     max_input_bytes: int = 256_000,
     max_output_bytes: int = 128_000,
     max_output_tokens: int = 8_192,
+    reasoning_effort: str = "medium",
 ) -> AsyncJsonCommandModelProvider:
     """Create a detached Codex CLI adapter behind AsyncModelProvider."""
 
     _text(executable, "executable", maximum=8_000)
+    if reasoning_effort not in {"minimal", "low", "medium", "high", "xhigh"}:
+        raise ValueError("reasoning_effort is unsupported")
     return AsyncJsonCommandModelProvider(
         ModelProviderSpec(
             provider_id=provider_id,
@@ -677,6 +717,8 @@ def create_codex_cli_model_provider(
                 "never",
                 "--model",
                 model_id,
+                "-c",
+                f'model_reasoning_effort="{reasoning_effort}"',
                 _CODEX_AGENT_PROMPT,
             ),
             timeout_seconds=timeout_seconds,
@@ -768,6 +810,10 @@ def _canonical_json(value: object) -> str:
         separators=(",", ":"),
         allow_nan=False,
     )
+
+
+def _duration_ms(started: float) -> int:
+    return max(0, int((time.monotonic() - started) * 1_000))
 
 
 def _decode_object(value: str, field: str) -> dict[str, object]:

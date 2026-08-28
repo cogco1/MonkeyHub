@@ -9,10 +9,12 @@ from archflow.capabilities.spatial import validate_spatial_authoring_context
 from archflow.production.responsibility import InvocationEnvelope
 from archflow.project.digests import canonical_json_sha256
 from archflow.project.production_transition import (
+    ArchivedFailedProductionAttempt,
     ProductionTransitionArchive,
     ProductionTransitionPort,
     load_production_transition,
     persist_compiled_production_transition,
+    persist_failed_production_attempt,
     production_intent_digest,
 )
 from archflow.project.refs import ProjectRecordRef, RunRef, require_identifier
@@ -37,6 +39,53 @@ class ProductionRuntimeError(RuntimeError):
 
 class ProductionContextError(ValueError):
     """A production context is stale, incomplete, or over-authorized."""
+
+
+class ProductionStepCompilationFailed(RuntimeError):
+    """A bounded production compiler stopped after validated provider work."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: str = "production.compilation_failed",
+    ) -> None:
+        if not isinstance(error_code, str) or not error_code.strip():
+            raise ValueError("error_code must be non-empty text")
+        self.error_code = error_code
+        super().__init__(message)
+
+
+class ProductionRuntimeStepFailed(RuntimeError):
+    """A failed production attempt was durably recorded through P036."""
+
+    def __init__(self, attempt: ArchivedFailedProductionAttempt) -> None:
+        if not isinstance(attempt, ArchivedFailedProductionAttempt):
+            raise TypeError("attempt must be ArchivedFailedProductionAttempt")
+        self.attempt = attempt
+        super().__init__(
+            f"{attempt.receipt.error_code}: {attempt.receipt.message}; "
+            f"evidence={attempt.ref.uri}"
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        receipt = self.attempt.receipt
+        return {
+            "schema": "ProductionRuntimeFailure@1",
+            "project_id": receipt.project_id,
+            "run_id": receipt.run_id,
+            "step_id": receipt.step_id,
+            "intent_digest": receipt.intent_digest,
+            "attempt_id": receipt.attempt_id,
+            "attempt_index": receipt.attempt_index,
+            "attempt_ref": self.attempt.ref.uri,
+            "retry_of_ref": receipt.retry_of_ref,
+            "error_code": receipt.error_code,
+            "message": receipt.message,
+            "transition_checkpoint_ref": None,
+            "lifecycle_successor": False,
+            "canonical_write_authority": False,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +218,13 @@ class ProductionStepCompiler(Protocol):
     @property
     def intent_record_refs(self) -> tuple[ProjectRecordRef, ...]: ...
 
+    def invocation_evidence_cursor(self) -> int: ...
+
+    def invocation_evidence_since(
+        self,
+        cursor: int,
+    ) -> tuple[InvocationEnvelope, ...]: ...
+
     async def compile(
         self,
         *,
@@ -292,11 +348,27 @@ async def run_or_resume_production_step(
     compile_step = getattr(compiler, "compile", None)
     if not callable(compile_step):
         raise TypeError("compiler must implement ProductionStepCompiler")
-    compiled = await compile_step(
-        run=run,
-        raw_request=raw_request,
-        prompt=prompt,
-    )
+    evidence_cursor = compiler.invocation_evidence_cursor()
+    try:
+        compiled = await compile_step(
+            run=run,
+            raw_request=raw_request,
+            prompt=prompt,
+        )
+    except ProductionStepCompilationFailed as exc:
+        envelopes = compiler.invocation_evidence_since(evidence_cursor)
+        if not envelopes:
+            raise
+        attempt = persist_failed_production_attempt(
+            repository,
+            run=run,
+            intent_digest=intent_digest,
+            step_id=step_id,
+            error_code=exc.error_code,
+            message=str(exc),
+            invocation_envelopes=envelopes,
+        )
+        raise ProductionRuntimeStepFailed(attempt) from exc
     if not isinstance(compiled, CompiledProductionStep):
         raise TypeError("production compiler returned an invalid step")
     archive = persist_compiled_production_transition(

@@ -12,6 +12,30 @@ Current status: P1 deterministic base, artifact, required-claim, and obligation
 gates emit a frozen `ValidationReceipt`. Validator exceptions fail closed and
 cannot mutate canonical state.
 
+## Project-derived architectural usability
+
+`architectural.py` compiles one exact-project usability contract against the
+current `DevelopedDesignState@1`, the sole selected
+`SpatialOptionProposal.components` tree, a `CompiledGeometryProgram@2`, and
+its exact sandbox scene and realization receipt. Artifact presence is only the
+first precondition: every mandatory project criterion must also have an exact,
+evaluable observation and pass.
+
+The module owns only generic equality, inequality, threshold, containment, and
+membership operators. Criterion names, values, units, component/object
+locality, and sources remain project records. A declared brief fact,
+prohibition, commitment, program/site/build-policy record, or current
+obligation may supply authority. Retrieved evidence remains a hypothesis until
+a separate authorized project adoption record is named; it cannot adopt
+itself. Empty and optional-only contracts are rejected.
+
+Missing, stale, unit-incompatible, non-evaluable, locality-mismatched, or
+contradictory mandatory evidence produces a typed failed or unknown finding.
+Each finding retains criterion, source, component, geometry-object,
+obligation, and measurement-evidence references for a later local repair. The
+receipt has no model-self-certification, geometry-mutation, review, promotion,
+or canonical-write authority.
+
 ## Voxel usability hard gates
 
 `validate_usability` consumes only `BuildingProgram@1`, a detached

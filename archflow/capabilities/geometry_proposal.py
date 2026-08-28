@@ -32,7 +32,11 @@ from archflow.project import (
     require_destination,
 )
 from archflow.runtime.geometry_compiler import (
+    AssetSubstitutionReceipt,
+    CompiledGeometryObject,
     CompiledGeometryProgram,
+    GeometryIssue,
+    GeometryIssueCode,
     compile_geometry_program,
 )
 from archflow.state import DevelopedDesignState, SpatialOptionProposal
@@ -63,6 +67,8 @@ from archflow.state.operational_state import PORTABLE_LOGICAL_REF_PATTERN
 
 _AUTHORING_OUTPUT_SCHEMA = "GeometryProposalAuthoringOutput@1"
 _PROPOSAL_BODY_SCHEMA = "GeometryProgramProposalBody@1"
+_EDIT_AUTHORING_OUTPUT_SCHEMA = "GeometryProgramEditAuthoringOutput@1"
+_EDIT_BODY_SCHEMA = "GeometryProgramEditBody@1"
 _PROPOSAL_RECORD_SCHEMA = "GeometryProgramProposalRecord@1"
 
 
@@ -531,9 +537,13 @@ def _authoring_output_contract(
     *,
     expected_predecessor_program_digest: str | None = None,
     required_hosted_component_bindings: tuple[dict[str, object], ...] = (),
+    required_geometry_component_ids: tuple[str, ...] = (),
+    predecessor_revision_contract: Mapping[str, object] | None = None,
     realization_contract: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Expose the exact generic parser topology without a building answer."""
+
+    edit_mode = expected_predecessor_program_digest is not None
 
     text = {"type": "string", "minLength": 1}
     identifier = {
@@ -799,9 +809,80 @@ def _authoring_output_contract(
             ),
         }
     )
+    edit_body = _strict_object(
+        {
+            "schema": {"const": _EDIT_BODY_SCHEMA},
+            "proposal_id": identifier,
+            "predecessor_program_digest": {
+                "const": expected_predecessor_program_digest,
+                "description": (
+                    "Exact predecessor published as "
+                    "available_predecessor_program_digest."
+                ),
+            },
+            "frame_upserts": _array_contract(
+                frame,
+                description=(
+                    "Complete new or replacement CoordinateFrame values; "
+                    "omitted predecessor frames remain byte-for-byte unchanged."
+                ),
+            ),
+            "asset_upserts": _array_contract(
+                asset,
+                description=(
+                    "Complete new or replacement AssetReference values; "
+                    "omitted predecessor assets remain unchanged."
+                ),
+            ),
+            "semantic_binding_upserts": _array_contract(
+                binding,
+                description=(
+                    "Complete new or replacement GeometrySemanticBinding values; "
+                    "omitted predecessor bindings remain unchanged."
+                ),
+            ),
+            "operation_upserts": _array_contract(
+                operation,
+                description=(
+                    "Complete new or replacement GeometryOperation values; "
+                    "omitted predecessor operations remain unchanged."
+                ),
+            ),
+            "assembly_upserts": _array_contract(
+                assembly,
+                description=(
+                    "Complete new or replacement HostedAssembly values; "
+                    "omitted predecessor assemblies remain unchanged."
+                ),
+            ),
+            "remove_frame_ids": string_list,
+            "remove_asset_ids": string_list,
+            "remove_semantic_binding_ids": string_list,
+            "remove_operation_ids": string_list,
+            "remove_assembly_ids": string_list,
+            "revisions": _array_contract(
+                lifecycle(ObjectRevisionPrecondition.SCHEMA),
+                description="Exact prior-object tokens for changed retained objects.",
+            ),
+            "retirements": _array_contract(
+                lifecycle(ObjectRetirement.SCHEMA),
+                description="Exact prior-object tokens for removed objects.",
+            ),
+        },
+        description=(
+            "A model-authored typed edit over one exact predecessor. The "
+            "framework only merges identities deterministically; it does not "
+            "invent operations, bindings, assemblies, revisions, or removals."
+        ),
+    )
+    body_key = "edit_body" if edit_mode else "proposal_body"
+    body_contract = edit_body if edit_mode else proposal_body
+    output_schema = (
+        _EDIT_AUTHORING_OUTPUT_SCHEMA if edit_mode else _AUTHORING_OUTPUT_SCHEMA
+    )
     output = _strict_object(
         {
-            "schema": {"const": _AUTHORING_OUTPUT_SCHEMA},
+            "schema": {"const": output_schema},
             "selected_template_refs": _array_contract(
                 logical_ref,
                 unique=True,
@@ -809,11 +890,48 @@ def _authoring_output_contract(
                     "Unique lexicographically sorted project URIs selected only from available_template_records."
                 ),
             ),
-            "proposal_body": proposal_body,
+            body_key: body_contract,
         }
     )
+    item_prefix = "edit_body" if edit_mode else "proposal_body"
+    operation_field = (
+        f"{item_prefix}.operation_upserts[*]"
+        if edit_mode
+        else f"{item_prefix}.operations[*]"
+    )
+    assembly_field = (
+        f"{item_prefix}.assembly_upserts[*]"
+        if edit_mode
+        else f"{item_prefix}.assemblies[*]"
+    )
+    relational_invariants = []
+    for invariant in _relational_authoring_invariants():
+        item = dict(invariant)
+        if edit_mode:
+            item["field"] = item["field"].replace(
+                "proposal_body.operations[*]",
+                "edit_body.operation_upserts[*]",
+            ).replace(
+                "proposal_body.assemblies[*]",
+                "edit_body.assembly_upserts[*]",
+            )
+            item["target"] = item["target"].replace(
+                "proposal_body.operations",
+                "merged predecessor plus edit_body.operation_upserts",
+            ).replace(
+                "proposal_body.assemblies",
+                "merged predecessor plus edit_body.assembly_upserts",
+            ).replace(
+                "proposal_body.semantic_bindings",
+                "merged predecessor plus edit_body.semantic_binding_upserts",
+            )
+        relational_invariants.append(item)
     return {
-        "schema": "GeometryProposalAuthoringContract@1",
+        "schema": (
+            "GeometryProgramEditAuthoringContract@1"
+            if edit_mode
+            else "GeometryProposalAuthoringContract@1"
+        ),
         "json_schema": output,
         "authority": {
             "proposal_only": True,
@@ -830,32 +948,40 @@ def _authoring_output_contract(
         "required_hosted_component_bindings": [
             dict(item) for item in required_hosted_component_bindings
         ],
+        "required_geometry_component_ids": list(
+            required_geometry_component_ids
+        ),
+        "predecessor_revision_contract": (
+            {}
+            if predecessor_revision_contract is None
+            else dict(predecessor_revision_contract)
+        ),
         "realization_contract": (
             {} if realization_contract is None else dict(realization_contract)
         ),
         "coordinate_convention": _GEOMETRY_COORDINATE_CONVENTION,
         "cross_field_invariants": [
             {
-                "field": "proposal_body.operations[*].responds_to_object_ids",
+                "field": f"{operation_field}.responds_to_object_ids",
                 "relation": "subset_of",
-                "target": "proposal_body.operations[*].input_object_ids",
+                "target": f"{operation_field}.input_object_ids",
             },
             {
-                "field": "proposal_body.operations[*].responds_to_binding_ids",
+                "field": f"{operation_field}.responds_to_binding_ids",
                 "relation": "subset_of",
-                "target": "proposal_body.operations[*].semantic_binding_ids",
+                "target": f"{operation_field}.semantic_binding_ids",
             },
             {
-                "field": "proposal_body.operations[*].input_object_ids",
+                "field": f"{operation_field}.input_object_ids",
                 "relation": "matches_function_input_arity",
                 "target": "geometry_function_contracts[kind]",
             },
             {
-                "field": "proposal_body.assemblies[*].members[*].role",
+                "field": f"{assembly_field}.members[*].role",
                 "relation": "contains_all_unique",
                 "target": "required_assembly_roles[kind]",
             },
-            *_relational_authoring_invariants(),
+            *relational_invariants,
         ],
     }
 
@@ -1257,8 +1383,10 @@ async def produce_geometry_program_proposal(
     template_refs: tuple[ProjectRecordRef, ...] = (),
     available_asset_digests: Mapping[str, str] | None = None,
     prior_program: CompiledGeometryProgram | None = None,
+    required_geometry_component_ids: tuple[str, ...] = (),
     realization_requirements: tuple[Mapping[str, object], ...] = (),
     initial_repair_issues: tuple[GeometryProposalIssue, ...] = (),
+    rejected_round_ref: ProjectRecordRef | None = None,
 ) -> GeometryProposalProductionResult:
     """Author, compile, and persist bounded proposal rounds without fallback."""
 
@@ -1272,6 +1400,7 @@ async def produce_geometry_program_proposal(
         provider_identity,
         policy,
         template_refs,
+        required_geometry_component_ids,
     )
     spatial_payload = repository.load_json(spatial_option_ref)
     spatial_option = SpatialOptionProposal.from_dict(spatial_payload)
@@ -1304,13 +1433,48 @@ async def produce_geometry_program_proposal(
         raise GeometryProposalProductionError(
             "initial_repair_issues must contain GeometryProposalIssue values"
         )
+    if rejected_round_ref is not None and not isinstance(
+        rejected_round_ref,
+        ProjectRecordRef,
+    ):
+        raise TypeError("rejected_round_ref must be a ProjectRecordRef or None")
+    if rejected_round_ref is not None and initial_repair_issues:
+        raise GeometryProposalProductionError(
+            "rejected_round_ref already owns the exact repair issues"
+        )
     realization_contract = _realization_authoring_contract(
         required_commitment_refs,
         exact_realization_requirements,
     )
     round_refs: list[ProjectRecordRef] = []
     repair_issues = initial_repair_issues
+    repair_context: dict[str, object] | None = None
     assets = {} if available_asset_digests is None else dict(available_asset_digests)
+
+    if rejected_round_ref is not None:
+        rejected_round = GeometryProposalRoundReceipt.from_dict(
+            repository.load_json(rejected_round_ref)
+        )
+        _validate_rejected_round_resume(
+            rejected_round_ref,
+            rejected_round,
+            spatial_option_ref=spatial_option_ref,
+            design_state=design_state,
+            required_commitment_refs=required_commitment_refs,
+            provider_identity=provider_identity,
+            expected_predecessor_program_digest=(
+                expected_predecessor_program_digest
+            ),
+            required_geometry_component_ids=required_geometry_component_ids,
+            realization_contract=realization_contract,
+        )
+        repair_issues = rejected_round.issues
+        repair_context = _rejected_output_repair_context(
+            rejected_round.model_receipt.output,
+            rejected_round.proposal_digest,
+            rejected_round.issues,
+            rejected_round_ref=rejected_round_ref,
+        )
 
     for round_index in range(1, policy.maximum_rounds + 1):
         request_payload = _request_payload(
@@ -1320,9 +1484,11 @@ async def produce_geometry_program_proposal(
             required_commitment_refs,
             template_payloads,
             repair_issues,
+            repair_context,
             available_interface_refs,
             expected_predecessor_program_digest,
             required_hosted_component_bindings,
+            required_geometry_component_ids,
             realization_contract,
             prior_program,
         )
@@ -1366,12 +1532,19 @@ async def produce_geometry_program_proposal(
             round_status = GeometryProposalRoundStatus.REFUSED
         else:
             try:
-                selected_templates, body = _authoring_output(receipt.output)
+                selected_templates, body = _authoring_output(
+                    receipt.output,
+                    prior_program,
+                )
                 if not set(selected_templates) <= allowed_template_uris:
                     raise GeometryProposalProductionError(
                         "model selected a template outside the supplied project records"
                     )
-                proposal = _proposal_from_body(body, design_state)
+                proposal = _proposal_from_body(
+                    body,
+                    design_state,
+                    prior_program,
+                )
                 _validate_function_contracts(proposal)
                 _validate_semantic_coverage(
                     proposal,
@@ -1380,6 +1553,8 @@ async def produce_geometry_program_proposal(
                     spatial_option_ref,
                     available_interface_refs,
                     required_hosted_component_bindings,
+                    required_geometry_component_ids,
+                    prior_program,
                 )
                 compilation = compile_geometry_program(
                     design_state,
@@ -1391,9 +1566,9 @@ async def produce_geometry_program_proposal(
                 compiler_receipt = compilation.receipt.to_dict()
                 if compilation.program is None:
                     issues = tuple(
-                        GeometryProposalIssue(
-                            f"compiler.{item.code.value}",
-                            f"{item.subject_id}: {item.detail}",
+                        _compiler_repair_issue(
+                            item,
+                            prior_program,
                         )
                         for item in compilation.receipt.issues
                     )
@@ -1487,6 +1662,12 @@ async def produce_geometry_program_proposal(
                 None,
                 None,
             )
+        repair_context = _rejected_output_repair_context(
+            receipt.output,
+            None if proposal is None else proposal.proposal_digest,
+            issues,
+            rejected_round_ref=None,
+        )
         repair_issues = issues
 
     lineage_ref = _persist_lineage(
@@ -1550,6 +1731,7 @@ def _validate_inputs(
     provider_identity: GeometryProposalProviderIdentity,
     policy: GeometryProposalPolicy,
     template_refs: tuple[ProjectRecordRef, ...],
+    required_geometry_component_ids: tuple[str, ...],
 ) -> None:
     if not isinstance(run, RunRef) or not isinstance(
         design_state,
@@ -1580,6 +1762,23 @@ def _validate_inputs(
         for item in template_refs
     ):
         raise GeometryProposalProductionError("template refs cross project boundary")
+    _strings(
+        required_geometry_component_ids,
+        "required_geometry_component_ids",
+        allow_empty=True,
+    )
+    component_ids = {
+        item.component_id
+        for item in design_state.selected_schematic.option.proposal.components
+    }
+    unavailable_components = sorted(
+        set(required_geometry_component_ids) - component_ids
+    )
+    if unavailable_components:
+        raise GeometryProposalProductionError(
+            "required geometry components are absent from the selected design "
+            f"state; unavailable={unavailable_components}"
+        )
     uris = tuple(item.uri for item in template_refs)
     if uris != tuple(sorted(set(uris))):
         raise GeometryProposalProductionError("template refs must be deterministic")
@@ -1592,17 +1791,29 @@ def _request_payload(
     commitments: tuple[str, ...],
     templates: tuple[dict[str, object], ...],
     repair_issues: tuple[GeometryProposalIssue, ...],
+    repair_context: Mapping[str, object] | None,
     available_interface_refs: tuple[str, ...],
     expected_predecessor_program_digest: str | None,
     required_hosted_component_bindings: tuple[dict[str, object], ...],
+    required_geometry_component_ids: tuple[str, ...],
     realization_contract: Mapping[str, object],
     prior_program: CompiledGeometryProgram | None,
 ) -> dict[str, object]:
+    predecessor_revision_contract = _predecessor_revision_contract(
+        prior_program
+    )
+    edit_mode = prior_program is not None
+    required_output_schema = (
+        _EDIT_AUTHORING_OUTPUT_SCHEMA if edit_mode else _AUTHORING_OUTPUT_SCHEMA
+    )
     return {
         "schema": "GeometryProposalAuthoringRequest@1",
         "spatial_option_record": {
             "ref": _record_dict(spatial_ref),
-            "proposal": spatial.to_dict(),
+            "proposal_digest": spatial.proposal_digest,
+            "proposal_path": (
+                "developed_design_state.selected_schematic.option.proposal"
+            ),
         },
         "developed_design_state": design_state.to_dict(),
         "available_predecessor_program_digest": (
@@ -1614,6 +1825,10 @@ def _request_payload(
         "required_hosted_component_bindings": [
             dict(item) for item in required_hosted_component_bindings
         ],
+        "required_geometry_component_ids": list(
+            required_geometry_component_ids
+        ),
+        "predecessor_revision_contract": predecessor_revision_contract,
         "realization_contract": dict(realization_contract),
         "required_commitment_refs": list(commitments),
         "available_template_records": list(templates),
@@ -1629,7 +1844,12 @@ def _request_payload(
         "geometry_function_contracts": _FUNCTION_CONTRACTS,
         "geometry_coordinate_convention": _GEOMETRY_COORDINATE_CONVENTION,
         "repair_issues": [item.to_dict() for item in repair_issues],
-        "required_output_schema": _AUTHORING_OUTPUT_SCHEMA,
+        "repair_context": (
+            None
+            if repair_context is None
+            else json.loads(_canonical_json(repair_context))
+        ),
+        "required_output_schema": required_output_schema,
         "required_output_contract": _authoring_output_contract(
             available_interface_refs,
             expected_predecessor_program_digest=(
@@ -1638,18 +1858,45 @@ def _request_payload(
             required_hosted_component_bindings=(
                 required_hosted_component_bindings
             ),
+            required_geometry_component_ids=(
+                required_geometry_component_ids
+            ),
+            predecessor_revision_contract=(
+                predecessor_revision_contract
+            ),
             realization_contract=realization_contract,
         ),
         "instructions": [
             "Author geometry only from the supplied design state and project records.",
-            "When available_predecessor_program is present, revise that exact geometry program instead of redrawing from scratch: preserve stable identities, copy its digest to predecessor_program_digest, add exact revision preconditions for changed retained objects, exact retirements for removed objects, and dependency responses required by the compiler.",
+            *(
+                [
+                    "repair_context.rejected_output is the exact previous model output, not authoritative state. Return a complete replacement output over the original predecessor, preserve every intended typed item not implicated by repair_context.issues, and fix every exact issue.",
+                    "Do not emit a patch. The framework will not merge rejected and repaired model outputs, and repair_context grants no output, validation, acceptance, or canonical-write authority.",
+                ]
+                if repair_context is not None
+                else []
+            ),
+            "The selected spatial proposal is supplied exactly once at spatial_option_record.proposal_path; spatial_option_record.proposal_digest binds that embedded value to the immutable P036 record without replaying a duplicate proposal.",
+            *(
+                [
+                    "Return one GeometryProgramEditAuthoringOutput@1 over the exact available_predecessor_program. Omit every unchanged predecessor frame, asset, semantic binding, operation, and assembly: omitted identities are retained byte-for-byte by deterministic merge.",
+                    "Put every new or changed item in its matching *_upserts array as a complete typed value. Remove an existing identity only through the matching remove_*_ids array. The framework will not infer an edit or author geometry.",
+                    "Copy available_predecessor_program_digest exactly to edit_body.predecessor_program_digest. Supply exact revision preconditions for changed retained objects, exact retirements for removed objects, and dependency responses required by the compiler.",
+                ]
+                if edit_mode
+                else [
+                    "No predecessor is available; return one complete initial GeometryProgramProposalBody@1."
+                ]
+            ),
             "Return exactly the keys and nested field shapes in required_output_contract.json_schema; do not invent aliases such as geometry_nodes or geometry_functions.",
             "Use only declared geometry function kinds and explicit parameters.",
             "For every operation parameter, copy kind from geometry_function_contracts[kind].parameters[*].kind; semantic choices such as polyline, bezier, or fixed belong in canonical value_json and are never parameter kind values.",
             "Use geometry_coordinate_convention exactly: Y is vertical up, XZ is the horizontal footprint plane, every vector is [x,y,z], solid origin[1] is elevation, and solid size[1] is height. Never reinterpret Z as vertical.",
             "GeometryParameter.value_json is canonical compact JSON encoded as a string, not a nested JSON value.",
             "Bind every realized geometry object to exactly one supplied semantic component_id; never infer identity from labels or screenshots.",
-            "Include the spatial option record URI in every semantic binding evidence_refs.",
+            "Every component_id in required_geometry_component_ids changed in the exact semantic predecessor transition and must retain a dedicated semantic binding with at least one realized object; omitting it cannot satisfy repair or lifecycle compilation.",
+            "When predecessor_revision_contract.predecessor_program_digest is non-null, copy expected_digest only from its exact object_revision_tokens when revising a retained object, and acknowledge every changed retained semantic binding through the producing operation responds_to_binding_ids; never guess a predecessor digest.",
+            "Include the current spatial option record URI in every new or changed semantic binding evidence_refs. An exact unchanged binding copied from available_predecessor_program may retain its predecessor evidence because predecessor_program_digest supplies the immutable lineage proof.",
             "Every assembly interface_refs value must be selected exactly from available_interface_refs.refs and match available_interface_refs.pattern.",
             "When a supplied semantic component requires a hosted assembly, represent its semantic identity and geometry together through semantic_binding_ids and typed assembly members.",
             "For every hosted assembly include all roles named by required_output_contract.required_assembly_roles[kind]; missing or duplicate roles are invalid.",
@@ -1666,14 +1913,206 @@ def _request_payload(
     }
 
 
-def _authoring_output(value: object) -> tuple[tuple[str, ...], Mapping[str, Any]]:
+def _rejected_output_repair_context(
+    rejected_output: Mapping[str, object] | None,
+    rejected_proposal_digest: str | None,
+    issues: tuple[GeometryProposalIssue, ...],
+    *,
+    rejected_round_ref: ProjectRecordRef | None,
+) -> dict[str, object]:
+    if rejected_output is None:
+        raise GeometryProposalProductionError(
+            "rejected repair context requires exact model output"
+        )
+    if not issues:
+        raise GeometryProposalProductionError(
+            "rejected repair context requires exact typed issues"
+        )
+    return {
+        "schema": "GeometryProposalRepairContext@1",
+        "rejected_round_ref": (
+            None if rejected_round_ref is None else rejected_round_ref.uri
+        ),
+        "rejected_output": json.loads(_canonical_json(rejected_output)),
+        "rejected_output_digest": _digest(rejected_output),
+        "rejected_proposal_digest": rejected_proposal_digest,
+        "issues": [item.to_dict() for item in issues],
+        "instructions": (
+            "Return one complete replacement authoring output over the "
+            "original supplied predecessor. Preserve intended typed items "
+            "from rejected_output that are not implicated by issues and "
+            "fix every exact issue. The framework will neither merge nor "
+            "patch model outputs across rounds."
+        ),
+        "output_patch_authority": False,
+        "validation_authority": False,
+    }
+
+
+def _validate_rejected_round_resume(
+    rejected_round_ref: ProjectRecordRef,
+    rejected_round: GeometryProposalRoundReceipt,
+    *,
+    spatial_option_ref: ProjectRecordRef,
+    design_state: DevelopedDesignState,
+    required_commitment_refs: tuple[str, ...],
+    provider_identity: GeometryProposalProviderIdentity,
+    expected_predecessor_program_digest: str | None,
+    required_geometry_component_ids: tuple[str, ...],
+    realization_contract: Mapping[str, object],
+) -> None:
+    expected_prefix = (
+        f"runs/{design_state.run_id}/records/"
+    )
+    if (
+        rejected_round_ref.project_id != design_state.project_id
+        or not rejected_round_ref.relative_path.startswith(expected_prefix)
+    ):
+        raise GeometryProposalProductionError(
+            "rejected round resume source is outside the exact project run"
+        )
+    if rejected_round.status is not GeometryProposalRoundStatus.REJECTED:
+        raise GeometryProposalProductionError(
+            "only a deterministically rejected round can resume repair"
+        )
+    if (
+        rejected_round.spatial_option_ref != spatial_option_ref
+        or rejected_round.design_state_digest != design_state.state_digest
+    ):
+        raise GeometryProposalProductionError(
+            "rejected round is stale for the current spatial design state"
+        )
+    request = rejected_round.request
+    receipt = rejected_round.model_receipt
+    if (
+        receipt.request != request
+        or request.phase is not ModelPhase.ACTION_PROPOSAL
+        or request.checkpoint_digest != design_state.state_digest
+        or request.context_digest != _digest(request.payload)
+        or receipt.status is not ModelInvocationStatus.SUCCESS
+        or not provider_identity.matches(receipt)
+    ):
+        raise GeometryProposalProductionError(
+            "rejected round lacks exact successful provider provenance"
+        )
+    payload = request.payload
+    spatial_record = payload.get("spatial_option_record")
+    if not isinstance(spatial_record, Mapping):
+        raise GeometryProposalProductionError(
+            "rejected round spatial record is malformed"
+        )
+    exact_fields = {
+        "schema": "GeometryProposalAuthoringRequest@1",
+        "developed_design_state": design_state.to_dict(),
+        "available_predecessor_program_digest": (
+            expected_predecessor_program_digest
+        ),
+        "required_commitment_refs": list(required_commitment_refs),
+        "required_geometry_component_ids": list(
+            required_geometry_component_ids
+        ),
+        "realization_contract": dict(realization_contract),
+    }
+    if any(payload.get(key) != value for key, value in exact_fields.items()):
+        raise GeometryProposalProductionError(
+            "rejected round request contract is stale for this repair"
+        )
+    if spatial_record.get("ref") != _record_dict(spatial_option_ref):
+        raise GeometryProposalProductionError(
+            "rejected round names another spatial option record"
+        )
+
+
+def _predecessor_revision_contract(
+    prior_program: CompiledGeometryProgram | None,
+) -> dict[str, object]:
+    if prior_program is None:
+        return {
+            "schema": "GeometryPredecessorRevisionContract@1",
+            "predecessor_program_digest": None,
+            "object_revision_tokens": [],
+            "semantic_binding_tokens": [],
+            "derivation_only": True,
+            "canonical_write_authority": False,
+        }
+    binding_digests = dict(prior_program.semantic_binding_digests)
+    return {
+        "schema": "GeometryPredecessorRevisionContract@1",
+        "predecessor_program_digest": prior_program.program_digest,
+        "object_revision_tokens": [
+            {
+                "schema": "GeometryObjectRevisionToken@1",
+                "object_id": item.object_id,
+                "expected_digest": item.object_digest,
+                "producer_op_id": item.producer_op_id,
+            }
+            for item in prior_program.objects
+        ],
+        "semantic_binding_tokens": [
+            {
+                "schema": "GeometrySemanticBindingResponseToken@1",
+                "binding_id": binding.binding_id,
+                "component_id": binding.component_id,
+                "object_ids": list(binding.object_ids),
+                "expected_digest": binding_digests[binding.binding_id],
+            }
+            for binding in prior_program.proposal.semantic_bindings
+        ],
+        "derivation_only": True,
+        "canonical_write_authority": False,
+    }
+
+
+def _compiler_repair_issue(
+    issue: GeometryIssue,
+    prior_program: CompiledGeometryProgram | None,
+) -> GeometryProposalIssue:
+    detail = f"{issue.subject_id}: {issue.detail}"
+    if (
+        prior_program is not None
+        and issue.code is GeometryIssueCode.MISSING_REVISION_PRECONDITION
+    ):
+        prior_object = next(
+            (
+                item
+                for item in prior_program.objects
+                if item.object_id == issue.subject_id
+            ),
+            None,
+        )
+        if prior_object is not None:
+            detail += (
+                "; exact_revision_token="
+                + _canonical_json(
+                    {
+                        "object_id": prior_object.object_id,
+                        "expected_digest": prior_object.object_digest,
+                        "producer_op_id": prior_object.producer_op_id,
+                    }
+                )
+            )
+    return GeometryProposalIssue(
+        f"compiler.{issue.code.value}",
+        detail,
+    )
+
+
+def _authoring_output(
+    value: object,
+    prior_program: CompiledGeometryProgram | None,
+) -> tuple[tuple[str, ...], Mapping[str, Any]]:
     payload = _mapping(value, "geometry authoring output")
+    edit_mode = prior_program is not None
+    body_key = "edit_body" if edit_mode else "proposal_body"
+    expected_schema = (
+        _EDIT_AUTHORING_OUTPUT_SCHEMA if edit_mode else _AUTHORING_OUTPUT_SCHEMA
+    )
     _exact(
         payload,
-        {"schema", "selected_template_refs", "proposal_body"},
+        {"schema", "selected_template_refs", body_key},
         "geometry authoring output",
     )
-    if payload["schema"] != _AUTHORING_OUTPUT_SCHEMA:
+    if payload["schema"] != expected_schema:
         raise GeometryProposalProductionError("geometry authoring output schema changed")
     selected = _strings(
         _strings_from_json(
@@ -1683,7 +2122,7 @@ def _authoring_output(value: object) -> tuple[tuple[str, ...], Mapping[str, Any]
         "selected_template_refs",
         allow_empty=True,
     )
-    return selected, _mapping(payload["proposal_body"], "proposal_body")
+    return selected, _mapping(payload[body_key], body_key)
 
 
 def _validate_semantic_coverage(
@@ -1693,6 +2132,8 @@ def _validate_semantic_coverage(
     spatial_ref: ProjectRecordRef,
     available_interface_refs: tuple[str, ...],
     required_hosted_component_bindings: tuple[dict[str, object], ...],
+    required_geometry_component_ids: tuple[str, ...],
+    prior_program: CompiledGeometryProgram | None,
 ) -> None:
     component_ids = {
         item.component_id
@@ -1711,6 +2152,14 @@ def _validate_semantic_coverage(
         raise GeometryProposalProductionError(
             "each semantic component may own at most one geometry binding"
         )
+    missing_required = sorted(
+        set(required_geometry_component_ids) - set(bound_component_ids)
+    )
+    if missing_required:
+        raise GeometryProposalProductionError(
+            "semantic bindings omit components requiring geometry response; "
+            f"missing={missing_required}"
+        )
     bound_commitments = {
         ref for binding in proposal.semantic_bindings for ref in binding.commitment_refs
     }
@@ -1718,9 +2167,24 @@ def _validate_semantic_coverage(
         raise GeometryProposalProductionError(
             "semantic bindings omit required active commitments"
         )
-    if any(spatial_ref.uri not in binding.evidence_refs for binding in proposal.semantic_bindings):
+    prior_bindings = (
+        {}
+        if prior_program is None
+        else {
+            item.binding_id: item
+            for item in prior_program.proposal.semantic_bindings
+        }
+    )
+    missing_current_evidence = tuple(
+        binding.binding_id
+        for binding in proposal.semantic_bindings
+        if spatial_ref.uri not in binding.evidence_refs
+        and prior_bindings.get(binding.binding_id) != binding
+    )
+    if missing_current_evidence:
         raise GeometryProposalProductionError(
-            "every semantic binding must cite the source spatial option record"
+            "every new or changed semantic binding must cite the current source "
+            f"spatial option record; missing={missing_current_evidence}"
         )
     used_interface_refs = {
         ref for assembly in proposal.assemblies for ref in assembly.interface_refs
@@ -1899,7 +2363,10 @@ def _available_interface_refs(
 def _proposal_from_body(
     value: Mapping[str, Any],
     design_state: DevelopedDesignState,
+    prior_program: CompiledGeometryProgram | None,
 ) -> GeometryProgramProposal:
+    if prior_program is not None:
+        return _proposal_from_edit(value, design_state, prior_program)
     _exact(
         value,
         {
@@ -1918,6 +2385,166 @@ def _proposal_from_body(
         design_state.base,
         design_state.state_digest,
     )
+
+
+def _proposal_from_edit(
+    value: Mapping[str, Any],
+    design_state: DevelopedDesignState,
+    prior_program: CompiledGeometryProgram,
+) -> GeometryProgramProposal:
+    """Expand one exact model-authored edit without inventing geometry."""
+
+    _exact(
+        value,
+        {
+            "schema",
+            "proposal_id",
+            "predecessor_program_digest",
+            "frame_upserts",
+            "asset_upserts",
+            "semantic_binding_upserts",
+            "operation_upserts",
+            "assembly_upserts",
+            "remove_frame_ids",
+            "remove_asset_ids",
+            "remove_semantic_binding_ids",
+            "remove_operation_ids",
+            "remove_assembly_ids",
+            "revisions",
+            "retirements",
+        },
+        "geometry program edit body",
+    )
+    if value["schema"] != _EDIT_BODY_SCHEMA:
+        raise GeometryProposalProductionError(
+            "geometry program edit body schema changed"
+        )
+    if value["predecessor_program_digest"] != prior_program.program_digest:
+        raise GeometryProposalProductionError(
+            "geometry program edit does not bind the exact predecessor"
+        )
+    prior = prior_program.proposal
+    frame_upserts = _decode_sorted_list(
+        value["frame_upserts"], _frame, "frame_upserts", lambda item: item.frame_id
+    )
+    asset_upserts = _decode_sorted_list(
+        value["asset_upserts"], _asset, "asset_upserts", lambda item: item.asset_id
+    )
+    binding_upserts = _decode_sorted_list(
+        value["semantic_binding_upserts"],
+        _binding,
+        "semantic_binding_upserts",
+        lambda item: item.binding_id,
+    )
+    operation_upserts = _decode_sorted_list(
+        value["operation_upserts"],
+        _operation,
+        "operation_upserts",
+        lambda item: item.op_id,
+    )
+    assembly_upserts = _decode_sorted_list(
+        value["assembly_upserts"],
+        _assembly,
+        "assembly_upserts",
+        lambda item: item.assembly_id,
+    )
+    remove_frame_ids = _ordered_edit_ids(value["remove_frame_ids"], "remove_frame_ids")
+    remove_asset_ids = _ordered_edit_ids(value["remove_asset_ids"], "remove_asset_ids")
+    remove_binding_ids = _ordered_edit_ids(
+        value["remove_semantic_binding_ids"],
+        "remove_semantic_binding_ids",
+    )
+    remove_operation_ids = _ordered_edit_ids(
+        value["remove_operation_ids"],
+        "remove_operation_ids",
+    )
+    remove_assembly_ids = _ordered_edit_ids(
+        value["remove_assembly_ids"],
+        "remove_assembly_ids",
+    )
+    return GeometryProgramProposal(
+        proposal_id=value["proposal_id"],
+        project_id=design_state.project_id,
+        run_id=design_state.run_id,
+        base=design_state.base,
+        design_state_digest=design_state.state_digest,
+        predecessor_program_digest=prior_program.program_digest,
+        length_unit=prior.length_unit,
+        tolerance=prior.tolerance,
+        frames=_merge_edit_items(
+            prior.frames, frame_upserts, remove_frame_ids, "frame_id", "frames"
+        ),
+        assets=_merge_edit_items(
+            prior.assets, asset_upserts, remove_asset_ids, "asset_id", "assets"
+        ),
+        semantic_bindings=_merge_edit_items(
+            prior.semantic_bindings,
+            binding_upserts,
+            remove_binding_ids,
+            "binding_id",
+            "semantic_bindings",
+        ),
+        operations=_merge_edit_items(
+            prior.operations,
+            operation_upserts,
+            remove_operation_ids,
+            "op_id",
+            "operations",
+        ),
+        assemblies=_merge_edit_items(
+            prior.assemblies,
+            assembly_upserts,
+            remove_assembly_ids,
+            "assembly_id",
+            "assemblies",
+        ),
+        revisions=_decode_sorted_list(
+            value["revisions"],
+            _revision,
+            "revisions",
+            lambda item: item.object_id,
+        ),
+        retirements=_decode_sorted_list(
+            value["retirements"],
+            _retirement,
+            "retirements",
+            lambda item: item.object_id,
+        ),
+    )
+
+
+def _ordered_edit_ids(value: object, field: str) -> tuple[str, ...]:
+    return _strings(
+        _strings_from_json(value, field),
+        field,
+        allow_empty=True,
+    )
+
+
+def _merge_edit_items(
+    prior_items: tuple[Any, ...],
+    upserts: tuple[Any, ...],
+    remove_ids: tuple[str, ...],
+    identity_field: str,
+    field: str,
+) -> tuple[Any, ...]:
+    current = {getattr(item, identity_field): item for item in prior_items}
+    upsert_ids = {getattr(item, identity_field) for item in upserts}
+    overlap = sorted(upsert_ids & set(remove_ids))
+    if overlap:
+        raise GeometryProposalProductionError(
+            f"{field} edit both upserts and removes identities; overlap={overlap}"
+        )
+    unknown = sorted(set(remove_ids) - set(current))
+    if unknown:
+        raise GeometryProposalProductionError(
+            f"{field} edit removes unknown predecessor identities; unknown={unknown}"
+        )
+    for identity in remove_ids:
+        del current[identity]
+    for item in upserts:
+        current[getattr(item, identity_field)] = item
+    return tuple(current[key] for key in sorted(current))
 
 
 def _construct_proposal(
@@ -2133,7 +2760,11 @@ def _proposal_from_record(value: object) -> GeometryProgramProposal:
         or payload["canonical_write_authority"] is not False
     ):
         raise GeometryProposalProductionError("geometry proposal record acquired forbidden authority")
-    proposal = _mapping(payload["proposal"], "geometry proposal")
+    return _proposal_from_full(payload["proposal"])
+
+
+def _proposal_from_full(value: object) -> GeometryProgramProposal:
+    proposal = _mapping(value, "geometry proposal")
     _exact(proposal, {"schema", "proposal_id", "project_id", "run_id", "base", "design_state_digest", "predecessor_program_digest", "length_unit", "tolerance", "frames", "assets", "semantic_bindings", "operations", "assemblies", "revisions", "retirements", "generation_authority", "hard_gate_authority", "canonical_write_authority"}, "geometry proposal")
     if (
         proposal["schema"] != GeometryProgramProposal.SCHEMA
@@ -2149,6 +2780,141 @@ def _proposal_from_record(value: object) -> GeometryProgramProposal:
         proposal["run_id"],
         _base_from_dict(proposal["base"]),
         proposal["design_state_digest"],
+    )
+
+
+def load_compiled_geometry_program(value: object) -> CompiledGeometryProgram:
+    """Reload one exact compiled program without granting execution authority."""
+
+    payload = _mapping(value, "compiled geometry program")
+    _exact(
+        payload,
+        {
+            "schema", "proposal", "proposal_digest", "operation_order",
+            "frame_digests", "component_digests", "semantic_binding_digests",
+            "objects", "asset_substitutions", "execution_authority",
+            "hard_gate_authority", "canonical_write_authority",
+        },
+        "compiled geometry program",
+    )
+    if (
+        payload["schema"] != CompiledGeometryProgram.SCHEMA
+        or payload["execution_authority"] is not False
+        or payload["hard_gate_authority"] is not False
+        or payload["canonical_write_authority"] is not False
+    ):
+        raise GeometryProposalProductionError(
+            "compiled geometry program acquired forbidden authority"
+        )
+    proposal = _proposal_from_full(payload["proposal"])
+    if payload["proposal_digest"] != proposal.proposal_digest:
+        raise GeometryProposalProductionError(
+            "compiled geometry proposal digest changed"
+        )
+    program = CompiledGeometryProgram(
+        proposal=proposal,
+        operation_order=_ordered_strings_from_json(
+            payload["operation_order"], "operation_order"
+        ),
+        frame_digests=_compiled_digest_pairs(
+            payload["frame_digests"], "frame_id", "frame_digests"
+        ),
+        component_digests=_compiled_digest_pairs(
+            payload["component_digests"], "component_id", "component_digests"
+        ),
+        semantic_binding_digests=_compiled_digest_pairs(
+            payload["semantic_binding_digests"],
+            "binding_id",
+            "semantic_binding_digests",
+        ),
+        objects=_decode_sorted_list(
+            payload["objects"],
+            _compiled_object,
+            "compiled objects",
+            lambda item: item.object_id,
+        ),
+        asset_substitutions=_decode_list(
+            payload["asset_substitutions"],
+            _asset_substitution_receipt,
+            "asset substitutions",
+        ),
+    )
+    if program.to_dict() != dict(payload):
+        raise GeometryProposalProductionError(
+            "compiled geometry program is not an exact canonical record"
+        )
+    return program
+
+
+def _compiled_digest_pairs(
+    value: object,
+    identity_field: str,
+    label: str,
+) -> tuple[tuple[str, str], ...]:
+    entries = _decode_list(value, lambda item: _mapping(item, label), label)
+    pairs: list[tuple[str, str]] = []
+    for entry in entries:
+        _exact(entry, {identity_field, "digest"}, label)
+        pairs.append((entry[identity_field], entry["digest"]))
+    return tuple(pairs)
+
+
+def _ordered_strings_from_json(value: object, field: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise TypeError(f"{field} must be a list")
+    if any(not isinstance(item, str) or not item for item in value):
+        raise GeometryProposalProductionError(f"{field} contains invalid text")
+    if len(value) != len(set(value)):
+        raise GeometryProposalProductionError(f"{field} contains duplicate values")
+    return tuple(value)
+
+
+def _compiled_object(value: object) -> CompiledGeometryObject:
+    payload = _mapping(value, "compiled geometry object")
+    _exact(
+        payload,
+        {"schema", "object_id", "producer_op_id", "object_digest"},
+        "compiled geometry object",
+    )
+    if payload["schema"] != CompiledGeometryObject.SCHEMA:
+        raise GeometryProposalProductionError(
+            "compiled geometry object schema changed"
+        )
+    return CompiledGeometryObject(
+        object_id=payload["object_id"],
+        producer_op_id=payload["producer_op_id"],
+        object_digest=payload["object_digest"],
+    )
+
+
+def _asset_substitution_receipt(value: object) -> AssetSubstitutionReceipt:
+    payload = _mapping(value, "asset substitution receipt")
+    _exact(
+        payload,
+        {
+            "schema", "requested_asset_id", "requested_sha256",
+            "replacement_asset_id", "replacement_sha256", "loss_codes",
+            "evidence_refs", "lossless", "canonical_write_authority",
+        },
+        "asset substitution receipt",
+    )
+    if (
+        payload["schema"] != AssetSubstitutionReceipt.SCHEMA
+        or payload["lossless"] is not False
+        or payload["canonical_write_authority"] is not False
+    ):
+        raise GeometryProposalProductionError(
+            "asset substitution receipt authority changed"
+        )
+    return AssetSubstitutionReceipt(
+        requested_asset_id=payload["requested_asset_id"],
+        requested_sha256=payload["requested_sha256"],
+        replacement_asset_id=payload["replacement_asset_id"],
+        replacement_sha256=payload["replacement_sha256"],
+        loss_codes=_strings_from_json(payload["loss_codes"], "loss_codes"),
+        evidence_refs=_strings_from_json(
+            payload["evidence_refs"], "substitution evidence_refs"
+        ),
     )
 
 
@@ -2313,4 +3079,80 @@ def proposal_authoring_output(
         "schema": _AUTHORING_OUTPUT_SCHEMA,
         "selected_template_refs": list(selected_template_refs),
         "proposal_body": _proposal_body(proposal),
+    }
+
+
+def proposal_edit_authoring_output(
+    prior_program: CompiledGeometryProgram,
+    proposal: GeometryProgramProposal,
+    *,
+    selected_template_refs: tuple[str, ...] = (),
+) -> dict[str, object]:
+    """Encode only model-authored differences from one exact predecessor."""
+
+    if not isinstance(prior_program, CompiledGeometryProgram):
+        raise TypeError("prior_program must be CompiledGeometryProgram")
+    if not isinstance(proposal, GeometryProgramProposal):
+        raise TypeError("proposal must be GeometryProgramProposal")
+    if proposal.predecessor_program_digest != prior_program.program_digest:
+        raise GeometryProposalProductionError(
+            "edit proposal does not bind the exact predecessor"
+        )
+    _strings(selected_template_refs, "selected_template_refs", allow_empty=True)
+    prior = prior_program.proposal
+
+    def differences(
+        old_items: tuple[Any, ...],
+        current_items: tuple[Any, ...],
+        identity_field: str,
+    ) -> tuple[list[dict[str, object]], list[str]]:
+        old = {getattr(item, identity_field): item for item in old_items}
+        current = {
+            getattr(item, identity_field): item for item in current_items
+        }
+        upserts = [
+            current[key].to_dict()
+            for key in sorted(current)
+            if old.get(key) != current[key]
+        ]
+        removals = sorted(set(old) - set(current))
+        return upserts, removals
+
+    frames, remove_frames = differences(prior.frames, proposal.frames, "frame_id")
+    assets, remove_assets = differences(prior.assets, proposal.assets, "asset_id")
+    bindings, remove_bindings = differences(
+        prior.semantic_bindings,
+        proposal.semantic_bindings,
+        "binding_id",
+    )
+    operations, remove_operations = differences(
+        prior.operations,
+        proposal.operations,
+        "op_id",
+    )
+    assemblies, remove_assemblies = differences(
+        prior.assemblies,
+        proposal.assemblies,
+        "assembly_id",
+    )
+    return {
+        "schema": _EDIT_AUTHORING_OUTPUT_SCHEMA,
+        "selected_template_refs": list(selected_template_refs),
+        "edit_body": {
+            "schema": _EDIT_BODY_SCHEMA,
+            "proposal_id": proposal.proposal_id,
+            "predecessor_program_digest": prior_program.program_digest,
+            "frame_upserts": frames,
+            "asset_upserts": assets,
+            "semantic_binding_upserts": bindings,
+            "operation_upserts": operations,
+            "assembly_upserts": assemblies,
+            "remove_frame_ids": remove_frames,
+            "remove_asset_ids": remove_assets,
+            "remove_semantic_binding_ids": remove_bindings,
+            "remove_operation_ids": remove_operations,
+            "remove_assembly_ids": remove_assemblies,
+            "revisions": [item.to_dict() for item in proposal.revisions],
+            "retirements": [item.to_dict() for item in proposal.retirements],
+        },
     }

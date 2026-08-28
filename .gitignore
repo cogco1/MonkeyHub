@@ -13,3 +13,5 @@ venv/
 *.log
 *.egg-info/
 config/runtime.json
+.claude/
+!.claude/launch.json

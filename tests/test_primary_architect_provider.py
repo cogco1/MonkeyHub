@@ -154,6 +154,15 @@ class ModelProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             ModelInvocationReceipt.from_dict(receipt.to_dict()),
             receipt,
         )
+        self.assertEqual("ModelInvocationReceipt@2", receipt.to_dict()["schema"])
+        self.assertGreaterEqual(receipt.duration_ms, 0)
+
+        legacy = receipt.to_dict()
+        legacy["schema"] = ModelInvocationReceipt.LEGACY_SCHEMA
+        legacy.pop("duration_ms")
+        reloaded_legacy = ModelInvocationReceipt.from_dict(legacy)
+        self.assertEqual(0, reloaded_legacy.duration_ms)
+        self.assertEqual(receipt.request, reloaded_legacy.request)
 
     async def test_codex_jsonl_bridge_uses_trusted_usage_and_empty_cwd(
         self,
@@ -200,6 +209,7 @@ class ModelProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             executable="codex-test",
             model_id="test-model",
             version="test-version",
+            reasoning_effort="low",
         )
 
         self.assertIsInstance(provider, AsyncJsonCommandModelProvider)
@@ -213,6 +223,41 @@ class ModelProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("--ephemeral", command)
         self.assertIn("read-only", command)
         self.assertNotIn("workspace-write", command)
+        self.assertIn('model_reasoning_effort="low"', command)
+
+        with self.assertRaisesRegex(ValueError, "reasoning_effort"):
+            create_codex_cli_model_provider(
+                executable="codex-test",
+                model_id="test-model",
+                version="test-version",
+                reasoning_effort="unbounded",
+            )
+
+    def test_provider_fingerprint_binds_execution_budgets(self) -> None:
+        baseline = ModelProviderSpec(
+            provider_id="fingerprint-test",
+            model_id="test-model",
+            version="1",
+            command=_command("print('{}')"),
+        )
+        variants = (
+            ModelProviderSpec(
+                provider_id=baseline.provider_id,
+                model_id=baseline.model_id,
+                version=baseline.version,
+                command=baseline.command,
+                timeout_seconds=baseline.timeout_seconds + 1,
+            ),
+            ModelProviderSpec(
+                provider_id=baseline.provider_id,
+                model_id=baseline.model_id,
+                version=baseline.version,
+                command=baseline.command,
+                max_output_tokens=baseline.max_output_tokens + 1,
+            ),
+        )
+        for variant in variants:
+            self.assertNotEqual(baseline.fingerprint, variant.fingerprint)
 
     async def test_timeout_malformed_exit_and_token_budget_are_typed(
         self,
@@ -269,6 +314,9 @@ class ModelProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(receipt.status, expected)
                 self.assertIsNotNone(receipt.error_code)
                 self.assertIsNone(receipt.output)
+                self.assertGreaterEqual(receipt.duration_ms, 0)
+                if name == "timeout":
+                    self.assertGreater(receipt.duration_ms, 0)
 
     async def test_input_budget_stops_before_missing_command(
         self,

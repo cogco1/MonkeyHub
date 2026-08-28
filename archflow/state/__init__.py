@@ -51,6 +51,15 @@ from archflow.state.design_brief import (
     BriefSlotStatus,
     DesignBrief,
 )
+from archflow.state.component_family import (
+    ComponentFamilyError,
+    ComponentFamilyInstance,
+    ComponentFamilyKind,
+    ComponentFamilySet,
+    FamilyAnchorBinding,
+    FamilyParameterRef,
+    FamilySocket,
+)
 from archflow.state.design_program import (
     DesignProgram,
     ProgramAssumption,
@@ -237,6 +246,10 @@ __all__ = [
     "CommitmentStrength",
     "CommitmentTransitionError",
     "ComponentMaturity",
+    "ComponentFamilyError",
+    "ComponentFamilyInstance",
+    "ComponentFamilyKind",
+    "ComponentFamilySet",
     "ComponentTransitionReceipt",
     "ConstraintResponseStatus",
     "ConstructabilityConstraint",
@@ -288,6 +301,9 @@ __all__ = [
     "Fact",
     "FactEpistemicStatus",
     "FactValue",
+    "FamilyAnchorBinding",
+    "FamilyParameterRef",
+    "FamilySocket",
     "FootprintTarget",
     "FootprintCell",
     "GoalContract",

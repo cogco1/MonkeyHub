@@ -25,11 +25,13 @@ from archflow.capabilities.geometry_proposal import (
 from archflow.capabilities.semantic_spatial_authoring import (
     SemanticSpatialAuthoringStatus,
     author_semantic_spatial_option,
+    semantic_spatial_repair_feedback,
 )
 from archflow.capabilities.spatial import compile_spatial_options
 from archflow.production import (
     AuthorizedAsyncModelProvider,
     InvocationEvidenceCollector,
+    InvocationEnvelope,
 )
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef, RunRef, require_identifier
@@ -37,6 +39,7 @@ from archflow.realization import RealizationStatus, realize_geometry
 from archflow.runtime.production_runtime import (
     CompiledProductionStep,
     ProductionAuthoringContext,
+    ProductionStepCompilationFailed,
 )
 from archflow.runtime.semantic_geometry_lifecycle import (
     bind_initial_semantic_geometry,
@@ -54,10 +57,14 @@ from archflow.state.developed_design import (
     DevelopmentObligationStatus,
     SelectedSchematicInput,
 )
-from archflow.state.spatial import SchematicOption, SchematicOptionSet
+from archflow.state.spatial import (
+    SchematicOption,
+    SchematicOptionSet,
+    SpatialProposalError,
+)
 
 
-class ProductionRootCompilationError(RuntimeError):
+class ProductionRootCompilationError(ProductionStepCompilationFailed):
     """The current project state could not reach initial semantic geometry."""
 
 
@@ -160,6 +167,109 @@ def schematic_selection_output(
     }
 
 
+def schematic_option_decision_projection(
+    option: SchematicOption,
+) -> dict[str, object]:
+    """Project one validated option into a bounded, identity-bound choice view.
+
+    The projection is not reloadable as a schematic option and carries no
+    validation or mutation authority.  The original ``SchematicOption`` remains
+    the only value that can be returned after deterministic id validation.
+    """
+
+    if not isinstance(option, SchematicOption):
+        raise TypeError("option must be SchematicOption")
+    proposal = option.proposal.to_dict()
+    components = proposal["components"]
+    levels = proposal["levels"]
+    volumes = proposal["volumes"]
+    zones = proposal["zones"]
+    connections = proposal["connections"]
+    responses = proposal["constraint_responses"]
+    assert isinstance(components, list)
+    assert isinstance(levels, list)
+    assert isinstance(volumes, list)
+    assert isinstance(zones, list)
+    assert isinstance(connections, list)
+    assert isinstance(responses, list)
+    return {
+        "schema": "SchematicOptionDecisionProjection@1",
+        "option_id": option.option_id,
+        "option_digest": option.option_digest,
+        "proposal_digest": option.proposal.proposal_digest,
+        "label": proposal["label"],
+        "typology_hypothesis": proposal["typology_hypothesis"],
+        "rationale": proposal["rationale"],
+        "program_scenario_ref": proposal["program_scenario_ref"],
+        "footprint_area": option.footprint_area,
+        "footprint_cell_count": len(option.proposal.footprint_cells),
+        "horizontal_area_per_cell": proposal["grid_basis"][
+            "horizontal_area_per_cell"
+        ],
+        "topology_signature": option.topology_signature,
+        "levels": [
+            {
+                "level_id": item["level_id"],
+                "base_y": item["base_y"],
+                "height": item["height"],
+            }
+            for item in levels
+        ],
+        "volumes": [
+            {
+                "volume_id": item["volume_id"],
+                "bounds": item["bounds"],
+                "level_ids": item["level_ids"],
+            }
+            for item in volumes
+        ],
+        "components": [
+            {
+                "component_id": item["component_id"],
+                "parent_component_id": item["parent_component_id"],
+                "semantic_kind": item["semantic_kind"],
+                "intent": item["intent"],
+                "maturity": item["maturity"],
+                "volume_ids": item["volume_ids"],
+                "unresolved_child_roles": item["unresolved_child_roles"],
+            }
+            for item in components
+        ],
+        "zones": [
+            {
+                "zone_id": item["zone_id"],
+                "program_node_refs": item["program_node_refs"],
+                "level_ids": item["level_ids"],
+                "volume_ids": item["volume_ids"],
+            }
+            for item in zones
+        ],
+        "connections": [
+            {
+                "connection_id": item["connection_id"],
+                "source_zone_id": item["source_zone_id"],
+                "target_zone_id": item["target_zone_id"],
+                "directed": item["directed"],
+                "relationship_refs": item["relationship_refs"],
+            }
+            for item in connections
+        ],
+        "constraint_responses": [
+            {
+                "constraint_ref": item["constraint_ref"],
+                "status": item["status"],
+                "rationale": item["rationale"],
+            }
+            for item in responses
+        ],
+        "decision_projection_only": True,
+        "option_mutation_authority": False,
+        "validation_authority": False,
+        "persistence_authority": False,
+        "canonical_write_authority": False,
+    }
+
+
 async def select_schematic_option(
     provider: AsyncModelProvider,
     *,
@@ -184,8 +294,40 @@ async def select_schematic_option(
         ),
         "raw_request_ref": raw_request.uri,
         "exact_option_set_digest": option_set.option_set_digest,
-        "options": [item.to_dict() for item in option_set.options],
+        "option_decision_projections": [
+            schematic_option_decision_projection(item)
+            for item in option_set.options
+        ],
+        "option_projection_contract": {
+            "schema": "SchematicOptionDecisionProjectionContract@1",
+            "source_option_set_digest": option_set.option_set_digest,
+            "projection_is_not_an_option": True,
+            "original_options_remain_authoritative": True,
+            "option_mutation_authority": False,
+            "validation_authority": False,
+            "persistence_authority": False,
+            "canonical_write_authority": False,
+        },
         "required_output_schema": "SchematicOptionSelectionOutput@1",
+        "output_contract": {
+            "schema": "SchematicOptionSelectionContract@1",
+            "exact_fields": [
+                "schema",
+                "exact_option_set_digest",
+                "selected_option_id",
+                "rationale",
+            ],
+            "fixed_values": {
+                "schema": "SchematicOptionSelectionOutput@1",
+                "exact_option_set_digest": option_set.option_set_digest,
+            },
+            "allowed_option_ids": [
+                item.option_id for item in option_set.options
+            ],
+            "option_mutation_authority": False,
+            "persistence_authority": False,
+            "canonical_write_authority": False,
+        },
     }
     request = ModelInvocationRequest.create(
         request_id=request_id,
@@ -213,13 +355,29 @@ async def select_schematic_option(
         )
     try:
         output = receipt.output
-        if not isinstance(output, dict) or set(output) != {
+        expected_fields = {
             "schema",
             "exact_option_set_digest",
             "selected_option_id",
             "rationale",
-        }:
-            raise ValueError("selection output fields drifted")
+        }
+        if not isinstance(output, dict):
+            return _failed_selection(
+                request,
+                receipt,
+                SchematicSelectionStatus.REJECTED,
+                "schematic_selection.output_not_object",
+            )
+        if set(output) != expected_fields:
+            missing = ",".join(sorted(expected_fields - set(output))) or "none"
+            extra = ",".join(sorted(set(output) - expected_fields)) or "none"
+            return _failed_selection(
+                request,
+                receipt,
+                SchematicSelectionStatus.REJECTED,
+                "schematic_selection.fields_mismatch:"
+                f"missing={missing};extra={extra}",
+            )
         if output["schema"] != "SchematicOptionSelectionOutput@1":
             raise ValueError("selection output schema is unsupported")
         if output["exact_option_set_digest"] != option_set.option_set_digest:
@@ -340,6 +498,15 @@ class ProductionRootCompiler:
     def intent_record_refs(self) -> tuple[ProjectRecordRef, ...]:
         return (self.context_ref,)
 
+    def invocation_evidence_cursor(self) -> int:
+        return self.evidence_collector.cursor()
+
+    def invocation_evidence_since(
+        self,
+        cursor: int,
+    ) -> tuple[InvocationEnvelope, ...]:
+        return self.evidence_collector.since(cursor)
+
     async def compile(
         self,
         *,
@@ -365,51 +532,109 @@ class ProductionRootCompiler:
                 "initial geometry requires at least one current commitment"
             )
         cursor = self.evidence_collector.cursor()
+        destination = PersistenceDestination(
+            PersistenceArea.RUN_RECORD,
+            run_id=run.run_id,
+        )
         authored = []
+        authoring_refs = []
         for index in range(1, 3):
-            result = await author_semantic_spatial_option(
-                self.provider,
-                request_id=f"spatial-{run.run_id}-{index:02d}",
+            repair_feedback = None
+            alternative_context = None
+            if authored:
+                existing = authored[0].option
+                assert existing is not None
+                alternative_context = {
+                    "schema": "SpatialAlternativeAuthoringContext@1",
+                    "excluded_option_ids": [existing.option_id],
+                    "excluded_option_digests": [existing.option_digest],
+                    "excluded_topology_signatures": [
+                        existing.topology_signature
+                    ],
+                    "existing_option_projection": (
+                        schematic_option_decision_projection(existing)
+                    ),
+                    "instructions": (
+                        "Author a complete independent alternative with a new "
+                        "option_id and meaningfully different spatial topology. "
+                        "Do not rename, patch, or select the existing option."
+                    ),
+                    "complete_alternative_required": True,
+                    "option_mutation_authority": False,
+                    "selection_authority": False,
+                    "validation_authority": False,
+                    "persistence_authority": False,
+                    "canonical_write_authority": False,
+                }
+            for attempt_index in range(2):
+                result = await author_semantic_spatial_option(
+                    self.provider,
+                    request_id=(
+                        f"spatial-{run.run_id}-{index:02d}-"
+                        f"attempt-{attempt_index:02d}"
+                    ),
+                    state=self.context.state,
+                    maturity=self.context.maturity,
+                    phase_gate=self.context.phase_gate,
+                    program=self.context.program,
+                    site_context=self.context.site_context,
+                    build_policy=self.context.build_policy,
+                    repair_feedback=repair_feedback,
+                    alternative_context=alternative_context,
+                )
+                authoring_refs.append(
+                    self.repository.put_json(
+                        run=run,
+                        destination=destination,
+                        record_kind=(
+                            f"semantic-spatial-authoring-{index:02d}-"
+                            f"attempt-{attempt_index:02d}"
+                        ),
+                        payload=result.receipt.to_dict(),
+                    )
+                )
+                if (
+                    result.receipt.status
+                    is SemanticSpatialAuthoringStatus.ACCEPTED
+                    and result.proposal is not None
+                ):
+                    authored.append(result)
+                    break
+                if attempt_index == 0:
+                    try:
+                        repair_feedback = semantic_spatial_repair_feedback(result)
+                    except (TypeError, ValueError):
+                        repair_feedback = None
+                    if repair_feedback is not None:
+                        continue
+                error_code = (
+                    result.receipt.error_code
+                    or "spatial_authoring.rejected_without_code"
+                )
+                diagnostic = result.receipt.message or "no diagnostic supplied"
+                raise ProductionRootCompilationError(
+                    "semantic-spatial authoring did not produce a valid option: "
+                    f"{error_code}; {diagnostic}",
+                    error_code=error_code,
+                )
+
+        try:
+            spatial = compile_spatial_options(
                 state=self.context.state,
                 maturity=self.context.maturity,
                 phase_gate=self.context.phase_gate,
                 program=self.context.program,
                 site_context=self.context.site_context,
                 build_policy=self.context.build_policy,
+                proposals=tuple(item.proposal for item in authored),
             )
-            if (
-                result.receipt.status
-                is not SemanticSpatialAuthoringStatus.ACCEPTED
-                or result.proposal is None
-            ):
-                raise ProductionRootCompilationError(
-                    "semantic-spatial authoring did not produce a valid option: "
-                    f"{result.receipt.error_code}"
-                )
-            authored.append(result)
-
-        spatial = compile_spatial_options(
-            state=self.context.state,
-            maturity=self.context.maturity,
-            phase_gate=self.context.phase_gate,
-            program=self.context.program,
-            site_context=self.context.site_context,
-            build_policy=self.context.build_policy,
-            proposals=tuple(item.proposal for item in authored),
-        )
-        destination = PersistenceDestination(
-            PersistenceArea.RUN_RECORD,
-            run_id=run.run_id,
-        )
-        authoring_refs = tuple(
-            self.repository.put_json(
-                run=run,
-                destination=destination,
-                record_kind=f"semantic-spatial-authoring-{index:02d}",
-                payload=item.receipt.to_dict(),
-            )
-            for index, item in enumerate(authored, start=1)
-        )
+        except SpatialProposalError as exc:
+            raise ProductionRootCompilationError(
+                "accepted semantic-spatial options cannot form one current "
+                f"alternative set: {type(exc).__name__}: {exc}",
+                error_code="spatial_authoring.option_set_rejected",
+            ) from exc
+        authoring_refs = tuple(authoring_refs)
         option_set_ref = self.repository.put_json(
             run=run,
             destination=destination,
@@ -436,7 +661,11 @@ class ProductionRootCompiler:
         ):
             raise ProductionRootCompilationError(
                 "Architect did not select a current schematic option: "
-                f"{selection.receipt.error_code}"
+                f"{selection.receipt.error_code}",
+                error_code=(
+                    selection.receipt.error_code
+                    or "schematic_selection.rejected_without_code"
+                ),
             )
         selection_ref = self.repository.put_json(
             run=run,

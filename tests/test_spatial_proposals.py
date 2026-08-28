@@ -11,6 +11,8 @@ from archflow.adapters.site_observation import (
 )
 from archflow.capabilities.spatial import (
     SpatialCompilationError,
+    compile_spatial_authoring_reference_contract,
+    compile_spatial_authoring_validation_contract,
     compile_spatial_options,
 )
 from archflow.project import (
@@ -487,6 +489,133 @@ def _proposal(
 
 
 class SpatialProposalTests(unittest.TestCase):
+    def test_reference_contract_is_shared_and_non_self_authorizing(self) -> None:
+        brief, program, site, policy, state, maturity, gate = _inputs()
+        contract = compile_spatial_authoring_reference_contract(
+            state=state,
+            phase_gate=gate,
+            program=program,
+            site_context=site,
+            build_policy=policy,
+        )
+        repeated = compile_spatial_authoring_reference_contract(
+            state=state,
+            phase_gate=gate,
+            program=program,
+            site_context=site,
+            build_policy=policy,
+        )
+        compact = _proposal(
+            option_id="compact",
+            program=program,
+            brief=brief,
+            two_levels=False,
+        )
+        split = _proposal(
+            option_id="split",
+            program=program,
+            brief=brief,
+            two_levels=True,
+        )
+
+        self.assertEqual(contract, repeated)
+        self.assertEqual(
+            "SpatialAuthoringReferenceContract@1",
+            contract.to_dict()["schema"],
+        )
+        self.assertTrue(
+            set(compact.evidence_refs) <= set(contract.allowed_evidence_refs)
+        )
+        self.assertTrue(
+            {item.ref for item in program.relationships}
+            <= set(contract.allowed_responds_to_refs)
+        )
+        self.assertTrue(
+            {item.ref for item in program.relationships}
+            <= set(contract.required_response_refs)
+        )
+        self.assertEqual((), contract.allowed_expert_advice_refs)
+
+        invented = "expert-advice:invented"
+        self_authorized = replace(
+            compact,
+            expert_advice_refs=(invented,),
+            evidence_refs=(*compact.evidence_refs, invented),
+        )
+        with self.assertRaisesRegex(
+            SpatialCompilationError,
+            "expert advice absent",
+        ):
+            compile_spatial_options(
+                state=state,
+                maturity=maturity,
+                phase_gate=gate,
+                program=program,
+                site_context=site,
+                build_policy=policy,
+                proposals=(self_authorized, split),
+            )
+
+    def test_validation_contract_publishes_current_facts_and_inclusive_rules(
+        self,
+    ) -> None:
+        _, program, site, _, _, _, _ = _inputs()
+
+        contract = compile_spatial_authoring_validation_contract(
+            program=program,
+            site_context=site,
+        )
+        facts = contract["current_facts"]
+
+        self.assertEqual("SpatialAuthoringValidationContract@1", contract["schema"])
+        self.assertEqual(
+            site.observed_envelope.to_dict(),
+            facts["observed_site_envelope"],
+        )
+        self.assertEqual(
+            {item.ref for item in program.scenarios},
+            {
+                item["scenario_ref"]
+                for item in facts["footprint_ranges"]
+                if item["scenario_ref"] is not None
+            },
+        )
+        self.assertEqual(
+            {
+                item.ref
+                for item in program.nodes
+                if item.kind is ProgramNodeKind.FUNCTION
+            },
+            set(facts["function_refs"]),
+        )
+        self.assertEqual(
+            {
+                (
+                    item.ref,
+                    item.source_node_ref,
+                    item.target_node_ref,
+                    item.directed,
+                    item.strength.value,
+                )
+                for item in program.relationships
+            },
+            {
+                (
+                    item["ref"],
+                    item["source_node_ref"],
+                    item["target_node_ref"],
+                    item["directed"],
+                    item["strength"],
+                )
+                for item in facts["relationships"]
+            },
+        )
+        rules = "\n".join(contract["required_invariants"])
+        self.assertIn("every inclusive [x,z] pair", rules)
+        self.assertIn("len(footprint_cells)", rules)
+        self.assertIn("exactly one zone", rules)
+        self.assertFalse(contract["output_repair_authority"])
+
     def test_multiple_options_compile_without_order_or_selection_authority(
         self,
     ) -> None:

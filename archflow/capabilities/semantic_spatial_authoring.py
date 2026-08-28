@@ -22,6 +22,8 @@ from archflow.adapters.model_provider import (
 )
 from archflow.capabilities.spatial import (
     SpatialCompilationError,
+    compile_spatial_authoring_reference_contract,
+    compile_spatial_authoring_validation_contract,
     validate_spatial_authoring_context,
     validate_spatial_option,
 )
@@ -34,6 +36,8 @@ from archflow.state.design_program import DesignProgram
 from archflow.state.operational_state import OperationalMarkovState
 from archflow.state.site_context import SiteContext
 from archflow.state.spatial import (
+    ComponentMaturity,
+    ConstraintResponseStatus,
     SpatialOptionProposal,
     SpatialProposalError,
     SchematicOption,
@@ -151,7 +155,7 @@ def semantic_spatial_authoring_contract() -> dict[str, object]:
     """Return the machine-facing output envelope and ownership contract."""
 
     return {
-        "schema": "SemanticSpatialAuthoringContract@1",
+        "schema": "SemanticSpatialAuthoringContract@2",
         "required_output_schema": "SemanticSpatialAuthoringOutput@1",
         "required_output_fields": [
             "schema",
@@ -186,11 +190,110 @@ def semantic_spatial_authoring_contract() -> dict[str, object]:
             "design_development_complete",
             "execution_ready",
         ],
+        "proposal_fixed_values": {
+            "proposal_only": True,
+            "selected": False,
+            "hard_usability_verdict": None,
+            "design_development_complete": False,
+            "execution_ready": False,
+        },
+        "proposal_nested_contracts": {
+            "grid_basis": {
+                "type": "object",
+                "exact_fields": {
+                    "horizontal_area_per_cell": "positive finite number",
+                    "area_unit": "non-empty string",
+                    "source_refs": "non-empty array of logical-ref strings",
+                },
+            },
+            "footprint_cells": {
+                "type": "non-empty array",
+                "item": "exactly [integer x, integer z]",
+            },
+            "levels": {
+                "type": "non-empty array",
+                "item_exact_fields": {
+                    "level_id": "local-id string",
+                    "base_y": "integer",
+                    "height": "positive integer",
+                    "source_refs": "non-empty array of logical-ref strings",
+                },
+            },
+            "volumes": {
+                "type": "non-empty array",
+                "item_exact_fields": {
+                    "volume_id": "local-id string",
+                    "bounds": {
+                        "type": "object",
+                        "exact_fields": {
+                            "minimum": "exactly [integer x, integer y, integer z]",
+                            "maximum": "exactly [integer x, integer y, integer z]",
+                        },
+                    },
+                    "level_ids": "non-empty array of local-id strings",
+                    "source_refs": "non-empty array of logical-ref strings",
+                },
+            },
+            "zones": {
+                "type": "non-empty array",
+                "item_exact_fields": {
+                    "zone_id": "local-id string",
+                    "program_node_refs": "non-empty array of logical-ref strings",
+                    "level_ids": "non-empty array of local-id strings",
+                    "volume_ids": "non-empty array of local-id strings",
+                    "source_refs": "non-empty array of logical-ref strings",
+                },
+            },
+            "components": {
+                "type": "non-empty array",
+                "item_exact_fields": {
+                    "schema": "fixed string DesignComponent@1",
+                    "component_id": "local-id string",
+                    "parent_component_id": "local-id string or null",
+                    "semantic_kind": "local-id string",
+                    "intent": "non-empty string",
+                    "maturity": {
+                        "type": "enum string",
+                        "values": [item.value for item in ComponentMaturity],
+                    },
+                    "revision": "non-negative integer",
+                    "volume_ids": "array of local-id strings; empty allowed",
+                    "unresolved_child_roles": "array of local-id strings; empty allowed",
+                    "source_refs": "non-empty array of logical-ref strings",
+                },
+            },
+            "connections": {
+                "type": "array",
+                "item_exact_fields": {
+                    "connection_id": "local-id string",
+                    "source_zone_id": "local-id string",
+                    "target_zone_id": "different local-id string",
+                    "relationship_refs": "non-empty array of logical-ref strings",
+                    "directed": "boolean",
+                    "source_refs": "non-empty array of logical-ref strings",
+                },
+            },
+            "constraint_responses": {
+                "type": "array",
+                "item_exact_fields": {
+                    "response_id": "local-id string",
+                    "constraint_ref": "logical-ref string",
+                    "status": {
+                        "type": "enum string",
+                        "values": [
+                            item.value for item in ConstraintResponseStatus
+                        ],
+                    },
+                    "rationale": "non-empty string",
+                    "source_refs": "non-empty array of logical-ref strings",
+                },
+            },
+        },
         "component_geometry_invariants": [
             "components form exactly one rooted acyclic tree",
             "every volume id exists and is owned by exactly one component",
             "component and volume source refs are present in evidence_refs",
-            "proposal_only is true and all downstream authority flags are false",
+            "proposal authority fields equal proposal_fixed_values exactly",
         ],
     }
 
@@ -215,6 +318,50 @@ def semantic_spatial_authoring_output(
     }
 
 
+def semantic_spatial_repair_feedback(
+    result: SemanticSpatialAuthoringResult,
+) -> dict[str, object]:
+    """Bind one deterministic rejection for a complete model-authored replacement."""
+
+    if not isinstance(result, SemanticSpatialAuthoringResult):
+        raise TypeError("result must be SemanticSpatialAuthoringResult")
+    receipt = result.receipt
+    model_receipt = receipt.model_receipt
+    if (
+        receipt.status is not SemanticSpatialAuthoringStatus.REJECTED
+        or model_receipt.status is not ModelInvocationStatus.SUCCESS
+        or model_receipt.request != receipt.request
+        or receipt.error_code
+        == "spatial_authoring.provider_request_mismatch"
+        or not isinstance(model_receipt.output, Mapping)
+    ):
+        raise ValueError(
+            "repair feedback requires one bound successful provider output "
+            "rejected by deterministic authoring validation"
+        )
+    rejected_output = dict(model_receipt.output)
+    return {
+        "schema": "SemanticSpatialRepairFeedback@1",
+        "prior_request_id": receipt.request.request_id,
+        "prior_model_receipt_id": model_receipt.receipt_id,
+        "exact_base_state_digest": receipt.request.checkpoint_digest,
+        "prior_context_digest": receipt.request.context_digest,
+        "rejected_output_digest": _digest(rejected_output),
+        "rejected_output": rejected_output,
+        "rejection_code": receipt.error_code,
+        "diagnostic": receipt.message,
+        "instructions": (
+            "Return one complete replacement output satisfying the unchanged "
+            "contracts. Do not return a patch and do not reuse invalid fields."
+        ),
+        "complete_replacement_required": True,
+        "field_patch_authority": False,
+        "validation_authority": False,
+        "persistence_authority": False,
+        "canonical_write_authority": False,
+    }
+
+
 async def author_semantic_spatial_option(
     provider: AsyncModelProvider,
     *,
@@ -225,6 +372,9 @@ async def author_semantic_spatial_option(
     program: DesignProgram,
     site_context: SiteContext,
     build_policy: BuildPolicy,
+    repair_feedback: Mapping[str, object] | None = None,
+    alternative_context: Mapping[str, object] | None = None,
+    revision_context: Mapping[str, object] | None = None,
 ) -> SemanticSpatialAuthoringResult:
     """Ask one provider for a co-authored component and massing proposal."""
 
@@ -246,7 +396,31 @@ async def author_semantic_spatial_option(
         "site_context": site_context.to_dict(),
         "build_policy": build_policy.to_dict(),
         "output_contract": semantic_spatial_authoring_contract(),
+        "reference_contract": compile_spatial_authoring_reference_contract(
+            state=state,
+            phase_gate=phase_gate,
+            program=program,
+            site_context=site_context,
+            build_policy=build_policy,
+        ).to_dict(),
+        "validation_contract": compile_spatial_authoring_validation_contract(
+            program=program,
+            site_context=site_context,
+        ),
     }
+    if repair_feedback is not None:
+        prompt["repair_feedback"] = _validated_repair_feedback(
+            repair_feedback,
+            exact_base_state_digest=state.state_digest,
+        )
+    if alternative_context is not None:
+        prompt["alternative_context"] = _validated_alternative_context(
+            alternative_context
+        )
+    if revision_context is not None:
+        prompt["revision_context"] = _validated_revision_context(
+            revision_context
+        )
     request = ModelInvocationRequest.create(
         request_id=request_id,
         phase=ModelPhase.SPATIAL_PROPOSAL,
@@ -328,6 +502,207 @@ async def author_semantic_spatial_option(
         proposal=proposal,
         option=option,
     )
+
+
+def _validated_repair_feedback(
+    value: Mapping[str, object],
+    *,
+    exact_base_state_digest: str,
+) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise TypeError("repair_feedback must be a mapping")
+    expected = {
+        "schema",
+        "prior_request_id",
+        "prior_model_receipt_id",
+        "exact_base_state_digest",
+        "prior_context_digest",
+        "rejected_output_digest",
+        "rejected_output",
+        "rejection_code",
+        "diagnostic",
+        "instructions",
+        "complete_replacement_required",
+        "field_patch_authority",
+        "validation_authority",
+        "persistence_authority",
+        "canonical_write_authority",
+    }
+    if set(value) != expected or value.get("schema") != "SemanticSpatialRepairFeedback@1":
+        raise ValueError("semantic-spatial repair feedback schema drifted")
+    rejected_output = value.get("rejected_output")
+    if not isinstance(rejected_output, Mapping) or (
+        value.get("rejected_output_digest") != _digest(rejected_output)
+    ):
+        raise ValueError("semantic-spatial rejected output digest changed")
+    if value.get("exact_base_state_digest") != exact_base_state_digest:
+        raise ValueError("semantic-spatial repair feedback is stale")
+    for field in (
+        "prior_request_id",
+        "prior_model_receipt_id",
+        "prior_context_digest",
+        "rejection_code",
+        "diagnostic",
+        "instructions",
+    ):
+        if not isinstance(value.get(field), str) or not value[field]:
+            raise ValueError(f"repair feedback {field} must be non-empty text")
+    if (
+        value.get("complete_replacement_required") is not True
+        or value.get("field_patch_authority") is not False
+        or value.get("validation_authority") is not False
+        or value.get("persistence_authority") is not False
+        or value.get("canonical_write_authority") is not False
+    ):
+        raise ValueError("semantic-spatial repair feedback acquired authority")
+    return dict(value)
+
+
+def _validated_alternative_context(
+    value: Mapping[str, object],
+) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise TypeError("alternative_context must be a mapping")
+    expected = {
+        "schema",
+        "excluded_option_ids",
+        "excluded_option_digests",
+        "excluded_topology_signatures",
+        "existing_option_projection",
+        "instructions",
+        "complete_alternative_required",
+        "option_mutation_authority",
+        "selection_authority",
+        "validation_authority",
+        "persistence_authority",
+        "canonical_write_authority",
+    }
+    if set(value) != expected or value.get("schema") != "SpatialAlternativeAuthoringContext@1":
+        raise ValueError("spatial alternative context schema drifted")
+    for field in (
+        "excluded_option_ids",
+        "excluded_option_digests",
+        "excluded_topology_signatures",
+    ):
+        items = value.get(field)
+        if (
+            not isinstance(items, list)
+            or not items
+            or any(not isinstance(item, str) or not item for item in items)
+            or items != sorted(set(items))
+        ):
+            raise ValueError(f"{field} must be a non-empty sorted unique list")
+    projection = value.get("existing_option_projection")
+    if not isinstance(projection, Mapping) or (
+        projection.get("schema") != "SchematicOptionDecisionProjection@1"
+        or projection.get("option_id") not in value["excluded_option_ids"]
+        or projection.get("option_digest") not in value["excluded_option_digests"]
+        or projection.get("topology_signature")
+        not in value["excluded_topology_signatures"]
+        or projection.get("decision_projection_only") is not True
+    ):
+        raise ValueError("existing option projection is not exactly excluded")
+    if not isinstance(value.get("instructions"), str) or not value["instructions"]:
+        raise ValueError("alternative context instructions must be non-empty text")
+    if (
+        value.get("complete_alternative_required") is not True
+        or value.get("option_mutation_authority") is not False
+        or value.get("selection_authority") is not False
+        or value.get("validation_authority") is not False
+        or value.get("persistence_authority") is not False
+        or value.get("canonical_write_authority") is not False
+    ):
+        raise ValueError("spatial alternative context acquired authority")
+    return dict(value)
+
+
+def _validated_revision_context(
+    value: Mapping[str, object],
+) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise TypeError("revision_context must be a mapping")
+    expected = {
+        "schema",
+        "predecessor_proposal",
+        "predecessor_proposal_digest",
+        "architectural_contract_digest",
+        "architectural_receipt_digest",
+        "failed_mandatory_findings",
+        "instructions",
+        "complete_successor_required",
+        "preserve_option_identity",
+        "component_patch_authority",
+        "geometry_patch_authority",
+        "selection_authority",
+        "validation_authority",
+        "persistence_authority",
+        "canonical_write_authority",
+    }
+    if (
+        set(value) != expected
+        or value.get("schema") != "SpatialArchitecturalRevisionContext@1"
+    ):
+        raise ValueError("spatial architectural revision context schema drifted")
+    predecessor = value.get("predecessor_proposal")
+    if not isinstance(predecessor, Mapping):
+        raise TypeError("predecessor_proposal must be a mapping")
+    parsed = SpatialOptionProposal.from_dict(predecessor)
+    if value.get("predecessor_proposal_digest") != parsed.proposal_digest:
+        raise ValueError("predecessor proposal digest changed")
+    for field in (
+        "architectural_contract_digest",
+        "architectural_receipt_digest",
+    ):
+        _sha256(value.get(field), field)
+    findings = value.get("failed_mandatory_findings")
+    if not isinstance(findings, list) or not findings:
+        raise ValueError("revision context needs failed mandatory findings")
+    criterion_ids: list[str] = []
+    for failure in findings:
+        if not isinstance(failure, Mapping) or set(failure) != {
+            "schema", "criterion", "finding"
+        }:
+            raise TypeError("architectural revision failure must be an exact mapping")
+        if failure.get("schema") != "ArchitecturalRevisionFailure@1":
+            raise ValueError("architectural revision failure schema changed")
+        criterion = failure.get("criterion")
+        finding = failure.get("finding")
+        if not isinstance(criterion, Mapping) or not isinstance(finding, Mapping):
+            raise TypeError("revision failure criterion and finding must be mappings")
+        if (
+            finding.get("schema") != "ArchitecturalUsabilityFinding@1"
+            or finding.get("status") != "fail"
+            or finding.get("mandatory") is not True
+        ):
+            raise ValueError("revision context includes a non-failed blocker")
+        criterion_id = finding.get("criterion_id")
+        if (
+            not isinstance(criterion_id, str)
+            or not criterion_id
+            or criterion.get("schema") != "ProjectArchitecturalCriterion@1"
+            or criterion.get("criterion_id") != criterion_id
+            or criterion.get("mandatory") is not True
+            or criterion.get("expected_json") != finding.get("expected_json")
+            or criterion.get("unit") != finding.get("unit")
+        ):
+            raise ValueError("failed finding criterion_id must be non-empty")
+        criterion_ids.append(criterion_id)
+    if criterion_ids != sorted(set(criterion_ids)):
+        raise ValueError("failed findings must be sorted and unique")
+    if not isinstance(value.get("instructions"), str) or not value["instructions"]:
+        raise ValueError("revision context instructions must be non-empty text")
+    if (
+        value.get("complete_successor_required") is not True
+        or value.get("preserve_option_identity") is not True
+        or value.get("component_patch_authority") is not False
+        or value.get("geometry_patch_authority") is not False
+        or value.get("selection_authority") is not False
+        or value.get("validation_authority") is not False
+        or value.get("persistence_authority") is not False
+        or value.get("canonical_write_authority") is not False
+    ):
+        raise ValueError("spatial architectural revision context acquired authority")
+    return dict(value)
 
 
 def _rejected_proposal(

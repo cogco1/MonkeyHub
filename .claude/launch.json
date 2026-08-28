@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "state-tree",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["tools/state_tree_viewer.py", "probes", "--port", "8766"],
+      "port": 8766
+    }
+  ]
+}

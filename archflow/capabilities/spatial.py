@@ -43,6 +43,62 @@ class SpatialCompilationError(ValueError):
     """A proposal cannot be compiled against the current design context."""
 
 
+@dataclass(frozen=True, slots=True)
+class SpatialAuthoringReferenceContract:
+    """Exact project refs exposed to and enforced against one proposal."""
+
+    allowed_evidence_refs: tuple[str, ...]
+    allowed_responds_to_refs: tuple[str, ...]
+    required_response_refs: tuple[str, ...]
+    allowed_expert_advice_refs: tuple[str, ...] = ()
+
+    SCHEMA = "SpatialAuthoringReferenceContract@1"
+
+    def __post_init__(self) -> None:
+        for value, field in (
+            (self.allowed_evidence_refs, "allowed_evidence_refs"),
+            (self.allowed_responds_to_refs, "allowed_responds_to_refs"),
+            (self.required_response_refs, "required_response_refs"),
+            (self.allowed_expert_advice_refs, "allowed_expert_advice_refs"),
+        ):
+            if (
+                not isinstance(value, tuple)
+                or value != tuple(sorted(set(value)))
+                or any(not isinstance(item, str) or not item for item in value)
+            ):
+                raise SpatialCompilationError(
+                    f"{field} must be a sorted unique string tuple"
+                )
+        if not set(self.required_response_refs) <= set(
+            self.allowed_responds_to_refs
+        ):
+            raise SpatialCompilationError(
+                "required response refs must be allowed response refs"
+            )
+        if not set(self.allowed_expert_advice_refs) <= set(
+            self.allowed_evidence_refs
+        ):
+            raise SpatialCompilationError(
+                "expert advice refs must be current evidence refs"
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "allowed_evidence_refs": list(self.allowed_evidence_refs),
+            "allowed_responds_to_refs": list(self.allowed_responds_to_refs),
+            "required_response_refs": list(self.required_response_refs),
+            "allowed_expert_advice_refs": list(
+                self.allowed_expert_advice_refs
+            ),
+            "nested_source_rule": (
+                "every nested source_ref must also appear in proposal.evidence_refs"
+            ),
+            "unknown_reference_policy": "reject",
+            "reference_normalization_authority": False,
+        }
+
+
 def _canonical_json(value: object) -> str:
     return json.dumps(
         value,
@@ -221,7 +277,6 @@ def _allowed_evidence_refs(
     program: DesignProgram,
     site_context: SiteContext,
     build_policy: BuildPolicy,
-    proposal: SpatialOptionProposal,
 ) -> set[str]:
     return {
         phase_gate.ref,
@@ -229,7 +284,144 @@ def _allowed_evidence_refs(
         *program.evidence_refs,
         *site_context.evidence_refs,
         *build_policy.evidence_refs,
-        *proposal.expert_advice_refs,
+    }
+
+
+def compile_spatial_authoring_reference_contract(
+    *,
+    state: OperationalMarkovState,
+    phase_gate: PhaseGateReceipt,
+    program: DesignProgram,
+    site_context: SiteContext,
+    build_policy: BuildPolicy,
+) -> SpatialAuthoringReferenceContract:
+    """Compile the one reference vocabulary shared by prompt and validator."""
+
+    for value, expected, field in (
+        (state, OperationalMarkovState, "state"),
+        (phase_gate, PhaseGateReceipt, "phase_gate"),
+        (program, DesignProgram, "program"),
+        (site_context, SiteContext, "site_context"),
+        (build_policy, BuildPolicy, "build_policy"),
+    ):
+        if not isinstance(value, expected):
+            raise TypeError(f"{field} must be {expected.__name__}")
+    allowed_responses = _known_response_refs(
+        state=state,
+        phase_gate=phase_gate,
+        program=program,
+        site_context=site_context,
+        build_policy=build_policy,
+    )
+    required_responses = _required_response_refs(
+        state=state,
+        program=program,
+        site_context=site_context,
+        build_policy=build_policy,
+    )
+    return SpatialAuthoringReferenceContract(
+        allowed_evidence_refs=tuple(
+            sorted(
+                _allowed_evidence_refs(
+                    state=state,
+                    phase_gate=phase_gate,
+                    program=program,
+                    site_context=site_context,
+                    build_policy=build_policy,
+                )
+            )
+        ),
+        allowed_responds_to_refs=tuple(sorted(allowed_responses)),
+        required_response_refs=tuple(sorted(required_responses)),
+        allowed_expert_advice_refs=(),
+    )
+
+
+def compile_spatial_authoring_validation_contract(
+    *,
+    program: DesignProgram,
+    site_context: SiteContext,
+) -> dict[str, object]:
+    """Publish current facts and the exact generic schematic gate semantics."""
+
+    if not isinstance(program, DesignProgram):
+        raise TypeError("program must be DesignProgram")
+    if not isinstance(site_context, SiteContext):
+        raise TypeError("site_context must be SiteContext")
+    footprint_ranges = tuple(
+        sorted(
+            (
+                {
+                    "ref": item.ref,
+                    "minimum": item.minimum,
+                    "maximum": item.maximum,
+                    "unit": item.unit,
+                    "scenario_ref": (
+                        f"program-scenario:{item.scenario_id}"
+                        if item.scenario_id is not None
+                        else None
+                    ),
+                }
+                for item in program.ranges
+                if item.metric is ProgramMetricKind.FOOTPRINT
+            ),
+            key=lambda item: item["ref"],
+        )
+    )
+    function_refs = tuple(
+        sorted(
+            item.ref
+            for item in program.nodes
+            if item.kind is ProgramNodeKind.FUNCTION
+        )
+    )
+    relationships = tuple(
+        sorted(
+            (
+                {
+                    "ref": item.ref,
+                    "source_node_ref": item.source_node_ref,
+                    "target_node_ref": item.target_node_ref,
+                    "directed": item.directed,
+                    "strength": item.strength.value,
+                }
+                for item in program.relationships
+            ),
+            key=lambda item: item["ref"],
+        )
+    )
+    return {
+        "schema": "SpatialAuthoringValidationContract@1",
+        "coordinate_semantics": {
+            "bounds_minimum_and_maximum_are_inclusive": True,
+            "footprint_cell_axes": ["x", "z"],
+            "volume_projection_axes": ["x", "z"],
+            "level_top_y_formula": "base_y + height - 1",
+        },
+        "current_facts": {
+            "observed_site_envelope": site_context.observed_envelope.to_dict(),
+            "footprint_ranges": list(footprint_ranges),
+            "function_refs": list(function_refs),
+            "relationships": list(relationships),
+        },
+        "required_invariants": [
+            "program_scenario_ref names a current program scenario",
+            "footprint_range_ref names a compatible current footprint range",
+            "footprint area equals len(footprint_cells) multiplied by grid_basis.horizontal_area_per_cell",
+            "footprint area is within the cited footprint range and uses the same area_unit",
+            "every footprint cell x/z lies inside the observed site envelope",
+            "every level spans inclusive y from base_y through base_y + height - 1 inside the site envelope",
+            "every volume bound lies inside the site envelope and names only current level_ids",
+            "for each volume include every inclusive [x,z] pair from bounds.minimum through bounds.maximum in footprint_cells",
+            "each volume projection contains at most 4096 inclusive x/z cells",
+            "each named level is vertically contained by its volume bounds",
+            "every current function_ref appears in exactly one zone and no other program_node_ref is used",
+            "every zone names only declared level_ids and volume_ids",
+            "each connection joins zones containing its relationship source and target nodes and matches relationship directed exactly",
+            "every required response ref is covered by a constraint_response or a matching connection relationship_ref",
+        ],
+        "output_repair_authority": False,
+        "validation_authority": "deterministic_compiler",
     }
 
 
@@ -335,25 +527,25 @@ def _validate_option(
             "proposal cites a footprint range absent from the program"
         )
 
-    allowed_evidence = _allowed_evidence_refs(
+    reference_contract = compile_spatial_authoring_reference_contract(
         state=state,
         phase_gate=phase_gate,
         program=program,
         site_context=site_context,
         build_policy=build_policy,
-        proposal=proposal,
     )
+    allowed_evidence = set(reference_contract.allowed_evidence_refs)
+    if not set(proposal.expert_advice_refs) <= set(
+        reference_contract.allowed_expert_advice_refs
+    ):
+        raise SpatialCompilationError(
+            "proposal cites expert advice absent from the current design state"
+        )
     if not set(proposal.evidence_refs) <= allowed_evidence:
         raise SpatialCompilationError(
             "proposal cites evidence absent from the current design state"
         )
-    known_response_refs = _known_response_refs(
-        state=state,
-        phase_gate=phase_gate,
-        program=program,
-        site_context=site_context,
-        build_policy=build_policy,
-    )
+    known_response_refs = set(reference_contract.allowed_responds_to_refs)
     if not set(proposal.responds_to_refs) <= known_response_refs:
         raise SpatialCompilationError(
             "proposal responds to an unknown or stale reference"
@@ -505,12 +697,7 @@ def _validate_option(
                 )
             covered_relationships.add(relationship_ref)
 
-    required = _required_response_refs(
-        state=state,
-        program=program,
-        site_context=site_context,
-        build_policy=build_policy,
-    )
+    required = set(reference_contract.required_response_refs)
     if not required <= (
         response_refs
         | covered_relationships

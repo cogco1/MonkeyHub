@@ -238,6 +238,7 @@ def run_external_production(
     model_id: str,
     provider_version: str,
     timeout_seconds: float,
+    reasoning_effort: str = "medium",
 ):
     """Start or resume the formal P053/P036 root production path."""
 
@@ -284,6 +285,7 @@ def run_external_production(
         contract_owner_id="archflow.production-root",
         verification_evidence_refs=(context_ref.uri,),
         timeout_seconds=timeout_seconds,
+        reasoning_effort=reasoning_effort,
         envelope_observer=collector.observe,
     )
     active = provider.router.state("model.production-root").active_provider
@@ -391,6 +393,11 @@ def _parser() -> argparse.ArgumentParser:
     production.add_argument("--model", required=True)
     production.add_argument("--provider-version", default="agent-cli")
     production.add_argument("--timeout-seconds", type=float, default=60.0)
+    production.add_argument(
+        "--reasoning-effort",
+        choices=("minimal", "low", "medium", "high", "xhigh"),
+        default="medium",
+    )
     return parser
 
 
@@ -421,17 +428,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             "canonical_authority": "FilesystemProjectRepository",
         }
     else:
-        result = run_external_production(
-            paths,
-            project_id=args.project_id,
-            prompt=args.prompt,
-            run_id=args.run_id,
-            context_path=args.context,
-            agent_executable=args.agent_executable,
-            model_id=args.model,
-            provider_version=args.provider_version,
-            timeout_seconds=args.timeout_seconds,
-        )
+        from archflow.runtime.production_runtime import ProductionRuntimeStepFailed
+
+        try:
+            result = run_external_production(
+                paths,
+                project_id=args.project_id,
+                prompt=args.prompt,
+                run_id=args.run_id,
+                context_path=args.context,
+                agent_executable=args.agent_executable,
+                model_id=args.model,
+                provider_version=args.provider_version,
+                timeout_seconds=args.timeout_seconds,
+                reasoning_effort=args.reasoning_effort,
+            )
+        except ProductionRuntimeStepFailed as exc:
+            print(json.dumps(exc.to_dict(), ensure_ascii=False, sort_keys=True))
+            return 2
         payload = result.to_dict()
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return 0

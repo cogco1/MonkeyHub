@@ -955,6 +955,16 @@ class AuthorizedModelProviderTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(MODEL_IDENTITY.provider_id, receipt.provider_id)
         self.assertEqual([_request()], provider.requests)
+        self.assertEqual(
+            MODEL_CONTRACT.to_dict(),
+            authorized.router.state(RESPONSIBILITY_ID).contract.to_dict(),
+        )
+        self.assertEqual(
+            "ModelInvocationReceipt@2",
+            authorized.router.state(
+                RESPONSIBILITY_ID
+            ).contract.receipt_contract,
+        )
 
     def test_agent_cli_is_only_one_configured_provider_implementation(self):
         authorized = activate_codex_agent_cli_provider(
@@ -969,6 +979,10 @@ class AuthorizedModelProviderTests(unittest.IsolatedAsyncioTestCase):
         active = authorized.router.state(RESPONSIBILITY_ID).active_provider
         assert active is not None
         self.assertEqual("codex-agent-cli", active.provider_id)
+        self.assertEqual(
+            MODEL_CONTRACT.to_dict(),
+            authorized.router.state(RESPONSIBILITY_ID).contract.to_dict(),
+        )
 
 
 if __name__ == "__main__":

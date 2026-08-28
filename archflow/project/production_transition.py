@@ -8,10 +8,12 @@ completion evidence until that checkpoint exists.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
+from archflow.adapters.model_provider import ModelInvocationReceipt
 from archflow.production.responsibility import InvocationEnvelope
 from archflow.project.digests import canonical_json_sha256
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -21,7 +23,12 @@ from archflow.project.production_checkpoint import (
     find_production_checkpoint,
     persist_production_checkpoint,
 )
-from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
+from archflow.project.refs import (
+    ProjectRecordRef,
+    ProjectVersionRef,
+    RunRef,
+    require_identifier,
+)
 from archflow.runtime.semantic_geometry_lifecycle import (
     InitialSemanticGeometryResult,
     SemanticGeometryLifecycleResult,
@@ -106,6 +113,151 @@ class ProductionTransitionArchive:
             raise TypeError("resumed must be bool")
 
 
+@dataclass(frozen=True, slots=True)
+class ProductionFailedAttemptReceipt:
+    project_id: str
+    run_id: str
+    base: ProjectVersionRef
+    step_id: str
+    intent_digest: str
+    attempt_index: int
+    attempt_id: str
+    error_code: str
+    message: str
+    invocation_envelopes: tuple[Mapping[str, Any], ...]
+    retry_of_ref: str | None = None
+
+    SCHEMA = "ProductionFailedAttemptReceipt@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.project_id, "project_id")
+        require_identifier(self.run_id, "run_id")
+        require_identifier(self.step_id, "step_id")
+        require_identifier(self.attempt_id, "attempt_id")
+        if not isinstance(self.base, ProjectVersionRef):
+            raise TypeError("base must be ProjectVersionRef")
+        if self.base.project_id != self.project_id:
+            raise ProductionTransitionError("failed attempt base crosses project")
+        _sha(self.intent_digest, "intent_digest")
+        if type(self.attempt_index) is not int or self.attempt_index < 0:
+            raise ValueError("attempt_index must be non-negative")
+        for value, field, maximum in (
+            (self.error_code, "error_code", 500),
+            (self.message, "message", 2_000),
+        ):
+            if not isinstance(value, str) or not value.strip() or len(value) > maximum:
+                raise ValueError(f"{field} must be bounded non-empty text")
+        if not isinstance(self.invocation_envelopes, tuple) or not self.invocation_envelopes:
+            raise ValueError("failed attempt requires P053 invocation evidence")
+        statuses = tuple(
+            _validate_failed_envelope(envelope)
+            for envelope in self.invocation_envelopes
+        )
+        if self.retry_of_ref is not None and (
+            not isinstance(self.retry_of_ref, str)
+            or not self.retry_of_ref.startswith(f"project://{self.project_id}/")
+        ):
+            raise ValueError("retry_of_ref must be a project-local logical ref")
+
+    @property
+    def failure_class(self) -> str:
+        """Distinguish provider failure from post-provider rejection."""
+
+        statuses = tuple(
+            _validate_failed_envelope(envelope)
+            for envelope in self.invocation_envelopes
+        )
+        return (
+            "pipeline_rejected"
+            if all(status == "success" for status in statuses)
+            else "provider_failed"
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "base": _base(self.base),
+            "step_id": self.step_id,
+            "intent_digest": self.intent_digest,
+            "attempt_index": self.attempt_index,
+            "attempt_id": self.attempt_id,
+            "status": "failed",
+            "error_code": self.error_code,
+            "message": self.message,
+            "invocation_envelopes": [dict(item) for item in self.invocation_envelopes],
+            "retry_of_ref": self.retry_of_ref,
+            "transition_checkpoint_ref": None,
+            "lifecycle_successor": False,
+            "fallback_used": False,
+            "persistence_authority": False,
+            "canonical_write_authority": False,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ProductionFailedAttemptReceipt":
+        if not isinstance(value, Mapping):
+            raise ProductionTransitionError("failed attempt must be an object")
+        expected = {
+            "schema", "project_id", "run_id", "base", "step_id",
+            "intent_digest", "attempt_index", "attempt_id", "status",
+            "error_code", "message", "invocation_envelopes", "retry_of_ref",
+            "transition_checkpoint_ref", "lifecycle_successor", "fallback_used",
+            "persistence_authority", "canonical_write_authority",
+        }
+        if set(value) != expected or value.get("schema") != cls.SCHEMA:
+            raise ProductionTransitionError("failed attempt schema drifted")
+        if (
+            value.get("status") != "failed"
+            or value.get("transition_checkpoint_ref") is not None
+            or value.get("lifecycle_successor") is not False
+            or value.get("fallback_used") is not False
+            or value.get("persistence_authority") is not False
+            or value.get("canonical_write_authority") is not False
+        ):
+            raise ProductionTransitionError("failed attempt authority or status drifted")
+        base = value.get("base")
+        if not isinstance(base, Mapping):
+            raise ProductionTransitionError("failed attempt base is malformed")
+        envelopes = value.get("invocation_envelopes")
+        if not isinstance(envelopes, list) or any(
+            not isinstance(item, Mapping) for item in envelopes
+        ):
+            raise ProductionTransitionError("failed attempt envelopes are malformed")
+        return cls(
+            project_id=value["project_id"],
+            run_id=value["run_id"],
+            base=ProjectVersionRef(
+                project_id=base.get("project_id"),
+                version=base.get("version"),
+                state_sha256=base.get("state_sha256"),
+            ),
+            step_id=value["step_id"],
+            intent_digest=value["intent_digest"],
+            attempt_index=value["attempt_index"],
+            attempt_id=value["attempt_id"],
+            error_code=value["error_code"],
+            message=value["message"],
+            invocation_envelopes=tuple(dict(item) for item in envelopes),
+            retry_of_ref=value["retry_of_ref"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ArchivedFailedProductionAttempt:
+    ref: ProjectRecordRef
+    receipt: ProductionFailedAttemptReceipt
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.ref, ProjectRecordRef):
+            raise TypeError("ref must be ProjectRecordRef")
+        if not isinstance(self.receipt, ProductionFailedAttemptReceipt):
+            raise TypeError("receipt must be ProductionFailedAttemptReceipt")
+        if self.ref.project_id != self.receipt.project_id:
+            raise ProductionTransitionError("failed attempt ref crosses project")
+
+
 def production_intent_digest(
     run: RunRef,
     *,
@@ -150,6 +302,104 @@ def load_production_transition(
         records=records,
         resumed=True,
     )
+
+
+def load_failed_production_attempts(
+    repository: ProductionTransitionPort,
+    *,
+    run: RunRef,
+    intent_digest: str,
+    step_id: str,
+) -> tuple[ArchivedFailedProductionAttempt, ...]:
+    """Reload the ordered P036 failure history for one incomplete intent."""
+
+    _sha(intent_digest, "intent_digest")
+    require_identifier(step_id, "step_id")
+    destination = PersistenceDestination(
+        PersistenceArea.RUN_RECORD,
+        run_id=run.run_id,
+    )
+    attempts: list[ArchivedFailedProductionAttempt] = []
+    for ref in repository.list_json(run=run, destination=destination):
+        payload = repository.load_json(ref)
+        if payload.get("schema") != ProductionFailedAttemptReceipt.SCHEMA:
+            continue
+        receipt = ProductionFailedAttemptReceipt.from_dict(payload)
+        if (
+            receipt.project_id == run.project_id
+            and receipt.run_id == run.run_id
+            and receipt.base == run.base
+            and receipt.intent_digest == intent_digest
+            and receipt.step_id == step_id
+        ):
+            attempts.append(ArchivedFailedProductionAttempt(ref, receipt))
+    attempts.sort(key=lambda item: item.receipt.attempt_index)
+    for index, attempt in enumerate(attempts):
+        expected_retry = None if index == 0 else attempts[index - 1].ref.uri
+        if (
+            attempt.receipt.attempt_index != index
+            or attempt.receipt.retry_of_ref != expected_retry
+        ):
+            raise ProductionTransitionError(
+                "failed production attempt chain is non-contiguous"
+            )
+    return tuple(attempts)
+
+
+def persist_failed_production_attempt(
+    repository: ProductionTransitionPort,
+    *,
+    run: RunRef,
+    intent_digest: str,
+    step_id: str,
+    error_code: str,
+    message: str,
+    invocation_envelopes: tuple[InvocationEnvelope, ...],
+) -> ArchivedFailedProductionAttempt:
+    """Persist provider failure or post-provider rejection without a checkpoint."""
+
+    if not isinstance(invocation_envelopes, tuple) or not invocation_envelopes:
+        raise ValueError("failed attempt requires invocation_envelopes")
+    if any(not isinstance(item, InvocationEnvelope) for item in invocation_envelopes):
+        raise TypeError("invocation_envelopes contains an invalid item")
+    if load_production_transition(
+        repository,
+        run=run,
+        intent_digest=intent_digest,
+    ) is not None:
+        raise ProductionTransitionError(
+            "completed production intent cannot gain a failed attempt"
+        )
+    prior = load_failed_production_attempts(
+        repository,
+        run=run,
+        intent_digest=intent_digest,
+        step_id=step_id,
+    )
+    index = len(prior)
+    receipt = ProductionFailedAttemptReceipt(
+        project_id=run.project_id,
+        run_id=run.run_id,
+        base=run.base,
+        step_id=step_id,
+        intent_digest=intent_digest,
+        attempt_index=index,
+        attempt_id=f"attempt-{intent_digest[:16]}-{index:03d}",
+        error_code=error_code,
+        message=message,
+        invocation_envelopes=tuple(item.to_dict() for item in invocation_envelopes),
+        retry_of_ref=None if not prior else prior[-1].ref.uri,
+    )
+    ref = repository.put_json(
+        run=run,
+        destination=PersistenceDestination(
+            PersistenceArea.RUN_RECORD,
+            run_id=run.run_id,
+        ),
+        record_kind=f"production-failed-attempt-{index:03d}",
+        payload=receipt.to_dict(),
+    )
+    return ArchivedFailedProductionAttempt(ref, receipt)
 
 
 def persist_compiled_production_transition(
@@ -438,6 +688,41 @@ def _base(value: ProjectVersionRef) -> dict[str, object]:
         "version": value.version,
         "state_sha256": value.require_digest(),
     }
+
+
+def _validate_failed_envelope(value: Mapping[str, Any]) -> str:
+    expected = {
+        "schema", "authority", "provider_receipt_json",
+        "provider_receipt_digest", "canonical_write_authority",
+        "envelope_signature",
+    }
+    if set(value) != expected or value.get("schema") != "ProductionInvocationEnvelope@2":
+        raise ProductionTransitionError("failed attempt envelope schema drifted")
+    if value.get("canonical_write_authority") is not False:
+        raise ProductionTransitionError("failed attempt envelope gained write authority")
+    authority = value.get("authority")
+    if not isinstance(authority, Mapping) or authority.get("production_authority") is not True:
+        raise ProductionTransitionError("failed attempt envelope lacks P053 authority")
+    encoded = value.get("provider_receipt_json")
+    if not isinstance(encoded, str):
+        raise ProductionTransitionError("failed attempt provider receipt is not text")
+    try:
+        receipt = json.loads(encoded)
+    except json.JSONDecodeError as exc:
+        raise ProductionTransitionError("failed attempt provider receipt is invalid") from exc
+    if not isinstance(receipt, Mapping):
+        raise ProductionTransitionError("failed attempt model receipt is malformed")
+    if canonical_json_sha256(receipt) != value.get("provider_receipt_digest"):
+        raise ProductionTransitionError("failed attempt provider digest drifted")
+    signature = value.get("envelope_signature")
+    _sha(signature, "envelope_signature")
+    try:
+        model_receipt = ModelInvocationReceipt.from_dict(receipt)
+    except (TypeError, ValueError) as exc:
+        raise ProductionTransitionError(
+            "failed attempt model receipt schema drifted"
+        ) from exc
+    return model_receipt.status.value
 
 
 def _sha(value: object, field: str) -> None:

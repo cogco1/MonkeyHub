@@ -7,6 +7,10 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from archflow.adapters.model_provider import (
+    ModelInvocationReceipt,
+    ModelInvocationStatus,
+)
 from archflow.project import (
     FilesystemProjectRepository,
     PersistenceArea,
@@ -20,9 +24,12 @@ from archflow.project.production_checkpoint import (
     persist_production_checkpoint,
 )
 from archflow.project.production_transition import (
+    ProductionFailedAttemptReceipt,
     ProductionTransitionError,
+    load_failed_production_attempts,
     load_production_transition,
     persist_compiled_production_transition,
+    persist_failed_production_attempt,
     production_intent_digest,
 )
 from archflow.runtime.geometry_compiler import compile_geometry_program
@@ -33,6 +40,7 @@ from archflow.runtime.semantic_geometry_lifecycle import (
 from tests.test_geometry_compiler import COMMITMENT
 from tests.test_production_responsibility import (
     RESPONSIBILITY_ID,
+    MODEL_IDENTITY,
     _ScriptedModelProvider,
     _active,
     _request,
@@ -117,6 +125,45 @@ def _compiled_initial(run):  # type: ignore[no-untyped-def]
     )
 
 
+async def _failed_envelope(
+    status: ModelInvocationStatus = ModelInvocationStatus.TIMEOUT,
+):  # type: ignore[no-untyped-def]
+    def receipt(request):  # type: ignore[no-untyped-def]
+        return ModelInvocationReceipt(
+            receipt_id=f"failed-{status.value}-receipt",
+            status=status,
+            request=request,
+            provider_id=MODEL_IDENTITY.provider_id,
+            model_id="scripted-model",
+            provider_version=MODEL_IDENTITY.version,
+            provider_fingerprint=MODEL_IDENTITY.fingerprint,
+            input_bytes=100,
+            output_bytes=0,
+            output_sha256=None,
+            duration_ms=120_000,
+            error_code=f"model.{status.value}",
+            message="bounded scripted provider failure",
+        )
+
+    envelopes = []
+    await AuthorizedAsyncModelProvider(
+        _active(_ScriptedModelProvider(receipt)),
+        RESPONSIBILITY_ID,
+        envelopes.append,
+    ).invoke(_request())
+    return envelopes[0]
+
+
+async def _success_envelope():
+    envelopes = []
+    await AuthorizedAsyncModelProvider(
+        _active(_ScriptedModelProvider()),
+        RESPONSIBILITY_ID,
+        envelopes.append,
+    ).invoke(_request())
+    return envelopes[0]
+
+
 class ProductionTransitionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -183,6 +230,133 @@ class ProductionTransitionTests(unittest.TestCase):
         )
         self.assertTrue(duplicate.resumed)
         self.assertEqual(first.checkpoint_ref, duplicate.checkpoint_ref)
+
+    def test_failed_attempt_reloads_and_retry_is_separately_identified(self):
+        head_before = self.repo.read_head()
+        first = persist_failed_production_attempt(
+            self.repo,
+            run=self.run,
+            intent_digest=self.intent,
+            step_id="dome-shell",
+            error_code="production.compilation_failed",
+            message="provider timed out before a valid proposal",
+            invocation_envelopes=(asyncio.run(_failed_envelope()),),
+        )
+        second = persist_failed_production_attempt(
+            self.repo,
+            run=self.run,
+            intent_digest=self.intent,
+            step_id="dome-shell",
+            error_code="production.compilation_failed",
+            message="provider exited before a valid proposal",
+            invocation_envelopes=(
+                asyncio.run(_failed_envelope(ModelInvocationStatus.EXIT_ERROR)),
+            ),
+        )
+
+        reopened = FilesystemProjectRepository.open(self.root)
+        attempts = load_failed_production_attempts(
+            reopened,
+            run=reopened.load_run(self.run.run_id),
+            intent_digest=self.intent,
+            step_id="dome-shell",
+        )
+
+        self.assertEqual((0, 1), tuple(item.receipt.attempt_index for item in attempts))
+        self.assertEqual(first.ref.uri, second.receipt.retry_of_ref)
+        self.assertEqual(second.ref, attempts[1].ref)
+        self.assertEqual(head_before, reopened.read_head())
+        self.assertIsNone(
+            load_production_transition(
+                reopened,
+                run=reopened.load_run(self.run.run_id),
+                intent_digest=self.intent,
+            )
+        )
+        payload = attempts[0].receipt.to_dict()
+        self.assertIsNone(payload["transition_checkpoint_ref"])
+        self.assertFalse(payload["lifecycle_successor"])
+        self.assertFalse(payload["fallback_used"])
+        self.assertFalse(payload["canonical_write_authority"])
+        provider_receipt = attempts[0].receipt.invocation_envelopes[0][
+            "provider_receipt_json"
+        ]
+        self.assertIn('"duration_ms":120000', provider_receipt)
+        self.assertIn('"status":"timeout"', provider_receipt)
+
+    def test_failed_attempt_rejects_tampered_provider_evidence(self):
+        archived = persist_failed_production_attempt(
+            self.repo,
+            run=self.run,
+            intent_digest=self.intent,
+            step_id="dome-shell",
+            error_code="production.compilation_failed",
+            message="provider timed out before a valid proposal",
+            invocation_envelopes=(asyncio.run(_failed_envelope()),),
+        )
+        payload = archived.receipt.to_dict()
+        payload["invocation_envelopes"][0]["provider_receipt_digest"] = "0" * 64
+
+        with self.assertRaisesRegex(
+            ProductionTransitionError,
+            "provider digest",
+        ):
+            ProductionFailedAttemptReceipt.from_dict(payload)
+
+    def test_rejected_attempt_retains_successful_provider_evidence(self):
+        archived = persist_failed_production_attempt(
+            self.repo,
+            run=self.run,
+            intent_digest=self.intent,
+            step_id="dome-shell",
+            error_code="production.compilation_failed",
+            message="deterministic proposal validation rejected the output",
+            invocation_envelopes=(asyncio.run(_success_envelope()),),
+        )
+
+        self.assertEqual("pipeline_rejected", archived.receipt.failure_class)
+        self.assertIsNone(
+            load_production_transition(
+                self.repo,
+                run=self.run,
+                intent_digest=self.intent,
+            )
+        )
+        reloaded = load_failed_production_attempts(
+            FilesystemProjectRepository.open(self.root),
+            run=self.run,
+            intent_digest=self.intent,
+            step_id="dome-shell",
+        )
+        self.assertEqual((archived.ref,), tuple(item.ref for item in reloaded))
+        provider_receipt = reloaded[0].receipt.invocation_envelopes[0][
+            "provider_receipt_json"
+        ]
+        self.assertIn('"status":"success"', provider_receipt)
+
+    def test_completed_intent_cannot_gain_a_later_failed_attempt(self):
+        state, result = _compiled_transition(self.run)
+        persist_compiled_production_transition(
+            self.repo,
+            run=self.run,
+            intent_digest=self.intent,
+            current_design_state=state,
+            result=result,
+        )
+
+        with self.assertRaisesRegex(
+            ProductionTransitionError,
+            "completed production intent",
+        ):
+            persist_failed_production_attempt(
+                self.repo,
+                run=self.run,
+                intent_digest=self.intent,
+                step_id="dome-shell",
+                error_code="production.compilation_failed",
+                message="contradictory late failure",
+                invocation_envelopes=(asyncio.run(_failed_envelope()),),
+            )
 
     def test_initial_binding_uses_the_same_p036_checkpoint_protocol(self):
         state, result = _compiled_initial(self.run)
