@@ -15,7 +15,7 @@
     "capabilities": "semantic_spatial_single_repair",
     "submission": "obligation_repair_proven",
     "validation": "project_derived_architectural_usability_proven",
-    "evaluation": "repair_locality_evidence_proven",
+    "evaluation": "inverse_derivation_fidelity_measured",
     "commit": "in_memory_proven",
     "adapters": "voxel_observation_and_cli_retrieval_proven",
     "project": "provider_success_rejection_recoverable"
@@ -10341,6 +10341,100 @@
       "completed_on": "2026-08-28",
       "evidence": [
         "repair-003 executed the corrected frozen 27-episode matrix: dependency-scoped repair matches whole-chain validity (9/9 no new failures) at 0.173 mean recompute ratio with exact gold-closure precision/recall 1.0, while target-only fails 9/9 on typed stale dependencies; defective runs repair-001/002 retained as executor-defect evidence; 7 contract tests and ARCHITECTURE PASS"
+      ]
+    },
+    {
+      "id": "P064",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Inverse-derive the frozen V3 Pantheon golden sample into V4 records: transcribe its retained generation trace into an explicit component tree, decision sequence, and dependency edges; replay only the coarse massing deterministically; and measure voxel fidelity against the frozen schematic without claiming byte replay, full-fidelity reproduction, or any V3 code reuse.",
+      "depends_on": [
+        "P062",
+        "P063"
+      ],
+      "write_scope": [
+        "archflow/evaluation/inverse_derivation.py",
+        "archflow/evaluation/__init__.py",
+        "archflow/evaluation/README.md",
+        "tools/run_inverse_derivation.py",
+        "tests/test_inverse_derivation.py",
+        "probes/p064-pantheon-inverse/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/paper/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "V3 golden inputs enter only as read-only external evidence records carrying exact file digests already pinned by the frozen sample; no V3 code or asset is imported or copied into production paths.",
+        "The transcribed component tree, decision sequence, and typed dependency edges are retained P036 project records whose every entry cites the exact V3 trace or manifest field it transcribes.",
+        "The coarse massing replay derives drum, dome, oculus, and portico volumes only from transcribed dimensions and canon ratios, deterministically and without a provider.",
+        "A fidelity receipt reports bounding-box agreement, solid-cell intersection-over-union, and per-part presence against the frozen schematic with exact denominators, and explicitly denies byte-replay, full-fidelity, and V3-execution claims.",
+        "Full-fidelity replay, live-provider re-derivation, and downstream platform export remain explicitly out of scope."
+      ],
+      "tests": [
+        "Sponge schematic parser digest and occupancy determinism tests",
+        "Transcription citation completeness and quarantine-boundary tests",
+        "Fidelity metric denominator and claim-boundary tests",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_inverse_derivation"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P064-pantheon-inverse-derivation.md",
+      "on_complete": {
+        "modules": {
+          "evaluation": "inverse_derivation_fidelity_measured"
+        }
+      },
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P064",
+        "actor": "codex",
+        "verified_at": "2026-08-28T09:40:29.926282+00:00",
+        "contract_sha256": "bb8d130ae82205fde458f9c135a1cc47302a1bf0dc425d137deac68cf20757bf",
+        "scope_sha256": "d7e663c8d13013fa40ec68b766fb0c976161690b7933812176bb81c412e88a48",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_inverse_derivation"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "4190e6532da5d52050bd5ea71ff40310f4ffe0846610b4b159650675a5a9c2b2",
+            "stdout_tail": "",
+            "stderr_tail": ".......\n----------------------------------------------------------------------\nRan 7 tests in 0.009s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e5c33517f143fc32d096c2fd5f2a2cfdbdf6332fefc797e83aff5bdd6b84fcba",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (124 files, 0.747s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "inverse-001 retains digest-pinned V3 external evidence, a fully cited 15-component transcribed tree, 10-decision sequence, and 5 typed dependency edges; coarse canon-ratio massing (no fitting) reaches plan-footprint IoU 0.925 and elevation-silhouette IoU 0.937 against the frozen schem whose parsed 325,282 solid cells match the manifest exactly; receipt denies byte-replay and full-fidelity claims; 7 contract tests and ARCHITECTURE PASS"
       ]
     }
   ]

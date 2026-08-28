@@ -64,7 +64,7 @@ These are the main responsibility chains. Individual cards retain their exact fa
 | Retirement | Replacement-first removal of old ownership | 0 | [R](mapping/retirement/INDEX.md) |
 | Modify | Scoped repair of the active path | 0 | [M](mapping/modify/INDEX.md) |
 | Planning | Not implemented or not yet accepted | 0 | [P](mapping/planning/INDEX.md) |
-| Archive | Completed and evidenced work | 124 | [A](mapping/archive/INDEX.md) |
+| Archive | Completed and evidenced work | 125 | [A](mapping/archive/INDEX.md) |
 
 R, M, and P are parallel ledgers, not mandatory runtime stages. Archive is
 the cleared construction record, not a fourth execution phase.
@@ -85,7 +85,7 @@ the cleared construction record, not a fourth execution phase.
 | [capabilities](../archflow/capabilities/README.md) | semantic_spatial_single_repair | Open discovery without fixed expert pipeline |
 | [submission](../archflow/submission/README.md) | obligation_repair_proven | Only boundary from working to formal review |
 | [validation](../archflow/validation/README.md) | project_derived_architectural_usability_proven | Read-only deterministic gates and obligations |
-| [evaluation](../archflow/evaluation/README.md) | repair_locality_evidence_proven | Read-only multi-objective observations |
+| [evaluation](../archflow/evaluation/README.md) | inverse_derivation_fidelity_measured | Read-only multi-objective observations |
 | [commit](../archflow/commit/README.md) | in_memory_proven | Single-writer canonical promotion |
 | [adapters](../archflow/adapters/README.md) | voxel_observation_and_cli_retrieval_proven | External MCP/CLI/model/storage boundaries |
 | [project](../archflow/project/README.md) | provider_success_rejection_recoverable | Project identity, layout, references, and persistence ports |

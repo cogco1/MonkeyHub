@@ -493,3 +493,26 @@ typed gold closure exactly while whole-chain over-reopens by more than five
 times (H4). These are twenty-seven deterministic paired episodes over three
 buildings, not a population claim, and no aggregate winner is written by
 the framework.
+
+## P064 golden inverse derivation — 2026-08-28
+
+P064 transcribes the frozen V3 golden sample's retained nine-stage
+generation trace into V4 records under the L8 quarantine: the three golden
+files enter only as digest-pinned read-only external evidence, and every
+transcribed component, decision, and dependency edge cites the exact trace
+or manifest field it transcribes. Fifteen semantic components carry the
+333 V3 rule outputs as family annotations; ten decisions and five typed
+dependency edges make the retrospective V3 explanation chain operational
+in the V4 form.
+
+The coarse massing replay derives drum, dome, and oculus geometry only
+from the transcribed canon ratios (span 94, rise/span 0.500, oculus/span
+0.188) with no value fitted against the occupancy grid. Against the frozen
+schematic (98 x 94 x 127; the parsed solid count 325,282 matches the
+manifest exactly), the retained fidelity receipt reports plan-footprint
+IoU 0.925, elevation-silhouette IoU 0.937, exact bounding-box agreement,
+and an open crown oculus. The receipt explicitly denies byte-replay,
+full-fidelity, and V3-execution claims: V3 reproduces its own golden
+byte-for-byte, and the V4 claim is only that transcribed canon-ratio
+massing agrees with the frozen envelope at the reported levels.
+Full-fidelity replay and live-provider re-derivation remain out of scope.

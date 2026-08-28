@@ -130,5 +130,6 @@ Which completed work has named acceptance evidence?
 | M061 | planning | done | Publish exact prior-option exclusions for genuine alternative authoring and preserve cross-option conflicts as typed P036 failures. | [M061](M061-alternative-option-set-boundary.md) |
 | M062 | planning | done | Feed exact failed P060 findings into one bounded model-authored semantic-and-geometry successor with exact predecessor compilation and no framework patching. | [M062](M062-architectural-failure-semantic-geometry-revision.md) |
 | P063 | planning | done | Measure repair locality: for one frozen accepted local delta per case and edit class, compare target-only patch, whole-chain rebuild, and dependency-scoped repair on validity, recomputation, retention, impact precision/recall, and failure attribution without giving any strategy design authority. | [P063](P063-repair-locality-experiment.md) |
+| P064 | planning | done | Inverse-derive the frozen V3 Pantheon golden sample into V4 records: transcribe its retained generation trace into an explicit component tree, decision sequence, and dependency edges; replay only the coarse massing deterministically; and measure voxel fidelity against the frozen schematic without claiming byte replay, full-fidelity reproduction, or any V3 code reuse. | [P064](P064-pantheon-inverse-derivation.md) |
 
 [Back to RMPA](../README.md)
