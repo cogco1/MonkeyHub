@@ -783,3 +783,27 @@ its cited range and a massing outside its footprint. The gate raised
 the bar above what the low-effort profile clears — that cost of rigor
 is the finding, and the repair-loop and effort escalation remain the
 P066 lane's open work.
+
+## P077 relation coverage and multi-source sweep — 2026-08-29
+
+Dimension two became a number. Candidate dependency edges are now
+enumerated mechanically — component pairs whose realized bounds meet
+within a caller tolerance — and every candidate must resolve through a
+machine-detected program edge, a declared edge with provenance, or
+surface as a typed uncovered_relation. The symmetric monument's
+stage-3 ledger reads 10 candidates, 3 resolved, 7 uncovered: thirty
+percent coverage, with the uncovered list (coffer attachment, statuary
+rings, aedicula, recesses, colonnade-rotunda junction) retained as the
+open work queue rather than smoothed away.
+
+The research driver learned to sweep. One query now snapshots and
+invokes every source separately — span verification stays inside each
+snapshot — and unions the surviving facts into a single adoption with
+per-source honesty preserved (empty sources and failures retained as
+rows, duplicate fact ids dropped with a note). The first live sweep
+(rotunda wall construction, Pantheon page plus Roman concrete page)
+adopted nine facts in one pass: the 6.4-metre wall thickness with its
+eight barrel vaults, the 43.3-metre interior diameter corroborated
+again, the aggregate grading from dense base to pumice crown attested
+by both sources, relieving arches and hidden chambers, and the Roman
+concrete composition the material channel will cite.

@@ -28,6 +28,7 @@ from archflow.adapters.web_evidence import fetch_web_evidence  # noqa: E402
 from archflow.capabilities.precedent import PrecedentAdoption  # noqa: E402
 from archflow.capabilities.research import (  # noqa: E402
     PrecedentQuery,
+    ResearchError,
     decode_research_json,
     extract_windows,
     parse_research_output,
@@ -88,72 +89,139 @@ def main(argv=None) -> int:
     )
     put(f"precedent-query-{query.query_id}", query.to_dict())
 
-    snapshot = fetch_web_evidence(args.url[0], retrieved_at=args.now)
-    snapshot_ref = put("web-evidence-snapshot", snapshot.to_dict())
-    windows = extract_windows(snapshot.text, query.search_terms)
-    print(f"  windows: {len(windows)}")
-    prompt = research_prompt(
-        query,
-        snapshot_ref=snapshot_ref.uri,
-        snapshot_text_sha256=snapshot.text_sha256,
-        windows=windows,
+    facts_by_id: dict[str, object] = {}
+    dropped_duplicates: list[dict] = []
+    per_source: list[dict] = []
+    all_rejections: list[dict] = []
+    for source_index, url in enumerate(args.url):
+        source_tag = f"{query.query_id}-s{source_index:02d}"
+        snapshot = fetch_web_evidence(url, retrieved_at=args.now)
+        snapshot_ref = put("web-evidence-snapshot", snapshot.to_dict())
+        try:
+            windows = extract_windows(snapshot.text, query.search_terms)
+        except ResearchError as exc:
+            per_source.append(
+                {"url": url, "snapshot_ref": snapshot_ref.uri,
+                 "status": "no_windows", "detail": str(exc)[:200]}
+            )
+            print(f"  [{source_index}] {url}: no windows (honest skip)")
+            continue
+        print(f"  [{source_index}] {url}: {len(windows)} windows")
+        prompt = research_prompt(
+            query,
+            snapshot_ref=snapshot_ref.uri,
+            snapshot_text_sha256=snapshot.text_sha256,
+            windows=windows,
+        )
+        collector = InvocationEvidenceCollector()
+        provider = activate_codex_agent_cli_provider(
+            executable=args.codex,
+            model_id="gpt-5.6-sol",
+            version="codex-cli-0.145.0",
+            responsibility_id="model.decision-research",
+            contract_owner_id="archflow.decision-research",
+            verification_evidence_refs=(snapshot_ref.uri,),
+            timeout_seconds=300.0,
+            reasoning_effort="low",
+            envelope_observer=collector.observe,
+        )
+        request = ModelInvocationRequest.create(
+            request_id=f"research-{source_tag}",
+            phase=ModelPhase.RESEARCH,
+            checkpoint_digest=snapshot.text_sha256,
+            context_digest=digest_value(prompt),
+            payload=prompt,
+        )
+        receipt = asyncio.run(provider.invoke(request))
+        envelopes = collector.since(0)
+        put(
+            f"research-invocation-{source_tag}",
+            {
+                "schema": "P070ResearchInvocation@1",
+                "project_id": run.project_id,
+                "run_id": run.run_id,
+                "query_id": query.query_id,
+                "source_url": url,
+                "provider_envelopes": [
+                    item.to_dict() for item in envelopes
+                ],
+                "status": receipt.status.value,
+                "canonical_write_authority": False,
+            },
+        )
+        if receipt.status is not ModelInvocationStatus.SUCCESS:
+            per_source.append(
+                {"url": url, "snapshot_ref": snapshot_ref.uri,
+                 "status": "invocation_failed",
+                 "detail": f"{receipt.error_code}: {receipt.message}"[:200]}
+            )
+            print(f"  [{source_index}] invocation failed (retained)")
+            continue
+        output = receipt.output
+        if isinstance(output, str):
+            output = decode_research_json(output)
+        try:
+            source_facts, rejections = parse_research_output(
+                output,
+                query=query,
+                snapshot_ref=snapshot_ref.uri,
+                snapshot_text=snapshot.text,
+                snapshot_text_sha256=snapshot.text_sha256,
+                annotator=f"model:{receipt.model_id}",
+            )
+        except ResearchError as exc:
+            per_source.append(
+                {"url": url, "snapshot_ref": snapshot_ref.uri,
+                 "status": "no_surviving_candidates",
+                 "detail": str(exc)[:300]}
+            )
+            print(f"  [{source_index}] zero candidates (honest empty)")
+            continue
+        all_rejections.extend(rejections)
+        kept = 0
+        for fact in source_facts:
+            if fact.fact_id in facts_by_id:
+                dropped_duplicates.append(
+                    {"fact_id": fact.fact_id, "url": url,
+                     "code": "duplicate_fact_id_across_sources"}
+                )
+                continue
+            facts_by_id[fact.fact_id] = fact
+            kept += 1
+        per_source.append(
+            {"url": url, "snapshot_ref": snapshot_ref.uri,
+             "status": "ok", "facts": kept}
+        )
+    facts = tuple(
+        facts_by_id[fact_id] for fact_id in sorted(facts_by_id)
     )
-    collector = InvocationEvidenceCollector()
-    provider = activate_codex_agent_cli_provider(
-        executable=args.codex,
-        model_id="gpt-5.6-sol",
-        version="codex-cli-0.145.0",
-        responsibility_id="model.decision-research",
-        contract_owner_id="archflow.decision-research",
-        verification_evidence_refs=(snapshot_ref.uri,),
-        timeout_seconds=300.0,
-        reasoning_effort="low",
-        envelope_observer=collector.observe,
-    )
-    request = ModelInvocationRequest.create(
-        request_id=f"research-{query.query_id}",
-        phase=ModelPhase.RESEARCH,
-        checkpoint_digest=snapshot.text_sha256,
-        context_digest=digest_value(prompt),
-        payload=prompt,
-    )
-    receipt = asyncio.run(provider.invoke(request))
-    envelopes = collector.since(0)
-    put(
-        f"research-invocation-{query.query_id}",
-        {
-            "schema": "P070ResearchInvocation@1",
-            "project_id": run.project_id,
-            "run_id": run.run_id,
-            "query_id": query.query_id,
-            "provider_envelopes": [item.to_dict() for item in envelopes],
-            "status": receipt.status.value,
-            "canonical_write_authority": False,
-        },
-    )
-    if receipt.status is not ModelInvocationStatus.SUCCESS:
-        print("RESEARCH FAILED:", receipt.error_code, receipt.message)
+    if not facts:
+        put(
+            f"research-candidates-{query.query_id}",
+            {
+                "schema": "P070ResearchCandidates@2",
+                "project_id": run.project_id,
+                "run_id": run.run_id,
+                "query_id": query.query_id,
+                "candidates": [],
+                "rejected_candidates": all_rejections,
+                "sources": per_source,
+                "canonical_write_authority": False,
+            },
+        )
+        print("RESEARCH SWEEP EMPTY: no source yielded a surviving fact")
         return 2
-    output = receipt.output
-    if isinstance(output, str):
-        output = decode_research_json(output)
-    facts, rejections = parse_research_output(
-        output,
-        query=query,
-        snapshot_ref=snapshot_ref.uri,
-        snapshot_text=snapshot.text,
-        snapshot_text_sha256=snapshot.text_sha256,
-        annotator=f"model:{receipt.model_id}",
-    )
     put(
         f"research-candidates-{query.query_id}",
         {
-            "schema": "P070ResearchCandidates@1",
+            "schema": "P070ResearchCandidates@2",
             "project_id": run.project_id,
             "run_id": run.run_id,
             "query_id": query.query_id,
             "candidates": [fact.to_dict() for fact in facts],
-            "rejected_candidates": list(rejections),
+            "rejected_candidates": all_rejections,
+            "dropped_duplicates": dropped_duplicates,
+            "sources": per_source,
             "span_verified": True,
             "adoption_authority": False,
             "canonical_write_authority": False,

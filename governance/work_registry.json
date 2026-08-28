@@ -11443,6 +11443,94 @@
       "evidence": [
         "build_basis_index derives sharded views from retained payloads (queries/snapshots/adoptions/calibrations): deterministic (order-independent, byte-identical shards), one shard per decision ref with facts+quote spans+adoption/authority ids, typed uncovered listing, per-source reverse shard naming the reopen set, manifest citing exactly the record files derived from. Built live for p066-live-monument: 5 decision shards (colonnade-bay-spacing 4 facts, column-shaft-m 3, orientation-axis 4, column-diameter-m 2, portico-width-m 2), 3 source shards, 0 uncovered; written to probes/p066-live-monument/index/basis/ as rebuildable derived view with no authority. tests/test_basis_index.py (6) green; archcheck PASS (also caught and fixed a real D8 violation: executable cad-scripts in probe exports renamed .py.txt with superseding manifests)."
       ]
+    },
+    {
+      "id": "P077",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Auditable relation coverage: candidate dependency edges between components are enumerated mechanically from realized bounds, resolved by machine-detected derivations (cross-component consumption/response in the program) or caller-declared typed edges with provenance, with every unresolved pair a typed uncovered_relation in a coverage ledger; the research driver gains multi-source sweep (one snapshot+invocation per URL, per-snapshot span verification, union adoption).",
+      "depends_on": [
+        "P074",
+        "P076"
+      ],
+      "write_scope": [
+        "archflow/capabilities/relation_coverage.py",
+        "archflow/capabilities/README.md",
+        "tools/run_relation_coverage.py",
+        "tools/run_decision_research.py",
+        "tests/test_relation_coverage.py",
+        "probes/p066-live-monument/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/GENERATION_RECORD_SPEC.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Candidate edges come only from realized bounds contact within a caller tolerance; enumeration is deterministic and names no framework relation vocabulary.",
+        "Cross-component consumption or binding response in the compiled program is detected as a derived edge with program provenance.",
+        "Caller-declared edges (derived/constraint/independent) join by component pair and carry refs; every remaining candidate is a typed uncovered_relation with contact geometry.",
+        "The ledger reports resolved and uncovered counts and ratio; a live ledger over the symmetric monument is retained, with its honest uncovered pairs listed, not fabricated away.",
+        "run_decision_research snapshots and invokes每个 URL separately and unions facts into one adoption; per-source empties retained."
+      ],
+      "tests": [
+        "Enumeration, detection, declaration join, uncovered typing",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_relation_coverage"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P077-relation-coverage-ledger.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P077",
+        "actor": "codex",
+        "verified_at": "2026-08-28T19:16:58.192264+00:00",
+        "contract_sha256": "8cd32bd653cad5e54ff3a9a7863d933e973d1e852f1f3f22f4ec1400a3225244",
+        "scope_sha256": "fa4bad61fdd52cd94f748d56cc70de9abc709947419efe3e07f9d903e155e8c4",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_relation_coverage"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "42f237d7abc9eb371abada54db94861f647b2fd2e4008b692ec18dfdcc2e00d5",
+            "stdout_tail": "",
+            "stderr_tail": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.000s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "cd9162386e88bb4186103a61b99333eaf3ae13ac4bdc813202218ebb5bcc073e",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (133 files, 0.860s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "relation_coverage.py: mechanical candidate enumeration from realized bounds (caller tolerance), program-edge detection (cross-component consumption/response with op provenance), declared-edge join (derived/constraint/independent, non-empty refs), typed uncovered_relation rows. Live ledger over the symmetric monument stage-3: 10 candidate edges, 3 resolved (colonnade-portico and portico-rotunda via commitment:primary-axis-center, dome-rotunda via envelope commitment), 7 honestly uncovered (coffers-dome, statuary rings, aedicula, recess, colonnade-rotunda) - coverage 30 percent retained as the dimension-2 metric and work queue. Multi-source sweep live: research-006 swept Pantheon and Roman-concrete pages in one query (18+7 windows, one invocation per snapshot, per-snapshot span verification), union adoption of 9 facts including wall thickness 6.4 m, interior diameter 43.3 m, aggregate grading, relieving arches - cross-source corroboration in a single calibration. tests/test_relation_coverage.py (9) green; suite 614; archcheck PASS."
+      ]
     }
   ]
 }
