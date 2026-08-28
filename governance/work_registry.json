@@ -10798,6 +10798,183 @@
       "card": "docs/mapping/planning/P068-staged-declaration-gates.md",
       "on_complete": {},
       "actor": "codex"
+    },
+    {
+      "id": "P070",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Let the agent research precedents and codes on the live web scoped to one named design decision: a typed query names the decision it calibrates, retrieval snapshots pages without authority, a bounded research invocation reads only term windows and may output only span-verified quoted fact candidates, and adoption routes each fact to the exact declaration ranges, constraints, or criteria it calibrates so revising a source reopens exactly its decisions.",
+      "depends_on": [
+        "P062",
+        "P067"
+      ],
+      "write_scope": [
+        "archflow/capabilities/research.py",
+        "archflow/capabilities/precedent.py",
+        "archflow/capabilities/README.md",
+        "tools/run_decision_research.py",
+        "tests/test_decision_research.py",
+        "tests/test_web_precedent.py",
+        "probes/p066-live-monument/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A precedent query is typed to named decision refs with search terms and an optional jurisdiction domain allowlist; queries without a decision target are rejected.",
+        "The research invocation receives only bounded keyword windows from retained snapshots, and its output is constrained to quoted fact candidates whose quotes are machine-verified to sit exactly at their claimed spans in the full snapshot; a fabricated quote is a typed rejection.",
+        "Candidates carry no authority; a typed adoption promotes selected facts, and every adopted fact retains the decision refs it calibrates.",
+        "A calibration record maps adopted facts to tightened declaration ranges or new constraints and criteria, provenance-chained through adoption and snapshot to URL.",
+        "At least one live research loop is retained end to end for a real decision, with the model reading windows and proposing span-verified candidates."
+      ],
+      "tests": [
+        "Window extraction, span verification, decision-ref binding, and fabricated-quote rejection tests",
+        "Calibration record provenance tests",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_decision_research",
+          "tests.test_web_precedent"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P070-decision-scoped-research.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P070",
+        "actor": "codex",
+        "verified_at": "2026-08-28T14:33:40.629187+00:00",
+        "contract_sha256": "ecdabcd4ebc5884ae7893c6d91a4f26bf5135db5a03233ca61c865797335bcba",
+        "scope_sha256": "0520d2afc9b4fc12480cee3b769aefa578430cd8ed3b7a9aa7dc613a2820f863",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_decision_research",
+              "tests.test_web_precedent"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "3f56dc2d2b62a4e6a4cedbffe44e114c3b721e5b4321a5d0b2f42d56f5b30c1b",
+            "stdout_tail": "",
+            "stderr_tail": "..................\n----------------------------------------------------------------------\nRan 18 tests in 0.002s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "9197f306e8f6d26edf28e5e5481b8cbbb72af35dd8db8f447b378ad3486b4fa4",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (129 files, 1.003s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "Live loop closed in probes/p066-live-monument run research-003: PrecedentQuery (3 decision refs) -> retained Wikipedia snapshot -> 5 keyword windows -> one codex RESEARCH call -> 3 verbatim-located quoted facts (10:1 slenderness, 6:5 total-to-shaft ratio, capital-proportion flexibility) -> typed adoption -> per-decision calibration record. Honest failures retained: research-001 (candidate rejected, decision_refs outside query), research-002 (model returned zero candidates). Harness computes authoritative quote spans; paraphrase is a typed per-candidate rejection. tests/test_decision_research.py (10) green; archcheck PASS."
+      ]
+    },
+    {
+      "id": "P071",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Realize the same neutral geometry program in a CAD kernel: a deterministic translator maps compiled operations to NURBS modelling steps executed through the external Rhino adapter, an equivalence receipt compares each object against the sandbox realization within explicit tolerances with typed loss records, and detail-stage validation gains exact CAD measurement while the voxel view remains the coarse-stage acceptance substrate.",
+      "depends_on": [
+        "P048",
+        "P065"
+      ],
+      "write_scope": [
+        "archflow/adapters/cad_program.py",
+        "archflow/adapters/README.md",
+        "tools/run_cad_equivalence.py",
+        "tests/test_cad_program.py",
+        "probes/p065-monument-derivation/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The translator consumes an exact compiled geometry program and emits a deterministic CAD build script covering solids, revolves, extrusions, lofts, booleans, and linear and radial arrays, with no design authority of its own.",
+        "Execution happens through an external CAD adapter whose identity is retained; the translated model is measured per object and an equivalence receipt compares CAD bounds against the sandbox realization within explicit tolerances, recording typed losses instead of hiding them.",
+        "At least one promoted program is realized in CAD end to end with its equivalence receipt and a rendered viewport retained as visual evidence.",
+        "The receipt carries no acceptance, review, or canonical-write authority, and voxel-based validation remains authoritative for coarse stages."
+      ],
+      "tests": [
+        "Translator determinism and operation-coverage tests",
+        "Equivalence tolerance and typed-loss tests",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_cad_program"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P071-cad-realization-adapter.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P071",
+        "actor": "codex",
+        "verified_at": "2026-08-28T14:34:14.474130+00:00",
+        "contract_sha256": "5ded4ab77ec176355c05d2e8294c0a0850d1e67c3c6c7a27d205af08ca4511e2",
+        "scope_sha256": "f4bb647df6ab856d45d7b1aedf50e6dad4fc69bd38a7e402648b767485e46a35",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_cad_program"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "83166b089fbcb82fac63f22522fa6ae99bb5e46368cd35d756277fd463dd6346",
+            "stdout_tail": "",
+            "stderr_tail": ".......\n----------------------------------------------------------------------\nRan 7 tests in 0.001s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "21ecef7bb4fa8415386715a9e9951a8c95fbeeb034681e27adb05cd83028d091",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (129 files, 1.000s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "translate_to_rhino_python maps the promoted P065 36-op compiled program to a 187-line rhinoscriptsyntax script (deterministic: regeneration byte-identical, sha256 3117dd1446e4bf2b...); executed in external Rhino 8 slot via MCP adapter producing 17 physical objects / 308 breps; expected_object_bounds analytic replay compared against CAD measures: EQUIVALENT, max deviation 0.346 m within 0.6 m tolerance, zero translation losses; receipt retained as cad-equivalence-receipt in probes/p065-monument-derivation run monument-001. tests/test_cad_program.py (7) green; archcheck PASS."
+      ]
     }
   ]
 }

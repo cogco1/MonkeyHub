@@ -599,3 +599,46 @@ attempt also shrank its massing well below the program range — retained
 as an honest attention trade-off observation, not repaired. This is the
 canon analogue of the P062 relationship ablation: knowledge absent from
 context does not emerge, and knowledge adopted into context does.
+
+## P070 decision-scoped research loop — 2026-08-28
+
+P067 proved retrieval can carry precedent into one generation; P070 makes
+it a calibration instrument aimed at named decisions. A typed
+`PrecedentQuery` must declare the declaration refs it calibrates before
+any page is read; the retained snapshot is cut into bounded keyword
+windows (never raw page text); one RESEARCH-phase invocation may output
+only quoted candidates; the harness locates every quote verbatim in the
+full snapshot and computes the authoritative character span itself, so
+paraphrase and fabrication are typed per-candidate rejections; and a
+typed adoption routes each surviving fact to exactly the decisions it
+names, with a calibration record binding fact ids to declaration refs.
+
+The live closure took three runs, all retained. research-001: the model
+returned one candidate with empty decision refs and free-text enum values
+— rejected. research-002: with the output contract tightened to name the
+allowed enum values, the model honestly returned zero candidates — the
+offset-arithmetic burden was the blocker. research-003: after moving span
+authority into the harness (the model quotes; the machine locates), the
+same page yielded three verbatim-located facts — the 10:1 slenderness
+canon, the 6:5 total-to-shaft ratio, and capital-proportion flexibility —
+adopted and calibrated onto the three column declarations. The failure
+sequence is itself the finding: a research contract survives a live model
+only when the machine owns every verification the model is bad at.
+
+## P071 CAD realization equivalence — 2026-08-28
+
+Voxels stay the coarse acceptance substrate; P071 gives the same compiled
+program an exact-measurement realization. A deterministic translator maps
+the promoted P065 monument program — 36 operations, 17 physical objects —
+onto a rhinoscriptsyntax build script (regeneration is byte-identical),
+executed in an external Rhino 8 instance through the MCP adapter: 308
+breps, with drum and dome-shell booleans, lofted taper, and full radial
+rings realized as true NURBS solids. An analytic bounds replay derived
+from the program itself — not from either renderer — is compared against
+the CAD-measured bounding boxes: equivalent at a maximum deviation of
+0.346 m against the 0.6 m tolerance (the dome-cap facet of the 24-gon
+loft), zero translation losses, receipt retained beside the sandbox
+realization it mirrors. The adapter owns no design authority: curves and
+transforms it cannot express arrive as typed losses, and the receipt
+names the program record, script digest, measures digest, and adapter
+identity.

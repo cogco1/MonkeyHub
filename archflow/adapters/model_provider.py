@@ -25,6 +25,7 @@ class ModelPhase(StrEnum):
     CAPABILITY_SELECTION = "capability_selection"
     ACTION_PROPOSAL = "action_proposal"
     SPATIAL_PROPOSAL = "spatial_proposal"
+    RESEARCH = "research"
 
 
 class ModelCommandProtocol(StrEnum):

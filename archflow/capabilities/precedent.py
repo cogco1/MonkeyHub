@@ -50,6 +50,7 @@ class PrecedentFact:
     annotator_is_harness: bool
     topic: ConstructabilityTopic
     strength: PolicyConstraintStrength
+    decision_refs: tuple[str, ...] = ()
 
     SCHEMA = "PrecedentFact@1"
 
@@ -96,6 +97,7 @@ class PrecedentFact:
             "annotator_is_harness": self.annotator_is_harness,
             "topic": self.topic.value,
             "strength": self.strength.value,
+            "decision_refs": list(self.decision_refs),
         }
 
     @classmethod
@@ -114,6 +116,7 @@ class PrecedentFact:
             annotator_is_harness=bool(value["annotator_is_harness"]),
             topic=ConstructabilityTopic(value["topic"]),
             strength=PolicyConstraintStrength(value["strength"]),
+            decision_refs=tuple(value.get("decision_refs", ())),
         )
 
 
