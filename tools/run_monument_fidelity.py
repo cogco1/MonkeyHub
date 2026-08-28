@@ -45,6 +45,9 @@ def _normalised(cells):
     return frozenset((x - x0, y - y0, z - z0) for x, y, z in cells)
 
 
+sys.path.insert(0, str(ROOT / "tools"))
+from _probe_paths import resolve_probe_root  # noqa: E402
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--now", required=True)

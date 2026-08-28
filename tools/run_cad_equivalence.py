@@ -180,6 +180,9 @@ def compare(expected, measures, tolerance):
     return mismatches, max_deviation
 
 
+sys.path.insert(0, str(ROOT / "tools"))
+from _probe_paths import resolve_probe_root  # noqa: E402
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--now", required=True)
@@ -253,7 +256,7 @@ def main(argv=None) -> int:
         else "diverged"
     )
     repository = FilesystemProjectRepository.open(
-        ROOT / "probes" / args.project_id
+        resolve_probe_root(args.project_id)
     )
     run = repository.load_run(args.run_id)
     destination = PersistenceDestination(

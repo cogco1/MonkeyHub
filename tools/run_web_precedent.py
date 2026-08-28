@@ -40,6 +40,9 @@ from tests.integration.test_monument_derivation import (  # noqa: E402
 )
 from tests.test_production_root_compiler import _rebase_context  # noqa: E402
 
+sys.path.insert(0, str(ROOT / "tools"))
+from _probe_paths import resolve_probe_root  # noqa: E402
+
 PROJECT_ID = "p066-live-monument"
 URL = "https://en.wikipedia.org/wiki/Pantheon,_Rome"
 
@@ -111,7 +114,7 @@ def main(argv=None) -> int:
     parser.add_argument("--run-id", default="live-002")
     args = parser.parse_args(argv)
 
-    repository = FilesystemProjectRepository.open(ROOT / "probes" / PROJECT_ID)
+    repository = FilesystemProjectRepository.open(resolve_probe_root(PROJECT_ID))
     try:
         run = repository.load_run(args.run_id)
     except Exception:

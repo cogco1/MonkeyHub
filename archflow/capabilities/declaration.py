@@ -27,6 +27,7 @@ class DeclarationError(ValueError):
 
 
 class DeclarationQuadrant(StrEnum):
+    SITE = "site"
     DIMENSIONS = "dimensions"
     STRUCTURE = "structure"
     OPENINGS = "openings"
@@ -266,3 +267,129 @@ def validate_stage_declarations(
                 "hold the geometry"
             )
     return derived
+
+
+def compile_declaration_commitments(
+    contract: StageDeclarationContract,
+    declarations: Mapping[str, object],
+    *,
+    quadrants,
+    gate_receipt_ref: str,
+    authority_id: str,
+    authorized_by: str,
+    source_event_ref: str,
+    criterion_provider_id: str,
+):
+    """Compile gate-passed declarations of the named quadrants into HARD
+    commitments.
+
+    Runs only after ``validate_stage_declarations`` has passed the gate;
+    the caller names which quadrants are irreversible at this gate — the
+    framework holds no stage default. Each commitment retains the gate
+    receipt and the field's range provenance as evidence, and its
+    satisfaction criterion is the field itself, so reopening a declared
+    value later requires an authority-gated commitment transition.
+    """
+
+    from archflow.state import (
+        Commitment,
+        CommitmentKind,
+        CommitmentStatus,
+        CommitmentStrength,
+        CriterionRef,
+    )
+
+    if not isinstance(contract, StageDeclarationContract):
+        raise TypeError("contract must be StageDeclarationContract")
+    selected = {DeclarationQuadrant(item) for item in quadrants}
+    if not selected:
+        raise DeclarationError("at least one quadrant required")
+    commitments = []
+    for field in contract.fields:
+        if field.quadrant not in selected:
+            continue
+        if field.field_id not in declarations:
+            raise DeclarationError(
+                f"{field.field_id}: cannot commit an undeclared value"
+            )
+        value = float(declarations[field.field_id])
+        if not (field.minimum <= value <= field.maximum):
+            raise DeclarationError(
+                f"{field.field_id}: cannot commit an out-of-range value"
+            )
+        unit = f" {field.unit}" if field.unit else ""
+        commitments.append(
+            Commitment(
+                commitment_id=f"declared-{field.field_id}",
+                kind=CommitmentKind.MAINTENANCE,
+                strength=CommitmentStrength.HARD,
+                status=CommitmentStatus.ACTIVE,
+                authority_id=authority_id,
+                authorized_by=authorized_by,
+                source_event_ref=source_event_ref,
+                satisfaction_criterion=CriterionRef(
+                    criterion_id=field.field_id,
+                    provider_id=criterion_provider_id,
+                ),
+                evidence_refs=tuple(
+                    sorted({gate_receipt_ref, *field.source_refs})
+                ),
+            )
+        )
+    return tuple(commitments)
+
+
+def select_decision_basis(
+    contract: StageDeclarationContract,
+    decision_shards: Mapping[str, Mapping[str, object]],
+) -> tuple[dict[str, list], dict[str, int]]:
+    """Select exactly the basis shards for this contract's fields.
+
+    ``decision_shards`` is the derived basis index's decision mapping
+    (decision ref -> shard). The selection injects only the adopted
+    facts whose decision ref matches ``declaration:<field_id>`` for a
+    contract field — nothing else reaches the prompt — and reports the
+    bounding metrics (facts and characters, selected versus store-wide)
+    so the saving is measurable, not asserted.
+    """
+
+    import json as _json
+
+    if not isinstance(contract, StageDeclarationContract):
+        raise TypeError("contract must be StageDeclarationContract")
+    keep = ("fact_id", "statement", "strength", "quote", "snapshot_ref")
+    payload: dict[str, list] = {}
+    facts_selected = 0
+    for field in contract.fields:
+        ref = f"declaration:{field.field_id}"
+        shard = decision_shards.get(ref)
+        if not isinstance(shard, Mapping):
+            continue
+        facts = shard.get("facts") or ()
+        if not facts:
+            continue
+        payload[ref] = [
+            {key: fact.get(key) for key in keep} for fact in facts
+        ]
+        facts_selected += len(facts)
+    facts_total = sum(
+        len(shard.get("facts") or ())
+        for shard in decision_shards.values()
+        if isinstance(shard, Mapping)
+    )
+    metrics = {
+        "facts_selected": facts_selected,
+        "facts_total": facts_total,
+        "chars_selected": len(_json.dumps(payload, sort_keys=True)),
+        "chars_total": len(
+            _json.dumps(
+                {
+                    ref: shard
+                    for ref, shard in sorted(decision_shards.items())
+                },
+                sort_keys=True,
+                default=str,
+            )
+        ),
+    }
+    return payload, metrics

@@ -151,18 +151,30 @@ class SemanticSpatialAuthoringResult:
             raise ValueError("failed result cannot carry an accepted option")
 
 
-def semantic_spatial_authoring_contract() -> dict[str, object]:
-    """Return the machine-facing output envelope and ownership contract."""
+def semantic_spatial_authoring_contract(
+    *,
+    with_stage_declarations: bool = False,
+) -> dict[str, object]:
+    """Return the machine-facing output envelope and ownership contract.
 
+    When a stage declaration contract gates the request, the output
+    envelope itself must name ``stage_declarations`` — the format
+    contract and the declaration contract may never disagree about the
+    required field set.
+    """
+
+    required = [
+        "schema",
+        "exact_base_state_digest",
+        "context_digest",
+        "proposal",
+    ]
+    if with_stage_declarations:
+        required.append("stage_declarations")
     return {
         "schema": "SemanticSpatialAuthoringContract@2",
         "required_output_schema": "SemanticSpatialAuthoringOutput@1",
-        "required_output_fields": [
-            "schema",
-            "exact_base_state_digest",
-            "context_digest",
-            "proposal",
-        ],
+        "required_output_fields": required,
         "proposal_schema": SpatialOptionProposal.SCHEMA,
         "proposal_required_fields": [
             "schema",
@@ -380,6 +392,7 @@ async def author_semantic_spatial_option(
     alternative_context: Mapping[str, object] | None = None,
     revision_context: Mapping[str, object] | None = None,
     declaration_contract: "StageDeclarationContract | None" = None,
+    decision_basis: Mapping[str, object] | None = None,
 ) -> SemanticSpatialAuthoringResult:
     """Ask one provider for a co-authored component and massing proposal."""
 
@@ -400,7 +413,9 @@ async def author_semantic_spatial_option(
         "program": program.to_dict(),
         "site_context": site_context.to_dict(),
         "build_policy": build_policy.to_dict(),
-        "output_contract": semantic_spatial_authoring_contract(),
+        "output_contract": semantic_spatial_authoring_contract(
+            with_stage_declarations=declaration_contract is not None,
+        ),
         "reference_contract": compile_spatial_authoring_reference_contract(
             state=state,
             phase_gate=phase_gate,
@@ -423,6 +438,8 @@ async def author_semantic_spatial_option(
                 "declaration_contract must be StageDeclarationContract"
             )
         prompt["declaration_contract"] = declaration_contract.to_dict()
+    if decision_basis is not None:
+        prompt["decision_basis"] = _validated_decision_basis(decision_basis)
     if repair_feedback is not None:
         prompt["repair_feedback"] = _validated_repair_feedback(
             repair_feedback,
@@ -523,7 +540,7 @@ async def author_semantic_spatial_option(
                 ),
                 proposal,
             )
-        except DeclarationError as exc:
+        except (DeclarationError, KeyError, TypeError, ValueError) as exc:
             return _failed(
                 request,
                 model_receipt,
@@ -596,6 +613,45 @@ def _validated_repair_feedback(
     ):
         raise ValueError("semantic-spatial repair feedback acquired authority")
     return dict(value)
+
+
+_MAX_DECISION_BASIS_CHARS = 20_000
+
+
+def _validated_decision_basis(value: Mapping[str, object]) -> dict:
+    """Bounded, decision-keyed adopted-fact slices for the prompt.
+
+    The selection is made upstream (one shard per contract field); this
+    guard only enforces shape and the hard size bound so a prompt can
+    never quietly swallow the whole adoption store.
+    """
+
+    if not isinstance(value, Mapping):
+        raise TypeError("decision_basis must be a mapping")
+    validated: dict[str, list] = {}
+    for decision_ref, facts in value.items():
+        if not isinstance(decision_ref, str) or not decision_ref.strip():
+            raise ValueError("decision_basis keys must be decision refs")
+        if not isinstance(facts, (list, tuple)) or not facts:
+            raise ValueError(
+                f"{decision_ref}: decision basis must be a non-empty list"
+            )
+        rows = []
+        for fact in facts:
+            if not isinstance(fact, Mapping):
+                raise ValueError(
+                    f"{decision_ref}: each basis fact must be a mapping"
+                )
+            rows.append({str(k): fact[k] for k in sorted(fact)})
+        validated[decision_ref] = rows
+    encoded = json.dumps(validated, sort_keys=True, default=str)
+    if len(encoded) > _MAX_DECISION_BASIS_CHARS:
+        raise ValueError(
+            "decision_basis exceeds the prompt bound "
+            f"({len(encoded)} > {_MAX_DECISION_BASIS_CHARS} chars); "
+            "select fewer shards"
+        )
+    return validated
 
 
 def _validated_alternative_context(

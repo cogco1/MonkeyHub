@@ -754,3 +754,32 @@ records: rebuildable, authority-free, never a substitute for the
 records. Bonus catch: archcheck's probe firewall flagged the migrated
 CAD scripts as executable logic inside probes — renamed to .py.txt
 with superseding manifests, digests still bound by their receipts.
+
+## P068 declaration gates closed; consumption-side basis wiring — 2026-08-29
+
+The declaration contract became a working gate with all three of its
+remaining pieces. The site quadrant joined the vocabulary. Gate-passed
+declarations of the caller-named irreversible quadrants now compile
+into HARD commitments whose satisfaction criterion is the field itself
+and whose evidence chains the gate receipt to the field's range
+provenance — reopening a declared value is an authority-gated
+commitment transition, not an edit. And the basis index gained its
+consumer: the authoring prompt receives exactly the shards of the
+contract's fields, nothing else — measured live at 6 of 15 facts and
+3,661 of 17,388 characters injected, a 79 percent reduction over
+store-wide injection, under a hard 20k-character prompt bound.
+
+The live paired observation is a study in what a gate is for. The
+ungated roots (live-002, live-003) had passed with a token-scale or
+axis-confused massing. The gated run (live-004, a project-authored
+seven-field white-model contract) put four codex attempts through the
+same door and every one was a typed rejection, none repaired: an output
+budget exhausted; an output field drift that exposed a real contract
+conflict (the format contract and the declaration contract disagreed —
+fixed so they cannot); a non-mapping declarations block that exposed a
+real fail-open crash (now a typed declaration_rejected with a
+regression test); then two honest content failures, a footprint outside
+its cited range and a massing outside its footprint. The gate raised
+the bar above what the low-effort profile clears — that cost of rigor
+is the finding, and the repair-loop and effort escalation remain the
+P066 lane's open work.

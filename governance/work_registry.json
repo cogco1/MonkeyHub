@@ -10747,8 +10747,8 @@
     {
       "id": "P068",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Gate each authoring stage behind a mandatory typed declaration set grouped into decision quadrants (dimensions, structure, openings, detail): the earliest stage requires only white-model dimensions, later stages add deeper quadrants, every declared value must sit inside an authorized range and match the authored geometry within tolerance, and an incomplete or inconsistent declaration is a typed rejection before the stage can pass.",
       "depends_on": [
         "P054",
@@ -10795,9 +10795,46 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P068-staged-declaration-gates.md",
+      "card": "docs/mapping/archive/P068-staged-declaration-gates.md",
       "on_complete": {},
-      "actor": "codex"
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P068",
+        "actor": "codex",
+        "verified_at": "2026-08-28T19:02:34.127485+00:00",
+        "contract_sha256": "4f1160bb3dddd9af7503de7034b8ca0fb2888a8b7c42ab91ca1aeca1284b2cd4",
+        "scope_sha256": "32e16768e636c3d98bd4419887940b808da86aa38f6c54abc3e8aa44b3c4a55a",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_stage_declarations"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "801524188e3685c494b3302dea7d76f2ce5465f79ea7636b33023966f00965f1",
+            "stdout_tail": "",
+            "stderr_tail": "............\n----------------------------------------------------------------------\nRan 12 tests in 0.020s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e1198f05dcfc68562dacf47d5a4510aa682c9859a4fbfbe2872484263d9110bd",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (132 files, 0.788s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "Contract complete: SITE quadrant added; compile_declaration_commitments turns gate-passed irreversible-quadrant declarations into HARD commitments (criterion=field, evidence=gate receipt + field provenance; quadrant set caller-supplied, no stage defaults); select_decision_basis wires consumption: prompt receives only the shards of the contract's fields (live measurement: 6/15 facts, 3661/17388 chars, 79 percent reduction), guarded by a 20k-char prompt bound; output contract and declaration contract can no longer disagree (with_stage_declarations). Live paired evidence retained in p066 live-004: project-authored 7-field Stage-0 contract (ranges from site envelope, program, and adoption records) gated four codex attempts - output_token_budget_exhausted (8192), output fields drifted (contract conflict, then fixed), non-mapping stage_declarations (previously fail-open crash, now typed declaration_rejected with regression test), footprint outside cited range, massing outside footprint - all typed rejections, none repaired, versus ungated live-002/003 which passed with token/misaxis massing. tests/test_stage_declarations.py (12) + authoring regression (14) green; suite 605; archcheck PASS."
+      ]
     },
     {
       "id": "P070",

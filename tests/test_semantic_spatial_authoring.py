@@ -750,3 +750,70 @@ class SemanticSpatialAuthoringTests(unittest.IsolatedAsyncioTestCase):
                 build_policy=self.policy,
             )
         self.assertEqual(provider.requests, [])
+
+
+class DeclarationGateFailClosedTests(unittest.IsolatedAsyncioTestCase):
+    """P068: a malformed stage_declarations block is a typed rejection."""
+
+    def setUp(self) -> None:
+        (
+            self.brief,
+            self.program,
+            self.site,
+            self.policy,
+            self.state,
+            self.maturity,
+            self.gate,
+        ) = _inputs()
+        self.proposal = _semantic_proposal(self.brief, self.program)
+
+    async def test_non_mapping_stage_declarations_rejects_typed(self) -> None:
+        from archflow.capabilities.declaration import (
+            DeclarationField,
+            DeclarationKind,
+            DeclarationQuadrant,
+            GeometryCheck,
+            StageDeclarationContract,
+        )
+
+        contract = StageDeclarationContract(
+            stage="schematic",
+            fields=(
+                DeclarationField(
+                    field_id="orientation-axis",
+                    quadrant=DeclarationQuadrant.SITE,
+                    kind=DeclarationKind.NUMBER,
+                    unit="deg",
+                    minimum=0.0,
+                    maximum=359.0,
+                    geometry_check=GeometryCheck.NONE,
+                    source_refs=("context:site",),
+                    statement="entrance axis azimuth",
+                ),
+            ),
+            tolerance_ratio=0.05,
+        )
+        provider = _ScriptedProvider(
+            lambda request: {
+                **semantic_spatial_authoring_output(
+                    request, self.proposal
+                ),
+                "stage_declarations": None,
+            }
+        )
+        result = await author_semantic_spatial_option(
+            provider,
+            request_id="semantic-spatial-option",
+            state=self.state,
+            maturity=self.maturity,
+            phase_gate=self.gate,
+            program=self.program,
+            site_context=self.site,
+            build_policy=self.policy,
+            declaration_contract=contract,
+        )
+        self.assertEqual("rejected", result.receipt.status.value)
+        self.assertEqual(
+            "spatial_authoring.declaration_rejected",
+            result.receipt.error_code,
+        )

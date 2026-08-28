@@ -69,7 +69,7 @@ class _Args:
 def load_baseline(case: str):
     """Baseline records of the study-028 full-condition candidate."""
 
-    assignment = Assignment(ROOT / "probes" / f"p062-{case}-case")
+    assignment = Assignment(resolve_probe_root(f"p062-{case}-case"))
     envelope = _load_envelope(
         assignment,
         "p062-study-028-execution-envelope",
@@ -570,6 +570,9 @@ def cmd_index(now: str, run_id: str) -> int:
     print(f"INDEX table_ready={complete} episodes={len(rows)}")
     return 0
 
+
+sys.path.insert(0, str(ROOT / "tools"))
+from _probe_paths import resolve_probe_root  # noqa: E402
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)

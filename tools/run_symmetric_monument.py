@@ -19,6 +19,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+sys.path.insert(0, str(ROOT / "tools"))
+from _probe_paths import (  # noqa: E402
+    WORKSPACE_PROJECTS,
+    resolve_probe_root,
+)
 from archflow.evaluation import axial_group_offsets  # noqa: E402
 from archflow.project import (  # noqa: E402
     FilesystemProjectRepository,
@@ -42,7 +47,7 @@ def derive(args) -> int:
 
     monument.PROJECT_ID = args.project_id
     monument.RUN_ID = args.run_id
-    root = ROOT / "probes" / args.project_id
+    root = WORKSPACE_PROJECTS / args.project_id
     manifest = monument._run_proof(root)
     print("stages:", [item["stage"] for item in manifest["stages"]])
     print(
@@ -54,7 +59,7 @@ def derive(args) -> int:
 
 
 def measure(args) -> int:
-    root = ROOT / "probes" / args.project_id
+    root = resolve_probe_root(args.project_id)
     repository = FilesystemProjectRepository.open(root)
     run = repository.load_run(args.run_id)
     destination = PersistenceDestination(

@@ -1,7 +1,7 @@
 # P068 — Staged declaration gates
 
 - Origin: Planning
-- Status: Active (design revised after practice-code research)
+- Status: Done (design revised after practice-code research)
 - Depends on: P054, P062, P067
 
 ## Goal
@@ -67,3 +67,9 @@ commitments.
 - Declaration-gated accept and typed rejection integration paths.
 - Declaration-to-commitment compilation on gate pass.
 - Architecture V3 scope diff, compileall, full discovery.
+
+
+## Completion
+
+- Completed: 2026-08-28
+- Evidence: Contract complete: SITE quadrant added; compile_declaration_commitments turns gate-passed irreversible-quadrant declarations into HARD commitments (criterion=field, evidence=gate receipt + field provenance; quadrant set caller-supplied, no stage defaults); select_decision_basis wires consumption: prompt receives only the shards of the contract's fields (live measurement: 6/15 facts, 3661/17388 chars, 79 percent reduction), guarded by a 20k-char prompt bound; output contract and declaration contract can no longer disagree (with_stage_declarations). Live paired evidence retained in p066 live-004: project-authored 7-field Stage-0 contract (ranges from site envelope, program, and adoption records) gated four codex attempts - output_token_budget_exhausted (8192), output fields drifted (contract conflict, then fixed), non-mapping stage_declarations (previously fail-open crash, now typed declaration_rejected with regression test), footprint outside cited range, massing outside footprint - all typed rejections, none repaired, versus ungated live-002/003 which passed with token/misaxis massing. tests/test_stage_declarations.py (12) + authoring regression (14) green; suite 605; archcheck PASS.

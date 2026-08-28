@@ -44,6 +44,9 @@ from archflow.project import (  # noqa: E402
 )
 from archflow.state.geometry_program import digest_value  # noqa: E402
 
+sys.path.insert(0, str(ROOT / "tools"))
+from _probe_paths import resolve_probe_root  # noqa: E402
+
 PROJECT_ID = "p066-live-monument"
 
 
@@ -59,7 +62,7 @@ def main(argv=None) -> int:
     parser.add_argument("--codex", default="codex.cmd")
     args = parser.parse_args(argv)
 
-    repository = FilesystemProjectRepository.open(ROOT / "probes" / PROJECT_ID)
+    repository = FilesystemProjectRepository.open(resolve_probe_root(PROJECT_ID))
     try:
         run = repository.load_run(args.run_id)
     except Exception:
