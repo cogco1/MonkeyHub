@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-16",
+  "updated_on": "2026-08-18",
   "phase": "P7 - semantic geometry production closure proven",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -9,16 +9,16 @@
     "archive": "Completed work keeps its origin identity, evidence, and acceptance record."
   },
   "modules": {
-    "state": "design_brief_commitment_transition_and_markov_state_proven",
-    "runtime": "semantic_geometry_production_closure_proven",
+    "state": "semantic_geometry_and_component_families_proven",
+    "runtime": "architectural_failure_revision_typed",
     "workspace": "p1_proven",
-    "capabilities": "state_responsive_experts_and_retrieval_proven",
+    "capabilities": "semantic_spatial_single_repair",
     "submission": "obligation_repair_proven",
-    "validation": "voxel_usability_gates_proven",
-    "evaluation": "aesthetic_vector_proven",
+    "validation": "project_derived_architectural_usability_proven",
+    "evaluation": "early_pipeline_rejection_measurable",
     "commit": "in_memory_proven",
     "adapters": "voxel_observation_and_cli_retrieval_proven",
-    "project": "persistence_and_external_runtime_boundary_proven"
+    "project": "provider_success_rejection_recoverable"
   },
   "architecture_layers": [
     {
@@ -119,10 +119,11 @@
         "P018",
         "P024",
         "P030",
-        "P026"
+        "P026",
+        "P060"
       ],
       "open_cards": [],
-      "gap": "Candidate assembly hard gates source-bound realized-scene use-scenario validation typed commitments monitoring append-only reconstruction separated promotion authorities and one accepted real-model Gold are proven."
+      "gap": "Candidate assembly hard gates source-bound realized-scene use-scenario validation typed commitments monitoring append-only reconstruction separated promotion authorities one accepted real-model Gold and exact-project architectural usability are proven without giving validation review promotion or canonical-write authority."
     },
     {
       "id": "L5",
@@ -173,10 +174,13 @@
         "P055",
         "P056",
         "M050",
-        "P058"
+        "P058",
+        "P061"
       ],
-      "open_cards": [],
-      "gap": "Direct component-to-geometry binding, exact-base joint semantic-geometry lifecycle compilation, deterministic sandbox realization, durable formal runtime, bypass quarantine, fresh Pantheon-scale prompt-driven proof, and explicit uneven-terrain alternatives with exact contact validation are proven; external-platform execution and structurally engineered terrain adaptation remain downstream and unproven."
+      "open_cards": [
+        "P062"
+      ],
+      "gap": "Direct component-to-geometry binding exact-base lifecycle sandbox realization and provenance-bound parametric or immutable mesh families are proven through P061; P062 is measuring multi-building behavior and bounded ablations before any paper claim."
     },
     {
       "id": "L8",
@@ -415,9 +419,10 @@
         "P048",
         "P026",
         "P051",
-        "P038"
+        "P038",
+        "P060"
       ],
-      "purpose": "Keep probes as thin building-run callers while the framework derives project answers compiles neutral geometry validates the sandbox artifact and owns no instance defaults."
+      "purpose": "Keep probes as thin building-run callers while the framework derives project answers compiles neutral geometry and evaluates exact project-authored criteria without owning instance defaults."
     },
     {
       "name": "Site, resources, and option lineage",
@@ -464,9 +469,10 @@
         "P048",
         "P026",
         "P031",
-        "P027"
+        "P027",
+        "P060"
       ],
-      "purpose": "Add reversible control, compile and validate a neutral hybrid artifact, prove sandbox Gold, save and stage it, and preserve explicit uneven-site alternatives with exact contact evidence."
+      "purpose": "Add reversible control, compile and validate a neutral hybrid artifact against exact project criteria, save and stage it, and preserve explicit uneven-site alternatives with exact contact evidence."
     },
     {
       "name": "World authority and recovery",
@@ -495,9 +501,10 @@
         "P026",
         "P027",
         "P051",
-        "P038"
+        "P038",
+        "P061"
       ],
-      "purpose": "Compile Architect semantics into generic geometry operations typed assemblies and provenance-bound assets then validate render repair and accept the building without an external platform."
+      "purpose": "Compile Architect semantics into generic geometry operations typed assemblies and provenance-bound parametric or mesh families then validate render repair and accept without an external platform."
     },
     {
       "name": "Downstream platform adapters",
@@ -8844,6 +8851,1399 @@
       "completed_on": "2026-08-16",
       "evidence": [
         "Synchronized the P7 phase, runtime module, and L3/L7/L16 closure claims with completed P056-M051 evidence while retaining explicit live-provider, external-platform, engineering, and fabrication limits. Focused 14 registry tests, M052 verification, ARCHITECTURE PASS 117 files, scope PASS 6 paths, and diff check passed."
+      ]
+    },
+    {
+      "id": "P059",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Produce recoverable live Agent CLI evidence and machine-prove the shared API-ready provider contract without fallback or canonical-write authority.",
+      "depends_on": [
+        "P056",
+        "M050",
+        "P058",
+        "M052"
+      ],
+      "write_scope": [
+        "archflow/adapters/model_provider.py",
+        "archflow/production/provider_runtime.py",
+        "archflow/project/production_transition.py",
+        "archflow/runtime/production_compiler.py",
+        "archflow/runtime/production_runtime.py",
+        "archflow/project/runtime.py",
+        "tests/test_primary_architect_provider.py",
+        "tests/test_production_responsibility.py",
+        "tests/test_production_transition.py",
+        "tests/test_production_root_compiler.py",
+        "tests/integration/test_primary_architect_smoke.py",
+        "probes/p059-provider-runtime/",
+        "probes/p059-provider-runtime-live/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Every model receipt records bounded wall-clock duration exact provider model version fingerprint request status byte token and output or error evidence while historical receipts remain readable.",
+        "A P053-validated provider failure is retained through P036 as a failed production attempt without a lifecycle successor transition checkpoint fallback or canonical write.",
+        "Reloading a failed attempt reproduces exact logical evidence and permits a separately identified retry without masquerading as completion.",
+        "Command-backed Agent CLI and an API-shaped AsyncModelProvider pass one machine-readable conformance contract and receive authority only through P053.",
+        "The prior 120-second timeout is diagnosed before at most one new opt-in live invocation and the result is persisted and claimed honestly.",
+        "Any promoted live probe contains only project input and P036-produced evidence with no credentials absolute paths case Python or external-platform claims."
+      ],
+      "tests": [
+        "Model duration legacy-read bounded-status and Codex JSONL tests",
+        "CLI and API-shaped P053 conformance no-fallback and stale-envelope tests",
+        "Failed-attempt persistence reload retry separation orphan and successful recovery tests",
+        "One gated opt-in live invocation plus architecture V3 scope diff and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_primary_architect_provider",
+          "tests.test_production_responsibility",
+          "tests.test_production_transition",
+          "tests.test_production_root_compiler"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.integration.test_primary_architect_smoke"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P059-live-provider-evidence-and-recovery.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P059",
+        "actor": "codex",
+        "verified_at": "2026-08-17T12:43:27.838910+00:00",
+        "contract_sha256": "8102707dcadcf6fdcd2eeb87a17a456e2477237ca69a8db0b5ce50ef741754aa",
+        "scope_sha256": "1c5f71fc228c3f9d1649176d5f6027543eaa65c8a9f65336f7730cb4479f5b09",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_primary_architect_provider",
+              "tests.test_production_responsibility",
+              "tests.test_production_transition",
+              "tests.test_production_root_compiler"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "a8dd786798c71fae459d863d4915b7368489cf271c4ad5cbfa5182480d206a56",
+            "stdout_tail": "",
+            "stderr_tail": ".................................................................\n----------------------------------------------------------------------\nRan 65 tests in 2.473s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.integration.test_primary_architect_smoke"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "cf64899ee55f2b2dc0a95542213aaa13cce051a12d808dcfe4e75e8d6af0f1ec",
+            "stdout_tail": "",
+            "stderr_tail": "s..\n----------------------------------------------------------------------\nRan 3 tests in 0.272s\n\nOK (skipped=1)\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "89736f2215c5afebd89a399e37863f0fa1017dd5f374f36c4dd3116a8ec1de8c",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (117 files, 0.554s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-17",
+      "evidence": [
+        "Agent CLI 0.145.0 gpt-5.6-sol live smoke succeeded once under the unchanged 120-second limit in 116515 ms; P053 envelope and ModelInvocationReceipt@2 are retained through P036 at project://p059-provider-runtime-live/runs/live-agent-cli-001/records/provider-live-invocation-5539b49bc4f6c696c929182f68ff7108d10e8138d213e7bee65258514940f581.json with HEAD v0 and no API-service building lifecycle checkpoint or canonical-write claim. Deterministic CLI/API contract failure retry and replay guards pass; 539 full tests with 3 skips architecture V3 scope and diff checks pass."
+      ]
+    },
+    {
+      "id": "P060",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Compile and evaluate architectural usability from authorized project evidence and current semantic-geometry state without framework-owned building answers.",
+      "depends_on": [
+        "P059",
+        "P020",
+        "P021",
+        "P028",
+        "P030",
+        "P048",
+        "P058"
+      ],
+      "write_scope": [
+        "archflow/validation/architectural.py",
+        "archflow/validation/__init__.py",
+        "archflow/validation/README.md",
+        "tests/test_architectural_usability.py",
+        "tests/integration/test_project_derived_architectural_usability.py",
+        "probes/p060-architectural-usability/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "One typed contract binds exact project run base current design state selected component tree neutral geometry realization and every authorized source of mandatory criteria.",
+        "Criteria derive only from authorized brief facts or commitments adopted retrieval evidence current program site build policy and explicit current obligations; empty or retrieval-only evidence cannot pass.",
+        "Framework code provides generic measurable operators while all building types rooms dimensions topology materials components and pass values remain project data.",
+        "Acceptance requires artifact presence and every mandatory criterion to be evaluable and pass; missing stale unsupported or contradictory evidence remains typed fail or unknown.",
+        "Local findings retain criterion source component geometry object and obligation refs without geometry state HEAD review or promotion authority.",
+        "Two non-isomorphic projects and a fresh P036 probe prove different contracts outcomes reload and honest claim boundaries while P058 remains frozen."
+      ],
+      "tests": [
+        "Schema provenance digest authority operator unit and unsupported-criterion tests",
+        "Pass fail unknown stale missing contradictory and local-finding tests over two non-isomorphic projects",
+        "P036 probe reload instance-literal scan architecture V3 scope diff and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_architectural_usability",
+          "tests.integration.test_project_derived_architectural_usability"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "validation": "project_derived_architectural_usability_proven"
+        }
+      },
+      "card": "docs/mapping/archive/P060-project-derived-architectural-usability.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P060",
+        "actor": "codex",
+        "verified_at": "2026-08-17T13:11:25.246144+00:00",
+        "contract_sha256": "da84297840a768750fc39cbf6d9100961fb9bce643d2e9c96c15b00f39b22a98",
+        "scope_sha256": "280bbc7bf38daadf490db9cc352155b57c64e98670f78d67b3c387319555f1c8",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_architectural_usability",
+              "tests.integration.test_project_derived_architectural_usability"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "f2985e54ed7498e534ca07a638a380f94819d7ef07a591c42b4d610e91704378",
+            "stdout_tail": "",
+            "stderr_tail": "..............\n----------------------------------------------------------------------\nRan 14 tests in 0.052s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "50ec7b9d15ffcdc7841d5c9b3af13fddb3fefb85a1d7e38d187e5640d8d0c257",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (118 files, 0.605s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-17",
+      "evidence": [
+        "Project-derived ArchitecturalUsabilityContract@1 binds exact P036 base developed-design digest sole selected component tree CompiledGeometryProgram@2 sandbox scene realization receipt artifact and authorized sources. Fourteen P060 tests prove schema authority adoption pass fail unknown stale contradiction locality two non-isomorphic project outcomes and fresh P036 reload; full discovery passed 553 tests with 3 skips; ARCHITECTURE PASS 118 files V3 boundary PASS 118 production files 2 frozen oracles P060 scope diff compileall and retained-probe integrity checks pass. Probe claim boundary is project://p060-architectural-usability/runs/architectural-usability-001/records/architectural-usability-claim-boundary-c8cf8276dbfede60466a29d0af8beed9c8a86dfcce52c21fc9c155229c686719.json; P058 remains artifact-presence-only."
+      ]
+    },
+    {
+      "id": "P061",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Unify reusable parametric assemblies and content-addressed external mesh families behind one exact-project semantic component protocol without creating another ownership tree.",
+      "depends_on": [
+        "P060",
+        "P047",
+        "P049",
+        "P051",
+        "P055",
+        "P057"
+      ],
+      "write_scope": [
+        "archflow/state/component_family.py",
+        "archflow/state/geometry_program.py",
+        "archflow/state/__init__.py",
+        "archflow/state/README.md",
+        "archflow/runtime/family_compiler.py",
+        "archflow/runtime/geometry_compiler.py",
+        "archflow/runtime/semantic_geometry_lifecycle.py",
+        "archflow/realization/sandbox.py",
+        "tests/test_component_family_protocol.py",
+        "tests/integration/test_component_family_realization.py",
+        "probes/p061-component-family-protocol/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "One typed family instance binds an existing semantic component exact project base revision frame anchors sockets native unit scale interfaces dependencies and provenance without another ownership tree.",
+        "Parametric assemblies use only existing generic geometry operations while all parameter names values ranges and adaptation decisions remain project data.",
+        "External mesh families require content identity media type native unit sockets and provenance and allow explicit placement and bounded scale without claiming internal parametric editability.",
+        "Parametric mesh and hybrid families publish one semantic binding interface dependency and realization receipt surface with typed local failures.",
+        "Exact-predecessor revise replace and retire participate in P055 local invalidation while preserved siblings keep identity and no family path gains HEAD review or promotion authority.",
+        "Two non-isomorphic projects and one fresh P036 probe prove reload realization local replacement and honest neutral-sandbox boundaries without a platform exporter."
+      ],
+      "tests": [
+        "Schema digest provenance unit scale anchor socket interface and semantic-owner tests",
+        "Parametric mesh hybrid realization and missing asset socket immutable mesh negatives",
+        "Exact-predecessor lifecycle local invalidation preserved siblings and stale rejection",
+        "Two project fixtures P036 reload instance-literal architecture V3 scope diff and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_component_family_protocol",
+          "tests.integration.test_component_family_realization"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "state": "semantic_geometry_and_component_families_proven",
+          "runtime": "semantic_geometry_family_lifecycle_proven"
+        }
+      },
+      "card": "docs/mapping/archive/P061-parametric-and-mesh-family-protocol.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P061",
+        "actor": "codex",
+        "verified_at": "2026-08-17T13:53:18.266140+00:00",
+        "contract_sha256": "f0b24a9fcbfde9a614f3b3f731a8e32b73aacb34f4bcf20a08cb45b046602e3c",
+        "scope_sha256": "23b55c094ea46fe9b15e83b6b4b1acf8d8dc7f495005f5c153a1b1fa971cb3df",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_component_family_protocol",
+              "tests.integration.test_component_family_realization"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "496e6aa79a17d5b7bce97900bed5939acedd761e5789eb930e701a9cb103e824",
+            "stdout_tail": "",
+            "stderr_tail": "..............\n----------------------------------------------------------------------\nRan 14 tests in 0.181s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "4a9f174b3f4e5bee46cdb1c3e8dffca62bb4eedc08656b8d1e7b1d2e024e32b7",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (120 files, 0.638s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-17",
+      "evidence": [
+        "Implemented ComponentFamilySet@1 as a project-authored annotation over the sole SpatialOptionProposal.components tree, with parametric assembly, immutable external mesh, and hybrid modes; exact component/geometry/parameter/asset/unit/socket/anchor/interface/dependency/provenance compilation; ComponentFamilyRealizationReceipt@1 binds the exact compiled family objects to one sandbox scene and receipt; exact P055 revise/replace/retire lifecycle rejects stale receipts and unacknowledged local dependency impact while preserving independent sibling identity. Fourteen focused tests pass; full discovery passed 567 tests with 3 explicit opt-in skips; ARCHITECTURE PASS 120 files; V3 boundary PASS 120 production files and 2 frozen oracles; P061 scope, diff, compileall, P036 reload and retained-probe integrity pass. Probe realization claims are project://p061-component-family-protocol/runs/parametric-001/records/component-family-realization-claim-boundary-9e190f8d69a0182dc2001386653eacc7895468bc700d417dc1b3904a16c4a164.json and project://p061-component-family-protocol/runs/mesh-001/records/component-family-realization-claim-boundary-05b37b1841a73833f01a47958580c8e41adb38fe9323595c661f549484c78537.json; exact replacement claim is project://p061-component-family-protocol/runs/lifecycle-001/records/component-family-replacement-claim-boundary-1aa681a7ff53237a0438ee5733e11515400a06ecd7546e7ab68f19bb9149d1de.json. No architectural family catalogue, platform exporter, geometry-generation authority, persistence authority, review authority, or canonical-write authority was added."
+      ]
+    },
+    {
+      "id": "P062",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Run preregistered reproducible multi-building experiments and bounded ablations through the real semantic-geometry production chain without reviving a deprecated route or claiming unrun outcomes.",
+      "depends_on": [
+        "P059",
+        "P060",
+        "P061"
+      ],
+      "write_scope": [
+        "archflow/evaluation/experiment.py",
+        "archflow/evaluation/__init__.py",
+        "archflow/evaluation/README.md",
+        "tools/run_experiment.py",
+        "tests/test_experiment_protocol.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-workshop-case/",
+        "probes/p062-courtyard-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A typed preregistration fixes case condition provider model version request digest wall-clock attempt metrics stopping and code identity before results exist while planned failed and completed remain distinct.",
+        "At least three non-isomorphic building briefs retain concrete prompts evidence parameters component trees geometry and traces in separate P036 project probes while framework contracts remain generic.",
+        "The full condition uses P053 authority and the current P056 P054 P055 P060 P061 chain with exact failure timeout malformed-output and rejection receipts and no fallback.",
+        "At least one generation-context ablation and one validation ablation are isolated experiment conditions that cannot replace disable or restore an old production route.",
+        "Comparable conditions report typed completion semantic-geometry consistency architectural usability retry and wall-clock metrics while missing values remain unknown.",
+        "A P036-retained study index binds claims to exact completed run receipts and generates an honest paper evidence table with sample-size limits."
+      ],
+      "tests": [
+        "Preregistration immutability condition identity lifecycle stale duplicate timeout failure and no-fallback tests",
+        "Metric comparability missing rejected and ablation-isolation deterministic tests",
+        "Real multi-building P036 reload provider receipt and generated-table reconciliation with no unrun-result scan",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_experiment_protocol",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "evaluation": "multi_building_ablation_evidence_proven"
+        }
+      },
+      "card": "docs/mapping/planning/P062-multi-building-experiments-and-ablations.md",
+      "actor": "codex",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P062",
+        "actor": "codex",
+        "verified_at": "2026-08-18T15:10:27.945412+00:00",
+        "contract_sha256": "347a56cb53caa85c319773a7714d841b6e71ceb30981b28a7d0ff8777b8c147d",
+        "scope_sha256": "247f3a65415b487adffc9c04c4d37dcf8d5db12cb7a57a5192a94cac459f4b40",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_experiment_protocol",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "1766b9e201b1ad5ac4d39a81d73ccb0806eb315962ceab28967ec2d90f89b51a",
+            "stdout_tail": "",
+            "stderr_tail": "........................\n----------------------------------------------------------------------\nRan 24 tests in 4.717s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "89b17954aea939ff9243fe7c056626eed2182fe5023ba19ea8b88f29b5be7265",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (122 files, 0.929s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "M053",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Persist successful-provider deterministic production rejections through P036 and classify them honestly in P062 without claiming a terminal building.",
+      "depends_on": [
+        "P056",
+        "P059"
+      ],
+      "write_scope": [
+        "archflow/project/production_transition.py",
+        "archflow/runtime/production_runtime.py",
+        "archflow/evaluation/experiment.py",
+        "tests/test_production_transition.py",
+        "tests/test_production_root_compiler.py",
+        "tests/test_experiment_protocol.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A failed production attempt retains failed provider evidence or successful P053 evidence followed by deterministic pipeline rejection.",
+        "Provider success plus rejection creates no production checkpoint lifecycle successor terminal building fallback or canonical write.",
+        "Reload preserves exact envelopes attempt identity rejection error and retry lineage without rewriting historical failure records.",
+        "P062 closes an early pipeline rejection with successful provider receipts zero or partial terminal evidence unknown metrics and failed lifecycle.",
+        "The unarchived study-005 incident remains diagnostic only and the next attempt uses a new frozen code identity."
+      ],
+      "tests": [
+        "Successful-provider rejected-attempt persistence reload and runtime tests",
+        "Experiment early pipeline-rejection and unknown-outcome tests",
+        "P062 reload architecture V3 scope diff and relevant full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_production_transition",
+          "tests.test_production_root_compiler",
+          "tests.test_experiment_protocol",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "project": "provider_success_rejection_recoverable",
+          "evaluation": "early_pipeline_rejection_measurable"
+        }
+      },
+      "card": "docs/mapping/archive/M053-provider-success-rejection-recovery.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M053",
+        "actor": "codex",
+        "verified_at": "2026-08-18T07:24:41.515932+00:00",
+        "contract_sha256": "1d7de37c393a0c97396dbe5a16e0e870c5bb93d6ea4e2ce749fe029626e11fd8",
+        "scope_sha256": "dd7201bd9d7109e306e9a6e3cbc35a289977c4491adb7ee5663912ca9302eb79",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_production_transition",
+              "tests.test_production_root_compiler",
+              "tests.test_experiment_protocol",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "c347b5ae2cf5b81880da776a0c48db6702712d84eb6eda3a7f7e6b0ff8b24daf",
+            "stdout_tail": "",
+            "stderr_tail": "...............................................\n----------------------------------------------------------------------\nRan 47 tests in 5.391s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "9399abf4ea7963f5ae0ba912ccbda199a28fb1ca4ced85721de970219c56c278",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (121 files, 0.722s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-18",
+      "evidence": [
+        "47 focused production/experiment/integration tests passed; devctl verify M053 PASS; study-005 diagnostic and study-006 preregistration retained through P036"
+      ]
+    },
+    {
+      "id": "M054",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Publish exact semantic-spatial proposal authority literals to the model and retain typed deterministic rejection diagnostics without weakening validation.",
+      "depends_on": [
+        "P054",
+        "P056",
+        "P059"
+      ],
+      "write_scope": [
+        "archflow/capabilities/semantic_spatial_authoring.py",
+        "archflow/runtime/production_compiler.py",
+        "tests/test_semantic_spatial_authoring.py",
+        "tests/test_production_root_compiler.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The model-facing contract publishes the exact typed proposal_only selected hard_usability_verdict design_development_complete and execution_ready literals.",
+        "No parser validation is weakened and no selection evaluation execution persistence or canonical-write authority is granted.",
+        "Durable production failure retains the exact semantic-spatial rejection code and bounded diagnostic message.",
+        "Study-006 remains immutable and any successor live attempt uses a new frozen code and contract identity."
+      ],
+      "tests": [
+        "Semantic-spatial contract literal and invalid authority value tests",
+        "Production compiler rejection diagnostic propagation tests",
+        "P062 reload architecture V3 scope and diff"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_semantic_spatial_authoring",
+          "tests.test_production_root_compiler",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "capabilities": "semantic_spatial_contract_exact_literals",
+          "runtime": "semantic_spatial_rejection_diagnostics_retained"
+        }
+      },
+      "card": "docs/mapping/archive/M054-semantic-spatial-contract-literals.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M054",
+        "actor": "codex",
+        "verified_at": "2026-08-18T07:41:43.193171+00:00",
+        "contract_sha256": "ca51da0ff31bc22e9638ed135453aa56aaf5567a6f000be9fec9448cdbd1261f",
+        "scope_sha256": "695e74a07e781f69a428f9f32867592692fd20c0ef64b98f04637afa2b1ab5f4",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_semantic_spatial_authoring",
+              "tests.test_production_root_compiler",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "036a86498966566d4ee0730a260f98f2fc6d498c4277e6ba7e2d75def9151564",
+            "stdout_tail": "",
+            "stderr_tail": "................................\n----------------------------------------------------------------------\nRan 32 tests in 3.729s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "15d56dc3c2bd30edcecade931d11c970cf963e8c22cf58e63b2cea9f07bc46a9",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (121 files, 0.709s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-18",
+      "evidence": [
+        "Exact proposal authority literals published; typed rejection diagnostics propagated; 32 focused tests and archcheck passed; study-006 retained unchanged"
+      ]
+    },
+    {
+      "id": "M055",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Publish the exact recursive SpatialOptionProposal JSON contract to the detached model without embedding a building answer or weakening strict parsing.",
+      "depends_on": [
+        "P054",
+        "P056",
+        "P059"
+      ],
+      "write_scope": [
+        "archflow/capabilities/semantic_spatial_authoring.py",
+        "tests/test_semantic_spatial_authoring.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The model contract exposes exact nested fields and primitive container types for every SpatialOptionProposal child structure.",
+        "Maturity and response enums plus local-id and logical-ref distinctions are explicit without project values or geometry.",
+        "A real proposal serializer cross-check fails when any published nested field set drifts.",
+        "Strict parsing and study-007 history remain immutable while a successor receives a new identity."
+      ],
+      "tests": [
+        "Recursive contract and serializer field-set tests",
+        "Existing malformed topology ownership source and authority negatives",
+        "P062 reload architecture V3 scope and diff"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_semantic_spatial_authoring",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "capabilities": "semantic_spatial_recursive_contract_published"
+        }
+      },
+      "card": "docs/mapping/archive/M055-recursive-semantic-spatial-contract.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M055",
+        "actor": "codex",
+        "verified_at": "2026-08-18T07:52:06.204237+00:00",
+        "contract_sha256": "06587a40496b85d3915e43a99dffa8284a13813ab791026e7c1359e1bfdbafd4",
+        "scope_sha256": "68f30aa5a284de596951914e77255618d18595673ed32e72a6cf70be50fde728",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_semantic_spatial_authoring",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "05694087e7fe02eeb44bc94ad304150fe13a4bf05256fc1d3f7bba259afff0a9",
+            "stdout_tail": "",
+            "stderr_tail": "...................\n----------------------------------------------------------------------\nRan 19 tests in 2.509s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "34539bfb51aa361785aaec5f2309c5bbc59b6d0efb4f8dba5800bdebf362aa5e",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (121 files, 0.699s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-18",
+      "evidence": [
+        "Recursive generic SpatialOptionProposal contract published as @2; serializer-backed field-set regression; 19 focused tests and archcheck passed; study-007 retained unchanged"
+      ]
+    },
+    {
+      "id": "M056",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Compile and publish exact current semantic-spatial reference sets so prompt and deterministic validation share one non-self-authorizing contract.",
+      "depends_on": [
+        "P054",
+        "P056",
+        "P059"
+      ],
+      "write_scope": [
+        "archflow/capabilities/spatial.py",
+        "archflow/capabilities/semantic_spatial_authoring.py",
+        "tests/test_spatial_proposals.py",
+        "tests/test_semantic_spatial_authoring.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "One deterministic contract exposes allowed evidence allowed and required responses and allowed expert advice from current inputs only.",
+        "Prompt publication and deterministic validation consume the same compiled reference contract.",
+        "Nested sources remain evidence subsets and expert advice cannot self-authorize an unknown reference.",
+        "Concrete project refs remain only in project invocations and retained receipts while study-008 remains immutable."
+      ],
+      "tests": [
+        "Reference contract determinism prompt and validator parity",
+        "Unknown required nested and self-authorized expert-advice negatives",
+        "P062 reload architecture V3 scope and diff"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_spatial_proposals",
+          "tests.test_semantic_spatial_authoring",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "capabilities": "semantic_spatial_reference_contract_shared"
+        }
+      },
+      "card": "docs/mapping/archive/M056-semantic-spatial-reference-contract.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M056",
+        "actor": "codex",
+        "verified_at": "2026-08-18T08:04:28.073837+00:00",
+        "contract_sha256": "c62c55cb881a31fafe0b2ff9f925488d22ddcaf3960f7bb2c824a2c8193dc2af",
+        "scope_sha256": "301f6e03e27201792ab59db39bb95fff6f093d3d719ba8e23ab9f08f1248f687",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_spatial_proposals",
+              "tests.test_semantic_spatial_authoring",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d761396df75f161dc1f1d56fd523bf66862b2b19d17b71d9909a9db690fba9cf",
+            "stdout_tail": "",
+            "stderr_tail": "..........................\n----------------------------------------------------------------------\nRan 26 tests in 2.791s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "d72b138ff9bbfd6b9094e4691c19997860a5a8fa86e280a7eecd6c87b766a6a1",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (121 files, 0.768s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-18",
+      "evidence": [
+        "Shared SpatialAuthoringReferenceContract compiled once for prompt and validator; self-authorized expert refs rejected; 26 focused tests and archcheck passed; study-008 retained unchanged"
+      ]
+    },
+    {
+      "id": "M057",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Publish exact generic spatial validation rules and current derived facts so detached proposal generation can satisfy the unchanged deterministic gate.",
+      "depends_on": [
+        "P054",
+        "P056",
+        "P059"
+      ],
+      "write_scope": [
+        "archflow/capabilities/spatial.py",
+        "archflow/capabilities/semantic_spatial_authoring.py",
+        "tests/test_spatial_proposals.py",
+        "tests/test_semantic_spatial_authoring.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The prompt states inclusive bounds footprint projection area containment level zone relationship and response coverage rules.",
+        "Current envelope ranges functions and relationship facts are compiled from the project context and retained only in the invocation.",
+        "Published facts cross-check exact typed inputs and retained projection failure behavior.",
+        "Strict validation and study-009 history remain unchanged while a successor uses a new identity."
+      ],
+      "tests": [
+        "Validation contract derived-fact and inclusive-rule tests",
+        "Existing spatial negatives and provider prompt publication",
+        "P062 reload architecture V3 scope and diff"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_spatial_proposals",
+          "tests.test_semantic_spatial_authoring",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "capabilities": "semantic_spatial_validation_contract_published"
+        }
+      },
+      "card": "docs/mapping/archive/M057-semantic-spatial-validation-contract.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M057",
+        "actor": "codex",
+        "verified_at": "2026-08-18T08:13:20.452297+00:00",
+        "contract_sha256": "c9a2c8fd692844d6d1db5fc92b4b6c3bc106429b4c5df2dfec418a31d098f1c4",
+        "scope_sha256": "d7b1d43a418e40c7659359d36850adcb68c252223b6c3f05d8c3a8bb62b40e40",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_spatial_proposals",
+              "tests.test_semantic_spatial_authoring",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "064f1e0313dab12f43bc1cae85cdd448523fe6409aaf5bb8d9c483fe02ea6e22",
+            "stdout_tail": "",
+            "stderr_tail": "...........................\n----------------------------------------------------------------------\nRan 27 tests in 2.630s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "a1d62928303388e8ede42247edc310056f703a555de6be45df0aaa1f06f84c6b",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (121 files, 0.742s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-18",
+      "evidence": [
+        "Generic SpatialAuthoringValidationContract publishes inclusive coordinate area envelope level zoning relationship and response rules with current derived facts; 27 focused tests and archcheck passed; study-009 retained unchanged"
+      ]
+    },
+    {
+      "id": "M058",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Publish the exact schematic selection output contract and retain stable field-difference diagnostics without changing supplied options or authority.",
+      "depends_on": [
+        "P056",
+        "P059"
+      ],
+      "write_scope": [
+        "archflow/runtime/production_compiler.py",
+        "tests/test_production_root_compiler.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Selection prompt publishes four exact output fields fixed schema exact option-set digest and allowed option ids.",
+        "Selection cannot modify options or gain validation persistence or canonical authority.",
+        "Missing and extra fields produce stable exact diagnostics rather than a generic exception type.",
+        "Study-010 remains immutable and a successor uses a new identity."
+      ],
+      "tests": [
+        "Selection contract and exact field mismatch tests",
+        "Production propagation and P062 reload",
+        "Architecture V3 scope and diff"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_production_root_compiler",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "runtime": "schematic_selection_contract_published"
+        }
+      },
+      "card": "docs/mapping/archive/M058-schematic-selection-contract.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M058",
+        "actor": "codex",
+        "verified_at": "2026-08-18T08:30:36.225655+00:00",
+        "contract_sha256": "3db42d510d7b47f105ba1e71cdd57f6d417f33692e494ad9918bef5a8d30164e",
+        "scope_sha256": "1decd7ab6617127abc10884fff19a238df65fef435d91dc5bf13b075b28180ac",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_production_root_compiler",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "ece6d7744ad19b701adbdf63fc968c0b65124e2e325d6ef7a3cabedf77a329a8",
+            "stdout_tail": "",
+            "stderr_tail": "........................\n----------------------------------------------------------------------\nRan 24 tests in 4.054s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "3309093ab65ce4999f71ce73b58c08d9f34b75e2e61a89082f6bd6ce52db7a13",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (121 files, 0.759s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-18",
+      "evidence": [
+        "Exact four-field selection contract and stable missing/extra diagnostics; study-010 retains three successful provider calls and two accepted options; 24 focused tests and archcheck passed"
+      ]
+    },
+    {
+      "id": "M059",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Replace full recursive option replay at schematic selection with a deterministic digest-bound decision projection without changing validated options or authority.",
+      "depends_on": [
+        "M058",
+        "P059"
+      ],
+      "write_scope": [
+        "archflow/runtime/production_compiler.py",
+        "tests/test_production_root_compiler.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Selection receives deterministic program massing topology component zone and tradeoff summaries for validated options.",
+        "Every summary binds exact proposal and option digests while the selected value remains an original option-set member.",
+        "The projection gains no option mutation ranking validation persistence or canonical authority.",
+        "Study-011 remains immutable and a successor freezes the projection contract before execution."
+      ],
+      "tests": [
+        "Projection determinism identity binding bounded content and exact option recovery",
+        "Selection rejection and P062 historical reload",
+        "Architecture V3 scope and diff"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_production_root_compiler",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "runtime": "schematic_selection_context_bounded"
+        }
+      },
+      "card": "docs/mapping/archive/M059-bounded-schematic-selection-context.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M059",
+        "actor": "codex",
+        "verified_at": "2026-08-18T09:12:59.582847+00:00",
+        "contract_sha256": "00e832d46eb9b67f281e0e4e1d8cc7c2f924dace52e3cf997b360db456ae16a0",
+        "scope_sha256": "09d44b1a7bf61df1f3ac1fba39386466ac49393d15e424933f591f4843da5c66",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_production_root_compiler",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "23f49e1b2c3494a4bd4e6592ea0f55088aeb0cdc88fdd498c5fa4adf0b719e64",
+            "stdout_tail": "",
+            "stderr_tail": "..........................\n----------------------------------------------------------------------\nRan 26 tests in 4.700s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "fb7a06af170fde7fc34436a07de0f5ad57a2d4fc5510c97220b1cae9a97a2d68",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (121 files, 0.659s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-18",
+      "evidence": [
+        "Study-011 retained two successes plus exact selection timeout; digest-bound decision projection reduces retained option payload 19739 to 9566 bytes without changing options; 26 focused tests and archcheck passed"
+      ]
+    },
+    {
+      "id": "M060",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Add one exact-feedback model-authored semantic-spatial repair after deterministic rejection without framework normalization or authority transfer.",
+      "depends_on": [
+        "M059",
+        "P059"
+      ],
+      "write_scope": [
+        "archflow/capabilities/semantic_spatial_authoring.py",
+        "archflow/runtime/production_compiler.py",
+        "tests/test_semantic_spatial_authoring.py",
+        "tests/test_production_root_compiler.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Only deterministic rejection of a successful bound provider response can receive one repair request.",
+        "Repair input binds exact rejected output code diagnostic and unchanged current contracts and requests a complete replacement.",
+        "Provider failure and provider request mismatch receive no internal retry.",
+        "All authoring receipts and P053 envelopes remain durable while only an accepted typed option enters the option set.",
+        "Study-012 remains immutable and a successor freezes the repair policy."
+      ],
+      "tests": [
+        "Repair feedback identity authority and context binding",
+        "One-repair success exhaustion and provider-failure no-retry",
+        "Receipt retention P062 reload architecture V3 scope and diff"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_semantic_spatial_authoring",
+          "tests.test_production_root_compiler",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "capabilities": "semantic_spatial_single_repair"
+        }
+      },
+      "card": "docs/mapping/archive/M060-semantic-spatial-self-repair.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M060",
+        "actor": "codex",
+        "verified_at": "2026-08-18T09:24:16.013340+00:00",
+        "contract_sha256": "d07ea3b6a89d63bd9eca41f130609d1d48203436e0b1cf81ddee743f9e5bb381",
+        "scope_sha256": "4b087e0f4f0e168bb8bb31c06a572e51f5c542d6d81c789581427003a5829796",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_semantic_spatial_authoring",
+              "tests.test_production_root_compiler",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "9dab8938fd3ad82f99abd9b3b7a38d99ab6a224c999516b678b85aaeb8e03890",
+            "stdout_tail": "",
+            "stderr_tail": ".......................................\n----------------------------------------------------------------------\nRan 39 tests in 4.487s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "54ec7a9dc2566b9bd622b6789881a2a15de115671ee7e598182a192c5717b40c",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (121 files, 0.783s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-18",
+      "evidence": [
+        "Study-012 retained exact source rejection; one complete model-authored replacement is allowed only after deterministic rejection; all receipts retained, provider failures not retried; 39 focused tests and archcheck passed"
+      ]
+    },
+    {
+      "id": "M061",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Publish exact prior-option exclusions for genuine alternative authoring and preserve cross-option conflicts as typed P036 failures.",
+      "depends_on": [
+        "M060",
+        "P059"
+      ],
+      "write_scope": [
+        "archflow/capabilities/semantic_spatial_authoring.py",
+        "archflow/runtime/production_compiler.py",
+        "tests/test_semantic_spatial_authoring.py",
+        "tests/test_production_root_compiler.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Second-option authoring receives exact excluded ids digests topology signatures and one non-authoritative projection.",
+        "Provider authors a complete independent alternative and framework code cannot rename or perturb it.",
+        "Cross-option identity digest and topology conflicts become stable typed production rejections while P053 envelopes remain available.",
+        "Study-013 remains diagnostic-only and no lost P053 envelope is reconstructed."
+      ],
+      "tests": [
+        "Alternative context identity authority and binding",
+        "Distinct pass and duplicate typed rejection",
+        "P053 failure archival P062 reload architecture V3 scope and diff"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_semantic_spatial_authoring",
+          "tests.test_production_root_compiler",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "runtime": "alternative_option_set_boundary_typed"
+        }
+      },
+      "card": "docs/mapping/archive/M061-alternative-option-set-boundary.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M061",
+        "actor": "codex",
+        "verified_at": "2026-08-18T09:38:11.738767+00:00",
+        "contract_sha256": "54ad21688eab807a8daf7c82fb16edea125abdd2d5ee8fd3c956ab7d74b11418",
+        "scope_sha256": "6aefcba1d5403449389d9c958f0b3ae7d691ead678370a997d9f2bfad8ef4a2f",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_semantic_spatial_authoring",
+              "tests.test_production_root_compiler",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "008bf2b0a96858088e5e42daa9f527bdb75729f59741f0558bbf37d5092d1194",
+            "stdout_tail": "",
+            "stderr_tail": ".........................................\n----------------------------------------------------------------------\nRan 41 tests in 5.842s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "424805532d4e54869cc6bdfe77012671cc7af3c2aad1df2e709ef40de4b416a1",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (121 files, 0.643s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-18",
+      "evidence": [
+        "Study-013 retained two accepted duplicate-id authoring receipts but no reconstructable P053 envelopes; second-option exclusion context and typed option-set rejection added; 41 focused tests and archcheck passed"
+      ]
+    },
+    {
+      "id": "M062",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Feed exact failed P060 findings into one bounded model-authored semantic-and-geometry successor with exact predecessor compilation and no framework patching.",
+      "depends_on": [
+        "P060",
+        "P061",
+        "M061"
+      ],
+      "write_scope": [
+        "archflow/capabilities/semantic_spatial_authoring.py",
+        "archflow/capabilities/geometry_proposal.py",
+        "archflow/runtime/architectural_revision.py",
+        "archflow/runtime/__init__.py",
+        "tests/test_semantic_spatial_authoring.py",
+        "tests/test_geometry_proposal_producer.py",
+        "tests/test_architectural_revision.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-experiment-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Failed mandatory P060 findings compile to exact-receipt-bound semantic revision context geometry repair issues and realization requirements while passed or stale receipts fail closed.",
+        "The provider authors a complete successor SpatialOptionProposal and framework code cannot insert rename or patch a project component or geometry answer.",
+        "The successor is revalidated against unchanged project context revised through portfolio lineage and compiled by P055 against exact predecessor semantics and geometry.",
+        "Geometry authoring receives the exact predecessor program and P060 requirements while P053 envelopes and P036 records survive success and deterministic rejection without fallback.",
+        "A new realization is evaluated again by P060 and only a passed receipt satisfies the experiment terminal role."
+      ],
+      "tests": [
+        "P060 feedback identity authority stale and pass rejection",
+        "Complete semantic successor validation and no field patching",
+        "Exact compiled-geometry reload and predecessor publication",
+        "P055 P053 P036 resume and promoted-study reload",
+        "Architecture V3 scope diff and compileall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_semantic_spatial_authoring",
+          "tests.test_geometry_proposal_producer",
+          "tests.test_architectural_revision",
+          "tests.integration.test_multi_building_experiments"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "on_complete": {
+        "modules": {
+          "runtime": "architectural_failure_revision_typed"
+        }
+      },
+      "card": "docs/mapping/archive/M062-architectural-failure-semantic-geometry-revision.md",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M062",
+        "actor": "codex",
+        "verified_at": "2026-08-18T14:45:54.079167+00:00",
+        "contract_sha256": "136f46d505b004e0b5c4c1632cd75b212e9595575389cffc6e39a803ff257b08",
+        "scope_sha256": "0e18849b2e9b4551867944395f4b82589406572ef9403e131695ed1122ab207e",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_semantic_spatial_authoring",
+              "tests.test_geometry_proposal_producer",
+              "tests.test_architectural_revision",
+              "tests.integration.test_multi_building_experiments"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d9734da6d52587e731a1071ef2977c7162a551a1075953708d6f774bfdf55a0a",
+            "stdout_tail": "",
+            "stderr_tail": "............................................Executing <Task finished name='Task-218' coro=<ArchitecturalRevisionCompilerTests.test_failed_entry_drives_atomic_model_authored_successor() done, defined at D:\\ARCHFLOW_V4\\tests\\test_architectural_revision.py:359> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.125 seconds\n...............\n----------------------------------------------------------------------\nRan 59 tests in 11.013s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "080b4715e5bcf2b40d5060db042a15a17dc84c520939754d7335fe208d8970f9",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (122 files, 0.796s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-18",
+      "evidence": [
+        "project://p062-experiment-study/runs/study-026/records/m062-lifecycle-p060-closure-outcome-07cf9dde95ea72a0b019bd426506dd96a594d3eb71d9693f7e0b6a0a31a3f995.json"
       ]
     }
   ]

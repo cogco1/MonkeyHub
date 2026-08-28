@@ -62,6 +62,74 @@ explicit oculus and a bounded coffer field. Every stage has exact lifecycle,
 geometry, sandbox realization, artifact-presence validation, and reloadable
 P036 evidence. The proof loads no prior Pantheon or sandbox Gold answer.
 
+P060 replaces the remaining artifact-presence-only inference with a separate
+project-derived architectural-usability contract. Compilation binds one exact
+project/run/base, current developed-design digest, sole selected component
+tree, compiled neutral geometry, sandbox scene, realization receipt, and
+stable artifact reference. The framework supplies only generic measurable
+comparison operators. Criterion vocabulary, values, units, component/object
+locality, obligations, and authority remain project records. Retrieved text is
+never authority by itself: a distinct authorized project adoption record must
+bind it before it can supply a mandatory criterion. Architectural acceptance
+requires artifact presence plus every mandatory criterion to be evaluable and
+pass; missing, stale, unsupported, unit-incompatible, locality-mismatched, or
+contradictory evidence becomes a typed failed or unknown local finding. The
+receipt is read-only and cannot edit geometry, certify a model assertion,
+review a candidate, promote state, or write canonical state. P058 remains an
+honest artifact-presence-only proof rather than being retroactively upgraded.
+
+P061 makes “family” a typed annotation of that same component–geometry value,
+not another ownership tree. A parametric family references parameters and
+hosted assemblies already present in generic geometry operations. An external
+mesh family references immutable content-addressed assets with explicit native
+unit, socket, frame, and scale while exposing no internal parametric edit
+surface. A hybrid can carry both under one existing `DesignComponent` binding.
+All modes publish the same project/base, family revision, anchors, interfaces,
+dependencies, semantic bindings, objects, and provenance receipt.
+
+The family compiler only validates an already compiled program. A separate
+read-only realization receipt then binds that compilation to the exact
+sandbox receipt, scene, workspace, and unchanged family object digests.
+Revision, replacement, and retirement are checked against the exact P055
+predecessor/current lifecycle; changed content cannot hide behind one revision,
+and preserved dependents cannot ignore a changed declared dependency. P036
+remains the only writer. P061 provides neither an architectural family
+catalogue nor a downstream platform exporter.
+
+P062 adds a detached experiment protocol, not another runtime controller.
+Preregistration freezes separate P036 project cases, a complete condition
+matrix, one shared provider profile, attempt and wall-clock bounds, metric
+specifications, and code/contract identity before any result. Attempt intents
+make planned, running/interrupted, terminal, provider-failed, and timed-out
+states distinguishable. Full runs retain P053 receipts; generation-context
+ablations declare only named withheld context; validation ablations reuse an
+exact source attempt without provider replay. Outcomes preserve P060 and other
+source statuses, report required missing measurements as unknown, and have no
+provider, validation, persistence, review, promotion, or canonical-write
+authority. Concrete building cases and all derivation traces remain in their
+project probes.
+
+The P062 result index is rebuildable from P036 records rather than authored as
+a report. It distinguishes planned, running, terminal-unmeasured, failed, and
+completed assignments, binds every indexed payload digest to its study record,
+and refuses successful post-completion retries. Its table-ready state stays
+false until every preregistered assignment has an exact outcome, so an unrun
+cell cannot enter P063 as empirical evidence.
+
+Condition completion is schema-bound as well as role-bound. Preregistration
+fixes each terminal role's source receipt schema and accepted status. Full and
+generation-context conditions retain the same authority chain; validation
+ablations remove only named evaluator roles and reuse every other binding
+exactly. An experiment-local placeholder therefore cannot impersonate P056,
+P060, or P061 evidence.
+
+Before a completed attempt is persisted, the P062 adapter also reconciles all
+known terminal receipts as one exact case chain. Geometry, design-state,
+component-tree, scene, sandbox-receipt, family-set, and family-compilation
+digests must agree across P056, sandbox, P060, and P061. Empty family
+compilation is a valid P061 no-op in isolation but not completed family evidence
+for this experiment.
+
 Until that chain is complete, three routes must not be conflated:
 
 - the intended active route is typed semantic-spatial authoring, joint
@@ -388,6 +456,19 @@ record set; Agent CLI and later API adapters share the same activation function
 and `AsyncModelProvider` port. Orphan run records from a pre-checkpoint
 interruption never become completion evidence.
 
+P059 makes the unsuccessful side equally durable without turning it into a
+success path. `ModelInvocationReceipt@2` binds bounded wall-clock duration to
+the exact request, provider identity, status, byte/token counts, and
+output-or-error evidence; historical `@1` receipts remain read-only inputs
+with an explicit unknown duration represented as zero. After a compiler stops
+on one or more P053-validated model receipts, P036 stores a
+`ProductionFailedAttemptReceipt@1` under that run. The receipt has no lifecycle
+successor, transition checkpoint, alternate provider, persistence authority,
+or canonical-write authority. Reload verifies the embedded receipt digest and
+orders later attempts through project-local retry references. A completed
+intent cannot subsequently acquire a failed attempt, while a failed intent may
+still be retried and reach the ordinary successful checkpoint path.
+
 `archflow-runtime run-project` is the formal P052/P053/P036 entry. It ingests
 an explicitly supplied typed current-project context into P036, generates two
 P054 semantic/coarse-geometry alternatives, compiles the existing option set,
@@ -593,6 +674,31 @@ The repository already proves portions of the outer control boundary:
 P042 falsified the stronger claim that V2 retained every future-relevant
 research and obligation distinction. M009 repairs those known losses; it does
 not claim that every future architectural distinction has already been found.
+
+M062 places failed P060 evidence back into the same semantic–geometry
+production lifecycle without adding another ownership tree. The model authors
+the complete semantic successor and its geometry delta. Deterministic code
+requires geometry for every directly changed component, publishes exact
+predecessor object and binding revision tokens, and may revalidate only
+descendants whose predecessor and successor geometry subtrees are identical.
+When deterministic geometry compilation rejects a complete typed model edit,
+the next bounded model request includes the exact rejected output, its digest,
+and the exact issues. The next output is still a complete replacement over the
+original predecessor: runtime code neither merges model rounds nor authors the
+repair. This preserves the provider's intended assembly while keeping compiler
+and validation authority deterministic.
+Study 025 exercises that contract across a process boundary: one P036-loaded
+rejected round led to one real provider replacement that retained its door
+assembly, compiled, and realized one sandbox opening. That recovery is not a
+committed lifecycle transition and has not yet passed the subsequent P060 gate.
+Study 026 then closes the deterministic continuation without another model
+call: P055 compiles and checkpoints the exact semantic-geometry successor, and
+P060 recomputes four project-derived measurements on a fresh realization. All
+mandatory clinic criteria pass, including one usable opening; no family or
+multi-building result is inferred from that single revision chain.
+`SpatialOptionProposal.components` remains the building ownership tree;
+`DesignStateTree` remains control and context. Failed proposals and provider
+receipts are retained through P036 and never promoted as committed state.
 
 It does **not** yet prove raw-prompt program derivation, capacity/area
 compilation, relationship/topology generation, a complete Architect controller,
