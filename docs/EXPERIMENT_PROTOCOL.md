@@ -551,3 +551,27 @@ occupancy grid: plan-footprint IoU 0.865, elevation-silhouette IoU 0.949,
 bounding box 48 x 47 x 62 against the downsampled 49 x 47 x 64. The
 receipt denies reproduction and full-fidelity claims; a live-model
 monument run remains a separately evidenced future card.
+
+## P066 live root and the standard render set — 2026-08-28
+
+The V3 golden render convention (`kevin-section-render-standard`) is
+reimplemented as a V4 tool without importing V3 code: a fixed axonometric
+camera with the entrance rotated toward the viewer, a transverse section
+on the drum mid-plane and an axial section on the entrance mid-line each
+keeping the far half so the cut face opens to the camera, and a front
+orthographic elevation with depth dimming. The P065 monument's four
+standard views are retained in the probe's export area under a
+source-manifest record binding view digests to the exact stage-3 voxel
+view; renders remain read-only visual evidence with no acceptance
+authority.
+
+P066 then opened the live lane: the same monument prompt and context, a
+frozen Codex profile, and one preregistered root attempt. The live model
+authored two independent monument options, a selection, and compiled
+neutral geometry in four calls over 183 seconds with no repair round,
+choosing a coarser two-square-metre grid basis itself to fit the frozen
+output budget. The result is honest coarse massing — three components and
+three solids at 7,800 voxel cells — exactly the root-step granularity the
+scripted P058/P065 chains also start from. Live deepening stages remain
+P066's open scope, with the study chronicle marking revision-stage
+authoring as the known weakest point of live-model discipline.

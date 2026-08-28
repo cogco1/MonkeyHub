@@ -10610,6 +10610,47 @@
       "evidence": [
         "scripted-provider monument derivation promoted: root step plus three P055 stages on eleven stable component identities; 36 authored operations expand through typed arrays (incl. 8 radial rings) into 308 realized instances and 37,013 occupied voxel cells; machine-local fidelity vs the frozen golden at declared half scale reaches plan IoU 0.865 and elevation IoU 0.949 with no fitted value; full voxelized proof retained behind ARCHFLOW_SLOW_MONUMENT with promoted probe evidence; fast protocol-chain test and ARCHITECTURE PASS"
       ]
+    },
+    {
+      "id": "P066",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Derive a monument-class building with a live model provider through the staged production runtime: the model authors the coarse proposal, selection, geometry, and stage deepenings itself under the frozen contracts, with every failed or timed-out attempt retained and no scripted fallback.",
+      "depends_on": [
+        "P062",
+        "P065"
+      ],
+      "write_scope": [
+        "tools/run_live_monument.py",
+        "probes/p066-live-monument/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/paper/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The live provider profile is frozen before any call and every attempt retains exact P053 envelopes; failures, rejections, and timeouts are terminal evidence, never silently retried.",
+        "The root step is authored end to end by the live model: two independent options, one selection, and compiled neutral geometry, with the harness contributing no coordinates.",
+        "At least one deepening stage extends the same component identities through a P055 exact-predecessor transaction authored by the live model.",
+        "Typed arrays authored by the model expand into enumerated instances without per-instance operations.",
+        "Claims separate live-model evidence from the P065 scripted proof, and partial progress is closed honestly as partial."
+      ],
+      "tests": [
+        "Probe reload and provenance tests over retained live attempts",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P066-live-monument-derivation.md",
+      "on_complete": {},
+      "actor": "codex"
     }
   ]
 }
