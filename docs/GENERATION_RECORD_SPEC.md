@@ -1,0 +1,129 @@
+# 生成过程记录规范(Generation Record Spec)
+
+**Status:** 规范草案 v1,2026-08-29。参照外部项目
+`DIGITAL FUTURE 2026 ZONING/V2_RUNTIME` 的目录纪律,落实到
+ArchFlow 的 P036 内容寻址仓库。本文回答:**一次生成过程(一个
+run)应当存在哪些维度的记录、如何命名、缺席时如何显式化。**
+
+## 一、从参照项目采纳的六条纪律
+
+1. **回执带 schema 版本**:`"schema_version": "…@1.0.0"` ——
+   ArchFlow 已有(`Schema@N`),保持。
+2. **阻塞回执**:外部输入缺失时写 `*_blocker_receipt.json`,
+   含 `stage_reached / reason / required_to_resume / resume_artifact`
+   —— ArchFlow **缺**此类型,补(维度 D9)。
+3. **批量清单账本**:一行一项目、逐模块状态列 + `blocker_reason` +
+   `resume_path` 的 manifest(CSV/JSON 双份)—— 即维度二的覆盖账本
+   在生产中的形态;ArchFlow **缺** run 级 manifest(维度 D7)。
+4. **区域分离**:config / source_staging / workspace /
+   artifact_store(sha256)/ cache / temp / output / handoff /
+   distribution / reference_library 各司其职;**证据永不住 temp**。
+5. **内容寻址产物库**:`artifact_store/sha256/` 与 P036 同构。
+6. **交付物命名**:`YYMMDD_{用途/受众}[_{形态}]`(如
+   `260806_内部汇报_16x9`);发布包
+   `{版本}-{YYYYMMDD}-r{轮次}-{语义槽}`。
+
+## 二、顶层区域对照
+
+| V2_RUNTIME | ArchFlow 对应 | 说明 |
+|---|---|---|
+| `config/` | provider profile / 冻结契约(卡片+registry) | 生成前冻结,digest 入 D1 |
+| `source_staging/` | `probes/<p>/input/` | 原始输入,只进不改 |
+| `workspace/projects/<id>/` | `probes/<p>/runs/<run>/` | 工作态 |
+| `artifact_store/sha256/` | `probes/<p>/objects/` + `records/<kind>-<sha256>.json` | 内容寻址 |
+| `temp/`, `cache/` | 会话 scratchpad | **禁止存证据**(见第五节缺口) |
+| `output/` | `probes/<p>/exports/` | 交付物,带清单 |
+| `handoff/` | D9 阻塞/移交回执 | 补 |
+| `distribution/` | git tag + 卡片归档 | 版本-日期-轮次-语义槽 |
+| `reference_library/` | D2 依据快照(web-evidence-snapshot) | 已有 |
+
+## 三、一次生成过程的九个记录维度
+
+一个 run 的记录按维度归类;**每个维度要么有记录,要么有类型化的
+缺席理由**(如 `not_required`)。现有记录种类名标注为 `code`。
+
+**D1 意图与语境** —— 为什么生成、在什么冻结条件下。
+`project-bootstrap`、`production-authoring-context`、provider 身份
+(id/version/fingerprint)、承诺集。缺席不允许。
+
+**D2 依据(basis)** —— 每条外部知识的来路。
+`precedent-query`(必须先声明校准哪些决策)→
+`web-evidence-snapshot` → `research-invocation`(含失败)→
+`research-candidates`(含 `rejected_candidates`)→
+`precedent-adoption` → `decision-calibration`。
+诚实空结果(零候选)也是记录,不是缺席。
+
+**D3 决策(decisions)** —— 收敛的每一步。
+`schematic-option-set` → `schematic-selection`(含理由)、
+声明集(P068 契约,字段级 `source_refs` 强制)、
+承诺(commitment,含权威与证据)。
+
+**D4 生成(generation)** —— 模型做了什么。
+`production-provider-invocation-*`(P053 信封,**每次尝试都留**,
+含失败与超时)、`geometry-program-proposal`、
+`production-geometry-program-*`(编译后程序,含 operation_order)。
+
+**D5 实现(realization)** —— build-to-measure 基底。
+`*-sandbox-scene`、`*-sandbox-realization`、`*-voxel-view`。
+实现≠验收(M075)。
+
+**D6 验收(acceptance)** —— 门与处置。
+判据门记录(`*-symmetry-gate` 等,过不过都留)、
+`*-validation`、`*-sandbox-archive`
+(disposition ∈ accepted/rejected/repaired;
+REJECTED 必引用致拒的门记录)。
+
+**D7 度量与账本(ledger)** —— run 的自描述。
+保真度测量(`*-fidelity`)、对称/判据发现
+(`axial-symmetry-findings-*`)、覆盖账本(P076,待建:
+有依据值/全部值、已销账关系/候选关系、已扫掠来源)、
+**run manifest**(待建:一行式状态摘要,逐维度
+`present / not_required / blocked`,参照批量清单)。
+
+**D8 外化(externalization)** —— 离开中立记录的每个形态。
+翻译脚本 digest、CAD 等价回执(`cad-equivalence-receipt`)、
+IFC 导出回执(`ifc-export-receipt`)、渲染清单
+(`*-standard-render-manifest`)。**规则:外化文件本体
+(.3dm/.ifc/.png/.py)与其回执一起进 `exports/`,
+回执在 `records/` 引用其 sha256;scratchpad 仅作过手。**
+
+**D9 中断与移交(interruption & handoff)** —— 为什么停、如何续。
+阻塞回执(待建,参照 `blocker_receipt`:
+`stage_reached / reason / required_to_resume / resume_record_ref`)、
+取代记录(typed supersession,已有)、恢复检查点
+(`runs/<run>/recovery/`,已有)。
+
+## 四、命名文法
+
+**记录**(`records/` 内,机器侧):
+`{阶段前缀?}-{角色}[-{序号}]-{sha256}.json`。
+角色词取本文 D1–D9 的 code 名;新角色须先入本表。
+内容寻址优先于可读性 —— 可读性由 run manifest 提供,不靠文件名。
+
+**外化文件**(`exports/` 内,人机两用):
+`{YYMMDD}_{project}_{角色}_{语义槽}.{ext}`
+例:`260829_p074_cad-model_symmetric.3dm`、
+`260829_p074_ifc_symmetric.ifc`、
+`260829_p074_render_front-elevation.png`;
+同名 `.receipt.json` 或清单记录引用其 digest。
+
+**交付物 / 发布**(仓库外或 tag):
+`{版本}-{YYYYMMDD}-r{轮次}-{语义槽}`,轮次单调递增,
+语义槽说明"这轮交付了什么",不写形容词。
+
+## 五、当前合规缺口(2026-08-29 盘点)
+
+1. **外化文件散落 scratchpad**:`monument-semantic.3dm`、
+   `monument-symmetric.3dm`、`monument-old.ifc`、
+   `monument-symmetric.ifc` 与正立面/透视截图未入 `exports/`
+   —— 违反 D8 规则,需迁移并补清单记录。
+2. **无 run manifest(D7)**:判断一个 run 是否完备目前要 glob
+   records;补一行式状态记录。
+3. **无阻塞回执类型(D9)**:P066 实机失败靠 P053 信封留档,
+   但"缺什么才能续"没有标准槽位。
+4. **记录角色名未成表**:`p065-stage-*` 前缀与
+   `production-*`、`research-*` 并存,角色词未注册;本文第四节
+   即注册表的起点。
+5. **覆盖账本(D7/P076)**:候选关系边枚举与销账未建。
+
+以上 1–2 为即改项;3–5 随 P076 与 P066 深化落地。
