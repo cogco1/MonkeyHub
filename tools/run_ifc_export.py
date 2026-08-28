@@ -48,12 +48,22 @@ def main(argv=None) -> int:
         default=[],
         help="component=IfcClass element mapping (repeatable)",
     )
+    parser.add_argument(
+        "--material",
+        action="append",
+        default=[],
+        help="component=material_id assignment (repeatable)",
+    )
     args = parser.parse_args(argv)
 
     class_map = {}
     for entry in args.map:
         component, _, ifc_class = entry.partition("=")
         class_map[component] = ifc_class
+    material_map = {}
+    for entry in args.material:
+        component, _, material_id = entry.partition("=")
+        material_map[component] = material_id
 
     record_path = Path(args.program_record)
     program = load_program_shim(record_path)
@@ -62,6 +72,7 @@ def main(argv=None) -> int:
         project_id=args.project_id,
         run_id=args.run_id,
         class_by_component=class_map,
+        material_by_component=material_map or None,
         provenance={
             "proposal_id": program.proposal.proposal_id,
             "proposal_digest": program.proposal_digest,
@@ -127,6 +138,7 @@ def main(argv=None) -> int:
         "element_count": result.element_count,
         "mapped_instance_total": result.mapped_instance_total,
         "class_map": class_map,
+        "material_map": material_map,
         "representation_notes": list(result.representation_notes),
         "validation": validation,
         "status": "verified" if verified else "failed",

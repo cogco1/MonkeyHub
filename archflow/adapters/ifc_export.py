@@ -349,8 +349,14 @@ def export_program_to_ifc(
     run_id: str,
     class_by_component: Mapping[str, str] | None = None,
     provenance: Mapping[str, str] | None = None,
+    material_by_component: Mapping[str, str] | None = None,
 ) -> IfcExportResult:
-    """Author one deterministic IFC4 file for the compiled program."""
+    """Author one deterministic IFC4 file for the compiled program.
+
+    With a material assignment, elements carry the material in their
+    property set and associate a real ``IfcMaterial`` through
+    ``IfcRelAssociatesMaterial``.
+    """
 
     proposal = program.proposal
     operations = {op.op_id: op for op in proposal.operations}
@@ -477,6 +483,9 @@ def export_program_to_ifc(
             raise IfcExportError(f"unsupported operation kind: {kind}")
 
     class_map = dict(class_by_component or {})
+    material_map = dict(material_by_component or {})
+    ifc_materials: dict[str, object] = {}
+    elements_by_material: dict[str, list] = {}
     elements = []
     mapped_total = 0
     for object_id in physical:
@@ -558,8 +567,20 @@ def export_program_to_ifc(
             ),
         )
         elements.append(element)
+        element_materials = sorted(
+            {material_map.get(item) for item in components} - {None}
+        )
+        for material_id in element_materials:
+            if material_id not in ifc_materials:
+                ifc_materials[material_id] = f.create_entity(
+                    "IfcMaterial", Name=material_id
+                )
+            elements_by_material.setdefault(material_id, []).append(
+                element
+            )
         properties = {
             "archflow:producer_op": operation.op_id,
+            "archflow:material": ",".join(element_materials),
             "archflow:bindings": ",".join(binding_ids),
             "archflow:component": component,
             "archflow:commitments": ",".join(
@@ -613,6 +634,13 @@ def export_program_to_ifc(
         RelatingStructure=building,
         RelatedElements=elements,
     )
+    for material_id in sorted(elements_by_material):
+        f.create_entity(
+            "IfcRelAssociatesMaterial",
+            GlobalId=_guid(f"{project_id}:material:{material_id}"),
+            RelatedObjects=elements_by_material[material_id],
+            RelatingMaterial=ifc_materials[material_id],
+        )
     return IfcExportResult(
         element_count=len(elements),
         mapped_instance_total=mapped_total,

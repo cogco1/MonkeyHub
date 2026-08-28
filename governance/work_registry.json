@@ -11531,6 +11531,99 @@
       "evidence": [
         "relation_coverage.py: mechanical candidate enumeration from realized bounds (caller tolerance), program-edge detection (cross-component consumption/response with op provenance), declared-edge join (derived/constraint/independent, non-empty refs), typed uncovered_relation rows. Live ledger over the symmetric monument stage-3: 10 candidate edges, 3 resolved (colonnade-portico and portico-rotunda via commitment:primary-axis-center, dome-rotunda via envelope commitment), 7 honestly uncovered (coffers-dome, statuary rings, aedicula, recess, colonnade-rotunda) - coverage 30 percent retained as the dimension-2 metric and work queue. Multi-source sweep live: research-006 swept Pantheon and Roman-concrete pages in one query (18+7 windows, one invocation per snapshot, per-snapshot span verification), union adoption of 9 facts including wall thickness 6.4 m, interior diameter 43.3 m, aggregate grading, relieving arches - cross-source corroboration in a single calibration. tests/test_relation_coverage.py (9) green; suite 614; archcheck PASS."
       ]
+    },
+    {
+      "id": "M069",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Typed component-level material intents with mandatory provenance, assigned through a ledger whose coverage join reports unassigned components as typed entries; projected into the CAD emission (material layer colors, archflow:material user text, semantic round trip) and the IFC export (pset entry plus IfcMaterial via IfcRelAssociatesMaterial). Material correctness = auditable assignment and sources, never voxel texture.",
+      "depends_on": [
+        "P072",
+        "P073",
+        "P077"
+      ],
+      "write_scope": [
+        "archflow/capabilities/material.py",
+        "archflow/capabilities/README.md",
+        "archflow/adapters/cad_program.py",
+        "archflow/adapters/ifc_export.py",
+        "tools/run_cad_equivalence.py",
+        "tools/run_ifc_export.py",
+        "tools/run_material_ledger.py",
+        "tests/test_material.py",
+        "tests/test_cad_program.py",
+        "tests/test_ifc_export.py",
+        "probes/p066-live-monument/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Material intents are typed records with non-empty source refs; the framework ships no material vocabulary or default.",
+        "Ledger coverage joins assignments against the program's bindings and lists unassigned components as typed entries.",
+        "CAD translation with a ledger colors component layers by material and stamps archflow:material user text, included in the semantic round trip expectation.",
+        "IFC export with a ledger writes the material into the element pset and associates a real IfcMaterial.",
+        "A live monument ledger assigns only citable materials (adopted facts as sources) and retains its honest unassigned remainder."
+      ],
+      "tests": [
+        "Ledger validation, provenance, coverage join, projections",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_material"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M069-material-channel.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M069",
+        "actor": "codex",
+        "verified_at": "2026-08-28T19:21:22.872781+00:00",
+        "contract_sha256": "3bea093b06177da6e6344ddb123e137b46d4c249947e4d82aa856eb4b23994a8",
+        "scope_sha256": "8af876cb8474042e3855060f5bbe28cb05fb6b9b20dfbdcb7cd2c65acf59fdb4",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_material"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "435ce6c4b1565f8868dbeffc94fc821121404534c0d8e0a8010249f429602e4d",
+            "stdout_tail": "",
+            "stderr_tail": ".......\n----------------------------------------------------------------------\nRan 7 tests in 0.333s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "b5954f4e646e529e57c2d302e7680ca0702694adcc68a0d0da2f3d0e62139c77",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (134 files, 0.863s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "material.py: MaterialIntent (mandatory non-empty source_refs, deterministic display color), MaterialLedger (assignments only over declared intents), ledger_coverage joining bindings with typed unassigned and orphan lists. CAD projection: material layer colors + archflow:material user text, in the semantic round-trip expectation; IFC projection: pset entry + IfcMaterial via IfcRelAssociatesMaterial (re-read verified). Live monument ledger: granite (colonnade, citing the retained octastyle adoption quote 'large granite Corinthian columns') and roman-concrete (rotunda+dome, citing the research-006 multi-source adoption); 7 components honestly typed unassigned, coverage 30 percent; material CAD script sha retained; material IFC export VERIFIED into workspace exports. tests/test_material.py (7) green; suite 621; archcheck PASS."
+      ]
     }
   ]
 }

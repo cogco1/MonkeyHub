@@ -87,7 +87,11 @@ def _layer_color(component_key: str) -> tuple[int, int, int]:
     )
 
 
-def expected_object_semantics(program) -> dict[str, dict]:
+def expected_object_semantics(
+    program,
+    *,
+    material_by_component: Mapping[str, str] | None = None,
+) -> dict[str, dict]:
     """The semantics each physical object must carry in the CAD document.
 
     Derived from the program alone: producer op, binding ids, component
@@ -143,6 +147,15 @@ def expected_object_semantics(program) -> dict[str, dict]:
                 user_text["archflow:bindings"] = ",".join(binding_ids)
             if components:
                 user_text["archflow:component"] = "+".join(components)
+                materials = sorted(
+                    {
+                        (material_by_component or {}).get(component)
+                        for component in components
+                    }
+                    - {None}
+                )
+                if materials:
+                    user_text["archflow:material"] = ",".join(materials)
             if commitments:
                 user_text["archflow:commitments"] = ",".join(commitments)
             if evidence:
@@ -171,14 +184,23 @@ def translate_to_rhino_python(
     program,
     *,
     provenance: Mapping[str, str] | None = None,
+    material_by_component: Mapping[str, str] | None = None,
+    material_colors: Mapping[str, tuple[int, int, int]] | None = None,
 ) -> CadTranslation:
-    """Emit one deterministic, semantics-carrying rhinoscriptsyntax script."""
+    """Emit one deterministic, semantics-carrying rhinoscriptsyntax script.
+
+    With a material assignment, component layers take the material's
+    display color and objects carry ``archflow:material`` user text —
+    the assignment travels with the geometry, auditable in the file.
+    """
 
     proposal = program.proposal
     operations = {op.op_id: op for op in proposal.operations}
     order = list(program.operation_order)
     physical = _physical_ids(proposal)
-    semantics = expected_object_semantics(program)
+    semantics = expected_object_semantics(
+        program, material_by_component=material_by_component
+    )
     losses: list[dict] = []
     lines: list[str] = [
         "import json",
@@ -202,9 +224,13 @@ def translate_to_rhino_python(
         }
     )
     for layer in layer_rows:
-        lines.append(
-            f"rs.AddLayer({layer!r}, {_layer_color(layer)!r})"
-        )
+        component = layer.split("::", 1)[1]
+        material = (material_by_component or {}).get(component)
+        if material is not None and material_colors is not None:
+            color = material_colors.get(material, _layer_color(layer))
+        else:
+            color = _layer_color(layer)
+        lines.append(f"rs.AddLayer({layer!r}, {tuple(color)!r})")
     for key, value in sorted((provenance or {}).items()):
         lines.append(
             f"rs.SetDocumentUserText({f'archflow:{key}'!r}, {value!r})"

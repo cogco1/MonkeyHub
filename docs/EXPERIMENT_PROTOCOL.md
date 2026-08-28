@@ -807,3 +807,24 @@ eight barrel vaults, the 43.3-metre interior diameter corroborated
 again, the aggregate grading from dense base to pumice crown attested
 by both sources, relieving arches and hidden chambers, and the Roman
 concrete composition the material channel will cite.
+
+## M069 material channel — 2026-08-29
+
+Materials entered the record system the way the reconstruction plan
+demanded: as auditable assignments, never texture. A material intent is
+a typed record with mandatory provenance; a ledger assigns intents to
+components; the coverage join reports every unassigned component as a
+typed entry. The projections ride the semantic carriers that already
+exist — CAD layers take the material's display color and objects carry
+archflow:material user text inside the round-trip expectation, and IFC
+elements gain the material in their property set plus a real
+IfcMaterial association.
+
+The monument's first ledger assigns only what the evidence can carry:
+granite for the colonnade, citing the retained adoption quote ("large
+granite Corinthian columns"), and Roman concrete for rotunda and dome,
+citing the multi-source wall-construction adoption. Seven components
+stay typed unassigned — thirty percent material coverage, honest, with
+the unassigned list as the next adoption queue. The material IFC
+export re-read verifies, and the material CAD script digest is
+retained beside the ledger.
