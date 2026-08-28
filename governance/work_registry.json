@@ -15,7 +15,7 @@
     "capabilities": "semantic_spatial_single_repair",
     "submission": "obligation_repair_proven",
     "validation": "project_derived_architectural_usability_proven",
-    "evaluation": "multi_building_ablation_evidence_proven",
+    "evaluation": "repair_locality_evidence_proven",
     "commit": "in_memory_proven",
     "adapters": "voxel_observation_and_cli_retrieval_proven",
     "project": "provider_success_rejection_recoverable"
@@ -10246,6 +10246,101 @@
       "completed_on": "2026-08-18",
       "evidence": [
         "project://p062-experiment-study/runs/study-026/records/m062-lifecycle-p060-closure-outcome-07cf9dde95ea72a0b019bd426506dd96a594d3eb71d9693f7e0b6a0a31a3f995.json"
+      ]
+    },
+    {
+      "id": "P063",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Measure repair locality: for one frozen accepted local delta per case and edit class, compare target-only patch, whole-chain rebuild, and dependency-scoped repair on validity, recomputation, retention, impact precision/recall, and failure attribution without giving any strategy design authority.",
+      "depends_on": [
+        "P062"
+      ],
+      "write_scope": [
+        "archflow/evaluation/repair_experiment.py",
+        "archflow/evaluation/__init__.py",
+        "archflow/evaluation/README.md",
+        "tools/run_repair_episode.py",
+        "tests/test_repair_experiment.py",
+        "probes/p062-clinic-case/",
+        "probes/p062-workshop-case/",
+        "probes/p062-courtyard-case/",
+        "probes/p063-repair-study/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/paper/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A typed preregistration freezes twenty-seven paired repair episodes (three cases by three edit classes by three strategies), each starting from the same retained accepted baseline and the same frozen delta, before any episode result exists.",
+        "A gold impact set for every edit is retained before execution with named annotator identity; harness-proposed annotations are marked as such and disagreements or later human review are retained rather than resolved silently.",
+        "The three strategies are generic executors over existing P055/P057 records: target-only applies the delta without closure, whole-chain recomputes the complete downstream chain, dependency-scoped recomputes only the typed invalidation closure; none may invent geometry or edit the delta.",
+        "Episode metrics report repair success against preregistered mandatory validators, recompute ratio, unaffected-commitment retention, impact precision and recall against the gold set, unintended change ratio, and first-failure attribution, with exact denominators and typed unknowns.",
+        "Every episode retains exact P036 receipts; a P063 study index stays table-closed until all preregistered episodes have exact outcomes, and no aggregate winner is claimed by the framework."
+      ],
+      "tests": [
+        "Repair-episode preregistration immutability, frozen-delta identity, and strategy-isolation deterministic tests",
+        "Gold-impact-set binding, precision/recall denominators, and typed-unknown metric tests",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_repair_experiment"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P063-repair-locality-experiment.md",
+      "on_complete": {
+        "modules": {
+          "evaluation": "repair_locality_evidence_proven"
+        }
+      },
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P063",
+        "actor": "codex",
+        "verified_at": "2026-08-28T09:36:17.605844+00:00",
+        "contract_sha256": "f56108ec1f8bb140be75e0e57fc1a80ef3d6f5667cb4ed84a72be11c2e852ebc",
+        "scope_sha256": "1e70ce6663b57c5548626d4e8713c6676120ce977425280c56d8859cb4319c2b",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_repair_experiment"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "83166b089fbcb82fac63f22522fa6ae99bb5e46368cd35d756277fd463dd6346",
+            "stdout_tail": "",
+            "stderr_tail": ".......\n----------------------------------------------------------------------\nRan 7 tests in 0.001s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "92e8ae39077f3785c1c4cb9775d0b27ed2aff751db97e4da6db3884c178bfb18",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (123 files, 0.737s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "repair-003 executed the corrected frozen 27-episode matrix: dependency-scoped repair matches whole-chain validity (9/9 no new failures) at 0.173 mean recompute ratio with exact gold-closure precision/recall 1.0, while target-only fails 9/9 on typed stale dependencies; defective runs repair-001/002 retained as executor-defect evidence; 7 contract tests and ARCHITECTURE PASS"
       ]
     }
   ]

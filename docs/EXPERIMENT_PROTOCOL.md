@@ -453,3 +453,43 @@ driver-authored observation-set records initially omitted a schema field
 schema-bearing successor). The one comparable completed sample, six exact
 failures, and two ablation-degradation observations enter the paper only
 through this index and these receipts.
+
+## P063 repair-locality studies — 2026-08-28
+
+P063 measures repair locality over the retained study-028 full-condition
+baselines with three deterministic, provider-free strategy executors. All
+concrete deltas and gold impact sets are project-owned records proposed by
+the executing harness before any episode ran, marked `annotator_is_harness`
+and open to human architectural review; the framework owns only the generic
+graph, delta, strategy, and metric contracts.
+
+`repair-001` executed the frozen twenty-seven episode matrix and exposed an
+executor defect: identity repair after a component replacement guessed the
+replacement id instead of following the delta's own rename mapping, so one
+retained reference could stay stale even under the dependency-scoped
+strategy. `repair-002` fixed identity repair and added the
+`no_new_validator_failures` metric (three baselines carry pre-existing
+failed criteria, so absolute repair success conflates the edit with the
+baseline), then exposed a second defect: the whole-chain recompute set was
+derived only from the program lane and missed the component-geometry lane.
+Both defective runs are retained unmodified as executor-defect evidence.
+
+`repair-003` is the corrected frozen matrix. Its table-ready index shows
+the preregistered asymmetry exactly:
+
+- target-only patch: 0/9 episodes without new failures; every episode fails
+  on a typed stale dependency; mean recompute ratio 0.018.
+- whole-chain rebuild: 9/9 without new failures; mean recompute ratio 1.0;
+  mean impact precision 0.181 against the gold closure.
+- dependency-scoped repair: 9/9 without new failures; mean recompute ratio
+  0.173; impact precision and recall both 1.0 in every episode; unaffected
+  record retention 1.0.
+
+Validity is therefore identical between whole-chain and dependency-scoped
+(H1), dependency-scoped recomputes about a fifth of the derived state that
+whole-chain rebuilds (H2), unaffected records and the baseline commitment
+are fully retained (H3), and the dependency-scoped reopened set equals the
+typed gold closure exactly while whole-chain over-reopens by more than five
+times (H4). These are twenty-seven deterministic paired episodes over three
+buildings, not a population claim, and no aggregate winner is written by
+the framework.
