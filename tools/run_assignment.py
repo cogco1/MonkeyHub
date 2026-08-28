@@ -118,7 +118,8 @@ def _put(repository, run, kind: str, payload: dict) -> ProjectRecordRef:
 class Assignment:
     """Load one case project plus the refs this attempt binds."""
 
-    def __init__(self, case_root: Path) -> None:
+    def __init__(self, case_root: Path, condition: str = "full") -> None:
+        self.condition = condition
         self.repository = FilesystemProjectRepository.open(case_root)
         self.run = self.repository.load_run("experiment-001")
         self.base = self.run.base
@@ -134,7 +135,12 @@ class Assignment:
         self.preflight = self.repository.load_json(preflights[0])
         if self.preflight.get("status") != "passed":
             raise SystemExit("assignment preflight did not pass")
-        self.context_ref = self._ref(self.preflight["full_context_ref"])
+        if condition == "generation-context":
+            self.context_ref = self._ref(
+                self.preflight["generation_ablation_context_ref"]
+            )
+        else:
+            self.context_ref = self._ref(self.preflight["full_context_ref"])
         self.context = ProductionAuthoringContext.from_dict(
             self.repository.load_json(self.context_ref)
         )
@@ -175,13 +181,20 @@ class Assignment:
         raise SystemExit(f"referenced record is absent: {uri}")
 
 
-def _load_envelope(assignment: Assignment, envelope_kind: str) -> dict:
+def _load_envelope(
+    assignment: Assignment, envelope_kind: str, assignment_id: str
+) -> dict:
     refs = assignment.by_kind.get(envelope_kind) or []
-    if not refs:
+    payloads = [
+        payload
+        for payload in (assignment.repository.load_json(ref) for ref in refs)
+        if payload.get("assignment_id") == assignment_id
+    ]
+    if not payloads:
         raise SystemExit(
-            f"no {envelope_kind} record; run the earlier stage first"
+            f"no {envelope_kind} record for {assignment_id}; "
+            "run the earlier stage first"
         )
-    payloads = [assignment.repository.load_json(ref) for ref in refs]
     payloads.sort(key=lambda item: item.get("sequence", 0))
     return payloads[-1]
 
@@ -390,7 +403,135 @@ def _measurements(design_program, proposal_dict, program, scene, criteria):
             if len(pair) == 2
             else None
         )
+    if "storey_count" in keys:
+        values["storey_count"] = len(proposal_dict.get("levels", []))
+    if "double_height_hall_realized" in keys:
+        values["double_height_hall_realized"] = _double_height_realized(
+            design_program, proposal_dict
+        )
+    if "courtyard_open_to_sky" in keys:
+        values["courtyard_open_to_sky"] = _courtyard_open(
+            design_program, proposal_dict, program, scene
+        )
+    if "required_courtyard_access_ratio" in keys:
+        values["required_courtyard_access_ratio"] = _courtyard_access_ratio(
+            design_program, proposal_dict
+        )
     return values, separation_components
+
+
+def _label_node(design_program, needle: str) -> str | None:
+    for node in design_program.get("nodes", []):
+        if needle in str(node.get("label", "")).lower():
+            return node["node_id"]
+    return None
+
+
+def _node_volumes(proposal_dict, node_id: str) -> list[dict]:
+    volume_ids: set[str] = set()
+    for zone in proposal_dict.get("zones", []):
+        refs = [
+            r.rsplit(":", 1)[-1] for r in zone.get("program_node_refs", [])
+        ]
+        if node_id in refs:
+            volume_ids.update(zone.get("volume_ids", []))
+    return [
+        v
+        for v in proposal_dict.get("volumes", [])
+        if v["volume_id"] in volume_ids
+    ]
+
+
+def _double_height_realized(design_program, proposal_dict):
+    """Hall volume height reaches twice the smallest declared level height."""
+
+    node = _label_node(design_program, "hall")
+    if node is None:
+        return None
+    levels = proposal_dict.get("levels", [])
+    if not levels:
+        return None
+    minimum_height = min(level["height"] for level in levels)
+    for volume in _node_volumes(proposal_dict, node):
+        bounds = volume["bounds"]
+        height = bounds["maximum"][1] - bounds["minimum"][1] + 1
+        if height >= 2 * minimum_height or len(
+            volume.get("level_ids", [])
+        ) >= 2:
+            return True
+    return False
+
+
+def _courtyard_open(design_program, proposal_dict, program, scene):
+    """No other component's realized object covers the courtyard from above."""
+
+    node = _label_node(design_program, "courtyard")
+    if node is None:
+        return None
+    node_component = _node_components(design_program, proposal_dict)
+    courtyard_component = node_component.get(node)
+    volumes = _node_volumes(proposal_dict, node)
+    if not volumes or courtyard_component is None:
+        return None
+    owner: dict[str, str] = {}
+    for binding in program.proposal.semantic_bindings:
+        for object_id in binding.object_ids:
+            owner[object_id] = binding.component_id
+    for volume in volumes:
+        lo, hi = volume["bounds"]["minimum"], volume["bounds"]["maximum"]
+        for obj in scene.objects:
+            if owner.get(obj.object_id) == courtyard_component:
+                continue
+            box = obj.to_dict().get("bounds")
+            if not box:
+                continue
+            blo, bhi = box["minimum"], box["maximum"]
+            overlaps_xz = (
+                blo[0] <= hi[0]
+                and lo[0] <= bhi[0]
+                and blo[2] <= hi[2]
+                and lo[2] <= bhi[2]
+            )
+            if overlaps_xz and bhi[1] > hi[1]:
+                return False
+    return True
+
+
+def _courtyard_access_ratio(design_program, proposal_dict):
+    """Declared circulation links to the courtyard covered by connections."""
+
+    node = _label_node(design_program, "courtyard")
+    if node is None:
+        return None
+    required = [
+        rel["relationship_id"]
+        for rel in design_program.get("relationships", [])
+        if rel.get("kind") == "circulation"
+        and node
+        in (
+            str(rel.get("source_node_ref", "")).rsplit(":", 1)[-1],
+            str(rel.get("target_node_ref", "")).rsplit(":", 1)[-1],
+        )
+    ]
+    if not required:
+        return 1.0
+    connection_refs = {
+        ref.rsplit(":", 1)[-1]
+        for connection in proposal_dict.get("connections", [])
+        for ref in connection.get("relationship_refs", [])
+    }
+    satisfied = {
+        response.get("response_id", "")
+        for response in proposal_dict.get("constraint_responses", [])
+        if response.get("status") == "satisfied"
+    }
+    covered = [
+        rel
+        for rel in required
+        if rel in connection_refs
+        or any(rid.endswith(rel) for rid in satisfied)
+    ]
+    return round(len(covered) / len(required), 6)
 
 
 def _separation_pair(design_program, proposal_dict):
@@ -450,7 +591,7 @@ def _xz_overlap(program, scene, component_a, component_b) -> bool:
 
 def stage_terminal(args, assignment: Assignment) -> int:
     envelope_kind = f"p062-{args.study_run}-execution-envelope"
-    envelope = _load_envelope(assignment, envelope_kind)
+    envelope = _load_envelope(assignment, envelope_kind, args.assignment)
     if envelope.get("status") != "compiled":
         raise SystemExit("root step is not compiled; terminal chain refused")
     roles, uris = _classify_archive(assignment, envelope["record_refs"])
@@ -966,7 +1107,7 @@ def stage_metrics(args, assignment: Assignment) -> int:
     """Compute and persist the thirteen preregistered metric values."""
 
     envelope_kind = f"p062-{args.study_run}-execution-envelope"
-    envelope = _load_envelope(assignment, envelope_kind)
+    envelope = _load_envelope(assignment, envelope_kind, args.assignment)
     terminal = envelope.get("terminal_refs") or {}
     roles, uris = _classify_archive(
         assignment, envelope.get("record_refs") or []
@@ -1182,6 +1323,7 @@ def stage_metrics(args, assignment: Assignment) -> int:
                 *(terminal.values()),
             }
         ),
+        "status": "measured",
         "paper_result_authority": False,
         "canonical_write_authority": False,
     }
@@ -1196,20 +1338,671 @@ def stage_metrics(args, assignment: Assignment) -> int:
     return 0
 
 
+def stage_bind(args, assignment: Assignment) -> int:
+    """Assemble receipt and outcome payloads and persist them via the CLI."""
+
+    import datetime
+    import subprocess
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    import run_experiment as rex
+
+    from archflow.evaluation.experiment import (
+        ExperimentAttemptIntent,
+        ExperimentAttemptReceipt,
+        ExperimentAttemptStatus,
+        ExperimentMetricObservation,
+        ExperimentOutcome,
+        ExperimentPreregistration,
+        MetricObservationStatus,
+    )
+
+    study_repo = FilesystemProjectRepository.open(Path(args.study_root))
+    study_run = study_repo.load_run(args.study_run)
+    study_dest = PersistenceDestination(
+        PersistenceArea.RUN_RECORD, run_id=args.study_run
+    )
+    prereg = intent = None
+    for ref in study_repo.list_json(run=study_run, destination=study_dest):
+        payload = study_repo.load_json(ref)
+        if payload.get("schema") == "ExperimentPreregistration@1":
+            prereg = ExperimentPreregistration.from_dict(payload)
+        if payload.get("schema") == "ExperimentAttemptIntent@1" and (
+            payload.get("assignment_id") == args.assignment
+            and payload.get("attempt_index") == args.attempt
+        ):
+            intent = ExperimentAttemptIntent.from_dict(payload)
+    if prereg is None or intent is None:
+        raise SystemExit("study run lacks the preregistration or the intent")
+    assignment_row = prereg.assignment(args.assignment)
+    condition = next(
+        c
+        for c in prereg.conditions
+        if c.condition_id == assignment_row.condition_id
+    )
+
+    envelope_kind = f"p062-{args.study_run}-execution-envelope"
+    envelope = _load_envelope(assignment, envelope_kind, args.assignment)
+    terminal = envelope.get("terminal_refs") or {}
+    all_refs = {
+        ref.uri: ref
+        for ref in _run_records(assignment.repository, assignment.run)
+    }
+
+    provider_bindings = []
+    for uri in envelope.get("record_refs") or []:
+        payload = assignment.repository.load_json(all_refs[uri])
+        if payload.get("role") == "provider-invocation":
+            provider_bindings.append(
+                rex.bind_provider_record(
+                    assignment.repository,
+                    run=assignment.run,
+                    ref=all_refs[uri],
+                )
+            )
+    provider_bindings.sort(key=lambda item: item.receipt_id)
+
+    usability_payload = None
+    if terminal.get("architectural-usability"):
+        usability_payload = assignment.repository.load_json(
+            all_refs[terminal["architectural-usability"]]
+        )
+    usability_passed = bool(usability_payload) and all(
+        f["status"] == "pass"
+        for f in usability_payload["findings"]
+        if f["mandatory"]
+    )
+    lifecycle_uri = next(
+        (
+            uri
+            for uri in envelope.get("record_refs") or []
+            if assignment.repository.load_json(all_refs[uri]).get("role")
+            == "lifecycle-receipt"
+        ),
+        None,
+    )
+    role_refs = {
+        "semantic-geometry-production": lifecycle_uri,
+        "sandbox-realization": terminal.get("sandbox-realization"),
+        "architectural-usability": terminal.get("architectural-usability"),
+        "component-family-compilation": terminal.get(
+            "component-family-compilation"
+        ),
+        "component-family-realization": terminal.get(
+            "component-family-realization"
+        ),
+    }
+    requirements = {
+        item.role: item for item in condition.terminal_requirements
+    }
+    if usability_passed and all(role_refs.values()):
+        terminal_evidence = rex.bind_terminal_chain(
+            assignment.repository,
+            run=assignment.run,
+            condition=condition,
+            record_refs={
+                role: all_refs[uri] for role, uri in role_refs.items()
+            },
+        )
+        status = ExperimentAttemptStatus.COMPLETED
+        error_code = None
+        message = None
+    else:
+        bindings = []
+        for role, uri in role_refs.items():
+            if uri is None or role == "architectural-usability":
+                continue
+            try:
+                bindings.append(
+                    rex.bind_terminal_record(
+                        assignment.repository,
+                        run=assignment.run,
+                        ref=all_refs[uri],
+                        requirement=requirements[role],
+                    )
+                )
+            except Exception:
+                continue
+        terminal_evidence = tuple(
+            sorted(bindings, key=lambda item: item.record_ref)
+        )
+        status = ExperimentAttemptStatus.PIPELINE_REJECTED
+        error_code = (
+            envelope.get("error_code")
+            or "architectural.usability_failed"
+        )
+        message = envelope.get("message") or (
+            "deterministic P060 evaluation rejected the realized candidate; "
+            "provider and terminal records are retained without upgrade"
+        )
+
+    issued = datetime.datetime.fromisoformat(intent.issued_at)
+    duration_ms = int(
+        (
+            datetime.datetime.now(tz=issued.tzinfo) - issued
+        ).total_seconds()
+        * 1000
+    )
+    receipt = ExperimentAttemptReceipt(
+        study_id=prereg.study_id,
+        preregistration_digest=prereg.preregistration_digest,
+        assignment_id=args.assignment,
+        assignment_digest=assignment_row.assignment_digest,
+        case_id=assignment_row.case_id,
+        condition_id=assignment_row.condition_id,
+        project_id=assignment.run.project_id,
+        run_id=assignment.run.run_id,
+        base=assignment.run.base,
+        attempt_id=intent.attempt_id,
+        attempt_index=args.attempt,
+        attempt_intent_digest=intent.intent_digest,
+        status=status,
+        duration_ms=duration_ms,
+        provider_receipts=tuple(provider_bindings),
+        terminal_evidence=terminal_evidence,
+        source_attempt_receipt_digest=None,
+        retry_of_attempt_receipt_digest=None,
+        error_code=error_code,
+        message=message,
+    )
+    scratch = Path(args.scratch_dir)
+    receipt_path = scratch / f"receipt-{args.study_run}-{args.assignment}.json"
+    receipt_path.write_text(
+        json.dumps(receipt.to_dict(), indent=1), encoding="utf-8"
+    )
+    cli = [
+        sys.executable,
+        str(ROOT / "tools" / "run_experiment.py"),
+        "receipt",
+        "--study-root",
+        str(args.study_root),
+        "--run-id",
+        args.study_run,
+        "--payload",
+        str(receipt_path),
+        "--source-project",
+        f"{assignment.run.project_id}={args.case_root}",
+    ]
+    print("persisting attempt receipt...")
+    print(subprocess.run(cli, capture_output=True, text=True).stdout.strip())
+
+    metric_kind = (
+        f"s{args.study_run.rsplit('-', 1)[-1]}-{args.assignment}"
+        "-metric-evidence"
+    )
+    metric_refs = assignment.by_kind.get(metric_kind) or [
+        ref
+        for uri, ref in all_refs.items()
+        if metric_kind in uri
+    ]
+    if not metric_refs:
+        raise SystemExit("metric evidence record is absent; run metrics first")
+    metric_ref = metric_refs[-1]
+    metric_payload = assignment.repository.load_json(metric_ref)
+    measured = metric_payload["measurements"]
+    notes = metric_payload.get("measurement_notes") or {}
+
+    observations = []
+    for spec in prereg.metric_specs:
+        metric_id = spec.metric_id
+        evidence = (
+            rex.bind_evidence_record(
+                assignment.repository,
+                run=assignment.run,
+                ref=metric_ref,
+                role=f"metric-{metric_id}",
+                expected_schema="P062AttemptMetricEvidence@1",
+                expected_status="measured",
+            ),
+        )
+        if metric_id == "wall-clock-ms":
+            observations.append(
+                ExperimentMetricObservation(
+                    metric_id=metric_id,
+                    status=MetricObservationStatus.MEASURED,
+                    value=duration_ms,
+                    evidence=evidence,
+                    reason=None,
+                )
+            )
+        elif metric_id in measured:
+            observations.append(
+                ExperimentMetricObservation(
+                    metric_id=metric_id,
+                    status=MetricObservationStatus.MEASURED,
+                    value=measured[metric_id],
+                    evidence=evidence,
+                    reason=None,
+                )
+            )
+        elif notes.get(metric_id, "").startswith("not applicable"):
+            observations.append(
+                ExperimentMetricObservation(
+                    metric_id=metric_id,
+                    status=MetricObservationStatus.NOT_APPLICABLE,
+                    value=None,
+                    evidence=evidence,
+                    reason=notes.get(metric_id),
+                )
+            )
+        else:
+            observations.append(
+                ExperimentMetricObservation(
+                    metric_id=metric_id,
+                    status=MetricObservationStatus.UNKNOWN,
+                    value=None,
+                    evidence=evidence,
+                    reason=notes.get(metric_id)
+                    or "no retained measurement for this attempt",
+                )
+            )
+    required_ids = {
+        spec.metric_id
+        for spec in prereg.metric_specs
+        if spec.required_for_comparison
+    }
+    measured_ids = {
+        item.metric_id
+        for item in observations
+        if item.status is MetricObservationStatus.MEASURED
+    }
+    outcome = ExperimentOutcome(
+        study_id=prereg.study_id,
+        preregistration_digest=prereg.preregistration_digest,
+        assignment_id=args.assignment,
+        assignment_digest=assignment_row.assignment_digest,
+        attempt_receipt_digest=receipt.receipt_digest,
+        attempt_status=status,
+        observations=tuple(observations),
+        eligible_for_comparison=(
+            status is ExperimentAttemptStatus.COMPLETED
+            and required_ids <= measured_ids
+        ),
+    )
+    outcome_path = scratch / f"outcome-{args.study_run}-{args.assignment}.json"
+    outcome_path.write_text(
+        json.dumps(outcome.to_dict(), indent=1), encoding="utf-8"
+    )
+    cli = [
+        sys.executable,
+        str(ROOT / "tools" / "run_experiment.py"),
+        "outcome",
+        "--study-root",
+        str(args.study_root),
+        "--run-id",
+        args.study_run,
+        "--payload",
+        str(outcome_path),
+        "--source-project",
+        f"{assignment.run.project_id}={args.case_root}",
+    ]
+    print("persisting outcome...")
+    print(subprocess.run(cli, capture_output=True, text=True).stdout.strip())
+
+    stamp = datetime.datetime.now(tz=issued.tzinfo).isoformat(
+        timespec="seconds"
+    )
+    cli = [
+        sys.executable,
+        str(ROOT / "tools" / "run_experiment.py"),
+        "index",
+        "--study-root",
+        str(args.study_root),
+        "--run-id",
+        args.study_run,
+        "--generated-at",
+        stamp,
+    ]
+    print("rebuilding result index...")
+    print(subprocess.run(cli, capture_output=True, text=True).stdout.strip())
+    print(f"BIND DONE (status: {status.value}, duration_ms: {duration_ms})")
+    return 0
+
+
+def stage_validation(args, assignment: Assignment) -> int:
+    """Bind one validation-ablation assignment from its exact source attempt.
+
+    No provider is invoked. The named evaluator is withheld: its receipt is
+    neither rebound nor reinterpreted, and artifact presence cannot become
+    architectural usability.
+    """
+
+    import datetime
+    import subprocess
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    import run_experiment as rex
+
+    from archflow.evaluation.experiment import (
+        ExperimentAttemptIntent,
+        ExperimentAttemptReceipt,
+        ExperimentAttemptStatus,
+        ExperimentMetricObservation,
+        ExperimentOutcome,
+        ExperimentPreregistration,
+        MetricObservationStatus,
+    )
+
+    study_repo = FilesystemProjectRepository.open(Path(args.study_root))
+    study_run = study_repo.load_run(args.study_run)
+    study_dest = PersistenceDestination(
+        PersistenceArea.RUN_RECORD, run_id=args.study_run
+    )
+    prereg = intent = None
+    source_receipt = None
+    source_assignment = args.assignment.replace("-validation", "-full")
+    for ref in study_repo.list_json(run=study_run, destination=study_dest):
+        payload = study_repo.load_json(ref)
+        schema = payload.get("schema")
+        if schema == "ExperimentPreregistration@1":
+            prereg = ExperimentPreregistration.from_dict(payload)
+        elif schema == "ExperimentAttemptIntent@1" and (
+            payload.get("assignment_id") == args.assignment
+            and payload.get("attempt_index") == args.attempt
+        ):
+            intent = ExperimentAttemptIntent.from_dict(payload)
+        elif schema == "ExperimentAttemptReceipt@1" and (
+            payload.get("assignment_id") == source_assignment
+        ):
+            source_receipt = ExperimentAttemptReceipt.from_dict(payload)
+    if prereg is None or intent is None:
+        raise SystemExit("study run lacks the preregistration or the intent")
+    if source_receipt is None:
+        raise SystemExit(
+            f"validation ablation requires the retained {source_assignment} "
+            "attempt receipt"
+        )
+    assignment_row = prereg.assignment(args.assignment)
+    condition = next(
+        c
+        for c in prereg.conditions
+        if c.condition_id == assignment_row.condition_id
+    )
+    if condition.withheld_evaluator_ids != ("architectural-usability",):
+        raise SystemExit("unexpected withheld evaluator set")
+
+    envelope_kind = f"p062-{args.study_run}-execution-envelope"
+    envelope = _load_envelope(assignment, envelope_kind, source_assignment)
+    terminal = envelope.get("terminal_refs") or {}
+    all_refs = {
+        ref.uri: ref
+        for ref in _run_records(assignment.repository, assignment.run)
+    }
+    provider_bindings = []
+    for uri in envelope.get("record_refs") or []:
+        payload = assignment.repository.load_json(all_refs[uri])
+        if payload.get("role") == "provider-invocation":
+            provider_bindings.append(
+                rex.bind_provider_record(
+                    assignment.repository,
+                    run=assignment.run,
+                    ref=all_refs[uri],
+                )
+            )
+    provider_bindings.sort(key=lambda item: item.receipt_id)
+    lifecycle_uri = next(
+        uri
+        for uri in envelope.get("record_refs") or []
+        if assignment.repository.load_json(all_refs[uri]).get("role")
+        == "lifecycle-receipt"
+    )
+    role_refs = {
+        "semantic-geometry-production": lifecycle_uri,
+        "sandbox-realization": terminal.get("sandbox-realization"),
+        "component-family-compilation": terminal.get(
+            "component-family-compilation"
+        ),
+        "component-family-realization": terminal.get(
+            "component-family-realization"
+        ),
+    }
+    if not all(role_refs.values()):
+        raise SystemExit("source attempt lacks the reduced terminal chain")
+    terminal_evidence = rex.bind_terminal_chain(
+        assignment.repository,
+        run=assignment.run,
+        condition=condition,
+        record_refs={role: all_refs[uri] for role, uri in role_refs.items()},
+    )
+    issued = datetime.datetime.fromisoformat(intent.issued_at)
+    duration_ms = int(
+        (
+            datetime.datetime.now(tz=issued.tzinfo) - issued
+        ).total_seconds()
+        * 1000
+    )
+    receipt = ExperimentAttemptReceipt(
+        study_id=prereg.study_id,
+        preregistration_digest=prereg.preregistration_digest,
+        assignment_id=args.assignment,
+        assignment_digest=assignment_row.assignment_digest,
+        case_id=assignment_row.case_id,
+        condition_id=assignment_row.condition_id,
+        project_id=assignment.run.project_id,
+        run_id=assignment.run.run_id,
+        base=assignment.run.base,
+        attempt_id=intent.attempt_id,
+        attempt_index=args.attempt,
+        attempt_intent_digest=intent.intent_digest,
+        status=ExperimentAttemptStatus.COMPLETED,
+        duration_ms=duration_ms,
+        provider_receipts=tuple(provider_bindings),
+        terminal_evidence=terminal_evidence,
+        source_attempt_receipt_digest=source_receipt.receipt_digest,
+        retry_of_attempt_receipt_digest=None,
+        error_code=None,
+        message=None,
+    )
+    existing = None
+    for ref in study_repo.list_json(run=study_run, destination=study_dest):
+        payload = study_repo.load_json(ref)
+        if payload.get("schema") == "ExperimentAttemptReceipt@1" and (
+            payload.get("attempt_id") == intent.attempt_id
+        ):
+            existing = ExperimentAttemptReceipt.from_dict(payload)
+    if existing is not None:
+        print("attempt receipt already retained; reusing it")
+        receipt = existing
+    else:
+        scratch = Path(args.scratch_dir)
+        receipt_path = (
+            scratch / f"receipt-{args.study_run}-{args.assignment}.json"
+        )
+        receipt_path.write_text(
+            json.dumps(receipt.to_dict(), indent=1), encoding="utf-8"
+        )
+        print("persisting validation-ablation receipt...")
+        out = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "tools" / "run_experiment.py"),
+                "receipt",
+                "--study-root",
+                str(args.study_root),
+                "--run-id",
+                args.study_run,
+                "--payload",
+                str(receipt_path),
+                "--source-project",
+                f"{assignment.run.project_id}={args.case_root}",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        print(out.stdout.strip() or out.stderr.strip()[-500:])
+    scratch = Path(args.scratch_dir)
+    duration_ms = receipt.duration_ms
+
+    metric_kind = (
+        f"s{args.study_run.rsplit('-', 1)[-1]}-{source_assignment}"
+        "-metric-evidence"
+    )
+    metric_refs = [
+        ref for uri, ref in all_refs.items() if metric_kind in uri
+    ]
+    if not metric_refs:
+        raise SystemExit("source metric evidence is absent")
+    metric_ref = sorted(metric_refs, key=lambda item: item.uri)[-1]
+    metric_payload = assignment.repository.load_json(metric_ref)
+    measured = metric_payload["measurements"]
+
+    withheld = {"architectural-usable", "project-constraint-pass-rate"}
+    observations = []
+    for spec in prereg.metric_specs:
+        metric_id = spec.metric_id
+        evidence = (
+            rex.bind_evidence_record(
+                assignment.repository,
+                run=assignment.run,
+                ref=metric_ref,
+                role=f"metric-{metric_id}",
+                expected_schema="P062AttemptMetricEvidence@1",
+                expected_status="measured",
+            ),
+        )
+        if metric_id in withheld:
+            observations.append(
+                ExperimentMetricObservation(
+                    metric_id=metric_id,
+                    status=MetricObservationStatus.UNKNOWN,
+                    value=None,
+                    evidence=evidence,
+                    reason=(
+                        "the architectural-usability evaluator is withheld "
+                        "by this preregistered validation ablation"
+                    ),
+                )
+            )
+        elif metric_id == "completion":
+            observations.append(
+                ExperimentMetricObservation(
+                    metric_id=metric_id,
+                    status=MetricObservationStatus.MEASURED,
+                    value=True,
+                    evidence=evidence,
+                    reason=None,
+                )
+            )
+        elif metric_id == "wall-clock-ms":
+            observations.append(
+                ExperimentMetricObservation(
+                    metric_id=metric_id,
+                    status=MetricObservationStatus.MEASURED,
+                    value=duration_ms,
+                    evidence=evidence,
+                    reason=None,
+                )
+            )
+        elif metric_id in measured:
+            observations.append(
+                ExperimentMetricObservation(
+                    metric_id=metric_id,
+                    status=MetricObservationStatus.MEASURED,
+                    value=measured[metric_id],
+                    evidence=evidence,
+                    reason=None,
+                )
+            )
+        else:
+            note = (metric_payload.get("measurement_notes") or {}).get(
+                metric_id, ""
+            )
+            observations.append(
+                ExperimentMetricObservation(
+                    metric_id=metric_id,
+                    status=(
+                        MetricObservationStatus.NOT_APPLICABLE
+                        if note.startswith("not applicable")
+                        else MetricObservationStatus.UNKNOWN
+                    ),
+                    value=None,
+                    evidence=evidence,
+                    reason=note or "no retained measurement",
+                )
+            )
+    required_ids = {
+        spec.metric_id
+        for spec in prereg.metric_specs
+        if spec.required_for_comparison
+    }
+    measured_ids = {
+        item.metric_id
+        for item in observations
+        if item.status is not MetricObservationStatus.UNKNOWN
+    }
+    outcome = ExperimentOutcome(
+        study_id=prereg.study_id,
+        preregistration_digest=prereg.preregistration_digest,
+        assignment_id=args.assignment,
+        assignment_digest=assignment_row.assignment_digest,
+        attempt_receipt_digest=receipt.receipt_digest,
+        attempt_status=ExperimentAttemptStatus.COMPLETED,
+        observations=tuple(observations),
+        eligible_for_comparison=required_ids <= measured_ids,
+    )
+    outcome_path = scratch / f"outcome-{args.study_run}-{args.assignment}.json"
+    outcome_path.write_text(
+        json.dumps(outcome.to_dict(), indent=1), encoding="utf-8"
+    )
+    print("persisting validation-ablation outcome...")
+    out = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools" / "run_experiment.py"),
+            "outcome",
+            "--study-root",
+            str(args.study_root),
+            "--run-id",
+            args.study_run,
+            "--payload",
+            str(outcome_path),
+            "--source-project",
+            f"{assignment.run.project_id}={args.case_root}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    print(out.stdout.strip() or out.stderr.strip()[-500:])
+    print(f"VALIDATION BIND DONE (duration_ms: {duration_ms})")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case-root", type=Path, required=True)
+    parser.add_argument("--study-root", type=Path,
+                        default=Path("probes/p062-experiment-study"))
+    parser.add_argument(
+        "--scratch-dir",
+        type=Path,
+        default=Path(
+            r"C:/Users/asus/AppData/Local/Temp/claude/D--ARCHFLOW-V4"
+            r"/f6dcb08c-c6c1-464f-9220-b61d7ba877e5/scratchpad"
+        ),
+    )
     parser.add_argument("--study-run", required=True)
     parser.add_argument("--assignment", required=True)
     parser.add_argument("--attempt", type=int, default=0)
     parser.add_argument(
+        "--condition",
+        choices=("full", "generation-context"),
+        default="full",
+    )
+    parser.add_argument(
         "--stage",
-        choices=("dry-run", "root", "terminal", "metrics"),
+        choices=(
+            "dry-run",
+            "root",
+            "terminal",
+            "metrics",
+            "bind",
+            "validation",
+        ),
         required=True,
     )
     parser.add_argument("--codex", default="codex.cmd")
     args = parser.parse_args(argv)
-    assignment = Assignment(args.case_root)
+    assignment = Assignment(args.case_root, condition=args.condition)
     print(
         f"case={assignment.run.project_id} run={assignment.run.run_id} "
         f"base=v{assignment.base.version} prompt={assignment.prompt[:60]!r}"
@@ -1227,6 +2020,10 @@ def main(argv=None) -> int:
         return stage_root(args, assignment)
     if args.stage == "metrics":
         return stage_metrics(args, assignment)
+    if args.stage == "bind":
+        return stage_bind(args, assignment)
+    if args.stage == "validation":
+        return stage_validation(args, assignment)
     return stage_terminal(args, assignment)
 
 
