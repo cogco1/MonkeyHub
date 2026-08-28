@@ -49,6 +49,7 @@ _SUPPORTED = frozenset(
         GeometryOperationKind.LOFT,
         GeometryOperationKind.SWEEP,
         GeometryOperationKind.ARRAY,
+        GeometryOperationKind.RADIAL_ARRAY,
         GeometryOperationKind.BOOLEAN_UNION,
         GeometryOperationKind.BOOLEAN_DIFFERENCE,
         GeometryOperationKind.BOOLEAN_INTERSECTION,
@@ -1149,6 +1150,57 @@ def _translated_bounds(
     )
 
 
+def _rotate_about_axis(
+    point: tuple[float, float, float],
+    center: Sequence[float],
+    axis: Sequence[float],
+    angle_degrees: float,
+) -> tuple[float, float, float]:
+    """Rodrigues rotation of one point about a unit axis through a center."""
+
+    theta = math.radians(angle_degrees)
+    cos_t = math.cos(theta)
+    sin_t = math.sin(theta)
+    local = _subtract(point, center)
+    crossed = _cross(axis, local)
+    dotted = _dot(axis, local)
+    rotated = tuple(
+        local[i] * cos_t
+        + crossed[i] * sin_t
+        + axis[i] * dotted * (1.0 - cos_t)
+        for i in range(3)
+    )
+    return tuple(rotated[i] + center[i] for i in range(3))
+
+
+def _rotated_bounds(
+    bounds: AxisAlignedBounds,
+    center: Sequence[float],
+    axis: Sequence[float],
+    angle_degrees: float,
+) -> AxisAlignedBounds:
+    """Exact axis-aligned bounds of a rotated axis-aligned box."""
+
+    corners = [
+        (
+            bounds.minimum[0] if x == 0 else bounds.maximum[0],
+            bounds.minimum[1] if y == 0 else bounds.maximum[1],
+            bounds.minimum[2] if z == 0 else bounds.maximum[2],
+        )
+        for x in (0, 1)
+        for y in (0, 1)
+        for z in (0, 1)
+    ]
+    rotated = [
+        _rotate_about_axis(corner, center, axis, angle_degrees)
+        for corner in corners
+    ]
+    return AxisAlignedBounds(
+        tuple(min(point[i] for point in rotated) for i in range(3)),
+        tuple(max(point[i] for point in rotated) for i in range(3)),
+    )
+
+
 def _mesh_from_sections(
     sections: tuple[tuple[tuple[float, float, float], ...], ...],
     *,
@@ -1592,6 +1644,8 @@ def _operation_geometry(
             raise SandboxRealizationError(
                 f"{operation.op_id}: array count must be between 1 and {_MAX_ARRAY_COUNT}"
             )
+        source_id = operation.input_object_ids[0]
+        source = objects[source_id]
         step = _transform_vector(
             matrix,
             _vector3(parameters, "step", operation.op_id),
@@ -1604,8 +1658,6 @@ def _operation_geometry(
             tuple(index * step[axis] for axis in range(3))
             for index in range(count)
         )
-        source_id = operation.input_object_ids[0]
-        source = objects[source_id]
         bounds = _translated_bounds(source.bounds, offsets[0])
         for offset in offsets[1:]:
             bounds = bounds.union(_translated_bounds(source.bounds, offset))
@@ -1614,6 +1666,64 @@ def _operation_geometry(
             "input": source_id,
             "count": count,
             "offsets": [list(item) for item in offsets],
+        }
+        inherited_loss_codes = source.geometry.get("loss_codes")
+        if inherited_loss_codes:
+            geometry["loss_codes"] = inherited_loss_codes
+        return source.representation, geometry, bounds
+    if operation.kind is GeometryOperationKind.RADIAL_ARRAY:
+        if len(operation.input_object_ids) != 1:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: radial array requires exactly one input"
+            )
+        count = _integer(parameters, "count", operation.op_id)
+        if count < 1 or count > _MAX_ARRAY_COUNT:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: radial array count must be between 1 "
+                f"and {_MAX_ARRAY_COUNT}"
+            )
+        source_id = operation.input_object_ids[0]
+        source = objects[source_id]
+        center = _transform_point(
+            matrix,
+            _vector3(parameters, "center", operation.op_id),
+        )
+        axis = _transform_vector(
+            matrix,
+            _vector3(parameters, "axis", operation.op_id),
+        )
+        axis_length = _length(axis)
+        if axis_length <= program.proposal.tolerance.linear:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: radial array needs a non-zero axis"
+            )
+        axis = tuple(item / axis_length for item in axis)
+        angle_step = _number(parameters, "angle_step_degrees", operation.op_id)
+        if count > 1 and abs(angle_step) <= 1e-9:
+            raise SandboxRealizationError(
+                f"{operation.op_id}: replicated radial array needs a "
+                "non-zero angle step"
+            )
+        start_angle = (
+            _number(parameters, "start_angle_degrees", operation.op_id)
+            if "start_angle_degrees" in parameters
+            else 0.0
+        )
+        angles = tuple(
+            start_angle + index * angle_step for index in range(count)
+        )
+        bounds = _rotated_bounds(source.bounds, center, axis, angles[0])
+        for angle in angles[1:]:
+            bounds = bounds.union(
+                _rotated_bounds(source.bounds, center, axis, angle)
+            )
+        geometry = {
+            "kind": "radial_array",
+            "input": source_id,
+            "count": count,
+            "center": list(center),
+            "axis": list(axis),
+            "angles_degrees": list(angles),
         }
         inherited_loss_codes = source.geometry.get("loss_codes")
         if inherited_loss_codes:
@@ -2417,6 +2527,17 @@ def _contains(
                 objects,
             )
             for offset in geometry["offsets"]
+        )
+    if kind == "radial_array":
+        center = tuple(geometry["center"])
+        axis = tuple(geometry["axis"])
+        return any(
+            _contains(
+                geometry["input"],
+                _rotate_about_axis(point, center, axis, -angle),
+                objects,
+            )
+            for angle in geometry["angles_degrees"]
         )
     if kind == "difference":
         return _contains(geometry["base"], point, objects) and not any(

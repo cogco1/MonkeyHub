@@ -9,7 +9,7 @@
 - Phase: **P7 - semantic geometry production closure proven**
 - Registry updated: **2026-08-28**
 - Product capability: **runtime=architectural_failure_revision_typed; adapters=voxel_observation_and_cli_retrieval_proven**
-- Next bounded transition: no dependency-ready work; integration decision required
+- Next bounded transition: finish active work: P065
 
 ## Architecture coverage
 
@@ -63,8 +63,8 @@ These are the main responsibility chains. Individual cards retain their exact fa
 | --- | --- | ---: | --- |
 | Retirement | Replacement-first removal of old ownership | 0 | [R](mapping/retirement/INDEX.md) |
 | Modify | Scoped repair of the active path | 0 | [M](mapping/modify/INDEX.md) |
-| Planning | Not implemented or not yet accepted | 0 | [P](mapping/planning/INDEX.md) |
-| Archive | Completed and evidenced work | 125 | [A](mapping/archive/INDEX.md) |
+| Planning | Not implemented or not yet accepted | 1 | [P](mapping/planning/INDEX.md) |
+| Archive | Completed and evidenced work | 126 | [A](mapping/archive/INDEX.md) |
 
 R, M, and P are parallel ledgers, not mandatory runtime stages. Archive is
 the cleared construction record, not a fourth execution phase.
@@ -73,7 +73,7 @@ the cleared construction record, not a fourth execution phase.
 
 | ID | Stream | Status | Goal | Card |
 | --- | --- | --- | --- | --- |
-| - | - | - | No active work | - |
+| P065 | planning | active | Prove that staged derivation plus typed repetition reaches golden-sample complexity: a scripted P053 provider derives a monument-class drum-and-dome building through the formal runtime in bounded stages on stable component identities, realizing hundreds of typed instances through arrays, with voxel-scale evidence and an explicit scripted-versus-live claim boundary. | [P065](mapping/planning/P065-monument-scale-derivation.md) |
 
 ## Module state
 

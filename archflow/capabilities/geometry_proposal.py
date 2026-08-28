@@ -143,6 +143,27 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
             ),
         ),
     ),
+    "radial_array": _function_contract(
+        minimum_inputs=1,
+        maximum_inputs=1,
+        parameters=(
+            _function_parameter(
+                "angle_step_degrees", GeometryParameterKind.NUMBER
+            ),
+            _function_parameter(
+                "axis", GeometryParameterKind.VECTOR3
+            ),
+            _function_parameter(
+                "center", GeometryParameterKind.VECTOR3, unit=_METER
+            ),
+            _function_parameter("count", GeometryParameterKind.INTEGER),
+            _function_parameter(
+                "start_angle_degrees",
+                GeometryParameterKind.NUMBER,
+                required=False,
+            ),
+        ),
+    ),
     "asset_instance": _function_contract(
         minimum_inputs=0,
         maximum_inputs=0,

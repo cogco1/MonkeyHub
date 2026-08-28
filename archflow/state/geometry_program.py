@@ -49,6 +49,7 @@ class GeometryOperationKind(StrEnum):
     LOFT = "loft"
     SWEEP = "sweep"
     ARRAY = "array"
+    RADIAL_ARRAY = "radial_array"
     BOOLEAN_UNION = "boolean_union"
     BOOLEAN_DIFFERENCE = "boolean_difference"
     BOOLEAN_INTERSECTION = "boolean_intersection"

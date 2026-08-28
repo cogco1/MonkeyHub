@@ -28,3 +28,12 @@ the responsibility of the generic project repository.
 The renderer is a separate read-only adapter. No renderer, voxelizer, archive,
 or realization receipt performs repair, hard validation, approval, promotion,
 or external execution.
+
+## Typed repetition (M065)
+
+The generic `array` operation replicates one input along a step vector; the
+generic `radial_array` operation replicates one input about an explicit
+axis and center by an explicit angle step. Both are bounded (256 replicas),
+deterministic, expressed as one authored operation regardless of replica
+count, and voxel-sampled through exact per-replica membership. Neither
+carries any typology, dimension, or placement default.

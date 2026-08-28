@@ -10436,6 +10436,147 @@
       "evidence": [
         "inverse-001 retains digest-pinned V3 external evidence, a fully cited 15-component transcribed tree, 10-decision sequence, and 5 typed dependency edges; coarse canon-ratio massing (no fitting) reaches plan-footprint IoU 0.925 and elevation-silhouette IoU 0.937 against the frozen schem whose parsed 325,282 solid cells match the manifest exactly; receipt denies byte-replay and full-fidelity claims; 7 contract tests and ARCHITECTURE PASS"
       ]
+    },
+    {
+      "id": "M065",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Extend the existing generic ARRAY geometry operation with a radial mode (axis, center, angle step) realized and voxel-sampled deterministically, so typed repetition can express rings and colonnades without enumerating per-instance operations and without adding any building answer to the framework.",
+      "depends_on": [
+        "P048",
+        "P061"
+      ],
+      "write_scope": [
+        "archflow/realization/sandbox.py",
+        "archflow/realization/README.md",
+        "tests/test_sandbox_realization.py",
+        "tests/test_radial_array.py",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The linear array contract is unchanged and backward compatible; mode defaults to linear.",
+        "A radial array realizes count replicas rotated about an explicit axis and center by an explicit angle step, with exact union bounds and per-replica point membership under inverse rotation.",
+        "Degenerate radial inputs (zero axis, zero angle with count above one, count outside bounds) fail closed with typed errors.",
+        "Voxelization of a radial array is deterministic and matches per-replica membership sampling."
+      ],
+      "tests": [
+        "Radial array realization bounds, membership, determinism, and fail-closed parameter tests",
+        "Linear array regression tests unchanged",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_radial_array",
+          "tests.test_sandbox_realization"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M065-radial-array-operation.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M065",
+        "actor": "codex",
+        "verified_at": "2026-08-28T10:10:17.819444+00:00",
+        "contract_sha256": "251ca08d40901c085d0c1d79e8829aba8d22d4e7166963eb6bf52ab942f18a55",
+        "scope_sha256": "959c200f0ca43e2ae3173d0424eab27355aff2801d543e762d58db2e74a703bb",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_radial_array",
+              "tests.test_sandbox_realization"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "8ffce9ffee3cbe5d061515ae457534fd198f65f91d5044f6aa724fe400372822",
+            "stdout_tail": "",
+            "stderr_tail": "...............\n----------------------------------------------------------------------\nRan 15 tests in 0.179s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "a6c8927beee28ef63969f6ba3f6d17b888fe873ff17bd0626828c7ca4cc728f1",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (124 files, 0.748s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "radial_array operation kind added beside the retained linear array: exact model-facing function contract, Rodrigues realization with exact rotated union bounds, per-replica inverse-rotation voxel membership, fail-closed degenerate inputs; 6 new tests plus the 9-test linear regression pass and ARCHITECTURE PASS"
+      ]
+    },
+    {
+      "id": "P065",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Prove that staged derivation plus typed repetition reaches golden-sample complexity: a scripted P053 provider derives a monument-class drum-and-dome building through the formal runtime in bounded stages on stable component identities, realizing hundreds of typed instances through arrays, with voxel-scale evidence and an explicit scripted-versus-live claim boundary.",
+      "depends_on": [
+        "P058",
+        "P062",
+        "P064",
+        "M065"
+      ],
+      "write_scope": [
+        "tests/integration/test_monument_derivation.py",
+        "tools/run_monument_fidelity.py",
+        "probes/p065-monument-derivation/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/paper/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The derivation begins from raw project input through the formal P053/P056 runtime with a scripted provider and no frozen golden answer loaded.",
+        "At least three deepening stages extend the same component identities through exact-predecessor P055 transactions while unaffected siblings keep direct object digests.",
+        "Typed arrays realize at least three hundred geometry instances from order-tens of authored operations, including at least one radial ring family.",
+        "A derived voxel view retains solid-cell scale evidence, and a separate machine-local fidelity receipt measures the coarse envelope against the frozen golden with exact denominators.",
+        "Claims distinguish the deterministic scripted-provider proof from any separately evidenced live-model run, and no engineering or fabrication validity is claimed."
+      ],
+      "tests": [
+        "Monument staged-derivation integration test with identity, array-instance, and voxel-scale assertions",
+        "Probe firewall reload and provenance tests",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.integration.test_monument_derivation"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P065-monument-scale-derivation.md",
+      "on_complete": {
+        "modules": {
+          "realization": "monument_scale_repetition_proven"
+        }
+      },
+      "actor": "codex"
     }
   ]
 }
