@@ -1,0 +1,268 @@
+"""Stage declaration gates: mandatory typed decisions before a stage passes.
+
+A ``StageDeclarationContract`` names the decision fields a provider must
+declare at one maturity stage, grouped into quadrants (dimensions,
+structure, openings, detail). Every field carries a kind, unit, authorized
+range, and range provenance; the framework stores no field values or
+stage defaults of its own. Validation is fail-closed: a missing field, an
+out-of-range value, or a declaration that disagrees with the authored
+massing geometry beyond the contract tolerance is a typed rejection —
+never a repair.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Mapping
+
+from archflow.state.geometry_program import digest_value
+
+_ID = re.compile(r"^[a-z0-9][a-z0-9\-]{0,80}$")
+
+
+class DeclarationError(ValueError):
+    """A declaration contract or a declared value set is invalid."""
+
+
+class DeclarationQuadrant(StrEnum):
+    DIMENSIONS = "dimensions"
+    STRUCTURE = "structure"
+    OPENINGS = "openings"
+    DETAIL = "detail"
+
+
+class DeclarationKind(StrEnum):
+    NUMBER = "number"
+    COUNT = "count"
+    RATIO = "ratio"
+
+
+class GeometryCheck(StrEnum):
+    """Deterministic cross-check binding a declared value to the massing."""
+
+    NONE = "none"
+    FOOTPRINT_WIDTH = "footprint_width"
+    FOOTPRINT_DEPTH = "footprint_depth"
+    OVERALL_HEIGHT = "overall_height"
+    PRIMARY_SPAN = "primary_span"
+    FOOTPRINT_FILL_RATIO = "footprint_fill_ratio"
+
+
+@dataclass(frozen=True, slots=True)
+class DeclarationField:
+    field_id: str
+    quadrant: DeclarationQuadrant
+    kind: DeclarationKind
+    unit: str | None
+    minimum: float
+    maximum: float
+    geometry_check: GeometryCheck
+    source_refs: tuple[str, ...]
+    statement: str
+
+    SCHEMA = "DeclarationField@1"
+
+    def __post_init__(self) -> None:
+        if not _ID.match(self.field_id):
+            raise DeclarationError("field_id must be a kebab identifier")
+        if not isinstance(self.quadrant, DeclarationQuadrant):
+            raise TypeError("quadrant must be DeclarationQuadrant")
+        if not isinstance(self.kind, DeclarationKind):
+            raise TypeError("kind must be DeclarationKind")
+        if not isinstance(self.geometry_check, GeometryCheck):
+            raise TypeError("geometry_check must be GeometryCheck")
+        if not (
+            isinstance(self.minimum, (int, float))
+            and isinstance(self.maximum, (int, float))
+            and self.minimum <= self.maximum
+        ):
+            raise DeclarationError("range must satisfy minimum <= maximum")
+        if not isinstance(self.source_refs, tuple) or not self.source_refs:
+            raise DeclarationError("range provenance source_refs required")
+        if not isinstance(self.statement, str) or not self.statement.strip():
+            raise DeclarationError("statement must be non-empty text")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "field_id": self.field_id,
+            "quadrant": self.quadrant.value,
+            "kind": self.kind.value,
+            "unit": self.unit,
+            "minimum": self.minimum,
+            "maximum": self.maximum,
+            "geometry_check": self.geometry_check.value,
+            "source_refs": list(self.source_refs),
+            "statement": self.statement,
+        }
+
+    @classmethod
+    def from_dict(cls, value) -> "DeclarationField":
+        if not isinstance(value, Mapping) or value.get("schema") != cls.SCHEMA:
+            raise DeclarationError("declaration field schema drifted")
+        return cls(
+            field_id=value["field_id"],
+            quadrant=DeclarationQuadrant(value["quadrant"]),
+            kind=DeclarationKind(value["kind"]),
+            unit=value.get("unit"),
+            minimum=float(value["minimum"]),
+            maximum=float(value["maximum"]),
+            geometry_check=GeometryCheck(value["geometry_check"]),
+            source_refs=tuple(value["source_refs"]),
+            statement=value["statement"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class StageDeclarationContract:
+    """The mandatory declaration set for one maturity stage."""
+
+    stage: str
+    fields: tuple[DeclarationField, ...]
+    tolerance_ratio: float
+
+    SCHEMA = "StageDeclarationContract@1"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.stage, str) or not self.stage.strip():
+            raise DeclarationError("stage must be non-empty text")
+        if not isinstance(self.fields, tuple) or not self.fields:
+            raise DeclarationError("contract requires at least one field")
+        field_ids = [field.field_id for field in self.fields]
+        if field_ids != sorted(set(field_ids)):
+            raise DeclarationError("field ids must be sorted and unique")
+        if not (
+            isinstance(self.tolerance_ratio, (int, float))
+            and 0.0 < self.tolerance_ratio < 1.0
+        ):
+            raise DeclarationError("tolerance_ratio must be inside (0, 1)")
+
+    @property
+    def contract_digest(self) -> str:
+        return digest_value(self.to_dict())
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "stage": self.stage,
+            "fields": [field.to_dict() for field in self.fields],
+            "tolerance_ratio": self.tolerance_ratio,
+            "required_output_field": "stage_declarations",
+            "pass_rule": (
+                "every field declared, every value inside its authorized "
+                "range, and every geometry-checked value matching the "
+                "authored massing within the tolerance ratio"
+            ),
+            "field_value_authority": False,
+            "canonical_write_authority": False,
+        }
+
+    @classmethod
+    def from_dict(cls, value) -> "StageDeclarationContract":
+        if not isinstance(value, Mapping) or value.get("schema") != cls.SCHEMA:
+            raise DeclarationError("stage declaration contract drifted")
+        return cls(
+            stage=value["stage"],
+            fields=tuple(
+                DeclarationField.from_dict(item) for item in value["fields"]
+            ),
+            tolerance_ratio=float(value["tolerance_ratio"]),
+        )
+
+
+def _derived_measures(proposal) -> dict[str, float]:
+    """Deterministic massing measures from an accepted spatial proposal."""
+
+    payload = proposal.to_dict() if hasattr(proposal, "to_dict") else proposal
+    volumes = payload.get("volumes", ())
+    if not volumes:
+        raise DeclarationError("proposal carries no massing volumes")
+    x0 = min(v["bounds"]["minimum"][0] for v in volumes)
+    x1 = max(v["bounds"]["maximum"][0] for v in volumes)
+    y0 = min(v["bounds"]["minimum"][1] for v in volumes)
+    y1 = max(v["bounds"]["maximum"][1] for v in volumes)
+    z0 = min(v["bounds"]["minimum"][2] for v in volumes)
+    z1 = max(v["bounds"]["maximum"][2] for v in volumes)
+    span = max(
+        max(
+            v["bounds"]["maximum"][0] - v["bounds"]["minimum"][0],
+            v["bounds"]["maximum"][2] - v["bounds"]["minimum"][2],
+        )
+        for v in volumes
+    )
+    covered: set[tuple[int, int]] = set()
+    for volume in volumes:
+        lo, hi = volume["bounds"]["minimum"], volume["bounds"]["maximum"]
+        for x in range(int(lo[0]), int(hi[0])):
+            for z in range(int(lo[2]), int(hi[2])):
+                covered.add((x, z))
+    grid = payload.get("grid_basis", {})
+    cell_area = float(grid.get("horizontal_area_per_cell", 1.0))
+    footprint_area = len(payload.get("footprint_cells", ())) * cell_area
+    fill = (len(covered) / footprint_area) if footprint_area else 0.0
+    return {
+        GeometryCheck.FOOTPRINT_WIDTH.value: float(x1 - x0),
+        GeometryCheck.FOOTPRINT_DEPTH.value: float(z1 - z0),
+        GeometryCheck.OVERALL_HEIGHT.value: float(y1 - y0),
+        GeometryCheck.PRIMARY_SPAN.value: float(span),
+        GeometryCheck.FOOTPRINT_FILL_RATIO.value: round(fill, 6),
+    }
+
+
+def validate_stage_declarations(
+    contract: StageDeclarationContract,
+    declarations: Mapping[str, object],
+    proposal,
+) -> dict[str, float]:
+    """Fail closed unless the declaration set passes the stage gate.
+
+    Returns the derived geometry measures so callers can retain them as
+    evidence beside the declared values.
+    """
+
+    if not isinstance(contract, StageDeclarationContract):
+        raise TypeError("contract must be StageDeclarationContract")
+    if not isinstance(declarations, Mapping):
+        raise DeclarationError("stage_declarations must be a mapping")
+    expected = {field.field_id for field in contract.fields}
+    supplied = set(declarations)
+    missing = sorted(expected - supplied)
+    extra = sorted(supplied - expected)
+    if missing or extra:
+        raise DeclarationError(
+            f"declaration set drifted; missing={missing}, extra={extra}"
+        )
+    derived = _derived_measures(proposal)
+    for field in contract.fields:
+        raw = declarations[field.field_id]
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            raise DeclarationError(
+                f"{field.field_id}: declared value must be numeric"
+            )
+        value = float(raw)
+        if field.kind is DeclarationKind.COUNT and value != int(value):
+            raise DeclarationError(
+                f"{field.field_id}: count declarations must be integers"
+            )
+        if not (field.minimum <= value <= field.maximum):
+            raise DeclarationError(
+                f"{field.field_id}: declared {value} is outside the "
+                f"authorized range [{field.minimum}, {field.maximum}]"
+            )
+        if field.geometry_check is GeometryCheck.NONE:
+            continue
+        measured = derived[field.geometry_check.value]
+        allowance = max(
+            abs(value) * contract.tolerance_ratio,
+            contract.tolerance_ratio,
+        )
+        if abs(measured - value) > allowance:
+            raise DeclarationError(
+                f"{field.field_id}: declared {value} but the authored "
+                f"massing measures {round(measured, 3)} "
+                f"({field.geometry_check.value}); the declaration does not "
+                "hold the geometry"
+            )
+    return derived

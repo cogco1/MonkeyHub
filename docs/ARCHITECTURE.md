@@ -707,3 +707,61 @@ storage, candidate-stage player controls, or an accepted prompt-to-usable
 Minecraft slice.
 Those gaps are tracked explicitly in the dynamic map rather than implied by the
 diagram.
+
+## The decision spine
+
+The additions of 2026-08-28 (live providers, precedent adoption, staged
+declarations, typed repetition) are one structure seen from different
+sides. Straightened, the architecture has one vertical spine crossed by
+one horizontal axis.
+
+### Vertical: knowledge → requirement → decision → geometry → validation → lock
+
+Retrieved knowledge has exactly one door to authority — a typed adoption
+record (P060 for criteria, P067 for precedent facts). Every inlet (P028
+CLI retrieval, P020 brief evidence, P042 research dossiers, P067 web
+snapshots) is provenance-bound evidence with no authority of its own, and
+raw retrieved text never enters a provider prompt.
+
+One adopted fact then projects into up to four requirement forms, each
+firing at its own checkpoint, all chaining to the same provenance:
+
+| Form | Checkpoint | Mechanism |
+| --- | --- | --- |
+| Build-policy constraint | before generation | provider must respond (M057 required responses) |
+| Stage declaration | at the phase gate | provider must declare values; the gate cross-checks the authored geometry (P068) |
+| Architectural criterion | after realization | deterministic P060 measurement of the artifact |
+| Commitment | after the gate passes | P015/P016 lock; reopening needs authority plus the P063-proven dependency-scoped repair |
+
+These four are not redundant channels but the same requirement at four
+moments of its life: advise the generator, gate the stage, measure the
+result, lock what must not silently move.
+
+### Horizontal: stages ordered by irreversibility
+
+Three stage notions align into one axis: project-level `DesignPhase`
+gates (P039) are the gates; per-component `ComponentMaturity` marks
+subtree progress; P055 exact-predecessor transactions are the only way
+maturity advances. Declaration contracts attach to the P039 gates as
+typed, quadrant-grouped deliverables — the gate's deliverable slot was
+always the mandatory-declaration slot; P068 makes it typed.
+
+Quadrants follow the shearing-layer irreversibility ordering (site >
+structure and massing > skin and openings > space plan > detail), and the
+practice codes agree on where each quadrant must close: concept sign-off
+fixes massing and the structural grid (RIBA stage 2, AIA schematic, the
+Chinese scheme-design depth code); spatial coordination closes skin and
+services routing before technical design; detail stays free the longest.
+The rule the spine adds: when a phase gate passes, the declarations of
+its irreversible quadrants compile into hard commitments; reversible
+quadrants remain stage-local declarations. Irreversibility is therefore
+runtime behaviour — what it costs to reopen — not documentation.
+
+### Two lanes, one protocol
+
+The scripted lane (P058, P065) proves protocol capacity; the live lane
+(P062, P066) measures model capability. They share every contract and
+differ only in the provider. Context-channel ablations (P062
+relationships, P067 precedent) measure what each knowledge channel
+causally contributes; the P068 gates measure what the model commits to
+before its work may pass.

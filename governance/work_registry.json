@@ -10743,6 +10743,61 @@
       "evidence": [
         "live paired observation retained: without precedent the model authored a flat portico slab; with three web-quoted adopted facts it answered every constraint, added a pediment component, and authored a genuine triangular-extrusion pitched pediment plus a revolve dome; snapshot/quote-span/adoption/provenance chain proven by 5 contract tests; raw page text never entered a prompt; ARCHITECTURE PASS"
       ]
+    },
+    {
+      "id": "P068",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Gate each authoring stage behind a mandatory typed declaration set grouped into decision quadrants (dimensions, structure, openings, detail): the earliest stage requires only white-model dimensions, later stages add deeper quadrants, every declared value must sit inside an authorized range and match the authored geometry within tolerance, and an incomplete or inconsistent declaration is a typed rejection before the stage can pass.",
+      "depends_on": [
+        "P054",
+        "P062",
+        "P067"
+      ],
+      "write_scope": [
+        "archflow/capabilities/declaration.py",
+        "archflow/capabilities/semantic_spatial_authoring.py",
+        "archflow/capabilities/README.md",
+        "archflow/runtime/production_compiler.py",
+        "tools/run_live_monument.py",
+        "tools/run_web_precedent.py",
+        "tests/test_stage_declarations.py",
+        "tests/test_semantic_spatial_authoring.py",
+        "probes/p066-live-monument/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A stage declaration contract is a typed project record: quadrant-grouped required fields with kinds, units, authorized ranges, and range provenance; the framework stores no field values of its own.",
+        "The authoring prompt carries the contract and the strict output parse requires a complete stage_declarations block whenever a contract is supplied; a missing or extra field is a typed rejection.",
+        "Every declared value is validated against its authorized range, and dimension declarations are cross-checked against the authored massing volumes within an explicit tolerance, so a declared footprint cannot host a token model.",
+        "The earliest stage mandates only the dimensions quadrant (white model); deeper quadrants attach to later maturity stages by contract, not by code defaults.",
+        "A live paired observation retains at least one attempt gated by the declaration contract, with any incomplete or inconsistent output kept as a typed rejection rather than repaired."
+      ],
+      "tests": [
+        "Declaration contract schema, presence, range, and geometry cross-check tests",
+        "Authoring integration: declaration-gated accept and typed rejection paths",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_stage_declarations"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P068-staged-declaration-gates.md",
+      "on_complete": {},
+      "actor": "codex"
     }
   ]
 }

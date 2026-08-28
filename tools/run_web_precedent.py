@@ -73,6 +73,23 @@ FACT_SPECS = (
         "strength": PolicyConstraintStrength.HARD,
     },
     {
+        "fact_id": "rotunda-interior-43-metres",
+        "needle": (
+            "The height to the oculus and the diameter of the interior "
+            "circle are the same, 43.3 metres (142 ft) , so the whole "
+            "interior would fit exactly within a cube"
+        ),
+        "statement": (
+            "The rotunda interior diameter and the height to the oculus "
+            "are each 43.3 metres; the massing must be sized to this "
+            "monument-scale precedent within the authorized site "
+            "envelope, filling the declared footprint rather than "
+            "placing a token model on it."
+        ),
+        "topic": ConstructabilityTopic.SUPPORT,
+        "strength": PolicyConstraintStrength.HARD,
+    },
+    {
         "fact_id": "dome-coffered-oculus",
         "needle": (
             "a coffered concrete dome made from Roman concrete (also "

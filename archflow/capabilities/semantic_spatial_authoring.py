@@ -301,6 +301,7 @@ def semantic_spatial_authoring_contract() -> dict[str, object]:
 def semantic_spatial_authoring_output(
     request: ModelInvocationRequest,
     proposal: SpatialOptionProposal,
+    stage_declarations: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Build the exact output envelope used by scripted or remote providers."""
 
@@ -310,12 +311,15 @@ def semantic_spatial_authoring_output(
         raise ValueError("request is not a spatial proposal request")
     if not isinstance(proposal, SpatialOptionProposal):
         raise TypeError("proposal must be SpatialOptionProposal")
-    return {
+    output: dict[str, object] = {
         "schema": "SemanticSpatialAuthoringOutput@1",
         "exact_base_state_digest": request.checkpoint_digest,
         "context_digest": request.context_digest,
         "proposal": proposal.to_dict(),
     }
+    if stage_declarations is not None:
+        output["stage_declarations"] = dict(stage_declarations)
+    return output
 
 
 def semantic_spatial_repair_feedback(
@@ -375,6 +379,7 @@ async def author_semantic_spatial_option(
     repair_feedback: Mapping[str, object] | None = None,
     alternative_context: Mapping[str, object] | None = None,
     revision_context: Mapping[str, object] | None = None,
+    declaration_contract: "StageDeclarationContract | None" = None,
 ) -> SemanticSpatialAuthoringResult:
     """Ask one provider for a co-authored component and massing proposal."""
 
@@ -408,6 +413,16 @@ async def author_semantic_spatial_option(
             site_context=site_context,
         ),
     }
+    if declaration_contract is not None:
+        from archflow.capabilities.declaration import (
+            StageDeclarationContract,
+        )
+
+        if not isinstance(declaration_contract, StageDeclarationContract):
+            raise TypeError(
+                "declaration_contract must be StageDeclarationContract"
+            )
+        prompt["declaration_contract"] = declaration_contract.to_dict()
     if repair_feedback is not None:
         prompt["repair_feedback"] = _validated_repair_feedback(
             repair_feedback,
@@ -449,12 +464,15 @@ async def author_semantic_spatial_option(
         )
     try:
         output = _mapping(model_receipt.output, "spatial authoring output")
-        if set(output) != {
+        expected_fields = {
             "schema",
             "exact_base_state_digest",
             "context_digest",
             "proposal",
-        }:
+        }
+        if declaration_contract is not None:
+            expected_fields = expected_fields | {"stage_declarations"}
+        if set(output) != expected_fields:
             raise ValueError("spatial authoring output fields drifted")
         if output["schema"] != "SemanticSpatialAuthoringOutput@1":
             raise ValueError("spatial authoring output schema is unsupported")
@@ -491,6 +509,28 @@ async def author_semantic_spatial_option(
             "spatial_authoring.malformed_output",
             f"{type(exc).__name__}: {exc}",
         )
+    if declaration_contract is not None:
+        from archflow.capabilities.declaration import (
+            DeclarationError,
+            validate_stage_declarations,
+        )
+
+        try:
+            validate_stage_declarations(
+                declaration_contract,
+                _mapping(
+                    output["stage_declarations"], "stage declarations"
+                ),
+                proposal,
+            )
+        except DeclarationError as exc:
+            return _failed(
+                request,
+                model_receipt,
+                SemanticSpatialAuthoringStatus.REJECTED,
+                "spatial_authoring.declaration_rejected",
+                str(exc),
+            )
     return SemanticSpatialAuthoringResult(
         receipt=_receipt(
             request,

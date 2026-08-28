@@ -473,6 +473,7 @@ class ProductionRootCompiler:
     evidence_collector: InvocationEvidenceCollector
     geometry_provider_identity: GeometryProposalProviderIdentity
     geometry_policy: GeometryProposalPolicy = GeometryProposalPolicy(3)
+    declaration_contract: object | None = None
 
     def __post_init__(self) -> None:
         for method in ("load_json", "put_json"):
@@ -581,6 +582,7 @@ class ProductionRootCompiler:
                     build_policy=self.context.build_policy,
                     repair_feedback=repair_feedback,
                     alternative_context=alternative_context,
+                    declaration_contract=self.declaration_contract,
                 )
                 authoring_refs.append(
                     self.repository.put_json(
