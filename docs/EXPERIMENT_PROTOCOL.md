@@ -411,3 +411,45 @@ ceiling is explicitly 14,400,000 ms (four hours). Its clinic/full intent is
 retained as running, with eight assignments planned and no provider receipt or
 outcome yet; it must not be counted in the evidence table until an exact attempt
 receipt and measured outcome exist.
+
+`study-028` supersedes the interrupted `study-027` clinic intent rather than
+resuming it. That intent was issued 2026-08-18 and no provider was ever
+called; the preregistered wall-clock metric runs from intent issue to
+terminal receipt, so a nine-day-old intent cannot honestly satisfy the
+four-hour study ceiling. A typed supersession record retains this decision
+in the study-027 run, the frozen matrix and profile continue unchanged, and
+the previously dirty code identity is committed rather than re-frozen.
+
+On 2026-08-28 study-028 executed the complete preregistered nine-assignment
+matrix and reached the first table-ready P062 index. Every full and
+generation-ablation attempt made exactly four successful P053 Codex calls
+(one hundred thirty-two to two hundred sixty-five seconds of provider time)
+with zero provider failures and zero bounded repairs. Outcomes are honest
+and asymmetric:
+
+- `courtyard/full` is the first fully completed live assignment in P062
+  history: all four mandatory project-derived P060 criteria pass, one
+  aggregate family compiles and realizes, and the assignment is
+  comparison-eligible.
+- `clinic/full` fails only `usable-main-entry` with zero opening objects —
+  the same locality as study-014 — and `workshop/full` fails only
+  `three-storey-organization` with two authored storeys against three.
+  Both are retained as `pipeline_rejected` with all thirteen metrics.
+- All three generation-context ablations degrade measurably: clinic
+  relationship coverage drops from 1.0 to 0.0 with all geometry bound to
+  the root component and no bindable family; workshop mandatory pass rate
+  drops from 0.8 to 0.6; courtyard drops from 1.0 (completed) to 0.5.
+  Withholding the program-relationship context therefore visibly removes
+  relational structure from otherwise successful generation.
+- All three validation ablations complete on the reduced terminal set while
+  the withheld `architectural-usability` evaluator stays typed-unknown, so
+  artifact presence never upgrades into architectural usability.
+
+Two defects surfaced and are retained as corrections rather than rewrites:
+the first clinic intent stamped an assumed clock roughly 195 minutes early
+(a typed clock-discrepancy note binds the observed timestamps), and the
+driver-authored observation-set records initially omitted a schema field
+(schema-correction notes name each defective record and its identical
+schema-bearing successor). The one comparable completed sample, six exact
+failures, and two ablation-degradation observations enter the paper only
+through this index and these receipts.

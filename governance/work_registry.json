@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-18",
+  "updated_on": "2026-08-28",
   "phase": "P7 - semantic geometry production closure proven",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -15,7 +15,7 @@
     "capabilities": "semantic_spatial_single_repair",
     "submission": "obligation_repair_proven",
     "validation": "project_derived_architectural_usability_proven",
-    "evaluation": "early_pipeline_rejection_measurable",
+    "evaluation": "multi_building_ablation_evidence_proven",
     "commit": "in_memory_proven",
     "adapters": "voxel_observation_and_cli_retrieval_proven",
     "project": "provider_success_rejection_recoverable"
@@ -175,11 +175,10 @@
         "P056",
         "M050",
         "P058",
-        "P061"
-      ],
-      "open_cards": [
+        "P061",
         "P062"
       ],
+      "open_cards": [],
       "gap": "Direct component-to-geometry binding exact-base lifecycle sandbox realization and provenance-bound parametric or immutable mesh families are proven through P061; P062 is measuring multi-building behavior and bounded ablations before any paper claim."
     },
     {
@@ -9182,8 +9181,8 @@
     {
       "id": "P062",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Run preregistered reproducible multi-building experiments and bounded ablations through the real semantic-geometry production chain without reviving a deprecated route or claiming unrun outcomes.",
       "depends_on": [
         "P059",
@@ -9239,15 +9238,14 @@
           "evaluation": "multi_building_ablation_evidence_proven"
         }
       },
-      "card": "docs/mapping/planning/P062-multi-building-experiments-and-ablations.md",
-      "actor": "codex",
+      "card": "docs/mapping/archive/P062-multi-building-experiments-and-ablations.md",
       "verification_receipt": {
         "schema": "ArchFlowWorkVerification@1",
         "item_id": "P062",
         "actor": "codex",
-        "verified_at": "2026-08-18T15:10:27.945412+00:00",
+        "verified_at": "2026-08-28T09:24:14.016503+00:00",
         "contract_sha256": "347a56cb53caa85c319773a7714d841b6e71ceb30981b28a7d0ff8777b8c147d",
-        "scope_sha256": "247f3a65415b487adffc9c04c4d37dcf8d5db12cb7a57a5192a94cac459f4b40",
+        "scope_sha256": "f37c3898e3b989ef99de56b54b8db61c8c9a1c006280a3aca643d3a7ae32148d",
         "commands": [
           {
             "argv": [
@@ -9259,9 +9257,9 @@
             ],
             "returncode": 0,
             "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "stderr_sha256": "1766b9e201b1ad5ac4d39a81d73ccb0806eb315962ceab28967ec2d90f89b51a",
+            "stderr_sha256": "9b1b9bc02d122b736e4145deb4223c129520a2a3e3c9ca6b011cb9179b8d318b",
             "stdout_tail": "",
-            "stderr_tail": "........................\n----------------------------------------------------------------------\nRan 24 tests in 4.717s\n\nOK\n"
+            "stderr_tail": "........................\n----------------------------------------------------------------------\nRan 24 tests in 5.299s\n\nOK\n"
           },
           {
             "argv": [
@@ -9269,13 +9267,17 @@
               "tools/archcheck.py"
             ],
             "returncode": 0,
-            "stdout_sha256": "89b17954aea939ff9243fe7c056626eed2182fe5023ba19ea8b88f29b5be7265",
+            "stdout_sha256": "4f5cf5f3a953da1a99d6e10d1b142919ef2f745fa6f4efb933ddb0d222358619",
             "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "stdout_tail": "ARCHITECTURE PASS (122 files, 0.929s)\n",
+            "stdout_tail": "ARCHITECTURE PASS (122 files, 0.682s)\n",
             "stderr_tail": ""
           }
         ]
-      }
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "study-028 executed the full preregistered 3x3 matrix through the live codex-agent-cli provider: 9/9 exact outcomes (3 completed incl. first fully-usable courtyard candidate, 6 pipeline_rejected with typed failures), first table-ready result index, ablation degradation measured, no fallback or hidden retry; 24 experiment tests pass"
+      ]
     },
     {
       "id": "M053",

@@ -1,7 +1,7 @@
 # P062 — Multi-building experiments and ablations
 
 - Origin: Planning
-- Status: Active
+- Status: Done
 - Depends on: P059, P060, P061
 
 ## Goal
@@ -245,3 +245,9 @@ writing unrun outcomes as evidence.
   one-attempt rule. Its clinic/full intent is durable and the result index is
   one running/eight planned. No provider has yet been invoked for this study,
   so it currently contributes no outcome or empirical claim.
+
+
+## Completion
+
+- Completed: 2026-08-28
+- Evidence: study-028 executed the full preregistered 3x3 matrix through the live codex-agent-cli provider: 9/9 exact outcomes (3 completed incl. first fully-usable courtyard candidate, 6 pipeline_rejected with typed failures), first table-ready result index, ablation degradation measured, no fallback or hidden retry; 24 experiment tests pass

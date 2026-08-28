@@ -810,8 +810,13 @@ def stage_terminal(args, assignment: Assignment) -> int:
         assignment.run,
         f"{prefix}-usability-observations",
         {
+            "schema": "P062ArchitecturalObservationSet@1",
+            "project_id": assignment.run.project_id,
+            "run_id": assignment.run.run_id,
+            "base": envelope["base"],
             "contract_digest": contract.contract_digest,
             "observations": [item.to_dict() for item in observations],
+            "canonical_write_authority": False,
         },
     )
     usability_ref = _put(
@@ -821,16 +826,39 @@ def stage_terminal(args, assignment: Assignment) -> int:
         receipt.to_dict(),
     )
 
-    family_refs = _family_binding(
-        args,
-        assignment,
-        prefix,
-        envelope,
-        state,
-        program,
-        proposal_dict,
-        result,
-    )
+    try:
+        family_refs = _family_binding(
+            args,
+            assignment,
+            prefix,
+            envelope,
+            state,
+            program,
+            proposal_dict,
+            result,
+        )
+    except SystemExit as failure:
+        family_refs = {}
+        _put(
+            assignment.repository,
+            assignment.run,
+            f"{prefix}-family-binding-failure",
+            {
+                "schema": "P062FamilyBindingFailure@1",
+                "project_id": assignment.run.project_id,
+                "run_id": assignment.run.run_id,
+                "base": envelope["base"],
+                "assignment_id": args.assignment,
+                "error": str(failure),
+                "detail": (
+                    "the accepted candidate exposes no non-root component "
+                    "owning bound geometry operations, so the case family "
+                    "brief cannot be satisfied; no family is invented"
+                ),
+                "canonical_write_authority": False,
+                "geometry_mutation_authority": False,
+            },
+        )
 
     envelope_update = dict(envelope)
     envelope_update.update(

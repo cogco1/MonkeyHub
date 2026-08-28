@@ -560,25 +560,50 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
                         "SpatialCompilationReceipt@1",
                     }
                 )
-            if project_id == "p062-clinic-case":
-                self.assertTrue(case_schemas <= schemas)
-                self.assertTrue(
-                    {
-                        "ArchitecturalUsabilityReceipt@1",
-                        "ComponentFamilyCompilationReceipt@1",
-                        "ComponentFamilyRealizationReceipt@1",
-                        "GeometryProposalLineage@2",
-                        "HybridSandboxScene@1",
-                        "ProductionTransitionRecord@1",
-                        "SandboxRealizationReceipt@1",
-                    }
-                    <= schemas
+            # Since study-028 every case retains executed terminal-chain
+            # evidence, so promoted inputs are a subset rather than the
+            # exact record population.
+            self.assertTrue(case_schemas <= schemas)
+            self.assertTrue(
+                {
+                    "ArchitecturalUsabilityReceipt@1",
+                    "ComponentFamilyCompilationReceipt@1",
+                    "ComponentFamilyRealizationReceipt@1",
+                    "GeometryProposalLineage@2",
+                    "HybridSandboxScene@1",
+                    "ProductionTransitionRecord@1",
+                    "SandboxRealizationReceipt@1",
+                }
+                <= schemas
+            )
+            # Every record carries an explicit schema. The only exception is
+            # a record named as defective by a retained schema-correction
+            # note that also names its corrected successor.
+            corrected_defects = {
+                uri
+                for item in records
+                if item.get("schema") == "P062RecordSchemaCorrection@1"
+                for uri in item["defective_record_refs"]
+            }
+            schemaless = tuple(
+                ref.uri
+                for ref in repository.list_json(
+                    run=run,
+                    destination=PersistenceDestination(
+                        PersistenceArea.RUN_RECORD,
+                        run_id=run.run_id,
+                    ),
                 )
-                self.assertTrue(
-                    all(isinstance(schema, str) and schema for schema in schemas)
+                if not repository.load_json(ref).get("schema")
+            )
+            self.assertTrue(set(schemaless) <= corrected_defects)
+            self.assertTrue(
+                all(
+                    isinstance(schema, str) and schema
+                    for schema in schemas
+                    if schema is not None
                 )
-            else:
-                self.assertEqual(case_schemas, schemas)
+            )
             bootstrap = next(
                 item
                 for item in records
