@@ -118,14 +118,19 @@ def _capsule(root: Path, item_id: str) -> dict[str, Any]:
 def _git_snapshot(root: Path) -> dict[str, Any]:
     head = _run(root, ["git", "rev-parse", "HEAD"])
     branch = _run(root, ["git", "branch", "--show-current"]) or "DETACHED"
-    dirty = tuple(
+    all_dirty = tuple(
         line[:240]
         for line in _run(root, ["git", "status", "--short"]).splitlines()
         if line.strip()
     )
-    if len(dirty) > MAX_DIRTY_PATHS:
-        raise RecoveryError("too-many-dirty-paths")
-    return {"branch": branch, "head": head, "dirty_paths": dirty}
+    dirty = all_dirty[:MAX_DIRTY_PATHS]
+    return {
+        "branch": branch,
+        "head": head,
+        "dirty_paths": dirty,
+        "dirty_path_count": len(all_dirty),
+        "dirty_paths_truncated": len(all_dirty) > len(dirty),
+    }
 
 
 def _summary(capsule: dict[str, Any]) -> dict[str, Any]:
@@ -184,12 +189,19 @@ def render_context(recovery: dict[str, Any]) -> str:
         "Before modifying files, refresh git status and the active work-card capsule; never infer success from compressed history.",
         f"Git branch: {git['branch']}",
         f"Git HEAD: {git['head']}",
-        "Dirty paths (status only):",
     ]
     dirty = git["dirty_paths"]
+    dirty_count = git.get("dirty_path_count", len(dirty))
+    lines.append(
+        "Dirty paths (status only; "
+        f"showing {len(dirty)} of {dirty_count}):"
+    )
     lines.extend(f"  {item}" for item in dirty)
     if not dirty:
         lines.append("  none")
+    omitted = max(0, dirty_count - len(dirty))
+    if omitted:
+        lines.append(f"  ... {omitted} additional dirty paths omitted")
     cards = recovery["active_cards"]
     if not cards:
         lines.append("Active work cards: none; do not choose a new card from hook output.")

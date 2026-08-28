@@ -9,7 +9,7 @@
 - Phase: **P7 - semantic geometry production closure proven**
 - Registry updated: **2026-08-28**
 - Product capability: **runtime=architectural_failure_revision_typed; adapters=voxel_observation_and_cli_retrieval_proven**
-- Next bounded transition: finish active work: P066, P068
+- Next bounded transition: finish active work: P066, P068, P074
 
 ## Architecture coverage
 
@@ -63,8 +63,8 @@ These are the main responsibility chains. Individual cards retain their exact fa
 | --- | --- | ---: | --- |
 | Retirement | Replacement-first removal of old ownership | 0 | [R](mapping/retirement/INDEX.md) |
 | Modify | Scoped repair of the active path | 0 | [M](mapping/modify/INDEX.md) |
-| Planning | Not implemented or not yet accepted | 2 | [P](mapping/planning/INDEX.md) |
-| Archive | Completed and evidenced work | 130 | [A](mapping/archive/INDEX.md) |
+| Planning | Not implemented or not yet accepted | 3 | [P](mapping/planning/INDEX.md) |
+| Archive | Completed and evidenced work | 132 | [A](mapping/archive/INDEX.md) |
 
 R, M, and P are parallel ledgers, not mandatory runtime stages. Archive is
 the cleared construction record, not a fourth execution phase.
@@ -75,6 +75,7 @@ the cleared construction record, not a fourth execution phase.
 | --- | --- | --- | --- | --- |
 | P066 | planning | active | Derive a monument-class building with a live model provider through the staged production runtime: the model authors the coarse proposal, selection, geometry, and stage deepenings itself under the frozen contracts, with every failed or timed-out attempt retained and no scripted fallback. | [P066](mapping/planning/P066-live-monument-derivation.md) |
 | P068 | planning | active | Gate each authoring stage behind a mandatory typed declaration set grouped into decision quadrants (dimensions, structure, openings, detail): the earliest stage requires only white-model dimensions, later stages add deeper quadrants, every declared value must sit inside an authorized range and match the authored geometry within tolerance, and an incomplete or inconsistent declaration is a typed rejection before the stage can pass. | [P068](mapping/planning/P068-staged-declaration-gates.md) |
+| P074 | planning | active | Close the axial dependency and self-check gap exposed by the monument's asymmetric front elevation: the primary axis becomes a named commitment bound by the axial components, colonnade row origins are derived center-out from the axis instead of free literals, a generic axial-symmetry measurement reports each named group's center offset from a project-supplied axis plane, typed FAIL findings are persisted beside the retained asymmetric scenes, and the re-derived symmetric monument plus rebuilt CAD realization provide the paired PASS evidence. | [P074](mapping/planning/P074-axial-dependency-symmetry.md) |
 
 ## Module state
 

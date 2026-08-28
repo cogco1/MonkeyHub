@@ -765,3 +765,25 @@ differ only in the provider. Context-channel ablations (P062
 relationships, P067 precedent) measure what each knowledge channel
 causally contributes; the P068 gates measure what the model commits to
 before its work may pass.
+
+### Dependent decisions are derived, not restated
+
+A decision that depends on another must be computed from it, and must
+bind the commitment that carries it. The monument's asymmetric front
+elevation (P074's origin defect) showed both halves failing at once: the
+column-row origins restated the axis as free literals — off by 0.25 m,
+the beam row by 0.90 m, the plinth by 0.50 m — and nothing responded to
+the axis, so no revision would ever have reopened them, and no criterion
+measured the symmetry the axis implies.
+
+The rule the spine adds: a dependency edge between decisions is
+executable in both directions. Forward, the dependent value is derived
+from the basis (`row_origin = axis − ((count−1)·step + width)/2` — the
+number cannot drift because it is not stored). Backward, the dependent
+geometry's semantic binding names the basis commitment, so revising the
+basis reopens exactly its dependents through the existing binding
+closure. And the self-check is compiled from the same basis: the axis
+commitment yields an axial-symmetry criterion over the named front
+groups, measured on realized bounds, never on intent. One basis, three
+projections — derivation, reopening, criterion — mirroring how one
+adopted fact projects into constraint, declaration, and criterion.

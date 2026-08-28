@@ -10,6 +10,11 @@ from archflow.evaluation.model import (
     Metric,
     ObservationStatus,
 )
+from archflow.evaluation.symmetry import (
+    GroupSymmetryFinding,
+    SymmetryMeasurementError,
+    axial_group_offsets,
+)
 from archflow.evaluation.experiment import (
     ExperimentAssignment,
     ExperimentAssignmentLifecycle,
@@ -43,6 +48,9 @@ from archflow.evaluation.experiment import (
 )
 
 __all__ = [
+    "GroupSymmetryFinding",
+    "SymmetryMeasurementError",
+    "axial_group_offsets",
     "ClaimCoverageEvaluator",
     "EvaluationObservation",
     "Evaluator",

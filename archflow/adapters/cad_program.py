@@ -9,13 +9,25 @@ measures (bounding box and closed-volume where available) that an
 equivalence receipt then compares against the sandbox realization within
 explicit tolerances. Unsupported constructs become typed losses, never
 silent drops.
+
+Semantics travel natively — no plugins, no sidecar files. Every physical
+object is emitted with its object id as the CAD object name, placed on a
+per-component layer, and tagged with key-value user text carrying exactly
+the binding ids, component id, commitment refs, evidence refs, and
+producer op the compiled program states. Component repetition becomes
+native block instancing (one definition, N transforms), mirroring the
+family identity the program already owns. The script reads its own
+semantics back from the document and prints them beside the measures so
+the receipt can verify the round trip against the program alone.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from dataclasses import dataclass
+from typing import Mapping
 
 _SUPPORTED = {
     "solid",
@@ -30,6 +42,8 @@ _SUPPORTED = {
     "transform",
     "curve",
 }
+
+_ROOT_LAYER = "archflow"
 
 
 class CadTranslationError(ValueError):
@@ -50,37 +64,152 @@ def _params(operation) -> dict[str, object]:
     return decoded
 
 
-def translate_to_rhino_python(program) -> CadTranslation:
-    """Emit one deterministic rhinoscriptsyntax build script."""
-
-    proposal = program.proposal
-    operations = {op.op_id: op for op in proposal.operations}
-    order = list(program.operation_order)
+def _physical_ids(proposal) -> tuple[str, ...]:
     consumed: set[str] = set()
     for op in proposal.operations:
         consumed.update(op.input_object_ids)
-    physical = tuple(
+    return tuple(
         sorted(
             object_id
             for op in proposal.operations
             for object_id in op.output_object_ids
-            if object_id not in consumed
-            and op.kind.value != "curve"
+            if object_id not in consumed and op.kind.value != "curve"
         )
     )
+
+
+def _layer_color(component_key: str) -> tuple[int, int, int]:
+    digest = hashlib.sha256(component_key.encode("utf-8")).digest()
+    return (
+        60 + digest[0] % 160,
+        60 + digest[1] % 160,
+        60 + digest[2] % 160,
+    )
+
+
+def expected_object_semantics(program) -> dict[str, dict]:
+    """The semantics each physical object must carry in the CAD document.
+
+    Derived from the program alone: producer op, binding ids, component
+    id, commitment and evidence refs, and the per-component layer path.
+    Objects the program leaves unbound stay on the root layer with no
+    invented component. Families report the block definitions arrays
+    must create with their instance multiplicities.
+    """
+
+    proposal = program.proposal
+    bindings = {
+        binding.binding_id: binding
+        for binding in getattr(proposal, "semantic_bindings", ())
+    }
+    objects: dict[str, dict] = {}
+    families: dict[str, int] = {}
+    for operation in proposal.operations:
+        kind = operation.kind.value
+        for object_id in operation.output_object_ids:
+            binding_ids = tuple(
+                sorted(getattr(operation, "semantic_binding_ids", ()) or ())
+            )
+            components = sorted(
+                {
+                    bindings[item].component_id
+                    for item in binding_ids
+                    if item in bindings
+                }
+            )
+            commitments = sorted(
+                {
+                    ref
+                    for item in binding_ids
+                    if item in bindings
+                    for ref in bindings[item].commitment_refs
+                }
+            )
+            evidence = sorted(
+                {
+                    ref
+                    for item in binding_ids
+                    if item in bindings
+                    for ref in bindings[item].evidence_refs
+                }
+            )
+            layer = (
+                f"{_ROOT_LAYER}::{'+'.join(components)}"
+                if components
+                else _ROOT_LAYER
+            )
+            user_text = {"archflow:producer_op": operation.op_id}
+            if binding_ids:
+                user_text["archflow:bindings"] = ",".join(binding_ids)
+            if components:
+                user_text["archflow:component"] = "+".join(components)
+            if commitments:
+                user_text["archflow:commitments"] = ",".join(commitments)
+            if evidence:
+                user_text["archflow:evidence"] = ",".join(evidence)
+            objects[object_id] = {
+                "name": object_id,
+                "layer": layer,
+                "user_text": user_text,
+            }
+        if kind in ("array", "radial_array"):
+            families[f"archflow-family-{operation.op_id}"] = int(
+                _params(operation)["count"]
+            )
+    physical = set(_physical_ids(proposal))
+    return {
+        "objects": {
+            object_id: row
+            for object_id, row in sorted(objects.items())
+            if object_id in physical
+        },
+        "blocks": families,
+    }
+
+
+def translate_to_rhino_python(
+    program,
+    *,
+    provenance: Mapping[str, str] | None = None,
+) -> CadTranslation:
+    """Emit one deterministic, semantics-carrying rhinoscriptsyntax script."""
+
+    proposal = program.proposal
+    operations = {op.op_id: op for op in proposal.operations}
+    order = list(program.operation_order)
+    physical = _physical_ids(proposal)
+    semantics = expected_object_semantics(program)
     losses: list[dict] = []
     lines: list[str] = [
         "import json",
         "import math",
         "import rhinoscriptsyntax as rs",
         "objects = {}",
+        "counts = {}",
         "",
         "def _register(object_id, guids):",
         "    if guids is None: raise Exception('build failed: ' + object_id)",
         "    if not isinstance(guids, list): guids = [guids]",
         "    objects[object_id] = guids",
         "",
+        f"rs.AddLayer({_ROOT_LAYER!r})",
     ]
+    layer_rows = sorted(
+        {
+            row["layer"]
+            for row in semantics["objects"].values()
+            if row["layer"] != _ROOT_LAYER
+        }
+    )
+    for layer in layer_rows:
+        lines.append(
+            f"rs.AddLayer({layer!r}, {_layer_color(layer)!r})"
+        )
+    for key, value in sorted((provenance or {}).items()):
+        lines.append(
+            f"rs.SetDocumentUserText({f'archflow:{key}'!r}, {value!r})"
+        )
+    lines.append("")
     for op_id in order:
         operation = operations[op_id]
         kind = operation.kind.value
@@ -173,14 +302,6 @@ def translate_to_rhino_python(program) -> CadTranslation:
             "boolean_difference",
             "boolean_intersection",
         ):
-            copies = (
-                "["
-                + ", ".join(
-                    f"rs.CopyObject(g) for g in objects[{i!r}]"
-                    for i in ins
-                )
-                + "]"
-            )
             lines.append(
                 "_ins = ["
                 + ", ".join(
@@ -213,7 +334,7 @@ def translate_to_rhino_python(program) -> CadTranslation:
                 )
             else:
                 lines.append(
-                    f"_res = rs.BooleanIntersection(_ins[0], "
+                    "_res = rs.BooleanIntersection(_ins[0], "
                     + " + ".join(
                         f"_ins[{index}]" for index in range(1, len(ins))
                     )
@@ -223,13 +344,17 @@ def translate_to_rhino_python(program) -> CadTranslation:
         elif kind == "array":
             count = int(params["count"])
             step = params["step"]
+            block = f"archflow-family-{op_id}"
             lines.extend(
                 [
-                    f"_guids = [rs.CopyObject(_g) for _g in objects[{ins[0]!r}]]",
-                    f"for _i in range(1, {count}):",
-                    f"    _guids += [rs.CopyObject(_g, "
-                    f"({step[0]}*_i, {step[2]}*_i, {step[1]}*_i)) "
-                    f"for _g in objects[{ins[0]!r}]]",
+                    f"_seed = objects[{ins[0]!r}]",
+                    "for _g in _seed: rs.ObjectColorSource(_g, 3)",
+                    f"rs.AddBlock(_seed, (0,0,0), {block!r}, False)",
+                    "_guids = []",
+                    f"for _i in range({count}):",
+                    f"    _guids.append(rs.InsertBlock({block!r}, "
+                    f"({step[0]}*_i, {step[2]}*_i, {step[1]}*_i)))",
+                    f"counts[{out!r}] = {count} * len(_seed)",
                     f"_register({out!r}, _guids)",
                 ]
             )
@@ -238,16 +363,19 @@ def translate_to_rhino_python(program) -> CadTranslation:
             center = params["center"]
             angle = float(params["angle_step_degrees"])
             start = float(params.get("start_angle_degrees", 0.0))
+            block = f"archflow-family-{op_id}"
+            center_pt = f"({center[0]},{center[2]},{center[1]})"
             lines.extend(
                 [
-                    f"_guids = []",
+                    f"_seed = objects[{ins[0]!r}]",
+                    "for _g in _seed: rs.ObjectColorSource(_g, 3)",
+                    f"rs.AddBlock(_seed, {center_pt}, {block!r}, False)",
+                    "_guids = []",
                     f"for _i in range({count}):",
-                    f"    _a = {start} + _i * {angle}",
-                    f"    for _g in objects[{ins[0]!r}]:",
-                    f"        _c = rs.CopyObject(_g)",
-                    f"        rs.RotateObject(_c, "
-                    f"({center[0]},{center[2]},{center[1]}), -_a)",
-                    f"        _guids.append(_c)",
+                    f"    _guids.append(rs.InsertBlock({block!r}, "
+                    f"{center_pt}, (1,1,1), -({start} + _i * {angle}), "
+                    f"(0,0,1)))",
+                    f"counts[{out!r}] = {count} * len(_seed)",
                     f"_register({out!r}, _guids)",
                 ]
             )
@@ -270,12 +398,30 @@ def translate_to_rhino_python(program) -> CadTranslation:
             "for _oid, _guids in objects.items():",
             "    if _oid not in _physical:",
             "        rs.DeleteObjects(_guids)",
+            "_semantic_table = json.loads("
+            + repr(json.dumps(semantics["objects"], sort_keys=True))
+            + ")",
+            "_semantics = {}",
             "measures = {}",
             "for _oid in _physical:",
             "    _guids = objects.get(_oid) or []",
             "    if not _guids:",
             "        measures[_oid] = None",
+            "        _semantics[_oid] = None",
             "        continue",
+            "    _meta = _semantic_table.get(_oid, {})",
+            "    for _g in _guids:",
+            "        rs.ObjectName(_g, _oid)",
+            "        if _meta.get('layer'): rs.ObjectLayer(_g, _meta['layer'])",
+            "        for _k in sorted(_meta.get('user_text', {})):",
+            "            rs.SetUserText(_g, _k, _meta['user_text'][_k])",
+            "    _first = _guids[0]",
+            "    _keys = rs.GetUserText(_first) or []",
+            "    _semantics[_oid] = {",
+            "        'name': rs.ObjectName(_first),",
+            "        'layer': rs.ObjectLayer(_first),",
+            "        'user_text': {_k: rs.GetUserText(_first, _k) for _k in _keys},",
+            "    }",
             "    _bb = rs.BoundingBox(_guids)",
             "    _vol = 0.0",
             "    for _g in _guids:",
@@ -288,9 +434,15 @@ def translate_to_rhino_python(program) -> CadTranslation:
             "        'bbox_min': [_bb[0].X, _bb[0].Z, _bb[0].Y],",
             "        'bbox_max': [_bb[6].X, _bb[6].Z, _bb[6].Y],",
             "        'volume': _vol,",
-            "        'brep_count': len(_guids),",
+            "        'brep_count': counts.get(_oid, len(_guids)),",
             "    }",
+            "_blocks = {}",
+            "for _bn in (rs.BlockNames() or []):",
+            "    if _bn.startswith('archflow-family-'):",
+            "        _blocks[_bn] = rs.BlockInstanceCount(_bn)",
             "print('CAD_MEASURES=' + json.dumps(measures))",
+            "print('SEMANTICS=' + json.dumps("
+            "{'objects': _semantics, 'blocks': _blocks}))",
         ]
     )
     return CadTranslation(

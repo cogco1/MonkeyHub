@@ -130,6 +130,18 @@ DRUM_OUTER = 23.0
 DRUM_INNER = 20.0
 BASE_Y = 60.0
 DRUM_TOP = 84.0
+AXIS_COMMITMENT_REF = "commitment:primary-axis-center"
+
+
+def _axial_row_origin(count, step, width):
+    """X origin of a column row derived from the committed primary axis.
+
+    Row layouts are dependent decisions: the origin is computed center-out
+    from the axis so the row is symmetric about it by construction, and a
+    revised axis reopens the rows through the axis commitment binding.
+    """
+
+    return CENTER_X - ((count - 1) * step + width) / 2.0
 
 
 def _monument_context() -> ProductionAuthoringContext:
@@ -214,7 +226,21 @@ def _monument_context() -> ProductionAuthoringContext:
         ),
         evidence_refs=(brief.raw_request_ref,),
     )
-    state = replace(state, commitments=(commitment,))
+    axis_commitment = Commitment(
+        commitment_id=AXIS_COMMITMENT_REF.removeprefix("commitment:"),
+        kind=CommitmentKind.MAINTENANCE,
+        strength=CommitmentStrength.HARD,
+        status=CommitmentStatus.ACTIVE,
+        authority_id="authority.user",
+        authorized_by="authority.user",
+        source_event_ref=brief.raw_request_ref,
+        satisfaction_criterion=CriterionRef(
+            criterion_id="primary-axis-center",
+            provider_id="validator.semantic-geometry",
+        ),
+        evidence_refs=(brief.raw_request_ref,),
+    )
+    state = replace(state, commitments=(commitment, axis_commitment))
     deliverables = tuple(
         replace(item, base_state_digest=state.state_digest)
         for item in maturity.deliverables
@@ -242,7 +268,7 @@ def _monument_context() -> ProductionAuthoringContext:
         site_context=site,
         build_policy=policy,
         architect_id="primary-architect",
-        required_commitment_refs=(COMMITMENT_REF,),
+        required_commitment_refs=(COMMITMENT_REF, AXIS_COMMITMENT_REF),
     )
 
 
@@ -616,7 +642,7 @@ def _monument_geometry(
     evidence = state.selected_schematic.option.proposal.evidence_refs
     operations = [
         _solid("plinth", "plinth-object", "rotunda-binding",
-               [1, 60, 0], [47, 2, 62]),
+               [CENTER_X - 23.5, 60, 0], [47, 2, 62]),
         _cylinder("drum-outer", "drum-outer-object", "rotunda-binding",
                   62, 84, DRUM_OUTER),
         _cylinder("drum-inner", "drum-inner-object", "rotunda-binding",
@@ -665,27 +691,32 @@ def _monument_geometry(
                 _solid("portico-mass", "portico-mass-object",
                        "portico-binding", [10, 74, 0], [28, 2, 15]),
                 _solid("col-front-seed", "col-front-seed-object",
-                       "colonnade-binding", [11, 62, 2], [2, 10, 2]),
+                       "colonnade-binding",
+                       [_axial_row_origin(8, 3.5, 2), 62, 2], [2, 10, 2]),
                 _linear_array("col-front-ring", "col-front-ring-object",
                               "colonnade-binding", "col-front-seed-object",
                               8, [3.5, 0, 0]),
                 _solid("col-rear-seed", "col-rear-seed-object",
-                       "colonnade-binding", [11, 62, 11], [2, 10, 2]),
+                       "colonnade-binding",
+                       [_axial_row_origin(8, 3.5, 2), 62, 11], [2, 10, 2]),
                 _linear_array("col-rear-ring", "col-rear-ring-object",
                               "colonnade-binding", "col-rear-seed-object",
                               8, [3.5, 0, 0]),
                 _solid("cap-front-seed", "cap-front-seed-object",
-                       "colonnade-binding", [10.5, 72, 1.5], [3, 1, 3]),
+                       "colonnade-binding",
+                       [_axial_row_origin(8, 3.5, 3), 72, 1.5], [3, 1, 3]),
                 _linear_array("cap-front-ring", "cap-front-ring-object",
                               "colonnade-binding", "cap-front-seed-object",
                               8, [3.5, 0, 0]),
                 _solid("cap-rear-seed", "cap-rear-seed-object",
-                       "colonnade-binding", [10.5, 72, 10.5], [3, 1, 3]),
+                       "colonnade-binding",
+                       [_axial_row_origin(8, 3.5, 3), 72, 10.5], [3, 1, 3]),
                 _linear_array("cap-rear-ring", "cap-rear-ring-object",
                               "colonnade-binding", "cap-rear-seed-object",
                               8, [3.5, 0, 0]),
                 _solid("beam-seed", "beam-seed-object", "colonnade-binding",
-                       [11, 73, 1], [1.4, 1.2, 13]),
+                       [_axial_row_origin(9, 3.3, 1.4), 73, 1],
+                       [1.4, 1.2, 13]),
                 _linear_array("beam-ring", "beam-ring-object",
                               "colonnade-binding", "beam-seed-object",
                               9, [3.3, 0, 0]),
@@ -794,7 +825,7 @@ def _monument_geometry(
             binding_id=binding_id,
             component_id=component_id,
             object_ids=tuple(sorted(object_ids)),
-            commitment_refs=(COMMITMENT_REF,),
+            commitment_refs=(COMMITMENT_REF, AXIS_COMMITMENT_REF),
             evidence_refs=prior_binding_evidence.get(component_id, evidence),
         )
         for binding_id, (component_id, object_ids) in sorted(
@@ -1215,7 +1246,7 @@ def _run_proof(root: Path) -> dict[str, object]:
     compiled = compile_geometry_program(
         initial_state,
         provider.generated_geometry,
-        active_commitment_refs=(COMMITMENT_REF,),
+        active_commitment_refs=(COMMITMENT_REF, AXIS_COMMITMENT_REF),
     )
     assert compiled.program is not None, compiled.receipt.issues
     stages = [
@@ -1253,7 +1284,7 @@ def _run_proof(root: Path) -> dict[str, object]:
                 if stage == 2
                 else ("oculus",) if stage == 3 else ()
             ),
-            active_commitment_refs=(COMMITMENT_REF,),
+            active_commitment_refs=(COMMITMENT_REF, AXIS_COMMITMENT_REF),
         )
         if (
             lifecycle.receipt.status
@@ -1384,7 +1415,7 @@ class MonumentLifecycleFastTests(unittest.TestCase):
             prior = compile_geometry_program(
                 state,
                 provider.generated_geometry,
-                active_commitment_refs=(COMMITMENT_REF,),
+                active_commitment_refs=(COMMITMENT_REF, AXIS_COMMITMENT_REF),
             ).program
             self.assertIsNotNone(prior)
             for stage in (1, 2, 3):
@@ -1408,7 +1439,7 @@ class MonumentLifecycleFastTests(unittest.TestCase):
                         if stage == 2
                         else ("oculus",) if stage == 3 else ()
                     ),
-                    active_commitment_refs=(COMMITMENT_REF,),
+                    active_commitment_refs=(COMMITMENT_REF, AXIS_COMMITMENT_REF),
                 )
                 self.assertIs(
                     SemanticGeometryLifecycleStatus.COMPILED,

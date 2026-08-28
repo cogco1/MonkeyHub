@@ -10975,6 +10975,232 @@
       "evidence": [
         "translate_to_rhino_python maps the promoted P065 36-op compiled program to a 187-line rhinoscriptsyntax script (deterministic: regeneration byte-identical, sha256 3117dd1446e4bf2b...); executed in external Rhino 8 slot via MCP adapter producing 17 physical objects / 308 breps; expected_object_bounds analytic replay compared against CAD measures: EQUIVALENT, max deviation 0.346 m within 0.6 m tolerance, zero translation losses; receipt retained as cad-equivalence-receipt in probes/p065-monument-derivation run monument-001. tests/test_cad_program.py (7) green; archcheck PASS."
       ]
+    },
+    {
+      "id": "P072",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Carry the compiled program's semantics natively into the CAD realization with zero plugins: object names, per-component layer hierarchy, key-value user text for binding/commitment/evidence refs, document-level provenance strings, and component repetition as native block definitions with transformed instances; the equivalence receipt gains a semantic round-trip section comparing document-read semantics against the program-derived expectation, with mismatches typed, never repaired.",
+      "depends_on": [
+        "P061",
+        "P071"
+      ],
+      "write_scope": [
+        "archflow/adapters/cad_program.py",
+        "archflow/adapters/README.md",
+        "tools/run_cad_equivalence.py",
+        "tests/test_cad_program.py",
+        "probes/p065-monument-derivation/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Every emitted physical object carries its object id as the CAD object name, sits on a per-component layer, and retains binding ids, component id, commitment refs, evidence refs, and producer op id as user text exactly as the program states them.",
+        "Array and radial-array repetition is realized as one native block definition plus N transformed instances, preserving family identity instead of anonymous copies.",
+        "The equivalence receipt includes a semantic round-trip section verified against expected_object_semantics derived from the program alone; mismatches are typed findings.",
+        "At least one promoted program is realized semantically in CAD with its extended receipt and the saved document retained.",
+        "The translator owns no design authority and invents no semantics beyond the program."
+      ],
+      "tests": [
+        "Semantic emission and expected-semantics derivation tests",
+        "Block instancing and determinism tests",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_cad_program"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P072-semantic-cad-emission.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P072",
+        "actor": "codex",
+        "verified_at": "2026-08-28T14:53:37.041592+00:00",
+        "contract_sha256": "f75515d79129b966e23966ab5231721feecd533626e296e64c1d0b8e0d0b8217",
+        "scope_sha256": "a2bff13df870dca014350168a33447690ef1dc0fc5bd899de1d826f18b013064",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_cad_program"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "34a82a30511a2175a5286cff0751874e9220ce5fb08cab87b09cc04e220f6b31",
+            "stdout_tail": "",
+            "stderr_tail": "...........\n----------------------------------------------------------------------\nRan 11 tests in 0.001s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "780e89e9a6ba139abbd454dc2420d1621877b58f80a065af863ffa3183921cc0",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (129 files, 0.791s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "translate_to_rhino_python emits native Rhino semantics with zero plugins: object Name=object_id, per-component nested layers with deterministic colors, key-value UserText (bindings/component/commitments/evidence/producer op), document user strings for provenance, and array/radial repetition as native block definitions with N transformed InsertBlock instances (by-parent color). expected_object_semantics derives the expectation from the program alone; receipt CadEquivalenceReceipt@2 gained a semantic round-trip section. Monument rebuilt in Rhino 8: 13 family blocks (36/9/8/8/28x5/8/8/15/72 instances), 17/17 objects semantics VERIFIED, geometry still EQUIVALENT at 0.346 m max deviation; .3dm saved with semantics persisted. tests/test_cad_program.py (11) green; archcheck PASS."
+      ]
+    },
+    {
+      "id": "P073",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Export a compiled program with its semantics as a deterministic IFC4 file through IfcOpenShell: spatial hierarchy from program identities, elements named by object id and typed through a caller-supplied component mapping with proxy fallback, property sets retaining binding/commitment/evidence/provenance, families as IfcMappedItem single-definition multi-transform instancing, exact parametric geometry where IFC expresses it and faceted lofts as typed representation notes, validated by re-reading the exported file.",
+      "depends_on": [
+        "P072"
+      ],
+      "write_scope": [
+        "archflow/adapters/ifc_export.py",
+        "archflow/adapters/README.md",
+        "tools/run_ifc_export.py",
+        "tests/test_ifc_export.py",
+        "probes/p065-monument-derivation/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The exported IFC carries project/site/building hierarchy from program identities and one element per physical object named by its object id.",
+        "Element classes come from a caller-supplied component mapping; unmapped components become IfcBuildingElementProxy; the framework ships no building vocabulary.",
+        "Property sets retain binding ids, component id, commitment refs, evidence refs, producer op id, and program digest per element.",
+        "Solids, extrusions, revolves, and booleans map to exact parametric IFC geometry; lofts become faceted breps from the exact ring vertices with a typed representation note; arrays become mapped items with one definition and N transforms.",
+        "A validation pass re-reads the file and compares element counts, names, property sets, and mapped multiplicities; the receipt retains file digest and library identity, with no design or acceptance authority."
+      ],
+      "tests": [
+        "Hierarchy, typing fallback, pset round-trip, mapped multiplicity",
+        "Exporter determinism and typed representation notes",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_ifc_export"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P073-ifc-semantic-export.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P073",
+        "actor": "codex",
+        "verified_at": "2026-08-28T16:12:14.124910+00:00",
+        "contract_sha256": "d29b3ec16ca435ffb1ade431caec16f904c3b4593dd270b64b2f80ebebd71044",
+        "scope_sha256": "7ad26aed817691e2328326e9837cffe0c3dc400c6f2389c57a86f071c9c8f519",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_ifc_export"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "58d85580edb84655508735b7ea3d69d25b2b41eff841c49261ef8485e3efa873",
+            "stdout_tail": "",
+            "stderr_tail": "........\n----------------------------------------------------------------------\nRan 8 tests in 0.134s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "53def8a9936f1666f2b6c40b1dcc999c2bc221e15cd6d88deaf9425b82609b1e",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (131 files, 0.867s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "export_program_to_ifc authors deterministic IFC4 (content-derived GUIDs, no timestamps; same program => same file sha256). Monument program exported: 17 elements typed via caller mapping (IfcColumn x5 colonnade rows, IfcCovering x5 coffer rings, IfcWall drum+plinth, IfcRoof dome, IfcSlab portico, 3 proxies), 304 IfcMappedItem instances over 13 single-definition representation maps, drum-wall boolean chain EXACT parametric IfcBooleanResult (circle-profile extrusion operands, door void applied), dome lofts faceted from exact ring vertices with typed notes (ifc.loft_faceted, ifc.boolean_partial_representation for the unevaluated dome inner/oculus voids). Re-read validation VERIFIED (names==program physical set, psets on all elements, mapped multiplicities match); IfcExportReceipt@1 retained in monument-001 with file sha256 and ifcopenshell-0.8.5 identity. tests/test_ifc_export.py (8) green; archcheck PASS."
+      ]
+    },
+    {
+      "id": "P074",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Close the axial dependency and self-check gap exposed by the monument's asymmetric front elevation: the primary axis becomes a named commitment bound by the axial components, colonnade row origins are derived center-out from the axis instead of free literals, a generic axial-symmetry measurement reports each named group's center offset from a project-supplied axis plane, typed FAIL findings are persisted beside the retained asymmetric scenes, and the re-derived symmetric monument plus rebuilt CAD realization provide the paired PASS evidence.",
+      "depends_on": [
+        "P065",
+        "P072"
+      ],
+      "write_scope": [
+        "archflow/evaluation/symmetry.py",
+        "archflow/evaluation/__init__.py",
+        "archflow/evaluation/README.md",
+        "tests/test_symmetry.py",
+        "tests/integration/test_monument_derivation.py",
+        "tools/run_symmetric_monument.py",
+        "tools/run_cad_equivalence.py",
+        "probes/p065-monument-derivation/",
+        "probes/p074-monument-symmetric/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The axial-symmetry measurement is generic: subjects (binding groups), axis value, axis index, and tolerance come from the caller; the framework ships no axis or subject of its own.",
+        "The monument's colonnade, cap, and beam row origins are derived from the committed axis, and the axial components bind the axis commitment so revision reopens exactly the dependent geometry.",
+        "Typed FAIL findings over the retained asymmetric stage scenes are persisted without rewriting any prior record.",
+        "The re-derived monument realizes zero group offsets and the CAD rebuild carries the corrected symmetric elevation with its equivalence receipt."
+      ],
+      "tests": [
+        "Symmetry measurement math and typed failures",
+        "Derived-origin centering",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_symmetry"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P074-axial-dependency-symmetry.md",
+      "on_complete": {},
+      "actor": "codex"
     }
   ]
 }

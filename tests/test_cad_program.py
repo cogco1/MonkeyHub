@@ -6,16 +6,18 @@ from types import SimpleNamespace
 
 from archflow.adapters.cad_program import (
     expected_object_bounds,
+    expected_object_semantics,
     translate_to_rhino_python,
 )
 
 
-def op(op_id, kind, outputs, inputs=(), **params):
+def op(op_id, kind, outputs, inputs=(), bindings=(), **params):
     return SimpleNamespace(
         op_id=op_id,
         kind=SimpleNamespace(value=kind),
         output_object_ids=tuple(outputs),
         input_object_ids=tuple(inputs),
+        semantic_binding_ids=tuple(bindings),
         parameters=tuple(
             SimpleNamespace(name=name, value_json=json.dumps(value))
             for name, value in sorted(params.items())
@@ -23,9 +25,22 @@ def op(op_id, kind, outputs, inputs=(), **params):
     )
 
 
-def program(*operations):
+def binding(binding_id, component_id, object_ids, commitments=(), evidence=()):
     return SimpleNamespace(
-        proposal=SimpleNamespace(operations=tuple(operations)),
+        binding_id=binding_id,
+        component_id=component_id,
+        object_ids=tuple(object_ids),
+        commitment_refs=tuple(commitments),
+        evidence_refs=tuple(evidence),
+    )
+
+
+def program(*operations, bindings=()):
+    return SimpleNamespace(
+        proposal=SimpleNamespace(
+            operations=tuple(operations),
+            semantic_bindings=tuple(bindings),
+        ),
         operation_order=tuple(item.op_id for item in operations),
     )
 
@@ -227,6 +242,99 @@ class ExpectedBoundsTest(unittest.TestCase):
         self.assertEqual(
             sorted(translation.physical_object_ids), sorted(bounds)
         )
+
+
+def semantic_build():
+    return program(
+        op(
+            "seed",
+            "solid",
+            ["seed-object"],
+            bindings=["ring-binding"],
+            origin=[9.0, 0.0, -0.5],
+            size=[1.0, 2.0, 1.0],
+        ),
+        op(
+            "ring",
+            "radial_array",
+            ["ring-object"],
+            ["seed-object"],
+            bindings=["ring-binding"],
+            count=6,
+            center=[0.0, 0.0, 0.0],
+            axis=[0.0, 1.0, 0.0],
+            angle_step_degrees=60.0,
+            start_angle_degrees=0.0,
+        ),
+        op(
+            "slab",
+            "solid",
+            ["slab-object"],
+            origin=[-12.0, -1.0, -12.0],
+            size=[24.0, 1.0, 24.0],
+        ),
+        bindings=[
+            binding(
+                "ring-binding",
+                "colonnade",
+                ["ring-object", "seed-object"],
+                commitments=["commitment:preserve-envelope"],
+                evidence=["brief-claim:claim.occupancy"],
+            )
+        ],
+    )
+
+
+class SemanticEmissionTest(unittest.TestCase):
+    def test_expected_semantics_come_from_bindings_only(self):
+        semantics = expected_object_semantics(semantic_build())
+        ring = semantics["objects"]["ring-object"]
+        self.assertEqual("ring-object", ring["name"])
+        self.assertEqual("archflow::colonnade", ring["layer"])
+        self.assertEqual(
+            {
+                "archflow:producer_op": "ring",
+                "archflow:bindings": "ring-binding",
+                "archflow:component": "colonnade",
+                "archflow:commitments": "commitment:preserve-envelope",
+                "archflow:evidence": "brief-claim:claim.occupancy",
+            },
+            ring["user_text"],
+        )
+        self.assertEqual({"archflow-family-ring": 6}, semantics["blocks"])
+
+    def test_unbound_object_stays_on_root_layer_without_invention(self):
+        semantics = expected_object_semantics(semantic_build())
+        slab = semantics["objects"]["slab-object"]
+        self.assertEqual("archflow", slab["layer"])
+        self.assertEqual(
+            {"archflow:producer_op": "slab"}, slab["user_text"]
+        )
+
+    def test_script_emits_native_semantic_carriers(self):
+        translation = translate_to_rhino_python(
+            semantic_build(),
+            provenance={"proposal_id": "prop-1"},
+        )
+        script = translation.script
+        self.assertIn("rs.AddLayer('archflow::colonnade'", script)
+        self.assertIn(
+            "rs.AddBlock(_seed, (0.0,0.0,0.0), 'archflow-family-ring'",
+            script,
+        )
+        self.assertIn("rs.InsertBlock('archflow-family-ring'", script)
+        self.assertIn("rs.ObjectName(_g, _oid)", script)
+        self.assertIn("rs.SetUserText", script)
+        self.assertIn(
+            "rs.SetDocumentUserText('archflow:proposal_id', 'prop-1')",
+            script,
+        )
+        self.assertIn("SEMANTICS=", script)
+
+    def test_semantic_translation_is_deterministic(self):
+        first = translate_to_rhino_python(semantic_build())
+        second = translate_to_rhino_python(semantic_build())
+        self.assertEqual(first.script, second.script)
 
 
 if __name__ == "__main__":

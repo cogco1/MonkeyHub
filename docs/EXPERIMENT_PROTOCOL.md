@@ -642,3 +642,40 @@ realization it mirrors. The adapter owns no design authority: curves and
 transforms it cannot express arrive as typed losses, and the receipt
 names the program record, script digest, measures digest, and adapter
 identity.
+
+## P072 semantic CAD emission — 2026-08-28
+
+The CAD lane stopped flattening semantics: with zero plugins, the
+translator now emits every physical object with its object id as the
+Rhino object name, on a per-component nested layer with a deterministic
+color, carrying binding ids, component id, commitment refs, evidence
+refs, and producer op as key-value user text, with document-level user
+strings anchoring the file to its exact program record. Component
+repetition became native instancing — one block definition per family,
+N transformed instances — so the 308-brep monument is now 13 families
+plus four singletons, mirroring the family identity the program owns.
+The equivalence receipt gained a semantic round-trip section: the build
+script reads its own semantics back from the document and the receipt
+compares them against an expectation derived from the program alone.
+Monument rebuild: geometry still equivalent at 0.346 m maximum
+deviation, semantics verified 17 of 17, the saved .3dm carrying
+everything.
+
+## P073 IFC semantic export — 2026-08-28
+
+The same program now exports to the open building-model standard
+through one library. Elements are named by object id and typed through
+a caller-supplied component mapping (the framework ships no building
+vocabulary; unmapped components become proxies); property sets retain
+the full semantic account per element; families become one
+representation map reused under N transformed IfcMappedItem instances —
+the IFC-native form of the program's array identity. Geometry maps
+exactly where IFC expresses it: rectangle and circle profile extrusions
+for solids and constant-radius revolves, and the drum wall as a genuine
+IfcBooleanResult chain with its door void applied. Lofts become faceted
+breps from the exact ring vertices, and the dome-shell boolean keeps
+its base representation with the inner and oculus voids recorded as a
+typed partial-representation note — never silently approximated. GUIDs
+derive from content keys and no timestamps are written, so the export
+is bit-deterministic; validation re-reads the file and matches element
+names, semantics, and mapped multiplicities against the program.

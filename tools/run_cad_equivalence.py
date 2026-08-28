@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 
 from archflow.adapters.cad_program import (  # noqa: E402
     expected_object_bounds,
+    expected_object_semantics,
     translate_to_rhino_python,
 )
 from archflow.project import (  # noqa: E402
@@ -47,6 +48,7 @@ def load_program_shim(record_path: Path):
             kind=SimpleNamespace(value=op["kind"]),
             output_object_ids=tuple(op["output_object_ids"]),
             input_object_ids=tuple(op["input_object_ids"]),
+            semantic_binding_ids=tuple(op.get("semantic_binding_ids", ())),
             parameters=tuple(
                 SimpleNamespace(
                     name=item["name"], value_json=item["value_json"]
@@ -56,10 +58,85 @@ def load_program_shim(record_path: Path):
         )
         for op in proposal["operations"]
     )
-    return SimpleNamespace(
-        proposal=SimpleNamespace(operations=operations),
-        operation_order=tuple(content["operation_order"]),
+    bindings = tuple(
+        SimpleNamespace(
+            binding_id=item["binding_id"],
+            component_id=item["component_id"],
+            object_ids=tuple(item["object_ids"]),
+            commitment_refs=tuple(item["commitment_refs"]),
+            evidence_refs=tuple(item["evidence_refs"]),
+        )
+        for item in proposal.get("semantic_bindings", ())
     )
+    return SimpleNamespace(
+        proposal=SimpleNamespace(
+            operations=operations,
+            semantic_bindings=bindings,
+            proposal_id=proposal.get("proposal_id", ""),
+            project_id=proposal.get("project_id", ""),
+            run_id=proposal.get("run_id", ""),
+        ),
+        operation_order=tuple(content["operation_order"]),
+        proposal_digest=content.get("proposal_digest", ""),
+    )
+
+
+def compare_semantics(expected, observed):
+    """Typed mismatches between program-derived and document-read semantics."""
+
+    mismatches = []
+    want_objects = expected["objects"]
+    got_objects = observed.get("objects", {})
+    for object_id in sorted(set(want_objects) | set(got_objects)):
+        want, got = want_objects.get(object_id), got_objects.get(object_id)
+        if want is None or got is None:
+            mismatches.append(
+                {"object_id": object_id, "code": "semantic_object_missing"}
+            )
+            continue
+        if got.get("name") != want["name"]:
+            mismatches.append(
+                {
+                    "object_id": object_id,
+                    "code": "name_mismatch",
+                    "expected": want["name"],
+                    "observed": got.get("name"),
+                }
+            )
+        if got.get("layer") != want["layer"]:
+            mismatches.append(
+                {
+                    "object_id": object_id,
+                    "code": "layer_mismatch",
+                    "expected": want["layer"],
+                    "observed": got.get("layer"),
+                }
+            )
+        observed_text = got.get("user_text") or {}
+        for key, value in want["user_text"].items():
+            if observed_text.get(key) != value:
+                mismatches.append(
+                    {
+                        "object_id": object_id,
+                        "code": "user_text_mismatch",
+                        "key": key,
+                        "expected": value,
+                        "observed": observed_text.get(key),
+                    }
+                )
+    want_blocks = expected["blocks"]
+    got_blocks = observed.get("blocks", {})
+    for name in sorted(set(want_blocks) | set(got_blocks)):
+        if want_blocks.get(name) != got_blocks.get(name):
+            mismatches.append(
+                {
+                    "block": name,
+                    "code": "family_multiplicity_mismatch",
+                    "expected": want_blocks.get(name),
+                    "observed": got_blocks.get(name),
+                }
+            )
+    return mismatches
 
 
 def compare(expected, measures, tolerance):
@@ -110,6 +187,7 @@ def main(argv=None) -> int:
     parser.add_argument("--run-id", default="monument-001")
     parser.add_argument("--program-record", required=True)
     parser.add_argument("--measures")
+    parser.add_argument("--semantics")
     parser.add_argument("--adapter-id")
     parser.add_argument("--tolerance", type=float, default=0.6)
     parser.add_argument("--script-out")
@@ -118,8 +196,18 @@ def main(argv=None) -> int:
 
     record_path = Path(args.program_record)
     program = load_program_shim(record_path)
-    translation = translate_to_rhino_python(program)
+    translation = translate_to_rhino_python(
+        program,
+        provenance={
+            "proposal_id": program.proposal.proposal_id,
+            "project_id": program.proposal.project_id,
+            "run_id": program.proposal.run_id,
+            "proposal_digest": program.proposal_digest,
+            "program_record": record_path.name,
+        },
+    )
     expected = expected_object_bounds(program)
+    expected_semantics = expected_object_semantics(program)
     script_sha256 = hashlib.sha256(
         translation.script.encode("utf-8")
     ).hexdigest()
@@ -149,7 +237,21 @@ def main(argv=None) -> int:
     mismatches, max_deviation = compare(
         expected, measures, args.tolerance
     )
-    status = "equivalent" if not mismatches else "diverged"
+    semantic_mismatches = None
+    semantics_sha256 = None
+    if args.semantics:
+        semantics_text = Path(args.semantics).read_text(encoding="utf-8")
+        semantics_sha256 = hashlib.sha256(
+            semantics_text.encode("utf-8")
+        ).hexdigest()
+        semantic_mismatches = compare_semantics(
+            expected_semantics, json.loads(semantics_text)
+        )
+    status = (
+        "equivalent"
+        if not mismatches and not semantic_mismatches
+        else "diverged"
+    )
     repository = FilesystemProjectRepository.open(
         ROOT / "probes" / args.project_id
     )
@@ -162,7 +264,7 @@ def main(argv=None) -> int:
         f"{record_path.name}"
     )
     receipt = {
-        "schema": "CadEquivalenceReceipt@1",
+        "schema": "CadEquivalenceReceipt@2",
         "project_id": args.project_id,
         "run_id": args.run_id,
         "captured_at": args.now,
@@ -180,6 +282,16 @@ def main(argv=None) -> int:
         "max_abs_deviation": max_deviation,
         "translation_losses": list(translation.losses),
         "mismatches": mismatches,
+        "semantic_verification": (
+            None
+            if semantic_mismatches is None
+            else {
+                "semantics_sha256": semantics_sha256,
+                "expected_family_blocks": expected_semantics["blocks"],
+                "mismatches": semantic_mismatches,
+                "verified": not semantic_mismatches,
+            }
+        ),
         "status": status,
         "execution_external": True,
         "canonical_write_authority": False,
@@ -192,6 +304,15 @@ def main(argv=None) -> int:
     )
     repository.verify()
     print(f"  retained {ref.uri[:110]}")
+    if semantic_mismatches is not None:
+        print(
+            "  semantics: "
+            + (
+                "verified"
+                if not semantic_mismatches
+                else f"{len(semantic_mismatches)} mismatches"
+            )
+        )
     print(
         f"CAD EQUIVALENCE {status.upper()} "
         f"max_dev={max_deviation:.4f} tolerance={args.tolerance}"

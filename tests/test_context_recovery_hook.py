@@ -8,6 +8,7 @@ import sys
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -170,6 +171,37 @@ class ContextRecoveryHookTests(unittest.TestCase):
         self.assertNotIn("Write scope:", context)
         self.assertNotIn("Stop conditions:", context)
         self.assertNotIn("P046 capsule sha256:", context)
+
+    def test_large_dirty_tree_is_summarized_without_blocking_recovery(self):
+        module = _hook_module()
+        dirty_lines = tuple(
+            f" M path-{index:03d}.txt"
+            for index in range(module.MAX_DIRTY_PATHS + 3)
+        )
+        with mock.patch.object(
+            module,
+            "_run",
+            side_effect=[
+                "b" * 40,
+                "test-branch",
+                "\n".join(dirty_lines),
+            ],
+        ):
+            snapshot = module._git_snapshot(ROOT)
+
+        self.assertEqual(module.MAX_DIRTY_PATHS, len(snapshot["dirty_paths"]))
+        self.assertEqual(
+            module.MAX_DIRTY_PATHS + 3,
+            snapshot["dirty_path_count"],
+        )
+        self.assertTrue(snapshot["dirty_paths_truncated"])
+
+        context = module.render_context(
+            {"git": snapshot, "active_cards": ()}
+        )
+        self.assertIn("showing 40 of 43", context)
+        self.assertIn("3 additional dirty paths omitted", context)
+        self.assertNotIn("path-042.txt", context)
 
     def test_invalid_event_fails_closed_without_echoing_input(self):
         output = _run_hook(
