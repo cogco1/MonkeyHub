@@ -10651,6 +10651,98 @@
       "card": "docs/mapping/planning/P066-live-monument-derivation.md",
       "on_complete": {},
       "actor": "codex"
+    },
+    {
+      "id": "P067",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Retrieve building precedent evidence directly from the live web and carry it into generation as authority-gated typed facts: a snapshot adapter retains exact page content by digest, adoption records bind selected quoted facts under named authority, adopted facts compile into build-policy constraints the provider must answer, and raw web text never enters a prompt or gains authority.",
+      "depends_on": [
+        "P028",
+        "P060",
+        "P062"
+      ],
+      "write_scope": [
+        "archflow/adapters/web_evidence.py",
+        "archflow/adapters/README.md",
+        "archflow/capabilities/precedent.py",
+        "archflow/capabilities/README.md",
+        "tools/run_web_precedent.py",
+        "tools/run_live_monument.py",
+        "tests/test_web_precedent.py",
+        "probes/p066-live-monument/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/paper/",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Web pages are retained as content-addressed snapshot records with URL, retrieval time, and exact digests; snapshots carry no authority and are never fed raw into a provider prompt.",
+        "Candidate facts cite exact quotes with character spans inside a named snapshot; harness-proposed extraction is explicitly marked and open to human review.",
+        "Only a typed adoption record under a named authority promotes facts, and each adopted fact compiles into a build-policy constraint whose provenance chains constraint to adoption to snapshot to URL.",
+        "The provider must answer precedent constraints through the existing required-response validation; ignoring an adopted fact is a typed rejection, not silence.",
+        "A paired live comparison retains one root attempt without precedent context and one with it, measured as a canon-context observation with no scripted fallback."
+      ],
+      "tests": [
+        "Snapshot digest, quote-span binding, adoption authority, and no-raw-text-in-prompt tests",
+        "Constraint compilation provenance-chain tests",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_web_precedent"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P067-web-precedent-adoption.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P067",
+        "actor": "codex",
+        "verified_at": "2026-08-28T12:51:41.644274+00:00",
+        "contract_sha256": "46ff99f1840550a7a224a9fe31f29a3304ad2286c9055a927f6a65d3ca88c5f8",
+        "scope_sha256": "4be1caac98e9d929e51714df8d4dd1357f9918337ce387898316093f026d4ba2",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_web_precedent"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "6273232de4d3ef7acd4ecafa5c86beeeb974f56586b21089a2990b3f72facbe6",
+            "stdout_tail": "",
+            "stderr_tail": ".....\n----------------------------------------------------------------------\nRan 5 tests in 0.001s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "6c9ab51f288dd41ed6855d5dad20b05695f4b157de1f9a5af8f0b29357b029a5",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (126 files, 0.980s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "live paired observation retained: without precedent the model authored a flat portico slab; with three web-quoted adopted facts it answered every constraint, added a pediment component, and authored a genuine triangular-extrusion pitched pediment plus a revolve dome; snapshot/quote-span/adoption/provenance chain proven by 5 contract tests; raw page text never entered a prompt; ARCHITECTURE PASS"
+      ]
     }
   ]
 }

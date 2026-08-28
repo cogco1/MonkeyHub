@@ -137,3 +137,11 @@ The bridge rejects the generic V3 CLI, `archflow.examples`, Pack registration,
 `compose_building`, `decision.v2_stages`, and the legacy Pack adapter at
 configuration time. P012 connects no real V3 provider; P013 must prove that its
 dedicated read-only entrypoint does not transitively load those surfaces.
+
+## Web evidence snapshots (P067)
+
+`web_evidence.py` retains one fetched page as a content-addressed
+snapshot: URL, retrieval time, raw and extracted-text digests, bounded
+size. Snapshots carry no adoption or design authority and are never fed
+raw into a provider prompt; only quoted facts promoted by a typed
+adoption record reach generation.

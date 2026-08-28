@@ -171,3 +171,12 @@ legacy Gold comparison. A detached finding may suggest a new obligation, but
 the receipt explicitly has no geometry-edit, hard-gate-waiver, winner,
 world-write, or canonical-write authority. Provider failure returns no design
 answer and leaves the Primary Architect free to choose another explicit action.
+
+## Precedent adoption (P067)
+
+`precedent.py` gates retrieved knowledge three steps from generation:
+quoted facts bind exact character spans inside a named snapshot, a typed
+adoption under a named authority promotes them, and each adopted fact
+compiles into a build-policy constraint whose provenance chains
+constraint to adoption to snapshot to URL. The provider must answer
+these constraints through the existing required-response validation.

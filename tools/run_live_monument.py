@@ -49,13 +49,14 @@ from tests.integration.test_monument_derivation import (  # noqa: E402
 from tests.test_production_root_compiler import _rebase_context  # noqa: E402
 
 PROJECT_ID = "p066-live-monument"
-RUN_ID = "live-001"
+DEFAULT_RUN_ID = "live-001"
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--codex", default="codex.cmd")
     parser.add_argument("--attempt", type=int, default=0)
+    parser.add_argument("--run-id", default=DEFAULT_RUN_ID)
     args = parser.parse_args(argv)
 
     root = ROOT / "probes" / PROJECT_ID
@@ -64,13 +65,16 @@ def main(argv=None) -> int:
             root,
             project_id=PROJECT_ID,
             prompt=PROMPT,
-            run_id=RUN_ID,
+            run_id=args.run_id,
             synthetic_test=False,
         )
     repository = FilesystemProjectRepository.open(root)
-    run = repository.load_run(RUN_ID)
+    try:
+        run = repository.load_run(args.run_id)
+    except Exception:
+        run = repository.create_run(args.run_id)
     destination = PersistenceDestination(
-        PersistenceArea.RUN_RECORD, run_id=RUN_ID
+        PersistenceArea.RUN_RECORD, run_id=args.run_id
     )
     inputs = repository.list_json(
         run=run, destination=PersistenceDestination(PersistenceArea.INPUT)
@@ -78,15 +82,23 @@ def main(argv=None) -> int:
     raw_request = next(
         ref for ref in inputs if "raw-request" in ref.relative_path
     )
-    context = _rebase_context(_monument_context(), run)
+    from archflow.runtime.production_runtime import (
+        ProductionAuthoringContext,
+    )
+
     existing = [
         ref
         for ref in repository.list_json(run=run, destination=destination)
         if "production-authoring-context" in ref.relative_path
     ]
     if existing:
+        # A persisted context (possibly precedent-enriched) is authoritative.
         context_ref = existing[0]
+        context = ProductionAuthoringContext.from_dict(
+            repository.load_json(context_ref)
+        )
     else:
+        context = _rebase_context(_monument_context(), run)
         context_ref = repository.put_json(
             run=run,
             destination=destination,

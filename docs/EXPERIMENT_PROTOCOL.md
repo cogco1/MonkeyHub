@@ -575,3 +575,27 @@ three solids at 7,800 voxel cells — exactly the root-step granularity the
 scripted P058/P065 chains also start from. Live deepening stages remain
 P066's open scope, with the study chronicle marking revision-stage
 authoring as the known weakest point of live-model discipline.
+
+## P067 web precedent retrieval and adoption — 2026-08-28
+
+P066's first live root exposed the knowledge gap directly: with no
+typology evidence in the authoring context, the model authored a flat
+portico slab. P067 closes the gap with live web retrieval held three
+gates from generation: a page is retained as a content-addressed snapshot
+with no authority; candidate facts cite exact quotes with character spans
+(harness-extracted and marked as such); and only a typed adoption under a
+named authority compiles them into build-policy constraints whose
+provenance chains constraint to adoption to snapshot to URL. Raw page
+text never enters a prompt.
+
+The paired live observation: from the same prompt and profile, the
+attempt without precedent (live-001) authored three components, three
+plain solids, and a flat portico roof; the attempt with three adopted
+facts (live-002) answered every precedent constraint in a typed response,
+added a dedicated pediment component, authored the pediment as a genuine
+triangular-profile extrusion with a revolve dome, and honestly marked the
+coffer-detail constraint as a risk at coarse maturity. The enriched
+attempt also shrank its massing well below the program range — retained
+as an honest attention trade-off observation, not repaired. This is the
+canon analogue of the P062 relationship ablation: knowledge absent from
+context does not emerge, and knowledge adopted into context does.
