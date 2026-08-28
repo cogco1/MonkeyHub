@@ -1,0 +1,40 @@
+{
+ "schema": "BasisIndexManifest@1",
+ "derived_view": true,
+ "authority": false,
+ "derived_from": [
+  "decision-calibration-corinthian-order-proportions-5d9bb8ae22c4839f05756ebec56b01ad5fec17312e928dbdc3a0b6a46a9c65b7.json",
+  "decision-calibration-front-elevation-governing-rules-1a715865b40e012790c0bd54fc9f12700c4c9d5290edc955b0a5a5a2ae421099.json",
+  "precedent-adoption-5b237dd4c0bb2f32b72062b4215995760f1b3b8955bcc510a506d5724620fad6.json",
+  "precedent-adoption-8080e040b37f8488bb795f31745d35d322a3087f6debcc96d77adfff48e3e6d7.json",
+  "precedent-adoption-c68fe515017ad5f768ddd1a2a8b46b2c3629c8eb7660f20e98ad75772dd435de.json",
+  "precedent-adoption-corinthian-order-proportions-ef2f563927d9094fef1d2bcf0de8c330fdea2951aae6231915e47d414409f022.json",
+  "precedent-adoption-front-elevation-governing-rules-258a5b44177cca12c207fe569025e7721af887c57801b3ad457eaee15cd5c31f.json",
+  "precedent-query-corinthian-order-proportions-83380088f8f4e7393ff15743c99c47aa1926d7c6ae1466c3bdecb048e446851a.json",
+  "precedent-query-corinthian-order-proportions-8f5f740eee0898cfe032e657ae3bb6906deee96d9fdc5eef6b0a635c237e53b7.json",
+  "precedent-query-corinthian-order-proportions-d9aa15b9cd1e8b95e262a197f8fa4a9852d401c9cb5417f53b9aaf64af9211a9.json",
+  "precedent-query-front-elevation-governing-rules-d36b4c09f22b674ccd567acf3933b8f170b91740f69db0d0212ff24eaa9ee5d7.json",
+  "precedent-query-front-elevation-governing-rules-e3918d6aae72296b1545df93efb0162b39e19339fed6eaa2fe997df5628529b4.json",
+  "web-evidence-snapshot-198b4671789c6dae9d88a5704c4d8ba4364760f669a4a560072603a1e958d587.json",
+  "web-evidence-snapshot-746f562bff997b8f62003c3c1c2602cde1d51c8fabbf35d54d488acca5f34664.json",
+  "web-evidence-snapshot-76294c248d49feeb19db8cfb6191a23a534d8cb553b4e7737cd926f4e59728dd.json",
+  "web-evidence-snapshot-7f7f96f2107bb5d44d5c85f045e99a21148321455023168a275f90f22cfadb1c.json",
+  "web-evidence-snapshot-83b78b48f3f656cdef6ee7d18d68aa93f1d6b3cb1784ef843e4503f3514f1c90.json",
+  "web-evidence-snapshot-a92320182c5dcabff701f4d6fac34d0f6bcd53ef0a6075140739030f30d45c40.json",
+  "web-evidence-snapshot-b5fe065d305844c64c3fdaabb0fb6a3b3c73fa036f70749c59b5d9c52e628b0a.json",
+  "web-evidence-snapshot-b64e98ea124daee96939b24566ecdff1fa068476a808d0c29670fe111cc7a499.json"
+ ],
+ "summary": {
+  "decision_count": 5,
+  "covered": [
+   "declaration:colonnade-bay-spacing",
+   "declaration:column-diameter-m",
+   "declaration:column-shaft-m",
+   "declaration:orientation-axis",
+   "declaration:portico-width-m"
+  ],
+  "uncovered": [],
+  "source_count": 3,
+  "derived_from_count": 20
+ }
+}

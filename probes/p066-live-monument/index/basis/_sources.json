@@ -1,0 +1,44 @@
+{
+ "398053d71ee0bc6bdeadf328559c68e8a6eb756c36abddaaeba510749bcc0082": {
+  "snapshot_text_sha256": "398053d71ee0bc6bdeadf328559c68e8a6eb756c36abddaaeba510749bcc0082",
+  "snapshot_ref": "project://p066-live-monument/runs/research-003/records/web-evidence-snapshot-746f562bff997b8f62003c3c1c2602cde1d51c8fabbf35d54d488acca5f34664.json",
+  "url": "https://en.wikipedia.org/wiki/Corinthian_order",
+  "facts": [
+   "corinthian-capital-proportion-flexibility",
+   "corinthian-slenderness-ratio",
+   "corinthian-total-to-shaft-ratio"
+  ],
+  "decision_refs": [
+   "declaration:column-diameter-m",
+   "declaration:column-shaft-m"
+  ]
+ },
+ "41148920aea54a0d0e40652a8319bef6fbb2d64cabc653621dc2cb841d39b24b": {
+  "snapshot_text_sha256": "41148920aea54a0d0e40652a8319bef6fbb2d64cabc653621dc2cb841d39b24b",
+  "snapshot_ref": "project://p066-live-monument/runs/live-003/records/web-evidence-snapshot-b64e98ea124daee96939b24566ecdff1fa068476a808d0c29670fe111cc7a499.json",
+  "url": "https://en.wikipedia.org/wiki/Pantheon,_Rome",
+  "facts": [
+   "dome-coffered-oculus",
+   "portico-octastyle-colonnade",
+   "portico-pediment-pitched",
+   "rotunda-interior-43-metres"
+  ],
+  "decision_refs": []
+ },
+ "e5ed87d80ae15970b54c321b796e525cff293e17f0294a31735a546a74d85cc2": {
+  "snapshot_text_sha256": "e5ed87d80ae15970b54c321b796e525cff293e17f0294a31735a546a74d85cc2",
+  "snapshot_ref": "project://p066-live-monument/runs/research-005/records/web-evidence-snapshot-83b78b48f3f656cdef6ee7d18d68aa93f1d6b3cb1784ef843e4503f3514f1c90.json",
+  "url": "https://en.wikipedia.org/wiki/Palladian_architecture",
+  "facts": [
+   "classical-grandeur-through-symmetry-proportion",
+   "palladian-classical-symmetry",
+   "symmetrical-temple-like-house-wings",
+   "whole-part-correspondence"
+  ],
+  "decision_refs": [
+   "declaration:colonnade-bay-spacing",
+   "declaration:orientation-axis",
+   "declaration:portico-width-m"
+  ]
+ }
+}

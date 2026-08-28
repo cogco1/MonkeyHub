@@ -11319,6 +11319,93 @@
       "evidence": [
         "Symmetry criterion moved onto the acceptance path in _persist_stage: realized scene measured against project-supplied axis/subjects/tolerance BEFORE any archive disposition; gate record (AxialSymmetryGate@1) persisted on both outcomes. Fail-closed drill proven fast: off-axis stage-0 scene -> REJECTED archive citing the gate record + typed StageGateError, no ACCEPTED record exists (exact 0.5 m offset in the gate record); symmetric scene -> ACCEPTED archive citing the gate ref among evidence. tests/test_symmetry.py grew to 10 green; full fast suite 588 green; archcheck PASS. Prior probes keep their standalone measure records; the gate binds every future derivation."
       ]
+    },
+    {
+      "id": "P076",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Derive a sharded decision-keyed index over retained basis records (queries, snapshots, adoptions, calibrations): one shard per decision ref so editing a decision reads exactly its shard, a typed uncovered list for decisions named by queries but backed by zero adopted facts, and a per-source reverse shard naming exactly what a revised source reopens. The index is a rebuildable derived view under probes/<p>/index/basis/ with a manifest of source record digests — never evidence, never authority.",
+      "depends_on": [
+        "P070",
+        "P074"
+      ],
+      "write_scope": [
+        "archflow/capabilities/basis_index.py",
+        "archflow/capabilities/README.md",
+        "tools/run_basis_index.py",
+        "tests/test_basis_index.py",
+        "probes/p066-live-monument/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/GENERATION_RECORD_SPEC.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "build_basis_index is a pure deterministic derivation over record payloads; same records yield byte-identical shards.",
+        "Each decision shard carries the adopted facts (statement, strength, quote span, snapshot ref, adoption and query ids) that calibrate exactly that decision.",
+        "Decisions named by any query but backed by zero facts appear in a typed uncovered list; they are never silently absent.",
+        "The reverse source shard maps each snapshot to its facts and the decisions they calibrate.",
+        "The index manifest names the record digests it derives from; the index carries no authority and substitutes for no record."
+      ],
+      "tests": [
+        "Shard grouping, determinism, uncovered listing, reverse map",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_basis_index"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P076-basis-index-coverage-view.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P076",
+        "actor": "codex",
+        "verified_at": "2026-08-28T17:18:50.157086+00:00",
+        "contract_sha256": "3ff4e2c09d4b36db3c9ae8c28dca76aace94bdbcb9ac1b39fb8fe1320036edf1",
+        "scope_sha256": "16d784c21792d3f6a4d58950795e3f9d01f91c6ba7c50ed2b195c7fb53822a8c",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_basis_index"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "dcd2147edfda2291b456dfb6d9f3021f0fed07760d5a1c8869fc5446f30e28fe",
+            "stdout_tail": "",
+            "stderr_tail": "......\n----------------------------------------------------------------------\nRan 6 tests in 0.000s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "19421fe182c14506c8d58e96483990564bcd1f9da1340109eaa80370d3b4e0fb",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (132 files, 1.014s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "build_basis_index derives sharded views from retained payloads (queries/snapshots/adoptions/calibrations): deterministic (order-independent, byte-identical shards), one shard per decision ref with facts+quote spans+adoption/authority ids, typed uncovered listing, per-source reverse shard naming the reopen set, manifest citing exactly the record files derived from. Built live for p066-live-monument: 5 decision shards (colonnade-bay-spacing 4 facts, column-shaft-m 3, orientation-axis 4, column-diameter-m 2, portico-width-m 2), 3 source shards, 0 uncovered; written to probes/p066-live-monument/index/basis/ as rebuildable derived view with no authority. tests/test_basis_index.py (6) green; archcheck PASS (also caught and fixed a real D8 violation: executable cad-scripts in probe exports renamed .py.txt with superseding manifests)."
+      ]
     }
   ]
 }

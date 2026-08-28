@@ -1,0 +1,73 @@
+{
+ "decision_ref": "declaration:column-shaft-m",
+ "facts": [
+  {
+   "fact_id": "corinthian-capital-proportion-flexibility",
+   "statement": "The carved capital's proportions may be adjusted to meet design demands without violating the order.",
+   "strength": "soft",
+   "topic": "support",
+   "quote": "Perrault demonstrates in his engraving how the proportions of the carved capital could be adjusted according to demands of the design, without offending.",
+   "quote_start": 14519,
+   "quote_end": 14672,
+   "snapshot_ref": "project://p066-live-monument/runs/research-003/records/web-evidence-snapshot-746f562bff997b8f62003c3c1c2602cde1d51c8fabbf35d54d488acca5f34664.json",
+   "snapshot_text_sha256": "398053d71ee0bc6bdeadf328559c68e8a6eb756c36abddaaeba510749bcc0082",
+   "adoption_id": "corinthian-order-proportions-adoption",
+   "authority_id": "authority.user",
+   "decision_refs": [
+    "declaration:column-diameter-m",
+    "declaration:column-shaft-m"
+   ]
+  },
+  {
+   "fact_id": "corinthian-slenderness-ratio",
+   "statement": "Corinthian columns have an approximate height-to-width ratio of 10:1.",
+   "strength": "hard",
+   "topic": "support",
+   "quote": "Their height to width ratio is about 10:1.",
+   "quote_start": 7202,
+   "quote_end": 7244,
+   "snapshot_ref": "project://p066-live-monument/runs/research-003/records/web-evidence-snapshot-746f562bff997b8f62003c3c1c2602cde1d51c8fabbf35d54d488acca5f34664.json",
+   "snapshot_text_sha256": "398053d71ee0bc6bdeadf328559c68e8a6eb756c36abddaaeba510749bcc0082",
+   "adoption_id": "corinthian-order-proportions-adoption",
+   "authority_id": "authority.user",
+   "decision_refs": [
+    "declaration:column-diameter-m",
+    "declaration:column-shaft-m"
+   ]
+  },
+  {
+   "fact_id": "corinthian-total-to-shaft-ratio",
+   "statement": "The total Corinthian column height relates to the column-shaft height in a 6:5 ratio.",
+   "strength": "hard",
+   "topic": "support",
+   "quote": "the ratio of total column height to column-shaft height is in a 6:5 ratio",
+   "quote_start": 6500,
+   "quote_end": 6573,
+   "snapshot_ref": "project://p066-live-monument/runs/research-003/records/web-evidence-snapshot-746f562bff997b8f62003c3c1c2602cde1d51c8fabbf35d54d488acca5f34664.json",
+   "snapshot_text_sha256": "398053d71ee0bc6bdeadf328559c68e8a6eb756c36abddaaeba510749bcc0082",
+   "adoption_id": "corinthian-order-proportions-adoption",
+   "authority_id": "authority.user",
+   "decision_refs": [
+    "declaration:column-shaft-m"
+   ]
+  }
+ ],
+ "queries": [
+  {
+   "query_id": "corinthian-order-proportions",
+   "question": "What proportional rules govern Corinthian columns: shaft height relative to total column height, slenderness (height to width ratio), and capital proportion?"
+  }
+ ],
+ "calibrations": [
+  {
+   "query_id": "corinthian-order-proportions",
+   "adoption_ref": "project://p066-live-monument/runs/research-003/records/precedent-adoption-corinthian-order-proportions-ef2f563927d9094fef1d2bcf0de8c330fdea2951aae6231915e47d414409f022.json",
+   "fact_ids": [
+    "corinthian-capital-proportion-flexibility",
+    "corinthian-slenderness-ratio",
+    "corinthian-total-to-shaft-ratio"
+   ]
+  }
+ ],
+ "status": "covered"
+}

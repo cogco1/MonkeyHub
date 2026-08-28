@@ -734,3 +734,23 @@ error, and a pass writes ACCEPTED citing the gate record that guarded
 it. The fail-closed drill proves the invariant the user demanded: an
 off-axis stage yields exactly one archive record, disposition REJECTED,
 and no ACCEPTED record exists anywhere.
+
+## P076 basis index and coverage view — 2026-08-29
+
+Retrieval evidence became addressable by decision. A pure derivation
+over the retained basis records shards the adoption store: one file per
+decision ref, so editing one decision means reading exactly its shard —
+bounding context tokens and blast radius together, the same philosophy
+that keeps raw pages out of prompts now applied to the adoption store
+itself. The identical derivation yields the coverage view (a decision
+named by any query but backed by zero facts is a typed uncovered entry)
+and the reverse source map (a revised snapshot names exactly the facts
+and decisions it reopens). Built live over the five research runs:
+five decision shards, three source shards, zero uncovered — the
+colonnade-bay-spacing shard alone carries the four Palladian symmetry
+facts a future layout edit would need, and nothing else. The index is
+a derived view under index/basis/ with a manifest naming its source
+records: rebuildable, authority-free, never a substitute for the
+records. Bonus catch: archcheck's probe firewall flagged the migrated
+CAD scripts as executable logic inside probes — renamed to .py.txt
+with superseding manifests, digests still bound by their receipts.

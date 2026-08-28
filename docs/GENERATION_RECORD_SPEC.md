@@ -140,3 +140,13 @@ IFC 导出回执(`ifc-export-receipt`)、渲染清单
 - **绑定**:工作区 `config/workspace.json` 记录创建时框架 commit;
   每个 run 的 D1 记录须写明其运行所用框架 commit,使任何一次生成
   都能还原到确切代码版本。
+
+## 七、依据索引(P076,派生视图)
+
+`probes/<p>/index/basis/` 存放由 D2 记录**派生**的分片索引:
+每个决策一个分片(`declaration-colonnade-bay-spacing.json`,含该决策
+的全部采纳事实、引文 span、采纳/权威 id)、`_sources.json` 来源反查
+(某快照被改动时恰好重开哪些事实与决策)、`_manifest.json` 注明派生
+自哪些记录文件。索引可随时重建、无权威、不替代记录 —— 但改某个
+决策时只读它的分片,其余不看:范围与 token 同时受限。未被任何
+事实支撑的决策在分片中显式标注 `uncovered`,并进清单汇总。
