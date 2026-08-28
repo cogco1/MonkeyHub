@@ -127,3 +127,16 @@ IFC 导出回执(`ifc-export-receipt`)、渲染清单
 5. **覆盖账本(D7/P076)**:候选关系边枚举与销账未建。
 
 以上 1–2 为即改项;3–5 随 P076 与 P066 深化落地。
+
+## 六、物理落位(2026-08-29 起生效)
+
+- **框架代码与治理**:`D:\ARCHFLOW_V4`(git)。卡片、registry、
+  机制证明 probes 与代码同仓演进 —— 它们是机制证据,`devctl verify`
+  依赖其与代码的同版本性。
+- **设计项目运行时工作区**:
+  `D:\PROJECTS\01_ACTIVE_当前项目\ARCHFLOW CAADRIA 2027\V4_RUNTIME\`
+  (非 git;区域布局见其 README)。真实建筑项目(全尺寸万神殿复原、
+  实机续跑、论文实验批次)、交付物与移交包住这里。
+- **绑定**:工作区 `config/workspace.json` 记录创建时框架 commit;
+  每个 run 的 D1 记录须写明其运行所用框架 commit,使任何一次生成
+  都能还原到确切代码版本。
