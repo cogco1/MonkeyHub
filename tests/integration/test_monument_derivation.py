@@ -1074,6 +1074,54 @@ def _next_state(
     )
 
 
+class StageGateError(AssertionError):
+    """A project criterion failed at stage acceptance: no ACCEPTED record."""
+
+
+SYMMETRY_GATE_TOLERANCE = 1e-6
+
+
+def _stage_symmetry_findings(scene_objects, stage: int):
+    """Project-supplied symmetry subjects for one monument stage."""
+
+    from archflow.evaluation import axial_group_offsets
+
+    physical_groups = {
+        "portico": ("portico-binding",),
+        "rotunda": ("rotunda-binding",),
+        "dome": ("dome-binding",),
+    }
+    findings = list(
+        axial_group_offsets(
+            scene_objects,
+            axis_value=CENTER_X,
+            axis_index=0,
+            groups=physical_groups,
+        )
+    )
+    if stage >= 1:
+        findings += list(
+            axial_group_offsets(
+                scene_objects,
+                axis_value=CENTER_X,
+                axis_index=0,
+                groups={
+                    "colonnade": ("colonnade-binding",),
+                },
+            )
+        )
+        findings += list(
+            axial_group_offsets(
+                scene_objects,
+                axis_value=CENTER_X,
+                axis_index=0,
+                groups={"main-entry": ("entry-binding",)},
+                physical_only=False,
+            )
+        )
+    return findings
+
+
 def _persist_stage(
     repository,
     *,
@@ -1082,7 +1130,13 @@ def _persist_stage(
     program,
     stage: int,
 ) -> dict[str, object]:
-    """P065 stage evidence: scene, receipt, voxel view, and validation."""
+    """P065 stage evidence: scene, receipt, voxel view, and validation.
+
+    The workspace realization is measurement substrate, never
+    acceptance: the symmetry criterion is evaluated before any archive
+    disposition, and a failing stage writes REJECTED plus a typed
+    error — an ACCEPTED record for a failing realization cannot exist.
+    """
 
     realization = realize_geometry(
         program,
@@ -1094,21 +1148,6 @@ def _persist_stage(
         realization.receipt,
         policy=VoxelizationPolicy(default_resolution=1.0),
     )
-    submission = CandidateSubmission(
-        submission_id=f"p065-stage-{stage}",
-        base=state.base,
-        workspace_id=realization.scene.workspace_id,
-        intent="Review the exact sandbox artifact produced for this stage.",
-        delta=CandidateDelta(artifacts_add=(view.artifact,)),
-        claims=(),
-        evidence_refs=(view.artifact.artifact_id,),
-    )
-    validation = validate_submission(
-        CanonicalState(ref=state.base),
-        submission,
-        (ArtifactPresentValidator(),),
-    )
-    assert validation.passed
     destination = PersistenceDestination(
         PersistenceArea.RUN_RECORD,
         run_id=run.run_id,
@@ -1131,6 +1170,64 @@ def _persist_stage(
         record_kind=f"p065-stage-{stage}-voxel-view",
         payload=view.to_dict(),
     )
+    findings = _stage_symmetry_findings(
+        realization.scene.to_dict()["objects"], stage
+    )
+    worst_offset = max(abs(item.offset) for item in findings)
+    gate_passed = worst_offset <= SYMMETRY_GATE_TOLERANCE
+    gate_ref = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind=f"p065-stage-{stage}-symmetry-gate",
+        payload={
+            "schema": "AxialSymmetryGate@1",
+            "stage": stage,
+            "axis_value": CENTER_X,
+            "axis_index": 0,
+            "axis_commitment_ref": AXIS_COMMITMENT_REF,
+            "tolerance": SYMMETRY_GATE_TOLERANCE,
+            "findings": [item.to_dict() for item in findings],
+            "max_abs_offset": worst_offset,
+            "status": "pass" if gate_passed else "fail",
+            "canonical_write_authority": False,
+        },
+    )
+    if not gate_passed:
+        rejected = SandboxArchiveRecord(
+            archive_id=f"p065-stage-{stage}-rejected",
+            disposition=SandboxArchiveDisposition.REJECTED,
+            geometry_program_digest=program.program_digest,
+            realization_receipt_digest=realization.receipt.receipt_digest,
+            scene_digest=realization.scene.scene_digest,
+            decision_receipt_digest=gate_ref.sha256,
+            evidence_refs=tuple(sorted((scene_ref.uri, gate_ref.uri))),
+        )
+        repository.put_json(
+            run=run,
+            destination=destination,
+            record_kind=f"p065-stage-{stage}-sandbox-archive",
+            payload=rejected.to_dict(),
+        )
+        raise StageGateError(
+            f"stage {stage} symmetry gate failed: max offset "
+            f"{worst_offset:.4f} m exceeds {SYMMETRY_GATE_TOLERANCE}; "
+            f"stage archived REJECTED at {gate_ref.uri}"
+        )
+    submission = CandidateSubmission(
+        submission_id=f"p065-stage-{stage}",
+        base=state.base,
+        workspace_id=realization.scene.workspace_id,
+        intent="Review the exact sandbox artifact produced for this stage.",
+        delta=CandidateDelta(artifacts_add=(view.artifact,)),
+        claims=(),
+        evidence_refs=(view.artifact.artifact_id,),
+    )
+    validation = validate_submission(
+        CanonicalState(ref=state.base),
+        submission,
+        (ArtifactPresentValidator(),),
+    )
+    assert validation.passed
     validation_ref = repository.put_json(
         run=run,
         destination=destination,
@@ -1144,7 +1241,9 @@ def _persist_stage(
         realization_receipt_digest=realization.receipt.receipt_digest,
         scene_digest=realization.scene.scene_digest,
         decision_receipt_digest=validation_ref.sha256,
-        evidence_refs=tuple(sorted((scene_ref.uri, validation_ref.uri))),
+        evidence_refs=tuple(
+            sorted((scene_ref.uri, gate_ref.uri, validation_ref.uri))
+        ),
     )
     repository.put_json(
         run=run,

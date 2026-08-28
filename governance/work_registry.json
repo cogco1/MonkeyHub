@@ -11238,6 +11238,87 @@
       "evidence": [
         "Defect quantified on retained scenes and persisted as typed FAIL findings beside them (colonnade +0.65 m, rotunda plinth +0.50 m, beams +0.90 m off the committed axis; three stages). Fix: commitment:primary-axis-center added as a typed HARD commitment the runtime enforces (required-commitment-absent rejection observed live); all bindings answer it; colonnade/cap/beam/plinth origins derived center-out from the axis. Re-derivation p074-monument-symmetric/monument-002: 4 stages, 308 instances, axial_group_offsets exactly 0.000 for all five groups at stages 1-3 (PASS records retained). CAD rebuild EQUIVALENT (max dev 0.346 m) with semantics verified; IFC re-export VERIFIED; symmetric front elevation captured. tests/test_symmetry.py (8) green; archcheck PASS."
       ]
+    },
+    {
+      "id": "M075",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Put the project's criteria on the acceptance path: stage acceptance measures the realized scene against the axial-symmetry criterion before any archive disposition, persists the gate record either way, writes REJECTED plus a typed stage-gate error on failure so no ACCEPTED record can exist for a failing realization, and cites the gate record in the ACCEPTED archive's evidence on pass — build-to-measure distinguished from pass-the-gate.",
+      "depends_on": [
+        "P074"
+      ],
+      "write_scope": [
+        "tests/integration/test_monument_derivation.py",
+        "tests/test_symmetry.py",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The symmetry criterion is evaluated at stage acceptance before any archive disposition is written; the gate record persists on both outcomes.",
+        "A failing realization yields a REJECTED archive citing the gate record plus a typed stage-gate error, and no ACCEPTED archive.",
+        "A passing stage's ACCEPTED archive cites the gate record among its evidence refs.",
+        "Axis value, subject groups, and tolerance remain project-supplied at the gate site; the framework gains no building answer."
+      ],
+      "tests": [
+        "Fail-closed off-axis gate rejection; pass-path evidence citation",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_symmetry"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M075-criterion-gated-stage-acceptance.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M075",
+        "actor": "codex",
+        "verified_at": "2026-08-28T16:50:42.538129+00:00",
+        "contract_sha256": "443bfc7f6702866d533d50e7236890713c506c8012eb0ffc14fba0f64fc86d52",
+        "scope_sha256": "744847c53b372089cbc71ca05989942342f320374cab45e31ef909b4d01b404e",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_symmetry"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "644b1e3191116768bfd6640277fc50a5f0669bccbd7d187080853ee1ec3dfbad",
+            "stdout_tail": "",
+            "stderr_tail": "..........\n----------------------------------------------------------------------\nRan 10 tests in 0.349s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "12f614003e39cc1a64e8d50b3cb5e2b1353e35f88b36cbfd89963d86f16a43b7",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (131 files, 0.833s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "Symmetry criterion moved onto the acceptance path in _persist_stage: realized scene measured against project-supplied axis/subjects/tolerance BEFORE any archive disposition; gate record (AxialSymmetryGate@1) persisted on both outcomes. Fail-closed drill proven fast: off-axis stage-0 scene -> REJECTED archive citing the gate record + typed StageGateError, no ACCEPTED record exists (exact 0.5 m offset in the gate record); symmetric scene -> ACCEPTED archive citing the gate ref among evidence. tests/test_symmetry.py grew to 10 green; full fast suite 588 green; archcheck PASS. Prior probes keep their standalone measure records; the gate binds every future derivation."
+      ]
     }
   ]
 }

@@ -713,3 +713,24 @@ and the front elevation is symmetric. The episode is the paper's
 self-check argument in one page: a criterion absent means a defect
 passes; a criterion compiled from the basis catches a quarter of a
 metre.
+
+## M075 criterion-gated stage acceptance — 2026-08-29
+
+The user asked the right question about P074: why did the FAIL exist at
+all — if the rules held, a failing model should never have been built.
+The honest answer had two parts. Historically, the criterion was born
+after the model: the FAIL findings over the old scenes are archaeology,
+evidence of the gap, not a gate working. Structurally, even after P074
+the criterion ran as a standalone tool — stage acceptance still
+validated only artifact presence, so a failing realization could have
+been archived ACCEPTED again tomorrow.
+
+M075 closes the structural half. Realization is measurement substrate —
+the model must be built in the workspace to be measured at all — but
+acceptance is a separate act the criterion now guards: the symmetry
+gate runs before any archive disposition, its record persists on both
+outcomes, a failure writes REJECTED and raises a typed stage-gate
+error, and a pass writes ACCEPTED citing the gate record that guarded
+it. The fail-closed drill proves the invariant the user demanded: an
+off-axis stage yields exactly one archive record, disposition REJECTED,
+and no ACCEPTED record exists anywhere.

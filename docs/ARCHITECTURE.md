@@ -787,3 +787,16 @@ commitment yields an axial-symmetry criterion over the named front
 groups, measured on realized bounds, never on intent. One basis, three
 projections — derivation, reopening, criterion — mirroring how one
 adopted fact projects into constraint, declaration, and criterion.
+
+### Build-to-measure is not pass-the-gate
+
+A criterion that lives outside the acceptance path is commentary. The
+P074 symmetry criterion first existed as a standalone measurement — it
+produced honest FAIL findings over retained scenes, but nothing stopped
+a failing realization from being archived ACCEPTED. M075 draws the
+line: realization in the workspace is measurement substrate (the model
+must be built to be measured), and acceptance is a separate act the
+criterion guards. The gate record persists on both outcomes; a failing
+stage writes REJECTED and raises a typed stage-gate error, so an
+ACCEPTED record for a failing realization cannot exist; a passing
+stage's ACCEPTED archive cites the gate record that guarded it.
