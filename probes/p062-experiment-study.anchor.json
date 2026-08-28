@@ -1,0 +1,10 @@
+{
+ "schema": "ProbeRelocationAnchor@1",
+ "project_id": "p062-experiment-study",
+ "moved_to": "D:\\PROJECTS\\01_ACTIVE_当前项目\\ARCHFLOW CAADRIA 2027\\V4_RUNTIME\\workspace\\projects\\p062-experiment-study",
+ "moved_on": "2026-08-29",
+ "file_count": 305,
+ "total_bytes": 1558536,
+ "project_json_sha256": "6219d1fe20e9350fda013a4abb357630e65425dcea4a44cbf55bb9f8635e45ba",
+ "note": "bulk derivation/design evidence lives in the runtime workspace; the repo keeps this anchor (spec §6.1). project:// URIs unchanged — resolve against moved_to."
+}

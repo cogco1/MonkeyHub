@@ -1,0 +1,10 @@
+{
+ "schema": "ProbeRelocationAnchor@1",
+ "project_id": "p059-provider-runtime-live",
+ "moved_to": "D:\\PROJECTS\\01_ACTIVE_当前项目\\ARCHFLOW CAADRIA 2027\\V4_RUNTIME\\workspace\\projects\\p059-provider-runtime-live",
+ "moved_on": "2026-08-29",
+ "file_count": 8,
+ "total_bytes": 5144,
+ "project_json_sha256": "a7dc97074e669056420ee3a5019b75466751a1a68c3ea49a528867d568d98d79",
+ "note": "bulk derivation/design evidence lives in the runtime workspace; the repo keeps this anchor (spec §6.1). project:// URIs unchanged — resolve against moved_to."
+}
