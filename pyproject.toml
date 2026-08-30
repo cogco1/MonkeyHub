@@ -9,6 +9,9 @@ description = "Bounded architectural agency with controlled state promotion"
 requires-python = ">=3.12"
 dependencies = []
 
+[project.optional-dependencies]
+cad-inspection = ["rhino3dm==8.32.1"]
+
 [project.scripts]
 archflow-runtime = "archflow.project.runtime:main"
 
