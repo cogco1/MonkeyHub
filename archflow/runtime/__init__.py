@@ -50,6 +50,7 @@ from archflow.runtime.design_controller import (
     MidRunRequirementStatus,
     PreparedDesignTurn,
     ProjectControllerArchiveAdapter,
+    StageExitArchiveBundle,
     advance_design_phase,
     apply_architect_action,
     compile_mid_run_requirement,
@@ -107,6 +108,10 @@ from archflow.runtime.operational_transition import (
     require_compiled_operational_state,
 )
 from archflow.runtime.repair_loop import ArchitectFailureRecovery
+from archflow.runtime.stage_subject_inventory import (
+    StageSubjectInventoryCompilationError,
+    compile_stage_subject_inventory,
+)
 from archflow.runtime.search_policy import (
     SearchPolicyRegistry,
     SearchPolicyRegistryError,
@@ -147,6 +152,8 @@ __all__ = [
     "MidRunRequirementStatus",
     "PreparedDesignTurn",
     "ProjectControllerArchiveAdapter",
+    "StageExitArchiveBundle",
+    "StageSubjectInventoryCompilationError",
     "SearchPolicyRegistry",
     "SearchPolicyRegistryError",
     "SearchPolicyUnavailableError",
@@ -189,6 +196,7 @@ __all__ = [
     "compile_environment_obligations",
     "compile_genesis_semantic_completeness",
     "compile_genesis_semantic_denominator",
+    "compile_stage_subject_inventory",
     "compile_mid_run_requirement",
     "compile_operational_transition_trace",
     "compile_search_policy_request",
@@ -211,6 +219,7 @@ __all__ = [
     "persist_clarification_request",
     "pause_for_clarification",
     "plan_sha256",
+    "portfolio_candidate_ref",
     "require_compiled_operational_state",
     "prepare_design_turn",
     "revise_design_phase",
