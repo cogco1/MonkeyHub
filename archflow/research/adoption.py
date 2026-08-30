@@ -23,6 +23,40 @@ from archflow.state.build_policy import (
 )
 
 _ID = re.compile(r"^[a-z0-9][a-z0-9\-]{0,80}$")
+_FACT_FIELDS = frozenset(
+    {
+        "schema",
+        "fact_id",
+        "statement",
+        "quote",
+        "quote_start",
+        "quote_end",
+        "snapshot_ref",
+        "snapshot_text_sha256",
+        "annotator",
+        "annotator_is_harness",
+        "topic",
+        "strength",
+        "decision_refs",
+    }
+)
+_ADOPTION_FIELDS = frozenset(
+    {
+        "schema",
+        "adoption_id",
+        "authority_id",
+        "adopted_at",
+        "facts",
+        "retrieved_text_authority",
+        "design_authority",
+        "canonical_write_authority",
+    }
+)
+_ADOPTION_AUTHORITY_FIELDS = (
+    "retrieved_text_authority",
+    "design_authority",
+    "canonical_write_authority",
+)
 
 
 class PrecedentError(ValueError):
@@ -65,7 +99,9 @@ class PrecedentFact:
             raise PrecedentError("snapshot text digest must be sha256")
         if not (
             isinstance(self.quote_start, int)
+            and not isinstance(self.quote_start, bool)
             and isinstance(self.quote_end, int)
+            and not isinstance(self.quote_end, bool)
             and 0 <= self.quote_start < self.quote_end
         ):
             raise PrecedentError("quote span must be a valid range")
@@ -73,6 +109,18 @@ class PrecedentFact:
             raise TypeError("topic must be ConstructabilityTopic")
         if not isinstance(self.strength, PolicyConstraintStrength):
             raise TypeError("strength must be PolicyConstraintStrength")
+        if not isinstance(self.annotator_is_harness, bool):
+            raise PrecedentError("annotator_is_harness must be a boolean")
+        if (
+            not isinstance(self.decision_refs, tuple)
+            or any(
+                not isinstance(item, str) or not item.strip()
+                for item in self.decision_refs
+            )
+        ):
+            raise PrecedentError(
+                "decision_refs must contain non-empty text"
+            )
 
     def require_quote_in(self, snapshot_text: str) -> None:
         """Fail closed unless the quote sits exactly at its claimed span."""
@@ -102,21 +150,38 @@ class PrecedentFact:
 
     @classmethod
     def from_dict(cls, value) -> "PrecedentFact":
-        if not isinstance(value, dict) or value.get("schema") != cls.SCHEMA:
+        if (
+            not isinstance(value, dict)
+            or set(value) != _FACT_FIELDS
+            or value.get("schema") != cls.SCHEMA
+        ):
             raise PrecedentError("precedent fact schema drifted")
+        quote_start = value["quote_start"]
+        quote_end = value["quote_end"]
+        annotator_is_harness = value["annotator_is_harness"]
+        decision_refs = value["decision_refs"]
+        if (
+            not isinstance(quote_start, int)
+            or isinstance(quote_start, bool)
+            or not isinstance(quote_end, int)
+            or isinstance(quote_end, bool)
+            or not isinstance(annotator_is_harness, bool)
+            or not isinstance(decision_refs, list)
+        ):
+            raise PrecedentError("precedent fact field types drifted")
         return cls(
             fact_id=value["fact_id"],
             statement=value["statement"],
             quote=value["quote"],
-            quote_start=int(value["quote_start"]),
-            quote_end=int(value["quote_end"]),
+            quote_start=quote_start,
+            quote_end=quote_end,
             snapshot_ref=value["snapshot_ref"],
             snapshot_text_sha256=value["snapshot_text_sha256"],
             annotator=value["annotator"],
-            annotator_is_harness=bool(value["annotator_is_harness"]),
+            annotator_is_harness=annotator_is_harness,
             topic=ConstructabilityTopic(value["topic"]),
             strength=PolicyConstraintStrength(value["strength"]),
-            decision_refs=tuple(value.get("decision_refs", ())),
+            decision_refs=tuple(decision_refs),
         )
 
 
@@ -160,8 +225,21 @@ class PrecedentAdoption:
 
     @classmethod
     def from_dict(cls, value) -> "PrecedentAdoption":
-        if not isinstance(value, dict) or value.get("schema") != cls.SCHEMA:
+        if (
+            not isinstance(value, dict)
+            or set(value) != _ADOPTION_FIELDS
+            or value.get("schema") != cls.SCHEMA
+        ):
             raise PrecedentError("precedent adoption schema drifted")
+        if any(
+            value[field] is not False
+            for field in _ADOPTION_AUTHORITY_FIELDS
+        ):
+            raise PrecedentError(
+                "precedent adoption authority flags changed"
+            )
+        if not isinstance(value["facts"], list):
+            raise PrecedentError("precedent adoption facts drifted")
         return cls(
             adoption_id=value["adoption_id"],
             authority_id=value["authority_id"],
