@@ -227,6 +227,46 @@ def bootstrap_external_project(
     )
 
 
+def prepare_external_stage0(
+    paths: RuntimePaths,
+    *,
+    project_id: str,
+    run_id: str,
+    branch_id: str,
+    epoch: int,
+    declaration_path: Path,
+):
+    """Compile an explicit Stage 0 declaration into one existing P036 run."""
+
+    from archflow.project.refs import BranchRef
+    from archflow.runtime.stage0_preparation import (
+        Stage0Declaration,
+        prepare_stage0_declaration,
+    )
+
+    root = paths.project(project_id)
+    repository = FilesystemProjectRepository.open(root)
+    run = repository.load_run(run_id)
+    try:
+        payload = json.loads(declaration_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeConfigError(
+            f"cannot read Stage 0 declaration: {declaration_path}"
+        ) from exc
+    declaration = Stage0Declaration.from_dict(payload)
+    expected_branch = BranchRef(
+        run=run,
+        branch_id=branch_id,
+        epoch=epoch,
+    )
+    if declaration.branch != expected_branch:
+        raise RuntimeConfigError(
+            "Stage 0 declaration does not match the selected exact "
+            "project/run/base/branch/epoch"
+        )
+    return prepare_stage0_declaration(repository, declaration)
+
+
 def run_external_production(
     paths: RuntimePaths,
     *,
@@ -384,6 +424,12 @@ def _parser() -> argparse.ArgumentParser:
     project.add_argument("--project-id", required=True)
     project.add_argument("--prompt", required=True)
     project.add_argument("--run-id", default="bootstrap-001")
+    stage0 = subparsers.add_parser("prepare-stage0")
+    stage0.add_argument("--project-id", required=True)
+    stage0.add_argument("--run-id", required=True)
+    stage0.add_argument("--branch-id", required=True)
+    stage0.add_argument("--epoch", required=True, type=int)
+    stage0.add_argument("--declaration", required=True, type=Path)
     production = subparsers.add_parser("run-project")
     production.add_argument("--project-id", required=True)
     production.add_argument("--prompt", required=True)
@@ -427,6 +473,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             },
             "canonical_authority": "FilesystemProjectRepository",
         }
+    elif args.command == "prepare-stage0":
+        payload = prepare_external_stage0(
+            paths,
+            project_id=args.project_id,
+            run_id=args.run_id,
+            branch_id=args.branch_id,
+            epoch=args.epoch,
+            declaration_path=args.declaration,
+        ).to_dict()
     else:
         from archflow.runtime.production_runtime import ProductionRuntimeStepFailed
 

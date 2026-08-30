@@ -60,6 +60,7 @@ from archflow.project.runtime import (
     bootstrap_external_project,
     initialize_runtime,
     load_runtime_config,
+    prepare_external_stage0,
 )
 
 __all__ = [
@@ -104,5 +105,6 @@ __all__ = [
     "load_runtime_config",
     "locate_project",
     "open_located_project",
+    "prepare_external_stage0",
     "require_destination",
 ]

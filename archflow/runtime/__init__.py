@@ -112,6 +112,14 @@ from archflow.runtime.stage_subject_inventory import (
     StageSubjectInventoryCompilationError,
     compile_stage_subject_inventory,
 )
+from archflow.runtime.stage0_preparation import (
+    Stage0Compilation,
+    Stage0Declaration,
+    Stage0PreparationError,
+    Stage0PreparationResult,
+    compile_stage0_declaration,
+    prepare_stage0_declaration,
+)
 from archflow.runtime.search_policy import (
     SearchPolicyRegistry,
     SearchPolicyRegistryError,
@@ -153,6 +161,10 @@ __all__ = [
     "PreparedDesignTurn",
     "ProjectControllerArchiveAdapter",
     "StageExitArchiveBundle",
+    "Stage0Compilation",
+    "Stage0Declaration",
+    "Stage0PreparationError",
+    "Stage0PreparationResult",
     "StageSubjectInventoryCompilationError",
     "SearchPolicyRegistry",
     "SearchPolicyRegistryError",
@@ -202,6 +214,7 @@ __all__ = [
     "compile_search_policy_request",
     "compile_search_proposal",
     "compile_semantic_denominator_inheritance",
+    "compile_stage0_declaration",
     "consult_selected_experts",
     "create_clarification_request",
     "discover_operational_experts",
@@ -222,6 +235,7 @@ __all__ = [
     "portfolio_candidate_ref",
     "require_compiled_operational_state",
     "prepare_design_turn",
+    "prepare_stage0_declaration",
     "revise_design_phase",
     "resume_authority_pause",
     "resume_from_clarification",
