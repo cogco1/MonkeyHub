@@ -454,6 +454,20 @@ class ProjectControllerArchiveAdapter:
 
     EVENT_SCHEMA = DesignEvent.SCHEMA
     CHECKPOINT_SCHEMA = "DesignControllerCheckpointRecord@1"
+    CHECKPOINT_FIELDS = frozenset(
+        {
+            "schema",
+            "project_id",
+            "run_id",
+            "branch_id",
+            "branch_epoch",
+            "run_base",
+            "checkpoint_digest",
+            "event_count",
+            "event_head_sha256",
+            "checkpoint",
+        }
+    )
 
     def __init__(
         self,
@@ -605,18 +619,10 @@ class ProjectControllerArchiveAdapter:
     ) -> DurableControllerResume:
         self._require_branch_record(ref)
         payload = self._repository.load_json(ref)
-        if set(payload) != {
-            "schema",
-            "project_id",
-            "run_id",
-            "branch_id",
-            "branch_epoch",
-            "run_base",
-            "checkpoint_digest",
-            "event_count",
-            "event_head_sha256",
-            "checkpoint",
-        } or payload.get("schema") != self.CHECKPOINT_SCHEMA:
+        if (
+            set(payload) != self.CHECKPOINT_FIELDS
+            or payload.get("schema") != self.CHECKPOINT_SCHEMA
+        ):
             raise DesignControllerError(
                 "controller checkpoint record schema drifted"
             )
@@ -684,6 +690,36 @@ class ProjectControllerArchiveAdapter:
             payload = self._repository.load_json(ref)
             if payload.get("schema") != self.CHECKPOINT_SCHEMA:
                 continue
+            if (
+                payload.get("project_id")
+                != self.branch.run.project_id
+                or payload.get("run_id") != self.branch.run.run_id
+                or payload.get("branch_id") != self.branch.branch_id
+            ):
+                raise DesignControllerError(
+                    "controller checkpoint record identity changed"
+                )
+            branch_epoch = payload.get("branch_epoch")
+            if (
+                not isinstance(branch_epoch, int)
+                or isinstance(branch_epoch, bool)
+                or branch_epoch < 0
+            ):
+                raise DesignControllerError(
+                    "controller checkpoint branch_epoch is invalid"
+                )
+            if branch_epoch != self.branch.epoch:
+                continue
+            if set(payload) != self.CHECKPOINT_FIELDS:
+                raise DesignControllerError(
+                    "controller checkpoint record schema drifted"
+                )
+            if payload["run_base"] != _project_version_payload(
+                self.branch.run.base
+            ):
+                raise DesignControllerError(
+                    "controller checkpoint record identity changed"
+                )
             resumed = self.load_checkpoint(ref)
             candidates.append(
                 (
