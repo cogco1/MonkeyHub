@@ -1,0 +1,113 @@
+"""Pure requirement and control-plane contracts.
+
+This package owns no persistence, design generation, or canonical-write
+authority.  Runtime orchestration may consume its typed receipts, while P036
+remains the only durable project writer.
+"""
+
+from archflow.control.convergence import (
+    StageConvergenceError,
+    StageConvergenceEvidence,
+    StageConvergenceOutcome,
+    StageConvergencePolicy,
+    StageConvergencePotential,
+    StageConvergenceReceipt,
+    StageTransitionKind,
+    StageTransitionRequest,
+    evaluate_stage_convergence,
+)
+from archflow.control.baseline import (
+    BASELINE_LEVEL_ROLES,
+    CadReadbackBaselineSource,
+    ComponentLineageBaselineSource,
+    DESIGN_PHASE_BASELINE_LEVEL,
+    MaterialBindingBaselineSource,
+    SpatialLayoutBaselineSource,
+    StageBaselineCoverageReceipt,
+    StageBaselineError,
+    StageBaselineLevel,
+    StageBaselineRole,
+    StageBaselineRoleCoverage,
+    StageBaselineSourceSet,
+    StageBaselineStatus,
+    baseline_level_for_design_phase,
+    compile_stage_baseline_coverage,
+)
+from archflow.control.check_requirements import (
+    assembly_stage_requirement,
+    cad_readback_stage_requirement,
+    component_lineage_stage_requirement,
+    material_binding_stage_requirement,
+    spatial_layout_stage_requirement,
+)
+from archflow.control.requirements import (
+    RequirementBasisMode,
+    RequirementTargetKind,
+    StageCheckRequirement,
+    StageRequirementProfile,
+)
+from archflow.control.profile import (
+    StageProfileBindingError,
+    StageRequirementProfileBinding,
+)
+from archflow.control.stage_closure import (
+    CompositeStageClosureReceipt,
+    StageClosureFinding,
+    StageClosureFindingCode,
+    StageClosureStatus,
+    compile_composite_stage_closure,
+)
+from archflow.control.stage_subjects import (
+    StageSubjectDisposition,
+    StageSubjectInventory,
+    StageSubjectInventoryEntry,
+    StageSubjectInventoryError,
+    StageSubjectRoleObligation,
+)
+__all__ = [
+    "CompositeStageClosureReceipt",
+    "BASELINE_LEVEL_ROLES",
+    "CadReadbackBaselineSource",
+    "ComponentLineageBaselineSource",
+    "DESIGN_PHASE_BASELINE_LEVEL",
+    "MaterialBindingBaselineSource",
+    "RequirementBasisMode",
+    "RequirementTargetKind",
+    "StageConvergenceError",
+    "StageConvergenceEvidence",
+    "StageConvergenceOutcome",
+    "StageConvergencePolicy",
+    "StageConvergencePotential",
+    "StageConvergenceReceipt",
+    "StageCheckRequirement",
+    "StageBaselineCoverageReceipt",
+    "StageBaselineError",
+    "StageBaselineLevel",
+    "StageBaselineRole",
+    "StageBaselineRoleCoverage",
+    "StageBaselineSourceSet",
+    "StageBaselineStatus",
+    "SpatialLayoutBaselineSource",
+    "StageClosureFinding",
+    "StageClosureFindingCode",
+    "StageClosureStatus",
+    "StageRequirementProfile",
+    "StageProfileBindingError",
+    "StageRequirementProfileBinding",
+    "StageTransitionKind",
+    "StageTransitionRequest",
+    "StageSubjectDisposition",
+    "StageSubjectInventory",
+    "StageSubjectInventoryEntry",
+    "StageSubjectInventoryError",
+    "StageSubjectRoleObligation",
+    "assembly_stage_requirement",
+    "baseline_level_for_design_phase",
+    "cad_readback_stage_requirement",
+    "component_lineage_stage_requirement",
+    "compile_composite_stage_closure",
+    "compile_stage_baseline_coverage",
+    "evaluate_stage_convergence",
+    "material_binding_stage_requirement",
+    "spatial_layout_stage_requirement",
+]
