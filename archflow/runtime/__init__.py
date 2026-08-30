@@ -59,6 +59,13 @@ from archflow.runtime.design_controller import (
     revise_design_phase,
     resume_authority_pause,
 )
+from archflow.runtime.genesis_completeness import (
+    GenesisSemanticCompletenessCompilationError,
+    bridge_semantic_completeness_check,
+    compile_genesis_semantic_completeness,
+    compile_genesis_semantic_denominator,
+    compile_semantic_denominator_inheritance,
+)
 from archflow.runtime.hierarchical_search import (
     AdoptedApplicableSearchEvidence,
     BoundCandidateEvaluatorReceipt,
@@ -128,6 +135,7 @@ __all__ = [
     "DesignControllerCheckpoint",
     "DesignControllerError",
     "DurableControllerResume",
+    "GenesisSemanticCompletenessCompilationError",
     "HierarchicalSearchCompileInput",
     "HierarchicalSearchProposal",
     "HierarchicalSearchProposalCompiler",
@@ -176,12 +184,16 @@ __all__ = [
     "advance_design_phase",
     "apply_architect_action",
     "build_environment_expert_snapshot",
+    "bridge_semantic_completeness_check",
     "compile_clarification_operator",
     "compile_environment_obligations",
+    "compile_genesis_semantic_completeness",
+    "compile_genesis_semantic_denominator",
     "compile_mid_run_requirement",
     "compile_operational_transition_trace",
     "compile_search_policy_request",
     "compile_search_proposal",
+    "compile_semantic_denominator_inheritance",
     "consult_selected_experts",
     "create_clarification_request",
     "discover_operational_experts",
