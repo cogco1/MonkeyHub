@@ -38,6 +38,8 @@ from archflow.control.check_requirements import (
     cad_readback_stage_requirement,
     component_lineage_stage_requirement,
     material_binding_stage_requirement,
+    relation_authoring_stage_requirements,
+    relation_coverage_stage_requirement,
     spatial_layout_stage_requirement,
 )
 from archflow.control.genesis_completeness import (
@@ -57,6 +59,22 @@ from archflow.control.requirements import (
     RequirementTargetKind,
     StageCheckRequirement,
     StageRequirementProfile,
+)
+from archflow.control.relation_checks import (
+    RELATION_VERIFICATION_CHECKERS,
+    check_relation_coverage,
+    relation_subject_inventory_ref,
+    require_relation_authoring_question_coverage,
+    require_relation_subject_inventory,
+)
+from archflow.control.relation_promotion import (
+    RelationPromotionBinding,
+    RelationPromotionError,
+    RelationPromotionReceipt,
+    RelationPromotionResult,
+    RelationPromotionStatus,
+    promote_verified_relation_graph,
+    relation_verification_receipt_ref,
 )
 from archflow.control.profile import (
     StageProfileBindingError,
@@ -106,6 +124,7 @@ __all__ = [
     "GenesisSemanticDenominator",
     "RequirementBasisMode",
     "RequirementTargetKind",
+    "RELATION_VERIFICATION_CHECKERS",
     "DecisionSpaceDescriptor",
     "DecisionSpaceKind",
     "ObjectiveDirection",
@@ -155,14 +174,27 @@ __all__ = [
     "StageSubjectInventoryEntry",
     "StageSubjectInventoryError",
     "StageSubjectRoleObligation",
+    "RelationPromotionBinding",
+    "RelationPromotionError",
+    "RelationPromotionReceipt",
+    "RelationPromotionResult",
+    "RelationPromotionStatus",
     "assembly_stage_requirement",
     "baseline_level_for_design_phase",
     "cad_readback_stage_requirement",
+    "check_relation_coverage",
     "component_lineage_stage_requirement",
     "compile_composite_stage_closure",
     "compile_stage_baseline_coverage",
     "evaluate_stage_convergence",
     "material_binding_stage_requirement",
+    "promote_verified_relation_graph",
+    "relation_subject_inventory_ref",
+    "relation_verification_receipt_ref",
+    "relation_authoring_stage_requirements",
+    "relation_coverage_stage_requirement",
+    "require_relation_authoring_question_coverage",
+    "require_relation_subject_inventory",
     "spatial_layout_stage_requirement",
     "validate_search_directive",
 ]
