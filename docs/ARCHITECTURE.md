@@ -15,6 +15,62 @@ Diagram variants:
 Both versions share the same nodes and connectors. Only language-specific
 copy and typography differ.
 
+## Hierarchical search control policy
+
+The stage controller may delegate search-budget advice through one
+proposal-only seam:
+
+```text
+RAG priors + exact DesignState + DesignOptionPortfolio + Evaluator receipts
+                              |
+                    SearchPolicyRequest@1
+                              |
+        explicitly registered AsyncSearchPolicy implementation
+                              |
+                       SearchDirective@1
+                              |
+       deterministic authority, hard gates, commit/reopen compilation
+```
+
+`archflow.control.search_policy` fixes the decision-space kind, exact
+project/run/branch/epoch and state digest, candidate/evaluation identities,
+objective mean/variance/sample count, finite evaluation/compute/token budget,
+allowed actions, and the explicit reopen envelope. A policy can recommend
+research, expansion, deepening, resampling, pruning, holding, stopping, or a
+request to commit/reopen. It cannot accept a stage, mutate state, persist a
+record, write canonical `HEAD`, waive a hard failure, or reopen a lock.
+
+`SearchPolicyRegistry` dispatches by exact `policy_id` and exact immutable
+descriptor only. It has no default, family lookup, retry, or fallback. The
+string family `ocba` is reserved by `RESERVED_OCBA_POLICY_FAMILY`, but this
+repository intentionally contains no OCBA algorithm or registered OCBA
+implementation. A future algorithms team can implement `AsyncSearchPolicy`
+without changing state, evaluator, commit, or P036 ownership boundaries.
+
+`runtime/hierarchical_search.py` is the first exact-state adapter for that
+seam. It derives branch identity from `OperationalMarkovState`, replays the
+retained portfolio, hard-check denominator, stage closure, convergence, and
+adopted-applicable evidence, then ends at an authority-free proposal. It is
+deliberately detached from `DesignController`: commit and reopen remain typed
+requests for the existing authority path, not side effects or transitions.
+
+Before later stages can omit a building system, Stage 0 may compile an exact
+semantic denominator through `control/genesis_completeness.py` and
+`runtime/genesis_completeness.py`. The denominator originates only from the
+initial branch epoch in the existing `research_brief` phase. Its members come
+only from explicitly supplied brief, typology, human-authority, or adopted and
+applicable RAG bases. A RAG basis binds the retained snapshot bytes, exact
+query/scope/revision, adopted quote, and applicability record; a URL alone is
+not evidence identity.
+
+Each denominator member is assessed as `PRESENT`, `NOT_APPLICABLE`, or
+`UNKNOWN`. Not-applicable claims need independent evidence and authority;
+unknown never closes the check. Successor stages inherit the exact original
+denominator and receipt lineage and cannot re-originate a smaller one. The
+result can be bridged to the existing `CheckReceiptEnvelope`, but the bridge
+does not infer a complete typology, write project data, attach itself to every
+runner, accept a stage, or replace `CompositeStageClosureReceipt`.
+
 ## Semantic-to-geometry bridge
 
 The inset between the Primary Architect and the typed operator makes one

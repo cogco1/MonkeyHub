@@ -406,6 +406,57 @@ conflict with an active lock preserves that commitment, adds an explicit
 authorized-revision obligation, and reopens only interfaces that cite its
 scope. No new chat text may overwrite the current state directly.
 
+### Pluggable search-policy seam
+
+`archflow.control.search_policy` and `runtime/search_policy.py` reserve the
+algorithm-team boundary without installing an optimizer. The injected
+`AsyncSearchPolicy` receives one `SearchPolicyRequest@1` bound to the exact
+branch epoch, stage, state digest, decision-space descriptor, portfolio digest,
+candidate evaluation receipts, evidence refs, and three finite budget axes.
+Objective estimates retain direction, mean, variance, and sample count so a
+later statistical allocation policy does not require a schema rewrite.
+
+The policy returns only `SearchDirective@1`. `request_commit` and
+`request_reopen` are requests to the existing authority and convergence
+compilers, not transitions. Validation rejects stale/cross-policy outputs,
+unknown targets or evidence, budget overflow, objective-direction drift,
+reopen targets outside the explicit envelope, and commit requests for
+unevaluated or hard-failing candidates. All serialized authority flags are
+fixed false.
+
+`SearchPolicyRegistry` requires an exact registered `policy_id` and immutable
+descriptor. It never chooses by family, retries a failed policy, or substitutes
+another implementation. `RESERVED_OCBA_POLICY_FAMILY == "ocba"` reserves the
+future integration name only; ArchFlow currently ships no OCBA implementation,
+and an OCBA request fails closed until the team's implementation is explicitly
+registered.
+
+`hierarchical_search.py` compiles this seam against retained runtime facts. It
+requires the exact `OperationalMarkovState`, persisted portfolio and digest,
+typed evaluator and hard-check receipts, replayed stage closure, exact
+convergence child, and adopted-applicable claim records. Its output remains a
+detached proposal: this module is not connected to the production controller
+and cannot commit, reopen, persist, accept a stage, or write `HEAD`.
+
+### Stage-0 semantic completeness
+
+`genesis_completeness.py` compiles an explicit semantic-system denominator at
+branch epoch zero in the existing `research_brief` phase. Only named brief,
+typology, human-authority, and adopted-applicable RAG bases may add systems.
+For RAG, the basis must bind the exact retained `BranchEvidenceSnapshot@1`
+record bytes, query/scope/branch revision, snapshot text digest, adopted quote,
+and applicability. Same-path records with a different SHA fail closed.
+
+The compiler never guesses from component names. Each required system is
+typed `PRESENT`, `NOT_APPLICABLE`, or `UNKNOWN`; N/A needs independent evidence
+and authority, while unknown remains open. Later stages can only inherit the
+exact original denominator and receipt digest, so a repeated `research_brief`
+label at a later epoch cannot silently shrink it. The result has no persistence
+or stage authority. `bridge_semantic_completeness_check()` only projects it
+into the existing `CheckReceiptEnvelope`; callers must still supply the
+project-specific denominator and route the receipt through the normal profile,
+closure, controller, and P036 paths.
+
 `DesignControllerCheckpoint@1` is a typed projection and serialization
 boundary, not a second durable state authority.
 `ProjectControllerArchiveAdapter` implements the P018 event-store port over one
@@ -413,9 +464,12 @@ P036 run/branch record area, then stores the derived checkpoint beside that
 immutable event chain. Every checkpoint binds the exact project/run/branch,
 semantic run-base digest, complete event prefix, event-head digest, and
 checkpoint digest. Reload derives the latest unambiguous checkpoint from the
-repository records; there is no mutable `latest` pointer or standalone
-controller directory. Project `HEAD` is unchanged until the separate accepted
-candidate commit boundary advances it.
+repository records after filtering by exact project, run, branch, and epoch;
+retained checkpoints from an earlier epoch cannot poison current-epoch
+recovery, while current-epoch ambiguity or event-chain drift still fails
+closed. There is no mutable `latest` pointer or standalone controller
+directory. Project `HEAD` is unchanged until the separate accepted candidate
+commit boundary advances it.
 
 ## Primary Architect model boundary
 
