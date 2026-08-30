@@ -3,7 +3,14 @@ from __future__ import annotations
 import copy
 import hashlib
 import unittest
+from types import SimpleNamespace
 
+from archflow.capabilities.precedent import (
+    PrecedentAdoption as CompatibilityPrecedentAdoption,
+)
+from archflow.capabilities.precedent import (
+    PrecedentFact as CompatibilityPrecedentFact,
+)
 from archflow.research.adoption import (
     PrecedentAdoption,
     PrecedentError,
@@ -56,6 +63,20 @@ class ResearchAdoptionReadbackTests(unittest.TestCase):
             adoption,
             PrecedentAdoption.from_dict(adoption.to_dict()),
         )
+        self.assertIs(CompatibilityPrecedentFact, PrecedentFact)
+        self.assertIs(
+            CompatibilityPrecedentAdoption,
+            PrecedentAdoption,
+        )
+
+    def test_legacy_v1_fact_without_decision_refs_remains_readable(self) -> None:
+        payload = _fact().to_dict()
+        payload.pop("decision_refs")
+
+        decoded = PrecedentFact.from_dict(payload)
+
+        self.assertEqual(decoded.decision_refs, ())
+        self.assertIn("decision_refs", decoded.to_dict())
 
     def test_fact_rejects_schema_and_type_coercion(self) -> None:
         payload = _fact().to_dict()
@@ -112,6 +133,16 @@ class ResearchAdoptionReadbackTests(unittest.TestCase):
                     "authority flags changed",
                 ):
                     PrecedentAdoption.from_dict(payload)
+
+    def test_adoption_rejects_noncanonical_fact_objects(self) -> None:
+        impostor = SimpleNamespace(fact_id="roof-support")
+        with self.assertRaisesRegex(PrecedentError, "canonical"):
+            PrecedentAdoption(
+                adoption_id="adoption-roof-support",
+                authority_id="authority.user",
+                adopted_at="2026-08-30T13:00:00Z",
+                facts=(impostor,),
+            )
 
 
 if __name__ == "__main__":

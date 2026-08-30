@@ -40,6 +40,7 @@ _FACT_FIELDS = frozenset(
         "decision_refs",
     }
 )
+_LEGACY_FACT_FIELDS = _FACT_FIELDS - {"decision_refs"}
 _ADOPTION_FIELDS = frozenset(
     {
         "schema",
@@ -150,16 +151,18 @@ class PrecedentFact:
 
     @classmethod
     def from_dict(cls, value) -> "PrecedentFact":
+        if not isinstance(value, dict):
+            raise PrecedentError("precedent fact schema drifted")
+        fields = set(value)
         if (
-            not isinstance(value, dict)
-            or set(value) != _FACT_FIELDS
+            fields not in {_FACT_FIELDS, _LEGACY_FACT_FIELDS}
             or value.get("schema") != cls.SCHEMA
         ):
             raise PrecedentError("precedent fact schema drifted")
         quote_start = value["quote_start"]
         quote_end = value["quote_end"]
         annotator_is_harness = value["annotator_is_harness"]
-        decision_refs = value["decision_refs"]
+        decision_refs = value.get("decision_refs", [])
         if (
             not isinstance(quote_start, int)
             or isinstance(quote_start, bool)
@@ -203,6 +206,10 @@ class PrecedentAdoption:
         _text(self.adopted_at, "adopted_at")
         if not self.facts or not isinstance(self.facts, tuple):
             raise PrecedentError("adoption requires at least one fact")
+        if any(type(fact) is not PrecedentFact for fact in self.facts):
+            raise PrecedentError(
+                "adoption facts must use the canonical PrecedentFact type"
+            )
         fact_ids = [fact.fact_id for fact in self.facts]
         if fact_ids != sorted(set(fact_ids)):
             raise PrecedentError("fact ids must be sorted and unique")
