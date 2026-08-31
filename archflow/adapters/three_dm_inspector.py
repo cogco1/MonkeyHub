@@ -28,6 +28,9 @@ class ThreeDmInspectionErrorCode(StrEnum):
     PATH_NOT_FILE = "three_dm_inspection.path_not_file"
     FILE_UNREADABLE = "three_dm_inspection.file_unreadable"
     INVALID_FILE = "three_dm_inspection.invalid_file"
+    VISIBLE_BOUNDS_UNAVAILABLE = (
+        "three_dm_inspection.visible_bounds_unavailable"
+    )
 
 
 class ThreeDmInspectionError(RuntimeError):
@@ -77,10 +80,11 @@ class ThreeDmInspection:
     aggregate_bbox: dict[str, list[float]] | None
     bbox_contributing_geometry_count: int
     named_object_bboxes: tuple[dict[str, object], ...] = ()
+    visible_bounds_witnesses: tuple[dict[str, object], ...] = ()
     read_only: bool = True
     rhino_process_started: bool = False
 
-    SCHEMA: ClassVar[str] = "ThreeDmInspectionSummary@1"
+    SCHEMA: ClassVar[str] = "ThreeDmInspectionSummary@2"
 
     def to_dict(self) -> dict[str, object]:
         payload = {
@@ -107,6 +111,7 @@ class ThreeDmInspection:
                 self.bbox_contributing_geometry_count
             ),
             "named_object_bboxes": self.named_object_bboxes,
+            "visible_bounds_witnesses": self.visible_bounds_witnesses,
             "read_only": self.read_only,
             "rhino_process_started": self.rhino_process_started,
         }
@@ -147,7 +152,7 @@ def inspect_three_dm(path: Path) -> ThreeDmInspection:
         )
 
     try:
-        payload = _summarize_model(model)
+        payload = _summarize_model(model, rhino3dm)
     except ThreeDmInspectionError:
         raise
     except Exception as exc:
@@ -210,8 +215,18 @@ def _load_rhino3dm() -> Any:
     return module
 
 
-def _summarize_model(model: Any) -> dict[str, object]:
-    objects = tuple(model.Objects)
+def _summarize_model(model: Any, rhino3dm: Any) -> dict[str, object]:
+    archive_objects = tuple(model.Objects)
+    explicit_witnesses, witness_object_ids = _explicit_visible_witnesses(
+        archive_objects,
+        rhino3dm,
+    )
+    objects = tuple(
+        item
+        for item in archive_objects
+        if _identifier(item.Attributes.Id, "object id")
+        not in witness_object_ids
+    )
     layers, layers_by_index = _layers(model, objects)
     object_rows, objects_by_id = _objects(objects, layers_by_index)
     definitions, definition_members = _definitions(model)
@@ -230,6 +245,8 @@ def _summarize_model(model: Any) -> dict[str, object]:
         object_rows,
         objects_by_id,
         definition_members,
+        rhino3dm,
+        explicit_witnesses,
     )
     by_type = Counter(item["type"] for item in object_rows)
     by_layer = _object_counts_by_layer(
@@ -262,7 +279,20 @@ def _summarize_model(model: Any) -> dict[str, object]:
         "object_user_strings": tuple(_object_user_strings(object_rows)),
         "aggregate_bbox": aggregate_bbox,
         "bbox_contributing_geometry_count": bbox_geometry_count,
-        "named_object_bboxes": tuple(_named_object_bboxes(object_rows)),
+        "named_object_bboxes": tuple(
+            _named_object_bboxes(
+                object_rows,
+                rhino3dm,
+                explicit_witnesses,
+            )
+        ),
+        "visible_bounds_witnesses": tuple(
+            _visible_bounds_witnesses(
+                object_rows,
+                rhino3dm,
+                explicit_witnesses,
+            )
+        ),
     }
 
 
@@ -339,6 +369,8 @@ def _objects(
 
 def _named_object_bboxes(
     object_rows: list[dict[str, Any]],
+    rhino3dm: Any,
+    explicit_witnesses: dict[str, dict[str, object]],
 ) -> list[dict[str, object]]:
     """Read per-object world bounds for named, top-level geometry.
 
@@ -355,22 +387,56 @@ def _named_object_bboxes(
         geometry = item["geometry"]
         if item["type"] == "InstanceReference":
             continue
-        bbox = geometry.GetBoundingBox()
-        if bbox is None or not bool(bbox.IsValid):
-            continue
+        points, witness = _visible_geometry_points(
+            geometry,
+            str(item["type"]),
+            rhino3dm,
+            object_id=str(item["id"]),
+            explicit_witnesses=explicit_witnesses,
+        )
         rows.append(
             {
                 "object_id": item["id"],
                 "name": item["name"],
                 "type": item["type"],
                 "layer_path": item["layer_path"],
-                "bbox": {
-                    "min": list(_point(bbox.Min, "named object bbox minimum")),
-                    "max": list(_point(bbox.Max, "named object bbox maximum")),
-                },
+                "bbox": _points_bbox(points),
+                "bbox_source": witness["source"],
+                "mesh_face_count": witness["mesh_face_count"],
+                "mesh_vertex_count": witness["mesh_vertex_count"],
             }
         )
     rows.sort(key=lambda item: (str(item["name"]), str(item["object_id"])))
+    return rows
+
+
+def _visible_bounds_witnesses(
+    object_rows: list[dict[str, Any]],
+    rhino3dm: Any,
+    explicit_witnesses: dict[str, dict[str, object]],
+) -> list[dict[str, object]]:
+    """Describe the exact saved-geometry source used for each leaf bound."""
+
+    rows: list[dict[str, object]] = []
+    for item in object_rows:
+        if item["type"] == "InstanceReference":
+            continue
+        _, witness = _visible_geometry_points(
+            item["geometry"],
+            str(item["type"]),
+            rhino3dm,
+            object_id=str(item["id"]),
+            explicit_witnesses=explicit_witnesses,
+        )
+        rows.append(
+            {
+                "object_id": item["id"],
+                "name": item["name"],
+                "type": item["type"],
+                **witness,
+            }
+        )
+    rows.sort(key=lambda item: str(item["object_id"]))
     return rows
 
 
@@ -535,11 +601,100 @@ def _user_strings(value: Any) -> list[dict[str, str]]:
     return rows
 
 
+def _explicit_visible_witnesses(
+    objects: tuple[Any, ...],
+    rhino3dm: Any,
+) -> tuple[dict[str, dict[str, object]], frozenset[str]]:
+    """Load hidden mesh objects that witness trimmed saved geometry.
+
+    RhinoDoc render-mesh caches are not serialized as ``BrepFace`` meshes in
+    every 3DM write path.  The exporter therefore stores those same trimmed
+    meshes as hidden geometry with an exact source-object mapping.  The mesh
+    coordinates remain independently readable; user strings provide identity,
+    never bounds or pass/fail authority.
+    """
+
+    objects_by_id = {
+        _identifier(item.Attributes.Id, "object id"): item for item in objects
+    }
+    grouped: dict[str, list[tuple[int, int, str, Any]]] = defaultdict(list)
+    witness_object_ids: set[str] = set()
+    for item in objects:
+        object_id = _identifier(item.Attributes.Id, "object id")
+        attributes = {row["key"]: row["value"] for row in _user_strings(item.Attributes)}
+        source_id = attributes.get("archflow:visible_bounds_witness_for")
+        if source_id is None:
+            continue
+        source_id = _identifier(source_id, "visible-bounds witness source id")
+        index_text = attributes.get("archflow:visible_bounds_witness_index")
+        count_text = attributes.get("archflow:visible_bounds_witness_count")
+        if index_text is None or count_text is None:
+            raise ValueError("visible-bounds witness metadata is incomplete")
+        try:
+            index = int(index_text)
+            count = int(count_text)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("visible-bounds witness index/count is invalid") from exc
+        if index < 0 or count <= 0 or str(index) != index_text or str(count) != count_text:
+            raise ValueError("visible-bounds witness index/count is non-canonical")
+        expected_name = f"__archflow_visible_bounds__:{source_id}:{index:04d}"
+        if _string(item.Attributes.Name, "witness object name") != expected_name:
+            raise ValueError("visible-bounds witness name does not bind its source")
+        if bool(item.Attributes.Visible):
+            raise ValueError("visible-bounds witness must remain hidden")
+        geometry = item.Geometry
+        if _enum_name(geometry.ObjectType, "witness object type") != "Mesh":
+            raise ValueError("visible-bounds witness must be mesh geometry")
+        if hasattr(geometry, "IsValid") and not bool(geometry.IsValid):
+            raise ValueError("visible-bounds witness mesh is invalid")
+        vertices = tuple(geometry.Vertices)
+        if not vertices or len(tuple(geometry.Faces)) == 0:
+            raise ValueError("visible-bounds witness mesh is empty")
+        if object_id == source_id or source_id not in objects_by_id:
+            raise ValueError("visible-bounds witness source object is missing")
+        grouped[source_id].append((index, count, object_id, geometry))
+        witness_object_ids.add(object_id)
+
+    result: dict[str, dict[str, object]] = {}
+    for source_id, rows in grouped.items():
+        rows.sort(key=lambda item: item[0])
+        counts = {row[1] for row in rows}
+        if len(counts) != 1:
+            raise ValueError("visible-bounds witness count is inconsistent")
+        count = next(iter(counts))
+        if [row[0] for row in rows] != list(range(count)):
+            raise ValueError("visible-bounds witness face denominator is incomplete")
+        source_geometry = objects_by_id[source_id].Geometry
+        source_type = _enum_name(source_geometry.ObjectType, "source object type")
+        if source_type == "Brep":
+            if len(tuple(source_geometry.Faces)) != count:
+                raise ValueError("Brep witness count differs from source face count")
+        elif source_type == "Extrusion":
+            if count != 1:
+                raise ValueError("extrusion requires exactly one witness mesh")
+        else:
+            raise ValueError("visible-bounds witness source is not meshable geometry")
+        points = tuple(
+            _point(vertex, "explicit visible-bounds witness vertex")
+            for _, _, _, mesh in rows
+            for vertex in mesh.Vertices
+        )
+        result[source_id] = {
+            "points": points,
+            "mesh_face_count": count,
+            "mesh_vertex_count": len(points),
+        }
+    return result, frozenset(witness_object_ids)
+
+
 def _aggregate_bbox(
     object_rows: list[dict[str, Any]],
     objects_by_id: dict[str, Any],
     definition_members: dict[str, tuple[str, ...]],
+    rhino3dm: Any,
+    explicit_witnesses: dict[str, dict[str, object]] | None = None,
 ) -> tuple[dict[str, list[float]] | None, int]:
+    explicit_witnesses = explicit_witnesses or {}
     minimum: list[float] | None = None
     maximum: list[float] | None = None
     geometry_count = 0
@@ -573,10 +728,13 @@ def _aggregate_bbox(
                 )
             return
 
-        bbox = geometry.GetBoundingBox()
-        if bbox is None or not bool(bbox.IsValid):
-            return
-        corners = _bbox_corners(bbox)
+        corners, _ = _visible_geometry_points(
+            geometry,
+            geometry_type,
+            rhino3dm,
+            object_id=_identifier(item.Attributes.Id, "object id"),
+            explicit_witnesses=explicit_witnesses,
+        )
         for transform in reversed(transforms):
             corners = [
                 _transform_point(point, transform) for point in corners
@@ -598,6 +756,128 @@ def _aggregate_bbox(
     if minimum is None or maximum is None:
         return None, geometry_count
     return {"min": minimum, "max": maximum}, geometry_count
+
+
+def _visible_geometry_points(
+    geometry: Any,
+    geometry_type: str,
+    rhino3dm: Any,
+    *,
+    object_id: str,
+    explicit_witnesses: dict[str, dict[str, object]] | None = None,
+) -> tuple[list[tuple[float, float, float]], dict[str, object]]:
+    """Return points that bound saved visible geometry, never Brep controls.
+
+    A Brep's ordinary openNURBS bounding box can include its untrimmed NURBS
+    control surface.  Render meshes are face-owned, trimmed, and retained in
+    the 3DM, so every face must provide one.  Missing, empty, or invalid mesh
+    data is a named hard failure; there is deliberately no Brep fallback.
+    """
+
+    explicit = (explicit_witnesses or {}).get(object_id)
+    if geometry_type in {"Brep", "Extrusion"} and explicit is not None:
+        return list(explicit["points"]), {
+            "source": "explicit_trimmed_render_mesh_witnesses",
+            "mesh_face_count": explicit["mesh_face_count"],
+            "mesh_vertex_count": explicit["mesh_vertex_count"],
+        }
+
+    if geometry_type == "Brep":
+        faces = tuple(geometry.Faces)
+        if not faces:
+            _visible_bounds_error(object_id, "Brep has no faces")
+        points: list[tuple[float, float, float]] = []
+        for face_index, face in enumerate(faces):
+            mesh = face.GetMesh(rhino3dm.MeshType.Render)
+            if mesh is None:
+                _visible_bounds_error(
+                    object_id,
+                    f"Brep face {face_index} has no retained render mesh",
+                )
+            if hasattr(mesh, "IsValid") and not bool(mesh.IsValid):
+                _visible_bounds_error(
+                    object_id,
+                    f"Brep face {face_index} render mesh is invalid",
+                )
+            vertices = tuple(mesh.Vertices)
+            if not vertices or len(tuple(mesh.Faces)) == 0:
+                _visible_bounds_error(
+                    object_id,
+                    f"Brep face {face_index} render mesh is empty",
+                )
+            points.extend(
+                _point(vertex, "retained render-mesh vertex")
+                for vertex in vertices
+            )
+        return points, {
+            "source": "brep_face_render_mesh_vertices",
+            "mesh_face_count": len(faces),
+            "mesh_vertex_count": len(points),
+        }
+
+    if geometry_type == "Extrusion":
+        mesh = geometry.GetMesh(rhino3dm.MeshType.Render)
+        if mesh is None:
+            _visible_bounds_error(
+                object_id,
+                "Extrusion has no retained render mesh",
+            )
+        vertices = tuple(mesh.Vertices)
+        if (
+            (hasattr(mesh, "IsValid") and not bool(mesh.IsValid))
+            or not vertices
+            or len(tuple(mesh.Faces)) == 0
+        ):
+            _visible_bounds_error(object_id, "Extrusion render mesh is invalid")
+        return [
+            _point(vertex, "retained render-mesh vertex")
+            for vertex in vertices
+        ], {
+            "source": "extrusion_render_mesh_vertices",
+            "mesh_face_count": 1,
+            "mesh_vertex_count": len(vertices),
+        }
+
+    if geometry_type == "Mesh":
+        vertices = tuple(geometry.Vertices)
+        if not vertices:
+            _visible_bounds_error(object_id, "Mesh has no vertices")
+        return [
+            _point(vertex, "mesh vertex") for vertex in vertices
+        ], {
+            "source": "mesh_vertices",
+            "mesh_face_count": 1,
+            "mesh_vertex_count": len(vertices),
+        }
+
+    tight_getter = getattr(geometry, "GetTightBoundingBox", None)
+    bbox = tight_getter() if callable(tight_getter) else geometry.GetBoundingBox()
+    if bbox is None or not bool(bbox.IsValid):
+        _visible_bounds_error(object_id, "geometry has no valid tight bounds")
+    points = _bbox_corners(bbox)
+    return points, {
+        "source": "tight_geometry_bbox",
+        "mesh_face_count": 0,
+        "mesh_vertex_count": 0,
+    }
+
+
+def _visible_bounds_error(object_id: str, detail: str) -> None:
+    raise ThreeDmInspectionError(
+        ThreeDmInspectionErrorCode.VISIBLE_BOUNDS_UNAVAILABLE,
+        f"object {object_id}: {detail}",
+    )
+
+
+def _points_bbox(
+    points: list[tuple[float, float, float]],
+) -> dict[str, list[float]]:
+    if not points:
+        raise ValueError("visible bounds require at least one point")
+    return {
+        "min": [min(point[axis] for point in points) for axis in range(3)],
+        "max": [max(point[axis] for point in points) for axis in range(3)],
+    }
 
 
 def _bbox_corners(bbox: Any) -> list[tuple[float, float, float]]:

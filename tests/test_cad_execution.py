@@ -222,6 +222,7 @@ def _inspection(plan) -> ThreeDmInspection:
     user_rows = []
     named_rows = []
     instance_rows = []
+    visible_witnesses = []
     counter = 0
     for object_id, semantic in sorted(expected_objects.items()):
         producer = semantic["user_text"]["archflow:producer_op"]
@@ -261,6 +262,19 @@ def _inspection(plan) -> ThreeDmInspection:
                     "type": "Brep",
                     "layer_path": semantic["layer"],
                     "bbox": plan.expected_bounds[object_id],
+                    "bbox_source": "brep_face_render_mesh_vertices",
+                    "mesh_face_count": 1,
+                    "mesh_vertex_count": 8,
+                }
+            )
+            visible_witnesses.append(
+                {
+                    "object_id": f"named-{object_id}",
+                    "name": object_id,
+                    "type": "Brep",
+                    "source": "brep_face_render_mesh_vertices",
+                    "mesh_face_count": 1,
+                    "mesh_vertex_count": 8,
                 }
             )
     definitions = tuple(
@@ -276,6 +290,17 @@ def _inspection(plan) -> ThreeDmInspection:
             "reference_count": count,
         }
         for name, count in sorted(expected_blocks.items())
+    )
+    visible_witnesses.extend(
+        {
+            "object_id": definition["object_ids"][0],
+            "name": "",
+            "type": "Brep",
+            "source": "brep_face_render_mesh_vertices",
+            "mesh_face_count": 1,
+            "mesh_vertex_count": 8,
+        }
+        for definition in definitions
     )
     aggregate = {
         "min": [
@@ -323,6 +348,7 @@ def _inspection(plan) -> ThreeDmInspection:
         aggregate_bbox=aggregate,
         bbox_contributing_geometry_count=counter,
         named_object_bboxes=tuple(named_rows),
+        visible_bounds_witnesses=tuple(visible_witnesses),
     )
 
 
@@ -439,7 +465,30 @@ class RhinoCadExportTest(unittest.TestCase):
             self.assertNotIn(second_directory, script)
             self.assertNotIn("os.getcwd()", script)
             self.assertIn("Path(__file__).resolve().parent", script)
-            self.assertIn("ActiveDoc.WriteFile(str(_output_path)", script)
+            self.assertIn("CreateMeshes(_mesh_type", script)
+            self.assertIn(
+                "_witness_attributes.SetUserString('archflow:visible_bounds_witness_for'",
+                script,
+            )
+            self.assertIn(
+                "_archive.Objects.AddMesh(_saved_mesh, _witness_attributes)",
+                script,
+            )
+            self.assertIn(
+                "_archive.Write(str(_output_path), _archive_options)",
+                script,
+            )
+            self.assertIn("for _active_guid in (rs.AllObjects() or [])", script)
+            self.assertIn("_instance_definition.GetObjects()", script)
+            self.assertIn("_instance_definition.IsReference", script)
+            self.assertIn("_mesh_parameters.DoublePrecision = True", script)
+            self.assertIn("_mesh_parameters.Tolerance = 0.00025000000000000001", script)
+            self.assertIn(
+                "_mesh_parameters.MinimumTolerance = 0.00025000000000000001",
+                script,
+            )
+            self.assertIn("_write_options.IncludeRenderMeshes = True", script)
+            self.assertIn("ActiveDoc.WriteFile(str(_raw_path)", script)
             self.assertNotIn(first_directory, str(first.to_dict()))
             self.assertEqual(
                 [2.0, 4.0, 3.0],
@@ -611,6 +660,30 @@ class RhinoCadExportTest(unittest.TestCase):
             self.assertIn(
                 "cad_execution.named_bounds_mismatch",
                 {item["code"] for item in receipt.failures},
+            )
+
+    def test_readback_rejects_missing_or_non_mesh_brep_bounds_witness(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            plan = _prepare(Path(temporary_directory))
+            inspection = _inspection(plan)
+            missing = _verified_readback(
+                plan,
+                replace(inspection, visible_bounds_witnesses=()),
+            )
+            self.assertIn(
+                "cad_execution.visible_bounds_witness_count_mismatch",
+                {item["code"] for item in missing.failures},
+            )
+
+            named = dict(inspection.named_object_bboxes[0])
+            named["bbox_source"] = "tight_geometry_bbox"
+            stale = _verified_readback(
+                plan,
+                replace(inspection, named_object_bboxes=(named,)),
+            )
+            self.assertIn(
+                "cad_execution.named_bounds_witness_invalid",
+                {item["code"] for item in stale.failures},
             )
 
     def test_readback_rejects_wrong_missing_layers_and_wrong_color(self):

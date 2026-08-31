@@ -5,6 +5,7 @@ import unittest
 from types import SimpleNamespace
 
 from archflow.adapters.cad_program import (
+    CadTranslationError,
     expected_object_bounds,
     expected_object_semantics,
     translate_to_rhino_python,
@@ -217,6 +218,52 @@ class ExpectedBoundsTest(unittest.TestCase):
         cone = expected_object_bounds(build)["cone-object"]
         self.assertEqual([2.0, 0.0, 2.0], cone["bbox_min"])
         self.assertEqual([8.0, 8.0, 8.0], cone["bbox_max"])
+
+    def test_revolve_bounds_are_exact_for_horizontal_axis(self):
+        build = program(
+            op(
+                "beam",
+                "revolve",
+                ["beam-object"],
+                axis_start=[0.0, 2.0, 3.0],
+                axis_end=[10.0, 2.0, 3.0],
+                start_radius=2.0,
+                end_radius=1.0,
+            ),
+        )
+        beam = expected_object_bounds(build)["beam-object"]
+        self.assertEqual([0.0, 0.0, 1.0], beam["bbox_min"])
+        self.assertEqual([10.0, 4.0, 5.0], beam["bbox_max"])
+
+    def test_boolean_difference_that_can_change_extrema_fails_closed(self):
+        build = program(
+            op(
+                "base",
+                "solid",
+                ["base-object"],
+                origin=[0.0, 0.0, 0.0],
+                size=[10.0, 10.0, 10.0],
+            ),
+            op(
+                "cut",
+                "solid",
+                ["cut-object"],
+                origin=[4.0, 4.0, 9.0],
+                size=[2.0, 2.0, 2.0],
+            ),
+            op(
+                "difference",
+                "boolean_difference",
+                ["result-object"],
+                ["base-object", "cut-object"],
+                base_index=0,
+            ),
+        )
+        with self.assertRaisesRegex(
+            CadTranslationError,
+            "can alter a base extremum",
+        ):
+            expected_object_bounds(build)
 
     def test_bounds_cover_exactly_the_physical_set(self):
         build = program(

@@ -680,6 +680,7 @@ def prepare_rhino_three_dm_export(
         completion_marker_name=completion_marker_path.name,
         completion_token=completion_token,
         length_unit=unit,
+        readback_tolerance=tolerance,
     )
     try:
         with script_path.open("x", encoding="utf-8", newline="\n") as stream:
@@ -1464,6 +1465,54 @@ def verify_rhino_export_readback(
             )
         )
 
+    visible_witnesses = tuple(inspection.visible_bounds_witnesses)
+    expected_leaf_witness_count = (
+        inspection.top_level_object_count
+        - len(inspection.instance_references)
+        + inspection.instance_definition_member_count
+    )
+    witness_ids = [str(row.get("object_id", "")) for row in visible_witnesses]
+    if (
+        len(visible_witnesses) != expected_leaf_witness_count
+        or len(set(witness_ids)) != len(witness_ids)
+    ):
+        failures.append(
+            _failure(
+                "cad_execution.visible_bounds_witness_count_mismatch",
+                "saved leaf geometry does not have one unique visible-bounds witness",
+            )
+        )
+    for row in visible_witnesses:
+        geometry_type = row.get("type")
+        source = row.get("source")
+        if geometry_type == "Brep" and (
+            source
+            not in {
+                "brep_face_render_mesh_vertices",
+                "explicit_trimmed_render_mesh_witnesses",
+            }
+            or not isinstance(row.get("mesh_face_count"), int)
+            or int(row["mesh_face_count"]) <= 0
+            or not isinstance(row.get("mesh_vertex_count"), int)
+            or int(row["mesh_vertex_count"]) <= 0
+        ):
+            failures.append(
+                _failure(
+                    "cad_execution.visible_bounds_witness_invalid",
+                    "Brep bounds are not backed by retained face render-mesh vertices",
+                )
+            )
+        if geometry_type == "Extrusion" and source not in {
+            "extrusion_render_mesh_vertices",
+            "explicit_trimmed_render_mesh_witnesses",
+        }:
+            failures.append(
+                _failure(
+                    "cad_execution.visible_bounds_witness_invalid",
+                    "Extrusion bounds are not backed by a retained render mesh",
+                )
+            )
+
     array_ops = {
         name.removeprefix("archflow-family-") for name in expected_blocks
     }
@@ -1485,7 +1534,20 @@ def verify_rhino_export_readback(
             )
         )
     for object_id in sorted(direct_ids & set(named_rows)):
-        actual_bbox = named_rows[object_id][0]["bbox"]
+        named_row = named_rows[object_id][0]
+        if named_row.get("type") == "Brep" and named_row.get(
+            "bbox_source"
+        ) not in {
+            "brep_face_render_mesh_vertices",
+            "explicit_trimmed_render_mesh_witnesses",
+        }:
+            failures.append(
+                _failure(
+                    "cad_execution.named_bounds_witness_invalid",
+                    f"object {object_id} bounds do not use retained trimmed mesh vertices",
+                )
+            )
+        actual_bbox = named_row["bbox"]
         expected_bbox = plan.expected_bounds[object_id]
         if not _bbox_close(
             actual_bbox,
@@ -1543,8 +1605,14 @@ def _export_script(
     completion_marker_name: str,
     completion_token: str,
     length_unit: str,
+    readback_tolerance: float,
 ) -> str:
     unit_enum = _UNIT_TO_RHINO[length_unit][0]
+    mesh_tolerance = _positive_finite(
+        readback_tolerance,
+        "readback_tolerance",
+    ) / 4.0
+    mesh_tolerance_literal = format(mesh_tolerance, ".17g")
     success_payload = _completion_marker_payload(
         artifact_relative_path=artifact_name,
         completion_token=completion_token,
@@ -1558,15 +1626,90 @@ def _export_script(
             "rs.EnableRedraw(False)",
             translated_script.rstrip("\n"),
             "rs.EnableRedraw(True)",
+            "_mesh_type = Rhino.Geometry.MeshType.Render",
+            "_mesh_parameters = Rhino.Geometry.MeshingParameters(Rhino.Geometry.MeshingParameters.QualityRenderMesh)",
+            "_mesh_parameters.DoublePrecision = True",
+            f"_mesh_parameters.Tolerance = {mesh_tolerance_literal}",
+            f"_mesh_parameters.MinimumTolerance = {mesh_tolerance_literal}",
+            "_archive_meshes = {}",
+            "_mesh_objects = {}",
+            "for _active_guid in (rs.AllObjects() or []):",
+            "    _active_object = Rhino.RhinoDoc.ActiveDoc.Objects.FindId(_active_guid)",
+            "    if _active_object is not None:",
+            "        _mesh_objects[str(_active_object.Id)] = _active_object",
+            "for _instance_definition in Rhino.RhinoDoc.ActiveDoc.InstanceDefinitions:",
+            "    if _instance_definition.IsDeleted or _instance_definition.IsReference:",
+            "        continue",
+            "    for _definition_object in _instance_definition.GetObjects():",
+            "        _mesh_objects[str(_definition_object.Id)] = _definition_object",
+            "for _rhino_object in sorted(_mesh_objects.values(), key=lambda _item: str(_item.Id)):",
+            "    _geometry = _rhino_object.Geometry",
+            "    if not isinstance(_geometry, (Rhino.Geometry.Brep, Rhino.Geometry.Extrusion)):",
+            "        continue",
+            "    _rhino_object.CreateMeshes(_mesh_type, _mesh_parameters, True)",
+            "    _retained_meshes = _rhino_object.GetMeshes(_mesh_type)",
+            "    _expected_meshes = _geometry.Faces.Count if isinstance(_geometry, Rhino.Geometry.Brep) else 1",
+            "    if _retained_meshes is None or len(_retained_meshes) != _expected_meshes:",
+            "        raise Exception('retained render-mesh face denominator mismatch')",
+            "    _mesh_copies = []",
+            "    for _retained_mesh in _retained_meshes:",
+            "        if _retained_mesh is None or not _retained_mesh.IsValid or _retained_mesh.Vertices.Count == 0 or _retained_mesh.Faces.Count == 0:",
+            "            raise Exception('retained render mesh is missing or invalid')",
+            "        _mesh_copies.append(_retained_mesh.DuplicateMesh())",
+            "    _archive_meshes[str(_rhino_object.Id)] = _mesh_copies",
+            "if not _archive_meshes:",
+            "    raise Exception('no meshable document geometry was enumerated')",
             f"_artifact_name = {artifact_name!r}",
             "_output_path = (_script_directory / _artifact_name).resolve()",
             "if _output_path.parent != _script_directory:",
             "    raise Exception('output escaped script workspace')",
             "if _output_path.exists(): raise Exception('output exists')",
+            "_raw_path = (_script_directory / (Path(_artifact_name).stem + '.archflow-raw.3dm')).resolve()",
+            "if _raw_path.parent != _script_directory or _raw_path.exists():",
+            "    raise Exception('raw output path is invalid or occupied')",
             "_write_options = Rhino.FileIO.FileWriteOptions()",
             "_write_options.SuppressDialogBoxes = True",
-            "if not Rhino.RhinoDoc.ActiveDoc.WriteFile(str(_output_path), _write_options):",
-            "    raise Exception('3dm save failed')",
+            "_write_options.IncludeRenderMeshes = True",
+            "if not Rhino.RhinoDoc.ActiveDoc.WriteFile(str(_raw_path), _write_options):",
+            "    raise Exception('raw 3dm save failed')",
+            "_archive = Rhino.FileIO.File3dm.Read(str(_raw_path))",
+            "if _archive is None:",
+            "    raise Exception('raw 3dm readback failed inside Rhino')",
+            "_archive_sources = {str(_item.Attributes.ObjectId): _item for _item in _archive.Objects}",
+            "_initial_archive_object_count = _archive.Objects.Count",
+            "_witness_mesh_count = sum(len(_items) for _items in _archive_meshes.values())",
+            "for _source_id in sorted(_archive_meshes):",
+            "    _source_object = _archive_sources.get(_source_id)",
+            "    if _source_object is None:",
+            "        raise Exception('archive retained-mesh source identity is missing')",
+            "    _saved_meshes = _archive_meshes[_source_id]",
+            "    _source_geometry = _source_object.Geometry",
+            "    _expected_saved_meshes = _source_geometry.Faces.Count if isinstance(_source_geometry, Rhino.Geometry.Brep) else 1",
+            "    if len(_saved_meshes) != _expected_saved_meshes:",
+            "        raise Exception('archive retained-mesh source denominator mismatch')",
+            "    for _mesh_index, _saved_mesh in enumerate(_saved_meshes):",
+            "        _witness_attributes = Rhino.DocObjects.ObjectAttributes()",
+            "        _witness_attributes.Name = '__archflow_visible_bounds__:' + _source_id + ':' + format(_mesh_index, '04d')",
+            "        _witness_attributes.LayerIndex = _source_object.Attributes.LayerIndex",
+            "        _witness_attributes.Visible = False",
+            "        _witness_attributes.SetUserString('archflow:visible_bounds_witness_for', _source_id)",
+            "        _witness_attributes.SetUserString('archflow:visible_bounds_witness_index', str(_mesh_index))",
+            "        _witness_attributes.SetUserString('archflow:visible_bounds_witness_count', str(len(_saved_meshes)))",
+            "        _witness_id = _archive.Objects.AddMesh(_saved_mesh, _witness_attributes)",
+            "        if str(_witness_id) == '00000000-0000-0000-0000-000000000000':",
+            "            raise Exception('failed to add explicit visible-bounds witness mesh')",
+            "if _archive.Objects.Count != _initial_archive_object_count + _witness_mesh_count:",
+            "    raise Exception('explicit witness mesh archive count mismatch before save')",
+            "_archive_options = Rhino.FileIO.File3dmWriteOptions()",
+            "_archive_options.Version = 8",
+            "_archive_options.SaveRenderMeshes = True",
+            "_archive_options.SaveUserData = True",
+            "if not _archive.Write(str(_output_path), _archive_options):",
+            "    raise Exception('final 3dm save failed')",
+            "_final_archive = Rhino.FileIO.File3dm.Read(str(_output_path))",
+            "if _final_archive is None or _final_archive.Objects.Count != _archive.Objects.Count:",
+            "    raise Exception('explicit witness mesh archive count mismatch after save')",
+            "_raw_path.unlink()",
         )
     )
     indented_body = "\n".join(

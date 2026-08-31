@@ -11752,6 +11752,113 @@
         "Real Rhino COM smoke: succeeded with independent readback, cleanup confirmed, and no residual Rhino process.",
         "Architecture check and compileall passed; canonical-write authority remains false."
       ]
+    },
+    {
+      "id": "M079",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make independent 3DM geometry readback compare the visible trimmed result of the exact CAD translation instead of an untrimmed NURBS control-surface envelope.",
+      "depends_on": [
+        "M078"
+      ],
+      "write_scope": [
+        "archflow/adapters/cad_program.py",
+        "archflow/adapters/cad_execution.py",
+        "archflow/adapters/three_dm_inspector.py",
+        "tests/test_cad_program.py",
+        "tests/test_cad_execution.py",
+        "tests/test_three_dm_inspector.py",
+        "governance/architecture_policy.json",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Brep readback derives bounds from retained trimmed/render geometry or another independently reproducible tight witness and never silently uses an untrimmed control-surface envelope.",
+        "CAD execution fails when the trimmed result differs from the analytic program denominator while valid extrusion, revolve, loft, and boolean results pass within the project-supplied tolerance.",
+        "Missing or stale mesh or bounds witnesses remain fail-closed without design, stage-acceptance, promotion, persistence, or canonical-write authority.",
+        "A real Rhino smoke includes curved and lofted geometry and finishes with independent readback plus exact-host cleanup."
+      ],
+      "tests": [
+        "CAD program, CAD execution, and 3DM inspector target suites",
+        "Architecture check and compileall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "tests/test_cad_program.py",
+          "tests/test_cad_execution.py",
+          "tests/test_three_dm_inspector.py",
+          "-q"
+        ],
+        [
+          "{python}",
+          "-m",
+          "compileall",
+          "-q",
+          "archflow"
+        ]
+      ],
+      "card": "docs/mapping/archive/M079-trimmed-cad-bounds-readback.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M079",
+        "actor": "codex",
+        "verified_at": "2026-08-31T01:18:52.244970+00:00",
+        "contract_sha256": "00c6ad46cdb9b71fa7b2310869463f849016eb2eca27ec5bd2f581e86bc5dd63",
+        "scope_sha256": "9f926277d2d7aca5295efc834de4ff96e299afd17ca7a681d824de99dbcb6695",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "b240f526c98e6aa6ab5972d647a5b2c23191d73763c0c0ee2a8ddb1b10eb14c1",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (186 files, 1.064s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "pytest",
+              "tests/test_cad_program.py",
+              "tests/test_cad_execution.py",
+              "tests/test_three_dm_inspector.py",
+              "-q"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "c4f1c5109fc89b9cc021bc16cf08e5d70ecc6017baf1a8928a3def9eb35b0d6c",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "......................................................                   [100%]\n54 passed in 1.46s\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "compileall",
+              "-q",
+              "archflow"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-30",
+      "evidence": [
+        "54 target tests passed; repository verification PASS; real Rhino curved+loft+instance smoke succeeded with independent explicit trimmed-mesh readback, cleanup confirmed, and no tolerance widening."
+      ]
     }
   ]
 }

@@ -565,16 +565,28 @@ def expected_object_bounds(program) -> dict[str, dict]:
             counts[out] = 1
         elif kind == "revolve":
             a0, a1 = params["axis_start"], params["axis_end"]
+            axis = [float(a1[i]) - float(a0[i]) for i in range(3)]
+            axis_length = math.sqrt(sum(value * value for value in axis))
+            if not math.isfinite(axis_length) or axis_length <= 0.0:
+                raise CadTranslationError(
+                    f"revolve {op_id} requires a finite non-zero axis"
+                )
+            unit_axis = [value / axis_length for value in axis]
             pts = []
             for level, radius in (
                 (a0, max(float(params["start_radius"]), 0.01)),
                 (a1, max(float(params["end_radius"]), 0.01)),
             ):
+                projected_radii = [
+                    radius * math.sqrt(max(0.0, 1.0 - component * component))
+                    for component in unit_axis
+                ]
                 pts.extend(
-                    [
-                        (level[0] - radius, level[1], level[2] - radius),
-                        (level[0] + radius, level[1], level[2] + radius),
-                    ]
+                    tuple(
+                        float(level[axis_index]) + sign * projected_radii[axis_index]
+                        for axis_index in range(3)
+                    )
+                    for sign in (-1.0, 1.0)
                 )
             points[out] = pts
             counts[out] = 1
@@ -586,6 +598,25 @@ def expected_object_bounds(program) -> dict[str, dict]:
             counts[out] = 1
         elif kind == "boolean_difference":
             base = sorted(ins)[int(params.get("base_index", 0))]
+            base_min, base_max = _point_bounds(points[base])
+            for cutter in (object_id for object_id in ins if object_id != base):
+                cutter_min, cutter_max = _point_bounds(points[cutter])
+                disjoint = any(
+                    cutter_max[axis] < base_min[axis]
+                    or cutter_min[axis] > base_max[axis]
+                    for axis in range(3)
+                )
+                strictly_internal = all(
+                    base_min[axis] < cutter_min[axis]
+                    and cutter_max[axis] < base_max[axis]
+                    for axis in range(3)
+                )
+                if not disjoint and not strictly_internal:
+                    raise CadTranslationError(
+                        "boolean difference bounds are not analytically "
+                        f"determined for {op_id}: cutter {cutter} can alter "
+                        "a base extremum"
+                    )
             points[out] = list(points[base])
             counts[out] = 1
         elif kind == "boolean_intersection":
@@ -633,3 +664,14 @@ def expected_object_bounds(program) -> dict[str, dict]:
             "brep_count": counts[object_id],
         }
     return bounds
+
+
+def _point_bounds(
+    values: list[tuple[float, float, float]],
+) -> tuple[list[float], list[float]]:
+    if not values:
+        raise CadTranslationError("analytic bounds require at least one point")
+    return (
+        [min(point[axis] for point in values) for axis in range(3)],
+        [max(point[axis] for point in values) for axis in range(3)],
+    )

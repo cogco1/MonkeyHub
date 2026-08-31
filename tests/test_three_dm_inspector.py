@@ -5,13 +5,17 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from archflow.adapters.three_dm_inspector import (
     ThreeDmInspection,
     ThreeDmInspectionError,
     ThreeDmInspectionErrorCode,
+    _aggregate_bbox,
+    _points_bbox,
     _rgba,
+    _visible_geometry_points,
     inspect_three_dm,
 )
 
@@ -94,7 +98,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
         self.assertIsInstance(first, ThreeDmInspection)
         summary = first.to_dict()
         json.dumps(summary, allow_nan=False, sort_keys=True)
-        self.assertEqual(summary["schema"], "ThreeDmInspectionSummary@1")
+        self.assertEqual(summary["schema"], "ThreeDmInspectionSummary@2")
         self.assertEqual(
             summary["file_sha256"],
             hashlib.sha256(expected_bytes).hexdigest(),
@@ -166,6 +170,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
             },
         )
         self.assertEqual(summary["bbox_contributing_geometry_count"], 3)
+        self.assertEqual(len(summary["visible_bounds_witnesses"]), 3)
         self.assertEqual(len(summary["named_object_bboxes"]), 1)
         self.assertEqual(
             summary["named_object_bboxes"][0]["name"],
@@ -178,6 +183,172 @@ class ThreeDmInspectorTests(unittest.TestCase):
         self.assertEqual(
             summary["named_object_bboxes"][0]["bbox"],
             {"min": [-1.0, 2.0, 3.0], "max": [-1.0, 2.0, 3.0]},
+        )
+
+    def test_brep_bounds_use_retained_face_mesh_vertices(self) -> None:
+        vertices = tuple(
+            SimpleNamespace(X=x, Y=y, Z=z)
+            for x, y, z in (
+                (2, 2, 2),
+                (8, 2, 2),
+                (8, 8, 8),
+                (2, 8, 8),
+            )
+        )
+        mesh = SimpleNamespace(IsValid=True, Vertices=vertices, Faces=(1,))
+        face = SimpleNamespace(GetMesh=lambda mesh_type: mesh)
+        geometry = SimpleNamespace(Faces=(face, face))
+        module = SimpleNamespace(MeshType=SimpleNamespace(Render=1))
+        points, witness = _visible_geometry_points(
+            geometry,
+            "Brep",
+            module,
+            object_id="trimmed-brep",
+        )
+        self.assertEqual(
+            _points_bbox(points),
+            {"min": [2.0, 2.0, 2.0], "max": [8.0, 8.0, 8.0]},
+        )
+        self.assertEqual(
+            witness["source"],
+            "brep_face_render_mesh_vertices",
+        )
+        self.assertEqual(witness["mesh_face_count"], 2)
+        self.assertEqual(witness["mesh_vertex_count"], 8)
+
+    def test_brep_without_retained_face_mesh_fails_closed(self) -> None:
+        geometry = SimpleNamespace(
+            Faces=(SimpleNamespace(GetMesh=lambda mesh_type: None),)
+        )
+        module = SimpleNamespace(MeshType=SimpleNamespace(Render=1))
+        with self.assertRaises(ThreeDmInspectionError) as raised:
+            _visible_geometry_points(
+                geometry,
+                "Brep",
+                module,
+                object_id="missing-witness",
+            )
+
+        self.assertIs(
+            raised.exception.code,
+            ThreeDmInspectionErrorCode.VISIBLE_BOUNDS_UNAVAILABLE,
+        )
+        self.assertIn("no retained render mesh", raised.exception.message)
+
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_hidden_explicit_mesh_witness_is_used_but_not_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "explicit-witness.3dm"
+            model = rhino3dm.File3dm()
+            brep = rhino3dm.Brep.CreateFromBoundingBox(
+                rhino3dm.BoundingBox(
+                    rhino3dm.Point3d(0, 0, 0),
+                    rhino3dm.Point3d(10, 10, 10),
+                )
+            )
+            attributes = rhino3dm.ObjectAttributes()
+            attributes.Name = "explicit-brep"
+            source_id = model.Objects.AddBrep(brep, attributes)
+            face_count = len(tuple(brep.Faces))
+            for index in range(face_count):
+                mesh = rhino3dm.Mesh()
+                for point in (
+                    (2, 2, 2),
+                    (8, 2, 2),
+                    (8, 8, 8),
+                    (2, 8, 8),
+                ):
+                    mesh.Vertices.Add(*point)
+                mesh.Faces.AddFace(0, 1, 2, 3)
+                witness = rhino3dm.ObjectAttributes()
+                witness.Name = (
+                    f"__archflow_visible_bounds__:{str(source_id).lower()}:"
+                    f"{index:04d}"
+                )
+                witness.Visible = False
+                witness.SetUserString(
+                    "archflow:visible_bounds_witness_for",
+                    str(source_id).lower(),
+                )
+                witness.SetUserString(
+                    "archflow:visible_bounds_witness_index",
+                    str(index),
+                )
+                witness.SetUserString(
+                    "archflow:visible_bounds_witness_count",
+                    str(face_count),
+                )
+                model.Objects.AddMesh(mesh, witness)
+            self.assertTrue(model.Write(str(source), 8))
+
+            summary = inspect_three_dm(source).to_dict()
+
+        self.assertEqual(summary["object_count"], 1)
+        self.assertEqual(summary["object_counts_by_type"], {"Brep": 1})
+        self.assertEqual(
+            summary["aggregate_bbox"],
+            {"min": [2.0, 2.0, 2.0], "max": [8.0, 8.0, 8.0]},
+        )
+        self.assertEqual(
+            summary["named_object_bboxes"][0]["bbox_source"],
+            "explicit_trimmed_render_mesh_witnesses",
+        )
+
+    def test_instance_definition_brep_mesh_vertices_are_transformed(self) -> None:
+        vertices = tuple(
+            SimpleNamespace(X=x, Y=y, Z=z)
+            for x, y, z in ((0, 0, 0), (2, 1, 1), (0, 1, 1))
+        )
+        mesh = SimpleNamespace(IsValid=True, Vertices=vertices, Faces=(1,))
+        member_geometry = SimpleNamespace(
+            ObjectType="Brep",
+            Faces=(SimpleNamespace(GetMesh=lambda mesh_type: mesh),),
+        )
+        member = SimpleNamespace(
+            Geometry=member_geometry,
+            Attributes=SimpleNamespace(Id="member-id"),
+        )
+        transform = SimpleNamespace(
+            M00=1,
+            M01=0,
+            M02=0,
+            M03=10,
+            M10=0,
+            M11=1,
+            M12=0,
+            M13=20,
+            M20=0,
+            M21=0,
+            M22=1,
+            M23=30,
+            M30=0,
+            M31=0,
+            M32=0,
+            M33=1,
+        )
+        reference = SimpleNamespace(
+            Geometry=SimpleNamespace(
+                ObjectType="InstanceReference",
+                ParentIdefId="definition-id",
+                Xform=transform,
+            )
+        )
+        module = SimpleNamespace(MeshType=SimpleNamespace(Render=1))
+        aggregate, count = _aggregate_bbox(
+            [
+                {
+                    "is_instance_definition_object": False,
+                    "source": reference,
+                }
+            ],
+            {"member-id": member},
+            {"definition-id": ("member-id",)},
+            module,
+        )
+        self.assertEqual(count, 1)
+        self.assertEqual(
+            aggregate,
+            {"min": [10.0, 20.0, 30.0], "max": [12.0, 21.0, 31.0]},
         )
 
     def test_layer_rgba_is_strictly_validated(self) -> None:
