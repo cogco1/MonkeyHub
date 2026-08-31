@@ -342,6 +342,11 @@ def translate_to_rhino_python(
             profiles = params["profiles"]
             size = int(params["profile_size"])
             cap_ends = bool(params.get("cap_ends", True))
+            loft_type = params.get("loft_type", "normal")
+            if loft_type not in {"normal", "straight"}:
+                raise CadTranslationError(
+                    f"loft {op_id} has unsupported loft_type {loft_type!r}"
+                )
             rings = [
                 profiles[i : i + size]
                 for i in range(0, len(profiles), size)
@@ -352,7 +357,11 @@ def translate_to_rhino_python(
                     f"({p[0]},{p[2]},{p[1]})" for p in [*ring, ring[0]]
                 )
                 lines.append(f"_rings.append(rs.AddPolyline([{pts}]))")
-            lines.append("_srf = rs.AddLoftSrf(_rings)")
+            lines.append(
+                "_srf = rs.AddLoftSrf(_rings)"
+                if loft_type == "normal"
+                else "_srf = rs.AddLoftSrf(_rings, loft_type=2)"
+            )
             if cap_ends:
                 lines.append("rs.CapPlanarHoles(_srf[0])")
             lines.extend(

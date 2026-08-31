@@ -11956,6 +11956,103 @@
       "evidence": [
         "16 CAD translation tests passed; cap_ends=false omits Rhino capping while the default/cap_ends=true path is unchanged; repository verification, architecture check, compileall, and diff check passed."
       ]
+    },
+    {
+      "id": "M081",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Expose a typed straight-loft interpolation mode in Rhino CAD translation so profile-derived analytic bounds remain exact instead of being violated by smooth NURBS end overshoot.",
+      "depends_on": [
+        "M080"
+      ],
+      "write_scope": [
+        "archflow/adapters/cad_program.py",
+        "tests/test_cad_program.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "loft_type=straight emits Rhino ruled sections while the absent/default value preserves normal loft behavior.",
+        "Unsupported loft types fail before script execution and cannot silently map to another interpolation.",
+        "No project dimension, component name, or tolerance exception enters the reusable adapter."
+      ],
+      "tests": [
+        "CAD translation straight/default/invalid loft-type tests",
+        "Architecture check and compileall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "tests/test_cad_program.py",
+          "-q"
+        ],
+        [
+          "{python}",
+          "-m",
+          "compileall",
+          "-q",
+          "archflow"
+        ]
+      ],
+      "card": "docs/mapping/archive/M081-typed-straight-loft-translation.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M081",
+        "actor": "codex",
+        "verified_at": "2026-08-31T01:26:51.047102+00:00",
+        "contract_sha256": "da9b7cfcd455fb245a8cbb889a72cf093f982dc7b295f6a08e0099b3c9488d93",
+        "scope_sha256": "bf9c675a75f393358e0e9cce1cc7b96489dbb4b9f4ff64084e82a937992a7bd8",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "220305a8c51b5dcbe5a326a39448a168ffd9c401a93889e962e2acb147a7a196",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (186 files, 1.037s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "pytest",
+              "tests/test_cad_program.py",
+              "-q"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "f54f24419c787ef8e276c816417daf19d41d14c97e1e5f07f6e3f78478d15aab",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": ".................                                                        [100%]\n17 passed in 0.22s\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "compileall",
+              "-q",
+              "archflow"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-30",
+      "evidence": [
+        "17 CAD translation tests passed; typed straight loft emits Rhino ruled sections, default normal loft is unchanged, invalid types fail closed; repository verification, architecture check, compileall, and diff check passed."
+      ]
     }
   ]
 }

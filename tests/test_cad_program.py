@@ -80,6 +80,44 @@ class TranslateTest(unittest.TestCase):
         self.assertNotIn("rs.CapPlanarHoles(_srf[0])", open_loft.script)
         self.assertIn("rs.AddLoftSrf(_rings)", open_loft.script)
 
+    def test_loft_type_straight_is_typed_and_invalid_values_fail(self):
+        parameters = {
+            "profile_size": 3,
+            "profiles": [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 2.0, 0.0],
+                [1.0, 2.0, 0.0],
+                [0.0, 2.0, 1.0],
+            ],
+        }
+        straight = translate_to_rhino_python(
+            program(
+                op(
+                    "straight",
+                    "loft",
+                    ["straight-object"],
+                    loft_type="straight",
+                    **parameters,
+                )
+            )
+        )
+
+        self.assertIn("rs.AddLoftSrf(_rings, loft_type=2)", straight.script)
+        with self.assertRaisesRegex(CadTranslationError, "unsupported loft_type"):
+            translate_to_rhino_python(
+                program(
+                    op(
+                        "invalid",
+                        "loft",
+                        ["invalid-object"],
+                        loft_type="smooth-ish",
+                        **parameters,
+                    )
+                )
+            )
+
     def test_script_is_deterministic_and_names_physical_objects(self):
         build = program(
             op(

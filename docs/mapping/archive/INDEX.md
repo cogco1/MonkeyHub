@@ -147,5 +147,6 @@ Which completed work has named acceptance evidence?
 | M078 | modify | done | Harden reusable staged control and CAD externalization: exact Stage 0 project entry, claim-bound architectural invariants, and exact P036-bound Rhino execution whose success requires complete independent semantic and geometric readback. | [M078](M078-exact-stage-entry-and-cad-externalization.md) |
 | M079 | modify | done | Make independent 3DM geometry readback compare the visible trimmed result of the exact CAD translation instead of an untrimmed NURBS control-surface envelope. | [M079](M079-trimmed-cad-bounds-readback.md) |
 | M080 | modify | done | Honor an explicit open-ended loft in exact Rhino translation so a measured ring profile can remain an actual opening instead of being silently capped or rebuilt through an analytically indeterminate boolean. | [M080](M080-explicit-open-loft-translation.md) |
+| M081 | modify | done | Expose a typed straight-loft interpolation mode in Rhino CAD translation so profile-derived analytic bounds remain exact instead of being violated by smooth NURBS end overshoot. | [M081](M081-typed-straight-loft-translation.md) |
 
 [Back to RMPA](../README.md)
