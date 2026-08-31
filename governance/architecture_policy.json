@@ -85,6 +85,16 @@
       "reason": "Writes a synthetic candidate only inside the supplied speculative workspace."
     },
     {
+      "path": "archflow/adapters/cad_execution.py",
+      "function": "prepare_rhino_three_dm_export",
+      "operations": [
+        "open_write"
+      ],
+      "kind": "adapter_workspace",
+      "owner": "M078",
+      "reason": "Exclusively creates a deterministic Rhino script inside the explicitly supplied non-symlink speculative workspace; saved 3DM output remains non-canonical."
+    },
+    {
       "path": "archflow/adapters/minecraft_mcp.py",
       "function": "_write_artifact",
       "operations": [

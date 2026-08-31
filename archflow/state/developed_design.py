@@ -1384,6 +1384,22 @@ class DevelopedDesignState:
                 "developed component does not exist in the selected "
                 f"semantic component tree: {sorted(unknown_component_ids)}"
             )
+        schematic_parent_ids = {
+            item.parent_component_id
+            for item in self.selected_schematic.option.proposal.components
+            if item.parent_component_id is not None
+        }
+        schematic_leaf_ids = schematic_component_ids - schematic_parent_ids
+        missing_component_ids = schematic_leaf_ids - set(component_map)
+        if (
+            self.coordination_status
+            is DevelopmentCoordinationStatus.COORDINATED
+            and missing_component_ids
+        ):
+            raise DevelopedDesignError(
+                "coordinated development omitted selected semantic leaves: "
+                f"{sorted(missing_component_ids)}"
+            )
         selected_refs = {
             self.selected_schematic.ref,
             self.selected_schematic.option.ref,

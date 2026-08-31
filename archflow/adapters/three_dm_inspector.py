@@ -287,6 +287,7 @@ def _layers(
             "id": layer_id,
             "name": _string(layer.Name, "layer name"),
             "full_path": _string(layer.FullPath, "layer full path"),
+            "color_rgba": _rgba(layer.Color, "layer color"),
             "parent_id": None if parent_id == _EMPTY_UUID else parent_id,
             "visible": bool(layer.Visible),
             "locked": bool(layer.Locked),
@@ -362,6 +363,7 @@ def _named_object_bboxes(
                 "object_id": item["id"],
                 "name": item["name"],
                 "type": item["type"],
+                "layer_path": item["layer_path"],
                 "bbox": {
                     "min": list(_point(bbox.Min, "named object bbox minimum")),
                     "max": list(_point(bbox.Max, "named object bbox maximum")),
@@ -503,6 +505,8 @@ def _object_user_strings(
         rows.append(
             {
                 "object_id": item["id"],
+                "name": item["name"],
+                "layer_path": item["layer_path"],
                 "attributes": attributes,
                 "geometry": geometry,
             }
@@ -657,6 +661,19 @@ def _point(value: Any, field: str) -> tuple[float, float, float]:
         _number(value.Y, field),
         _number(value.Z, field),
     )
+
+
+def _rgba(value: Any, field: str) -> list[int]:
+    if not isinstance(value, tuple) or len(value) != 4:
+        raise TypeError(f"{field} must be a four-channel tuple")
+    channels: list[int] = []
+    for channel in value:
+        if isinstance(channel, bool) or not isinstance(channel, int):
+            raise TypeError(f"{field} channels must be integers")
+        if channel < 0 or channel > 255:
+            raise ValueError(f"{field} channels must be between 0 and 255")
+        channels.append(channel)
+    return channels
 
 
 def _units(value: Any) -> dict[str, object]:

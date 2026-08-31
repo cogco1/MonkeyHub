@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-28",
+  "updated_on": "2026-08-30",
   "phase": "P7 - semantic geometry production closure proven",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -11623,6 +11623,134 @@
       "completed_on": "2026-08-28",
       "evidence": [
         "material.py: MaterialIntent (mandatory non-empty source_refs, deterministic display color), MaterialLedger (assignments only over declared intents), ledger_coverage joining bindings with typed unassigned and orphan lists. CAD projection: material layer colors + archflow:material user text, in the semantic round-trip expectation; IFC projection: pset entry + IfcMaterial via IfcRelAssociatesMaterial (re-read verified). Live monument ledger: granite (colonnade, citing the retained octastyle adoption quote 'large granite Corinthian columns') and roman-concrete (rotunda+dome, citing the research-006 multi-source adoption); 7 components honestly typed unassigned, coverage 30 percent; material CAD script sha retained; material IFC export VERIFIED into workspace exports. tests/test_material.py (7) green; suite 621; archcheck PASS."
+      ]
+    },
+    {
+      "id": "M078",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Harden reusable staged control and CAD externalization: exact Stage 0 project entry, claim-bound architectural invariants, and exact P036-bound Rhino execution whose success requires complete independent semantic and geometric readback.",
+      "depends_on": [
+        "P036",
+        "P071",
+        "P072",
+        "M069"
+      ],
+      "write_scope": [
+        "archflow/runtime/stage0_preparation.py",
+        "archflow/project/runtime.py",
+        "archflow/project/__init__.py",
+        "archflow/runtime/__init__.py",
+        "archflow/state/developed_design.py",
+        "archflow/validation/architectural_invariants.py",
+        "archflow/adapters/cad_program.py",
+        "archflow/adapters/cad_execution.py",
+        "archflow/adapters/three_dm_inspector.py",
+        "tests/test_stage0_preparation.py",
+        "tests/test_design_development.py",
+        "tests/test_architectural_invariants.py",
+        "tests/test_cad_program.py",
+        "tests/test_cad_execution.py",
+        "tests/test_three_dm_inspector.py",
+        "governance/architecture_policy.json",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Stage 0 rejects historical, cross-scope, epoch-ambiguous, and same-epoch checkpoint-ambiguous evidence while preserving canonical HEAD.",
+        "A developed-design state cannot claim COORDINATED while omitting any leaf component from the selected schematic semantic tree.",
+        "Architectural invariant checkers consume project-supplied claims and observations, retain exact profiles, and preserve UNKNOWN without design or acceptance authority.",
+        "CAD plans bind an exact P036 program record and reject path escape, symlinks, script mutation, stale output, translation loss, or caller identity drift.",
+        "CAD success requires independent exact units, provenance, object multiplicity, semantics, materials, blocks, and tolerance-bounded geometry readback."
+      ],
+      "tests": [
+        "Stage 0, architectural invariants, CAD execution, CAD program, and 3DM inspector target suites",
+        "Architecture check and compileall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "tests/test_stage0_preparation.py",
+          "tests/test_design_development.py",
+          "tests/test_architectural_invariants.py",
+          "tests/test_cad_execution.py",
+          "tests/test_cad_program.py",
+          "tests/test_three_dm_inspector.py",
+          "-q"
+        ],
+        [
+          "{python}",
+          "-m",
+          "compileall",
+          "-q",
+          "archflow"
+        ]
+      ],
+      "card": "docs/mapping/archive/M078-exact-stage-entry-and-cad-externalization.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M078",
+        "actor": "codex",
+        "verified_at": "2026-08-31T00:34:05.576203+00:00",
+        "contract_sha256": "f2058bc276554e497d298ba16a815ced1ff1e4dbe82d00846662afd90fbfdfc3",
+        "scope_sha256": "739dac08a75b45ce0e16c22b321001b404384edb96ead6c7e22dbfe9e4cbde2a",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "ca58b2980744c3bb54ac0f0db0132168cfe9764968b56693133bf1fa3b695cb2",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (186 files, 1.055s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "pytest",
+              "tests/test_stage0_preparation.py",
+              "tests/test_design_development.py",
+              "tests/test_architectural_invariants.py",
+              "tests/test_cad_execution.py",
+              "tests/test_cad_program.py",
+              "tests/test_three_dm_inspector.py",
+              "-q"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "3dd15d50e878fed7d6bbd74d584bde6dabf6a28c5a1aca81e2ba81877eb42720",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "........................................................................ [ 88%]\n.........                                                                [100%]\n81 passed in 2.55s\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "compileall",
+              "-q",
+              "archflow"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-30",
+      "evidence": [
+        "Target suites: 99 passed; repository verification receipt PASS.",
+        "Real Rhino COM smoke: succeeded with independent readback, cleanup confirmed, and no residual Rhino process.",
+        "Architecture check and compileall passed; canonical-write authority remains false."
       ]
     }
   ]

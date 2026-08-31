@@ -55,6 +55,7 @@ class CadTranslation:
     script: str
     physical_object_ids: tuple[str, ...]
     losses: tuple[dict, ...]
+    layer_colors: tuple[tuple[str, tuple[int, int, int]], ...]
 
 
 def _params(operation) -> dict[str, object]:
@@ -85,6 +86,50 @@ def _layer_color(component_key: str) -> tuple[int, int, int]:
         60 + digest[1] % 160,
         60 + digest[2] % 160,
     )
+
+
+def _rgb(value: object, field: str) -> tuple[int, int, int]:
+    if not isinstance(value, tuple) or len(value) != 3:
+        raise CadTranslationError(f"{field} must be a three-channel tuple")
+    channels: list[int] = []
+    for channel in value:
+        if isinstance(channel, bool) or not isinstance(channel, int):
+            raise CadTranslationError(f"{field} channels must be integers")
+        if channel < 0 or channel > 255:
+            raise CadTranslationError(
+                f"{field} channels must be between 0 and 255"
+            )
+        channels.append(channel)
+    return channels[0], channels[1], channels[2]
+
+
+def _resolved_layer_colors(
+    layer_paths: set[str],
+    *,
+    material_by_component: Mapping[str, str] | None,
+    material_colors: Mapping[str, tuple[int, int, int]] | None,
+) -> tuple[tuple[str, tuple[int, int, int]], ...]:
+    """Resolve the one color table used by both the script and its contract.
+
+    The root layer has no component or material assignment, so it always uses
+    the same deterministic path-derived fallback as an explicit contract.
+    """
+
+    rows: list[tuple[str, tuple[int, int, int]]] = []
+    for layer_path in sorted({_ROOT_LAYER, *layer_paths}):
+        color = _layer_color(layer_path)
+        if layer_path != _ROOT_LAYER:
+            component = layer_path.split("::", 1)[1]
+            material = (material_by_component or {}).get(component)
+            if material is not None and material_colors is not None:
+                color = material_colors.get(material, color)
+        rows.append(
+            (
+                layer_path,
+                _rgb(color, f"layer color for {layer_path}"),
+            )
+        )
+    return tuple(rows)
 
 
 def expected_object_semantics(
@@ -214,23 +259,14 @@ def translate_to_rhino_python(
         "    if not isinstance(guids, list): guids = [guids]",
         "    objects[object_id] = guids",
         "",
-        f"rs.AddLayer({_ROOT_LAYER!r})",
     ]
-    layer_rows = sorted(
-        {
-            row["layer"]
-            for row in semantics["objects"].values()
-            if row["layer"] != _ROOT_LAYER
-        }
+    layer_colors = _resolved_layer_colors(
+        {row["layer"] for row in semantics["objects"].values()},
+        material_by_component=material_by_component,
+        material_colors=material_colors,
     )
-    for layer in layer_rows:
-        component = layer.split("::", 1)[1]
-        material = (material_by_component or {}).get(component)
-        if material is not None and material_colors is not None:
-            color = material_colors.get(material, _layer_color(layer))
-        else:
-            color = _layer_color(layer)
-        lines.append(f"rs.AddLayer({layer!r}, {tuple(color)!r})")
+    for layer_path, color in layer_colors:
+        lines.append(f"rs.AddLayer({layer_path!r}, {color!r})")
     for key, value in sorted((provenance or {}).items()):
         lines.append(
             f"rs.SetDocumentUserText({f'archflow:{key}'!r}, {value!r})"
@@ -475,6 +511,7 @@ def translate_to_rhino_python(
         script="\n".join(lines),
         physical_object_ids=physical,
         losses=tuple(losses),
+        layer_colors=layer_colors,
     )
 
 

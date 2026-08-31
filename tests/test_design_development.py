@@ -354,7 +354,10 @@ def _coordinated_state(
             ),
         ),
         resolved_obligation_ids=tuple(
-            item.obligation_id for item in state.obligations
+            item.obligation_id
+            for item in state.obligations
+            if include_material
+            or item.discipline is not DevelopmentDiscipline.MATERIALS
         ),
         authority_id="architect-lead",
         decision_ref=DECISION,
@@ -504,6 +507,17 @@ class DesignDevelopmentTests(unittest.TestCase):
             DevelopedDesignState.from_dict(payload),
             coordinated,
         )
+
+    def test_coordinated_state_cannot_omit_selected_components(self) -> None:
+        _, _, _, coordinated = _coordinated_state()
+        payload = coordinated.to_dict()
+        payload["components"] = payload["components"][:-1]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "omitted selected semantic leaves",
+        ):
+            DevelopedDesignState.from_dict(payload)
 
     def test_schematic_change_invalidates_only_dependency_closure(
         self,

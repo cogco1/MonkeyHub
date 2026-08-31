@@ -11,6 +11,7 @@ from archflow.adapters.three_dm_inspector import (
     ThreeDmInspection,
     ThreeDmInspectionError,
     ThreeDmInspectionErrorCode,
+    _rgba,
     inspect_three_dm,
 )
 
@@ -117,6 +118,10 @@ class ThreeDmInspectorTests(unittest.TestCase):
             [item["total"] for item in summary["object_counts_by_layer"]],
             [2, 2],
         )
+        self.assertEqual(
+            [item["color_rgba"] for item in summary["layers"]],
+            [[10, 20, 30, 255], [40, 50, 60, 128]],
+        )
 
         self.assertEqual(len(summary["instance_definitions"]), 1)
         definition = summary["instance_definitions"][0]
@@ -137,6 +142,14 @@ class ThreeDmInspectorTests(unittest.TestCase):
             ],
         )
         self.assertEqual(len(summary["object_user_strings"]), 1)
+        self.assertEqual(
+            summary["object_user_strings"][0]["name"],
+            "axis-witness",
+        )
+        self.assertEqual(
+            summary["object_user_strings"][0]["layer_path"],
+            "Main",
+        )
         self.assertEqual(
             summary["object_user_strings"][0]["attributes"],
             [{"key": "discipline", "value": "architecture"}],
@@ -159,9 +172,30 @@ class ThreeDmInspectorTests(unittest.TestCase):
             "axis-witness",
         )
         self.assertEqual(
+            summary["named_object_bboxes"][0]["layer_path"],
+            "Main",
+        )
+        self.assertEqual(
             summary["named_object_bboxes"][0]["bbox"],
             {"min": [-1.0, 2.0, 3.0], "max": [-1.0, 2.0, 3.0]},
         )
+
+    def test_layer_rgba_is_strictly_validated(self) -> None:
+        self.assertEqual(
+            _rgba((0, 127, 255, 64), "layer color"),
+            [0, 127, 255, 64],
+        )
+        for invalid in (
+            (0, 0, 0),
+            [0, 0, 0, 255],
+            (True, 0, 0, 255),
+            (0.0, 0, 0, 255),
+            (-1, 0, 0, 255),
+            (0, 0, 0, 256),
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises((TypeError, ValueError)):
+                    _rgba(invalid, "layer color")
 
     def _write_model(self, source: Path) -> None:
         model = rhino3dm.File3dm()
@@ -171,9 +205,11 @@ class ThreeDmInspectorTests(unittest.TestCase):
 
         main = rhino3dm.Layer()
         main.Name = "Main"
+        main.Color = (10, 20, 30, 255)
         main_index = model.Layers.Add(main)
         secondary = rhino3dm.Layer()
         secondary.Name = "Secondary"
+        secondary.Color = (40, 50, 60, 128)
         secondary_index = model.Layers.Add(secondary)
 
         point_attributes = rhino3dm.ObjectAttributes()

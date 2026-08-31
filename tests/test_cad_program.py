@@ -78,6 +78,11 @@ class TranslateTest(unittest.TestCase):
             ("base-object", "row-object"), first.physical_object_ids
         )
         self.assertEqual((), first.losses)
+        self.assertEqual(first.layer_colors, second.layer_colors)
+        self.assertEqual(
+            tuple(sorted(first.layer_colors)),
+            first.layer_colors,
+        )
         self.assertIn("rs.AddBox", first.script)
         self.assertIn("CAD_MEASURES=", first.script)
 
@@ -335,6 +340,35 @@ class SemanticEmissionTest(unittest.TestCase):
         first = translate_to_rhino_python(semantic_build())
         second = translate_to_rhino_python(semantic_build())
         self.assertEqual(first.script, second.script)
+        self.assertEqual(first.layer_colors, second.layer_colors)
+
+    def test_layer_color_contract_drives_add_layer_material_override(self):
+        translation = translate_to_rhino_python(
+            semantic_build(),
+            material_by_component={"colonnade": "limestone"},
+            material_colors={"limestone": (11, 22, 33)},
+        )
+        colors = dict(translation.layer_colors)
+        self.assertEqual(
+            ("archflow", "archflow::colonnade"),
+            tuple(layer for layer, _ in translation.layer_colors),
+        )
+        self.assertEqual((11, 22, 33), colors["archflow::colonnade"])
+        for layer_path, color in translation.layer_colors:
+            self.assertIn(
+                f"rs.AddLayer({layer_path!r}, {color!r})",
+                translation.script,
+            )
+
+    def test_layer_color_contract_has_deterministic_fallback(self):
+        default = translate_to_rhino_python(semantic_build())
+        missing_material_color = translate_to_rhino_python(
+            semantic_build(),
+            material_by_component={"colonnade": "limestone"},
+            material_colors={},
+        )
+        self.assertEqual(default.layer_colors, missing_material_color.layer_colors)
+        self.assertIn("archflow", dict(default.layer_colors))
 
 
 if __name__ == "__main__":
