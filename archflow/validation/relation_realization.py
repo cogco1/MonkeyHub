@@ -9,12 +9,8 @@ never expands endpoint sets into a Cartesian product.
 from __future__ import annotations
 
 from collections import Counter, defaultdict, deque
+from dataclasses import replace
 
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-)
 from archflow.relations.contracts import (
     ArchitecturalRelationGraph,
     ArchitecturalRelationKind,
@@ -41,19 +37,84 @@ from archflow.validation.contracts import (
 )
 
 
-def relation_realization_stage_requirement(
-    graph: ArchitecturalRelationGraph,
-    manifest: RelationRealizationManifest,
-) -> StageCheckRequirement:
-    """Compile the exact pre-check denominator for StageRequirementProfile."""
+_RELATION_PURPOSES = {
+    ArchitecturalRelationKind.INTERFACE: (
+        RelationRealizationPurpose.CONTACT_INTERFACE
+    ),
+    ArchitecturalRelationKind.INTERSECTS: (
+        RelationRealizationPurpose.CONTACT_INTERFACE
+    ),
+    ArchitecturalRelationKind.HOST: RelationRealizationPurpose.HOST_INTERFACE,
+    ArchitecturalRelationKind.HOSTS_VOID: (
+        RelationRealizationPurpose.HOST_INTERFACE
+    ),
+    ArchitecturalRelationKind.FILLS_VOID: (
+        RelationRealizationPurpose.HOST_INTERFACE
+    ),
+    ArchitecturalRelationKind.SUPPORT: (
+        RelationRealizationPurpose.SUPPORT_CHAIN
+    ),
+    ArchitecturalRelationKind.LOAD_TRANSFER: (
+        RelationRealizationPurpose.LOAD_PATH
+    ),
+    ArchitecturalRelationKind.ACCESS: (
+        RelationRealizationPurpose.WALKING_PATH
+    ),
+    ArchitecturalRelationKind.ALLOWS_PASSAGE: (
+        RelationRealizationPurpose.WALKING_PATH
+    ),
+}
 
-    return StageCheckRequirement(
-        requirement_id=manifest.check_id,
-        checker_id=RELATION_REALIZATION_CHECKER_ID,
-        target_kind=RequirementTargetKind.RELATION,
-        basis_mode=RequirementBasisMode.UNIVERSAL,
-        denominator_refs=relation_realization_denominator(graph, manifest),
+_DIRECT_PAIRING_RELATION_KINDS = frozenset(
+    {
+        ArchitecturalRelationKind.INTERFACE,
+        ArchitecturalRelationKind.INTERSECTS,
+        ArchitecturalRelationKind.HOST,
+        ArchitecturalRelationKind.HOSTS_VOID,
+        ArchitecturalRelationKind.FILLS_VOID,
+    }
+)
+
+
+def _required_relation_purpose(
+    relation_kind: ArchitecturalRelationKind,
+) -> RelationRealizationPurpose:
+    if not isinstance(relation_kind, ArchitecturalRelationKind):
+        raise TypeError("relation_kind must be ArchitecturalRelationKind")
+    return _RELATION_PURPOSES.get(
+        relation_kind,
+        RelationRealizationPurpose.GENERIC_PAIR,
     )
+
+
+def _verification_subject_refs(
+    owner: RelationEndpointPairing | RelationObjectPath,
+) -> tuple[str, ...]:
+    """Bind a receipt to the exact topology without a digest fixed point.
+
+    Pair/path refs include their verification binding.  The no-verification
+    owner ref therefore commits the topology that the independent receipt is
+    attesting without making that receipt digest recursively define itself.
+    """
+
+    topology_owner = replace(owner, verification=None)
+    if isinstance(owner, RelationEndpointPairing):
+        refs = (
+            owner.relation_ref,
+            topology_owner.ref,
+            owner.first_binding_ref,
+            owner.second_binding_ref,
+        )
+    elif isinstance(owner, RelationObjectPath):
+        refs = (
+            owner.relation_ref,
+            topology_owner.ref,
+            *owner.endpoint_binding_refs,
+            *owner.pairing_refs,
+        )
+    else:  # pragma: no cover - protected by the private typed call sites
+        raise TypeError("verification owner must be a pairing or path")
+    return tuple(sorted(set(refs)))
 
 
 def _measurement(
@@ -137,32 +198,13 @@ def check_relation_realization(
             manifest.ref,
         )
 
-    def purpose_matches_relation(
-        purpose: RelationRealizationPurpose,
-        relation_kind: ArchitecturalRelationKind,
-    ) -> bool:
-        required = {
-            ArchitecturalRelationKind.SUPPORT: (
-                RelationRealizationPurpose.SUPPORT_CHAIN
-            ),
-            ArchitecturalRelationKind.LOAD_TRANSFER: (
-                RelationRealizationPurpose.LOAD_PATH
-            ),
-            ArchitecturalRelationKind.ACCESS: (
-                RelationRealizationPurpose.WALKING_PATH
-            ),
-            ArchitecturalRelationKind.ALLOWS_PASSAGE: (
-                RelationRealizationPurpose.WALKING_PATH
-            ),
-        }.get(relation_kind)
-        return required is None or purpose is required
-
     def verify_independent_receipt(
         verification: RelationVerificationBinding | None,
         *,
         owner_ref: str,
         relation_ref: str,
         relation_kind: ArchitecturalRelationKind,
+        expected_subject_refs: tuple[str, ...],
         expected_purpose: RelationRealizationPurpose | None = None,
     ) -> bool:
         if verification is None:
@@ -182,19 +224,19 @@ def check_relation_realization(
                 verification.ref,
             )
             return False
-        if not purpose_matches_relation(verification.purpose, relation_kind):
+        if verification.purpose is not _required_relation_purpose(relation_kind):
             add(
                 "relation-verification-purpose-incompatible",
-                "walking, load, and support verification purposes are not interchangeable",
+                "contact, host, walking, load, support, and generic verification purposes are not interchangeable",
                 owner_ref,
                 relation_ref,
                 verification.ref,
             )
             return False
-        if relation_ref not in verification.subject_refs:
+        if verification.subject_refs != expected_subject_refs:
             add(
                 "relation-verification-subject-unbound",
-                "independent verification does not include the exact semantic relation",
+                "independent verification does not exactly bind its semantic relation, owner topology, and binding/pairing denominator",
                 owner_ref,
                 relation_ref,
                 verification.ref,
@@ -764,10 +806,10 @@ def check_relation_realization(
         relation = relations[path.relation_ref]
         for pairing_ref in path.pairing_refs:
             pairing_path_purposes[pairing_ref].add(path.purpose)
-        if not purpose_matches_relation(path.purpose, relation.kind):
+        if path.purpose is not _required_relation_purpose(relation.kind):
             add(
                 "relation-path-purpose-incompatible",
-                "walking, load, and support paths are separate relation obligations",
+                "contact, host, walking, load, and support paths are separate relation obligations",
                 path.ref,
                 relation.ref,
             )
@@ -777,9 +819,20 @@ def check_relation_realization(
             owner_ref=path.ref,
             relation_ref=relation.ref,
             relation_kind=relation.kind,
+            expected_subject_refs=_verification_subject_refs(path),
             expected_purpose=path.purpose,
         ):
-            verified_path_pairing_refs.update(path.pairing_refs)
+            # A direct relation without semantic via endpoints is realized by
+            # independently verified object pairs, never by path closure.
+            has_via_endpoint = any(
+                participant.role == "via"
+                for participant in relation.participants
+            )
+            if (
+                relation.kind not in _DIRECT_PAIRING_RELATION_KINDS
+                or has_via_endpoint
+            ):
+                verified_path_pairing_refs.update(path.pairing_refs)
 
     for pairing_ref, purposes in pairing_path_purposes.items():
         if len(purposes) > 1:
@@ -801,6 +854,7 @@ def check_relation_realization(
             owner_ref=pairing.ref,
             relation_ref=relation.ref,
             relation_kind=relation.kind,
+            expected_subject_refs=_verification_subject_refs(pairing),
         )
 
     # De-duplicate any convergent diagnostics before constructing the strict
@@ -896,6 +950,5 @@ validate_relation_realization = check_relation_realization
 __all__ = [
     "RELATION_REALIZATION_CHECKER_ID",
     "check_relation_realization",
-    "relation_realization_stage_requirement",
     "validate_relation_realization",
 ]

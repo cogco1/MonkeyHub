@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import math
 import unittest
 from dataclasses import replace
 
 from archflow.contracts.canonical import canonical_digest
+from archflow.control.baseline import (
+    BASELINE_LEVEL_ROLES,
+    StageBaselineSourceSet,
+    StageBaselineStatus,
+    baseline_level_for_design_phase,
+    compile_stage_baseline_coverage,
+)
 from archflow.control.convergence import (
     StageConvergenceEvidence,
     StageConvergencePolicy,
@@ -33,6 +41,12 @@ from archflow.control.search_policy import (
     SearchPolicyRequest,
 )
 from archflow.control.stage_closure import compile_composite_stage_closure
+from archflow.control.stage_subjects import (
+    StageSubjectDisposition,
+    StageSubjectInventory,
+    StageSubjectInventoryEntry,
+    StageSubjectRoleObligation,
+)
 from archflow.evidence.applicability import (
     AllowedClaimUse,
     ApplicabilityDisposition,
@@ -46,6 +60,7 @@ from archflow.project.refs import (
     ProjectVersionRef,
     RunRef,
 )
+from archflow.project.manifest import ProjectManifest
 from archflow.research.adoption import PrecedentAdoption, PrecedentFact
 from archflow.research.branch import BranchPrecedentAdoption
 from archflow.runtime.hierarchical_search import (
@@ -64,11 +79,13 @@ from archflow.runtime.hierarchical_search import (
     portfolio_candidate_ref,
 )
 from archflow.runtime.branch_portfolio import PersistedDesignPortfolio
+from archflow.runtime.design_controller import ProjectControllerArchiveAdapter
 from archflow.runtime.search_policy import SearchPolicyRegistry
 from archflow.state.build_policy import (
     ConstructabilityTopic,
     PolicyConstraintStrength,
 )
+from archflow.state.design_maturity import DesignPhase
 from archflow.state.operational_state import (
     DesignObligation,
     ObligationStatus,
@@ -103,6 +120,116 @@ def _record(
     )
 
 
+def _branch_record(
+    branch: BranchRef,
+    name: str,
+    digest_char: str | None = None,
+    *,
+    payload: dict[str, object] | None = None,
+) -> ProjectRecordRef:
+    if payload is not None:
+        encoded = json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        sha256 = hashlib.sha256(
+            (encoded + "\n").encode("utf-8")
+        ).hexdigest()
+    elif digest_char is not None:
+        sha256 = digest_char * 64
+    else:
+        raise ValueError("branch record requires a payload or digest char")
+    return ProjectRecordRef(
+        project_id=branch.run.project_id,
+        relative_path=(
+            f"runs/{branch.run.run_id}/branches/{branch.branch_id}/records/"
+            f"{name}.json"
+        ),
+        sha256=sha256,
+    )
+
+
+def _record_payload(ref: ProjectRecordRef) -> dict[str, object]:
+    return {
+        "project_id": ref.project_id,
+        "relative_path": ref.relative_path,
+        "sha256": ref.sha256,
+        "media_type": ref.media_type,
+    }
+
+
+class _SearchGovernanceRepository:
+    def __init__(
+        self,
+        run: RunRef,
+        records: dict[ProjectRecordRef, dict[str, object]],
+    ) -> None:
+        self.run = run
+        self.records = records
+
+    def load_manifest(self) -> ProjectManifest:
+        return ProjectManifest(self.run.project_id, format_version=2)
+
+    def load_run(self, run_id: str) -> RunRef:
+        if run_id != self.run.run_id:
+            raise ValueError("unknown run")
+        return self.run
+
+    def load_json(self, ref: ProjectRecordRef) -> dict[str, object]:
+        try:
+            return dict(self.records[ref])
+        except KeyError as exc:
+            raise ValueError("record ref or digest is not retained") from exc
+
+    def list_json(self, **_kwargs: object) -> tuple[ProjectRecordRef, ...]:
+        return tuple(self.records)
+
+    def put_json(self, **_kwargs: object) -> ProjectRecordRef:
+        raise AssertionError("search governance replay is read-only")
+
+
+def _governance_archive(
+    governance: SearchGovernanceEvidence,
+    branch: BranchRef,
+) -> ProjectControllerArchiveAdapter:
+    records = {
+        governance.profile_record_ref: governance.profile.to_dict(),
+        governance.closure_record_ref: governance.closure.to_dict(),
+        governance.convergence_record_ref: governance.convergence.to_dict(),
+        **{
+            item.record_ref: item.receipt.to_dict()
+            for item in governance.closure_checks
+        },
+    }
+    if not governance.is_legacy_read_only:
+        assert governance.baseline_sources_record_ref is not None
+        assert governance.baseline_sources is not None
+        assert governance.stage_subject_inventory_record_ref is not None
+        assert governance.stage_subject_inventory is not None
+        assert governance.baseline_coverage_record_ref is not None
+        assert governance.baseline_coverage is not None
+        records.update(
+            {
+                governance.baseline_sources_record_ref: (
+                    governance.baseline_sources.to_dict()
+                ),
+                governance.stage_subject_inventory_record_ref: (
+                    governance.stage_subject_inventory.to_dict()
+                ),
+                governance.baseline_coverage_record_ref: (
+                    governance.baseline_coverage.to_dict()
+                ),
+            }
+        )
+    return ProjectControllerArchiveAdapter(
+        _SearchGovernanceRepository(branch.run, records),
+        branch=branch,
+    )
+
+
 def _obligation(status: ObligationStatus) -> DesignObligation:
     return DesignObligation(
         obligation_id="close-stage",
@@ -113,17 +240,21 @@ def _obligation(status: ObligationStatus) -> DesignObligation:
     )
 
 
-def _states(run: RunRef) -> tuple[OperationalMarkovState, OperationalMarkovState]:
+def _states(
+    run: RunRef,
+    *,
+    phase: str = DesignPhase.SCHEMATIC_DESIGN.value,
+) -> tuple[OperationalMarkovState, OperationalMarkovState]:
     parent = OperationalMarkovState(
         branch=BranchRef(run=run, branch_id="branch-a", epoch=3),
         compiler_version="hierarchical-search-test",
-        phase="schematic_design",
+        phase=phase,
         obligations=(_obligation(ObligationStatus.OPEN),),
     )
     child = OperationalMarkovState(
         branch=BranchRef(run=run, branch_id="branch-a", epoch=4),
         compiler_version="hierarchical-search-test",
-        phase="schematic_design",
+        phase=phase,
         obligations=(_obligation(ObligationStatus.SATISFIED),),
     )
     return parent, child
@@ -168,6 +299,7 @@ def _stage_governance(
     *,
     closure_passed: bool = True,
     convergence_ready: bool = True,
+    current_baseline: bool = False,
 ) -> SearchGovernanceEvidence:
     requirement = StageCheckRequirement(
         requirement_id="stage-integrity",
@@ -249,20 +381,158 @@ def _stage_governance(
         ),
     )
     run = state.branch.run
-    return SearchGovernanceEvidence(
-        profile_record_ref=_record(run, "stage-profile", "1"),
-        profile=profile,
-        closure_checks=(
-            RetainedCheckReceipt(
-                record_ref=_record(run, "stage-check", "2"),
-                receipt=closure_check,
+    profile_record_ref = _branch_record(
+        state.branch,
+        "stage-profile",
+        payload=profile.to_dict(),
+    )
+    retained_check = RetainedCheckReceipt(
+        record_ref=_branch_record(
+            state.branch,
+            "stage-check",
+            payload=closure_check.to_dict(),
+        ),
+        receipt=closure_check,
+    )
+    closure_record_ref = _branch_record(
+        state.branch,
+        "stage-closure",
+        payload=closure.to_dict(),
+    )
+    convergence_record_ref = _branch_record(
+        state.branch,
+        "stage-convergence",
+        payload=convergence.to_dict(),
+    )
+    if not current_baseline:
+        return SearchGovernanceEvidence.from_dict(
+            {
+                "schema": SearchGovernanceEvidence.LEGACY_SCHEMA,
+                "profile_record_ref": _record_payload(profile_record_ref),
+                "profile": profile.to_dict(),
+                "closure_checks": [
+                    {
+                        "record_ref": _record_payload(
+                            retained_check.record_ref
+                        ),
+                        "receipt": retained_check.receipt.to_dict(),
+                    }
+                ],
+                "closure_record_ref": _record_payload(closure_record_ref),
+                "closure": closure.to_dict(),
+                "convergence_record_ref": _record_payload(
+                    convergence_record_ref
+                ),
+                "convergence": convergence.to_dict(),
+            }
+        )
+
+    level = baseline_level_for_design_phase(DesignPhase(state.phase))
+    record_prefix = (
+        f"runs/{run.run_id}/branches/{state.branch.branch_id}/records"
+    )
+    role_obligations = tuple(
+        StageSubjectRoleObligation(
+            role=role,
+            disposition=StageSubjectDisposition.REQUIRED,
+            target_refs=("design-component:stage-root",),
+            evidence_refs=(f"evidence:{role.value}",),
+            authority_refs=(f"authority:{role.value}",),
+        )
+        for role in sorted(BASELINE_LEVEL_ROLES[level])
+    )
+    inventory = StageSubjectInventory(
+        inventory_id="stage-3-search-subjects",
+        branch=state.branch,
+        stage_id="stage-3",
+        stage_subject_ref=profile.stage_subject_ref,
+        stage_subject_digest=state.state_digest,
+        baseline_level=level,
+        component_proposal_ref=ProjectRecordRef(
+            project_id=run.project_id,
+            relative_path=f"{record_prefix}/component-proposal.json",
+            sha256="5" * 64,
+        ),
+        component_proposal_digest="5" * 64,
+        component_index_ref=ProjectRecordRef(
+            project_id=run.project_id,
+            relative_path=f"{record_prefix}/component-index.json",
+            sha256="6" * 64,
+        ),
+        component_index_digest="6" * 64,
+        entries=(
+            StageSubjectInventoryEntry(
+                component_id="stage-root",
+                identity_ref="design-component:stage-root",
+                parent_component_id=None,
+                semantic_kind="stage-root",
+                component_digest=state.state_digest,
+                geometry_object_ids=(),
+                binding_ids=(),
+                role_obligations=role_obligations,
             ),
         ),
-        closure_record_ref=_record(run, "stage-closure", "3"),
-        closure=closure,
-        convergence_record_ref=_record(run, "stage-convergence", "4"),
-        convergence=convergence,
     )
+    sources = StageBaselineSourceSet()
+    coverage = compile_stage_baseline_coverage(
+        profile,
+        level=level,
+        sources=sources,
+        subject_digest=state.state_digest,
+        subject_inventory=inventory,
+        check_receipts=(closure_check,),
+    )
+    return SearchGovernanceEvidence(
+        profile_record_ref=profile_record_ref,
+        profile=profile,
+        closure_checks=(retained_check,),
+        closure_record_ref=closure_record_ref,
+        closure=closure,
+        convergence_record_ref=convergence_record_ref,
+        convergence=convergence,
+        baseline_sources_record_ref=_branch_record(
+            state.branch,
+            "stage-baseline-sources",
+            payload=sources.to_dict(),
+        ),
+        baseline_sources=sources,
+        stage_subject_inventory_record_ref=_branch_record(
+            state.branch,
+            "stage-subject-inventory",
+            payload=inventory.to_dict(),
+        ),
+        stage_subject_inventory=inventory,
+        baseline_coverage_record_ref=_branch_record(
+            state.branch,
+            "stage-baseline-coverage",
+            payload=coverage.to_dict(),
+        ),
+        baseline_coverage=coverage,
+    )
+
+
+def _replace_governance(
+    governance: SearchGovernanceEvidence,
+    **changes: object,
+) -> SearchGovernanceEvidence:
+    if not governance.is_legacy_read_only:
+        return replace(governance, **changes)
+    payload = governance.to_dict()
+    serializers = {
+        "profile": lambda value: value.to_dict(),
+        "closure_checks": lambda values: [
+            {
+                "record_ref": _record_payload(item.record_ref),
+                "receipt": item.receipt.to_dict(),
+            }
+            for item in values
+        ],
+        "closure": lambda value: value.to_dict(),
+        "convergence": lambda value: value.to_dict(),
+    }
+    for field_name, value in changes.items():
+        payload[field_name] = serializers[field_name](value)
+    return SearchGovernanceEvidence.from_dict(payload)
 
 
 def _hard_check(
@@ -460,13 +730,22 @@ def _context(
     hard_a: CheckStatus = CheckStatus.PASS,
     hard_b: CheckStatus = CheckStatus.PASS,
     covered_a: tuple[str, ...] = HARD_REFS,
+    phase: str = DesignPhase.PROGRAMMING.value,
+    current_baseline: bool = True,
 ) -> tuple[
     HierarchicalSearchCompileInput,
     OperationalMarkovState,
 ]:
     source_portfolio = _portfolio()
-    parent, state = _states(source_portfolio.run)
+    parent, state = _states(source_portfolio.run, phase=phase)
     snapshot = _snapshot(source_portfolio, state)
+    governance = _stage_governance(
+        parent,
+        state,
+        closure_passed=closure_passed,
+        convergence_ready=convergence_ready,
+        current_baseline=current_baseline,
+    )
     context = HierarchicalSearchCompileInput(
         request_id="hierarchical-request-001",
         policy=_policy(),
@@ -495,12 +774,7 @@ def _context(
             ),
         ),
         evidence=(_adopted_evidence(snapshot, state),),
-        governance=_stage_governance(
-            parent,
-            state,
-            closure_passed=closure_passed,
-            convergence_ready=convergence_ready,
-        ),
+        governance=governance,
         budget=budget
         or SearchBudget(
             evaluation_units=2,
@@ -518,6 +792,10 @@ def _context(
         ),
         reopen_envelope=SearchReopenEnvelope(
             ("decision:typology",)
+        ),
+        governance_archive=_governance_archive(
+            governance,
+            state.branch,
         ),
     )
     return context, parent
@@ -589,6 +867,254 @@ class _Policy:
 
 
 class HierarchicalSearchRequestCompilerTests(unittest.TestCase):
+    def test_current_governance_replays_exact_stage_baseline(self):
+        context, _ = _context(
+            phase=DesignPhase.PROGRAMMING.value,
+            current_baseline=True,
+        )
+        governance = context.governance
+
+        request = compile_search_policy_request(context)
+
+        self.assertFalse(governance.is_legacy_read_only)
+        self.assertIs(
+            governance.baseline_coverage.status,
+            StageBaselineStatus.SATISFIED,
+        )
+        self.assertIn(
+            f"/branches/{context.state.branch.branch_id}/records/",
+            governance.baseline_sources_record_ref.relative_path,
+        )
+        self.assertIn(
+            exact_record_ref(governance.baseline_sources_record_ref),
+            request.evidence_refs,
+        )
+        self.assertIn(
+            exact_record_ref(governance.stage_subject_inventory_record_ref),
+            request.evidence_refs,
+        )
+        self.assertIn(
+            exact_record_ref(governance.baseline_coverage_record_ref),
+            request.evidence_refs,
+        )
+        self.assertEqual(
+            SearchGovernanceEvidence.from_dict(governance.to_dict()),
+            governance,
+        )
+
+    def test_current_governance_rejects_run_level_stage_record(self):
+        context, _ = _context(
+            phase=DesignPhase.PROGRAMMING.value,
+            current_baseline=True,
+        )
+        run_level = _record(
+            context.state.branch.run,
+            "stage-baseline-sources",
+            "7",
+        )
+        with self.assertRaisesRegex(
+            HierarchicalSearchProposalError,
+            "requested branch",
+        ):
+            compile_search_policy_request(
+                replace(
+                    context,
+                    governance=replace(
+                        context.governance,
+                        baseline_sources_record_ref=run_level,
+                    ),
+                )
+            )
+
+    def test_current_governance_rejects_same_path_fake_record_digests(self):
+        context, _ = _context(
+            phase=DesignPhase.PROGRAMMING.value,
+            current_baseline=True,
+        )
+        governance = context.governance
+        fields = (
+            "profile_record_ref",
+            "closure_record_ref",
+            "convergence_record_ref",
+            "baseline_sources_record_ref",
+            "stage_subject_inventory_record_ref",
+            "baseline_coverage_record_ref",
+        )
+        for field in fields:
+            with self.subTest(field=field):
+                ref = getattr(governance, field)
+                assert isinstance(ref, ProjectRecordRef)
+                forged = replace(
+                    governance,
+                    **{field: replace(ref, sha256="f" * 64)},
+                )
+                with self.assertRaisesRegex(
+                    HierarchicalSearchProposalError,
+                    "did not replay from exact P036 records",
+                ):
+                    compile_search_policy_request(
+                        replace(context, governance=forged)
+                    )
+
+        retained = governance.closure_checks[0]
+        forged_check = replace(
+            retained,
+            record_ref=replace(
+                retained.record_ref,
+                sha256="f" * 64,
+            ),
+        )
+        with self.assertRaisesRegex(
+            HierarchicalSearchProposalError,
+            "did not replay from exact P036 records",
+        ):
+            compile_search_policy_request(
+                replace(
+                    context,
+                    governance=replace(
+                        governance,
+                        closure_checks=(forged_check,),
+                    ),
+                )
+            )
+
+    def test_structural_fake_cannot_replace_durable_governance_archive(self):
+        context, _ = _context(
+            phase=DesignPhase.PROGRAMMING.value,
+            current_baseline=True,
+        )
+
+        class NoIOReplay:
+            def replay_exact_branch_json_records(self, records):
+                return tuple(item[0] for item in records)
+
+            def replay_accepted_relation_predecessors(self, sources):
+                return tuple(
+                    {
+                        ref
+                        for source in sources.relation_inheritance
+                        for ref in (
+                            source.predecessor.predecessor_checkpoint_ref,
+                            source.predecessor.stage_exit_anchor_ref,
+                            source.predecessor.baseline_sources_ref,
+                            source.predecessor.baseline_coverage_ref,
+                        )
+                    }
+                )
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "concrete durable controller archive adapter",
+        ):
+            replace(context, governance_archive=NoIOReplay())
+
+    def test_concrete_archive_recomputes_p036_json_byte_digest(self):
+        context, _ = _context(
+            phase=DesignPhase.PROGRAMMING.value,
+            current_baseline=True,
+        )
+        forged = replace(
+            context.governance,
+            profile_record_ref=replace(
+                context.governance.profile_record_ref,
+                sha256="f" * 64,
+            ),
+        )
+        caller_built_archive = _governance_archive(
+            forged,
+            context.state.branch,
+        )
+        with self.assertRaisesRegex(
+            HierarchicalSearchProposalError,
+            "did not replay from exact P036 records",
+        ):
+            compile_search_policy_request(
+                replace(
+                    context,
+                    governance=forged,
+                    governance_archive=caller_built_archive,
+                )
+            )
+
+    def test_current_governance_rejects_sparse_stage_profile(self):
+        context, _ = _context(
+            phase=DesignPhase.SCHEMATIC_DESIGN.value,
+            current_baseline=True,
+        )
+        self.assertIs(
+            context.governance.baseline_coverage.status,
+            StageBaselineStatus.OPEN,
+        )
+
+        with self.assertRaisesRegex(
+            HierarchicalSearchProposalError,
+            "sparse, open",
+        ):
+            compile_search_policy_request(context)
+
+    def test_current_governance_rejects_tampered_baseline_receipt(self):
+        context, _ = _context(
+            phase=DesignPhase.PROGRAMMING.value,
+            current_baseline=True,
+        )
+        governance = context.governance
+        tampered = replace(
+            governance.baseline_coverage,
+            profile_id="tampered-profile",
+        )
+
+        with self.assertRaisesRegex(
+            HierarchicalSearchProposalError,
+            "baseline evidence crossed",
+        ):
+            compile_search_policy_request(
+                replace(
+                    context,
+                    governance=replace(
+                        governance,
+                        baseline_coverage=tampered,
+                    ),
+                )
+            )
+
+    def test_current_governance_requires_all_exact_baseline_inputs(self):
+        context, _ = _context(
+            phase=DesignPhase.PROGRAMMING.value,
+            current_baseline=True,
+        )
+        for field_name in (
+            "baseline_sources",
+            "stage_subject_inventory",
+            "baseline_coverage",
+        ):
+            with self.subTest(field=field_name), self.assertRaises(TypeError):
+                replace(
+                    context.governance,
+                    **{field_name: None},
+                )
+
+    def test_legacy_governance_is_explicit_read_only_replay(self):
+        context, _ = _context(current_baseline=False)
+        governance = context.governance
+
+        with self.assertRaisesRegex(
+            HierarchicalSearchProposalError,
+            "legacy governance evidence is read-only",
+        ):
+            compile_search_policy_request(context)
+
+        self.assertTrue(governance.is_legacy_read_only)
+        self.assertEqual(
+            governance.to_dict()["schema"],
+            SearchGovernanceEvidence.LEGACY_SCHEMA,
+        )
+        self.assertEqual(
+            SearchGovernanceEvidence.from_dict(governance.to_dict()),
+            governance,
+        )
+        with self.assertRaises(TypeError):
+            replace(governance)
+
     def test_request_identity_is_derived_from_exact_operational_state(self):
         context, _ = _context()
 
@@ -691,7 +1217,7 @@ class HierarchicalSearchRequestCompilerTests(unittest.TestCase):
             compile_search_policy_request(
                 replace(
                     context,
-                    governance=replace(
+                    governance=_replace_governance(
                         context.governance,
                         closure_checks=(stale_check,),
                     ),
@@ -717,7 +1243,7 @@ class HierarchicalSearchRequestCompilerTests(unittest.TestCase):
             compile_search_policy_request(
                 replace(
                     context,
-                    governance=replace(
+                    governance=_replace_governance(
                         context.governance,
                         profile=stale_profile,
                         closure=stale_closure,
@@ -736,7 +1262,7 @@ class HierarchicalSearchRequestCompilerTests(unittest.TestCase):
             compile_search_policy_request(
                 replace(
                     context,
-                    governance=replace(
+                    governance=_replace_governance(
                         context.governance,
                         convergence=stale_convergence,
                     ),

@@ -29,10 +29,12 @@ from archflow.control import (
     cad_readback_stage_requirement,
     compile_composite_stage_closure,
     compile_stage_baseline_coverage,
+    derive_stage_requirement_profile,
     component_lineage_stage_requirement,
     material_binding_stage_requirement,
     spatial_layout_stage_requirement,
 )
+from archflow.contracts.canonical import canonical_digest
 from archflow.project import BranchRef, ProjectRecordRef
 from archflow.state import DesignPhase
 from archflow.materials.binding import validate_material_bindings
@@ -140,6 +142,23 @@ def physical_sources(
         ),
         assembly=(assembly,),
     )
+
+
+def legacy_sources(
+    sources: StageBaselineSourceSet,
+) -> StageBaselineSourceSet:
+    payload = sources.to_dict()
+    payload["schema"] = StageBaselineSourceSet.LEGACY_SCHEMA
+    payload.pop("relation_topology")
+    payload.pop("relation_realization")
+    payload.pop("relation_inheritance")
+    content = {
+        key: value
+        for key, value in payload.items()
+        if key != "source_set_digest"
+    }
+    payload["source_set_digest"] = canonical_digest(content)
+    return StageBaselineSourceSet.from_dict(payload)
 
 
 def requirement_and_receipts(
@@ -379,7 +398,7 @@ class StageBaselineTests(unittest.TestCase):
                 validator_input=source.validator_input,
             )
 
-    def test_typed_spatial_sources_cover_all_basic_roles(self) -> None:
+    def test_current_spatial_sources_require_relation_topology(self) -> None:
         sources = physical_sources()
         inventory = subject_inventory(
             sources,
@@ -395,7 +414,7 @@ class StageBaselineTests(unittest.TestCase):
             check_receipts=receipts,
         )
 
-        self.assertIs(receipt.status, StageBaselineStatus.SATISFIED)
+        self.assertIs(receipt.status, StageBaselineStatus.OPEN)
         self.assertEqual(
             receipt.stage_subject_inventory_digest,
             inventory.inventory_digest,
@@ -404,13 +423,15 @@ class StageBaselineTests(unittest.TestCase):
             receipt.to_dict()["schema"],
             "StageBaselineCoverageReceipt@3",
         )
-        self.assertEqual(receipt.missing_roles, ())
+        self.assertEqual(
+            receipt.missing_roles,
+            (StageBaselineRole.ASSEMBLY_RELATIONSHIPS,),
+        )
         self.assertEqual(
             {item.role for item in receipt.coverage},
             {
                 StageBaselineRole.COMPONENT_LINEAGE,
                 StageBaselineRole.SPATIAL_ENVELOPE,
-                StageBaselineRole.ASSEMBLY_RELATIONSHIPS,
                 StageBaselineRole.OPENING_CLEARANCE,
                 StageBaselineRole.LOAD_PATH,
             },
@@ -422,6 +443,43 @@ class StageBaselineTests(unittest.TestCase):
             StageBaselineCoverageReceipt.from_dict(receipt.to_dict()),
             receipt,
         )
+
+        self.assertEqual(
+            StageBaselineSourceSet.from_dict(sources.to_dict()),
+            sources,
+        )
+
+    def test_exact_legacy_spatial_source_replays_read_only(self) -> None:
+        sources = legacy_sources(physical_sources())
+        inventory = subject_inventory(
+            sources,
+            level=StageBaselineLevel.SPATIAL,
+        )
+        requirements, receipts = requirement_and_receipts(sources)
+        receipt = compile_stage_baseline_coverage(
+            profile(requirements),
+            level=StageBaselineLevel.SPATIAL,
+            sources=sources,
+            subject_digest=SUBJECT_DIGEST,
+            subject_inventory=inventory,
+            check_receipts=receipts,
+        )
+
+        self.assertTrue(sources.is_legacy_read_only)
+        self.assertIs(receipt.status, StageBaselineStatus.SATISFIED)
+        self.assertEqual(receipt.missing_roles, ())
+
+        with self.assertRaisesRegex(
+            StageBaselineError,
+            "legacy stage baseline sources are read-only",
+        ):
+            derive_stage_requirement_profile(
+                profile(requirements),
+                level=StageBaselineLevel.SPATIAL,
+                sources=sources,
+                subject_digest=SUBJECT_DIGEST,
+                subject_inventory=inventory,
+            )
 
         legacy_payload = receipt.to_dict()
         legacy_payload["schema"] = "StageBaselineCoverageReceipt@2"
@@ -564,6 +622,7 @@ class StageBaselineTests(unittest.TestCase):
         self.assertEqual(
             receipt.missing_roles,
             (
+                StageBaselineRole.ASSEMBLY_RELATIONSHIPS,
                 StageBaselineRole.LOAD_PATH,
                 StageBaselineRole.OPENING_CLEARANCE,
             ),
@@ -714,14 +773,14 @@ class StageBaselineTests(unittest.TestCase):
             profile=cad_profile,
             snapshot=cad_snapshot_fixture(cad_profile),
         )
-        developed_sources = replace(
+        developed_sources = legacy_sources(replace(
             base_sources,
             material_binding=(material_source,),
-        )
-        coordinated_sources = replace(
+        ))
+        coordinated_sources = legacy_sources(replace(
             developed_sources,
             cad_readback=(cad_source,),
-        )
+        ))
 
         self.assertEqual(
             StageBaselineSourceSet.from_dict(

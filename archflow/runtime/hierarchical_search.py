@@ -9,7 +9,8 @@ commit, reopen, or ``HEAD`` authority.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from archflow.contracts.branch import branch_ref_from_dict, branch_ref_to_dict
 from archflow.contracts.canonical import canonical_digest, require_sha256
@@ -20,7 +21,19 @@ from archflow.contracts.fields import (
     identifier,
     logical_ref,
 )
-from archflow.control.convergence import StageConvergenceReceipt
+from archflow.control.baseline import (
+    StageBaselineCoverageReceipt,
+    StageBaselineSourceSet,
+    StageBaselineStatus,
+    baseline_level_for_design_phase,
+    compile_stage_baseline_coverage,
+)
+from archflow.control.convergence import (
+    StageConvergenceOutcome,
+    StageConvergencePotential,
+    StageConvergenceReceipt,
+    StageTransitionKind,
+)
 from archflow.control.requirements import StageRequirementProfile
 from archflow.control.search_policy import (
     DecisionSpaceDescriptor,
@@ -40,6 +53,7 @@ from archflow.control.stage_closure import (
     StageClosureStatus,
     compile_composite_stage_closure,
 )
+from archflow.control.stage_subjects import StageSubjectInventory
 from archflow.evidence.applicability import (
     ApplicabilityDisposition,
     ClaimApplicability,
@@ -54,12 +68,18 @@ from archflow.state.design_portfolio import (
     BranchLifecycle,
     BranchRevisionRef,
 )
+from archflow.state.design_maturity import DesignPhase
 from archflow.state.operational_state import OperationalMarkovState
 from archflow.validation.contracts import (
     CheckReceiptEnvelope,
     CheckStatus,
     FindingSeverity,
 )
+
+if TYPE_CHECKING:
+    from archflow.runtime.design_controller import (
+        ProjectControllerArchiveAdapter,
+    )
 
 
 _WORK_ACTIONS = frozenset(
@@ -106,6 +126,151 @@ def exact_record_ref(ref: ProjectRecordRef) -> str:
     )
 
 
+def _record_ref_dict(ref: ProjectRecordRef) -> dict[str, object]:
+    if not isinstance(ref, ProjectRecordRef):
+        raise TypeError("ref must be ProjectRecordRef")
+    return {
+        "project_id": ref.project_id,
+        "relative_path": ref.relative_path,
+        "sha256": ref.sha256,
+        "media_type": ref.media_type,
+    }
+
+
+def _record_ref_from_dict(value: object, field_name: str) -> ProjectRecordRef:
+    payload = exact_mapping(
+        value,
+        {"project_id", "relative_path", "sha256", "media_type"},
+        field_name,
+    )
+    return ProjectRecordRef(
+        project_id=payload["project_id"],
+        relative_path=payload["relative_path"],
+        sha256=payload["sha256"],
+        media_type=payload["media_type"],
+    )
+
+
+def _convergence_potential_from_dict(
+    value: object,
+) -> StageConvergencePotential:
+    fields = (
+        "hard_gate_failure_refs",
+        "conflict_refs",
+        "tolerance_failure_refs",
+        "missing_mandatory_obligation_refs",
+        "blocked_mandatory_obligation_refs",
+        "open_mandatory_obligation_refs",
+        "invalidated_refs",
+        "revalidation_refs",
+    )
+    payload = exact_mapping(
+        value,
+        {"schema", *fields, "vector"},
+        "stage convergence potential",
+    )
+    if payload["schema"] != StageConvergencePotential.SCHEMA:
+        raise HierarchicalSearchProposalError(
+            "unsupported stage convergence potential schema"
+        )
+    if any(not isinstance(payload[name], list) for name in (*fields, "vector")):
+        raise TypeError("stage convergence potential refs must be lists")
+    result = StageConvergencePotential(
+        **{name: tuple(payload[name]) for name in fields}
+    )
+    if result.to_dict() != payload:
+        raise HierarchicalSearchProposalError(
+            "stage convergence potential identity changed"
+        )
+    return result
+
+
+def _convergence_receipt_from_dict(value: object) -> StageConvergenceReceipt:
+    payload = exact_mapping(
+        value,
+        {
+            "schema",
+            "receipt_id",
+            "outcome",
+            "request_id",
+            "stage",
+            "transition_kind",
+            "branch",
+            "policy_digest",
+            "parent_state_digest",
+            "child_state_digest",
+            "parent_sufficient_digest",
+            "child_sufficient_digest",
+            "parent_evidence_digest",
+            "child_evidence_digest",
+            "potential_before",
+            "potential_after",
+            "protected_refs",
+            "changed_protected_refs",
+            "mandatory_obligation_ids",
+            "added_mandatory_obligation_ids",
+            "dependency_closure",
+            "authorization_ref",
+            "reason_codes",
+            "stage_ready",
+            "canonical_write_authority",
+        },
+        "stage convergence receipt",
+    )
+    if (
+        payload["schema"] != StageConvergenceReceipt.SCHEMA
+        or payload["canonical_write_authority"] is not False
+    ):
+        raise HierarchicalSearchProposalError(
+            "unsupported or authoritative stage convergence receipt"
+        )
+    list_fields = (
+        "protected_refs",
+        "changed_protected_refs",
+        "mandatory_obligation_ids",
+        "added_mandatory_obligation_ids",
+        "dependency_closure",
+        "reason_codes",
+    )
+    if any(not isinstance(payload[name], list) for name in list_fields):
+        raise TypeError("stage convergence receipt refs must be lists")
+    result = StageConvergenceReceipt(
+        receipt_id=payload["receipt_id"],
+        outcome=StageConvergenceOutcome(payload["outcome"]),
+        request_id=payload["request_id"],
+        stage=payload["stage"],
+        transition_kind=StageTransitionKind(payload["transition_kind"]),
+        branch=branch_ref_from_dict(payload["branch"]),
+        policy_digest=payload["policy_digest"],
+        parent_state_digest=payload["parent_state_digest"],
+        child_state_digest=payload["child_state_digest"],
+        parent_sufficient_digest=payload["parent_sufficient_digest"],
+        child_sufficient_digest=payload["child_sufficient_digest"],
+        parent_evidence_digest=payload["parent_evidence_digest"],
+        child_evidence_digest=payload["child_evidence_digest"],
+        potential_before=_convergence_potential_from_dict(
+            payload["potential_before"]
+        ),
+        potential_after=_convergence_potential_from_dict(
+            payload["potential_after"]
+        ),
+        protected_refs=tuple(payload["protected_refs"]),
+        changed_protected_refs=tuple(payload["changed_protected_refs"]),
+        mandatory_obligation_ids=tuple(payload["mandatory_obligation_ids"]),
+        added_mandatory_obligation_ids=tuple(
+            payload["added_mandatory_obligation_ids"]
+        ),
+        dependency_closure=tuple(payload["dependency_closure"]),
+        authorization_ref=payload["authorization_ref"],
+        reason_codes=tuple(payload["reason_codes"]),
+    )
+    if result.to_dict() != payload:
+        raise HierarchicalSearchProposalError(
+            "stage convergence receipt identity changed"
+        )
+    return result
+
+
 def _require_run_record(
     ref: ProjectRecordRef,
     run: RunRef,
@@ -121,6 +286,29 @@ def _require_run_record(
     ):
         raise HierarchicalSearchProposalError(
             f"{field} is not an exact record in the requested run"
+        )
+    return exact_record_ref(ref)
+
+
+def _require_branch_record(
+    ref: ProjectRecordRef,
+    branch: BranchRef,
+    field: str,
+) -> str:
+    if not isinstance(ref, ProjectRecordRef):
+        raise TypeError(f"{field} must be ProjectRecordRef")
+    if not isinstance(branch, BranchRef):
+        raise TypeError("branch must be BranchRef")
+    prefix = (
+        f"runs/{branch.run.run_id}/branches/"
+        f"{branch.branch_id}/records/"
+    )
+    if (
+        ref.project_id != branch.run.project_id
+        or not ref.relative_path.startswith(prefix)
+    ):
+        raise HierarchicalSearchProposalError(
+            f"{field} is not an exact record in the requested branch"
         )
     return exact_record_ref(ref)
 
@@ -313,6 +501,21 @@ class SearchGovernanceEvidence:
     closure: CompositeStageClosureReceipt
     convergence_record_ref: ProjectRecordRef
     convergence: StageConvergenceReceipt
+    baseline_sources_record_ref: ProjectRecordRef | None = None
+    baseline_sources: StageBaselineSourceSet | None = None
+    stage_subject_inventory_record_ref: ProjectRecordRef | None = None
+    stage_subject_inventory: StageSubjectInventory | None = None
+    baseline_coverage_record_ref: ProjectRecordRef | None = None
+    baseline_coverage: StageBaselineCoverageReceipt | None = None
+    _legacy_read_only: bool = field(
+        default=False,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+
+    SCHEMA = "SearchGovernanceEvidence@2"
+    LEGACY_SCHEMA = "SearchGovernanceEvidence@1"
 
     def __post_init__(self) -> None:
         if not isinstance(self.profile, StageRequirementProfile):
@@ -341,6 +544,235 @@ class SearchGovernanceEvidence:
             raise TypeError(
                 "closure_checks must contain RetainedCheckReceipt values"
             )
+        current_values = (
+            self.baseline_sources_record_ref,
+            self.baseline_sources,
+            self.stage_subject_inventory_record_ref,
+            self.stage_subject_inventory,
+            self.baseline_coverage_record_ref,
+            self.baseline_coverage,
+        )
+        if self._legacy_read_only:
+            if any(value is not None for value in current_values):
+                raise HierarchicalSearchProposalError(
+                    "legacy governance evidence cannot carry current baseline fields"
+                )
+            return
+        for field_name in (
+            "baseline_sources_record_ref",
+            "stage_subject_inventory_record_ref",
+            "baseline_coverage_record_ref",
+        ):
+            if not isinstance(getattr(self, field_name), ProjectRecordRef):
+                raise TypeError(
+                    f"current governance {field_name} must be ProjectRecordRef"
+                )
+        if not isinstance(self.baseline_sources, StageBaselineSourceSet):
+            raise TypeError(
+                "current governance requires exact StageBaselineSourceSet"
+            )
+        if self.baseline_sources.is_legacy_read_only:
+            raise HierarchicalSearchProposalError(
+                "current governance cannot author a legacy baseline source set"
+            )
+        if not isinstance(self.stage_subject_inventory, StageSubjectInventory):
+            raise TypeError(
+                "current governance requires exact StageSubjectInventory"
+            )
+        if not isinstance(
+            self.baseline_coverage,
+            StageBaselineCoverageReceipt,
+        ):
+            raise TypeError(
+                "current governance requires exact StageBaselineCoverageReceipt"
+            )
+        if self.baseline_coverage.stage_subject_inventory_digest is None:
+            raise HierarchicalSearchProposalError(
+                "current governance cannot author legacy baseline coverage"
+            )
+
+    @property
+    def is_legacy_read_only(self) -> bool:
+        return self._legacy_read_only
+
+    def to_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "schema": (
+                self.LEGACY_SCHEMA if self._legacy_read_only else self.SCHEMA
+            ),
+            "profile_record_ref": _record_ref_dict(self.profile_record_ref),
+            "profile": self.profile.to_dict(),
+            "closure_checks": [
+                {
+                    "record_ref": _record_ref_dict(item.record_ref),
+                    "receipt": item.receipt.to_dict(),
+                }
+                for item in self.closure_checks
+            ],
+            "closure_record_ref": _record_ref_dict(self.closure_record_ref),
+            "closure": self.closure.to_dict(),
+            "convergence_record_ref": _record_ref_dict(
+                self.convergence_record_ref
+            ),
+            "convergence": self.convergence.to_dict(),
+        }
+        if not self._legacy_read_only:
+            assert isinstance(self.baseline_sources_record_ref, ProjectRecordRef)
+            assert isinstance(self.baseline_sources, StageBaselineSourceSet)
+            assert isinstance(
+                self.stage_subject_inventory_record_ref,
+                ProjectRecordRef,
+            )
+            assert isinstance(
+                self.stage_subject_inventory,
+                StageSubjectInventory,
+            )
+            assert isinstance(self.baseline_coverage_record_ref, ProjectRecordRef)
+            assert isinstance(
+                self.baseline_coverage,
+                StageBaselineCoverageReceipt,
+            )
+            payload.update(
+                {
+                    "baseline_sources_record_ref": _record_ref_dict(
+                        self.baseline_sources_record_ref
+                    ),
+                    "baseline_sources": self.baseline_sources.to_dict(),
+                    "stage_subject_inventory_record_ref": _record_ref_dict(
+                        self.stage_subject_inventory_record_ref
+                    ),
+                    "stage_subject_inventory": (
+                        self.stage_subject_inventory.to_dict()
+                    ),
+                    "baseline_coverage_record_ref": _record_ref_dict(
+                        self.baseline_coverage_record_ref
+                    ),
+                    "baseline_coverage": self.baseline_coverage.to_dict(),
+                }
+            )
+        return payload
+
+    @classmethod
+    def from_dict(cls, value: object) -> "SearchGovernanceEvidence":
+        if not isinstance(value, dict):
+            raise TypeError("search governance evidence must be a mapping")
+        schema = value.get("schema")
+        common = {
+            "schema",
+            "profile_record_ref",
+            "profile",
+            "closure_checks",
+            "closure_record_ref",
+            "closure",
+            "convergence_record_ref",
+            "convergence",
+        }
+        current = {
+            "baseline_sources_record_ref",
+            "baseline_sources",
+            "stage_subject_inventory_record_ref",
+            "stage_subject_inventory",
+            "baseline_coverage_record_ref",
+            "baseline_coverage",
+        }
+        if schema == cls.SCHEMA:
+            expected = common | current
+            legacy = False
+        elif schema == cls.LEGACY_SCHEMA:
+            expected = common
+            legacy = True
+        else:
+            raise HierarchicalSearchProposalError(
+                "unsupported search governance evidence schema"
+            )
+        payload = exact_mapping(value, expected, "search governance evidence")
+        if not isinstance(payload["closure_checks"], list):
+            raise TypeError("closure_checks must be a list")
+        closure_checks: list[RetainedCheckReceipt] = []
+        for item in payload["closure_checks"]:
+            retained = exact_mapping(
+                item,
+                {"record_ref", "receipt"},
+                "retained closure check",
+            )
+            closure_checks.append(
+                RetainedCheckReceipt(
+                    record_ref=_record_ref_from_dict(
+                        retained["record_ref"],
+                        "retained closure check record_ref",
+                    ),
+                    receipt=CheckReceiptEnvelope.from_dict(
+                        retained["receipt"]
+                    ),
+                )
+            )
+        values = {
+            "profile_record_ref": _record_ref_from_dict(
+                payload["profile_record_ref"],
+                "profile_record_ref",
+            ),
+            "profile": StageRequirementProfile.from_dict(payload["profile"]),
+            "closure_checks": tuple(closure_checks),
+            "closure_record_ref": _record_ref_from_dict(
+                payload["closure_record_ref"],
+                "closure_record_ref",
+            ),
+            "closure": CompositeStageClosureReceipt.from_dict(
+                payload["closure"]
+            ),
+            "convergence_record_ref": _record_ref_from_dict(
+                payload["convergence_record_ref"],
+                "convergence_record_ref",
+            ),
+            "convergence": _convergence_receipt_from_dict(
+                payload["convergence"]
+            ),
+        }
+        if legacy:
+            result = object.__new__(cls)
+            for field_name, field_value in values.items():
+                object.__setattr__(result, field_name, field_value)
+            for field_name in (
+                "baseline_sources_record_ref",
+                "baseline_sources",
+                "stage_subject_inventory_record_ref",
+                "stage_subject_inventory",
+                "baseline_coverage_record_ref",
+                "baseline_coverage",
+            ):
+                object.__setattr__(result, field_name, None)
+            object.__setattr__(result, "_legacy_read_only", True)
+            result.__post_init__()
+        else:
+            result = cls(
+                **values,
+                baseline_sources_record_ref=_record_ref_from_dict(
+                    payload["baseline_sources_record_ref"],
+                    "baseline_sources_record_ref",
+                ),
+                baseline_sources=StageBaselineSourceSet.from_dict(
+                    payload["baseline_sources"]
+                ),
+                stage_subject_inventory_record_ref=_record_ref_from_dict(
+                    payload["stage_subject_inventory_record_ref"],
+                    "stage_subject_inventory_record_ref",
+                ),
+                stage_subject_inventory=StageSubjectInventory.from_dict(
+                    payload["stage_subject_inventory"]
+                ),
+                baseline_coverage_record_ref=_record_ref_from_dict(
+                    payload["baseline_coverage_record_ref"],
+                    "baseline_coverage_record_ref",
+                ),
+                baseline_coverage=StageBaselineCoverageReceipt.from_dict(
+                    payload["baseline_coverage"]
+                ),
+            )
+        if result.to_dict() != payload:
+            raise HierarchicalSearchProposalError(
+                "search governance evidence identity changed"
+            )
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -382,6 +814,7 @@ class HierarchicalSearchCompileInput:
     budget: SearchBudget
     allowed_actions: tuple[SearchAction, ...]
     reopen_envelope: SearchReopenEnvelope
+    governance_archive: ProjectControllerArchiveAdapter | None = None
 
     def __post_init__(self) -> None:
         identifier(self.request_id, "request_id")
@@ -460,6 +893,19 @@ class HierarchicalSearchCompileInput:
             )
         if not isinstance(self.reopen_envelope, SearchReopenEnvelope):
             raise TypeError("reopen_envelope must be SearchReopenEnvelope")
+        from archflow.runtime.design_controller import (
+            ProjectControllerArchiveAdapter,
+        )
+
+        if (
+            self.governance_archive is not None
+            and type(self.governance_archive)
+            is not ProjectControllerArchiveAdapter
+        ):
+            raise TypeError(
+                "governance_archive must be the concrete durable controller "
+                "archive adapter"
+            )
 
 
 def _require_budget_action_match(
@@ -480,32 +926,155 @@ def _require_budget_action_match(
         )
 
 
+def _replay_search_relation_predecessors(
+    sources: StageBaselineSourceSet,
+    archive: ProjectControllerArchiveAdapter | None,
+) -> tuple[str, ...]:
+    from archflow.runtime.design_controller import (
+        ProjectControllerArchiveAdapter,
+    )
+
+    inheritance_sources = sources.relation_inheritance
+    if not inheritance_sources:
+        return ()
+    if type(archive) is not ProjectControllerArchiveAdapter:
+        raise HierarchicalSearchProposalError(
+            "relation inheritance search requires durable P036 predecessor "
+            "replay"
+        )
+    try:
+        replayed_refs = archive.replay_accepted_relation_predecessors(sources)
+    except Exception as exc:
+        raise HierarchicalSearchProposalError(
+            "relation inheritance predecessor did not replay from exact P036 "
+            "records"
+        ) from exc
+    if (
+        not isinstance(replayed_refs, tuple)
+        or any(not isinstance(ref, ProjectRecordRef) for ref in replayed_refs)
+    ):
+        raise HierarchicalSearchProposalError(
+            "relation predecessor replay returned invalid record refs"
+        )
+    expected_refs = {
+        ref
+        for source in inheritance_sources
+        for ref in (
+            source.predecessor.predecessor_checkpoint_ref,
+            source.predecessor.stage_exit_anchor_ref,
+            source.predecessor.baseline_sources_ref,
+            source.predecessor.baseline_coverage_ref,
+        )
+    }
+    if set(replayed_refs) != expected_refs:
+        raise HierarchicalSearchProposalError(
+            "relation predecessor replay did not cover the exact accepted "
+            "record set"
+        )
+    predecessor_branch = inheritance_sources[0].predecessor.graph.branch
+    return tuple(
+        sorted(
+            {
+                _require_branch_record(
+                    ref,
+                    predecessor_branch,
+                    "replayed relation predecessor record",
+                )
+                for ref in replayed_refs
+            }
+        )
+    )
+
+
+def _replay_current_search_governance(
+    governance: SearchGovernanceEvidence,
+    archive: ProjectControllerArchiveAdapter | None,
+) -> tuple[str, ...]:
+    from archflow.runtime.design_controller import (
+        ProjectControllerArchiveAdapter,
+    )
+
+    if type(archive) is not ProjectControllerArchiveAdapter:
+        raise HierarchicalSearchProposalError(
+            "current search governance requires durable P036 archive replay"
+        )
+    assert governance.baseline_sources_record_ref is not None
+    assert governance.baseline_sources is not None
+    assert governance.stage_subject_inventory_record_ref is not None
+    assert governance.stage_subject_inventory is not None
+    assert governance.baseline_coverage_record_ref is not None
+    assert governance.baseline_coverage is not None
+    records = (
+        (governance.profile_record_ref, governance.profile.to_dict()),
+        *(
+            (item.record_ref, item.receipt.to_dict())
+            for item in governance.closure_checks
+        ),
+        (governance.closure_record_ref, governance.closure.to_dict()),
+        (
+            governance.convergence_record_ref,
+            governance.convergence.to_dict(),
+        ),
+        (
+            governance.baseline_sources_record_ref,
+            governance.baseline_sources.to_dict(),
+        ),
+        (
+            governance.stage_subject_inventory_record_ref,
+            governance.stage_subject_inventory.to_dict(),
+        ),
+        (
+            governance.baseline_coverage_record_ref,
+            governance.baseline_coverage.to_dict(),
+        ),
+    )
+    try:
+        replayed_refs = archive.replay_exact_branch_json_records(records)
+    except Exception as exc:
+        raise HierarchicalSearchProposalError(
+            "current search governance did not replay from exact P036 records"
+        ) from exc
+    expected_refs = {item[0] for item in records}
+    if set(replayed_refs) != expected_refs:
+        raise HierarchicalSearchProposalError(
+            "current search governance replay omitted an exact branch record"
+        )
+    return tuple(sorted(exact_record_ref(ref) for ref in replayed_refs))
+
+
 def _validate_governance(
     context: HierarchicalSearchCompileInput,
 ) -> tuple[str, ...]:
     state = context.state
     run = state.branch.run
     governance = context.governance
+    if governance.is_legacy_read_only:
+        raise HierarchicalSearchProposalError(
+            "legacy governance evidence is read-only and cannot author a new "
+            "search request"
+        )
     profile = governance.profile
     closure = governance.closure
     convergence = governance.convergence
-    refs = [
-        _require_run_record(
-            governance.profile_record_ref,
-            run,
-            "stage requirement profile record",
-        ),
-        _require_run_record(
-            governance.closure_record_ref,
-            run,
-            "stage closure record",
-        ),
-        _require_run_record(
-            governance.convergence_record_ref,
-            run,
-            "stage convergence record",
-        ),
-    ]
+    refs = list(
+        (
+            _require_branch_record(
+                governance.profile_record_ref,
+                state.branch,
+                "stage requirement profile record",
+            ),
+            _require_branch_record(
+                governance.closure_record_ref,
+                state.branch,
+                "stage closure record",
+            ),
+            _require_branch_record(
+                governance.convergence_record_ref,
+                state.branch,
+                "stage convergence record",
+            ),
+        )
+    )
     if (
         profile.branch != state.branch
         or profile.stage_id != context.stage_id
@@ -525,7 +1094,13 @@ def _validate_governance(
         )
     checks = tuple(item.receipt for item in governance.closure_checks)
     for item in governance.closure_checks:
-        refs.append(item.require_run(run, "stage closure check record"))
+        refs.append(
+            _require_branch_record(
+                item.record_ref,
+                state.branch,
+                "stage closure check record",
+            )
+        )
         receipt = item.receipt
         if (
             receipt.branch != state.branch
@@ -544,6 +1119,98 @@ def _validate_governance(
         raise HierarchicalSearchProposalError(
             "stage closure does not replay from its exact typed inputs"
         )
+    assert isinstance(
+        governance.baseline_sources_record_ref,
+        ProjectRecordRef,
+    )
+    assert isinstance(governance.baseline_sources, StageBaselineSourceSet)
+    assert isinstance(
+        governance.stage_subject_inventory_record_ref,
+        ProjectRecordRef,
+    )
+    assert isinstance(
+        governance.stage_subject_inventory,
+        StageSubjectInventory,
+    )
+    assert isinstance(
+        governance.baseline_coverage_record_ref,
+        ProjectRecordRef,
+    )
+    assert isinstance(
+        governance.baseline_coverage,
+        StageBaselineCoverageReceipt,
+    )
+    refs.extend(
+        (
+            _require_branch_record(
+                governance.baseline_sources_record_ref,
+                state.branch,
+                "stage baseline sources record",
+            ),
+            _require_branch_record(
+                governance.stage_subject_inventory_record_ref,
+                state.branch,
+                "stage subject inventory record",
+            ),
+            _require_branch_record(
+                governance.baseline_coverage_record_ref,
+                state.branch,
+                "stage baseline coverage record",
+            ),
+        )
+    )
+    refs.extend(
+        _replay_search_relation_predecessors(
+            governance.baseline_sources,
+            context.governance_archive,
+        )
+    )
+    try:
+        expected_level = baseline_level_for_design_phase(
+            DesignPhase(state.phase)
+        )
+    except (TypeError, ValueError) as exc:
+        raise HierarchicalSearchProposalError(
+            "search state has no exact stage baseline level"
+        ) from exc
+    inventory = governance.stage_subject_inventory
+    baseline = governance.baseline_coverage
+    if (
+        inventory.branch != state.branch
+        or inventory.stage_id != context.stage_id
+        or inventory.stage_subject_ref != profile.stage_subject_ref
+        or inventory.stage_subject_digest != state.state_digest
+        or inventory.baseline_level is not expected_level
+        or baseline.profile_id != profile.profile_id
+        or baseline.profile_digest != profile.profile_digest
+        or baseline.branch != state.branch
+        or baseline.stage_id != context.stage_id
+        or baseline.level is not expected_level
+        or baseline.stage_subject_inventory_digest != inventory.inventory_digest
+    ):
+        raise HierarchicalSearchProposalError(
+            "stage baseline evidence crossed profile, branch, stage, or subject"
+        )
+    try:
+        recomputed_baseline = compile_stage_baseline_coverage(
+            profile,
+            level=expected_level,
+            sources=governance.baseline_sources,
+            subject_digest=state.state_digest,
+            subject_inventory=inventory,
+            check_receipts=checks,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HierarchicalSearchProposalError(
+            "stage baseline does not replay from its exact typed inputs"
+        ) from exc
+    if (
+        recomputed_baseline != baseline
+        or baseline.status is not StageBaselineStatus.SATISFIED
+    ):
+        raise HierarchicalSearchProposalError(
+            "stage baseline coverage is sparse, open, or does not replay"
+        )
     if (
         convergence.branch != state.branch
         or convergence.stage != context.stage_id
@@ -553,6 +1220,12 @@ def _validate_governance(
         raise HierarchicalSearchProposalError(
             "stage convergence crossed the exact operational state"
         )
+    refs.extend(
+        _replay_current_search_governance(
+            governance,
+            context.governance_archive,
+        )
+    )
     return tuple(sorted(set(refs)))
 
 

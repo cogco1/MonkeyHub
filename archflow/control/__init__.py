@@ -22,6 +22,8 @@ from archflow.control.baseline import (
     ComponentLineageBaselineSource,
     DESIGN_PHASE_BASELINE_LEVEL,
     MaterialBindingBaselineSource,
+    RelationRealizationBaselineSource,
+    RelationTopologyBaselineSource,
     SpatialLayoutBaselineSource,
     StageBaselineCoverageReceipt,
     StageBaselineError,
@@ -30,8 +32,11 @@ from archflow.control.baseline import (
     StageBaselineRoleCoverage,
     StageBaselineSourceSet,
     StageBaselineStatus,
+    StageRelationInheritanceBaselineSource,
     baseline_level_for_design_phase,
     compile_stage_baseline_coverage,
+    derive_stage_baseline_requirements,
+    derive_stage_requirement_profile,
 )
 from archflow.control.check_requirements import (
     assembly_stage_requirement,
@@ -40,6 +45,8 @@ from archflow.control.check_requirements import (
     material_binding_stage_requirement,
     relation_authoring_stage_requirements,
     relation_coverage_stage_requirement,
+    relation_realization_stage_requirement,
+    stage_relation_inheritance_stage_requirement,
     spatial_layout_stage_requirement,
 )
 from archflow.control.genesis_completeness import (
@@ -94,6 +101,17 @@ from archflow.control.stage_subjects import (
     StageSubjectInventoryError,
     StageSubjectRoleObligation,
 )
+from archflow.control.stage_relation_inheritance import (
+    AcceptedRelationTopologyIdentity,
+    AcceptedStageRelationPredecessor,
+    RelationInheritanceDisposition,
+    StageRelationInheritanceCoverage,
+    StageRelationInheritanceError,
+    StageRelationInheritanceReceipt,
+    bridge_stage_relation_inheritance_receipt,
+    compile_stage_relation_inheritance,
+    stage_relation_inheritance_denominator,
+)
 from archflow.control.search_policy import (
     AsyncSearchPolicy,
     DecisionSpaceDescriptor,
@@ -113,6 +131,8 @@ from archflow.control.search_policy import (
 )
 
 __all__ = [
+    "AcceptedRelationTopologyIdentity",
+    "AcceptedStageRelationPredecessor",
     "AsyncSearchPolicy",
     "CompositeStageClosureReceipt",
     "BASELINE_LEVEL_ROLES",
@@ -120,6 +140,8 @@ __all__ = [
     "ComponentLineageBaselineSource",
     "DESIGN_PHASE_BASELINE_LEVEL",
     "MaterialBindingBaselineSource",
+    "RelationRealizationBaselineSource",
+    "RelationTopologyBaselineSource",
     "GenesisSemanticCompletenessError",
     "GenesisSemanticDenominator",
     "RequirementBasisMode",
@@ -160,6 +182,11 @@ __all__ = [
     "StageBaselineRoleCoverage",
     "StageBaselineSourceSet",
     "StageBaselineStatus",
+    "StageRelationInheritanceBaselineSource",
+    "StageRelationInheritanceCoverage",
+    "StageRelationInheritanceError",
+    "StageRelationInheritanceReceipt",
+    "RelationInheritanceDisposition",
     "SpatialLayoutBaselineSource",
     "StageClosureFinding",
     "StageClosureFindingCode",
@@ -186,6 +213,9 @@ __all__ = [
     "component_lineage_stage_requirement",
     "compile_composite_stage_closure",
     "compile_stage_baseline_coverage",
+    "compile_stage_relation_inheritance",
+    "derive_stage_baseline_requirements",
+    "derive_stage_requirement_profile",
     "evaluate_stage_convergence",
     "material_binding_stage_requirement",
     "promote_verified_relation_graph",
@@ -193,6 +223,10 @@ __all__ = [
     "relation_verification_receipt_ref",
     "relation_authoring_stage_requirements",
     "relation_coverage_stage_requirement",
+    "relation_realization_stage_requirement",
+    "stage_relation_inheritance_denominator",
+    "stage_relation_inheritance_stage_requirement",
+    "bridge_stage_relation_inheritance_receipt",
     "require_relation_authoring_question_coverage",
     "require_relation_subject_inventory",
     "spatial_layout_stage_requirement",

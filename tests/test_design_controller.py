@@ -13,16 +13,24 @@ from archflow.capabilities.phase_gates import PhaseExpertMetadata
 from archflow.control.baseline import (
     BASELINE_LEVEL_ROLES,
     ComponentLineageBaselineSource,
+    RelationRealizationBaselineSource,
+    RelationTopologyBaselineSource,
     SpatialLayoutBaselineSource,
     StageBaselineLevel,
     StageBaselineRole,
     StageBaselineSourceSet,
     baseline_level_for_design_phase,
+    derive_stage_requirement_profile,
 )
 from archflow.control.check_requirements import (
     assembly_stage_requirement,
     component_lineage_stage_requirement,
+    relation_authoring_stage_requirements,
     spatial_layout_stage_requirement,
+)
+from archflow.control.relation_checks import check_relation_coverage
+from archflow.control.relation_promotion import (
+    promote_verified_relation_graph,
 )
 from archflow.control.stage_closure import (
     CompositeStageClosureReceipt,
@@ -55,6 +63,11 @@ from archflow.project import (
     ProjectRecordRef,
     ProjectVersionRef,
     RunRef,
+)
+from archflow.relations.authoring import compile_relation_authoring
+from archflow.relations.contracts import (
+    ArchitecturalNode,
+    ArchitecturalNodeKind,
 )
 from archflow.runtime.clarification import (
     create_clarification_request,
@@ -144,6 +157,15 @@ from archflow.validation.check_bridges import (
 from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archflow.validation.spatial import validate_spatial_layout
 from tests.test_stage_baseline import physical_sources
+from tests.test_relation_authoring import (
+    _context as relation_context_fixture,
+    _proposal as relation_proposal_fixture,
+)
+from tests.test_relation_realization import (
+    compiled_program as relation_compiled_program,
+    manifest as relation_manifest,
+    readback as relation_readback,
+)
 
 
 _GLOBAL_COMMITMENT_REF = "commitment:preserve-public-purpose"
@@ -1171,6 +1193,34 @@ def _stage_closure_receipt(
     subject_digest: str | None = None,
     findings: tuple[StageClosureFinding, ...] = (),
 ) -> CompositeStageClosureReceipt:
+    _profile, _sources, _receipts, _inventory, closure = (
+        _complete_stage_inputs(
+            checkpoint,
+            stage_id=stage_id,
+            receipt_branch=receipt_branch,
+            stage_subject_ref=stage_subject_ref,
+            subject_digest=subject_digest,
+        )
+    )
+    if not findings:
+        return closure
+    return replace(
+        closure,
+        findings=findings,
+        status=StageClosureStatus.OPEN,
+    )
+
+
+def _legacy_stage_closure_receipt(
+    checkpoint: DesignControllerCheckpoint,
+    *,
+    stage_id: str | None = None,
+    receipt_branch: BranchRef | None = None,
+    stage_subject_ref: str | None = None,
+    subject_digest: str | None = None,
+) -> CompositeStageClosureReceipt:
+    """Build the pre-M083 closure shape for explicit negative tests only."""
+
     deliverable = checkpoint.maturity.deliverables[0]
     profile = _stage_requirement_profile(
         checkpoint,
@@ -1194,13 +1244,7 @@ def _stage_closure_receipt(
         subject_digest=selected_subject_digest,
         check_receipts=receipts,
     )
-    if not findings:
-        return closure
-    return replace(
-        closure,
-        findings=findings,
-        status=StageClosureStatus.OPEN,
-    )
+    return closure
 
 
 def _stage_requirement_profile_for_closure(
@@ -1224,18 +1268,14 @@ def _stage_inputs_for_closure(
     tuple[CheckReceiptEnvelope, ...],
     StageSubjectInventory,
 ]:
-    profile = _stage_requirement_profile_for_closure(checkpoint, closure)
-    sources, _requirements, receipts = _stage_baseline_evidence(
-        checkpoint,
-        stage_id=closure.stage_id,
-        receipt_branch=closure.branch,
-        subject_digest=closure.subject_digest,
-    )
-    inventory = _stage_subject_inventory(
-        checkpoint,
-        closure,
-        profile,
-        sources,
+    profile, sources, receipts, inventory, _generated_closure = (
+        _complete_stage_inputs(
+            checkpoint,
+            stage_id=closure.stage_id,
+            receipt_branch=closure.branch,
+            stage_subject_ref=closure.stage_subject_ref,
+            subject_digest=closure.subject_digest,
+        )
     )
     return profile, sources, receipts, inventory
 
@@ -1301,15 +1341,7 @@ def _stage_subject_inventory(
 ) -> StageSubjectInventory:
     level = baseline_level_for_design_phase(checkpoint.maturity.phase)
     targets = _stage_role_target_refs(sources)
-    source_refs = tuple(
-        sorted(
-            {
-                ref
-                for requirement in profile.requirements
-                for ref in requirement.required_source_refs
-            }
-        )
-    ) or (f"evidence:stage-profile:{profile.profile_digest}",)
+    source_refs = ("evidence:controller-relations",)
     binding_authority_ref = ProjectRecordRef(
         project_id=closure.branch.run.project_id,
         relative_path=(
@@ -1320,22 +1352,53 @@ def _stage_subject_inventory(
         sha256=_hash("controller-stage-profile-authorization"),
     )
     authority_refs = (binding_authority_ref.uri,)
-    obligations = tuple(
-        StageSubjectRoleObligation(
-            role=role,
-            disposition=StageSubjectDisposition.REQUIRED,
-            target_refs=(
-                targets[role]
-                or (f"component:uncovered-{role.value}",)
-            ),
-            evidence_refs=source_refs,
-            authority_refs=authority_refs,
-        )
-        for role in sorted(
+    ordered_roles = tuple(
+        sorted(
             BASELINE_LEVEL_ROLES[level],
             key=lambda item: item.value,
         )
     )
+
+    def obligations_for(
+        component_id: str,
+    ) -> tuple[StageSubjectRoleObligation, ...]:
+        relation_roles = {
+            StageBaselineRole.ASSEMBLY_RELATIONSHIPS,
+            StageBaselineRole.LOAD_PATH,
+        }
+        root_roles = {
+            StageBaselineRole.COMPONENT_LINEAGE,
+            StageBaselineRole.SPATIAL_ENVELOPE,
+        }
+        return tuple(
+            StageSubjectRoleObligation(
+                role=role,
+                disposition=(
+                    StageSubjectDisposition.REQUIRED
+                    if (
+                        component_id == "stage-root" and role in root_roles
+                    ) or (
+                        component_id == "roof" and role in relation_roles
+                    )
+                    else StageSubjectDisposition.NOT_APPLICABLE
+                ),
+                target_refs=(
+                    (
+                        targets[role]
+                        or (f"component:uncovered-{role.value}",)
+                    )
+                    if component_id == "stage-root" and role in root_roles
+                    else (
+                        ("design-component:roof",)
+                        if component_id == "roof" and role in relation_roles
+                        else ()
+                    )
+                ),
+                evidence_refs=source_refs,
+                authority_refs=authority_refs,
+            )
+            for role in ordered_roles
+        )
     branch = closure.branch
     prefix = (
         f"runs/{branch.run.run_id}/branches/"
@@ -1364,18 +1427,222 @@ def _stage_subject_inventory(
             sha256=index_digest,
         ),
         component_index_digest=index_digest,
-        entries=(
+        entries=tuple(
             StageSubjectInventoryEntry(
-                component_id="stage-root",
-                identity_ref="design-component:stage-root",
-                parent_component_id=None,
-                semantic_kind="stage-root",
+                component_id=component_id,
+                identity_ref=f"design-component:{component_id}",
+                parent_component_id=parent_component_id,
+                semantic_kind=semantic_kind,
                 component_digest=closure.subject_digest,
                 geometry_object_ids=(),
                 binding_ids=(),
-                role_obligations=obligations,
-            ),
+                role_obligations=obligations_for(component_id),
+            )
+            for component_id, parent_component_id, semantic_kind in (
+                ("stage-root", None, "stage-root"),
+                ("foundation", "stage-root", "foundation"),
+                ("column", "foundation", "column"),
+                ("beam", "column", "beam"),
+                ("roof", "beam", "roof"),
+            )
         ),
+    )
+
+
+def _stage_relation_topology_evidence(
+    inventory: StageSubjectInventory,
+    *,
+    state_digest: str,
+    scope_digest: str,
+    source_ref: str = "evidence:controller-relations",
+    authority_ref: str | None = None,
+) -> tuple[
+    RelationTopologyBaselineSource,
+    tuple[StageCheckRequirement, ...],
+    tuple[CheckReceiptEnvelope, ...],
+]:
+    base_context = relation_context_fixture()
+    entry_by_id = {
+        entry.component_id: entry for entry in inventory.entries
+    }
+    relation_component_ids = (
+        "beam",
+        "column",
+        "foundation",
+        "roof",
+        "stage-root",
+    )
+    if authority_ref is None:
+        authority_ref = (
+            f"project://{inventory.branch.run.project_id}/runs/"
+            f"{inventory.branch.run.run_id}/branches/"
+            f"{inventory.branch.branch_id}/records/"
+            "stage-profile-authorization.json"
+        )
+    context = replace(
+        base_context,
+        branch=inventory.branch,
+        stage_id=inventory.stage_id,
+        state_digest=state_digest,
+        scope_digest=scope_digest,
+        stage_subject_digest=inventory.stage_subject_digest,
+        subject_inventory_ref=(
+            f"stage-subject-inventory:{inventory.inventory_digest}"
+        ),
+        subject_inventory_digest=inventory.inventory_digest,
+        nodes=tuple(
+            ArchitecturalNode(
+                node_ref=entry_by_id[component_id].identity_ref,
+                node_kind=ArchitecturalNodeKind.COMPONENT,
+                semantic_kind=entry_by_id[component_id].semantic_kind,
+                stage_id=inventory.stage_id,
+                source_refs=(
+                    "stage-subject-entry:"
+                    f"{entry_by_id[component_id].entry_digest}",
+                ),
+            )
+            for component_id in relation_component_ids
+        ),
+        bases=tuple(
+            replace(
+                basis,
+                evidence_refs=(source_ref,),
+                authority_refs=(authority_ref,),
+            )
+            for basis in base_context.bases
+        ),
+    )
+    compilation = compile_relation_authoring(
+        context,
+        relation_proposal_fixture(context),
+    )
+    open_requirements = relation_authoring_stage_requirements(
+        context,
+        compilation,
+        inventory,
+    )
+    verification_requirement = next(
+        item
+        for item in open_requirements
+        if item.requirement_id.startswith("relation-verification-")
+    )
+    verification_receipt = CheckReceiptEnvelope(
+        check_id=verification_requirement.requirement_id,
+        checker_id=verification_requirement.checker_id,
+        checker_version="1.0.0",
+        branch=inventory.branch,
+        scope_digest=scope_digest,
+        subject_refs=verification_requirement.denominator_refs,
+        subject_digest=inventory.stage_subject_digest,
+        status=CheckStatus.PASS,
+        source_refs=verification_requirement.required_source_refs,
+        authority_refs=verification_requirement.required_authority_refs,
+        coverage_denominator=verification_requirement.denominator_refs,
+        covered_refs=verification_requirement.denominator_refs,
+    )
+    promotion = promote_verified_relation_graph(
+        context,
+        compilation,
+        inventory,
+        (verification_receipt,),
+    )
+    requirements = relation_authoring_stage_requirements(
+        context,
+        compilation,
+        inventory,
+        promotion=promotion,
+    )
+    _manifest, coverage_receipt = check_relation_coverage(
+        promotion.graph,
+        compilation.policy,
+        inventory,
+        compilation.slots,
+        promotion=promotion.receipt,
+    )
+    return (
+        RelationTopologyBaselineSource(
+            context=context,
+            compilation=compilation,
+            promotion=promotion,
+        ),
+        requirements,
+        (verification_receipt, coverage_receipt),
+    )
+
+
+def _complete_stage_inputs(
+    checkpoint: DesignControllerCheckpoint,
+    *,
+    stage_id: str | None = None,
+    receipt_branch: BranchRef | None = None,
+    stage_subject_ref: str | None = None,
+    subject_digest: str | None = None,
+) -> tuple[
+    StageRequirementProfile,
+    StageBaselineSourceSet,
+    tuple[CheckReceiptEnvelope, ...],
+    StageSubjectInventory,
+    CompositeStageClosureReceipt,
+]:
+    deliverable = checkpoint.maturity.deliverables[0]
+    selected_digest = (
+        deliverable.base_state_digest
+        if subject_digest is None
+        else subject_digest
+    )
+    seed_profile = _stage_requirement_profile(
+        checkpoint,
+        stage_id=stage_id,
+        receipt_branch=receipt_branch,
+        stage_subject_ref=stage_subject_ref,
+    )
+    sources, _requirements, receipts = _stage_baseline_evidence(
+        checkpoint,
+        stage_id=stage_id,
+        receipt_branch=receipt_branch,
+        subject_digest=selected_digest,
+    )
+    seed_closure = compile_composite_stage_closure(
+        seed_profile,
+        subject_digest=selected_digest,
+        check_receipts=receipts,
+    )
+    inventory = _stage_subject_inventory(
+        checkpoint,
+        seed_closure,
+        seed_profile,
+        sources,
+    )
+    topology_source, _topology_requirements, topology_receipts = (
+        _stage_relation_topology_evidence(
+            inventory,
+            state_digest=checkpoint.maturity.operational_state_digest,
+            scope_digest=seed_profile.scope_digest,
+        )
+    )
+    sources = replace(
+        sources,
+        relation_topology=(topology_source,),
+    )
+    completed_profile = derive_stage_requirement_profile(
+        seed_profile,
+        level=baseline_level_for_design_phase(checkpoint.maturity.phase),
+        sources=sources,
+        subject_digest=selected_digest,
+        subject_inventory=inventory,
+    )
+    all_receipts = (*receipts, *topology_receipts)
+    closure = compile_composite_stage_closure(
+        completed_profile,
+        subject_digest=selected_digest,
+        check_receipts=all_receipts,
+    )
+    return (
+        completed_profile,
+        sources,
+        all_receipts,
+        inventory,
+        closure,
     )
 
 
@@ -2555,6 +2822,71 @@ class DesignControllerTurnTests(unittest.TestCase):
         )
         valid_binding = _stage_profile_binding(valid, valid_inventory)
 
+        stale_topology, _, _ = _stage_relation_topology_evidence(
+            valid_inventory,
+            state_digest=_hash("stale-relation-operational-state"),
+            scope_digest=valid_profile.scope_digest,
+        )
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "relation baseline source crossed the exact profile",
+        ):
+            advance_design_phase(
+                checkpoint,
+                phase_gate,
+                convergence_receipt=convergence_receipt,
+                requirement_profile=valid_profile,
+                profile_binding=valid_binding,
+                closure_receipt=valid,
+                baseline_sources=replace(
+                    valid_sources,
+                    relation_topology=(stale_topology,),
+                ),
+                subject_inventory=valid_inventory,
+                check_receipts=valid_receipts,
+                history_event_ref="design-event:stale-relation-topology",
+            )
+
+        topology_graph = valid_sources.relation_topology[0].promotion.graph
+        alternate_graph = replace(
+            topology_graph,
+            graph_id="alternate-realization-graph",
+        )
+        program = relation_compiled_program()
+        snapshot = replace(
+            relation_readback(
+                program,
+                selected_branch=alternate_graph.branch,
+            ),
+            stage_id=alternate_graph.stage_id,
+        )
+        alternate_realization = RelationRealizationBaselineSource(
+            graph=alternate_graph,
+            manifest=relation_manifest(
+                alternate_graph,
+                program,
+                snapshot,
+                (),
+                pairings=(),
+            ),
+            program=program,
+            readback=snapshot,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "topology and realization must bind the same exact graph set",
+        ):
+            derive_stage_requirement_profile(
+                valid_profile,
+                level=StageBaselineLevel.SPATIAL,
+                sources=replace(
+                    valid_sources,
+                    relation_realization=(alternate_realization,),
+                ),
+                subject_digest=valid.subject_digest,
+                subject_inventory=valid_inventory,
+            )
+
         with self.assertRaisesRegex(TypeError, "requirement_profile"):
             advance_design_phase(
                 checkpoint,
@@ -2732,7 +3064,7 @@ class DesignControllerTurnTests(unittest.TestCase):
             ),
             (
                 replace(valid, subject_digest=_hash("stale-subject")),
-                "subject digest is stale",
+                "authorized profile|subject digest is stale",
             ),
             (
                 _stage_closure_receipt(

@@ -19,6 +19,11 @@ from archflow.control.relation_promotion import (
     RelationPromotionReceipt,
     RelationPromotionResult,
 )
+from archflow.control.stage_relation_inheritance import (
+    STAGE_RELATION_INHERITANCE_CHECKER_ID,
+    STAGE_RELATION_INHERITANCE_CHECK_ID,
+    stage_relation_inheritance_denominator,
+)
 from archflow.materials.binding import MaterialBindingProfile
 from archflow.relations.checks import (
     RELATION_COVERAGE_CHECKER_ID,
@@ -188,6 +193,41 @@ def relation_realization_stage_requirement(
         target_kind=RequirementTargetKind.RELATION,
         basis_mode=RequirementBasisMode.UNIVERSAL,
         denominator_refs=relation_realization_denominator(graph, manifest),
+    )
+
+
+def stage_relation_inheritance_stage_requirement(
+    predecessor: "AcceptedStageRelationPredecessor",
+    current_graph: ArchitecturalRelationGraph,
+    current_manifest: RelationRealizationManifest,
+    current_realization_receipt: "CheckReceiptEnvelope",
+) -> StageCheckRequirement:
+    """Require exact predecessor relation coverage and current revalidation."""
+
+    from archflow.control.stage_relation_inheritance import (
+        AcceptedStageRelationPredecessor,
+    )
+    from archflow.validation.contracts import CheckReceiptEnvelope
+
+    if not isinstance(predecessor, AcceptedStageRelationPredecessor):
+        raise TypeError(
+            "predecessor must be AcceptedStageRelationPredecessor"
+        )
+    if not isinstance(current_realization_receipt, CheckReceiptEnvelope):
+        raise TypeError(
+            "current_realization_receipt must be CheckReceiptEnvelope"
+        )
+    return StageCheckRequirement(
+        requirement_id=STAGE_RELATION_INHERITANCE_CHECK_ID,
+        checker_id=STAGE_RELATION_INHERITANCE_CHECKER_ID,
+        target_kind=RequirementTargetKind.RELATION,
+        basis_mode=RequirementBasisMode.UNIVERSAL,
+        denominator_refs=stage_relation_inheritance_denominator(
+            predecessor,
+            current_graph,
+            current_manifest,
+            current_realization_receipt,
+        ),
     )
 
 
@@ -376,5 +416,6 @@ __all__ = [
     "relation_authoring_stage_requirements",
     "relation_coverage_stage_requirement",
     "relation_realization_stage_requirement",
+    "stage_relation_inheritance_stage_requirement",
     "spatial_layout_stage_requirement",
 ]

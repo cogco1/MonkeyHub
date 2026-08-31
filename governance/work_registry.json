@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-30",
+  "updated_on": "2026-08-31",
   "phase": "P7 - semantic geometry production closure proven",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -12171,6 +12171,135 @@
       "completed_on": "2026-08-30",
       "evidence": [
         "Exact branch/scope/graph/program/readback/stage-subject binding; explicit pairings and ordered purpose-isolated paths; fail-closed endpoint joins and UNKNOWN without independent narrow phase; 124 related tests, architecture check, and compileall passed."
+      ]
+    },
+    {
+      "id": "M083",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make architectural relation completeness, exact physical realization, and cross-stage inheritance mandatory shared stage-exit controls instead of optional helpers that an individual runner can omit.",
+      "depends_on": [
+        "P077",
+        "M082"
+      ],
+      "write_scope": [
+        "archflow/control/__init__.py",
+        "archflow/control/baseline.py",
+        "archflow/control/check_requirements.py",
+        "archflow/control/stage_relation_inheritance.py",
+        "archflow/runtime/design_controller.py",
+        "archflow/runtime/hierarchical_search.py",
+        "archflow/validation/relation_realization.py",
+        "tests/test_stage_baseline.py",
+        "tests/test_relation_realization.py",
+        "tests/test_stage_relation_inheritance.py",
+        "tests/test_design_controller.py",
+        "tests/test_hierarchical_search_controller.py",
+        "tests/integration/test_design_state_resume.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Spatial stage exits derive relation-question and mechanical slot coverage from the exact stage subject inventory; a sparse caller-authored profile cannot omit the relation denominator.",
+        "Developed and coordinated stage exits additionally require exact relation realization against the current compiled program and CAD readback, with explicit object pairings or ordered paths and independent narrow-phase receipts.",
+        "Contact interfaces, host interfaces, walking paths, support chains, and load paths have non-interchangeable typed purposes; a chain through a third object cannot satisfy a declared direct interface.",
+        "Coordinated/detail stages mechanically cover every predecessor relation and freshly revalidate retained or refined relations against the current stage subject, program, and readback.",
+        "Exact legacy stage-exit records remain read-only replayable but cannot author a new sparse stage closure under the current contract.",
+        "The shared controller and governance replay paths enforce the same derived denominator without introducing a project-specific architectural answer."
+      ],
+      "tests": [
+        "Stage-baseline source derivation, sparse-profile rejection, and legacy read-only replay",
+        "Direct-interface, purpose isolation, and exact pairing denominator",
+        "Cross-stage relation coverage and fresh current-stage revalidation",
+        "Design-controller and hierarchical-search governance regressions",
+        "Architecture check and compileall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "tests/test_stage_baseline.py",
+          "tests/test_relation_realization.py",
+          "tests/test_stage_relation_inheritance.py",
+          "tests/test_relation_authoring.py",
+          "tests/test_relation_coverage.py",
+          "tests/test_design_controller.py",
+          "tests/test_hierarchical_search_controller.py",
+          "tests/integration/test_design_state_resume.py",
+          "-q"
+        ],
+        [
+          "{python}",
+          "-m",
+          "compileall",
+          "-q",
+          "archflow"
+        ]
+      ],
+      "card": "docs/mapping/archive/M083-mandatory-staged-relation-control.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M083",
+        "actor": "codex",
+        "verified_at": "2026-08-31T05:22:20.250503+00:00",
+        "contract_sha256": "3f12c214170e978f3e4eb03f2ad0eb2c1ee98a7b90f0727e3fb30a5656eed514",
+        "scope_sha256": "01627c467e31f15cae7be8917be92e720333b79c9b1e0b72b3b577a9fa9b3213",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "165e02792f7a85f9849415ed210ca28de91bdc7443dfb659baa5096912b6762a",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (189 files, 1.071s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "pytest",
+              "tests/test_stage_baseline.py",
+              "tests/test_relation_realization.py",
+              "tests/test_stage_relation_inheritance.py",
+              "tests/test_relation_authoring.py",
+              "tests/test_relation_coverage.py",
+              "tests/test_design_controller.py",
+              "tests/test_hierarchical_search_controller.py",
+              "tests/integration/test_design_state_resume.py",
+              "-q"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "eee4cf52f59859a2e189c93a4ea36a5e0f0bb325e905e0ac59a95858bc358fd4",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "........................................................................ [ 51%]\n....................................................................     [100%]\n140 passed in 17.85s\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "compileall",
+              "-q",
+              "archflow"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-31",
+      "evidence": [
+        "140 targeted relation-control tests passed; compileall passed; ARCHITECTURE PASS (189 files); exact P036 byte-digest replay rejects forged same-path refs; full suite 1026 passed, 6 skipped, 40 known unrelated failures from missing promoted probes and stale oculus fixtures"
       ]
     }
   ]

@@ -99,10 +99,16 @@ from archflow.control.convergence import (
 )
 from archflow.control.baseline import (
     StageBaselineCoverageReceipt,
+    StageBaselineError,
+    StageBaselineRole,
     StageBaselineSourceSet,
     StageBaselineStatus,
     baseline_level_for_design_phase,
     compile_stage_baseline_coverage,
+    derive_stage_baseline_requirements,
+)
+from archflow.control.stage_relation_inheritance import (
+    AcceptedRelationTopologyIdentity,
 )
 from archflow.control.requirements import StageRequirementProfile
 from archflow.control.stage_closure import (
@@ -193,6 +199,19 @@ def _canonical_json(value: object) -> str:
 
 def _digest(value: object) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def _p036_json_record_digest(value: Mapping[str, Any]) -> str:
+    """Recompute the exact byte digest owned by the P036 JSON writer."""
+
+    encoded = json.dumps(
+        dict(value),
+        allow_nan=False,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256((encoded + "\n").encode("utf-8")).hexdigest()
 
 
 def _text(value: object, field: str) -> str:
@@ -1038,7 +1057,10 @@ class ProjectControllerArchiveAdapter:
             run=self.branch.run,
             destination=self._destination,
         ):
-            payload = self._repository.load_json(ref)
+            payload = self._load_verified_json_record(
+                ref,
+                field="design event record",
+            )
             if payload.get("schema") != self.EVENT_SCHEMA:
                 continue
             events.append(DesignEvent.from_dict(payload))
@@ -1143,8 +1165,9 @@ class ProjectControllerArchiveAdapter:
                 raise DesignControllerError(
                     "checkpoint lineage does not advance"
                 )
-            current_payload = self._repository.load_json(
-                current.record_ref
+            current_payload = self._load_verified_json_record(
+                current.record_ref,
+                field="current controller checkpoint record",
             )
             if current_payload.get("schema") != self.CHECKPOINT_SCHEMA:
                 raise DesignControllerError(
@@ -1254,7 +1277,10 @@ class ProjectControllerArchiveAdapter:
                 "controller checkpoint lineage contains a cycle"
             )
         ancestry = (*ancestry, identity)
-        payload = self._repository.load_json(ref)
+        payload = self._load_verified_json_record(
+            ref,
+            field="controller checkpoint record",
+        )
         base_fields = {
             "schema",
             "project_id",
@@ -1468,7 +1494,10 @@ class ProjectControllerArchiveAdapter:
                 "checkpoint lineage does not advance"
             )
 
-        previous_payload = self._repository.load_json(previous_ref)
+        previous_payload = self._load_verified_json_record(
+            previous_ref,
+            field="previous controller checkpoint record",
+        )
         expected_anchor = self._checkpoint_anchor_ref(
             previous_ref,
             previous_payload,
@@ -1490,7 +1519,10 @@ class ProjectControllerArchiveAdapter:
             anchor_ref,
             ancestry=ancestry,
         )
-        anchor_payload = self._repository.load_json(anchor_ref)
+        anchor_payload = self._load_verified_json_record(
+            anchor_ref,
+            field="controller stage-exit anchor record",
+        )
         anchor_proof = anchor_payload.get("stage_exit_proof")
         if (
             anchor_payload.get("schema") != self.CHECKPOINT_SCHEMA
@@ -1556,7 +1588,10 @@ class ProjectControllerArchiveAdapter:
             run=self.branch.run,
             destination=self._destination,
         ):
-            payload = self._repository.load_json(ref)
+            payload = self._load_verified_json_record(
+                ref,
+                field="controller checkpoint candidate record",
+            )
             if payload.get("schema") not in {
                 self.LEGACY_CHECKPOINT_SCHEMA,
                 self.PROOF_CHECKPOINT_SCHEMA,
@@ -1616,8 +1651,9 @@ class ProjectControllerArchiveAdapter:
                 "branch has ambiguous latest checkpoint lineage"
             )
         selected = latest[0]
-        selected_payload = self._repository.load_json(
-            selected.record_ref
+        selected_payload = self._load_verified_json_record(
+            selected.record_ref,
+            field="selected controller checkpoint record",
         )
         if selected_payload.get("schema") == self.CHECKPOINT_SCHEMA:
             raw_previous = selected_payload.get("previous_checkpoint_ref")
@@ -1674,12 +1710,35 @@ class ProjectControllerArchiveAdapter:
             raise DesignControllerError(
                 f"{field} is not a JSON project record"
             )
+        return self._load_verified_json_record(ref, field=field)
+
+    def _load_verified_json_record(
+        self,
+        ref: ProjectRecordRef,
+        *,
+        field: str,
+    ) -> dict[str, Any]:
         try:
-            return self._repository.load_json(ref)
+            payload = self._repository.load_json(ref)
         except Exception as exc:
             raise DesignControllerError(
                 f"{field} P036 readback failed"
             ) from exc
+        if not isinstance(payload, Mapping):
+            raise DesignControllerError(
+                f"{field} P036 readback is not a JSON mapping"
+            )
+        try:
+            digest = _p036_json_record_digest(payload)
+        except (TypeError, ValueError) as exc:
+            raise DesignControllerError(
+                f"{field} P036 readback is not finite JSON"
+            ) from exc
+        if digest != ref.sha256:
+            raise DesignControllerError(
+                f"{field} P036 byte digest disagrees with its exact ref"
+            )
+        return dict(payload)
 
     def _load_same_project_json(
         self,
@@ -1697,12 +1756,7 @@ class ProjectControllerArchiveAdapter:
             raise DesignControllerError(
                 f"{field} is not a JSON project record"
             )
-        try:
-            return self._repository.load_json(ref)
-        except Exception as exc:
-            raise DesignControllerError(
-                f"{field} P036 readback failed"
-            ) from exc
+        return self._load_verified_json_record(ref, field=field)
 
     def _read_stage_exit_bundle(
         self,
@@ -1812,6 +1866,9 @@ class ProjectControllerArchiveAdapter:
                     source.profile.branch
                     for source in baseline_sources.cad_readback
                 ),
+                *(source.branch for source in baseline_sources.relation_topology),
+                *(source.branch for source in baseline_sources.relation_realization),
+                *(source.branch for source in baseline_sources.relation_inheritance),
             )
         ):
             raise DesignControllerError(
@@ -1956,8 +2013,43 @@ class ProjectControllerArchiveAdapter:
                 "stage subject role obligations are not authorized by the "
                 "exact profile binding"
             )
+        framework_requirements = derive_stage_baseline_requirements(
+            profile,
+            level=subject_inventory.baseline_level,
+            sources=baseline_sources,
+            subject_digest=subject_inventory.stage_subject_digest,
+            subject_inventory=subject_inventory,
+        )
+        framework_internal_refs = {
+            ref
+            for requirement in framework_requirements
+            for ref in (
+                *requirement.required_claim_refs,
+                *requirement.required_applicability_refs,
+                *requirement.required_adoption_refs,
+                *requirement.required_source_refs,
+                *requirement.required_authority_refs,
+            )
+            if not ref.startswith("project://")
+        }
+        all_basis_refs = profile_basis_uris | inventory_basis_uris
+        unbacked_internal_refs = {
+            ref
+            for ref in all_basis_refs
+            if not ref.startswith("project://")
+            and ref not in framework_internal_refs
+        }
+        if unbacked_internal_refs:
+            raise DesignControllerError(
+                "stage-exit requirement basis refs are not exact typed "
+                "baseline or P036 records"
+            )
         required_basis_uris = tuple(
-            sorted(profile_basis_uris | inventory_basis_uris)
+            sorted(
+                ref
+                for ref in all_basis_refs
+                if ref.startswith("project://")
+            )
         )
         supplied_basis_uris = tuple(
             sorted(ref.uri for ref in bundle.requirement_basis_refs)
@@ -2046,6 +2138,10 @@ class ProjectControllerArchiveAdapter:
         if not binding.is_legacy_read_only:
             raise DesignControllerError(
                 "legacy stage-exit proof requires a read-only profile binding"
+            )
+        if not baseline_sources.is_legacy_read_only:
+            raise DesignControllerError(
+                "legacy stage-exit proof requires read-only baseline sources"
             )
         if baseline_coverage.stage_subject_inventory_digest is not None:
             raise DesignControllerError(
@@ -2239,6 +2335,11 @@ class ProjectControllerArchiveAdapter:
                 "stage subject does not retain the exact component proposal "
                 "record as predecessor evidence"
             )
+        self._require_accepted_relation_predecessors(
+            previous,
+            bundle.predecessor_checkpoint_ref,
+            baseline_sources,
+        )
         recomputed_baseline = compile_stage_baseline_coverage(
             profile,
             level=baseline_level_for_design_phase(
@@ -2288,6 +2389,263 @@ class ProjectControllerArchiveAdapter:
             ],
         }
         return {**content, "proof_digest": _digest(content)}
+
+    def _require_accepted_relation_predecessors(
+        self,
+        previous: DesignControllerCheckpoint,
+        predecessor_checkpoint_ref: ProjectRecordRef,
+        current_sources: StageBaselineSourceSet,
+    ) -> None:
+        """Replay the prior accepted stage graph named by inheritance inputs."""
+
+        if not current_sources.relation_inheritance:
+            return
+        predecessor_payload = self._load_verified_json_record(
+            predecessor_checkpoint_ref,
+            field="relation predecessor checkpoint record",
+        )
+        anchor_ref = self._checkpoint_anchor_ref(
+            predecessor_checkpoint_ref,
+            predecessor_payload,
+        )
+        if anchor_ref is None:
+            raise DesignControllerError(
+                "relation inheritance has no accepted predecessor stage-exit anchor"
+            )
+        anchor_payload = self._load_verified_json_record(
+            anchor_ref,
+            field="relation predecessor stage-exit anchor record",
+        )
+        raw_proof = anchor_payload.get("stage_exit_proof")
+        if not isinstance(raw_proof, Mapping):
+            raise DesignControllerError(
+                "relation inheritance predecessor anchor has no stage-exit proof"
+            )
+        proof = self._parse_stage_exit_proof(raw_proof)
+        if proof["schema"] != self.STAGE_EXIT_PROOF_SCHEMA:
+            raise DesignControllerError(
+                "relation inheritance cannot use a legacy stage-exit proof"
+            )
+        predecessor_bundle = StageExitArchiveBundle.from_dict(
+            proof["bundle"]
+        )
+        try:
+            predecessor_sources = StageBaselineSourceSet.from_dict(
+                self._load_exact_branch_json(
+                    predecessor_bundle.baseline_sources_ref,
+                    field="relation predecessor baseline_sources_ref",
+                )
+            )
+            predecessor_coverage = StageBaselineCoverageReceipt.from_dict(
+                self._load_exact_branch_json(
+                    predecessor_bundle.baseline_coverage_ref,
+                    field="relation predecessor baseline_coverage_ref",
+                )
+            )
+        except DesignControllerError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise DesignControllerError(
+                "relation predecessor baseline sources are invalid"
+            ) from exc
+        if (
+            predecessor_sources.is_legacy_read_only
+            or predecessor_sources.source_set_digest
+            != proof["baseline_sources_digest"]
+            or predecessor_coverage.stage_subject_inventory_digest is None
+            or predecessor_coverage.receipt_digest
+            != proof["baseline_coverage_digest"]
+        ):
+            raise DesignControllerError(
+                "relation predecessor baseline evidence does not replay exactly"
+            )
+        topology_by_digest = {
+            source.source_digest: source
+            for source in predecessor_sources.relation_topology
+        }
+        if len(topology_by_digest) != len(
+            predecessor_sources.relation_topology
+        ):
+            raise DesignControllerError(
+                "accepted predecessor repeats a relation topology source"
+            )
+        credited_source_digests = {
+            source_digest
+            for coverage in predecessor_coverage.coverage
+            if coverage.role is StageBaselineRole.ASSEMBLY_RELATIONSHIPS
+            for source_digest in coverage.source_digests
+        }
+        credited_topology_digests = (
+            credited_source_digests & set(topology_by_digest)
+        )
+        if not credited_topology_digests:
+            raise DesignControllerError(
+                "accepted predecessor baseline credited no relation topology"
+            )
+        accepted_topologies = tuple(
+            sorted(
+                (
+                    AcceptedRelationTopologyIdentity(
+                        topology_source_digest=source_digest,
+                        graph_digest=(
+                            topology_by_digest[
+                                source_digest
+                            ].promotion.graph.graph_digest
+                        ),
+                    )
+                    for source_digest in credited_topology_digests
+                ),
+                key=lambda item: (
+                    item.topology_source_digest,
+                    item.graph_digest,
+                ),
+            )
+        )
+        bound_topology_digests = {
+            source.predecessor.topology_source_digest
+            for source in current_sources.relation_inheritance
+        }
+        if bound_topology_digests != credited_topology_digests:
+            raise DesignControllerError(
+                "relation inheritance does not cover the exact accepted P036 "
+                "credited predecessor topology source set"
+            )
+        for source in current_sources.relation_inheritance:
+            binding = source.predecessor
+            topology = topology_by_digest.get(
+                binding.topology_source_digest
+            )
+            if (
+                binding.predecessor_checkpoint_ref
+                != predecessor_checkpoint_ref
+                or binding.predecessor_checkpoint_digest
+                != previous.checkpoint_digest
+                or binding.stage_exit_anchor_ref != anchor_ref
+                or binding.stage_exit_proof_digest != proof["proof_digest"]
+                or binding.baseline_sources_ref
+                != predecessor_bundle.baseline_sources_ref
+                or binding.baseline_sources_digest
+                != predecessor_sources.source_set_digest
+                or binding.baseline_coverage_ref
+                != predecessor_bundle.baseline_coverage_ref
+                or binding.baseline_coverage_digest
+                != predecessor_coverage.receipt_digest
+                or binding.accepted_topologies != accepted_topologies
+                or topology is None
+                or binding.graph != topology.promotion.graph
+                or binding.graph.stage_id != proof["stage_id"]
+                or binding.graph.stage_subject_digest
+                != proof["subject_digest"]
+            ):
+                raise DesignControllerError(
+                    "relation inheritance predecessor is not the exact accepted "
+                    "P036 stage graph"
+                )
+
+    def replay_accepted_relation_predecessors(
+        self,
+        current_sources: StageBaselineSourceSet,
+    ) -> tuple[ProjectRecordRef, ...]:
+        """Read-only P036 replay for proposal-only search governance.
+
+        The search compiler cannot turn claimed record paths into accepted
+        evidence.  This adapter first reloads the exact controller checkpoint,
+        including its event chain and stage-exit anchor, then reuses the same
+        accepted-source and credited-topology checks as durable stage exit.
+        """
+
+        if not isinstance(current_sources, StageBaselineSourceSet):
+            raise TypeError("current_sources must be StageBaselineSourceSet")
+        if not current_sources.relation_inheritance:
+            return ()
+        checkpoint_refs = {
+            source.predecessor.predecessor_checkpoint_ref
+            for source in current_sources.relation_inheritance
+        }
+        if len(checkpoint_refs) != 1:
+            raise DesignControllerError(
+                "relation inheritance crossed accepted predecessor checkpoints"
+            )
+        predecessor_checkpoint_ref = next(iter(checkpoint_refs))
+        resume = self.load_checkpoint(predecessor_checkpoint_ref)
+        self._require_accepted_relation_predecessors(
+            resume.checkpoint,
+            predecessor_checkpoint_ref,
+            current_sources,
+        )
+        refs = {
+            ref
+            for source in current_sources.relation_inheritance
+            for ref in (
+                source.predecessor.predecessor_checkpoint_ref,
+                source.predecessor.stage_exit_anchor_ref,
+                source.predecessor.baseline_sources_ref,
+                source.predecessor.baseline_coverage_ref,
+            )
+        }
+        return tuple(
+            sorted(
+                refs,
+                key=lambda ref: (
+                    ref.uri,
+                    ref.sha256,
+                    ref.media_type,
+                ),
+            )
+        )
+
+    def replay_exact_branch_json_records(
+        self,
+        records: tuple[
+            tuple[ProjectRecordRef, Mapping[str, object]],
+            ...,
+        ],
+    ) -> tuple[ProjectRecordRef, ...]:
+        """Reload exact branch records and compare their durable JSON values."""
+
+        if not isinstance(records, tuple) or not records:
+            raise DesignControllerError(
+                "durable governance replay requires branch records"
+            )
+        replayed: list[ProjectRecordRef] = []
+        for item in records:
+            if (
+                not isinstance(item, tuple)
+                or len(item) != 2
+                or not isinstance(item[0], ProjectRecordRef)
+                or not isinstance(item[1], Mapping)
+            ):
+                raise TypeError(
+                    "governance replay records must pair refs and JSON mappings"
+                )
+            ref, expected = item
+            actual = self._load_exact_branch_json(
+                ref,
+                field="search governance record",
+            )
+            if actual != dict(expected):
+                raise DesignControllerError(
+                    "search governance record content changed from its exact "
+                    "P036 value"
+                )
+            replayed.append(ref)
+        identities = tuple(
+            (ref.uri, ref.sha256, ref.media_type) for ref in replayed
+        )
+        if len(identities) != len(set(identities)):
+            raise DesignControllerError(
+                "search governance replay contains duplicate records"
+            )
+        return tuple(
+            sorted(
+                replayed,
+                key=lambda ref: (
+                    ref.uri,
+                    ref.sha256,
+                    ref.media_type,
+                ),
+            )
+        )
 
     def _parse_stage_exit_proof(
         self,
@@ -2571,7 +2929,10 @@ class ProjectControllerArchiveAdapter:
                     raise DesignControllerError(
                         "read-only stage-exit proof cannot authorize a new branch epoch"
                     )
-                anchor_payload = self._repository.load_json(anchor_ref)
+                anchor_payload = self._load_verified_json_record(
+                    anchor_ref,
+                    field="branch epoch stage-exit anchor record",
+                )
                 anchor_proof = anchor_payload.get("stage_exit_proof")
                 if (
                     anchor_payload.get("schema") != self.CHECKPOINT_SCHEMA
@@ -2589,7 +2950,10 @@ class ProjectControllerArchiveAdapter:
         ref: ProjectRecordRef,
     ) -> dict[str, object] | None:
         self._require_branch_record(ref)
-        payload = self._repository.load_json(ref)
+        payload = self._load_verified_json_record(
+            ref,
+            field="stage-exit proof checkpoint record",
+        )
         if payload.get("schema") == self.LEGACY_CHECKPOINT_SCHEMA:
             return None
         if payload.get("schema") not in {
@@ -3206,6 +3570,11 @@ def _require_exact_current_stage_closure(
         )
     if not isinstance(baseline_sources, StageBaselineSourceSet):
         raise TypeError("baseline_sources must be a StageBaselineSourceSet")
+    if baseline_sources.is_legacy_read_only:
+        raise DesignControllerError(
+            "legacy stage baseline sources are read-only and cannot authorize "
+            "a new phase advance"
+        )
     if not isinstance(subject_inventory, StageSubjectInventory):
         raise TypeError("subject_inventory must be a StageSubjectInventory")
     if not isinstance(check_receipts, tuple) or any(
@@ -3223,6 +3592,17 @@ def _require_exact_current_stage_closure(
         )
     target = checkpoint.tree.node(checkpoint.target_node_ref)
     state = target.operational_state
+    if any(
+        source.branch != state.branch
+        for source in (
+            *baseline_sources.relation_topology,
+            *baseline_sources.relation_realization,
+            *baseline_sources.relation_inheritance,
+        )
+    ):
+        raise DesignControllerError(
+            "stage relation baseline source is cross-branch or stale"
+        )
     if (
         requirement_profile.branch != state.branch
         or requirement_profile.branch != checkpoint.tree.branch
@@ -3367,14 +3747,17 @@ def _require_exact_current_stage_closure(
             "composite stage closure was not recomputed from the supplied "
             "exact check receipts"
         )
-    baseline = compile_stage_baseline_coverage(
-        requirement_profile,
-        level=baseline_level_for_design_phase(checkpoint.maturity.phase),
-        sources=baseline_sources,
-        subject_digest=current_digest,
-        subject_inventory=subject_inventory,
-        check_receipts=check_receipts,
-    )
+    try:
+        baseline = compile_stage_baseline_coverage(
+            requirement_profile,
+            level=baseline_level_for_design_phase(checkpoint.maturity.phase),
+            sources=baseline_sources,
+            subject_digest=current_digest,
+            subject_inventory=subject_inventory,
+            check_receipts=check_receipts,
+        )
+    except StageBaselineError as exc:
+        raise DesignControllerError(str(exc)) from exc
     if baseline.status is not StageBaselineStatus.SATISFIED:
         raise DesignControllerError(
             "stage requirement profile omits framework baseline roles: "

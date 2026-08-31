@@ -11,6 +11,7 @@ from archflow.contracts.canonical import canonical_digest
 from archflow.control.baseline import (
     BASELINE_LEVEL_ROLES,
     ComponentLineageBaselineSource,
+    RelationRealizationBaselineSource,
     SpatialLayoutBaselineSource,
     StageBaselineCoverageReceipt,
     StageBaselineStatus,
@@ -18,10 +19,17 @@ from archflow.control.baseline import (
     StageBaselineSourceSet,
     baseline_level_for_design_phase,
     compile_stage_baseline_coverage,
+    derive_stage_requirement_profile,
+    StageRelationInheritanceBaselineSource,
+)
+from archflow.control.stage_relation_inheritance import (
+    AcceptedRelationTopologyIdentity,
+    AcceptedStageRelationPredecessor,
 )
 from archflow.control.check_requirements import (
     assembly_stage_requirement,
     component_lineage_stage_requirement,
+    relation_authoring_stage_requirements,
     spatial_layout_stage_requirement,
 )
 from archflow.project import (
@@ -51,6 +59,11 @@ from archflow.runtime import (
 )
 from archflow.runtime.component_index import ComponentIndex, ComponentIndexEntry
 from archflow.runtime.design_controller import StageExitArchiveBundle
+from archflow.runtime.hierarchical_search import (
+    HierarchicalSearchProposalError,
+    _replay_search_relation_predecessors,
+    exact_record_ref,
+)
 from archflow.runtime.event_log import DesignEvent, EventDecision
 from archflow.runtime.state_reducer import (
     canonical_state_to_dict,
@@ -89,8 +102,15 @@ from archflow.validation.spatial import validate_spatial_layout
 from tests.test_design_controller import (
     _checkpoint,
     _phase_ready_checkpoint,
+    _stage_relation_topology_evidence,
 )
 from tests.test_stage_baseline import physical_sources
+from tests.test_relation_realization import (
+    compiled_program as relation_compiled_program,
+    graph as relation_graph,
+    manifest as relation_manifest,
+    readback as relation_readback,
+)
 
 
 def _bind_checkpoint(
@@ -179,16 +199,31 @@ def _mechanical_stage_subject_sources(
     source_ref: str,
 ) -> tuple[SpatialOptionProposal, ComponentIndex]:
     evidence = (source_ref,)
-    component = DesignComponent(
-        component_id="stage-root",
-        parent_component_id=None,
-        semantic_kind="stage-root",
-        intent="Bind the exact durable stage subject universe.",
-        maturity=ComponentMaturity.SCHEMATIC,
-        revision=0,
-        volume_ids=("stage-volume",),
-        unresolved_child_roles=(),
-        source_refs=evidence,
+    components = tuple(
+        DesignComponent(
+            component_id=component_id,
+            parent_component_id=parent_component_id,
+            semantic_kind=semantic_kind,
+            intent=(
+                "Bind the exact durable staged relation subject universe."
+            ),
+            maturity=ComponentMaturity.SCHEMATIC,
+            revision=0,
+            volume_ids=(
+                ("stage-volume",)
+                if component_id == "stage-root"
+                else ()
+            ),
+            unresolved_child_roles=(),
+            source_refs=evidence,
+        )
+        for component_id, parent_component_id, semantic_kind in (
+            ("stage-root", None, "stage-root"),
+            ("foundation", "stage-root", "foundation"),
+            ("column", "foundation", "column"),
+            ("beam", "column", "beam"),
+            ("roof", "beam", "roof"),
+        )
     )
     proposal = SpatialOptionProposal(
         option_id="durable-stage-subjects",
@@ -215,7 +250,7 @@ def _mechanical_stage_subject_sources(
                 evidence,
             ),
         ),
-        components=(component,),
+        components=components,
         connections=(),
         constraint_responses=(),
         typology_hypothesis="Generic durable stage fixture",
@@ -237,7 +272,7 @@ def _mechanical_stage_subject_sources(
         control_context_digest=_digest("durable-stage-control-context"),
         lifecycle_receipt_digest=_digest("durable-stage-lifecycle"),
         control_target_node_ref=checkpoint.target_node_ref,
-        entries=(
+        entries=tuple(
             ComponentIndexEntry(
                 component=component,
                 geometry_object_ids=(),
@@ -245,7 +280,11 @@ def _mechanical_stage_subject_sources(
                 dependency_ids=(),
                 task_ids=(),
                 source_refs=evidence,
-            ),
+            )
+            for component in sorted(
+                components,
+                key=lambda item: item.component_id,
+            )
         ),
         dependencies=(),
         tasks=(),
@@ -487,6 +526,45 @@ def _stage_exit_inputs(
         checkpoint.maturity.phase
     )
     targets = _stage_role_target_refs(sources)
+
+    def obligations_for(
+        component_id: str,
+    ) -> tuple[StageSubjectRoleObligation, ...]:
+        relation_roles = {
+            StageBaselineRole.ASSEMBLY_RELATIONSHIPS,
+            StageBaselineRole.LOAD_PATH,
+        }
+        root_roles = {
+            StageBaselineRole.COMPONENT_LINEAGE,
+            StageBaselineRole.SPATIAL_ENVELOPE,
+        }
+        return tuple(
+            StageSubjectRoleObligation(
+                role=role,
+                disposition=(
+                    StageSubjectDisposition.REQUIRED
+                    if (
+                        component_id == "stage-root" and role in root_roles
+                    ) or (
+                        component_id == "roof" and role in relation_roles
+                    )
+                    else StageSubjectDisposition.NOT_APPLICABLE
+                ),
+                target_refs=(
+                    targets[role]
+                    if component_id == "stage-root" and role in root_roles
+                    else (
+                        ("design-component:roof",)
+                        if component_id == "roof" and role in relation_roles
+                        else ()
+                    )
+                ),
+                evidence_refs=(source_ref,),
+                authority_refs=(authority_ref,),
+            )
+            for role in sorted(BASELINE_LEVEL_ROLES[baseline_level])
+        )
+
     inventory = compile_stage_subject_inventory(
         inventory_id="durable-stage-subject-inventory",
         branch=branch,
@@ -499,18 +577,33 @@ def _stage_exit_inputs(
         component_index=component_index,
         component_index_ref=component_index_ref,
         role_obligations={
-            "stage-root": tuple(
-                StageSubjectRoleObligation(
-                    role=role,
-                    disposition=StageSubjectDisposition.REQUIRED,
-                    target_refs=targets[role],
-                    evidence_refs=(source_ref,),
-                    authority_refs=(authority_ref,),
-                )
-                for role in sorted(BASELINE_LEVEL_ROLES[baseline_level])
-            ),
+            component.component_id: obligations_for(
+                component.component_id
+            )
+            for component in component_proposal.components
         },
     )
+    topology_source, _topology_requirements, topology_receipts = (
+        _stage_relation_topology_evidence(
+            inventory,
+            state_digest=subject_digest,
+            scope_digest=scope_digest,
+            source_ref=source_ref,
+            authority_ref=authority_ref,
+        )
+    )
+    sources = replace(
+        sources,
+        relation_topology=(topology_source,),
+    )
+    profile = derive_stage_requirement_profile(
+        profile,
+        level=baseline_level,
+        sources=sources,
+        subject_digest=subject_digest,
+        subject_inventory=inventory,
+    )
+    receipts = (*receipts, *topology_receipts)
     closure = compile_composite_stage_closure(
         profile,
         subject_digest=subject_digest,
@@ -927,9 +1020,166 @@ def _persist_true_legacy_stage_exit_checkpoint(
         branch_id=advanced.tree.branch.branch_id,
     )
 
+    current_profile = StageRequirementProfile.from_dict(
+        repository.load_json(bundle.profile_ref)
+    )
+    current_sources = StageBaselineSourceSet.from_dict(
+        repository.load_json(bundle.baseline_sources_ref)
+    )
+    current_inventory = StageSubjectInventory.from_dict(
+        repository.load_json(bundle.stage_subject_inventory_ref)
+    )
+    current_receipts = tuple(
+        CheckReceiptEnvelope.from_dict(repository.load_json(ref))
+        for ref in bundle.check_receipt_refs
+    )
+    topology_requirement_ids = {
+        requirement.requirement_id
+        for source in current_sources.relation_topology
+        for requirement in relation_authoring_stage_requirements(
+            source.context,
+            source.compilation,
+            current_inventory,
+            promotion=source.promotion,
+        )
+    }
+    legacy_profile = replace(
+        current_profile,
+        requirements=tuple(
+            requirement
+            for requirement in current_profile.requirements
+            if requirement.requirement_id not in topology_requirement_ids
+        ),
+    )
+    legacy_receipts = tuple(
+        receipt
+        for receipt in current_receipts
+        if receipt.check_id not in topology_requirement_ids
+    )
+    legacy_closure = compile_composite_stage_closure(
+        legacy_profile,
+        subject_digest=current_inventory.stage_subject_digest,
+        check_receipts=legacy_receipts,
+    )
+
+    current_sources_payload = current_sources.to_dict()
+    current_sources_payload["schema"] = StageBaselineSourceSet.LEGACY_SCHEMA
+    current_sources_payload.pop("relation_topology")
+    current_sources_payload.pop("relation_realization")
+    current_sources_payload.pop("relation_inheritance")
+    source_content = {
+        key: value
+        for key, value in current_sources_payload.items()
+        if key != "source_set_digest"
+    }
+    current_sources_payload["source_set_digest"] = canonical_digest(
+        source_content
+    )
+    legacy_sources = StageBaselineSourceSet.from_dict(
+        current_sources_payload
+    )
+    if not legacy_sources.is_legacy_read_only:
+        raise AssertionError("legacy baseline sources are not read-only")
+
+    legacy_targets = _stage_role_target_refs(legacy_sources)
+    evidence_ref = current_inventory.entries[0].role_obligations[0].evidence_refs[0]
+    authority_ref = current_inventory.entries[0].role_obligations[0].authority_refs[0]
+    legacy_inventory = replace(
+        current_inventory,
+        entries=tuple(
+            replace(
+                entry,
+                role_obligations=tuple(
+                    StageSubjectRoleObligation(
+                        role=role,
+                        disposition=(
+                            StageSubjectDisposition.REQUIRED
+                            if entry.component_id == "stage-root"
+                            else StageSubjectDisposition.NOT_APPLICABLE
+                        ),
+                        target_refs=(
+                            legacy_targets[role]
+                            if entry.component_id == "stage-root"
+                            else ()
+                        ),
+                        evidence_refs=(evidence_ref,),
+                        authority_refs=(authority_ref,),
+                    )
+                    for role in sorted(
+                        BASELINE_LEVEL_ROLES[
+                            current_inventory.baseline_level
+                        ]
+                    )
+                ),
+            )
+            for entry in current_inventory.entries
+        ),
+    )
+    current_legacy_baseline = compile_stage_baseline_coverage(
+        legacy_profile,
+        level=current_inventory.baseline_level,
+        sources=legacy_sources,
+        subject_digest=current_inventory.stage_subject_digest,
+        subject_inventory=legacy_inventory,
+        check_receipts=legacy_receipts,
+    )
+    if current_legacy_baseline.status is not StageBaselineStatus.SATISFIED:
+        raise AssertionError("legacy baseline fixture is not satisfied")
+    legacy_baseline_payload = current_legacy_baseline.to_dict()
+    legacy_baseline_payload["schema"] = (
+        StageBaselineCoverageReceipt.LEGACY_SCHEMA
+    )
+    legacy_baseline_payload.pop("stage_subject_inventory_digest")
+    legacy_baseline = StageBaselineCoverageReceipt.from_dict(
+        legacy_baseline_payload
+    )
+
+    legacy_profile_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="legacy-stage-requirement-profile",
+        payload=legacy_profile.to_dict(),
+    )
+    legacy_closure_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="legacy-stage-closure",
+        payload=legacy_closure.to_dict(),
+    )
+    legacy_check_records = tuple(
+        repository.put_json(
+            run=run,
+            destination=destination,
+            record_kind=f"legacy-stage-check-{index:03d}",
+            payload=receipt.to_dict(),
+        )
+        for index, receipt in enumerate(legacy_receipts)
+    )
+    legacy_sources_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="legacy-stage-baseline-sources-v1",
+        payload=legacy_sources.to_dict(),
+    )
+    legacy_baseline_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="legacy-stage-baseline-coverage-v2",
+        payload=legacy_baseline_payload,
+    )
+
     current_binding_payload = repository.load_json(bundle.profile_binding_ref)
     legacy_binding_payload = copy.deepcopy(current_binding_payload)
     legacy_binding_payload["schema"] = StageRequirementProfileBinding.LEGACY_SCHEMA
+    legacy_binding_payload["profile_digest"] = legacy_profile.profile_digest
+    legacy_binding_payload["profile_ref"] = _project_record_payload(
+        ProjectRecordRef(
+            project_id=legacy_profile_record.project_id,
+            relative_path=legacy_profile_record.relative_path,
+            sha256=legacy_profile.profile_digest,
+            media_type=legacy_profile_record.media_type,
+        )
+    )
     legacy_binding_payload.pop("stage_subject_inventory_ref")
     legacy_binding_payload.pop("stage_subject_inventory_digest")
     legacy_binding = StageRequirementProfileBinding.from_dict(
@@ -944,32 +1194,24 @@ def _persist_true_legacy_stage_exit_checkpoint(
         payload=legacy_binding_payload,
     )
 
-    current_baseline_payload = repository.load_json(
-        bundle.baseline_coverage_ref
-    )
-    legacy_baseline_payload = copy.deepcopy(current_baseline_payload)
-    legacy_baseline_payload["schema"] = (
-        StageBaselineCoverageReceipt.LEGACY_SCHEMA
-    )
-    legacy_baseline_payload.pop("stage_subject_inventory_digest")
-    legacy_baseline = StageBaselineCoverageReceipt.from_dict(
-        legacy_baseline_payload
-    )
-    if legacy_baseline.stage_subject_inventory_digest is not None:
-        raise AssertionError("legacy baseline fixture retained an inventory")
-    legacy_baseline_record = repository.put_json(
-        run=run,
-        destination=destination,
-        record_kind="legacy-stage-baseline-coverage-v2",
-        payload=legacy_baseline_payload,
-    )
-
     current_bundle_payload = bundle.to_dict()
     legacy_bundle_content = copy.deepcopy(current_bundle_payload)
     legacy_bundle_content.pop("bundle_digest")
     legacy_bundle_content["schema"] = bundle.LEGACY_SCHEMA
     legacy_bundle_content["profile_binding_ref"] = _project_record_payload(
         legacy_binding_record
+    )
+    legacy_bundle_content["profile_ref"] = _project_record_payload(
+        legacy_profile_record
+    )
+    legacy_bundle_content["closure_ref"] = _project_record_payload(
+        legacy_closure_record
+    )
+    legacy_bundle_content["check_receipt_refs"] = [
+        _project_record_payload(ref) for ref in legacy_check_records
+    ]
+    legacy_bundle_content["baseline_sources_ref"] = _project_record_payload(
+        legacy_sources_record
     )
     legacy_bundle_content["baseline_coverage_ref"] = _project_record_payload(
         legacy_baseline_record
@@ -994,9 +1236,21 @@ def _persist_true_legacy_stage_exit_checkpoint(
     legacy_proof_content["profile_binding_digest"] = (
         legacy_binding.binding_digest
     )
+    legacy_proof_content["profile_digest"] = legacy_profile.profile_digest
+    legacy_proof_content["closure_digest"] = legacy_closure.receipt_digest
+    legacy_proof_content["baseline_sources_digest"] = (
+        legacy_sources.source_set_digest
+    )
     legacy_proof_content["baseline_coverage_digest"] = (
         legacy_baseline.receipt_digest
     )
+    legacy_proof_content["check_receipt_digests"] = [
+        receipt.receipt_digest
+        for receipt in sorted(
+            legacy_receipts,
+            key=lambda item: item.receipt_digest,
+        )
+    ]
     legacy_proof_content.pop("stage_subject_inventory_digest")
     legacy_proof_payload = {
         **legacy_proof_content,
@@ -1530,14 +1784,18 @@ class DurableDesignStateResumeTests(unittest.TestCase):
                 sources,
                 assembly=(reduced_assembly,),
             )
-            reduced_requirements = (
-                component_lineage_stage_requirement(
-                    reduced_sources.component_lineage[0].profile
-                ),
-                spatial_layout_stage_requirement(
-                    reduced_sources.spatial_layout[0].profile
-                ),
-                assembly_stage_requirement(reduced_assembly),
+            original_assembly_requirement = assembly_stage_requirement(
+                original_assembly
+            )
+            reduced_assembly_requirement = assembly_stage_requirement(
+                reduced_assembly
+            )
+            reduced_requirements = tuple(
+                reduced_assembly_requirement
+                if requirement.requirement_id
+                == original_assembly_requirement.requirement_id
+                else requirement
+                for requirement in profile.requirements
             )
             reduced_profile = replace(
                 profile,
@@ -1716,6 +1974,165 @@ class DurableDesignStateResumeTests(unittest.TestCase):
             self.assertIsNotNone(
                 repository.load_json(record)["stage_exit_proof"]
             )
+
+    def test_relation_inheritance_replays_exact_accepted_p036_graph(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repository, adapter, _previous, advanced, bundle = (
+                _prepare_stage_exit(
+                    Path(temporary) / "controller-relation-predecessor",
+                    project_id="controller-relation-predecessor",
+                )
+            )
+            anchor_record = adapter.save_checkpoint(
+                advanced,
+                stage_exit_bundle=bundle,
+            )
+            proof = repository.load_json(anchor_record)["stage_exit_proof"]
+            self.assertIsInstance(proof, dict)
+            predecessor_sources = StageBaselineSourceSet.from_dict(
+                repository.load_json(bundle.baseline_sources_ref)
+            )
+            predecessor_coverage = StageBaselineCoverageReceipt.from_dict(
+                repository.load_json(bundle.baseline_coverage_ref)
+            )
+            credited_source_digests = {
+                source_digest
+                for coverage in predecessor_coverage.coverage
+                if coverage.role
+                is StageBaselineRole.ASSEMBLY_RELATIONSHIPS
+                for source_digest in coverage.source_digests
+            }
+            accepted_topologies = tuple(
+                AcceptedRelationTopologyIdentity(
+                    topology_source_digest=source.source_digest,
+                    graph_digest=source.promotion.graph.graph_digest,
+                )
+                for source in predecessor_sources.relation_topology
+                if source.source_digest in credited_source_digests
+            )
+            topology = predecessor_sources.relation_topology[0]
+            predecessor = AcceptedStageRelationPredecessor(
+                predecessor_checkpoint_ref=anchor_record,
+                predecessor_checkpoint_digest=advanced.checkpoint_digest,
+                stage_exit_anchor_ref=anchor_record,
+                stage_exit_proof_digest=proof["proof_digest"],
+                baseline_sources_ref=bundle.baseline_sources_ref,
+                baseline_sources_digest=(
+                    predecessor_sources.source_set_digest
+                ),
+                baseline_coverage_ref=bundle.baseline_coverage_ref,
+                baseline_coverage_digest=(
+                    predecessor_coverage.receipt_digest
+                ),
+                accepted_topologies=accepted_topologies,
+                topology_source_digest=topology.source_digest,
+                graph=topology.promotion.graph,
+            )
+            program = relation_compiled_program()
+            selected_graph = relation_graph()
+            snapshot = relation_readback(program)
+            current_realization = RelationRealizationBaselineSource(
+                graph=selected_graph,
+                manifest=relation_manifest(
+                    selected_graph,
+                    program,
+                    snapshot,
+                    (),
+                    pairings=(),
+                ),
+                program=program,
+                readback=snapshot,
+            )
+            inheritance_source = StageRelationInheritanceBaselineSource(
+                predecessor=predecessor,
+                current_realization=current_realization,
+            )
+            current_sources = StageBaselineSourceSet(
+                relation_inheritance=(inheritance_source,),
+            )
+            self.assertEqual(
+                StageBaselineSourceSet.from_dict(current_sources.to_dict()),
+                current_sources,
+            )
+
+            replayed_records = (
+                adapter.replay_accepted_relation_predecessors(
+                    current_sources
+                )
+            )
+            self.assertEqual(
+                _replay_search_relation_predecessors(
+                    current_sources,
+                    adapter,
+                ),
+                tuple(
+                    sorted(
+                        exact_record_ref(ref)
+                        for ref in replayed_records
+                    )
+                ),
+            )
+            with self.assertRaisesRegex(
+                HierarchicalSearchProposalError,
+                "requires durable P036 predecessor replay",
+            ):
+                _replay_search_relation_predecessors(
+                    current_sources,
+                    None,
+                )
+
+            forged_graph = replace(predecessor.graph, relations=())
+            forged = replace(
+                predecessor,
+                accepted_topologies=(
+                    AcceptedRelationTopologyIdentity(
+                        topology_source_digest=topology.source_digest,
+                        graph_digest=forged_graph.graph_digest,
+                    ),
+                ),
+                graph=forged_graph,
+            )
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "not the exact accepted P036 stage graph",
+            ):
+                adapter.replay_accepted_relation_predecessors(
+                    replace(
+                        current_sources,
+                        relation_inheritance=(
+                            replace(
+                                inheritance_source,
+                                predecessor=forged,
+                            ),
+                        ),
+                    )
+                )
+
+            fake_checkpoint = replace(
+                predecessor,
+                predecessor_checkpoint_ref=replace(
+                    predecessor.predecessor_checkpoint_ref,
+                    sha256="f" * 64,
+                ),
+            )
+            with self.assertRaisesRegex(
+                HierarchicalSearchProposalError,
+                "did not replay from exact P036 records",
+            ):
+                _replay_search_relation_predecessors(
+                    replace(
+                        current_sources,
+                        relation_inheritance=(
+                            replace(
+                                inheritance_source,
+                                predecessor=fake_checkpoint,
+                            ),
+                        ),
+                    ),
+                    adapter,
+                )
 
     def test_same_epoch_checkpoint_retains_exact_stage_exit_anchor(
         self,
