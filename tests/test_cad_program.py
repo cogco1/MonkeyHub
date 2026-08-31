@@ -47,6 +47,39 @@ def program(*operations, bindings=()):
 
 
 class TranslateTest(unittest.TestCase):
+    def test_loft_cap_ends_is_explicit_and_backward_compatible(self):
+        parameters = {
+            "profile_size": 4,
+            "profiles": [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 2.0, 0.0],
+                [1.0, 2.0, 0.0],
+                [1.0, 2.0, 1.0],
+                [0.0, 2.0, 1.0],
+            ],
+        }
+        capped = translate_to_rhino_python(
+            program(op("capped", "loft", ["capped-object"], **parameters))
+        )
+        open_loft = translate_to_rhino_python(
+            program(
+                op(
+                    "open",
+                    "loft",
+                    ["open-object"],
+                    cap_ends=False,
+                    **parameters,
+                )
+            )
+        )
+
+        self.assertIn("rs.CapPlanarHoles(_srf[0])", capped.script)
+        self.assertNotIn("rs.CapPlanarHoles(_srf[0])", open_loft.script)
+        self.assertIn("rs.AddLoftSrf(_rings)", open_loft.script)
+
     def test_script_is_deterministic_and_names_physical_objects(self):
         build = program(
             op(

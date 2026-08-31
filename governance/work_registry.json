@@ -11859,6 +11859,103 @@
       "evidence": [
         "54 target tests passed; repository verification PASS; real Rhino curved+loft+instance smoke succeeded with independent explicit trimmed-mesh readback, cleanup confirmed, and no tolerance widening."
       ]
+    },
+    {
+      "id": "M080",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Honor an explicit open-ended loft in exact Rhino translation so a measured ring profile can remain an actual opening instead of being silently capped or rebuilt through an analytically indeterminate boolean.",
+      "depends_on": [
+        "M079"
+      ],
+      "write_scope": [
+        "archflow/adapters/cad_program.py",
+        "tests/test_cad_program.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "A loft with cap_ends=false reaches Rhino as an uncapped Brep and a loft with cap_ends=true retains the existing cap behavior.",
+        "The choice is read only from the typed operation parameter and introduces no building-specific dimension or default.",
+        "Expected visible bounds remain derived from the exact profile denominator; no tolerance is widened and no boolean is faked."
+      ],
+      "tests": [
+        "CAD translation open-versus-capped loft regression tests",
+        "Architecture check and compileall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "tests/test_cad_program.py",
+          "-q"
+        ],
+        [
+          "{python}",
+          "-m",
+          "compileall",
+          "-q",
+          "archflow"
+        ]
+      ],
+      "card": "docs/mapping/archive/M080-explicit-open-loft-translation.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M080",
+        "actor": "codex",
+        "verified_at": "2026-08-31T01:22:47.425911+00:00",
+        "contract_sha256": "b6043319abd3dc32d1740cad87d4027e0ff6680a315e9988664ad5fff43dfbe0",
+        "scope_sha256": "d25764a72c034e2982a5e5a2e37fe16f7f56ba53ca48fb686d510ed45eec3faf",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "491444dae2fe904d4272adf966f31fd4add88785aed28f654acd1b22ceb3b5bc",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (186 files, 1.036s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "pytest",
+              "tests/test_cad_program.py",
+              "-q"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "fe7d42fa4595ec28138d47b584be346fb0d7ce12eef6744104232a5c89ef0f4b",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "................                                                         [100%]\n16 passed in 0.20s\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "compileall",
+              "-q",
+              "archflow"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-30",
+      "evidence": [
+        "16 CAD translation tests passed; cap_ends=false omits Rhino capping while the default/cap_ends=true path is unchanged; repository verification, architecture check, compileall, and diff check passed."
+      ]
     }
   ]
 }
