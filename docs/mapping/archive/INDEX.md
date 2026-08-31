@@ -148,5 +148,6 @@ Which completed work has named acceptance evidence?
 | M079 | modify | done | Make independent 3DM geometry readback compare the visible trimmed result of the exact CAD translation instead of an untrimmed NURBS control-surface envelope. | [M079](M079-trimmed-cad-bounds-readback.md) |
 | M080 | modify | done | Honor an explicit open-ended loft in exact Rhino translation so a measured ring profile can remain an actual opening instead of being silently capped or rebuilt through an analytically indeterminate boolean. | [M080](M080-explicit-open-loft-translation.md) |
 | M081 | modify | done | Expose a typed straight-loft interpolation mode in Rhino CAD translation so profile-derived analytic bounds remain exact instead of being violated by smooth NURBS end overshoot. | [M081](M081-typed-straight-loft-translation.md) |
+| M082 | modify | done | Require every declared architectural relation to bind its semantic endpoints to exact compiled objects and exact CAD readback objects, then bind explicit pairings or paths to independent checks before that relation can satisfy a stage requirement. | [M082](M082-exact-relation-realization-closure.md) |
 
 [Back to RMPA](../README.md)

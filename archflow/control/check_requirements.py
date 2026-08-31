@@ -34,6 +34,11 @@ from archflow.relations.coverage import (
     SemanticKindRelationPolicy,
     compile_requirement_slots,
 )
+from archflow.relations.realization import (
+    RELATION_REALIZATION_CHECKER_ID,
+    RelationRealizationManifest,
+    relation_realization_denominator,
+)
 from archflow.validation.assembly import AssemblyProfile
 from archflow.validation.cad_readback import CadReadbackProfile
 from archflow.validation.check_bridges import (
@@ -114,7 +119,6 @@ def relation_coverage_stage_requirement(
         relation_subject_inventory_ref,
         require_relation_subject_inventory,
     )
-
     if not isinstance(graph, ArchitecturalRelationGraph):
         raise TypeError("graph must be an ArchitecturalRelationGraph")
     if not isinstance(policy, SemanticKindRelationPolicy):
@@ -165,6 +169,25 @@ def relation_coverage_stage_requirement(
         denominator_refs=denominator,
         required_source_refs=source_refs,
         required_authority_refs=authority_refs,
+    )
+
+
+def relation_realization_stage_requirement(
+    graph: ArchitecturalRelationGraph,
+    manifest: RelationRealizationManifest,
+) -> StageCheckRequirement:
+    """Require exact semantic-to-program-to-readback relation closure."""
+
+    if not isinstance(graph, ArchitecturalRelationGraph):
+        raise TypeError("graph must be an ArchitecturalRelationGraph")
+    if not isinstance(manifest, RelationRealizationManifest):
+        raise TypeError("manifest must be a RelationRealizationManifest")
+    return StageCheckRequirement(
+        requirement_id=manifest.check_id,
+        checker_id=RELATION_REALIZATION_CHECKER_ID,
+        target_kind=RequirementTargetKind.RELATION,
+        basis_mode=RequirementBasisMode.UNIVERSAL,
+        denominator_refs=relation_realization_denominator(graph, manifest),
     )
 
 
@@ -352,5 +375,6 @@ __all__ = [
     "material_binding_stage_requirement",
     "relation_authoring_stage_requirements",
     "relation_coverage_stage_requirement",
+    "relation_realization_stage_requirement",
     "spatial_layout_stage_requirement",
 ]

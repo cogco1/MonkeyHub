@@ -12053,6 +12053,125 @@
       "evidence": [
         "17 CAD translation tests passed; typed straight loft emits Rhino ruled sections, default normal loft is unchanged, invalid types fail closed; repository verification, architecture check, compileall, and diff check passed."
       ]
+    },
+    {
+      "id": "M082",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Require every declared architectural relation to bind its semantic endpoints to exact compiled objects and exact CAD readback objects, then bind explicit pairings or paths to independent checks before that relation can satisfy a stage requirement.",
+      "depends_on": [
+        "P077",
+        "M079"
+      ],
+      "write_scope": [
+        "archflow/relations/__init__.py",
+        "archflow/relations/realization.py",
+        "archflow/validation/relation_realization.py",
+        "archflow/control/check_requirements.py",
+        "tests/test_relation_realization.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Relation realization is bound to one exact branch, scope, relation graph, compiled program, readback snapshot, and stage-subject digest.",
+        "Every semantic endpoint names its exact semantic binding, compiled output, producing operation, and readback object; missing or ambiguous bindings fail closed.",
+        "Multi-object endpoints use caller-authored pairings and ordered paths with no Cartesian expansion or GeometryOperation.input_object_ids inference.",
+        "Walking, load, support, host-interface, and contact-interface purposes remain independent; a walking-path pass cannot satisfy a support chain.",
+        "Object bindings without an exact independent narrow-phase receipt remain UNKNOWN, and a requirement-first bridge can place that result on composite stage closure without authority transfer.",
+        "No project-specific building answer enters the reusable contracts or checker."
+      ],
+      "tests": [
+        "Relation-realization contracts, fail-closed identity joins, explicit pairing/path, narrow-phase UNKNOWN, purpose isolation, and composite-stage closure",
+        "Architectural relation, assembly, walking-surface, and CAD-readback regressions",
+        "Architecture check and compileall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "tests/test_relation_realization.py",
+          "tests/test_architectural_relations.py",
+          "tests/test_relation_coverage.py",
+          "tests/test_relation_authoring.py",
+          "tests/test_relation_verification_bridge.py",
+          "tests/test_assembly_validation.py",
+          "tests/test_walking_surface_continuity.py",
+          "tests/test_cad_readback_contracts.py",
+          "-q"
+        ],
+        [
+          "{python}",
+          "-m",
+          "compileall",
+          "-q",
+          "archflow"
+        ]
+      ],
+      "card": "docs/mapping/archive/M082-exact-relation-realization-closure.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M082",
+        "actor": "codex",
+        "verified_at": "2026-08-31T01:55:02.547230+00:00",
+        "contract_sha256": "18cb874cd6dff535247b667c62ce1b84005c925a9d004e88122882ff6bbd2b8a",
+        "scope_sha256": "d99e13850ee73e6904bf3913011c4ef25a19d509c995df93eb7fd7e2400baaac",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "399dee6f06433a455bb3968950f048e4bed8942fe46d08eebc518475cd3c9f6e",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (188 files, 1.069s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "pytest",
+              "tests/test_relation_realization.py",
+              "tests/test_architectural_relations.py",
+              "tests/test_relation_coverage.py",
+              "tests/test_relation_authoring.py",
+              "tests/test_relation_verification_bridge.py",
+              "tests/test_assembly_validation.py",
+              "tests/test_walking_surface_continuity.py",
+              "tests/test_cad_readback_contracts.py",
+              "-q"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "2aa63cf88e20135b021aa99d05c6df4020b93a50708db6fb25ae3be1833d30fd",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "........................................................................ [ 58%]\n....................................................                     [100%]\n124 passed in 1.31s\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "compileall",
+              "-q",
+              "archflow"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-30",
+      "evidence": [
+        "Exact branch/scope/graph/program/readback/stage-subject binding; explicit pairings and ordered purpose-isolated paths; fail-closed endpoint joins and UNKNOWN without independent narrow phase; 124 related tests, architecture check, and compileall passed."
+      ]
     }
   ]
 }
