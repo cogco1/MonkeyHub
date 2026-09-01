@@ -87,6 +87,7 @@ def validate_policy(policy: dict[str, Any]) -> None:
         if not isinstance(policy.get(field), str) or not policy[field]:
             raise ArchitecturePolicyError(f"{field} must be non-empty text")
     for field in (
+        "checked_source_roots",
         "forbidden_instance_literals",
         "forbidden_framework_identifiers",
         "probe_executable_suffixes",
@@ -94,6 +95,15 @@ def validate_policy(policy: dict[str, Any]) -> None:
         "forbidden_commit_symbols",
     ):
         _require_string_list(policy, field)
+    checked_roots = policy["checked_source_roots"]
+    if len(checked_roots) != len(set(checked_roots)):
+        raise ArchitecturePolicyError(
+            "checked_source_roots must not contain duplicates"
+        )
+    if policy["source_root"] not in checked_roots:
+        raise ArchitecturePolicyError(
+            "checked_source_roots must include source_root"
+        )
 
     write_sites = policy.get("allowed_write_sites")
     if not isinstance(write_sites, list):
@@ -186,6 +196,22 @@ def _python_files(root: Path, relative_root: str) -> tuple[Path, ...]:
     )
 
 
+def _checked_python_files(
+    root: Path,
+    policy: dict[str, Any],
+) -> tuple[Path, ...]:
+    """Return one stable, de-duplicated file set for the configured roots."""
+
+    paths = {
+        path
+        for relative_root in policy["checked_source_roots"]
+        for path in _python_files(root, relative_root)
+    }
+    return tuple(
+        sorted(paths, key=lambda path: path.relative_to(root).as_posix())
+    )
+
+
 def _parse(path: Path, root: Path) -> tuple[ast.Module | None, Finding | None]:
     relative = path.relative_to(root).as_posix()
     try:
@@ -221,7 +247,10 @@ def check_imports(
     policy: dict[str, Any],
 ) -> Iterator[Finding]:
     for target, line in _import_targets(index.nodes):
-        if _module_matches(target, "probes"):
+        if _source_matches(
+            relative,
+            policy["source_root"],
+        ) and _module_matches(target, "probes"):
             yield Finding(
                 relative,
                 line,
@@ -445,7 +474,7 @@ def check_probe_boundary(root: Path, policy: dict[str, Any]) -> Iterator[Finding
 def run_checks(root: Path, policy: dict[str, Any]) -> tuple[Finding, ...]:
     validate_policy(policy)
     findings: list[Finding] = list(check_probe_boundary(root, policy))
-    for path in _python_files(root, policy["source_root"]):
+    for path in _checked_python_files(root, policy):
         relative = path.relative_to(root).as_posix()
         tree, parse_finding = _parse(path, root)
         if parse_finding is not None:
@@ -453,13 +482,18 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[Finding, ...]:
             continue
         assert tree is not None
         index = _index_tree(tree)
-        checks: Iterable[Iterable[Finding]] = (
-            check_imports(relative, index, policy),
-            check_instance_answers(relative, index, policy),
-            check_filesystem_writes(relative, index, policy),
-            check_authority_symbols(relative, index, policy),
-            check_commit_soft_gate_leak(relative, index, policy),
-        )
+        checks: list[Iterable[Finding]] = [
+            check_imports(relative, index, policy)
+        ]
+        if _source_matches(relative, policy["source_root"]):
+            checks.extend(
+                (
+                    check_instance_answers(relative, index, policy),
+                    check_filesystem_writes(relative, index, policy),
+                    check_authority_symbols(relative, index, policy),
+                    check_commit_soft_gate_leak(relative, index, policy),
+                )
+            )
         for result in checks:
             findings.extend(result)
     return tuple(sorted(set(findings)))
@@ -499,9 +533,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "schema": "ArchFlowArchitectureCheck@1",
                     "passed": not findings,
-                    "files_checked": len(
-                        _python_files(root, policy["source_root"])
-                    ),
+                    "files_checked": len(_checked_python_files(root, policy)),
                     "elapsed_seconds": round(elapsed, 6),
                     "findings": [item.to_dict() for item in findings],
                 },
@@ -519,7 +551,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(
             "ARCHITECTURE PASS "
-            f"({len(_python_files(root, policy['source_root']))} files, "
+            f"({len(_checked_python_files(root, policy))} files, "
             f"{elapsed:.3f}s)"
         )
     return 1 if findings else 0

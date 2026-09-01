@@ -24,7 +24,7 @@ from archflow.adapters.voxel_observation import (
     VoxelObservation,
 )
 from archflow.project import ProjectVersionRef
-from archflow.runtime.geometry_compiler import (
+from archflow.compilers.geometry import (
     CompiledGeometryProgram,
     GeometryCompileStatus,
 )

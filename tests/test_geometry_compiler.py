@@ -4,7 +4,10 @@ from dataclasses import replace
 from pathlib import Path
 import unittest
 
-from archflow.runtime.geometry_compiler import (
+import archflow.compilers as compiler_api
+import archflow.compilers.geometry as canonical_geometry_compiler
+import archflow.runtime.geometry_compiler as runtime_geometry_compiler
+from archflow.compilers.geometry import (
     AssetSubstitutionReceipt,
     GeometryCompileStatus,
     GeometryIssueCode,
@@ -244,6 +247,80 @@ def _codes(result) -> set[GeometryIssueCode]:
 
 
 class GeometryCompilerTests(unittest.TestCase):
+    def test_canonical_owner_freezes_payload_digest_and_facade_identity(
+        self,
+    ) -> None:
+        state = _state()
+        result = compile_geometry_program(
+            state,
+            _proposal(state),
+            active_commitment_refs=(COMMITMENT,),
+        )
+        assert result.program is not None
+
+        self.assertEqual(
+            "46cf330eb4d2b71123b40449a0ce97aaa081e19bef52b0ab02cbb2822b9abfb4",
+            result.program.program_digest,
+        )
+        self.assertEqual(
+            "ee422e9494526bc0959a8f1ffa172a4467e0ecd0929615427bd1c4ce61eb8a32",
+            result.receipt.receipt_digest,
+        )
+        self.assertEqual(
+            {
+                "schema": "GeometryCompilationReceipt@1",
+                "proposal_digest": (
+                    "e9a07293fb9be4a326e1171a18cc3c3985e8254f2aabf461f3618967f460a309"
+                ),
+                "status": "compiled",
+                "compiled_program_digest": (
+                    "46cf330eb4d2b71123b40449a0ce97aaa081e19bef52b0ab02cbb2822b9abfb4"
+                ),
+                "operation_order": [
+                    "opening-tool",
+                    "unrelated",
+                    "wall",
+                    "cut",
+                    "clearance",
+                    "frame",
+                    "hardware",
+                    "leaf",
+                ],
+                "issues": [],
+                "asset_substitutions": [],
+                "execution_authority": False,
+                "hard_gate_authority": False,
+                "canonical_write_authority": False,
+            },
+            result.receipt.to_dict(),
+        )
+        self.assertEqual(
+            {
+                "schema": "CompiledGeometryObject@1",
+                "object_id": "clearance",
+                "producer_op_id": "clearance",
+                "object_digest": (
+                    "a72e184cf3747fd89684b624e369e977c9291bd5617e2e981edc58266f6230c3"
+                ),
+            },
+            result.program.objects[0].to_dict(),
+        )
+        self.assertEqual(
+            canonical_geometry_compiler.__all__,
+            runtime_geometry_compiler.__all__,
+        )
+        for symbol in canonical_geometry_compiler.__all__:
+            self.assertIs(
+                getattr(canonical_geometry_compiler, symbol),
+                getattr(runtime_geometry_compiler, symbol),
+                symbol,
+            )
+            self.assertIs(
+                getattr(canonical_geometry_compiler, symbol),
+                getattr(compiler_api, symbol),
+                symbol,
+            )
+
     def test_graph_compiles_in_dependency_order_with_stable_objects(self) -> None:
         state = _state()
         proposal = _proposal(state)
@@ -523,6 +600,9 @@ class GeometryCompilerTests(unittest.TestCase):
             (root / "archflow/state/geometry_program.py")
             .read_text(encoding="utf-8")
             .lower()
+            + (
+                root / "archflow/compilers/geometry.py"
+            ).read_text(encoding="utf-8").lower()
             + (
                 root / "archflow/runtime/geometry_compiler.py"
             ).read_text(encoding="utf-8").lower()

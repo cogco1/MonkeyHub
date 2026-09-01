@@ -138,7 +138,7 @@ class StageGateDrillTest(unittest.TestCase):
     """M075: the criterion sits on the acceptance path, fail-closed."""
 
     def _run_gate(self, objects, tmp):
-        import tests.integration.test_monument_derivation as monument
+        from tools.projects.pantheon import monument_support as monument
         from archflow.project import (
             FilesystemProjectRepository,
             bootstrap_raw_request_project,
@@ -218,7 +218,7 @@ class StageGateDrillTest(unittest.TestCase):
         ]
 
     def test_off_axis_stage_is_rejected_and_never_accepted(self):
-        import tests.integration.test_monument_derivation as monument
+        from tools.projects.pantheon import monument_support as monument
 
         with tempfile.TemporaryDirectory() as tmp:
             _, repository, run, persist, root = self._run_gate(
@@ -256,7 +256,7 @@ class StageGateDrillTest(unittest.TestCase):
 
 class DerivedRowOriginTest(unittest.TestCase):
     def test_monument_rows_center_on_the_axis(self):
-        from tests.integration.test_monument_derivation import (
+        from tools.projects.pantheon.monument_support import (
             CENTER_X,
             _axial_row_origin,
         )

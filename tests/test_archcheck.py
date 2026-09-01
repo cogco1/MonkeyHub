@@ -71,6 +71,127 @@ class ArchitectureFirewallTests(unittest.TestCase):
             self.assertIn("UNOWNED_FILESYSTEM_WRITE", codes)
             self.assertIn("DUPLICATE_STATE_AUTHORITY", codes)
 
+    def test_framework_imports_cannot_reach_repository_support_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "archflow" / "bad_imports.py"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                "\n".join(
+                    (
+                        "from docs.guide import NOTES",
+                        "from probes.case import DATA",
+                        "from tests.helpers import FIXTURE",
+                        "from tools.builder import build",
+                        "",
+                    )
+                ),
+                encoding="utf-8",
+            )
+
+            findings = archcheck.run_checks(root, self.policy)
+
+            violations = {
+                (item.code, item.line)
+                for item in findings
+                if item.path == "archflow/bad_imports.py"
+            }
+            self.assertIn(("LAYER_AUTHORITY_VIOLATION", 1), violations)
+            self.assertIn(("PROBE_REVERSE_IMPORT", 2), violations)
+            self.assertIn(("LAYER_AUTHORITY_VIOLATION", 3), violations)
+            self.assertIn(("LAYER_AUTHORITY_VIOLATION", 4), violations)
+
+    def test_tool_imports_cannot_reach_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "tools" / "bad.py"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                "from tests.helpers import FIXTURE\n",
+                encoding="utf-8",
+            )
+
+            findings = archcheck.run_checks(root, self.policy)
+
+            self.assertEqual(
+                tuple(
+                    (item.path, item.line, item.code)
+                    for item in findings
+                ),
+                (("tools/bad.py", 1, "LAYER_AUTHORITY_VIOLATION"),),
+            )
+
+    def test_canonical_low_layers_cannot_import_runtime_or_adapters(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            sources = {
+                "contracts": "from archflow.runtime import Coordinator\n",
+                "ports": "from archflow.adapters import cli_retrieval\n",
+                "evidence": "from archflow.adapters.web_evidence import fetch\n",
+                "research": "from archflow.validation import validate\n",
+                "materials": "from archflow.runtime import Runner\n",
+                "control": "from archflow.adapters import cad\n",
+            }
+            for package, body in sources.items():
+                source = root / "archflow" / package / "bad.py"
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text(body, encoding="utf-8")
+
+            findings = archcheck.run_checks(root, self.policy)
+
+            violations = {
+                item.path
+                for item in findings
+                if item.code == "LAYER_AUTHORITY_VIOLATION"
+            }
+            self.assertEqual(
+                violations,
+                {
+                    f"archflow/{package}/bad.py"
+                    for package in sources
+                },
+            )
+
+    def test_framework_rejects_only_explicit_project_literals(self) -> None:
+        forbidden = ("Pantheon", "Parthenon", "P087", "Pentelic")
+        for literal in forbidden:
+            with (
+                self.subTest(literal=literal),
+                tempfile.TemporaryDirectory() as temp_dir,
+            ):
+                root = Path(temp_dir)
+                source = root / "archflow" / "bad_literal.py"
+                source.parent.mkdir(parents=True)
+                source.write_text(
+                    f"PROJECT_ANSWER = {literal!r}\n",
+                    encoding="utf-8",
+                )
+
+                findings = archcheck.run_checks(root, self.policy)
+
+                self.assertEqual(len(findings), 1)
+                self.assertEqual(findings[0].code, "INSTANCE_ANSWER_LITERAL")
+
+    def test_generic_vocabulary_and_project_tools_are_not_instance_answers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            framework = root / "archflow" / "generic.py"
+            framework.parent.mkdir(parents=True)
+            framework.write_text(
+                "RELATIONS = ('column', 'wall', 'door', 'marble', 'support')\n",
+                encoding="utf-8",
+            )
+            project_tool = root / "tools" / "project_runner.py"
+            project_tool.parent.mkdir(parents=True)
+            project_tool.write_text(
+                "PROJECT = 'Parthenon Pentelic P087'\n",
+                encoding="utf-8",
+            )
+
+            findings = archcheck.run_checks(root, self.policy)
+
+            self.assertEqual(findings, ())
+
     def test_probe_executable_and_root_run_store_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -3,7 +3,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from archflow.runtime.commitment_compiler import (
+import archflow.compilers.commitments as canonical_commitments
+import archflow.runtime.commitment_compiler as legacy_commitments
+from archflow.compilers.commitments import (
     CommitmentReplacementRequiresRevision,
     IntentCompilationStatus,
     IntentObservation,
@@ -39,6 +41,38 @@ def _observation(
 
 
 class CommitmentCompilerTests(unittest.TestCase):
+    def test_legacy_facade_reexports_canonical_objects_by_identity(self) -> None:
+        for name in legacy_commitments.__all__:
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(canonical_commitments, name),
+                    getattr(legacy_commitments, name),
+                )
+
+    def test_reference_intent_preserves_schema_digest_and_behavior(self) -> None:
+        term = IntentTerm(
+            "gross_area",
+            IntentOperator.MINIMUM,
+            1200,
+            "square_metres",
+        )
+        compilation = compile_intent(_observation(term))
+
+        self.assertEqual(
+            "39d393bfdd01ce889028c701160b17160ef0bbd481adf020acc1304e97e02697",
+            term.digest,
+        )
+        self.assertEqual("IntentCompilation@1", compilation.schema)
+        self.assertEqual(
+            "intent-b223eea826e87aa3d6b6",
+            compilation.compilation_id,
+        )
+        self.assertIs(compilation.status, IntentCompilationStatus.PROPOSED)
+        self.assertEqual(
+            "proposal.intent.1af8a30c198919835817",
+            compilation.proposals[0].proposal_id,
+        )
+
     def test_explicit_requirement_compiles_deterministically_but_not_active(self) -> None:
         use = IntentTerm(
             parameter_key="building.requested_use",
@@ -211,7 +245,7 @@ class CommitmentCompilerTests(unittest.TestCase):
     def test_compiler_has_no_pack_or_building_specific_default(self) -> None:
         source = (
             __import__(
-                "archflow.runtime.commitment_compiler",
+                "archflow.compilers.commitments",
                 fromlist=["__file__"],
             )
             .__file__

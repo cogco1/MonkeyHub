@@ -164,3 +164,31 @@ IFC 导出回执(`ifc-export-receipt`)、渲染清单
   (digest 摘要清单)——版本控制持有指纹,本体住工作区。
 - 首个住户:万神殿复原(P069)自 bootstrap 起生在
   `workspace/projects/pantheon-reconstruction/`。
+
+## 八、落点决策表(行为规则,2026-08-30 增补)
+
+三次落盘事故(RAG 记录滞留他项目、人读总览进全局库、预览件困于
+会话暂存区)的共同根因:本规范此前只定义了"区域是什么",没有规定
+"**动作发生的那一刻落哪**"。以下决策表为强制规则,对人和代理同等
+适用:
+
+| 正要产生的东西 | 唯一正确落点 |
+|---|---|
+| 任何 D2 记录(检索/快照/调用/采纳/校准)| **当前工作的项目** `runs/<run>/records/`;工具必须显式 `--project-id`,**禁止默认目标** |
+| 外来证据 | `run_basis_import.py` 整体导入当前项目(含快照与调用信封,带出处记录)|
+| 派生索引 / 执行契约 JSON / 人读总览 | 当前项目 `index/` |
+| 预览模型、截图、审查包(给人或其他代理看)| `V4_RUNTIME/output/YYMMDD_用途/` |
+| 证据级外化(正式 .3dm/.ifc/渲染)| 项目 `exports/` + 外化清单记录(D8)|
+| 重启备份 / 大文件过手 | `V4_RUNTIME/cache/` 或 `temp/` |
+| 会话 scratchpad 允许内容 | 工具结果解码缓冲、一次性诊断脚本 —— **仅此两类** |
+| 项目设计文档(计划/复原表)| 项目根目录;repo 仅留指针 stub(卡片引用不断链)|
+| 项目专属推导脚本 | repo `tools/`(需版本控制与测试),但其**实例参数**必须逐步外置为项目 `index/contracts/` 执行 JSON —— 代码在仓库,数值在项目 |
+| 归属拿不准的任何东西 | **问用户,不自作主张** |
+
+**RAG 三层归属**(用户裁定):全局 `reference_library/` 仅存
+**未采纳**原始文献;采纳即嵌入 —— 项目内 D2 记录自含可移交;
+执行层读项目 `index/contracts/`,不读代码字面量。
+
+**执行状态**(2026-08-30):p066-live-monument 已迁工作区(锚留 repo);
+PANTHEON_RECONSTRUCTION_PLAN.md 已迁 pantheon 项目(repo 留 stub);
+`run_decision_research` 已改为 `--project-id` 必填。

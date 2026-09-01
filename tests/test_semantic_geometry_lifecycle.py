@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.runtime.geometry_compiler import compile_geometry_program
+from archflow.compilers.geometry import compile_geometry_program
 from archflow.runtime.semantic_geometry_lifecycle import (
     SemanticGeometryLifecycleIssueCode,
     SemanticGeometryLifecycleStatus,

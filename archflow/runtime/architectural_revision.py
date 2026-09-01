@@ -14,6 +14,14 @@ from archflow.capabilities.design_development import (
     invalidate_developed_design,
     resume_development_after_selection,
 )
+from archflow.research.index import BranchBasisIndex
+from archflow.capabilities.evidence_sufficiency import (
+    DecisionUniverseClosure,
+    DecisionUniverseRevision,
+    EvidenceSufficiencyPolicy,
+    EvidenceSufficiencyReceipt,
+    ResearchFrontier,
+)
 from archflow.capabilities.geometry_proposal import (
     GeometryProposalIssue,
     GeometryProposalPolicy,
@@ -24,7 +32,7 @@ from archflow.capabilities.geometry_proposal import (
 )
 from archflow.capabilities.semantic_spatial_authoring import (
     SemanticSpatialAuthoringStatus,
-    author_semantic_spatial_option,
+    _author_semantic_spatial_option,
     semantic_spatial_repair_feedback,
 )
 from archflow.production import (
@@ -33,11 +41,13 @@ from archflow.production import (
     InvocationEvidenceCollector,
 )
 from archflow.project import (
+    FilesystemProjectRepository,
     PersistenceArea,
     PersistenceDestination,
     ProjectRecordRef,
     RunRef,
 )
+from archflow.runtime.branch_research import BranchResearchArchive
 from archflow.project.digests import canonical_json_sha256
 from archflow.realization import RealizationStatus, realize_geometry
 from archflow.runtime.production_runtime import (
@@ -45,7 +55,7 @@ from archflow.runtime.production_runtime import (
     ProductionAuthoringContext,
     ProductionStepCompilationFailed,
 )
-from archflow.runtime.geometry_compiler import CompiledGeometryProgram
+from archflow.compilers.geometry import CompiledGeometryProgram
 from archflow.runtime.semantic_geometry_lifecycle import (
     SemanticGeometryLifecycleStatus,
     compile_semantic_geometry_lifecycle,
@@ -297,6 +307,51 @@ def compile_architectural_revision_feedback(
     )
 
 
+def _require_branch_index_matches_selected_predecessor(
+    *,
+    branch_index: BranchBasisIndex,
+    portfolio: DesignOptionPortfolio,
+    selected_schematic: SelectedSchematicInput,
+    selection_ref: ProjectRecordRef,
+    expected_scope_digest: str,
+) -> None:
+    """Reject a valid index when it belongs to another selected Candidate."""
+
+    selected = portfolio.selected_branch
+    scope = branch_index.scope
+    if (
+        selected is None
+        or scope.run != portfolio.run
+        or scope.portfolio_id != portfolio.portfolio_id
+        or scope.portfolio_digest != portfolio.portfolio_digest
+        or scope.operational_state_digest != portfolio.operational_state_digest
+        or scope.branch_id != selected.branch_id
+        or scope.branch_revision_id != selected.head.revision_id
+        or scope.branch_revision_digest != selected.head.revision_digest
+        or scope.selection_record_ref != selection_ref
+        or selected_schematic.option.option_id != selected.branch_id
+        or selected_schematic.selection_decision_ref
+        != scope.selection_record_ref.uri
+        or expected_scope_digest != scope.scope_digest
+    ):
+        raise ArchitecturalRevisionError(
+            "branch RAG index does not match the selected predecessor Candidate"
+        )
+
+
+def _portfolio_uses_branch_research_selection(
+    portfolio: DesignOptionPortfolio,
+) -> bool:
+    """Detect P078 lineage from retained transitions, not caller-supplied refs."""
+
+    if not isinstance(portfolio, DesignOptionPortfolio):
+        raise TypeError("portfolio must be DesignOptionPortfolio")
+    fragment = (
+        f"/runs/{portfolio.run_id}/records/branch-selection-"
+    )
+    return any(fragment in item.decision_ref for item in portfolio.transitions)
+
+
 class ArchitecturalRevisionRepository(Protocol):
     def load_json(self, ref: ProjectRecordRef) -> dict[str, object]: ...
 
@@ -328,6 +383,14 @@ class ArchitecturalRevisionCompiler:
     geometry_policy: GeometryProposalPolicy = GeometryProposalPolicy(3)
     template_refs: tuple[ProjectRecordRef, ...] = ()
     predecessor_portfolio_ref: ProjectRecordRef | None = None
+    branch_basis_index_ref: ProjectRecordRef | None = None
+    expected_branch_scope_digest: str | None = None
+    branch_decision_refs: tuple[str, ...] = ()
+    branch_decision_universe: DecisionUniverseRevision | None = None
+    branch_evidence_policy: EvidenceSufficiencyPolicy | None = None
+    branch_universe_closure: DecisionUniverseClosure | None = None
+    branch_evidence_sufficiency: EvidenceSufficiencyReceipt | None = None
+    branch_research_frontier: ResearchFrontier | None = None
 
     def __post_init__(self) -> None:
         for method in ("load_json", "put_json"):
@@ -345,6 +408,83 @@ class ArchitecturalRevisionCompiler:
             raise TypeError("geometry_provider_identity is invalid")
         if not isinstance(self.geometry_policy, GeometryProposalPolicy):
             raise TypeError("geometry_policy is invalid")
+        branch_configured = (
+            self.branch_basis_index_ref is not None,
+            self.expected_branch_scope_digest is not None,
+            bool(self.branch_decision_refs),
+            self.branch_decision_universe is not None,
+            self.branch_evidence_policy is not None,
+            self.branch_universe_closure is not None,
+            self.branch_evidence_sufficiency is not None,
+            self.branch_research_frontier is not None,
+        )
+        if any(branch_configured) and not all(branch_configured):
+            raise ArchitecturalRevisionError(
+                "branch index, scope, decisions, and exact P079 acceptance "
+                "values are one input"
+            )
+        branch_selection_prefix = (
+            f"runs/{self.context.run.run_id}/records/branch-selection-"
+        )
+        if (
+            self.selection_ref.relative_path.startswith(branch_selection_prefix)
+            and not all(branch_configured)
+        ):
+            raise ArchitecturalRevisionError(
+                "branch-selected predecessor requires its persisted RAG index"
+            )
+        if self.expected_branch_scope_digest is not None:
+            _sha256(
+                self.expected_branch_scope_digest,
+                "expected_branch_scope_digest",
+            )
+            branch_types = (
+                (
+                    self.branch_decision_universe,
+                    DecisionUniverseRevision,
+                    "branch_decision_universe",
+                ),
+                (
+                    self.branch_evidence_policy,
+                    EvidenceSufficiencyPolicy,
+                    "branch_evidence_policy",
+                ),
+                (
+                    self.branch_universe_closure,
+                    DecisionUniverseClosure,
+                    "branch_universe_closure",
+                ),
+                (
+                    self.branch_evidence_sufficiency,
+                    EvidenceSufficiencyReceipt,
+                    "branch_evidence_sufficiency",
+                ),
+                (
+                    self.branch_research_frontier,
+                    ResearchFrontier,
+                    "branch_research_frontier",
+                ),
+            )
+            for value, expected_type, field in branch_types:
+                if not isinstance(value, expected_type):
+                    raise TypeError(f"{field} must be {expected_type.__name__}")
+            assert isinstance(
+                self.branch_decision_universe,
+                DecisionUniverseRevision,
+            )
+            if (
+                self.branch_decision_universe.scope_digest
+                != self.expected_branch_scope_digest
+            ):
+                raise ArchitecturalRevisionError(
+                    "branch decision universe crosses the expected research scope"
+                )
+        if self.branch_decision_refs != tuple(
+            sorted(set(self.branch_decision_refs))
+        ):
+            raise ArchitecturalRevisionError(
+                "branch decision refs must be sorted and unique"
+            )
         refs = self.intent_record_refs
         if any(item.project_id != self.context.run.project_id for item in refs):
             raise ArchitecturalRevisionError(
@@ -363,6 +503,7 @@ class ArchitecturalRevisionCompiler:
             self.architectural_contract_ref,
             self.architectural_receipt_ref,
             *((self.predecessor_portfolio_ref,) if self.predecessor_portfolio_ref else ()),
+            *((self.branch_basis_index_ref,) if self.branch_basis_index_ref else ()),
             *self.template_refs,
         )
         if any(not isinstance(item, ProjectRecordRef) for item in refs):
@@ -435,6 +576,12 @@ class ArchitecturalRevisionCompiler:
                 contract,
                 receipt,
             )
+            portfolio = self._reconstruct_predecessor_portfolio(
+                run=run,
+                raw_request=raw_request,
+                option_set=option_set,
+                predecessor_state=predecessor_state,
+            )
             feedback = compile_architectural_revision_feedback(
                 contract=contract,
                 receipt=receipt,
@@ -449,11 +596,83 @@ class ArchitecturalRevisionCompiler:
             revision_context = feedback.semantic_revision_context(
                 predecessor_spatial
             )
+            branch_index = None
+            branch_context = None
+            branch_scope_digest = None
+            predecessor_is_branch_conditioned = (
+                _portfolio_uses_branch_research_selection(portfolio)
+            )
+            if (
+                predecessor_is_branch_conditioned
+                and self.branch_basis_index_ref is None
+            ):
+                raise ArchitecturalRevisionError(
+                    "branch-selected predecessor requires its persisted RAG index"
+                )
+            if self.branch_basis_index_ref is not None:
+                if not isinstance(
+                    self.repository,
+                    FilesystemProjectRepository,
+                ):
+                    raise ArchitecturalRevisionError(
+                        "branch research requires the P036 project repository"
+                )
+                assert self.expected_branch_scope_digest is not None
+                assert isinstance(
+                    self.branch_decision_universe,
+                    DecisionUniverseRevision,
+                )
+                assert isinstance(
+                    self.branch_evidence_policy,
+                    EvidenceSufficiencyPolicy,
+                )
+                assert isinstance(
+                    self.branch_universe_closure,
+                    DecisionUniverseClosure,
+                )
+                assert isinstance(
+                    self.branch_evidence_sufficiency,
+                    EvidenceSufficiencyReceipt,
+                )
+                assert isinstance(
+                    self.branch_research_frontier,
+                    ResearchFrontier,
+                )
+                branch_archive = BranchResearchArchive(
+                    self.repository,
+                    run=run,
+                )
+                branch_index = branch_archive.load_index(
+                    self.branch_basis_index_ref,
+                    expected_scope_digest=(
+                        self.expected_branch_scope_digest
+                    ),
+                )
+                _require_branch_index_matches_selected_predecessor(
+                    branch_index=branch_index,
+                    portfolio=portfolio,
+                    selected_schematic=predecessor_state.selected_schematic,
+                    selection_ref=self.selection_ref,
+                    expected_scope_digest=(
+                        self.expected_branch_scope_digest
+                    ),
+                )
+                branch_scope_digest = branch_index.scope.scope_digest
+                branch_context = branch_archive.load_decision_context(
+                    self.branch_basis_index_ref,
+                    expected_scope_digest=branch_scope_digest,
+                    decision_refs=self.branch_decision_refs,
+                    universe=self.branch_decision_universe,
+                    policy=self.branch_evidence_policy,
+                    closure=self.branch_universe_closure,
+                    sufficiency=self.branch_evidence_sufficiency,
+                    frontier=self.branch_research_frontier,
+                )
             authored = None
             authoring_refs: list[ProjectRecordRef] = []
             repair_feedback = None
             for attempt_index in range(2):
-                authored = await author_semantic_spatial_option(
+                authored = await _author_semantic_spatial_option(
                     self.provider,
                     request_id=(
                         f"architectural-revision-{run.run_id}-"
@@ -467,6 +686,10 @@ class ArchitecturalRevisionCompiler:
                     build_policy=self.context.build_policy,
                     repair_feedback=repair_feedback,
                     revision_context=revision_context,
+                    branch_research_context=branch_context,
+                    expected_branch_scope_digest=(
+                        branch_scope_digest
+                    ),
                 )
                 authoring_ref = self.repository.put_json(
                     run=run,
@@ -521,12 +744,6 @@ class ArchitecturalRevisionCompiler:
                 destination=destination,
                 record_kind="architectural-revised-spatial-option",
                 payload=authored.proposal.to_dict(),
-            )
-            portfolio = self._reconstruct_predecessor_portfolio(
-                run=run,
-                raw_request=raw_request,
-                option_set=option_set,
-                predecessor_state=predecessor_state,
             )
             evidence_refs = tuple(
                 sorted(

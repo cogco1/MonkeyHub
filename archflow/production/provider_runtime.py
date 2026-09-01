@@ -6,11 +6,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from archflow.adapters.model_provider import (
+    ModelProviderSpec,
+    create_codex_cli_model_provider,
+)
+from archflow.ports.model import (
     AsyncModelProvider,
     ModelInvocationReceipt,
     ModelInvocationRequest,
-    ModelProviderSpec,
-    create_codex_cli_model_provider,
 )
 from archflow.production.responsibility import (
     HandoverDecision,

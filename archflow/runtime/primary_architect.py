@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping
 
-from archflow.adapters.model_provider import (
+from archflow.ports.model import (
     ModelInvocationReceipt,
     ModelInvocationRequest,
     ModelInvocationStatus,

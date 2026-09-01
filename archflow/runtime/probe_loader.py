@@ -17,7 +17,7 @@ from archflow.project import (
     RunRef,
 )
 from archflow.project.refs import require_identifier
-from archflow.runtime.brief_compiler import (
+from archflow.compilers.brief import (
     BriefIntentObservation,
     BriefObservation,
     CompiledDesignBrief,

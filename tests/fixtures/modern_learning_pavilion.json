@@ -1,0 +1,84 @@
+{
+  "schema": "ArchFlowSyntheticDecisionFixture@1",
+  "project_id": "modern-learning-pavilion",
+  "synthetic_test": true,
+  "empirical_authority": false,
+  "branch_id": "courtyard-scheme",
+  "stage": "coordination",
+  "decisions": [
+    {
+      "ref": "decision:structural-grid",
+      "ontology_kind": "coordination_parameter",
+      "value": "7.2 m",
+      "constraint_class": "hard"
+    },
+    {
+      "ref": "decision:facade-module",
+      "ontology_kind": "hosted_parameter",
+      "value": "1.2 m",
+      "constraint_class": "hard"
+    },
+    {
+      "ref": "decision:courtyard-clear-width",
+      "ontology_kind": "spatial_parameter",
+      "value": "12.0 m",
+      "constraint_class": "hard"
+    },
+    {
+      "ref": "decision:accessible-route",
+      "ontology_kind": "code_strategy",
+      "value": "continuous",
+      "constraint_class": "hard"
+    },
+    {
+      "ref": "decision:floor-to-floor",
+      "ontology_kind": "section_parameter",
+      "value": "4.2 m",
+      "constraint_class": "hard"
+    },
+    {
+      "ref": "decision:stair-geometry",
+      "ontology_kind": "egress_strategy",
+      "value": "pending-calibration",
+      "constraint_class": "hard"
+    },
+    {
+      "ref": "decision:facade-expression",
+      "ontology_kind": "design_preference",
+      "value": "regular-courtyard-rhythm",
+      "constraint_class": "soft"
+    }
+  ],
+  "required_relations": [
+    {
+      "ref": "relation:grid-constrains-facade",
+      "source_ref": "decision:structural-grid",
+      "target_ref": "decision:facade-module",
+      "relation_kind": "constrains"
+    },
+    {
+      "ref": "relation:courtyard-interfaces-route",
+      "source_ref": "decision:courtyard-clear-width",
+      "target_ref": "decision:accessible-route",
+      "relation_kind": "interfaces"
+    },
+    {
+      "ref": "relation:height-constrains-stair",
+      "source_ref": "decision:floor-to-floor",
+      "target_ref": "decision:stair-geometry",
+      "relation_kind": "constrains"
+    }
+  ],
+  "soft_preferences": [
+    {
+      "ref": "preference:courtyard-rhythm",
+      "target_ref": "decision:facade-expression",
+      "weight": 0.6
+    },
+    {
+      "ref": "preference:daylight-continuity",
+      "target_ref": "decision:facade-expression",
+      "weight": 0.4
+    }
+  ]
+}

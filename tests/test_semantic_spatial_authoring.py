@@ -6,7 +6,7 @@ import json
 import unittest
 from dataclasses import replace
 
-from archflow.adapters.model_provider import (
+from archflow.ports.model import (
     ModelInvocationReceipt,
     ModelInvocationRequest,
     ModelInvocationStatus,

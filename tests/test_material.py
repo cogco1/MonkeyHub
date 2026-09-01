@@ -2,13 +2,17 @@
 
 import unittest
 
-from archflow.capabilities.material import (
+import archflow.capabilities.material as legacy_material
+import archflow.materials as materials_api
+import archflow.materials.ledger as canonical_material
+from archflow.materials.ledger import (
     MaterialError,
     MaterialIntent,
     MaterialLedger,
     ledger_coverage,
     material_display_color,
 )
+from archflow.state.geometry_program import digest_value
 
 
 def intent(material_id, refs=("adoption://fact",), color=None):
@@ -35,6 +39,41 @@ BINDINGS = [
 
 
 class MaterialIntentTest(unittest.TestCase):
+    def test_legacy_facade_reexports_canonical_objects_by_identity(self):
+        for name in legacy_material.__all__:
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(canonical_material, name),
+                    getattr(legacy_material, name),
+                )
+
+    def test_package_exports_only_stable_public_api(self):
+        self.assertEqual(canonical_material.__all__, materials_api.__all__)
+        for name in materials_api.__all__:
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(canonical_material, name),
+                    getattr(materials_api, name),
+                )
+
+    def test_reference_payload_preserves_schema_digest_and_authority(self):
+        material_ledger = ledger()
+        payload = material_ledger.to_dict()
+        coverage = ledger_coverage(BINDINGS, material_ledger)
+
+        self.assertEqual("MaterialLedger@1", payload["schema"])
+        self.assertEqual(
+            "26b51a50cc3003f56e9499c28652d539269232b6d2159e2a6482f0770a3c2988",
+            digest_value(payload),
+        )
+        self.assertIs(payload["material_vocabulary_authority"], False)
+        self.assertIs(payload["canonical_write_authority"], False)
+        self.assertEqual("MaterialLedgerCoverage@1", coverage["schema"])
+        self.assertEqual(
+            "402dc9205fa728e9e936d4d6845c4f1901489c0e218715ec878f6a92bc021dbb",
+            digest_value(coverage),
+        )
+
     def test_provenance_is_mandatory(self):
         with self.assertRaises(MaterialError):
             intent("cast-stone", refs=())

@@ -10,13 +10,52 @@ from archflow.capabilities.experts import (
     ExpertSpec,
 )
 from archflow.capabilities.phase_gates import PhaseExpertMetadata
+from archflow.control.baseline import (
+    BASELINE_LEVEL_ROLES,
+    ComponentLineageBaselineSource,
+    SpatialLayoutBaselineSource,
+    StageBaselineLevel,
+    StageBaselineRole,
+    StageBaselineSourceSet,
+    baseline_level_for_design_phase,
+)
+from archflow.control.check_requirements import (
+    assembly_stage_requirement,
+    component_lineage_stage_requirement,
+    spatial_layout_stage_requirement,
+)
+from archflow.control.stage_closure import (
+    CompositeStageClosureReceipt,
+    StageClosureFinding,
+    StageClosureFindingCode,
+    StageClosureStatus,
+    compile_composite_stage_closure,
+)
+from archflow.control.profile import StageRequirementProfileBinding
+from archflow.control.stage_subjects import (
+    StageSubjectDisposition,
+    StageSubjectInventory,
+    StageSubjectInventoryEntry,
+    StageSubjectRoleObligation,
+)
+from archflow.control.requirements import (
+    RequirementBasisMode,
+    RequirementTargetKind,
+    StageCheckRequirement,
+    StageRequirementProfile,
+)
 from archflow.interaction import (
     ClarificationAlternative,
     ClarificationDisposition,
     ClarificationEffect,
     ClarifiedFactValue,
 )
-from archflow.project import BranchRef, ProjectVersionRef, RunRef
+from archflow.project import (
+    BranchRef,
+    ProjectRecordRef,
+    ProjectVersionRef,
+    RunRef,
+)
 from archflow.runtime.clarification import (
     create_clarification_request,
     issue_authority_decision,
@@ -37,6 +76,7 @@ from archflow.runtime.design_controller import (
     MidRunRequirementStatus,
     advance_design_phase,
     apply_architect_action,
+    close_reopened_nodes,
     compile_mid_run_requirement,
     consult_selected_experts,
     pause_for_clarification,
@@ -90,6 +130,20 @@ from archflow.state.operational_state import (
     StateDomain,
     StateFact,
 )
+from archflow.state.stage_convergence import (
+    StageConvergenceOutcome,
+    StageConvergencePotential,
+    StageConvergenceReceipt,
+    StageTransitionKind,
+)
+from archflow.validation.assembly import RelationshipKind, check_assembly
+from archflow.validation.check_bridges import (
+    bridge_component_lineage_receipt,
+    bridge_spatial_validation_receipt,
+)
+from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archflow.validation.spatial import validate_spatial_layout
+from tests.test_stage_baseline import physical_sources
 
 
 _GLOBAL_COMMITMENT_REF = "commitment:preserve-public-purpose"
@@ -97,6 +151,24 @@ _GLOBAL_COMMITMENT_REF = "commitment:preserve-public-purpose"
 
 def _hash(label: str) -> str:
     return hashlib.sha256(label.encode("utf-8")).hexdigest()
+
+
+def _stage_component_proposal_ref(
+    branch: BranchRef,
+    stage_id: str,
+    subject_digest: str,
+) -> ProjectRecordRef:
+    prefix = (
+        f"runs/{branch.run.run_id}/branches/"
+        f"{branch.branch_id}/records"
+    )
+    return ProjectRecordRef(
+        project_id=branch.run.project_id,
+        relative_path=f"{prefix}/component-proposal.json",
+        sha256=_hash(
+            f"component-proposal:{stage_id}:{subject_digest}"
+        ),
+    )
 
 
 def _branch(*, epoch: int = 0) -> BranchRef:
@@ -785,19 +857,27 @@ def _operator(
 def _phase_deliverables(
     checkpoint: DesignControllerCheckpoint,
 ) -> tuple[PhaseDeliverable, ...]:
+    branch = checkpoint.tree.branch
+    subject_digest = checkpoint.tree.node(
+        checkpoint.target_node_ref
+    ).operational_state.state_digest
+    proposal_ref = _stage_component_proposal_ref(
+        branch,
+        DesignPhase.SCHEMATIC_DESIGN.value,
+        subject_digest,
+    )
     return tuple(
         PhaseDeliverable(
             deliverable_id=f"schematic-{role.value}",
             role=role,
             produced_phase=DesignPhase.SCHEMATIC_DESIGN,
-            branch=checkpoint.tree.branch,
-            base_state_digest=(
-                checkpoint.tree.node(
-                    checkpoint.target_node_ref
-                ).operational_state.state_digest
-            ),
+            branch=branch,
+            base_state_digest=subject_digest,
             artifact_ref=f"artifact://schematic/{role.value}",
-            evidence_refs=(f"evidence://schematic/{role.value}",),
+            evidence_refs=(
+                f"evidence://schematic/{role.value}",
+                proposal_ref.uri,
+            ),
         )
         for role in sorted(
             PHASE_DELIVERABLE_ROLES[
@@ -863,6 +943,476 @@ def _phase_ready_checkpoint() -> DesignControllerCheckpoint:
         maturity=replace(
             current.maturity,
             deliverables=deliverables,
+        ),
+    )
+
+
+def _convergence_potential(
+    *,
+    open_refs: tuple[str, ...] = (),
+    invalidated_refs: tuple[str, ...] = (),
+) -> StageConvergencePotential:
+    return StageConvergencePotential(
+        hard_gate_failure_refs=(),
+        conflict_refs=(),
+        tolerance_failure_refs=(),
+        missing_mandatory_obligation_refs=(),
+        blocked_mandatory_obligation_refs=(),
+        open_mandatory_obligation_refs=open_refs,
+        invalidated_refs=invalidated_refs,
+        revalidation_refs=(),
+    )
+
+
+def _stage_convergence_receipt(
+    checkpoint: DesignControllerCheckpoint,
+    *,
+    outcome: StageConvergenceOutcome = StageConvergenceOutcome.PROGRESS,
+    transition_kind: StageTransitionKind = StageTransitionKind.RESOLVE,
+    potential_before: StageConvergencePotential | None = None,
+    potential_after: StageConvergencePotential | None = None,
+    receipt_branch: BranchRef | None = None,
+    child_state_digest: str | None = None,
+) -> StageConvergenceReceipt:
+    state = checkpoint.tree.node(
+        checkpoint.target_node_ref
+    ).operational_state
+    rejected = outcome is StageConvergenceOutcome.REJECTED
+    return StageConvergenceReceipt(
+        receipt_id=f"scr-{_hash(checkpoint.checkpoint_digest)[:24]}",
+        outcome=outcome,
+        request_id="controller-stage-close",
+        stage="schematic-design",
+        transition_kind=transition_kind,
+        branch=state.branch if receipt_branch is None else receipt_branch,
+        policy_digest=_hash("controller-stage-policy"),
+        parent_state_digest=_hash("controller-parent-state"),
+        child_state_digest=(
+            state.state_digest
+            if child_state_digest is None
+            else child_state_digest
+        ),
+        parent_sufficient_digest=_hash("controller-parent-sufficient"),
+        child_sufficient_digest=state.sufficient_digest,
+        parent_evidence_digest=_hash("controller-parent-evidence"),
+        child_evidence_digest=_hash("controller-child-evidence"),
+        potential_before=(
+            _convergence_potential(
+                open_refs=("obligation:prior-stage-work",)
+            )
+            if potential_before is None
+            else potential_before
+        ),
+        potential_after=(
+            _convergence_potential()
+            if potential_after is None
+            else potential_after
+        ),
+        protected_refs=(),
+        changed_protected_refs=(),
+        mandatory_obligation_ids=(),
+        added_mandatory_obligation_ids=(),
+        dependency_closure=(),
+        authorization_ref=None,
+        reason_codes=(
+            ("stage_convergence.test_rejected",) if rejected else ()
+        ),
+    )
+
+
+def _stage_baseline_evidence(
+    checkpoint: DesignControllerCheckpoint,
+    *,
+    stage_id: str | None = None,
+    receipt_branch: BranchRef | None = None,
+    subject_digest: str | None = None,
+) -> tuple[
+    StageBaselineSourceSet,
+    tuple[StageCheckRequirement, ...],
+    tuple[CheckReceiptEnvelope, ...],
+]:
+    branch = (
+        checkpoint.maturity.branch
+        if receipt_branch is None
+        else receipt_branch
+    )
+    stage = (
+        checkpoint.maturity.phase.value if stage_id is None else stage_id
+    )
+    digest = (
+        checkpoint.maturity.operational_state_digest
+        if subject_digest is None
+        else subject_digest
+    )
+    scope_digest = _hash("controller-stage-closure-scope")
+    base = physical_sources(stage_subject_source_digest=digest)
+    lineage = base.component_lineage[0]
+    lineage_profile = replace(
+        lineage.profile,
+        branch=branch,
+        scope_digest=scope_digest,
+        predecessor_stage_id="prior-stage",
+        successor_stage_id=stage,
+    )
+    lineage_source_receipt = replace(
+        lineage.source_receipt,
+        predecessor_stage_id="prior-stage",
+        successor_stage_id=stage,
+    )
+    spatial = base.spatial_layout[0]
+    spatial_profile = replace(
+        spatial.profile,
+        branch=branch,
+        scope_digest=scope_digest,
+        stage_id=stage,
+    )
+    spatial_input = spatial.validator_input
+    spatial_receipt = validate_spatial_layout(
+        elements=spatial_input.elements,
+        host_regions=spatial_input.host_regions,
+        required_component_ids=spatial_input.required_component_ids,
+        opening_clear_regions=spatial_input.opening_clear_regions,
+        minimum_column_wall_clearance=(
+            spatial_input.minimum_column_wall_clearance
+        ),
+        linear_tolerance=spatial_input.linear_tolerance,
+        intersection_volume_tolerance=(
+            spatial_input.intersection_volume_tolerance
+        ),
+        length_unit=spatial_input.length_unit,
+    )
+    sources = StageBaselineSourceSet(
+        component_lineage=(
+            ComponentLineageBaselineSource(
+                lineage_profile,
+                lineage_source_receipt,
+            ),
+        ),
+        spatial_layout=(
+            SpatialLayoutBaselineSource(
+                spatial_profile,
+                spatial_input,
+            ),
+        ),
+        assembly=base.assembly,
+    )
+    requirements = (
+        component_lineage_stage_requirement(lineage_profile),
+        spatial_layout_stage_requirement(spatial_profile),
+        assembly_stage_requirement(sources.assembly[0]),
+    )
+    receipts = (
+        bridge_component_lineage_receipt(
+            lineage_profile,
+            lineage_source_receipt,
+            stage_subject_digest=digest,
+        ),
+        bridge_spatial_validation_receipt(
+            spatial_profile,
+            spatial_receipt,
+            stage_subject_digest=digest,
+        ),
+        check_assembly(
+            sources.assembly[0],
+            branch=branch,
+            scope_digest=scope_digest,
+            stage_subject_digest=digest,
+        ),
+    )
+    return sources, requirements, receipts
+
+
+def _stage_requirement_profile(
+    checkpoint: DesignControllerCheckpoint,
+    *,
+    stage_id: str | None = None,
+    receipt_branch: BranchRef | None = None,
+    stage_subject_ref: str | None = None,
+) -> StageRequirementProfile:
+    deliverable = checkpoint.maturity.deliverables[0]
+    subject_ref = (
+        deliverable.ref if stage_subject_ref is None else stage_subject_ref
+    )
+    branch = (
+        checkpoint.maturity.branch
+        if receipt_branch is None
+        else receipt_branch
+    )
+    _sources, requirements, _receipts = _stage_baseline_evidence(
+        checkpoint,
+        stage_id=stage_id,
+        receipt_branch=receipt_branch,
+        subject_digest=deliverable.base_state_digest,
+    )
+    return StageRequirementProfile(
+        profile_id="controller-stage-closure",
+        typology_id="synthetic-controller-fixture",
+        stage_id=(
+            checkpoint.maturity.phase.value
+            if stage_id is None
+            else stage_id
+        ),
+        branch=branch,
+        predecessor_state_digest=(
+            checkpoint.maturity.operational_state_digest
+        ),
+        scope_digest=_hash("controller-stage-closure-scope"),
+        stage_subject_ref=subject_ref,
+        requirements=requirements,
+    )
+
+
+def _stage_closure_receipt(
+    checkpoint: DesignControllerCheckpoint,
+    *,
+    stage_id: str | None = None,
+    receipt_branch: BranchRef | None = None,
+    stage_subject_ref: str | None = None,
+    subject_digest: str | None = None,
+    findings: tuple[StageClosureFinding, ...] = (),
+) -> CompositeStageClosureReceipt:
+    deliverable = checkpoint.maturity.deliverables[0]
+    profile = _stage_requirement_profile(
+        checkpoint,
+        stage_id=stage_id,
+        receipt_branch=receipt_branch,
+        stage_subject_ref=stage_subject_ref,
+    )
+    selected_subject_digest = (
+        deliverable.base_state_digest
+        if subject_digest is None
+        else subject_digest
+    )
+    _sources, _requirements, receipts = _stage_baseline_evidence(
+        checkpoint,
+        stage_id=stage_id,
+        receipt_branch=receipt_branch,
+        subject_digest=selected_subject_digest,
+    )
+    closure = compile_composite_stage_closure(
+        profile,
+        subject_digest=selected_subject_digest,
+        check_receipts=receipts,
+    )
+    if not findings:
+        return closure
+    return replace(
+        closure,
+        findings=findings,
+        status=StageClosureStatus.OPEN,
+    )
+
+
+def _stage_requirement_profile_for_closure(
+    checkpoint: DesignControllerCheckpoint,
+    closure: CompositeStageClosureReceipt,
+) -> StageRequirementProfile:
+    return _stage_requirement_profile(
+        checkpoint,
+        stage_id=closure.stage_id,
+        receipt_branch=closure.branch,
+        stage_subject_ref=closure.stage_subject_ref,
+    )
+
+
+def _stage_inputs_for_closure(
+    checkpoint: DesignControllerCheckpoint,
+    closure: CompositeStageClosureReceipt,
+) -> tuple[
+    StageRequirementProfile,
+    StageBaselineSourceSet,
+    tuple[CheckReceiptEnvelope, ...],
+    StageSubjectInventory,
+]:
+    profile = _stage_requirement_profile_for_closure(checkpoint, closure)
+    sources, _requirements, receipts = _stage_baseline_evidence(
+        checkpoint,
+        stage_id=closure.stage_id,
+        receipt_branch=closure.branch,
+        subject_digest=closure.subject_digest,
+    )
+    inventory = _stage_subject_inventory(
+        checkpoint,
+        closure,
+        profile,
+        sources,
+    )
+    return profile, sources, receipts, inventory
+
+
+def _stage_role_target_refs(
+    sources: StageBaselineSourceSet,
+) -> dict[StageBaselineRole, tuple[str, ...]]:
+    targets: dict[StageBaselineRole, set[str]] = {
+        role: set() for role in StageBaselineRole
+    }
+    for source in sources.component_lineage:
+        targets[StageBaselineRole.COMPONENT_LINEAGE].update(
+            f"component:{operation.ref.component_id}"
+            for operation in source.source_receipt.predecessor_operations
+        )
+    for source in sources.spatial_layout:
+        targets[StageBaselineRole.SPATIAL_ENVELOPE].update(
+            f"component:{component_id}"
+            for component_id in source.validator_input.required_component_ids
+        )
+    for source in sources.assembly:
+        targets[StageBaselineRole.ASSEMBLY_RELATIONSHIPS].update(
+            source.coverage_manifest.stage_subject_refs
+        )
+        targets[StageBaselineRole.OPENING_CLEARANCE].update(
+            ref
+            for requirement in source.requirements
+            if requirement.kind is RelationshipKind.OPENING_CLEAR
+            for ref in requirement.subject_refs
+        )
+        targets[StageBaselineRole.LOAD_PATH].update(
+            ref
+            for requirement in source.requirements
+            if requirement.kind
+            in {
+                RelationshipKind.SUPPORT,
+                RelationshipKind.VERTICAL_SUPPORT_CHAIN,
+                RelationshipKind.LOAD_PATH_TO_FOUNDATION,
+            }
+            for ref in requirement.subject_refs
+        )
+    for source in sources.material_binding:
+        targets[StageBaselineRole.MATERIAL_BINDING].update(
+            requirement.semantic_subject_ref
+            for requirement in source.profile.requirements
+        )
+    for source in sources.cad_readback:
+        targets[StageBaselineRole.CAD_READBACK].update(
+            requirement.object_ref
+            for requirement in source.profile.object_requirements
+        )
+    return {
+        role: tuple(sorted(refs))
+        for role, refs in targets.items()
+    }
+
+
+def _stage_subject_inventory(
+    checkpoint: DesignControllerCheckpoint,
+    closure: CompositeStageClosureReceipt,
+    profile: StageRequirementProfile,
+    sources: StageBaselineSourceSet,
+) -> StageSubjectInventory:
+    level = baseline_level_for_design_phase(checkpoint.maturity.phase)
+    targets = _stage_role_target_refs(sources)
+    source_refs = tuple(
+        sorted(
+            {
+                ref
+                for requirement in profile.requirements
+                for ref in requirement.required_source_refs
+            }
+        )
+    ) or (f"evidence:stage-profile:{profile.profile_digest}",)
+    binding_authority_ref = ProjectRecordRef(
+        project_id=closure.branch.run.project_id,
+        relative_path=(
+            f"runs/{closure.branch.run.run_id}/branches/"
+            f"{closure.branch.branch_id}/records/"
+            "stage-profile-authorization.json"
+        ),
+        sha256=_hash("controller-stage-profile-authorization"),
+    )
+    authority_refs = (binding_authority_ref.uri,)
+    obligations = tuple(
+        StageSubjectRoleObligation(
+            role=role,
+            disposition=StageSubjectDisposition.REQUIRED,
+            target_refs=(
+                targets[role]
+                or (f"component:uncovered-{role.value}",)
+            ),
+            evidence_refs=source_refs,
+            authority_refs=authority_refs,
+        )
+        for role in sorted(
+            BASELINE_LEVEL_ROLES[level],
+            key=lambda item: item.value,
+        )
+    )
+    branch = closure.branch
+    prefix = (
+        f"runs/{branch.run.run_id}/branches/"
+        f"{branch.branch_id}/records"
+    )
+    proposal_ref = _stage_component_proposal_ref(
+        branch,
+        closure.stage_id,
+        closure.subject_digest,
+    )
+    index_digest = _hash(
+        f"component-index:{closure.stage_id}:{closure.subject_digest}"
+    )
+    return StageSubjectInventory(
+        inventory_id="controller-stage-subjects",
+        branch=branch,
+        stage_id=closure.stage_id,
+        stage_subject_ref=closure.stage_subject_ref,
+        stage_subject_digest=closure.subject_digest,
+        baseline_level=level,
+        component_proposal_ref=proposal_ref,
+        component_proposal_digest=proposal_ref.sha256,
+        component_index_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/component-index.json",
+            sha256=index_digest,
+        ),
+        component_index_digest=index_digest,
+        entries=(
+            StageSubjectInventoryEntry(
+                component_id="stage-root",
+                identity_ref="design-component:stage-root",
+                parent_component_id=None,
+                semantic_kind="stage-root",
+                component_digest=closure.subject_digest,
+                geometry_object_ids=(),
+                binding_ids=(),
+                role_obligations=obligations,
+            ),
+        ),
+    )
+
+
+def _stage_profile_binding(
+    closure: CompositeStageClosureReceipt,
+    subject_inventory: StageSubjectInventory,
+) -> StageRequirementProfileBinding:
+    branch = closure.branch
+    prefix = (
+        f"runs/{branch.run.run_id}/branches/"
+        f"{branch.branch_id}/records"
+    )
+    return StageRequirementProfileBinding(
+        binding_id="controller-stage-profile-binding",
+        profile_id=closure.profile_id,
+        profile_digest=closure.profile_digest,
+        branch=branch,
+        stage_id=closure.stage_id,
+        stage_subject_ref=closure.stage_subject_ref,
+        subject_digest=closure.subject_digest,
+        profile_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/stage-requirement-profile.json",
+            sha256=closure.profile_digest,
+        ),
+        stage_subject_inventory_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/stage-subject-inventory.json",
+            sha256=subject_inventory.inventory_digest,
+        ),
+        stage_subject_inventory_digest=subject_inventory.inventory_digest,
+        authority_refs=(
+            ProjectRecordRef(
+                project_id=branch.run.project_id,
+                relative_path=f"{prefix}/stage-profile-authorization.json",
+                sha256=_hash("controller-stage-profile-authorization"),
+            ),
         ),
     )
 
@@ -1056,6 +1606,155 @@ class DesignControllerTurnTests(unittest.TestCase):
             result.checkpoint.status,
             ControllerStatus.READY,
         )
+
+    def test_reopened_refs_accumulate_and_close_only_named_nodes(
+        self,
+    ) -> None:
+        checkpoint, nodes = _checkpoint()
+        registry, metadata = _experts()
+        prepared = prepare_design_turn(
+            checkpoint,
+            registry,
+            phase_metadata=metadata,
+            obligation_topics={"resolve-grid": "structure"},
+        )
+        consultation = consult_selected_experts(prepared, registry, ())
+        first_action = GroundedArchitectAction(
+            action_id="reopen-grid-interfaces",
+            checkpoint_digest=checkpoint.checkpoint_digest,
+            context_digest=prepared.context.context_digest,
+            operator=_operator(
+                checkpoint,
+                decision_id="reopen-grid-interfaces-op",
+                discharge=True,
+            ),
+            responds_to_refs=(
+                _GLOBAL_COMMITMENT_REF,
+                "obligation:resolve-grid",
+            ),
+            selected_expert_ids=(),
+            adopted_advice_refs=(),
+            rejected_advice_refs=(),
+            tradeoff_rationale="Resolve the grid and retain interface scope.",
+        )
+        first = apply_architect_action(
+            checkpoint,
+            prepared,
+            consultation,
+            first_action,
+            history_event_ref="design-event:first-interface-reopen",
+        )
+        expected = tuple(
+            sorted((nodes["stair"].ref, nodes["facade"].ref))
+        )
+        self.assertEqual(first.checkpoint.reopened_node_refs, expected)
+
+        prepared_again = prepare_design_turn(
+            first.checkpoint,
+            registry,
+            phase_metadata=metadata,
+            obligation_topics={},
+        )
+        consultation_again = consult_selected_experts(
+            prepared_again,
+            registry,
+            (),
+        )
+        target_state = first.checkpoint.tree.node(
+            first.checkpoint.target_node_ref
+        ).operational_state
+        unrelated_action = GroundedArchitectAction(
+            action_id="unrelated-grid-note",
+            checkpoint_digest=first.checkpoint.checkpoint_digest,
+            context_digest=prepared_again.context.context_digest,
+            operator=DecisionOperator(
+                decision_id="unrelated-grid-note-op",
+                decision_type="parameter-derivation",
+                base_state_digest=target_state.state_digest,
+                authority_id="structure-agent",
+                intent="Record an unrelated local grid note.",
+                add_facts=(
+                    StateFact(
+                        domain=StateDomain.PARAMETER,
+                        key="grid-depth-note",
+                        value="retained",
+                        source_ref="evidence://analysis/grid-depth-note",
+                    ),
+                ),
+                evidence_refs=("evidence://analysis/grid-depth-note",),
+            ),
+            responds_to_refs=(_GLOBAL_COMMITMENT_REF,),
+            selected_expert_ids=(),
+            adopted_advice_refs=(),
+            rejected_advice_refs=(),
+            tradeoff_rationale="This local note changes no named interface.",
+        )
+        second = apply_architect_action(
+            first.checkpoint,
+            prepared_again,
+            consultation_again,
+            unrelated_action,
+            history_event_ref="design-event:unrelated-after-reopen",
+        )
+        self.assertEqual(second.checkpoint.reopened_node_refs, expected)
+        self.assertEqual(second.receipt.invalidated_node_refs, ())
+        self.assertEqual(second.receipt.revalidation_node_refs, ())
+
+        repair_receipt = _stage_convergence_receipt(
+            second.checkpoint,
+            outcome=StageConvergenceOutcome.REPAIR,
+            transition_kind=StageTransitionKind.REPAIR,
+            potential_before=_convergence_potential(
+                invalidated_refs=expected
+            ),
+            potential_after=_convergence_potential(
+                invalidated_refs=(nodes["facade"].ref,)
+            ),
+        )
+        unrelated_repair = _stage_convergence_receipt(
+            second.checkpoint,
+            outcome=StageConvergenceOutcome.REPAIR,
+            transition_kind=StageTransitionKind.REPAIR,
+            potential_before=_convergence_potential(
+                invalidated_refs=(nodes["facade"].ref,)
+            ),
+            potential_after=_convergence_potential(),
+        )
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "does not prove the named reopened refs closed",
+        ):
+            close_reopened_nodes(
+                second.checkpoint,
+                unrelated_repair,
+                resolved_node_refs=(nodes["stair"].ref,),
+                history_event_ref="design-event:unrelated-repair-close",
+            )
+        closed = close_reopened_nodes(
+            second.checkpoint,
+            repair_receipt,
+            resolved_node_refs=(nodes["stair"].ref,),
+            history_event_ref="design-event:stair-repair-closed",
+        )
+        self.assertIs(
+            closed.receipt.outcome,
+            ControllerOutcome.REOPENED_REFS_CLOSED,
+        )
+        self.assertEqual(
+            closed.checkpoint.reopened_node_refs,
+            (nodes["facade"].ref,),
+        )
+        self.assertIs(closed.stage_convergence, repair_receipt)
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "outside the current reopened set",
+        ):
+            close_reopened_nodes(
+                closed.checkpoint,
+                repair_receipt,
+                resolved_node_refs=(nodes["envelope"].ref,),
+                history_event_ref="design-event:invalid-close",
+            )
 
     def test_action_must_account_for_advice_and_current_work(
         self,
@@ -1489,6 +2188,16 @@ class DesignControllerTurnTests(unittest.TestCase):
         self,
     ) -> None:
         blocked, _ = _checkpoint()
+        phase_ready = _phase_ready_checkpoint()
+        blocked_closure = _stage_closure_receipt(phase_ready)
+        (
+            blocked_profile,
+            blocked_sources,
+            blocked_receipts,
+            blocked_inventory,
+        ) = (
+            _stage_inputs_for_closure(phase_ready, blocked_closure)
+        )
         with self.assertRaisesRegex(
             DesignControllerError,
             "active obligations",
@@ -1496,22 +2205,30 @@ class DesignControllerTurnTests(unittest.TestCase):
             advance_design_phase(
                 blocked,
                 evaluate_forward_phase_gate(
-                    _phase_ready_checkpoint().maturity,
+                    phase_ready.maturity,
                     PhaseGateRequest(
                         request_id="temporary-gate",
-                        branch=_phase_ready_checkpoint().maturity.branch,
+                        branch=phase_ready.maturity.branch,
                         base_state_digest=(
-                            _phase_ready_checkpoint()
-                            .maturity.operational_state_digest
+                            phase_ready.maturity.operational_state_digest
                         ),
                         from_phase=DesignPhase.SCHEMATIC_DESIGN,
                         to_phase=DesignPhase.DESIGN_DEVELOPMENT,
                         deliverable_refs=(
-                            _phase_ready_checkpoint()
-                            .maturity.deliverable_refs
+                            phase_ready.maturity.deliverable_refs
                         ),
                     ),
                 ),
+                convergence_receipt=_stage_convergence_receipt(blocked),
+                requirement_profile=blocked_profile,
+                profile_binding=_stage_profile_binding(
+                    blocked_closure,
+                    blocked_inventory,
+                ),
+                closure_receipt=blocked_closure,
+                baseline_sources=blocked_sources,
+                subject_inventory=blocked_inventory,
+                check_receipts=blocked_receipts,
                 history_event_ref="design-event:blocked-advance",
             )
 
@@ -1526,12 +2243,34 @@ class DesignControllerTurnTests(unittest.TestCase):
             to_phase=DesignPhase.DESIGN_DEVELOPMENT,
             deliverable_refs=checkpoint.maturity.deliverable_refs,
         )
+        convergence_receipt = _stage_convergence_receipt(checkpoint)
+        closure_receipt = _stage_closure_receipt(checkpoint)
+        (
+            stage_profile,
+            stage_sources,
+            stage_receipts,
+            stage_inventory,
+        ) = (
+            _stage_inputs_for_closure(checkpoint, closure_receipt)
+        )
+        profile_binding = _stage_profile_binding(
+            closure_receipt,
+            stage_inventory,
+        )
+        phase_gate = evaluate_forward_phase_gate(
+            checkpoint.maturity,
+            request,
+        )
         result = advance_design_phase(
             checkpoint,
-            evaluate_forward_phase_gate(
-                checkpoint.maturity,
-                request,
-            ),
+            phase_gate,
+            convergence_receipt=convergence_receipt,
+            requirement_profile=stage_profile,
+            profile_binding=profile_binding,
+            closure_receipt=closure_receipt,
+            baseline_sources=stage_sources,
+            subject_inventory=stage_inventory,
+            check_receipts=stage_receipts,
             history_event_ref="design-event:phase-advanced",
         )
 
@@ -1542,6 +2281,50 @@ class DesignControllerTurnTests(unittest.TestCase):
         self.assertIs(
             result.checkpoint.maturity.phase,
             DesignPhase.DESIGN_DEVELOPMENT,
+        )
+        self.assertIs(result.stage_convergence, convergence_receipt)
+        self.assertIs(result.stage_closure, closure_receipt)
+        self.assertIs(result.stage_profile_binding, profile_binding)
+        self.assertIsNotNone(result.stage_baseline_coverage)
+        self.assertEqual(
+            profile_binding.binding_digest,
+            result.receipt.stage_profile_binding_digest,
+        )
+        self.assertEqual(
+            result.stage_baseline_coverage.receipt_digest,
+            result.receipt.stage_baseline_coverage_digest,
+        )
+        alternate_closure = _stage_closure_receipt(
+            checkpoint,
+            stage_subject_ref=checkpoint.maturity.deliverables[1].ref,
+        )
+        (
+            alternate_profile,
+            alternate_sources,
+            alternate_receipts,
+            alternate_inventory,
+        ) = (
+            _stage_inputs_for_closure(checkpoint, alternate_closure)
+        )
+        alternate = advance_design_phase(
+            checkpoint,
+            phase_gate,
+            convergence_receipt=convergence_receipt,
+            requirement_profile=alternate_profile,
+            profile_binding=_stage_profile_binding(
+                alternate_closure,
+                alternate_inventory,
+            ),
+            closure_receipt=alternate_closure,
+            baseline_sources=alternate_sources,
+            subject_inventory=alternate_inventory,
+            check_receipts=alternate_receipts,
+            history_event_ref="design-event:phase-advanced",
+        )
+        self.assertIs(alternate.stage_closure, alternate_closure)
+        self.assertNotEqual(
+            result.receipt.receipt_id,
+            alternate.receipt.receipt_id,
         )
         self.assertTrue(
             all(
@@ -1573,10 +2356,545 @@ class DesignControllerTurnTests(unittest.TestCase):
         )
         self.assertEqual(prepared.discovered_expert_ids, ())
 
+    def test_phase_advance_requires_component_proposal_anchor(self) -> None:
+        checkpoint = _phase_ready_checkpoint()
+        subject = checkpoint.maturity.deliverables[0]
+        proposal_ref = _stage_component_proposal_ref(
+            checkpoint.maturity.branch,
+            checkpoint.maturity.phase.value,
+            subject.base_state_digest,
+        )
+        unanchored_subject = replace(
+            subject,
+            evidence_refs=tuple(
+                ref
+                for ref in subject.evidence_refs
+                if ref != proposal_ref.uri
+            ),
+        )
+        unanchored = replace(
+            checkpoint,
+            maturity=replace(
+                checkpoint.maturity,
+                deliverables=(
+                    unanchored_subject,
+                    *checkpoint.maturity.deliverables[1:],
+                ),
+            ),
+        )
+        closure = _stage_closure_receipt(unanchored)
+        profile, sources, check_receipts, subject_inventory = (
+            _stage_inputs_for_closure(unanchored, closure)
+        )
+        self.assertEqual(
+            subject_inventory.component_proposal_ref,
+            proposal_ref,
+        )
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "does not retain the exact component proposal",
+        ):
+            advance_design_phase(
+                unanchored,
+                evaluate_forward_phase_gate(
+                    unanchored.maturity,
+                    PhaseGateRequest(
+                        request_id="unanchored-component-proposal",
+                        branch=unanchored.maturity.branch,
+                        base_state_digest=(
+                            unanchored.maturity.operational_state_digest
+                        ),
+                        from_phase=DesignPhase.SCHEMATIC_DESIGN,
+                        to_phase=DesignPhase.DESIGN_DEVELOPMENT,
+                        deliverable_refs=unanchored.maturity.deliverable_refs,
+                    ),
+                ),
+                convergence_receipt=_stage_convergence_receipt(unanchored),
+                requirement_profile=profile,
+                profile_binding=_stage_profile_binding(
+                    closure,
+                    subject_inventory,
+                ),
+                closure_receipt=closure,
+                baseline_sources=sources,
+                subject_inventory=subject_inventory,
+                check_receipts=check_receipts,
+                history_event_ref="design-event:unanchored-proposal-rejected",
+            )
+
+    def test_phase_advance_rejects_reopen_stale_cross_and_nonzero(
+        self,
+    ) -> None:
+        checkpoint = _phase_ready_checkpoint()
+        request = PhaseGateRequest(
+            request_id="strict-stage-convergence",
+            branch=checkpoint.maturity.branch,
+            base_state_digest=checkpoint.maturity.operational_state_digest,
+            from_phase=DesignPhase.SCHEMATIC_DESIGN,
+            to_phase=DesignPhase.DESIGN_DEVELOPMENT,
+            deliverable_refs=checkpoint.maturity.deliverable_refs,
+        )
+        phase_gate = evaluate_forward_phase_gate(
+            checkpoint.maturity,
+            request,
+        )
+        valid = _stage_convergence_receipt(checkpoint)
+        reopened = replace(
+            checkpoint,
+            reopened_node_refs=(checkpoint.tree.root.ref,),
+        )
+        with self.assertRaisesRegex(DesignControllerError, "reopened nodes"):
+            reopened_closure = _stage_closure_receipt(reopened)
+            (
+                reopened_profile,
+                reopened_sources,
+                reopened_receipts,
+                reopened_inventory,
+            ) = (
+                _stage_inputs_for_closure(reopened, reopened_closure)
+            )
+            advance_design_phase(
+                reopened,
+                phase_gate,
+                convergence_receipt=_stage_convergence_receipt(reopened),
+                requirement_profile=reopened_profile,
+                profile_binding=_stage_profile_binding(
+                    reopened_closure,
+                    reopened_inventory,
+                ),
+                closure_receipt=reopened_closure,
+                baseline_sources=reopened_sources,
+                subject_inventory=reopened_inventory,
+                check_receipts=reopened_receipts,
+                history_event_ref="design-event:reopened-rejected",
+            )
+
+        invalid_receipts = (
+            (
+                replace(valid, child_state_digest=_hash("stale-child")),
+                "stale against current state",
+            ),
+            (
+                replace(
+                    valid,
+                    branch=replace(valid.branch, branch_id="option-b"),
+                ),
+                "cross-branch or stale",
+            ),
+            (
+                replace(
+                    valid,
+                    potential_after=_convergence_potential(
+                        open_refs=("obligation:still-open",)
+                    ),
+                ),
+                "potential is not closed",
+            ),
+            (
+                _stage_convergence_receipt(
+                    checkpoint,
+                    outcome=StageConvergenceOutcome.REJECTED,
+                ),
+                "receipt was rejected",
+            ),
+        )
+        for receipt, message in invalid_receipts:
+            with self.subTest(message=message):
+                closure = _stage_closure_receipt(checkpoint)
+                (
+                    stage_profile,
+                    stage_sources,
+                    stage_receipts,
+                    stage_inventory,
+                ) = (
+                    _stage_inputs_for_closure(checkpoint, closure)
+                )
+                with self.assertRaisesRegex(DesignControllerError, message):
+                    advance_design_phase(
+                        checkpoint,
+                        phase_gate,
+                        convergence_receipt=receipt,
+                        requirement_profile=stage_profile,
+                        profile_binding=_stage_profile_binding(
+                            closure,
+                            stage_inventory,
+                        ),
+                        closure_receipt=closure,
+                        baseline_sources=stage_sources,
+                        subject_inventory=stage_inventory,
+                        check_receipts=stage_receipts,
+                        history_event_ref="design-event:convergence-rejected",
+                    )
+
+    def test_phase_advance_requires_exact_composite_stage_closure(
+        self,
+    ) -> None:
+        checkpoint = _phase_ready_checkpoint()
+        phase_gate = evaluate_forward_phase_gate(
+            checkpoint.maturity,
+            PhaseGateRequest(
+                request_id="strict-composite-stage-closure",
+                branch=checkpoint.maturity.branch,
+                base_state_digest=(
+                    checkpoint.maturity.operational_state_digest
+                ),
+                from_phase=DesignPhase.SCHEMATIC_DESIGN,
+                to_phase=DesignPhase.DESIGN_DEVELOPMENT,
+                deliverable_refs=checkpoint.maturity.deliverable_refs,
+            ),
+        )
+        convergence_receipt = _stage_convergence_receipt(checkpoint)
+        valid = _stage_closure_receipt(checkpoint)
+        (
+            valid_profile,
+            valid_sources,
+            valid_receipts,
+            valid_inventory,
+        ) = (
+            _stage_inputs_for_closure(checkpoint, valid)
+        )
+        valid_binding = _stage_profile_binding(valid, valid_inventory)
+
+        with self.assertRaisesRegex(TypeError, "requirement_profile"):
+            advance_design_phase(
+                checkpoint,
+                phase_gate,
+                convergence_receipt=convergence_receipt,
+                profile_binding=valid_binding,
+                closure_receipt=valid,
+                baseline_sources=valid_sources,
+                subject_inventory=valid_inventory,
+                check_receipts=valid_receipts,
+                history_event_ref="design-event:missing-requirement-profile",
+            )
+
+        with self.assertRaisesRegex(TypeError, "closure_receipt"):
+            advance_design_phase(
+                checkpoint,
+                phase_gate,
+                convergence_receipt=convergence_receipt,
+                requirement_profile=valid_profile,
+                profile_binding=valid_binding,
+                baseline_sources=valid_sources,
+                subject_inventory=valid_inventory,
+                check_receipts=valid_receipts,
+                history_event_ref="design-event:missing-closure",
+            )
+        with self.assertRaisesRegex(
+            TypeError,
+            "CompositeStageClosureReceipt",
+        ):
+            advance_design_phase(
+                checkpoint,
+                phase_gate,
+                convergence_receipt=convergence_receipt,
+                requirement_profile=valid_profile,
+                profile_binding=valid_binding,
+                closure_receipt=True,
+                baseline_sources=valid_sources,
+                subject_inventory=valid_inventory,
+                check_receipts=valid_receipts,
+                history_event_ref="design-event:boolean-closure",
+            )
+        with self.assertRaisesRegex(TypeError, "profile_binding"):
+            advance_design_phase(
+                checkpoint,
+                phase_gate,
+                convergence_receipt=convergence_receipt,
+                requirement_profile=valid_profile,
+                closure_receipt=valid,
+                baseline_sources=valid_sources,
+                subject_inventory=valid_inventory,
+                check_receipts=valid_receipts,
+                history_event_ref="design-event:missing-profile-binding",
+            )
+        with self.assertRaisesRegex(
+            TypeError,
+            "StageRequirementProfileBinding",
+        ):
+            advance_design_phase(
+                checkpoint,
+                phase_gate,
+                convergence_receipt=convergence_receipt,
+                requirement_profile=valid_profile,
+                profile_binding=True,
+                closure_receipt=valid,
+                baseline_sources=valid_sources,
+                subject_inventory=valid_inventory,
+                check_receipts=valid_receipts,
+                history_event_ref="design-event:boolean-profile-binding",
+            )
+        substituted_closure = replace(
+            valid,
+            profile_id="caller-minimal-profile",
+            profile_digest=_hash("caller-minimal-profile"),
+        )
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "authorized profile",
+        ):
+            advance_design_phase(
+                checkpoint,
+                phase_gate,
+                convergence_receipt=convergence_receipt,
+                requirement_profile=valid_profile,
+                profile_binding=_stage_profile_binding(
+                    substituted_closure,
+                    valid_inventory,
+                ),
+                closure_receipt=valid,
+                baseline_sources=valid_sources,
+                subject_inventory=valid_inventory,
+                check_receipts=valid_receipts,
+                history_event_ref="design-event:profile-substitution",
+            )
+
+        subject = checkpoint.maturity.deliverables[0]
+        caller_minimal_profile = StageRequirementProfile(
+            profile_id="caller-minimal-profile",
+            typology_id="synthetic-controller-fixture",
+            stage_id=checkpoint.maturity.phase.value,
+            branch=checkpoint.maturity.branch,
+            predecessor_state_digest=(
+                checkpoint.maturity.operational_state_digest
+            ),
+            scope_digest=_hash("caller-minimal-profile-scope"),
+            stage_subject_ref=subject.ref,
+            requirements=(
+                StageCheckRequirement(
+                    requirement_id="caller-selected-only-check",
+                    checker_id="caller-summary-checker",
+                    target_kind=RequirementTargetKind.ARTIFACT,
+                    basis_mode=RequirementBasisMode.UNIVERSAL,
+                    denominator_refs=(subject.ref,),
+                ),
+            ),
+        )
+        caller_minimal_requirement = caller_minimal_profile.requirements[0]
+        caller_minimal_receipt = CheckReceiptEnvelope(
+            check_id=caller_minimal_requirement.requirement_id,
+            checker_id=caller_minimal_requirement.checker_id,
+            checker_version="1.0.0",
+            branch=caller_minimal_profile.branch,
+            scope_digest=caller_minimal_profile.scope_digest,
+            subject_refs=caller_minimal_requirement.denominator_refs,
+            subject_digest=subject.base_state_digest,
+            status=CheckStatus.PASS,
+            coverage_denominator=caller_minimal_requirement.denominator_refs,
+            covered_refs=caller_minimal_requirement.denominator_refs,
+        )
+        caller_minimal_closure = compile_composite_stage_closure(
+            caller_minimal_profile,
+            subject_digest=subject.base_state_digest,
+            check_receipts=(caller_minimal_receipt,),
+        )
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "omits framework baseline roles",
+        ):
+            advance_design_phase(
+                checkpoint,
+                phase_gate,
+                convergence_receipt=convergence_receipt,
+                requirement_profile=caller_minimal_profile,
+                profile_binding=_stage_profile_binding(
+                    caller_minimal_closure,
+                    valid_inventory,
+                ),
+                closure_receipt=caller_minimal_closure,
+                baseline_sources=StageBaselineSourceSet(),
+                subject_inventory=valid_inventory,
+                check_receipts=(caller_minimal_receipt,),
+                history_event_ref="design-event:minimal-profile-rejected",
+            )
+
+        open_receipt = _stage_closure_receipt(
+            checkpoint,
+            findings=(
+                StageClosureFinding(
+                    code=StageClosureFindingCode.CHECK_FAILED,
+                    requirement_id="structure-check",
+                ),
+            ),
+        )
+        invalid_receipts = (
+            (open_receipt, "not satisfied"),
+            (
+                replace(
+                    valid,
+                    branch=replace(valid.branch, branch_id="option-b"),
+                ),
+                "cross-branch or stale",
+            ),
+            (
+                replace(valid, stage_id="design_development"),
+                "current phase",
+            ),
+            (
+                replace(valid, subject_digest=_hash("stale-subject")),
+                "subject digest is stale",
+            ),
+            (
+                _stage_closure_receipt(
+                    checkpoint,
+                    stage_subject_ref="deliverable:unknown-subject",
+                ),
+                "not a known maturity deliverable",
+            ),
+        )
+        for closure_receipt, message in invalid_receipts:
+            with self.subTest(message=message):
+                (
+                    invalid_profile,
+                    invalid_sources,
+                    invalid_check_receipts,
+                    invalid_inventory,
+                ) = _stage_inputs_for_closure(
+                    checkpoint,
+                    closure_receipt,
+                )
+                with self.assertRaisesRegex(DesignControllerError, message):
+                    advance_design_phase(
+                        checkpoint,
+                        phase_gate,
+                        convergence_receipt=convergence_receipt,
+                        requirement_profile=invalid_profile,
+                        profile_binding=_stage_profile_binding(
+                            closure_receipt,
+                            invalid_inventory,
+                        ),
+                        closure_receipt=closure_receipt,
+                        baseline_sources=invalid_sources,
+                        subject_inventory=invalid_inventory,
+                        check_receipts=invalid_check_receipts,
+                        history_event_ref=(
+                            "design-event:invalid-composite-closure"
+                        ),
+                    )
+
+        stale_deliverable = replace(
+            checkpoint.maturity.deliverables[0],
+            base_state_digest=_hash("stale-deliverable-base"),
+        )
+        with_stale_deliverable = replace(
+            checkpoint,
+            maturity=replace(
+                checkpoint.maturity,
+                deliverables=(
+                    stale_deliverable,
+                    *checkpoint.maturity.deliverables[1:],
+                ),
+            ),
+        )
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "subject digest is stale",
+        ):
+            stale_closure = _stage_closure_receipt(
+                with_stale_deliverable
+            )
+            (
+                stale_profile,
+                stale_sources,
+                stale_check_receipts,
+                stale_inventory,
+            ) = _stage_inputs_for_closure(
+                with_stale_deliverable,
+                stale_closure,
+            )
+            advance_design_phase(
+                with_stale_deliverable,
+                phase_gate,
+                convergence_receipt=_stage_convergence_receipt(
+                    with_stale_deliverable
+                ),
+                requirement_profile=stale_profile,
+                profile_binding=_stage_profile_binding(
+                    stale_closure,
+                    stale_inventory,
+                ),
+                closure_receipt=stale_closure,
+                baseline_sources=stale_sources,
+                subject_inventory=stale_inventory,
+                check_receipts=stale_check_receipts,
+                history_event_ref="design-event:stale-deliverable-closure",
+            )
+
+        unaccepted = PhaseDeliverable(
+            deliverable_id="prior-site-context",
+            role=DeliverableRole.SITE_CONTEXT,
+            produced_phase=DesignPhase.SITE_RESOURCE_COORDINATION,
+            branch=checkpoint.maturity.branch,
+            base_state_digest=(
+                checkpoint.maturity.operational_state_digest
+            ),
+            artifact_ref="artifact://prior/site-context",
+            evidence_refs=(
+                "evidence://prior/site-context",
+                _stage_component_proposal_ref(
+                    checkpoint.maturity.branch,
+                    checkpoint.maturity.phase.value,
+                    checkpoint.maturity.operational_state_digest,
+                ).uri,
+            ),
+        )
+        with_extra_deliverable = replace(
+            checkpoint,
+            maturity=replace(
+                checkpoint.maturity,
+                deliverables=(
+                    *checkpoint.maturity.deliverables,
+                    unaccepted,
+                ),
+            ),
+        )
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "not accepted by the current phase gate",
+        ):
+            unaccepted_closure = _stage_closure_receipt(
+                with_extra_deliverable,
+                stage_subject_ref=unaccepted.ref,
+                subject_digest=unaccepted.base_state_digest,
+            )
+            (
+                unaccepted_profile,
+                unaccepted_sources,
+                unaccepted_check_receipts,
+                unaccepted_inventory,
+            ) = _stage_inputs_for_closure(
+                with_extra_deliverable,
+                unaccepted_closure,
+            )
+            advance_design_phase(
+                with_extra_deliverable,
+                phase_gate,
+                convergence_receipt=_stage_convergence_receipt(
+                    with_extra_deliverable
+                ),
+                requirement_profile=unaccepted_profile,
+                profile_binding=_stage_profile_binding(
+                    unaccepted_closure,
+                    unaccepted_inventory,
+                ),
+                closure_receipt=unaccepted_closure,
+                baseline_sources=unaccepted_sources,
+                subject_inventory=unaccepted_inventory,
+                check_receipts=unaccepted_check_receipts,
+                history_event_ref="design-event:unaccepted-closure-subject",
+            )
+
     def test_backward_revision_reopens_only_impacted_deliverable(
         self,
     ) -> None:
         checkpoint = _phase_ready_checkpoint()
+        closure = _stage_closure_receipt(checkpoint)
+        profile, sources, check_receipts, subject_inventory = (
+            _stage_inputs_for_closure(
+            checkpoint,
+            closure,
+            )
+        )
         advanced = advance_design_phase(
             checkpoint,
             evaluate_forward_phase_gate(
@@ -1594,6 +2912,16 @@ class DesignControllerTurnTests(unittest.TestCase):
                     ),
                 ),
             ),
+            convergence_receipt=_stage_convergence_receipt(checkpoint),
+            requirement_profile=profile,
+            profile_binding=_stage_profile_binding(
+                closure,
+                subject_inventory,
+            ),
+            closure_receipt=closure,
+            baseline_sources=sources,
+            subject_inventory=subject_inventory,
+            check_receipts=check_receipts,
             history_event_ref="design-event:advance-before-revision",
         ).checkpoint
         changed_ref = advanced.maturity.deliverable_refs[0]

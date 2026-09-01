@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 import unittest
 
-from archflow.runtime.geometry_compiler import (
+from archflow.compilers.geometry import (
     GeometryIssueCode,
     compile_geometry_program,
 )

@@ -8,7 +8,7 @@ from typing import Mapping, Protocol
 from archflow.capabilities.spatial import validate_spatial_authoring_context
 from archflow.production.responsibility import InvocationEnvelope
 from archflow.project.digests import canonical_json_sha256
-from archflow.project.production_transition import (
+from archflow.runtime.persistence.production_transition import (
     ArchivedFailedProductionAttempt,
     ProductionTransitionArchive,
     ProductionTransitionPort,

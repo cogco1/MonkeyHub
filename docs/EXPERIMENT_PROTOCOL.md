@@ -828,3 +828,36 @@ stay typed unassigned — thirty percent material coverage, honest, with
 the unassigned list as the next adoption queue. The material IFC
 export re-read verifies, and the material CAD script digest is
 retained beside the ledger.
+
+## P081 token-cost boundary — 2026-08-29
+
+Current evidence does **not** show that ArchFlow costs fewer model tokens than
+direct MCP.  The retained live-model runs contain provider token receipts;
+the Rhino MCP equivalence receipts contain geometry, adapter, and error data
+but no call count, transport bytes, duration, or model-token telemetry.  They
+therefore cannot form a comparable pair and their receipt file sizes are not
+MCP payload measurements.
+
+The framework side is measurable and currently expensive.  Live-001 through
+live-004 used 19 provider calls, 489,574 input and 76,822 output tokens.  The
+seven live-004 calls all belonged to four workflow-rejected production
+attempts.  Across the retained live, research, and simple-concept sample,
+workflow failures consumed 306,851 of 764,140 total tokens (40.16 percent),
+while provider-level failures account for only 35,234 tokens: most waste came
+from valid model outputs rejected by deterministic contracts, not transport
+failure.  A conservative canonical-payload lower bound attributes 203,136
+bytes, 35.73 percent of live input bytes, to repeated contract/schema fields.
+The small accepted concept alone carried at least 4,878 contract/schema bytes
+inside an 8,146-byte request (59.88 percent).  Provider-reported input tokens
+also include context that the persisted request cannot disaggregate, so these
+byte ratios must not be restated as token ratios.
+
+Decision-shard injection still demonstrates a narrower fact: six of fifteen
+facts and 3,661 of 17,388 characters were selected, a 79 percent reduction
+against store-wide evidence injection.  That is a context-slicing result, not
+a whole-workflow direct-MCP comparison.  A valid comparison must hold task,
+model/effort, inputs, acceptance/fidelity criterion, and revision request
+constant; record initial construction separately from a later upstream change;
+and sum input/output/cached tokens, bytes, tool calls, retries, rejections, and
+accepted outcome.  Until a direct lane supplies that telemetry, the machine
+answer is `incomparable`, not `ArchFlow saves tokens`.

@@ -7,9 +7,8 @@ import unittest
 from archflow.adapters.cli_retrieval import (
     CliProviderSpec,
     CliRetrievalAdapter,
-    RetrievalQuery,
-    RetrievalStatus,
 )
+from archflow.ports.retrieval import RetrievalQuery, RetrievalStatus
 from archflow.capabilities.retrieval import (
     RetrievalCapability,
     RetrievalCapabilityRegistry,

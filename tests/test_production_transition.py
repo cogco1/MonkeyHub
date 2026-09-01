@@ -7,7 +7,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.adapters.model_provider import (
+from archflow.ports.model import (
     ModelInvocationReceipt,
     ModelInvocationStatus,
 )
@@ -15,15 +15,29 @@ from archflow.project import (
     FilesystemProjectRepository,
     PersistenceArea,
     PersistenceDestination,
+    ProjectRecordRef,
+    ProjectVersionRef,
+    RunRef,
+    canonical_json_sha256,
 )
+from archflow.project import production_checkpoint as project_checkpoint_facade
+from archflow.project import production_transition as project_transition_facade
 from archflow.production import AuthorizedAsyncModelProvider
-from archflow.project.production_checkpoint import (
+from archflow.runtime import persistence as runtime_persistence
+from archflow.runtime.persistence import (
+    production_checkpoint as runtime_checkpoint,
+)
+from archflow.runtime.persistence import (
+    production_transition as runtime_transition,
+)
+from archflow.runtime.persistence.production_checkpoint import (
     ProductionCheckpointError,
+    ProductionRunCheckpoint,
     checkpoint_destination,
     load_production_checkpoint,
     persist_production_checkpoint,
 )
-from archflow.project.production_transition import (
+from archflow.runtime.persistence.production_transition import (
     ProductionFailedAttemptReceipt,
     ProductionTransitionError,
     load_failed_production_attempts,
@@ -32,7 +46,7 @@ from archflow.project.production_transition import (
     persist_failed_production_attempt,
     production_intent_digest,
 )
-from archflow.runtime.geometry_compiler import compile_geometry_program
+from archflow.compilers.geometry import compile_geometry_program
 from archflow.runtime.semantic_geometry_lifecycle import (
     bind_initial_semantic_geometry,
     compile_semantic_geometry_lifecycle,
@@ -506,6 +520,69 @@ class ProductionCheckpointTests(unittest.TestCase):
             destination=self.destination,
             record_kind=name,
             payload={"schema": "TestRecord@1", "name": name},
+        )
+
+    def test_runtime_owner_preserves_facade_identity_and_digests(self) -> None:
+        for name in project_checkpoint_facade.__all__:
+            self.assertIs(
+                getattr(project_checkpoint_facade, name),
+                getattr(runtime_checkpoint, name),
+            )
+        for name in project_transition_facade.__all__:
+            self.assertIs(
+                getattr(project_transition_facade, name),
+                getattr(runtime_transition, name),
+            )
+        self.assertIs(
+            runtime_persistence.ProductionRunCheckpoint,
+            ProductionRunCheckpoint,
+        )
+        self.assertIs(
+            runtime_persistence.ProductionFailedAttemptReceipt,
+            ProductionFailedAttemptReceipt,
+        )
+
+        record = ProjectRecordRef(
+            project_id="checkpoint-demo",
+            relative_path=(
+                "runs/run-001/records/design-state-" + "a" * 64 + ".json"
+            ),
+            sha256="a" * 64,
+        )
+        checkpoint = ProductionRunCheckpoint(
+            project_id="checkpoint-demo",
+            run_id="run-001",
+            sequence=0,
+            intent_digest="b" * 64,
+            transition_digest="c" * 64,
+            record_refs=(record,),
+        )
+        self.assertEqual(
+            checkpoint.SCHEMA,
+            "ProductionRunCheckpoint@2",
+        )
+        self.assertEqual(
+            canonical_json_sha256(checkpoint.to_dict()),
+            "93931eb17fa010ac1f2dd1557391b4003c5716b180ea046bc8c40775b1953b3a",
+        )
+        fixed_run = RunRef(
+            project_id="checkpoint-demo",
+            run_id="run-001",
+            base=ProjectVersionRef(
+                project_id="checkpoint-demo",
+                version=0,
+                state_sha256="d" * 64,
+            ),
+        )
+        self.assertEqual(
+            production_intent_digest(
+                fixed_run,
+                intent={
+                    "schema": "TestProductionIntent@1",
+                    "step_id": "dome-shell",
+                },
+            ),
+            "399eefd38a091e07a82261f328f8799f4a15630e968e42138ecc099282fc94bd",
         )
 
     def test_p036_checkpoint_is_reloadable_and_idempotent(self) -> None:

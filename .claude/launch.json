@@ -4,7 +4,7 @@
     {
       "name": "state-tree",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["tools/state_tree_viewer.py", "probes", "--port", "8766"],
+      "runtimeArgs": ["tools/state_tree_viewer.py", "D:/PROJECTS/01_ACTIVE_当前项目/ARCHFLOW CAADRIA 2027/V4_RUNTIME/workspace/projects", "--port", "8766"],
       "port": 8766
     }
   ]

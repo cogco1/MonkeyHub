@@ -20,7 +20,7 @@ from archflow.runtime.candidate_assembly import (
     CandidateAssembly,
     CandidatePolicyKind,
 )
-from archflow.runtime.geometry_compiler import CompiledGeometryProgram
+from archflow.compilers.geometry import CompiledGeometryProgram
 from archflow.state.build_policy import (
     BuildPolicy,
     BuildStagingMode,

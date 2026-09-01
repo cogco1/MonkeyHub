@@ -3,12 +3,13 @@
 import hashlib
 import unittest
 
-from archflow.adapters.web_evidence import (
-    WebEvidenceError,
-    WebEvidenceSnapshot,
-    extract_text,
-)
-from archflow.capabilities.precedent import (
+from archflow.adapters import web_evidence as legacy_web_evidence
+from archflow.adapters.web_evidence import extract_text
+from archflow.capabilities import precedent as legacy_precedent
+from archflow.evidence import sources as canonical_sources
+from archflow.evidence.sources import WebEvidenceError, WebEvidenceSnapshot
+from archflow.research import adoption as canonical_adoption
+from archflow.research.adoption import (
     PrecedentAdoption,
     PrecedentError,
     PrecedentFact,
@@ -55,6 +56,47 @@ def _fact(
 
 
 class WebPrecedentContractTests(unittest.TestCase):
+    def test_legacy_web_schema_import_is_identity_preserving_facade(self):
+        self.assertIs(
+            legacy_web_evidence.WebEvidenceError,
+            canonical_sources.WebEvidenceError,
+        )
+        self.assertIs(
+            legacy_web_evidence.WebEvidenceSnapshot,
+            canonical_sources.WebEvidenceSnapshot,
+        )
+
+    def test_snapshot_schema_and_payload_remain_fixed(self):
+        snapshot = _snapshot()
+        self.assertEqual("WebEvidenceSnapshot@1", snapshot.SCHEMA)
+        self.assertEqual(
+            {
+                "schema": "WebEvidenceSnapshot@1",
+                "url": "https://example.org/precedent",
+                "retrieved_at": "2026-08-28T21:00:00+08:00",
+                "content_sha256": "a" * 64,
+                "content_bytes": 1024,
+                "text": TEXT,
+                "text_sha256": hashlib.sha256(TEXT.encode()).hexdigest(),
+                "adoption_authority": False,
+                "prompt_injection_surface": False,
+                "canonical_write_authority": False,
+            },
+            snapshot.to_dict(),
+        )
+        self.assertEqual(
+            snapshot,
+            WebEvidenceSnapshot.from_dict(snapshot.to_dict()),
+        )
+
+    def test_legacy_import_is_thin_canonical_facade(self):
+        for name in legacy_precedent.__all__:
+            self.assertIs(
+                getattr(legacy_precedent, name),
+                getattr(canonical_adoption, name),
+                name,
+            )
+
     def test_snapshot_carries_no_authority_and_binds_its_digest(self):
         snapshot = _snapshot()
         payload = snapshot.to_dict()
@@ -101,6 +143,14 @@ class WebPrecedentContractTests(unittest.TestCase):
             adopted_at="2026-08-28T21:05:00+08:00",
             facts=(_fact(),),
         )
+        self.assertEqual("PrecedentAdoption@1", adoption.to_dict()["schema"])
+        self.assertEqual(
+            "e0a54ff963e5b817766aea8f60d8bb8dc66e68752fae4fc1b4fc1934b127c756",
+            adoption.adoption_digest,
+        )
+        self.assertFalse(adoption.to_dict()["retrieved_text_authority"])
+        self.assertFalse(adoption.to_dict()["design_authority"])
+        self.assertFalse(adoption.to_dict()["canonical_write_authority"])
         constraints = compile_precedent_constraints(
             adoption,
             adoption_ref="project://demo/runs/r/records/precedent-adoption-x",

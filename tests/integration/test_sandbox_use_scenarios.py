@@ -7,7 +7,7 @@ from archflow.realization import (
     derive_voxel_view,
     realize_geometry,
 )
-from archflow.runtime.geometry_compiler import compile_geometry_program
+from archflow.compilers.geometry import compile_geometry_program
 from archflow.state import CanonicalState
 from archflow.state.geometry_program import (
     AffineTransform,

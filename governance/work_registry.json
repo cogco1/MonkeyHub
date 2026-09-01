@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-28",
+  "updated_on": "2026-08-29",
   "phase": "P7 - semantic geometry production closure proven",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -11623,6 +11623,1060 @@
       "completed_on": "2026-08-28",
       "evidence": [
         "material.py: MaterialIntent (mandatory non-empty source_refs, deterministic display color), MaterialLedger (assignments only over declared intents), ledger_coverage joining bindings with typed unassigned and orphan lists. CAD projection: material layer colors + archflow:material user text, in the semantic round-trip expectation; IFC projection: pset entry + IfcMaterial via IfcRelAssociatesMaterial (re-read verified). Live monument ledger: granite (colonnade, citing the retained octastyle adoption quote 'large granite Corinthian columns') and roman-concrete (rotunda+dome, citing the research-006 multi-source adoption); 7 components honestly typed unassigned, coverage 30 percent; material CAD script sha retained; material IFC export VERIFIED into workspace exports. tests/test_material.py (7) green; suite 621; archcheck PASS."
+      ]
+    },
+    {
+      "id": "P069",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Full-scale reconstruction reference derivation as the runtime workspace's first tenant: four staged derivations at metre-cell footprint granularity inside the 4096 bound, each stage passing its declaration gate and axial-symmetry gate, every dimension citing an adopted fact or a typed widened-range uncertainty, materials assigned through the provenance ledger, final fidelity measured against the adopted dimensions, records living in the workspace with anchors in the repo.",
+      "depends_on": [
+        "P068",
+        "M069",
+        "P076",
+        "P077"
+      ],
+      "write_scope": [
+        "archflow/adapters/three_dm_inspector.py",
+        "archflow/capabilities/stage_evidence_pack.py",
+        "pyproject.toml",
+        "README.md",
+        "tools/run_pantheon_reconstruction.py",
+        "tools/build_pantheon_progress_snapshot.py",
+        "tools/_probe_paths.py",
+        "tests/test_pantheon_reconstruction_gates.py",
+        "tests/test_pantheon_progress_snapshot.py",
+        "tests/test_stage_evidence_pack.py",
+        "tests/test_three_dm_inspector.py",
+        "probes/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/PANTHEON_RECONSTRUCTION_PLAN.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The project is bootstrapped in the runtime workspace; the repo holds only an anchor.",
+        "Stage 0 passes a project-authored declaration contract whose every range cites retained adoptions, plus the axial-symmetry gate, before any ACCEPTED archive.",
+        "Stages 1-3 deepen the same component identities through the exact-predecessor lifecycle with their own gates; dimensions cite adoptions or typed uncertainties, never inventions.",
+        "The material ledger covers the components with citable sources and types the remainder unassigned.",
+        "A fidelity receipt compares realized measures against the adopted dimensions; CAD/IFC externalizations carry materials.",
+        "The explicit progress surface reads retained 3DM files without starting Rhino, checks digest, object count, model units, and current geometry-program identity, and remains blocked unless exact branch evidence and convergence records close."
+      ],
+      "tests": [
+        "Stage gate integration on the derivation runner",
+        "Headless 3DM inspection and StageEvidencePack fail-closed contracts",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_pantheon_reconstruction_gates",
+          "tests.test_pantheon_progress_snapshot",
+          "tests.test_stage_evidence_pack",
+          "tests.test_three_dm_inspector"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P069-pantheon-reconstruction.md",
+      "on_complete": {},
+      "actor": "codex",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P069",
+        "actor": "codex",
+        "verified_at": "2026-08-29T15:16:55.523040+00:00",
+        "contract_sha256": "16512224f949eef80585c6751bff8b100dc0276696e5b8151507d2315fa1324d",
+        "scope_sha256": "61a0c8d08fb5e670ffcf00d7282fa43bc9a8def383515d157488715ecc3e55e7",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_pantheon_reconstruction_gates",
+              "tests.test_pantheon_progress_snapshot",
+              "tests.test_stage_evidence_pack",
+              "tests.test_three_dm_inspector"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d730b23510b3f7ab766ca8bdf6e87b2ba8f9539c9a91b11c24ec9afb9f1dd6a4",
+            "stdout_tail": "",
+            "stderr_tail": "............................\n----------------------------------------------------------------------\nRan 28 tests in 0.313s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "f4f9afc2996d3c44db6d8c9ed46cb5151e72cab8549d499490df86942348b1b9",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (142 files, 0.950s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "P078",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make the selected Candidate a real retrieval boundary: evidence-backed scorecards resolve through explicit automatic or human-in-the-loop policy, alternatives remain parked with rationale, and every later query, source allowlist, decision universe, adoption, basis shard, prompt context, and next-round work item carries the exact selected branch scope.",
+      "depends_on": [
+        "P033",
+        "P067",
+        "P070",
+        "P076"
+      ],
+      "write_scope": [
+        "archflow/capabilities/branch_research.py",
+        "archflow/capabilities/basis_index.py",
+        "archflow/capabilities/research.py",
+        "archflow/capabilities/semantic_spatial_authoring.py",
+        "archflow/capabilities/README.md",
+        "archflow/adapters/web_evidence.py",
+        "archflow/runtime/branch_research.py",
+        "archflow/runtime/architectural_revision.py",
+        "archflow/runtime/README.md",
+        "tests/test_branch_conditioned_rag.py",
+        "tests/test_architectural_revision.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Automatic selection changes no state below its score or margin threshold or on a tie; deserialisation and application replay the winner, threshold, margin, permitted algorithm authority, exact active Candidate heads and complete loser set.",
+        "Human-in-the-loop selection requires an explicit permitted authority and may choose a lower-scored candidate; pending human review leaves the portfolio byte-identical.",
+        "Every scorecard binds an exact-revision BranchResearchProfile; selecting a Candidate simultaneously selects its decision universe, included and excluded search terms, domain allowlist, and profile evidence, while BranchResearchScope binds content-addressed P036 source SchematicOptionSet and OperationalMarkovState records that runtime reloads with the selected profile before every write.",
+        "Branch queries cannot widen decisions, vocabulary, or sources; typed snapshots bind exact query and Candidate revision, requested and final URLs are checked, and research output must echo the exact query and scope digests.",
+        "Only an explicit adoption bound to the exact branch query and full P036 snapshot URI can enter a per-scope basis index; foreign, same-name cross-branch and legacy-unscoped facts are excluded and uncovered decisions compile the complete next query wave.",
+        "BranchDecisionContext is compiled only after P036 reload and deterministic re-derivation; a P078-selected production revision requires that index and matches it to the predecessor selected Candidate, while advance_feedback_wave persists the complete next query and BranchRAGProgress loop through P036 RUN_BRANCH."
+      ],
+      "tests": [
+        "Candidate convergence, branch isolation, retrieval narrowing, prompt consumption, progress and P036 reload",
+        "Architecture firewall and focused adjacent regression"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_branch_conditioned_rag",
+          "tests.test_decision_research",
+          "tests.test_basis_index",
+          "tests.test_stage_declarations",
+          "tests.test_semantic_spatial_authoring",
+          "tests.test_architectural_revision",
+          "tests.test_web_precedent",
+          "tests.test_design_portfolio",
+          "tests.integration.test_branch_portfolio_reload"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P078-branch-conditioned-rag.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P078",
+        "actor": "codex",
+        "verified_at": "2026-08-28T21:37:14.550218+00:00",
+        "contract_sha256": "11c325ed011f4bcad1c5c69b2882d64161db2ecba1a053dea86f51923b6f3b48",
+        "scope_sha256": "fc554b96324424cf07a0408ffe75544008819729c8d61f841cb6dbc481816d8e",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_branch_conditioned_rag",
+              "tests.test_decision_research",
+              "tests.test_basis_index",
+              "tests.test_stage_declarations",
+              "tests.test_semantic_spatial_authoring",
+              "tests.test_architectural_revision",
+              "tests.test_web_precedent",
+              "tests.test_design_portfolio",
+              "tests.integration.test_branch_portfolio_reload"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e2c68f73eea57f1ea4b7e2d8263b587c4008be112cd52b15afae552fcf2eb87f",
+            "stdout_tail": "",
+            "stderr_tail": "..............................................................Executing <Task finished name='Task-75' coro=<ArchitecturalRevisionCompilerTests.test_failed_entry_drives_atomic_model_authored_successor() done, defined at D:\\ARCHFLOW_V4\\tests\\test_architectural_revision.py:359> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.172 seconds\n................\n----------------------------------------------------------------------\nRan 78 tests in 1.838s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "078a44acfa559a5edbaee3feb1ea96131a90811c9013d9aebf48b574e8838a9a",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (136 files, 0.859s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "Branch-conditioned Candidate selection, P036 source/profile replay, exact query-snapshot-adoption indexing, durable feedback waves, and predecessor-bound semantic context verified; 78 focused tests and architecture firewall pass."
+      ]
+    },
+    {
+      "id": "P079",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Compile project-authored decision-universe closure, dependency edges, evidence sufficiency, source diversity, uncertainty, conflict review, and bounded saturation into a typed fail-closed branch research receipt without silently widening a P078 scope.",
+      "depends_on": [
+        "P076",
+        "P077",
+        "P078"
+      ],
+      "write_scope": [
+        "archflow/capabilities/evidence_sufficiency.py",
+        "tests/test_evidence_sufficiency.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Mandatory decisions satisfy project-authored adopted-fact, independent-source-family, and uncertainty policies before completion.",
+        "Required dependency edges are resolved or typed open; newly discovered decisions emit an exact predecessor-bound successor-universe proposal and never widen the current scope.",
+        "Material conflicts require an explicit authorised resolution and otherwise return human_review_required.",
+        "Bounded saturation distinguishes continue, universe expansion, human review, and complete without framework-owned building vocabulary.",
+        "Historical-colonnade and modern-learning-pavilion synthetic cases prove facts alone cannot close a missing relation, conflict, or dependency decision."
+      ],
+      "tests": [
+        "Evidence sufficiency, dependency closure, conflict routing, universe expansion, saturation, and cross-typology fixtures",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_evidence_sufficiency"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P079-evidence-sufficiency-closure.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P079",
+        "actor": "codex",
+        "verified_at": "2026-08-28T23:01:56.550498+00:00",
+        "contract_sha256": "1ed5ed22f45e7b4fcf037209441a4dc4b94e75b14f1d1d35b75db7364415c2e7",
+        "scope_sha256": "8b714c137bd102ae19a02e96b8badd2fefa882d8ac99464ba607472a8905f65d",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_evidence_sufficiency"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "3af354abd6afd2f4f662a367159a8b8107385935ded6c8a2b929734becedb43c",
+            "stdout_tail": "",
+            "stderr_tail": "............\n----------------------------------------------------------------------\nRan 12 tests in 0.002s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "d09501edb3ed9db512016f1a2bcf3c37944eb66dff231c5815ffd2f038b26a06",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (138 files, 0.751s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "Modality-neutral decision-universe closure and evidence-sufficiency compiler now separates fact presence from adequate research. It binds exact predecessor universe/scope expansion, required edges, source-family diversity, qualifiers, typed uncertainty, policy-authorised conflict review, bounded no-novelty saturation, and explicit continue/universe-expansion/human-review/complete frontier states. Text, visual region, drawing/sketch, measurement, and derivation evidence remain typed candidates; historical and modern synthetic cases plus 12 focused tests pass; architecture firewall passes."
+      ]
+    },
+    {
+      "id": "P080",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make staged design convergence machine-checkable through exact parent-child state binding, protected-lock inheritance, mandatory-obligation and failure vectors, dependency-local reopening, and explicit progress, repair, scope-expansion, or rejection receipts.",
+      "depends_on": [
+        "P039",
+        "P040",
+        "P041",
+        "P068",
+        "M075"
+      ],
+      "write_scope": [
+        "archflow/state/stage_convergence.py",
+        "tests/test_stage_convergence.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The receipt binds branch, stage, exact parent-child digests, transition kind, locks, obligations, gate failures, conflicts, tolerance failures, invalidations, and revalidations.",
+        "Refine, resolve, and repair preserve protected locks and strictly reduce a deterministic convergence vector; no-op and regression reject.",
+        "Scope expansion is explicit, bounded, authorised, and never reported as ordinary progress; locked-decision reopening is limited to its supplied dependency closure.",
+        "Stale parent state, unexplained invalidation, open mandatory obligations, and unauthorised lock changes fail closed.",
+        "Historical and modern synthetic cases prove the mechanism without framework-owned building vocabulary."
+      ],
+      "tests": [
+        "Exact-base binding, vector monotonicity, lock inheritance, bounded reopening, repair, scope expansion, and cross-typology fixtures",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_stage_convergence"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P080-stage-convergence-receipt.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P080",
+        "actor": "codex",
+        "verified_at": "2026-08-28T22:57:59.925532+00:00",
+        "contract_sha256": "594cc33abacf0ce49178cb8033bdf23824952d4dcc23c025dfdee9f09286a456",
+        "scope_sha256": "bedf2d1862a255ed41e4a614c7d0c636d5e72ab0403f3b6931d59a2dc23bb8e7",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_stage_convergence"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "40e6a3053d86436d6aa245501343227a2e81436f4f14da71a21257468605aff6",
+            "stdout_tail": "",
+            "stderr_tail": "..........\n----------------------------------------------------------------------\nRan 10 tests in 0.006s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "d09501edb3ed9db512016f1a2bcf3c37944eb66dff231c5815ffd2f038b26a06",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (138 files, 0.751s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "StageConvergencePolicy and exact-state evaluator bind parent/child digests, protected locks, mandatory obligations, external gate/conflict/tolerance/revalidation deficits, lexicographic potential, and dependency-local scope expansion. Refine/resolve/repair require strict decrease; ordinary hidden expansion and protected drift reject; authorised grid revision is typed scope_expansion. Historical colonnade and modern grid/core/facade/MEP synthetic tests: 10 green; compileall and architecture firewall pass."
+      ]
+    },
+    {
+      "id": "P081",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Close the P079/P080 branch-to-stage path, expose panel data, and compare execution cost.",
+      "depends_on": [
+        "P079",
+        "P080"
+      ],
+      "write_scope": [
+        "archflow/capabilities/branch_research.py",
+        "archflow/capabilities/basis_index.py",
+        "archflow/runtime/branch_research.py",
+        "archflow/runtime/architectural_revision.py",
+        "archflow/runtime/design_controller.py",
+        "archflow/runtime/token_accounting.py",
+        "archflow/project/location.py",
+        "archflow/project/__init__.py",
+        "tools/_probe_paths.py",
+        "tools/run_pantheon_reconstruction.py",
+        "tests/test_branch_conditioned_rag.py",
+        "tests/test_architectural_revision.py",
+        "tests/test_design_controller.py",
+        "tests/test_token_accounting.py",
+        "tests/test_pantheon_reconstruction_gates.py",
+        "tests/test_project_location.py",
+        "tests/integration/test_decision_design_closure.py",
+        "tests/integration/test_component_family_realization.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "tests/integration/test_project_derived_architectural_usability.py",
+        "tests/fixtures/modern_learning_pavilion.json",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Exact COMPLETE P079 context is mandatory; expansion creates a successor P078 scope.",
+        "Stage exit requires an exact current P080 receipt; stale, regressive, or hidden expansion rejects.",
+        "A synthetic modern fixture proves generic dependency and state closure.",
+        "Hard feasibility filters before soft/HITL ranking; preference cannot offset code, safety, dimension, or standard failure.",
+        "Text, visual, drawing/sketch, measurement, and derivation evidence share one typed frontier; model labels remain candidates.",
+        "Pantheon later-stage archival requires both exact receipts.",
+        "P060/P061/P062 evidence reloads through workspace relocation anchors.",
+        "archflow.project owns read-only project discovery and anchor integrity; tools/tests only configure roots.",
+        "Comparable initial/revision telemetry makes no unsupported token-saving claim."
+      ],
+      "tests": [
+        "Branch/stage, modern, Pantheon, relocation, and token comparison",
+        "Full discovery plus architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_branch_conditioned_rag",
+          "tests.test_design_controller",
+          "tests.test_token_accounting",
+          "tests.test_pantheon_reconstruction_gates",
+          "tests.integration.test_decision_design_closure"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests",
+          "-t",
+          "."
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P081-branch-stage-closure-integration.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P081",
+        "actor": "codex",
+        "verified_at": "2026-08-28T23:43:56.737502+00:00",
+        "contract_sha256": "1233a2c4647e97ba4b7f5f89852c4983b1c71f660a18b01892b2343a97aae098",
+        "scope_sha256": "2a85710b4e2f128b972282e794f8edb66082c0d286b36f3ed228a0c387387961",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_branch_conditioned_rag",
+              "tests.test_design_controller",
+              "tests.test_token_accounting",
+              "tests.test_pantheon_reconstruction_gates",
+              "tests.integration.test_decision_design_closure"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "aa4916afb6695b76589733ba2b4cb35cd4c6c6e08d55d3022821767ce79905ef",
+            "stdout_tail": "",
+            "stderr_tail": "...........................................................\n----------------------------------------------------------------------\nRan 59 tests in 1.177s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests",
+              "-t",
+              "."
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "6542631d083debdf06e5d2efbea05f43e15a33e2c9dddae7000a64fe379ba9c5",
+            "stdout_tail": "",
+            "stderr_tail": "rams\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.140 seconds\n.................................................................................................................................................................................................................................................................................................................................ss.....................................................................................................Executing <Task finished name='Task-341' coro=<ProductionRootCompilerTests.test_current_state_reaches_selected_initial_semantic_geometry() done, defined at D:\\ARCHFLOW_V4\\tests\\test_production_root_compiler.py:634> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.109 seconds\n..............................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 788 tests in 102.288s\n\nOK (skipped=6)\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "0fe124660a787b5a91e6bdf08961ffa676a3644ef21d0af16e24e1e9064c0974",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (140 files, 1.033s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "P079 COMPLETE is now mandatory on branch design context; P080 exact current stage-ready receipts gate phase exit and Pantheon stage 1-3 archival. Hard feasibility can be required and filters before soft/HITL ranking; missing, unresolved, or violated hard assessment cannot win. Multimodal evidence and the synthetic modern fixture exercise generic closure. archflow.project now owns typed read-only local/anchor/workspace discovery with manifest/hash validation, and P060/P061/P062 reload through their workspace anchors. Comparable token accounting reports missing direct telemetry instead of claiming savings. Verification: 788 tests passed with 6 skipped, P081 targeted commands passed, compileall and architecture firewall passed. The actual Pantheon v2 derivation remains P069 work and was not claimed here."
+      ]
+    },
+    {
+      "id": "P082",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Run a second monument through the frozen branch-conditioned workflow: retain Parthenon Web evidence, select and inherit one branch identity through four exact-successor stages, emit headless metre-unit 3DM candidates, and report wall time and provider usage without estimating missing token or quota telemetry.",
+      "depends_on": [
+        "P036",
+        "P078",
+        "P079",
+        "P080",
+        "P081"
+      ],
+      "write_scope": [
+        "tools/run_parthenon_reconstruction.py",
+        "tests/test_parthenon_reconstruction.py",
+        "probes/parthenon-reconstruction.anchor.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Web evidence candidate selection queries adoptions decision universes and stages carry one selected branch identity.",
+        "Four stages retain COMPLETE sufficiency and exact-successor stage-ready convergence receipts while preserving building and component identities.",
+        "Every hard dimension cites retained evidence and unresolved detail is typed uncertainty or an explicit exclusion.",
+        "Each stage emits a headlessly inspectable metre-unit 3DM; Stage 3 carries Doric order cella entablature pediments and Pentelic-marble intent.",
+        "The run summary separates wall time HTTP calls local scripted calls external provider calls and provider tokens; missing Codex-app quota is n/a.",
+        "The workspace owns the project and the repo anchor binds the retained progress snapshot without creating a second authority."
+      ],
+      "tests": [
+        "Parthenon topology symmetry branch inheritance evidence closure convergence 3DM and usage-summary contracts",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_parthenon_reconstruction"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P082-parthenon-reconstruction.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P082",
+        "actor": "codex",
+        "verified_at": "2026-08-29T16:48:00.218083+00:00",
+        "contract_sha256": "a3533a4970cd4e130a47b1d4b2073f23bf49fd0aeb0fdb145de3261cdb8db6e0",
+        "scope_sha256": "68eb9f1ac9b29de46a9a83baeda7d3e8714c4cf475c791d84e0c992cde4262d7",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_parthenon_reconstruction"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "55f298b6cdefb09275702231e4a46dc03731a076e6d24fecca9aa5149d76a747",
+            "stdout_tail": "",
+            "stderr_tail": "...\n----------------------------------------------------------------------\nRan 3 tests in 1.096s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "a81cc923c0e5b67c0bc19fdc8653a4461561face1ce6eebeb541babdedb3e9a3",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (142 files, 0.785s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-29",
+      "evidence": [
+        "project://parthenon-reconstruction/exports/parthenon-progress-snapshot-90aed29c897835c08a360817a87eea494d6194c96444fbcd9b8f797f59f122ba.json",
+        "3 tests PASS; ARCHITECTURE PASS (142 files)",
+        "final 3dm sha256 ff9ec8a81d239ea38281c0f8ca31b9e0f4ef15f2680faa7597a7e6ff83cde5f1"
+      ]
+    },
+    {
+      "id": "P083",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Correct the Parthenon Architectural IR and Rhino adapter to World XY with Z-up, and retain the fix as an exact successor run without overwriting P082 evidence.",
+      "depends_on": [
+        "P082"
+      ],
+      "write_scope": [
+        "tools/run_parthenon_reconstruction.py",
+        "tests/test_parthenon_reconstruction.py",
+        "probes/parthenon-reconstruction.anchor.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Architectural IR declares RhinoWorldXY with plan axes X and Y and up axis Z.",
+        "Every corrected stage is grounded at Z zero and checks that plan length is Y width is X and height is Z.",
+        "Exterior columns are measurably vertical along Rhino world Z rather than Y.",
+        "Reconstruction 003 binds the exact reconstruction 001 progress snapshot and a typed coordinate-axis correction receipt without overwriting the predecessor; run 002 remains a timed-out evidence-fetch attempt.",
+        "Four corrected stage packs compile COMPLETE and remain HOLD.",
+        "The workspace anchor binds the corrected progress snapshot and final model digests."
+      ],
+      "tests": [
+        "Initial and successor Parthenon runs plus Rhino Z-up geometry assertions",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_parthenon_reconstruction"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P083-parthenon-rhino-z-up-correction.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P083",
+        "actor": "codex",
+        "verified_at": "2026-08-29T17:02:12.304522+00:00",
+        "contract_sha256": "5f87bf58ce7fceee5a81a1fb7ccc5b1f4ad4cb84eef45e1f9436f82bec3b8267",
+        "scope_sha256": "0f05d7d371ccd82c11c5309a996dd63e5436dace52ea4c640e31136a1c27afca",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_parthenon_reconstruction"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "fd37be30f0c608f57de64f2ee5bdd2bac43fba44b2059648a73768566cfd701b",
+            "stdout_tail": "",
+            "stderr_tail": ".....\n----------------------------------------------------------------------\nRan 5 tests in 3.228s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "be1836fb42aa74cd9b1602e081a8020b49b90e3b33ea7fe3d5b100a673e43405",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (142 files, 0.748s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-29",
+      "evidence": [
+        "project://parthenon-reconstruction/exports/parthenon-progress-snapshot-dc7c1a2b9e52136eb5e3f627eb39b60b042fbb9904c4628d13f4d61267155bff.json",
+        "Rhino World XY Z-up bbox 34.48 x 73.10 x 19.38 m; min Z 0.0",
+        "final 3dm sha256 3992c65df16554ff2b22b5f2dc68df47bc98f0bcec715acf99f2b139ce407a5c",
+        "5 tests PASS; ARCHITECTURE PASS (142 files)"
+      ]
+    },
+    {
+      "id": "P084",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Repair the Parthenon completeness and spatial-closure path so missing principal doors, unsupported exact coordinates, and column-wall intersections fail closed, then retain a fresh four-stage reconstruction without overwriting prior evidence.",
+      "depends_on": [
+        "P079",
+        "P080",
+        "P081",
+        "P082",
+        "P083"
+      ],
+      "write_scope": [
+        "archflow/capabilities/architectural_completeness.py",
+        "archflow/capabilities/spatial_validation.py",
+        "tools/run_parthenon_reconstruction.py",
+        "tests/test_architectural_completeness.py",
+        "tests/test_spatial_validation.py",
+        "tests/test_parthenon_reconstruction.py",
+        "probes/parthenon-reconstruction.anchor.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A typology and stage completeness contract enumerates required decision families and fails closed when openings connectivity supports or another required family is absent.",
+        "Parameter-basis validation rejects an exact numerical parameter backed only by topology while allowing measured derived or explicitly typed candidate bases.",
+        "Executable spatial validation checks required components clear opening volumes forbidden solid intersections containment and minimum clearance.",
+        "Stage readiness and closure booleans derive from retained evidence geometry spatial and convergence receipts and no obligation closes before realization passes its gates.",
+        "Reconstruction 004 contains independently accessible east and west cella doors retains disconnected east and west rooms and has no interior-support overlap with partition or perimeter walls.",
+        "Four Z-up metre-unit stage packs inherit one branch identity remain HOLD and are bound by the project progress snapshot and repository anchor."
+      ],
+      "tests": [
+        "Negative completeness parameter-basis opening-clearance and column-wall-intersection tests",
+        "Deterministic Parthenon successor rebuild and headless 3DM inspection",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_architectural_completeness",
+          "tests.test_spatial_validation",
+          "tests.test_parthenon_reconstruction"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P084-parthenon-completeness-spatial-closure.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P084",
+        "actor": "codex",
+        "verified_at": "2026-08-29T17:44:32.546886+00:00",
+        "contract_sha256": "da6d1d284e11bcc8648d35f50a4bc6185163e1916901a5425f2300052c1adb18",
+        "scope_sha256": "559a62499cf8b7aa8fd0af4d14a8088b49d91750ecab3e0a0d058070c4df1f9d",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_architectural_completeness",
+              "tests.test_spatial_validation",
+              "tests.test_parthenon_reconstruction"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "795e067e071ac390b130194cef1be5f4b70d878793914f26f885bef305ac6277",
+            "stdout_tail": "",
+            "stderr_tail": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 4.868s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "ba8af5d2e8751baa438e28124cdcb20a04dfb7190eccc5e7922288789cfb4ad2",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (144 files, 0.735s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-29",
+      "evidence": [
+        "project://parthenon-reconstruction/exports/parthenon-progress-snapshot-ac778e607e87f1f9625121f3e70742b28c0dffcc1426365f893d3b98b4f4799a.json",
+        "project://parthenon-reconstruction/runs/reconstruction-004/branches/idealized-periclean-original/records/stage-3-spatial-validation-c07db4eb9f3547111bc1f61c5b642378cb4b5fc0802add672d6a968dce7b3969.json",
+        "21 tests PASS; ARCHITECTURE PASS (144 files); live Web RAG 8 HTTP calls and four COMPLETE HOLD packs"
+      ]
+    },
+    {
+      "id": "P085",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Open Parthenon Stage 4 by downloading branch-bound Web images into the project, compiling typed visual-region element candidates and non-claims, and retaining a selected manifest before any detail geometry changes.",
+      "depends_on": [
+        "P078",
+        "P079",
+        "P081",
+        "P084"
+      ],
+      "write_scope": [
+        "archflow/capabilities/visual_evidence.py",
+        "tools/run_parthenon_stage4_visual_rag.py",
+        "tests/test_visual_evidence.py",
+        "tests/test_parthenon_stage4_visual_rag.py",
+        "probes/parthenon-reconstruction.anchor.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Every downloaded image has a local workspace copy immutable artifact ref retained source record digest pixel dimensions branch identity and provenance or usage note.",
+        "Every visual-region candidate declares pixel and normalized bbox element tag host component spatial location confidence supports cannot-support and review state.",
+        "Invalid regions absent sources duplicate identities missing non-claims and exact dimension claims without a measurement basis fail closed.",
+        "Measured drawings reconstruction drawings current-condition photographs and museum-object images retain distinct modality limits through candidate selection.",
+        "Research 005 retains selected and parked candidates plus a visual RAG progress snapshot and this card creates no reconstruction 005 model."
+      ],
+      "tests": [
+        "Pure visual evidence validation and negative tests",
+        "Offline runner and live research 005 artifact readback",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_visual_evidence",
+          "tests.test_parthenon_stage4_visual_rag"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P085-parthenon-stage4-visual-rag.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P085",
+        "actor": "codex",
+        "verified_at": "2026-08-29T18:28:45.531794+00:00",
+        "contract_sha256": "3d31072d5815548bc0002cec9c52e9d38571cf609ca20b6476b777caa43edc54",
+        "scope_sha256": "78e60fa9ba190daba9e8e1a2152a43c2b7ddbd01ce2a89b581a07852d30ead90",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_visual_evidence",
+              "tests.test_parthenon_stage4_visual_rag"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "fe65a6bf78f6b4d6a2fabfcd3c25a4188c58cf645d59db8d704779c1e70573d7",
+            "stdout_tail": "",
+            "stderr_tail": "..........\n----------------------------------------------------------------------\nRan 10 tests in 0.358s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "1623629a2add7fa0a6f9a94b4fba29c3ab4eba647a3cdf1e7f8dad0dd68b32d4",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (145 files, 0.793s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-29",
+      "evidence": [
+        "project://parthenon-reconstruction/runs/research-005/branches/idealized-periclean-original/records/visual-candidate-manifest-76b73f91e9ab2af8552a7fcf3abef9cd596702c0f96f78daffc6c1ebd00e0fb0.json",
+        "project://parthenon-reconstruction/runs/research-005/records/stage4-visual-rag-progress-de8d5a1b9694647c32aeb9e3ae21485357b28f47501eaebe0f81a8819d527c15.json",
+        "10 tests PASS; ARCHITECTURE PASS (145 files); 8 local source images and 8 content-addressed objects read back; reconstruction-005 absent"
+      ]
+    },
+    {
+      "id": "P086",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Refine retained Parthenon Stage 4 images into real branch-bound ROI candidates, crops, overlays, and an explicit current manifest before detail geometry.",
+      "depends_on": [
+        "P085"
+      ],
+      "write_scope": [
+        "tools/refine_parthenon_stage4_visual_regions.py",
+        "tests/test_parthenon_stage4_visual_regions.py",
+        "probes/parthenon-reconstruction.anchor.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "All eight retained P085 sources are read back by exact source record and object digest without unreviewed network expansion.",
+        "The refined manifest contains 32 conservative real ROI candidates with typed coordinates labels hosts locations confidence claims modality branch scope and review state.",
+        "Every ROI has a deterministic crop and every source has a labelled overlay under the declared research 005 workspace with relative paths and SHA-256 digests.",
+        "Reconstruction drawings remain parked and temporary restoration equipment cannot drive idealized Periclean geometry.",
+        "A current ROI record explicitly names the predecessor P085 manifest and superseded manifest rather than inferring currency from mtime.",
+        "No ROI claims exact dimensions canonical state remains unchanged and no reconstruction 005 run is created."
+      ],
+      "tests": [
+        "Offline visual region crop overlay manifest and negative tests",
+        "Live research 005 ROI artifact and record readback",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_parthenon_stage4_visual_regions"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P086-parthenon-stage4-visual-region-localization.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P086",
+        "actor": "codex",
+        "verified_at": "2026-08-29T18:45:51.684999+00:00",
+        "contract_sha256": "b386c3719a0bbaf628391701f7c39ea1f9deec543524012a8c76c06cca6fc615",
+        "scope_sha256": "153e70ce0208267e9055dc4a266b67cc41b70e0a96684fde4404879e149c54cb",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_parthenon_stage4_visual_regions"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "272630f48f6934caa00b6ff146634f6a1de615b06e6c9f820e58ed5f343f56db",
+            "stdout_tail": "",
+            "stderr_tail": ".....\n----------------------------------------------------------------------\nRan 5 tests in 2.968s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "4c4c25cc3a531b161412b6f9d156fb641cad62e748f0e144ea3d9f101cd24ac6",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (145 files, 0.789s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-29",
+      "evidence": [
+        "project://parthenon-reconstruction/runs/research-005/branches/idealized-periclean-original/records/visual-region-manifest-d3ff9f427bbe4126d8346ad3be18831b638ea8f08d18e3b007234d7e9a4da7bd.json",
+        "project://parthenon-reconstruction/runs/research-005/records/stage4-visual-region-progress-b96542e0f69fcf523f6149038a2bde5b7dab7f43f064b44ac68e0e6d3005d320.json",
+        "32 ROI crops and 8 overlays read back; 14 selected, 13 parked, 5 rejected; 15 tests PASS; ARCHITECTURE PASS (145 files); canonical HEAD unchanged; reconstruction-005 absent"
+      ]
+    },
+    {
+      "id": "P087",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Generate an inherited evidence-bound Parthenon Stage 4 detail model with optional licensed open assets, provenance, and machine self-checks.",
+      "depends_on": [
+        "P086"
+      ],
+      "write_scope": [
+        "archflow/capabilities/stage_evidence_pack.py",
+        "tools/run_parthenon_stage4_reconstruction.py",
+        "tests/test_stage_evidence_pack.py",
+        "tests/test_parthenon_stage4_reconstruction.py",
+        "probes/parthenon-reconstruction.anchor.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "An exact predecessor binding proves the Stage 3 state pack program model branch metre units Z-up spatial pass and unchanged inherited facts and locks.",
+        "Stage 4 opens its obligation before geometry and closes it only after model readback spatial detail and evidence gates with no preclosed convergence.",
+        "Research 006 retains hard soft parked and branch-excluded claims plus reasons and exact source identity.",
+        "Every downloaded 3D asset has explicit license source author digest format units axis use and adoption records or the documented procedural route is used.",
+        "The 3DM refines supported Doric and entablature details retains 92 metopes represents supported openings and excludes unsupported text figures and dimensions.",
+        "Readback proves metre Z-up predecessor binding required details no branch leakage no introduced collisions and a COMPLETE HOLD Stage 4 pack."
+      ],
+      "tests": [
+        "Offline predecessor state evidence IR model detail login and asset provenance tests",
+        "Live bounded research 006 and reconstruction 005 readback",
+        "Architecture firewall and project repository verification"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_stage_evidence_pack",
+          "tests.test_parthenon_stage4_reconstruction"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P087-parthenon-stage4-detail-reconstruction.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P087",
+        "actor": "codex",
+        "verified_at": "2026-08-29T19:26:33.983263+00:00",
+        "contract_sha256": "7e4994b7dabdc9427355f1e03e06ce57a4314cb296ae9c7f7cc3d427a54effe2",
+        "scope_sha256": "651250426e6da0ddf209d3c62e919ff60b3de777c2f84e167d22ae3b2a77ff76",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_stage_evidence_pack",
+              "tests.test_parthenon_stage4_reconstruction"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d254b1d308c4186e543e6642127aa795b8908ac9951278c69c70136ebdd19f68",
+            "stdout_tail": "",
+            "stderr_tail": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 2.710s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "72b48b729abb80a726a09df15cb4ce23db212b3ce9d8b4d163ba94f3dcedff3b",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (145 files, 0.733s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-29",
+      "evidence": [
+        "project://parthenon-reconstruction/exports/parthenon-stage-4-progress-1060f6732d80606e449940c9107160f2fdd1e4ab9271367f8f83f8c32b5dbc7c.json",
+        "project://parthenon-reconstruction/runs/reconstruction-005/branches/idealized-periclean-original/records/stage-4-evidence-pack-533cd7d76d7ed86a5152c9bc0d802cf9846725bfcb6d850235ec4b3835dc39ca.json",
+        "project://parthenon-reconstruction/runs/reconstruction-005/branches/idealized-periclean-original/records/stage-4-operational-state-3ba5880632383d89b59ba372c46b3513b86400c2235deb91f4716e9e79b5c096.json",
+        "project://parthenon-reconstruction/objects/sha256/79/79e333e33c8db6edcee7ee83068373fcba6bb97ed4aba6c6eda39e5514b1acba",
+        "project://parthenon-reconstruction/objects/sha256/9c/9c00f9568c436ccee20219f6c9b2a1ae05d37aed839e2a588491ab05100f4dda",
+        "509-object Meters/Z-up 3DM readback and Stage 4 detail/spatial/evidence gates PASS; COMPLETE pack; HOLD; 56 related tests PASS; compileall PASS; ARCHITECTURE PASS (145 files); project repository verify PASS; canonical HEAD version 0 unchanged"
       ]
     }
   ]

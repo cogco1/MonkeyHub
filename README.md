@@ -36,6 +36,19 @@ Run the deterministic proof:
 python -m unittest discover -s tests -v
 ```
 
+Install the optional OpenNURBS reader and build a Rhino-free Pantheon progress
+snapshot:
+
+```powershell
+py -3.12 -m pip install -e ".[cad-inspection]"
+py -3.12 tools/build_pantheon_progress_snapshot.py --no-persist
+```
+
+This reads the retained `.3dm` directly; it does not start Rhino. The snapshot
+checks file digest, document units, object/layer counts, user strings, bounding
+box, and geometry-program alignment. It is a non-authoritative view and never
+turns a candidate or passing local check into an accepted stage.
+
 Run the explicit probe-rooted framework smoke:
 
 ```powershell

@@ -16,9 +16,8 @@ from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-for entry in (str(ROOT), str(ROOT / "tests")):
-    if entry not in sys.path:
-        sys.path.insert(0, entry)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from archflow.adapters.web_evidence import fetch_web_evidence  # noqa: E402
 from archflow.capabilities.precedent import (  # noqa: E402
@@ -35,10 +34,9 @@ from archflow.state.build_policy import (  # noqa: E402
     ConstructabilityTopic,
     PolicyConstraintStrength,
 )
-from tests.integration.test_monument_derivation import (  # noqa: E402
-    _monument_context,
+from tools.projects.web_precedent.support import (  # noqa: E402
+    load_rebased_authoring_context,
 )
-from tests.test_production_root_compiler import _rebase_context  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "tools"))
 from _probe_paths import resolve_probe_root  # noqa: E402
@@ -112,6 +110,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--now", required=True)
     parser.add_argument("--run-id", default="live-002")
+    parser.add_argument("--source-run-id", default="live-001")
     args = parser.parse_args(argv)
 
     repository = FilesystemProjectRepository.open(resolve_probe_root(PROJECT_ID))
@@ -122,6 +121,12 @@ def main(argv=None) -> int:
     destination = PersistenceDestination(
         PersistenceArea.RUN_RECORD, run_id=args.run_id
     )
+    context, source_context_ref = load_rebased_authoring_context(
+        repository,
+        source_run_id=args.source_run_id,
+        target_run=run,
+    )
+    print("source context:", source_context_ref.uri[:100])
 
     snapshot = fetch_web_evidence(URL, retrieved_at=args.now)
     snapshot_ref = repository.put_json(
@@ -170,7 +175,6 @@ def main(argv=None) -> int:
     )
     print("adoption:", adoption_ref.uri[:100])
 
-    context = _rebase_context(_monument_context(), run)
     policy = context.build_policy
     constraints = compile_precedent_constraints(
         adoption,

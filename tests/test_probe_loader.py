@@ -19,7 +19,7 @@ from archflow.runtime.probe_loader import (
     load_probe_input_envelope,
     persist_compiled_design_brief,
 )
-from archflow.runtime.brief_compiler import BriefObservation
+from archflow.compilers.brief import BriefObservation
 from archflow.state import (
     BriefClaimKind,
     BriefSlot,

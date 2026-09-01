@@ -18,7 +18,7 @@ from archflow.runtime.family_compiler import (
     compile_component_families,
     compile_component_family_lifecycle,
 )
-from archflow.runtime.geometry_compiler import compile_geometry_program
+from archflow.compilers.geometry import compile_geometry_program
 from archflow.runtime.semantic_geometry_lifecycle import (
     SemanticGeometryLifecycleStatus,
     compile_semantic_geometry_lifecycle,

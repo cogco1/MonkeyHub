@@ -5,23 +5,27 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
+import archflow.compilers as compilers_api
+import archflow.compilers.site as canonical_site
+import archflow.runtime.site_compiler as legacy_site
 from archflow.adapters.site_observation import (
     SiteObservationAuthorization,
     SiteObservationError,
     SiteObservationErrorCode,
     authorize_site_observation,
 )
-from archflow.project import ProjectVersionRef
-from archflow.runtime.brief_compiler import compile_design_brief
-from archflow.runtime.site_compiler import (
+from archflow.compilers.site import (
     SiteCompilationError,
     compile_site_context,
 )
+from archflow.project import ProjectVersionRef
+from archflow.compilers.brief import compile_design_brief
 from archflow.state import (
     GroundModelKind,
     SiteBounds,
     SiteContext,
 )
+from archflow.state.geometry_program import digest_value
 
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "site"
@@ -97,6 +101,40 @@ def _flat_authorization(
 
 
 class SiteContextTests(unittest.TestCase):
+    def test_legacy_facade_and_package_export_canonical_objects(self) -> None:
+        for name in legacy_site.__all__:
+            with self.subTest(name=name):
+                canonical = getattr(canonical_site, name)
+                self.assertIs(canonical, getattr(legacy_site, name))
+                self.assertIs(canonical, getattr(compilers_api, name))
+
+    def test_reference_site_preserves_schema_digests_and_authority(self) -> None:
+        observation = authorize_site_observation(
+            _payload("authorized_superflat.json"),
+            authorization=_flat_authorization(),
+        )
+        result = compile_site_context(
+            brief=_brief("site-flat", "a" * 64),
+            observation=observation,
+        )
+
+        self.assertEqual("SiteContext@2", result.context.SCHEMA)
+        self.assertEqual(
+            "c6b8689bfeadcba53a2ab910a2f0f1ae2b31fc3caf5862a4f6ee48aa1fe053d1",
+            result.context.context_digest,
+        )
+        self.assertEqual("SiteCompilationReceipt@1", result.receipt.SCHEMA)
+        self.assertEqual(
+            "site-compilation.a2ac3a3969587f5ad33619e2",
+            result.receipt.compilation_id,
+        )
+        self.assertEqual(
+            "0a8efe4190cbeafb1585c6ce1dab6d8e938723c2ccfb6f9c6fddb44d58671522",
+            digest_value(result.receipt.to_dict()),
+        )
+        self.assertIs(result.receipt.to_dict()["generation_authority"], False)
+        self.assertIs(result.receipt.to_dict()["world_write_authority"], False)
+
     def test_authorized_superflat_context_is_explicit_and_read_only(self) -> None:
         payload = _payload("authorized_superflat.json")
         authorization = _flat_authorization()
