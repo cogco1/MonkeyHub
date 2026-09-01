@@ -15,6 +15,7 @@ from archflow.compilers.geometry import (
     GeometryIssue,
     GeometryIssueCode,
     compile_geometry_program,
+    resolve_interface_datums,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "GeometryIssue",
     "GeometryIssueCode",
     "compile_geometry_program",
+    "resolve_interface_datums",
 ]

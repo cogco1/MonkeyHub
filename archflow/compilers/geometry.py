@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Mapping
 
@@ -11,9 +11,13 @@ from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.geometry_program import (
     AssemblyRole,
     AssetReference,
+    DatumBinding,
     GeometryOperation,
     GeometryOperationKind,
+    GeometryParameter,
+    GeometryProgramError,
     GeometryProgramProposal,
+    InterfaceDatum,
     digest_value,
     require_sha256,
 )
@@ -40,6 +44,9 @@ class GeometryIssueCode(StrEnum):
     UNKNOWN_ASSET = "unknown_asset"
     MISSING_ASSET = "missing_asset"
     INVALID_ASSET_SUBSTITUTION = "invalid_asset_substitution"
+    UNKNOWN_DATUM = "unknown_datum"
+    INVALID_DATUM_BINDING = "invalid_datum_binding"
+    RESTATED_DATUM_PARAMETER = "restated_datum_parameter"
     INVALID_ASSEMBLY = "invalid_assembly"
     PREDECESSOR_MISMATCH = "predecessor_mismatch"
     MISSING_REVISION_PRECONDITION = "missing_revision_precondition"
@@ -185,8 +192,10 @@ class CompiledGeometryProgram:
     semantic_binding_digests: tuple[tuple[str, str], ...]
     objects: tuple[CompiledGeometryObject, ...]
     asset_substitutions: tuple[AssetSubstitutionReceipt, ...]
+    interface_datums: tuple[InterfaceDatum, ...] = ()
+    datum_bindings: tuple[DatumBinding, ...] = ()
 
-    SCHEMA = "CompiledGeometryProgram@2"
+    SCHEMA = "CompiledGeometryProgram@3"
 
     def __post_init__(self) -> None:
         if not isinstance(self.proposal, GeometryProgramProposal):
@@ -223,6 +232,16 @@ class CompiledGeometryProgram:
             )
         ):
             raise TypeError("asset_substitutions contains an invalid item")
+        if not isinstance(self.interface_datums, tuple) or any(
+            not isinstance(item, InterfaceDatum)
+            for item in self.interface_datums
+        ):
+            raise TypeError("interface_datums contains an invalid item")
+        if not isinstance(self.datum_bindings, tuple) or any(
+            not isinstance(item, DatumBinding)
+            for item in self.datum_bindings
+        ):
+            raise TypeError("datum_bindings contains an invalid item")
 
     @staticmethod
     def _digest_pairs(
@@ -273,6 +292,12 @@ class CompiledGeometryProgram:
             "objects": [item.to_dict() for item in self.objects],
             "asset_substitutions": [
                 item.to_dict() for item in self.asset_substitutions
+            ],
+            "interface_datums": [
+                item.to_dict() for item in self.interface_datums
+            ],
+            "datum_bindings": [
+                item.to_dict() for item in self.datum_bindings
             ],
             "execution_authority": False,
             "hard_gate_authority": False,
@@ -969,6 +994,124 @@ def _validate_revision(
                 )
 
 
+def resolve_interface_datums(
+    proposal: GeometryProgramProposal,
+    interface_datums: tuple[InterfaceDatum, ...],
+    datum_bindings: tuple[DatumBinding, ...],
+    issues: list[GeometryIssue],
+) -> GeometryProgramProposal:
+    """Resolve datum bindings into ordinary literal parameters (P090).
+
+    Contact-by-construction: the authored proposal never restates a
+    bound coordinate; this pass derives each bound parameter from its
+    published datum, so every consumer of the value shares one node and
+    downstream evaluators see plain parameters. On any binding issue
+    the proposal is returned unchanged and the recorded issues reject
+    the compile.
+    """
+
+    if not isinstance(interface_datums, tuple) or any(
+        not isinstance(item, InterfaceDatum) for item in interface_datums
+    ):
+        raise TypeError("interface_datums contains an invalid item")
+    if not isinstance(datum_bindings, tuple) or any(
+        not isinstance(item, DatumBinding) for item in datum_bindings
+    ):
+        raise TypeError("datum_bindings contains an invalid item")
+    datum_by_id: dict[str, InterfaceDatum] = {}
+    for datum in interface_datums:
+        if datum.datum_id in datum_by_id:
+            raise GeometryCompilationError(
+                f"duplicate interface datum: {datum.datum_id}"
+            )
+        datum_by_id[datum.datum_id] = datum
+    binding_ids = tuple(item.binding_id for item in datum_bindings)
+    if len(binding_ids) != len(set(binding_ids)):
+        raise GeometryCompilationError(
+            "datum_bindings contains duplicate binding ids"
+        )
+    if not datum_bindings:
+        return proposal
+
+    operations = {item.op_id: item for item in proposal.operations}
+    additions: dict[str, dict[str, GeometryParameter]] = {}
+    before = len(issues)
+    for binding in datum_bindings:
+        datum = datum_by_id.get(binding.datum_id)
+        if datum is None:
+            _issue(
+                issues,
+                GeometryIssueCode.UNKNOWN_DATUM,
+                binding.binding_id,
+                "binding names an undeclared interface datum",
+            )
+            continue
+        operation = operations.get(binding.op_id)
+        if operation is None:
+            _issue(
+                issues,
+                GeometryIssueCode.INVALID_DATUM_BINDING,
+                binding.binding_id,
+                "binding names an unknown operation",
+            )
+            continue
+        if binding.parameter_name in {
+            item.name for item in operation.parameters
+        }:
+            _issue(
+                issues,
+                GeometryIssueCode.RESTATED_DATUM_PARAMETER,
+                binding.binding_id,
+                "bound parameter is restated as a literal on the operation",
+            )
+            continue
+        synthesized = additions.setdefault(binding.op_id, {})
+        if binding.parameter_name in synthesized:
+            _issue(
+                issues,
+                GeometryIssueCode.INVALID_DATUM_BINDING,
+                binding.binding_id,
+                "parameter is bound by more than one datum binding",
+            )
+            continue
+        try:
+            kind, value = datum.resolve(binding.component)
+        except GeometryProgramError as exc:
+            _issue(
+                issues,
+                GeometryIssueCode.INVALID_DATUM_BINDING,
+                binding.binding_id,
+                str(exc),
+            )
+            continue
+        synthesized[binding.parameter_name] = GeometryParameter.create(
+            name=binding.parameter_name,
+            kind=kind,
+            value=value,
+            unit=datum.unit,
+        )
+    if len(issues) > before:
+        return proposal
+    resolved_operations = tuple(
+        replace(
+            operation,
+            parameters=tuple(
+                sorted(
+                    (
+                        *operation.parameters,
+                        *additions[operation.op_id].values(),
+                    ),
+                    key=lambda item: item.name,
+                )
+            ),
+        )
+        if operation.op_id in additions
+        else operation
+        for operation in proposal.operations
+    )
+    return replace(proposal, operations=resolved_operations)
+
+
 def compile_geometry_program(
     state: DevelopedDesignState,
     proposal: GeometryProgramProposal,
@@ -977,8 +1120,15 @@ def compile_geometry_program(
     available_asset_digests: Mapping[str, str] | None = None,
     prior_program: CompiledGeometryProgram | None = None,
     asset_substitutions: tuple[AssetSubstitutionReceipt, ...] = (),
+    interface_datums: tuple[InterfaceDatum, ...] = (),
+    datum_bindings: tuple[DatumBinding, ...] = (),
 ) -> GeometryCompilationResult:
-    """Compile a proposal or return a detached, explicit rejection receipt."""
+    """Compile a proposal or return a detached, explicit rejection receipt.
+
+    Receipts carry the authored proposal digest; when datum bindings are
+    supplied, the compiled program embeds the datum-resolved proposal
+    together with the datums and bindings as its derivation receipt.
+    """
 
     if not isinstance(state, DevelopedDesignState):
         raise TypeError("state must be DevelopedDesignState")
@@ -1012,6 +1162,13 @@ def compile_geometry_program(
         raise TypeError("asset_substitutions contains an invalid item")
 
     issues: list[GeometryIssue] = []
+    authored_digest = proposal.proposal_digest
+    proposal = resolve_interface_datums(
+        proposal,
+        interface_datums,
+        datum_bindings,
+        issues,
+    )
     if (
         proposal.project_id != state.project_id
         or proposal.run_id != state.run_id
@@ -1074,7 +1231,7 @@ def compile_geometry_program(
     )
     if ordered_issues:
         receipt = GeometryCompilationReceipt(
-            proposal_digest=proposal.proposal_digest,
+            proposal_digest=authored_digest,
             status=GeometryCompileStatus.REJECTED,
             compiled_program_digest=None,
             operation_order=operation_order,
@@ -1099,9 +1256,11 @@ def compile_geometry_program(
         semantic_binding_digests=tuple(sorted(semantic_digests.items())),
         objects=objects,
         asset_substitutions=used_substitutions,
+        interface_datums=interface_datums,
+        datum_bindings=datum_bindings,
     )
     receipt = GeometryCompilationReceipt(
-        proposal_digest=proposal.proposal_digest,
+        proposal_digest=authored_digest,
         status=GeometryCompileStatus.COMPILED,
         compiled_program_digest=program.program_digest,
         operation_order=operation_order,
@@ -1122,4 +1281,5 @@ __all__ = [
     "GeometryIssue",
     "GeometryIssueCode",
     "compile_geometry_program",
+    "resolve_interface_datums",
 ]

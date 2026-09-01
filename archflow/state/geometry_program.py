@@ -770,6 +770,326 @@ class ObjectRetirement:
         }
 
 
+class InterfaceDatumKind(StrEnum):
+    LEVEL = "level"
+    PLANE = "plane"
+    SERIES = "series"
+
+
+@dataclass(frozen=True, slots=True)
+class InterfaceDatum:
+    """One published interface value dependents co-derive from (P090).
+
+    A host component publishes a named datum — an elevation, a plane, or
+    an arithmetic series — and dependent operations bind parameters to
+    the same value node instead of restating coordinates.  Contact then
+    holds by construction and is verified on the derivation graph, not
+    by measuring realized geometry for positive overlap.
+    """
+
+    datum_id: str
+    kind: InterfaceDatumKind
+    published_by: str
+    value_json: str
+    unit: LengthUnit | None = None
+    basis_refs: tuple[str, ...] = ()
+
+    SCHEMA = "InterfaceDatum@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.datum_id, "datum_id")
+        if not isinstance(self.kind, InterfaceDatumKind):
+            raise TypeError("kind must be InterfaceDatumKind")
+        require_identifier(self.published_by, "datum published_by")
+        if not isinstance(self.value_json, str):
+            raise TypeError("datum value_json must be text")
+        try:
+            value = json.loads(self.value_json)
+        except json.JSONDecodeError as exc:
+            raise GeometryProgramError(
+                "datum value must contain JSON"
+            ) from exc
+        if canonical_json(value) != self.value_json:
+            raise GeometryProgramError("datum value JSON must be canonical")
+        if self.unit is not None and not isinstance(self.unit, LengthUnit):
+            raise TypeError("datum unit must be LengthUnit or None")
+        object.__setattr__(
+            self,
+            "basis_refs",
+            _refs(self.basis_refs, "datum basis_refs", allow_empty=True),
+        )
+        normalized = self._validated_value(value)
+        object.__setattr__(self, "value_json", canonical_json(normalized))
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        datum_id: str,
+        kind: InterfaceDatumKind,
+        published_by: str,
+        value: object,
+        unit: LengthUnit | None = None,
+        basis_refs: tuple[str, ...] = (),
+    ) -> InterfaceDatum:
+        return cls(
+            datum_id=datum_id,
+            kind=kind,
+            published_by=published_by,
+            value_json=canonical_json(value),
+            unit=unit,
+            basis_refs=basis_refs,
+        )
+
+    def _validated_value(self, value: object) -> object:
+        if self.kind is InterfaceDatumKind.LEVEL:
+            return _finite(value, f"datum {self.datum_id} level")
+        if self.kind is InterfaceDatumKind.PLANE:
+            if not isinstance(value, dict) or set(value) != {
+                "origin",
+                "normal",
+            }:
+                raise GeometryProgramError(
+                    f"datum {self.datum_id} plane requires origin and normal"
+                )
+            origin = self._vector(value["origin"], "plane origin")
+            normal = self._vector(value["normal"], "plane normal")
+            if all(item == 0.0 for item in normal):
+                raise GeometryProgramError(
+                    f"datum {self.datum_id} plane normal must be nonzero"
+                )
+            return {"normal": normal, "origin": origin}
+        if self.kind is InterfaceDatumKind.SERIES:
+            if not isinstance(value, dict) or set(value) != {
+                "start",
+                "step",
+                "count",
+            }:
+                raise GeometryProgramError(
+                    f"datum {self.datum_id} series requires start, step, count"
+                )
+            count = value["count"]
+            if isinstance(count, bool) or not isinstance(count, int):
+                raise GeometryProgramError(
+                    f"datum {self.datum_id} series count must be an integer"
+                )
+            if count < 1:
+                raise GeometryProgramError(
+                    f"datum {self.datum_id} series count must be positive"
+                )
+            return {
+                "count": count,
+                "start": _finite(value["start"], "series start"),
+                "step": _finite(value["step"], "series step"),
+            }
+        raise GeometryProgramError(
+            f"datum {self.datum_id} has an unsupported kind"
+        )
+
+    def _vector(self, value: object, field: str) -> list[float]:
+        if not isinstance(value, list) or len(value) != 3:
+            raise GeometryProgramError(
+                f"datum {self.datum_id} {field} must be a 3-vector"
+            )
+        return [_finite(item, field) for item in value]
+
+    def resolve(
+        self,
+        component: str | int | None,
+    ) -> tuple[GeometryParameterKind, object]:
+        """Return the parameter kind and value one binding derives.
+
+        LEVEL takes no component; PLANE takes ``origin`` or ``normal``;
+        SERIES takes an index inside its count.  Anything else fails
+        closed — a binding may only consume what the datum publishes.
+        """
+
+        value = json.loads(self.value_json)
+        if self.kind is InterfaceDatumKind.LEVEL:
+            if component is not None:
+                raise GeometryProgramError(
+                    f"datum {self.datum_id} level takes no component"
+                )
+            return GeometryParameterKind.NUMBER, value
+        if self.kind is InterfaceDatumKind.PLANE:
+            if component not in ("origin", "normal"):
+                raise GeometryProgramError(
+                    f"datum {self.datum_id} plane component must be "
+                    "origin or normal"
+                )
+            return GeometryParameterKind.VECTOR3, value[component]
+        if isinstance(component, bool) or not isinstance(component, int):
+            raise GeometryProgramError(
+                f"datum {self.datum_id} series requires an integer index"
+            )
+        if not 0 <= component < value["count"]:
+            raise GeometryProgramError(
+                f"datum {self.datum_id} series index {component} is outside "
+                f"count {value['count']}"
+            )
+        return (
+            GeometryParameterKind.NUMBER,
+            value["start"] + value["step"] * component,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "datum_id": self.datum_id,
+            "kind": self.kind.value,
+            "published_by": self.published_by,
+            "value_json": self.value_json,
+            "unit": self.unit.value if self.unit is not None else None,
+            "basis_refs": list(self.basis_refs),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> InterfaceDatum:
+        if not isinstance(value, dict) or set(value) != {
+            "schema",
+            "datum_id",
+            "kind",
+            "published_by",
+            "value_json",
+            "unit",
+            "basis_refs",
+        }:
+            raise GeometryProgramError("interface datum payload malformed")
+        if value["schema"] != cls.SCHEMA:
+            raise GeometryProgramError("interface datum schema changed")
+        return cls(
+            datum_id=value["datum_id"],
+            kind=InterfaceDatumKind(value["kind"]),
+            published_by=value["published_by"],
+            value_json=value["value_json"],
+            unit=(
+                LengthUnit(value["unit"]) if value["unit"] is not None else None
+            ),
+            basis_refs=tuple(value["basis_refs"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DatumBinding:
+    """Bind one operation parameter to a published interface datum.
+
+    The bound parameter must not also appear as a literal on the
+    operation — derived, not restated, lowered to the coordinate level.
+    """
+
+    binding_id: str
+    datum_id: str
+    op_id: str
+    parameter_name: str
+    component: str | int | None = None
+
+    SCHEMA = "DatumBinding@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.binding_id, "datum binding_id")
+        require_identifier(self.datum_id, "binding datum_id")
+        require_identifier(self.op_id, "binding op_id")
+        require_identifier(self.parameter_name, "binding parameter_name")
+        if self.component is None:
+            return
+        if isinstance(self.component, bool):
+            raise TypeError("binding component must not be a boolean")
+        if isinstance(self.component, int):
+            if self.component < 0:
+                raise GeometryProgramError(
+                    "binding component index must be non-negative"
+                )
+            return
+        if not isinstance(self.component, str) or not self.component:
+            raise TypeError(
+                "binding component must be None, an index, or non-empty text"
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "binding_id": self.binding_id,
+            "datum_id": self.datum_id,
+            "op_id": self.op_id,
+            "parameter_name": self.parameter_name,
+            "component": self.component,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> DatumBinding:
+        if not isinstance(value, dict) or set(value) != {
+            "schema",
+            "binding_id",
+            "datum_id",
+            "op_id",
+            "parameter_name",
+            "component",
+        }:
+            raise GeometryProgramError("datum binding payload malformed")
+        if value["schema"] != cls.SCHEMA:
+            raise GeometryProgramError("datum binding schema changed")
+        return cls(
+            binding_id=value["binding_id"],
+            datum_id=value["datum_id"],
+            op_id=value["op_id"],
+            parameter_name=value["parameter_name"],
+            component=value["component"],
+        )
+
+
+def verify_datum_directions(
+    datums: tuple[InterfaceDatum, ...],
+    bindings: tuple[DatumBinding, ...],
+    operations: tuple[GeometryOperation, ...],
+    permitted_edges: tuple[tuple[str, str], ...],
+) -> tuple[str, ...]:
+    """Check publication/consumption direction against declared edges.
+
+    ``permitted_edges`` are ``(publisher_object_id, consumer_object_id)``
+    pairs taken from declared SUPPORT/HOST-family relations.  A binding
+    is in direction when the datum publisher is one of the consuming
+    operation's own outputs (a component may consume its own datum) or a
+    declared edge runs from the publisher to one consumed output.
+    Returns sorted violation messages; empty means in direction.
+    """
+
+    datum_by_id = {item.datum_id: item for item in datums}
+    op_by_id = {item.op_id: item for item in operations}
+    edges = set()
+    for edge in permitted_edges:
+        publisher, consumer = edge
+        require_identifier(publisher, "edge publisher")
+        require_identifier(consumer, "edge consumer")
+        edges.add((publisher, consumer))
+    violations: list[str] = []
+    for binding in bindings:
+        datum = datum_by_id.get(binding.datum_id)
+        if datum is None:
+            violations.append(
+                f"{binding.binding_id}: unknown datum {binding.datum_id}"
+            )
+            continue
+        operation = op_by_id.get(binding.op_id)
+        if operation is None:
+            violations.append(
+                f"{binding.binding_id}: unknown operation {binding.op_id}"
+            )
+            continue
+        consumers = set(operation.output_object_ids)
+        if datum.published_by in consumers:
+            continue
+        if any(
+            (datum.published_by, consumer) in edges for consumer in consumers
+        ):
+            continue
+        violations.append(
+            f"{binding.binding_id}: no declared edge from "
+            f"{datum.published_by} to any of "
+            f"{', '.join(sorted(consumers))}"
+        )
+    return tuple(sorted(violations))
+
+
 @dataclass(frozen=True, slots=True)
 class GeometryProgramProposal:
     proposal_id: str

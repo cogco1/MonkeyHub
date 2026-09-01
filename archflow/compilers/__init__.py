@@ -11,6 +11,7 @@ from archflow.compilers.geometry import (
     GeometryIssue,
     GeometryIssueCode,
     compile_geometry_program,
+    resolve_interface_datums,
 )
 from archflow.compilers.program import (
     CompiledDesignProgram,
@@ -88,4 +89,5 @@ __all__ = [
     "compile_geometry_program",
     "compile_site_context",
     "maximum_footprint_constraint_refs",
+    "resolve_interface_datums",
 ]

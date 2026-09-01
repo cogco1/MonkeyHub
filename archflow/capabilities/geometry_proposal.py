@@ -48,12 +48,14 @@ from archflow.state.geometry_program import (
     AssemblyRole,
     AssetReference,
     CoordinateFrame,
+    DatumBinding,
     DetailMaturity,
     GeometryOperation,
     GeometryOperationKind,
     GeometryParameter,
     GeometryParameterKind,
     GeometryProgramProposal,
+    InterfaceDatum,
     GeometryTolerance,
     HostedAssembly,
     LengthUnit,
@@ -3094,23 +3096,42 @@ def _proposal_from_full(value: object) -> GeometryProgramProposal:
     )
 
 
+_COMPILED_PROGRAM_BASE_KEYS = frozenset(
+    {
+        "schema", "proposal", "proposal_digest", "operation_order",
+        "frame_digests", "component_digests", "semantic_binding_digests",
+        "objects", "asset_substitutions", "execution_authority",
+        "hard_gate_authority", "canonical_write_authority",
+    }
+)
+_COMPILED_PROGRAM_SCHEMA_KEYS = {
+    "CompiledGeometryProgram@2": _COMPILED_PROGRAM_BASE_KEYS,
+    "CompiledGeometryProgram@3": _COMPILED_PROGRAM_BASE_KEYS
+    | {"interface_datums", "datum_bindings"},
+}
+
+
 def load_compiled_geometry_program(value: object) -> CompiledGeometryProgram:
-    """Reload one exact compiled program without granting execution authority."""
+    """Reload one exact compiled program without granting execution authority.
+
+    Accepts the current schema and the retained @2 generation, whose
+    records predate interface datums (P090) and reload with empty datum
+    fields.
+    """
 
     payload = _mapping(value, "compiled geometry program")
+    schema = payload.get("schema")
+    if schema not in _COMPILED_PROGRAM_SCHEMA_KEYS:
+        raise GeometryProposalProductionError(
+            "compiled geometry program schema is unsupported"
+        )
     _exact(
         payload,
-        {
-            "schema", "proposal", "proposal_digest", "operation_order",
-            "frame_digests", "component_digests", "semantic_binding_digests",
-            "objects", "asset_substitutions", "execution_authority",
-            "hard_gate_authority", "canonical_write_authority",
-        },
+        set(_COMPILED_PROGRAM_SCHEMA_KEYS[schema]),
         "compiled geometry program",
     )
     if (
-        payload["schema"] != CompiledGeometryProgram.SCHEMA
-        or payload["execution_authority"] is not False
+        payload["execution_authority"] is not False
         or payload["hard_gate_authority"] is not False
         or payload["canonical_write_authority"] is not False
     ):
@@ -3121,6 +3142,19 @@ def load_compiled_geometry_program(value: object) -> CompiledGeometryProgram:
     if payload["proposal_digest"] != proposal.proposal_digest:
         raise GeometryProposalProductionError(
             "compiled geometry proposal digest changed"
+        )
+    interface_datums: tuple[InterfaceDatum, ...] = ()
+    datum_bindings: tuple[DatumBinding, ...] = ()
+    if schema == "CompiledGeometryProgram@3":
+        interface_datums = _decode_list(
+            payload["interface_datums"],
+            InterfaceDatum.from_dict,
+            "interface datums",
+        )
+        datum_bindings = _decode_list(
+            payload["datum_bindings"],
+            DatumBinding.from_dict,
+            "datum bindings",
         )
     program = CompiledGeometryProgram(
         proposal=proposal,
@@ -3149,8 +3183,18 @@ def load_compiled_geometry_program(value: object) -> CompiledGeometryProgram:
             _asset_substitution_receipt,
             "asset substitutions",
         ),
+        interface_datums=interface_datums,
+        datum_bindings=datum_bindings,
     )
-    if program.to_dict() != dict(payload):
+    rendered = program.to_dict()
+    if schema == "CompiledGeometryProgram@2":
+        rendered = {
+            key: item
+            for key, item in rendered.items()
+            if key not in ("interface_datums", "datum_bindings")
+        }
+        rendered["schema"] = "CompiledGeometryProgram@2"
+    if rendered != dict(payload):
         raise GeometryProposalProductionError(
             "compiled geometry program is not an exact canonical record"
         )

@@ -259,11 +259,11 @@ class GeometryCompilerTests(unittest.TestCase):
         assert result.program is not None
 
         self.assertEqual(
-            "46cf330eb4d2b71123b40449a0ce97aaa081e19bef52b0ab02cbb2822b9abfb4",
+            "39fc0581cc23010aee7ce3781d087e79d0115b844a0c7cc99f625b05dc704fe6",
             result.program.program_digest,
         )
         self.assertEqual(
-            "ee422e9494526bc0959a8f1ffa172a4467e0ecd0929615427bd1c4ce61eb8a32",
+            "f731496b9fbc2b455d1ec20566d6aafeb6f875e67906eb529305c1ca6dadc836",
             result.receipt.receipt_digest,
         )
         self.assertEqual(
@@ -274,7 +274,7 @@ class GeometryCompilerTests(unittest.TestCase):
                 ),
                 "status": "compiled",
                 "compiled_program_digest": (
-                    "46cf330eb4d2b71123b40449a0ce97aaa081e19bef52b0ab02cbb2822b9abfb4"
+                    "39fc0581cc23010aee7ce3781d087e79d0115b844a0c7cc99f625b05dc704fe6"
                 ),
                 "operation_order": [
                     "opening-tool",
