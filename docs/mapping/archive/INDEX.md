@@ -164,5 +164,6 @@ Which completed work has named acceptance evidence?
 | P085 | planning | done | Open Parthenon Stage 4 by downloading branch-bound Web images into the project, compiling typed visual-region element candidates and non-claims, and retaining a selected manifest before any detail geometry changes. | [P085](P085-parthenon-stage4-visual-rag.md) |
 | P086 | planning | done | Refine retained Parthenon Stage 4 images into real branch-bound ROI candidates, crops, overlays, and an explicit current manifest before detail geometry. | [P086](P086-parthenon-stage4-visual-region-localization.md) |
 | P087 | planning | done | Generate an inherited evidence-bound Parthenon Stage 4 detail model with optional licensed open assets, provenance, and machine self-checks. | [P087](P087-parthenon-stage4-detail-reconstruction.md) |
+| P088 | planning | done | Move hand-written discipline into machinery without weakening any audit guarantee: one authority-block helper with port-level validation, schema key sets exported at the definition site and imported by every consumer, read guards that downgrade unknown keys to typed diagnostics while write guards stay exact, and cross-record references converged on the semantic digest single track. | [P088](P088-ceremony-reduction.md) |
 
 [Back to RMPA](../README.md)

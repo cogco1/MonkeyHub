@@ -7,9 +7,9 @@
 ## Current state
 
 - Phase: **P7 - semantic geometry production closure proven**
-- Registry updated: **2026-08-31**
+- Registry updated: **2026-09-01**
 - Product capability: **runtime=architectural_failure_revision_typed; adapters=voxel_observation_and_cli_retrieval_proven**
-- Next bounded transition: finish active work: P066, P069
+- Next bounded transition: finish active work: P066, P069, P090
 
 ## Architecture coverage
 
@@ -56,15 +56,16 @@ These are the main responsibility chains. Individual cards retain their exact fa
 | Production responsibility isolation | [P014](mapping/archive/P014-v3-ownership-handover-guard.md) → [P036](mapping/archive/P036-durable-project-repository.md) → [P053](mapping/archive/P053-production-responsibility-handover.md) | Register implementations without authority run replacements in shadow and switch exactly one active provider by monotonic exact-base handover with no fallback or canonical-write power. |
 | Development architecture governance | [M006](mapping/archive/M006-project-workspace-boundary-cleanup.md) → [P035](mapping/archive/P035-project-persistence-boundary-skeleton.md) → [P036](mapping/archive/P036-durable-project-repository.md) → [M013](mapping/archive/M013-receipt-bound-work-completion.md) → [P045](mapping/archive/P045-architecture-firewall.md) → [P046](mapping/archive/P046-agent-context-capsule.md) → [M033](mapping/archive/M033-context-compaction-recovery.md) | Make architecture rules executable, bind completion evidence to the verified source state, and give each Agent only its bounded work context. |
 | Semantic geometry production closure | [P051](mapping/archive/P051-unified-progressive-semantic-geometry.md) → [M049](mapping/archive/M049-semantic-geometry-production-truth.md) → [P054](mapping/archive/P054-typed-semantic-spatial-authoring.md) → [P055](mapping/archive/P055-joint-semantic-geometry-lifecycle.md) → [P056](mapping/archive/P056-durable-production-runtime.md) → [M050](mapping/archive/M050-quarantine-production-bypasses.md) → [P057](mapping/archive/P057-derived-component-task-index.md) → [P058](mapping/archive/P058-fresh-progressive-dome-pantheon-proof.md) | Preserve the proven component and geometry invariants, then add typed co-authoring, one joint lifecycle, one durable runtime, isolated providers, derived task context, and fresh proof without creating another design or persistence authority. |
+| Productization and componentization consolidation | [P088](mapping/archive/P088-ceremony-reduction.md) → [M088](mapping/modify/M088-repo-slimming-and-typology-audit.md) → [P089](mapping/planning/P089-record-driven-reconstruction-runner.md) → [P090](mapping/planning/P090-interface-datum-coderivation.md) → [P091](mapping/planning/P091-component-template-library.md) → [P092](mapping/planning/P092-wall-window-family-extraction.md) → [P093](mapping/planning/P093-catalog-harvest-gates.md) | Freeze new capability surface and consolidate: discipline moves from scribes to machinery, one record-driven runner replaces per-building monoliths, contact becomes correct by construction through shared interface datums, and converged project components harvest into provenance-bound template records that future projects cite instead of rebuilding. |
 
 ## RMPA ledgers
 
 | Ledger | Meaning | Items | Index |
 | --- | --- | ---: | --- |
 | Retirement | Replacement-first removal of old ownership | 0 | [R](mapping/retirement/INDEX.md) |
-| Modify | Scoped repair of the active path | 0 | [M](mapping/modify/INDEX.md) |
-| Planning | Not implemented or not yet accepted | 2 | [P](mapping/planning/INDEX.md) |
-| Archive | Completed and evidenced work | 158 | [A](mapping/archive/INDEX.md) |
+| Modify | Scoped repair of the active path | 1 | [M](mapping/modify/INDEX.md) |
+| Planning | Not implemented or not yet accepted | 7 | [P](mapping/planning/INDEX.md) |
+| Archive | Completed and evidenced work | 159 | [A](mapping/archive/INDEX.md) |
 
 R, M, and P are parallel ledgers, not mandatory runtime stages. Archive is
 the cleared construction record, not a fourth execution phase.
@@ -75,6 +76,12 @@ the cleared construction record, not a fourth execution phase.
 | --- | --- | --- | --- | --- |
 | P066 | planning | active | Derive a monument-class building with a live model provider through the staged production runtime: the model authors the coarse proposal, selection, geometry, and stage deepenings itself under the frozen contracts, with every failed or timed-out attempt retained and no scripted fallback. | [P066](mapping/planning/P066-live-monument-derivation.md) |
 | P069 | planning | active | Full-scale reconstruction reference derivation as the runtime workspace's first tenant: four staged derivations at metre-cell footprint granularity inside the 4096 bound, each stage passing its declaration gate and axial-symmetry gate, every dimension citing an adopted fact or a typed widened-range uncertainty, materials assigned through the provenance ledger, final fidelity measured against the adopted dimensions, records living in the workspace with anchors in the repo. | [P069](mapping/planning/P069-pantheon-reconstruction.md) |
+| M088 | modify | ready | Bounded hygiene repair with no behavior change: migrate retained probe run data to the runtime workspace with repo anchors following the p066 precedent, slim the state-tree viewer by importing P088 single-source schema contracts, and audit vertical_circulation.py for embedded typology constants with extraction into project records. | [M088](mapping/modify/M088-repo-slimming-and-typology-audit.md) |
+| P089 | planning | ready | Extract the reconstruction execution protocol from the three per-building runner monoliths into one record-driven runner whose per-building input is a project record pack; record-ref loading verifies digests at the repository port and retires hand-pinned SHA constants; orchestration only, with no derivation, gate, or authority semantics change and no building answer in the framework. | [P089](mapping/planning/P089-record-driven-reconstruction-runner.md) |
+| P090 | planning | active | Make contact between dependent components correct by construction: hosts publish named interface datums as first-class geometry-program values, dependent boundaries reference the same value node along SUPPORT/HOST relation edges, the embed-overlap convention retires, and verification becomes a derivation-graph check backed by a Brep regression at model tolerance. | [P090](mapping/planning/P090-interface-datum-coderivation.md) |
+| P091 | planning | ready | Define the component-template record kind and its promotion path: anatomy from the run-014 recovery triple generalized to mathematics reference, applicability domain, and interface obligations; module-bound ratio-band parameters with per-value evidence refs in a treatise-page structure; project-first storage with component-import promotion to a library store supplied to P050 authoring with receipted selection; reuse as re-derivation with per-project evidence re-binding. | [P091](mapping/planning/P091-component-template-library.md) |
+| P092 | planning | ready | Harvest the wall-with-openings and window/door-array families from the villa run-012 monolith into solver-plus-bridge capability pairs on the stair pattern, typology lifted into P091 template records and contact through P090 datums; replay villa as reconstruction-016 through the P089 runner with object equivalence against the repaired run-014 model as the acceptance instrument and reuse metrics as paper evidence. | [P092](mapping/planning/P092-wall-window-family-extraction.md) |
+| P093 | planning | ready | Put the catalog on the write path and the harvest on the acceptance path: geometry authoring opens only after a per-family selected template ref or typed declination with reason, and stage acceptance emits a harvest obligation or recorded waiver for every family produced inline, reusing P050 selection receipts and the existing obligation machinery with no new authority. | [P093](mapping/planning/P093-catalog-harvest-gates.md) |
 
 ## Module state
 

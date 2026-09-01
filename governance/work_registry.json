@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-08-31",
+  "updated_on": "2026-09-01",
   "phase": "P7 - semantic geometry production closure proven",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -563,6 +563,19 @@
         "P058"
       ],
       "purpose": "Preserve the proven component and geometry invariants, then add typed co-authoring, one joint lifecycle, one durable runtime, isolated providers, derived task context, and fresh proof without creating another design or persistence authority."
+    },
+    {
+      "name": "Productization and componentization consolidation",
+      "cards": [
+        "P088",
+        "M088",
+        "P089",
+        "P090",
+        "P091",
+        "P092",
+        "P093"
+      ],
+      "purpose": "Freeze new capability surface and consolidate: discipline moves from scribes to machinery, one record-driven runner replaces per-building monoliths, contact becomes correct by construction through shared interface datums, and converged project components harvest into provenance-bound template records that future projects cite instead of rebuilding."
     }
   ],
   "items": [
@@ -13899,6 +13912,406 @@
         "project://parthenon-reconstruction/objects/sha256/9c/9c00f9568c436ccee20219f6c9b2a1ae05d37aed839e2a588491ab05100f4dda",
         "509-object Meters/Z-up 3DM readback and Stage 4 detail/spatial/evidence gates PASS; COMPLETE pack; HOLD; 56 related tests PASS; compileall PASS; ARCHITECTURE PASS (145 files); project repository verify PASS; canonical HEAD version 0 unchanged"
       ]
+    },
+    {
+      "id": "P088",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Move hand-written discipline into machinery without weakening any audit guarantee: one authority-block helper with port-level validation, schema key sets exported at the definition site and imported by every consumer, read guards that downgrade unknown keys to typed diagnostics while write guards stay exact, and cross-record references converged on the semantic digest single track.",
+      "depends_on": [
+        "P036"
+      ],
+      "write_scope": [
+        "archflow/contracts/",
+        "archflow/state/",
+        "archflow/project/",
+        "archflow/adapters/three_dm_inspector.py",
+        "tools/state_tree_viewer.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A single helper produces the authority block; ports validate it; a static scan rejects newly inlined authority dicts.",
+        "Schema key sets exist only at the definition site; the state-tree viewer imports them and renders ThreeDmInspectionSummary@3 and @4 records from the villa project.",
+        "Read guards accept unknown keys as typed warnings; write guards remain exact; both directions tested.",
+        "New cross-record references carry the semantic digest only; byte hashes remain internal to storage and transfer.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "Authority helper round-trip and inline-dict static scan",
+        "Schema guard write-exact read-tolerant asymmetry per supported version",
+        "Viewer rendering against retained @3 and freshly emitted @4 inspections",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_authority_helper",
+          "tests.test_schema_single_source",
+          "tests.test_stage_progress_viewer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P088-ceremony-reduction.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P088",
+        "actor": "claude",
+        "verified_at": "2026-09-01T18:16:09.141929+00:00",
+        "contract_sha256": "7d90cc4f395888a843af11926fe111cd0859c049cb46b25171ad412e9004a665",
+        "scope_sha256": "782bd0e79174b6161236172112c42b5def682e451962c2f424e781766efc83be",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_authority_helper",
+              "tests.test_schema_single_source",
+              "tests.test_stage_progress_viewer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "56507efa4e7f76b35b4139fec000fd3a38b105fb985c609de851570b48faf243",
+            "stdout_tail": "",
+            "stderr_tail": "...........................\n----------------------------------------------------------------------\nRan 27 tests in 0.664s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "7e1cc1d5fd981cc34f25fe79bda351df1aa0f9514b8008ac9eb5b055939d4756",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (290 files, 1.792s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-01",
+      "evidence": [
+        "1492 tests + 2 skips PASS; ARCHITECTURE PASS (290 files); retained villa @3 record (40 layers, 1120 objects) and freshly emitted @4 inspection of the 58MB stage-5 3dm both adapt with zero error and zero warning diagnostics; inline authority-literal ratchet baseline 782; scope PASS (10 paths)"
+      ]
+    },
+    {
+      "id": "M088",
+      "origin_stream": "modify",
+      "stream": "modify",
+      "status": "ready",
+      "goal": "Bounded hygiene repair with no behavior change: migrate retained probe run data to the runtime workspace with repo anchors following the p066 precedent, slim the state-tree viewer by importing P088 single-source schema contracts, and audit vertical_circulation.py for embedded typology constants with extraction into project records.",
+      "depends_on": [
+        "P057",
+        "P088"
+      ],
+      "write_scope": [
+        "probes/",
+        "tools/state_tree_viewer.py",
+        "archflow/validation/vertical_circulation.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The repository sheds the migrated run data; anchors resolve; no test or tool reads the old paths.",
+        "The viewer holds no hand-copied schema key sets and drops below half its current line count without losing a rendering behavior.",
+        "A vertical-circulation audit receipt reports zero instance defaults or lists each extraction with its destination record.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "Anchor resolution for migrated probe data",
+        "Viewer regression against retained records",
+        "Vertical-circulation behavior equivalence before and after extraction",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_stage_progress_viewer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/modify/M088-repo-slimming-and-typology-audit.md",
+      "on_complete": {}
+    },
+    {
+      "id": "P089",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Extract the reconstruction execution protocol from the three per-building runner monoliths into one record-driven runner whose per-building input is a project record pack; record-ref loading verifies digests at the repository port and retires hand-pinned SHA constants; orchestration only, with no derivation, gate, or authority semantics change and no building answer in the framework.",
+      "depends_on": [
+        "P069",
+        "P083",
+        "P087",
+        "P088"
+      ],
+      "write_scope": [
+        "tools/",
+        "archflow/runtime/",
+        "archflow/project/",
+        "tests/",
+        "probes/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "One runner replays the pantheon, parthenon, and villa stage flows from their retained records, producing digest-equal stage packs wherever predecessors are unchanged.",
+        "Per-building runner tools retire to archive stubs; building-specific behavior lives only in project records.",
+        "Hand-pinned SHA constants and load-module-by-SHA patterns reach zero on the authoring path; loading is by verified record ref.",
+        "Per-stage wall time is reported in the run summary.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "Runner replay equivalence against retained pantheon, parthenon, and villa records",
+        "Record-ref digest verification fail-closed paths",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_reconstruction_runner"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P089-record-driven-reconstruction-runner.md",
+      "on_complete": {}
+    },
+    {
+      "id": "P090",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Make contact between dependent components correct by construction: hosts publish named interface datums as first-class geometry-program values, dependent boundaries reference the same value node along SUPPORT/HOST relation edges, the embed-overlap convention retires, and verification becomes a derivation-graph check backed by a Brep regression at model tolerance.",
+      "depends_on": [
+        "P047",
+        "P049",
+        "P050"
+      ],
+      "write_scope": [
+        "archflow/state/geometry_program.py",
+        "archflow/compilers/",
+        "archflow/capabilities/geometry_proposal.py",
+        "archflow/runtime/",
+        "archflow/relations/",
+        "archflow/realization/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Geometry programs express datum publication and reference; the compiler validates resolution and acyclicity along declared relation edges.",
+        "Datum-shared joints verify by derivation-graph check as primary proof; realized Breps pass regression at model tolerance with no positive-overlap witnesses.",
+        "A datum-migrated villa successor run re-runs the 2026-09-01 clash scan with zero unwaived interpenetration families against a baseline of 36, and embed constants appear zero times in its authoring.",
+        "A riser-series demonstration shows one rise-value change propagating exactly to its dependency closure."
+      ],
+      "tests": [
+        "Datum resolution, cycle rejection, and dangling-reference fail-closed paths",
+        "Graph-check versus Brep-regression agreement on shared-datum joints",
+        "Riser-series propagation closure",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_interface_datums"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P090-interface-datum-coderivation.md",
+      "on_complete": {},
+      "actor": "claude",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P090",
+        "actor": "claude",
+        "verified_at": "2026-09-01T18:34:01.670690+00:00",
+        "contract_sha256": "af1e189fd35a6534b437040d42a0fe92e6144b8308467f65f4e11fbc4d861a13",
+        "scope_sha256": "992b1b70b98849d71b9e5649092af65f05ad5b7815023d1da81630fa8d76186b",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_interface_datums"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "75f04ee1c84675d80745dbb820732d3a0ade13b7672ee0b8ead275eb6127f419",
+            "stdout_tail": "",
+            "stderr_tail": "................\n----------------------------------------------------------------------\nRan 16 tests in 0.054s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "fe8159fb3cc399624db2a897c39dea02d655ebb489cfe3bb7b7e5e21d6b409e4",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (290 files, 1.762s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "P091",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Define the component-template record kind and its promotion path: anatomy from the run-014 recovery triple generalized to mathematics reference, applicability domain, and interface obligations; module-bound ratio-band parameters with per-value evidence refs in a treatise-page structure; project-first storage with component-import promotion to a library store supplied to P050 authoring with receipted selection; reuse as re-derivation with per-project evidence re-binding.",
+      "depends_on": [
+        "P050",
+        "P090"
+      ],
+      "write_scope": [
+        "archflow/state/",
+        "archflow/capabilities/",
+        "archflow/project/",
+        "tools/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The template record schema validates the treatise five elements plus interface obligations expressed against P090 datums.",
+        "The stair family is the first harvest: a stair template record derived from the existing stair-solver path is selected through P050 with receipts and realized on a test project.",
+        "component-import moves a template across projects with provenance intact and local evidence re-binding; out-of-catalog selection stays a typed failure.",
+        "The two-vote rule is enforced as a typed guard or a recorded waiver."
+      ],
+      "tests": [
+        "Template schema validation including negative paths",
+        "Stair-template harvest, selection receipt, and realization round trip",
+        "Cross-project import with evidence re-binding",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_component_templates"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P091-component-template-library.md",
+      "on_complete": {}
+    },
+    {
+      "id": "P092",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Harvest the wall-with-openings and window/door-array families from the villa run-012 monolith into solver-plus-bridge capability pairs on the stair pattern, typology lifted into P091 template records and contact through P090 datums; replay villa as reconstruction-016 through the P089 runner with object equivalence against the repaired run-014 model as the acceptance instrument and reuse metrics as paper evidence.",
+      "depends_on": [
+        "P089",
+        "P090",
+        "P091"
+      ],
+      "write_scope": [
+        "archflow/capabilities/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Wall and window solvers are authority-free with a passing no-instance-default static scan; bridges bake local-basis assemblies to neutral geometry programs.",
+        "Interface duties are declared, not coded: walls host voids requested by opening solvers; window arrays accept INTERSECTS exclusions from portico obligations.",
+        "reconstruction-016 replays object-equivalent to the repaired run-014 model except at documented defect fixes.",
+        "Three reuse metrics are reported: runs-to-acceptance per stage, inline geometry bytes per run, catalog hit rate."
+      ],
+      "tests": [
+        "Solver enumeration and negative paths with scripted inputs",
+        "Void-hosting negotiation between wall and window solvers",
+        "Replay equivalence harness against retained run-014 records",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_wall_window_families"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P092-wall-window-family-extraction.md",
+      "on_complete": {}
+    },
+    {
+      "id": "P093",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Put the catalog on the write path and the harvest on the acceptance path: geometry authoring opens only after a per-family selected template ref or typed declination with reason, and stage acceptance emits a harvest obligation or recorded waiver for every family produced inline, reusing P050 selection receipts and the existing obligation machinery with no new authority.",
+      "depends_on": [
+        "P091"
+      ],
+      "write_scope": [
+        "archflow/capabilities/",
+        "archflow/production/",
+        "archflow/control/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Authoring without a per-family catalog answer fails typed; declination records carry reasons and feed the harvest queue.",
+        "Stage acceptance on a run with inline-produced families emits harvest obligations; waivers are recorded with reasons and are auditable.",
+        "End-to-end: a family declined in one run surfaces as an obligation, harvests into a template, and the next authoring session is offered it in the catalog.",
+        "Emergency repair flows pass through the waiver path without blocking."
+      ],
+      "tests": [
+        "Entry-gate typed failure and declination record round trip",
+        "Acceptance-gate obligation and waiver emission",
+        "End-to-end decline-harvest-offer cycle with a scripted provider",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_catalog_and_harvest_gates"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P093-catalog-harvest-gates.md",
+      "on_complete": {}
     }
   ]
 }
