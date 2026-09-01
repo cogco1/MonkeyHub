@@ -49,10 +49,311 @@ _STAGE_LABELS = {
     2: "interior-articulation",
     3: "dome-technical-pattern",
 }
+_RELATION_CONTROL_SCHEMA = "P069StageRelationControlSummary@1"
+_RELATION_PROGRESS_SCHEMA = "P069StageRelationControlProgress@1"
 
 
 class PantheonProgressSnapshotError(RuntimeError):
     pass
+
+
+def _has_record_identity(*values: object) -> bool:
+    return all(
+        isinstance(value, str) and bool(value.strip()) for value in values
+    )
+
+
+def _check_state(value: object) -> str:
+    """Collapse typed source statuses into a fail-closed panel status."""
+
+    if not isinstance(value, str):
+        return "BLOCKED"
+    normalized = value.strip().lower()
+    if normalized in {
+        "pass",
+        "verified",
+        "verified_promotion",
+        "proposal_compiled",
+    }:
+        return "PASS"
+    if normalized in {"fail", "failed"}:
+        return "FAIL"
+    return "BLOCKED"
+
+
+def _combined_check_state(*states: str) -> str:
+    if any(state == "FAIL" for state in states):
+        return "FAIL"
+    if states and all(state == "PASS" for state in states):
+        return "PASS"
+    return "BLOCKED"
+
+
+def _relation_control_summary(review: Mapping[str, object]) -> dict[str, object]:
+    """Expose optional relation-control evidence without inventing closure.
+
+    Older P069 reviews predate relation control. Their absence is an explicit
+    ``NOT_RECORDED`` state, never an implicit pass. A recorded summary is
+    reduced to panel-friendly phase states while retaining the exact refs and
+    source statuses needed to inspect the P036 branch records.
+    """
+
+    raw = review.get("relation_control")
+    if raw is None:
+        not_recorded = {"status": "NOT_RECORDED"}
+        return {
+            "schema": _RELATION_PROGRESS_SCHEMA,
+            "source_schema": None,
+            "source_status": None,
+            "recording_status": "NOT_RECORDED",
+            "status": "NOT_RECORDED",
+            "inventory": dict(not_recorded),
+            "question": {**not_recorded, "count": 0},
+            "proposal": dict(not_recorded),
+            "assembly": dict(not_recorded),
+            "verification": {
+                **not_recorded,
+                "question_verifications": [],
+            },
+            "promotion": dict(not_recorded),
+            "unresolved_reason_codes": ["relation-control-not-recorded"],
+            "stage_acceptance_authority": False,
+            "canonical_write_authority": False,
+        }
+    if not isinstance(raw, Mapping):
+        raise PantheonProgressSnapshotError("relation control summary drifted")
+    if raw.get("schema") != _RELATION_CONTROL_SCHEMA:
+        raise PantheonProgressSnapshotError("relation control schema drifted")
+    source_reasons = raw.get("unresolved_reason_codes", [])
+    if not isinstance(source_reasons, list) or any(
+        not isinstance(item, str) for item in source_reasons
+    ):
+        raise PantheonProgressSnapshotError(
+            "relation control unresolved reasons drifted"
+        )
+    question_rows = raw.get("question_verifications", [])
+    if not isinstance(question_rows, list):
+        raise PantheonProgressSnapshotError(
+            "relation control question verifications drifted"
+        )
+
+    inventory_recorded = _has_record_identity(
+        raw.get("inventory_ref"), raw.get("inventory_digest")
+    )
+    context_recorded = _has_record_identity(
+        raw.get("context_ref"), raw.get("context_digest")
+    )
+    proposal_recorded = _has_record_identity(
+        raw.get("proposal_ref"), raw.get("proposal_digest")
+    )
+    compilation_recorded = _has_record_identity(raw.get("compilation_ref"))
+    compilation_status = _check_state(raw.get("compilation_status"))
+
+    verification_rows: list[dict[str, object]] = []
+    unresolved_questions: list[str] = []
+    verification_states: list[str] = []
+    for item in question_rows:
+        if not isinstance(item, Mapping):
+            raise PantheonProgressSnapshotError(
+                "relation control question verification entry drifted"
+            )
+        state = _check_state(item.get("status"))
+        verification_states.append(state)
+        question_ref = item.get("question_ref")
+        if state != "PASS" and isinstance(question_ref, str):
+            unresolved_questions.append(question_ref)
+        verification_rows.append(
+            {
+                "question_ref": question_ref,
+                "profile_ref": item.get("profile_ref"),
+                "receipt_ref": item.get("receipt_ref"),
+                "source_status": item.get("status"),
+                "status": state,
+            }
+        )
+    verification_status = (
+        _combined_check_state(*verification_states)
+        if verification_states
+        else "BLOCKED"
+    )
+
+    base_assembly_status = _check_state(raw.get("base_assembly_receipt_status"))
+    topology_status = _check_state(raw.get("program_topology_receipt_status"))
+    walking_required = isinstance(review.get("stage"), int) and review["stage"] >= 1
+    walking_status = (
+        _check_state(raw.get("walking_surface_receipt_status"))
+        if walking_required
+        else "PASS"
+    )
+    walking_recorded = (
+        not walking_required
+        or _has_record_identity(
+            raw.get("walking_surface_profile_ref"),
+            raw.get("walking_surface_profile_digest"),
+            raw.get("walking_surface_receipt_ref"),
+            raw.get("walking_surface_receipt_digest"),
+        )
+    )
+    verification_base_status = _check_state(
+        raw.get("relation_verification_base_receipt_status")
+    )
+    verification_base_recorded = _has_record_identity(
+        raw.get("relation_verification_base_receipt_ref"),
+        raw.get("relation_verification_base_receipt_digest"),
+    )
+    verification_status = _combined_check_state(
+        verification_status,
+        walking_status,
+        verification_base_status,
+    )
+    if not walking_recorded or not verification_base_recorded:
+        verification_status = (
+            "FAIL" if verification_status == "FAIL" else "BLOCKED"
+        )
+    # The generic AABB checker is deliberately conservative around boolean
+    # hosts and may return UNKNOWN.  The Pantheon topology checker is the
+    # independent, exact-denominator successor used by every relation
+    # verification profile.  Its PASS can therefore close an AABB UNKNOWN,
+    # but it can never mask a generic FAIL; a topology UNKNOWN/FAIL remains
+    # fail-closed.
+    assembly_status = (
+        "FAIL"
+        if base_assembly_status == "FAIL" or topology_status == "FAIL"
+        else "PASS"
+        if topology_status == "PASS"
+        else "BLOCKED"
+    )
+    if not _has_record_identity(
+        raw.get("assembly_profile_ref"),
+        raw.get("base_assembly_receipt_ref"),
+        raw.get("program_topology_receipt_ref"),
+    ):
+        assembly_status = "FAIL" if assembly_status == "FAIL" else "BLOCKED"
+
+    promotion_source_status = raw.get("promotion_status")
+    promotion_status = _check_state(promotion_source_status)
+    promotion_recorded = _has_record_identity(
+        raw.get("promotion_ref"),
+        raw.get("effective_graph_ref"),
+        raw.get("effective_graph_digest"),
+    )
+    if not promotion_recorded:
+        promotion_status = "FAIL" if promotion_status == "FAIL" else "BLOCKED"
+
+    derived_reasons: list[str] = []
+    if not inventory_recorded:
+        derived_reasons.append("relation-inventory-not-recorded")
+    if not context_recorded:
+        derived_reasons.append("relation-question-context-not-recorded")
+    if not proposal_recorded:
+        derived_reasons.append("relation-proposal-not-recorded")
+    if not compilation_recorded or compilation_status != "PASS":
+        derived_reasons.append("relation-compilation-not-complete")
+    if assembly_status != "PASS":
+        derived_reasons.append("relation-assembly-not-verified")
+    if verification_status != "PASS":
+        derived_reasons.append("relation-verification-not-pass")
+    if promotion_status != "PASS":
+        derived_reasons.append("relation-promotion-not-recorded")
+    unresolved_reason_codes = list(
+        dict.fromkeys([*source_reasons, *derived_reasons])
+    )
+
+    phase_states = (
+        "PASS" if inventory_recorded else "BLOCKED",
+        "PASS" if context_recorded else "BLOCKED",
+        "PASS" if proposal_recorded else "BLOCKED",
+        compilation_status if compilation_recorded else "BLOCKED",
+        assembly_status,
+        verification_status,
+        promotion_status,
+    )
+    source_status = _check_state(raw.get("status"))
+    status = _combined_check_state(source_status, *phase_states)
+    if unresolved_reason_codes and status == "PASS":
+        status = "BLOCKED"
+
+    return {
+        "schema": _RELATION_PROGRESS_SCHEMA,
+        "source_schema": raw.get("schema"),
+        "source_status": raw.get("status"),
+        "recording_status": "RECORDED",
+        "status": status,
+        "inventory": {
+            "status": "RECORDED" if inventory_recorded else "BLOCKED",
+            "ref": raw.get("inventory_ref"),
+            "digest": raw.get("inventory_digest"),
+        },
+        "question": {
+            "status": verification_status,
+            "context_ref": raw.get("context_ref"),
+            "context_digest": raw.get("context_digest"),
+            "count": len(verification_rows),
+            "unresolved_question_refs": unresolved_questions,
+        },
+        "proposal": {
+            "status": "RECORDED" if proposal_recorded else "BLOCKED",
+            "ref": raw.get("proposal_ref"),
+            "digest": raw.get("proposal_digest"),
+            "compilation_ref": raw.get("compilation_ref"),
+            "compilation_source_status": raw.get("compilation_status"),
+            "compilation_status": (
+                compilation_status if compilation_recorded else "BLOCKED"
+            ),
+        },
+        "assembly": {
+            "status": assembly_status,
+            "exact_topology_supersedes_generic_unknown": (
+                base_assembly_status == "BLOCKED"
+                and topology_status == "PASS"
+            ),
+            "profile_ref": raw.get("assembly_profile_ref"),
+            "base_receipt_ref": raw.get("base_assembly_receipt_ref"),
+            "base_receipt_source_status": raw.get(
+                "base_assembly_receipt_status"
+            ),
+            "base_receipt_status": base_assembly_status,
+            "program_topology_receipt_ref": raw.get(
+                "program_topology_receipt_ref"
+            ),
+            "program_topology_receipt_source_status": raw.get(
+                "program_topology_receipt_status"
+            ),
+            "program_topology_receipt_status": topology_status,
+        },
+        "verification": {
+            "status": verification_status,
+            "walking_surface_required": walking_required,
+            "walking_surface_profile_ref": raw.get(
+                "walking_surface_profile_ref"
+            ),
+            "walking_surface_receipt_ref": raw.get(
+                "walking_surface_receipt_ref"
+            ),
+            "walking_surface_source_status": raw.get(
+                "walking_surface_receipt_status"
+            ),
+            "walking_surface_status": walking_status,
+            "relation_verification_base_receipt_ref": raw.get(
+                "relation_verification_base_receipt_ref"
+            ),
+            "relation_verification_base_source_status": raw.get(
+                "relation_verification_base_receipt_status"
+            ),
+            "relation_verification_base_status": verification_base_status,
+            "question_verifications": verification_rows,
+        },
+        "promotion": {
+            "status": promotion_status,
+            "ref": raw.get("promotion_ref"),
+            "source_status": promotion_source_status,
+            "effective_graph_ref": raw.get("effective_graph_ref"),
+            "effective_graph_digest": raw.get("effective_graph_digest"),
+        },
+        "unresolved_reason_codes": unresolved_reason_codes,
+        "stage_acceptance_authority": False,
+        "canonical_write_authority": False,
+    }
 
 
 def _record_ref_dict(ref: ProjectRecordRef) -> dict[str, object]:
@@ -185,6 +486,9 @@ def _stage_rows(
                 "declaration_count": len(fields),
                 "hold_reasons": list(review.get("hold_reasons", [])),
                 "structure_issues": list(review.get("structure_issues", [])),
+                "soft_decisions": dict(review.get("soft_decisions", {})),
+                "open_conflicts": list(review.get("open_conflicts", [])),
+                "relation_control": _relation_control_summary(review),
                 "review_ref": _record_ref_dict(review_ref),
                 "formal_stage_pack_status": "missing",
             }
@@ -366,14 +670,41 @@ def _closure_inventory(
         "stage_evidence_pack": sum(
             name.startswith("stage-evidence-pack-") for name in names
         ),
+        "stage_subject_inventory": sum(
+            "stage-subject-inventory" in name for name in names
+        ),
+        "relation_authoring_context": sum(
+            "relation-authoring-context" in name for name in names
+        ),
+        "relation_authoring_proposal": sum(
+            "relation-authoring-proposal" in name for name in names
+        ),
+        "relation_authoring_compilation": sum(
+            "relation-authoring-compilation" in name for name in names
+        ),
+        "assembly_receipt": sum(
+            "assembly-receipt" in name or "program-topology-receipt" in name
+            for name in names
+        ),
+        "relation_verification": sum(
+            "relation-verification" in name for name in names
+        ),
+        "relation_promotion": sum(
+            "relation-promotion" in name for name in names
+        ),
     }
+    record_inventory_complete = all(value > 0 for value in counts.values())
     return {
         "schema": "StageClosureInventory@1",
         "record_counts": counts,
-        "formal_closure_present": all(value > 0 for value in counts.values()),
+        "record_inventory_complete": record_inventory_complete,
+        "formal_closure_present": False,
+        "formal_closure_status": "NOT_EVALUATED",
+        "closure_reason_codes": ["record-presence-is-not-formal-closure"],
         "note": (
             "Record presence is inventory only; receipt payloads must still "
-            "prove exact scope, sufficiency, and stage_ready."
+            "prove exact scope, sufficiency, stage_ready, relation verification, "
+            "and promotion. This snapshot does not establish closure."
         ),
         "stage_acceptance_authority": False,
         "canonical_write_authority": False,

@@ -19,6 +19,8 @@ from archflow.state.design_brief import (
 from archflow.state.design_program import (
     DesignProgram,
     ProgramAssumption,
+    ProgramMetricApplicability,
+    ProgramMetricApplicabilityDecision,
     ProgramMetricKind,
     ProgramNode,
     ProgramNodeKind,
@@ -31,6 +33,7 @@ from archflow.state.design_program import (
 from archflow.state.operational_state import (
     DesignObligation,
     FactEpistemicStatus,
+    ObligationStatus,
     require_local_id,
     require_logical_ref,
 )
@@ -154,12 +157,34 @@ class ProgramScenarioProposal:
 
 
 @dataclass(frozen=True, slots=True)
+class ProgramMetricApplicabilityBinding:
+    """Bind a typed applicability decision to its exact P036 record."""
+
+    decision: ProgramMetricApplicabilityDecision
+    decision_ref: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(
+            self.decision,
+            ProgramMetricApplicabilityDecision,
+        ):
+            raise TypeError(
+                "decision must be ProgramMetricApplicabilityDecision"
+            )
+        require_logical_ref(self.decision_ref, "decision_ref")
+
+
+@dataclass(frozen=True, slots=True)
 class ProgramProposalBundle:
     assumptions: tuple[ProgramAssumptionProposal, ...] = ()
     nodes: tuple[ProgramNodeProposal, ...] = ()
     ranges: tuple[ProgramRangeProposal, ...] = ()
     relationships: tuple[ProgramRelationshipProposal, ...] = ()
     scenarios: tuple[ProgramScenarioProposal, ...] = ()
+    metric_applicability: tuple[
+        ProgramMetricApplicabilityBinding,
+        ...,
+    ] = ()
 
     def __post_init__(self) -> None:
         _typed(
@@ -178,6 +203,11 @@ class ProgramProposalBundle:
             self.scenarios,
             ProgramScenarioProposal,
             "scenarios",
+        )
+        _typed(
+            self.metric_applicability,
+            ProgramMetricApplicabilityBinding,
+            "metric_applicability",
         )
 
 
@@ -276,6 +306,46 @@ def compile_design_program(
         tuple(item.scenario_id for item in proposals.scenarios),
         "scenario ids",
     )
+    _unique(
+        tuple(
+            item.decision.decision_id
+            for item in proposals.metric_applicability
+        ),
+        "metric applicability decision ids",
+    )
+    _unique(
+        tuple(
+            item.decision.metric.value
+            for item in proposals.metric_applicability
+        ),
+        "metric applicability metrics",
+    )
+    for binding in proposals.metric_applicability:
+        decision = binding.decision
+        if (
+            decision.project_id != brief.project_id
+            or decision.run_id != brief.run_id
+            or decision.base != brief.base
+        ):
+            raise ProgramCompilationError(
+                "metric applicability decision is not exact-base"
+            )
+        if binding.decision_ref not in allowed_sources:
+            raise ProgramCompilationError(
+                "metric applicability decision is absent from the "
+                "exact-base brief"
+            )
+        if not binding.decision_ref.startswith(
+            f"project://{brief.project_id}/runs/{brief.run_id}/"
+        ):
+            raise ProgramCompilationError(
+                "metric applicability decision reference is outside the run"
+            )
+        if not set(decision.source_refs) <= allowed_sources:
+            raise ProgramCompilationError(
+                "metric applicability source is absent from the "
+                "exact-base brief"
+            )
     for item in (
         *proposals.assumptions,
         *proposals.nodes,
@@ -362,6 +432,16 @@ def compile_design_program(
     ):
         raise ProgramCompilationError(
             "scenario-assigned range is absent from its scenario"
+        )
+    ranged_metrics = {item.metric for item in proposals.ranges}
+    if any(
+        binding.decision.applicability
+        is ProgramMetricApplicability.NOT_APPLICABLE
+        and binding.decision.metric in ranged_metrics
+        for binding in proposals.metric_applicability
+    ):
+        raise ProgramCompilationError(
+            "not-applicable metric cannot also have a program range"
         )
 
     size_status = next(
@@ -485,6 +565,7 @@ def compile_design_program(
         ranges=ranges,
         relationships=relationships,
         scenarios=scenarios,
+        metric_applicability=proposals.metric_applicability,
     )
     program = DesignProgram(
         project_id=brief.project_id,
@@ -525,6 +606,11 @@ def compile_design_program(
                     f"scenario:{item.scenario_id}"
                     for item in proposals.scenarios
                 ),
+                *(
+                    "metric-applicability:"
+                    f"{item.decision.decision_id}"
+                    for item in proposals.metric_applicability
+                ),
             )
         )
     )
@@ -553,7 +639,10 @@ def compile_design_program(
             item.scenario_id for item in scenarios
         ),
         open_obligation_ids=tuple(
-            item.obligation_id for item in obligations
+            item.obligation_id
+            for item in obligations
+            if item.status
+            in {ObligationStatus.OPEN, ObligationStatus.BLOCKED}
         ),
     )
     return CompiledDesignProgram(program=program, receipt=receipt)
@@ -566,12 +655,20 @@ def _open_obligations(
     ranges: tuple[ProgramRange, ...],
     relationships: tuple[ProgramRelationship, ...],
     scenarios: tuple[ProgramScenario, ...],
+    metric_applicability: tuple[
+        ProgramMetricApplicabilityBinding,
+        ...,
+    ],
 ) -> tuple[DesignObligation, ...]:
     source = f"design-brief:{brief.brief_digest}"
     obligations: list[DesignObligation] = []
+    applicability_by_metric = {
+        item.decision.metric: item for item in metric_applicability
+    }
     checks = (
         (
             not any(item.kind is ProgramNodeKind.FUNCTION for item in nodes),
+            None,
             "program.functions",
             "Derive or explicitly leave unresolved the project functions.",
         ),
@@ -580,6 +677,7 @@ def _open_obligations(
                 item.metric is ProgramMetricKind.CAPACITY
                 for item in ranges
             ),
+            ProgramMetricKind.CAPACITY,
             "program.capacity",
             "Derive bounded capacity hypotheses or preserve capacity as unknown.",
         ),
@@ -588,6 +686,7 @@ def _open_obligations(
                 item.metric is ProgramMetricKind.NET_AREA
                 for item in ranges
             ),
+            ProgramMetricKind.NET_AREA,
             "program.net-area",
             "Derive bounded net-area hypotheses or preserve net area as unknown.",
         ),
@@ -596,6 +695,7 @@ def _open_obligations(
                 item.metric is ProgramMetricKind.GROSS_ALLOWANCE
                 for item in ranges
             ),
+            ProgramMetricKind.GROSS_ALLOWANCE,
             "program.gross-allowance",
             "Derive a bounded gross allowance or preserve it as unknown.",
         ),
@@ -604,17 +704,45 @@ def _open_obligations(
                 item.metric is ProgramMetricKind.TOTAL_FLOOR_AREA
                 for item in ranges
             ),
+            ProgramMetricKind.TOTAL_FLOOR_AREA,
             "program.total-floor-area",
             "Derive bounded total-floor-area hypotheses or preserve them as unknown.",
         ),
         (
             not relationships,
+            None,
             "program.relationships",
             "Derive functional relationship hypotheses without selecting layout.",
         ),
     )
-    for missing, suffix, statement in checks:
+    for missing, metric, suffix, statement in checks:
         if missing:
+            binding = (
+                applicability_by_metric.get(metric)
+                if metric is not None
+                else None
+            )
+            if (
+                binding is not None
+                and binding.decision.applicability
+                is ProgramMetricApplicability.NOT_APPLICABLE
+            ):
+                obligations.append(
+                    DesignObligation(
+                        obligation_id=f"resolve.{suffix}",
+                        statement=(
+                            "Metric is explicitly not applicable to this "
+                            f"project type: {binding.decision.rationale}"
+                        ),
+                        source_ref=binding.decision_ref,
+                        status=ObligationStatus.WAIVED,
+                        subject_refs=(
+                            f"program-metric:{metric.value}",
+                        ),
+                        validator_ref=binding.decision_ref,
+                    )
+                )
+                continue
             obligations.append(
                 DesignObligation(
                     obligation_id=f"resolve.{suffix}",
@@ -622,6 +750,31 @@ def _open_obligations(
                     source_ref=source,
                 )
             )
+    footprint_binding = applicability_by_metric.get(
+        ProgramMetricKind.FOOTPRINT
+    )
+    if (
+        footprint_binding is not None
+        and footprint_binding.decision.applicability
+        is ProgramMetricApplicability.NOT_APPLICABLE
+        and not any(
+            item.metric is ProgramMetricKind.FOOTPRINT
+            for item in ranges
+        )
+    ):
+        obligations.append(
+            DesignObligation(
+                obligation_id="resolve.program.footprint",
+                statement=(
+                    "Metric is explicitly not applicable to this project "
+                    f"type: {footprint_binding.decision.rationale}"
+                ),
+                source_ref=footprint_binding.decision_ref,
+                status=ObligationStatus.WAIVED,
+                subject_refs=("program-metric:footprint",),
+                validator_ref=footprint_binding.decision_ref,
+            )
+        )
     size_status = next(
         item.status
         for item in brief.slots
@@ -736,10 +889,10 @@ __all__ = [
     "ProgramRangeProposal",
     "ProgramRelationshipProposal",
     "ProgramScenarioProposal",
+    "ProgramMetricApplicabilityBinding",
     "ProgramProposalBundle",
     "ProgramCompilationReceipt",
     "CompiledDesignProgram",
     "compile_design_program",
     "maximum_footprint_constraint_refs",
 ]
-

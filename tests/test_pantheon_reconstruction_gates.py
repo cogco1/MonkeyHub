@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import unittest
 from dataclasses import replace
@@ -355,22 +356,22 @@ class PantheonCandidateGeometrySelfCheckTests(unittest.TestCase):
         runner_context = P.create_runner_context()
         expected = (
             (
-                "39502459053020bb4586fd995006a74948ea55e24b550c64bf898551be8bd8f6",
+                "99ba494a951e3c73146afc1e355dcb1eaac11fccb72b4c02029d67a61bda3a7d",
                 "443fc3ae7f27bbbf7ab1f86df1f012e19956a4bf57fdacfa9e2441eb9108ad74",
                 "76f370d4a3e977009feb49739b41c0978cbc07b4574fd58c1278954f0272f19d",
             ),
             (
-                "5cd94736437ef62ead85f42c8953fde9cf5047a92450fec4970d875c88b651f4",
+                "d78d08ba20ea435158c73c618dca6e34dd9317bc4c3c23e589852826786d43e0",
                 "b70df27a7a9aa27525ce8fe8851183f1024a41baf3d7e7ead97dae9ab309d925",
                 "4fa795074005760fb4d226a42b4f1dd812545078a7e8685abc54b744d1d31683",
             ),
             (
-                "96879252de22a5aea06535a428177d0831a0596e3e1ea40db3c4986464f049d6",
+                "fccd894082579dac5ae9475c2f7be1c879a9dc881931bd9de8ae9f9746a5ff67",
                 "74f7ee15028879fe68d6e98227a01e4d79660606644871603e393f833127d653",
                 "01b71fe74e2573a6ca51b9765ede627b119ab9f22f35f0a8b5f98773467b4e4a",
             ),
             (
-                "5df2659b0fc6972c795e49d18468980e2e1fea0c5727c529b03f04bed3e6a34a",
+                "99b2a6677ed1f297b9ddab5d88afa141129ab37c60997b0428cf942b9121f199",
                 "662b5f4e5d888b1c5634e0c5dcc11c54fb53289b798f71d1f0977f7d900d7f5e",
                 "f4dc3c023e68cddaea975cb96512c4eb93377a98f7e351d5aac3b3cd7368ec77",
             ),
@@ -492,7 +493,22 @@ class PantheonCandidateGeometrySelfCheckTests(unittest.TestCase):
         ):
             result = P._headless_three_dm_gate(
                 P.Path("candidate.3dm"),
-                {"model_unit_system": "Meters"},
+                {
+                    "model_unit_system": "Meters",
+                    "source_vertical_axis": (
+                        P._PANTHEON_COORDINATE_TRANSFORM[
+                            "source_vertical_axis"
+                        ]
+                    ),
+                    "rhino_vertical_axis": (
+                        P._PANTHEON_COORDINATE_TRANSFORM[
+                            "rhino_vertical_axis"
+                        ]
+                    ),
+                    "coordinate_transform": (
+                        P._PANTHEON_COORDINATE_TRANSFORM["mapping"]
+                    ),
+                },
                 expected_object_count=59,
             )
 
@@ -564,10 +580,7 @@ class PantheonCandidateGeometrySelfCheckTests(unittest.TestCase):
         self.assertNotIn("requests.", script)
 
     def test_cad_summary_separates_strict_oracle_from_meter_grid_gate(self):
-        from archflow.adapters.cad_program import (
-            expected_object_bounds,
-            expected_object_semantics,
-        )
+        from archflow.adapters.cad_program import expected_object_semantics
 
         proposal = _geometry(3).proposal
         pending = list(proposal.operations)
@@ -588,7 +601,9 @@ class PantheonCandidateGeometrySelfCheckTests(unittest.TestCase):
             proposal=proposal,
             operation_order=tuple(order),
         )
-        measures = json.loads(json.dumps(expected_object_bounds(program)))
+        measures = json.loads(
+            json.dumps(P._candidate_expected_object_bounds(program))
+        )
         measures["transition-block-object"]["bbox_max"][2] -= 0.4374
 
         summary = P._candidate_cad_verification_summary(
@@ -766,6 +781,457 @@ class PantheonCandidateGeometrySelfCheckTests(unittest.TestCase):
         )
         self.assertEqual(5, stage3["coffer_ring_count"])
         self.assertEqual([28] * 5, stage3["coffers_per_ring"])
+
+
+    def test_headless_3dm_gate_rejects_axis_transform_drift(self):
+        model = SimpleNamespace(
+            file_sha256="a" * 64,
+            file_bytes=2048,
+            three_dm_version=8,
+            archive_version=80,
+            units={"name": "Meters", "code": 4},
+            object_count=59,
+            top_level_object_count=59,
+            layers=(),
+            instance_definitions=(),
+            instance_references=(),
+            aggregate_bbox={
+                "min": [0.0, 0.0, 0.0],
+                "max": [1.0, 1.0, 1.0],
+            },
+        )
+        with patch(
+            "archflow.adapters.three_dm_inspector.inspect_three_dm",
+            return_value=model,
+        ):
+            result = P._headless_three_dm_gate(
+                P.Path("candidate.3dm"),
+                {
+                    "model_unit_system": "Meters",
+                    "source_vertical_axis": "Y",
+                    "rhino_vertical_axis": "Y",
+                    "coordinate_transform": "identity",
+                },
+                expected_object_count=59,
+            )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(2, len(result["issues"]))
+        self.assertTrue(
+            all("coordinate" in issue for issue in result["issues"])
+        )
+
+    def test_headless_3dm_gate_reads_saved_column_as_z_up_witness(self):
+        witness_name = "column-shaft-r0-c0-object"
+        model = SimpleNamespace(
+            file_sha256="a" * 64,
+            file_bytes=2048,
+            three_dm_version=8,
+            archive_version=80,
+            units={"name": "Meters", "code": 4},
+            object_count=59,
+            top_level_object_count=59,
+            layers=(),
+            instance_definitions=(),
+            instance_references=(),
+            aggregate_bbox={
+                "min": [0.0, 0.0, 0.0],
+                "max": [56.0, 77.0, 46.1],
+            },
+            named_object_bboxes=(
+                {
+                    "name": witness_name,
+                    "bbox": {
+                        # Rhino's normal loft overshoots the tapered endpoint
+                        # radius by 15 mm; the Z-axis endpoints remain exact.
+                        "min": [11.835, 3.235, 2.0],
+                        "max": [13.365, 4.765, 13.9],
+                    },
+                },
+                {
+                    "name": "bronze-door-left",
+                    "bbox": {
+                        "min": [25.775, 18.86, 1.0],
+                        "max": [27.97, 18.98, 8.53],
+                    },
+                },
+                {
+                    "name": "bronze-door-right",
+                    "bbox": {
+                        "min": [28.03, 18.86, 1.0],
+                        "max": [30.225, 18.98, 8.53],
+                    },
+                },
+            ),
+        )
+        status = {
+            "model_unit_system": "Meters",
+            "source_vertical_axis": "Y",
+            "rhino_vertical_axis": "Z",
+            "coordinate_transform": "(x,y,z)->(x,z,y)",
+        }
+        source_bbox = {
+            "bbox_min": [11.85, 2.0, 3.25],
+            "bbox_max": [13.35, 13.9, 4.75],
+        }
+        with patch(
+            "archflow.adapters.three_dm_inspector.inspect_three_dm",
+            return_value=model,
+        ):
+            result = P._headless_three_dm_gate(
+                P.Path("candidate.3dm"),
+                status,
+                expected_object_count=59,
+                axis_witness={
+                    "name": witness_name,
+                    "source_bbox": source_bbox,
+                },
+                named_vertical_witnesses={
+                    "bronze-door-left": P.DOOR_THRESHOLD_Y,
+                    "bronze-door-right": P.DOOR_THRESHOLD_Y,
+                },
+            )
+
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["axis_witness"]["passed"])
+        self.assertEqual(0.02, result["axis_witness"]["tolerance_m"])
+        self.assertGreater(
+            result["axis_witness"]["actual_rhino_bbox"]["max"][2],
+            result["axis_witness"]["actual_rhino_bbox"]["max"][1],
+        )
+        self.assertTrue(
+            all(
+                item["passed"]
+                for item in result["named_vertical_witnesses"]
+            )
+        )
+
+    def test_realized_cad_datum_readback_fails_on_reintroduced_one_metre_gap(self):
+        measures = {
+            "plinth-object": {
+                "bbox_min": [0.0, -0.5, 0.0],
+                "bbox_max": [56.0, 0.0, 77.0],
+            },
+            "rotunda-floor-object": {
+                "bbox_min": [0.0, 0.0, 21.0],
+                "bbox_max": [56.0, 1.0, 77.0],
+            },
+            "transition-floor-object": {
+                "bbox_min": [11.25, 0.0, 15.0],
+                "bbox_max": [44.75, 1.0, 21.0],
+            },
+            "portico-floor-object": {
+                "bbox_min": [11.45, 0.0, 3.0],
+                "bbox_max": [44.55, 1.0, 15.0],
+            },
+            "transition-block-object": {
+                "bbox_min": [11.25, 1.0, 15.0],
+                "bbox_max": [44.75, 26.0, 26.5],
+            },
+        }
+        for index in range(P.FRONT_STEP_COUNT):
+            measures[f"front-step-{index}-object"] = {
+                "bbox_min": [11.45, 0.0, index * P.FRONT_STEP_TREAD],
+                "bbox_max": [
+                    44.55,
+                    P.FRONT_STEP_RISE * (index + 1),
+                    P.FRONT_STEP_TREAD * (index + 1),
+                ],
+            }
+        for row, count in ((0, 8), (1, 4), (2, 4)):
+            for column in range(count):
+                measures[f"column-shaft-r{row}-c{column}-object"] = {
+                    "bbox_min": [0.0, 1.0, 0.0],
+                    "bbox_max": [1.0, 12.9, 1.0],
+                }
+
+        passing = P._candidate_cad_datum_readback(measures)
+        self.assertTrue(passing["passed"])
+
+        drifted = json.loads(json.dumps(measures))
+        drifted["portico-floor-object"]["bbox_min"][1] = 1.0
+        drifted["portico-floor-object"]["bbox_max"][1] = 2.0
+        failed = P._candidate_cad_datum_readback(drifted)
+        self.assertFalse(failed["passed"])
+        self.assertTrue(
+            any("portico-floor-object" in issue for issue in failed["issues"])
+        )
+
+    def test_stage3_material_ledger_covers_every_semantic_component(self):
+        program = _geometry(3)
+        ledger = P._candidate_material_ledger(program)
+        bindings = [
+            {
+                "component_id": item.component_id,
+                "binding_id": item.binding_id,
+                "object_ids": list(item.object_ids),
+            }
+            for item in program.proposal.semantic_bindings
+        ]
+        from archflow.capabilities.material import ledger_coverage
+
+        coverage = ledger_coverage(bindings, ledger)
+
+        self.assertEqual(1.0, coverage["coverage_ratio"])
+        self.assertEqual([], coverage["unassigned"])
+        self.assertEqual([], coverage["orphan_assignments"])
+        self.assertEqual(
+            "reference-void",
+            ledger.material_of("main-entry"),
+        )
+
+    def test_detail_wrapper_uses_rhino_python_compatible_json_writes(self):
+        source = inspect.getsource(P._write_speculative_detail_rhino_workspace)
+
+        self.assertNotIn("encoding='utf-8'", source)
+        self.assertIn("ensure_ascii=True", source)
+        self.assertIn("Rhino.RhinoApp.Exit(False)", source)
+
+    def test_stage1_grade_steps_landing_and_entry_share_one_datum_chain(self):
+        program = _geometry(1)
+        operations = {
+            operation.op_id: operation
+            for operation in program.proposal.operations
+        }
+
+        self.assertEqual(0.0, P.GRADE_Y)
+        self.assertEqual(
+            P.FLOOR_Y,
+            P.GRADE_Y + P.STYLOBATE_THICKNESS,
+        )
+
+        plinth_origin = _parameter(operations["plinth"], "origin")
+        plinth_size = _parameter(operations["plinth"], "size")
+        self.assertEqual(P.FOUNDATION_BASE_Y, plinth_origin[1])
+        self.assertEqual(P.GRADE_Y, plinth_origin[1] + plinth_size[1])
+
+        rotunda_floor = operations["rotunda-floor"]
+        self.assertEqual(
+            P.ROTUNDA_FLOOR_BASE_Y,
+            _parameter(rotunda_floor, "axis_start")[1],
+        )
+        self.assertEqual(
+            P.FLOOR_Y,
+            _parameter(rotunda_floor, "axis_end")[1],
+        )
+
+        transition_floor = operations["transition-floor"]
+        transition_origin = _parameter(transition_floor, "origin")
+        transition_size = _parameter(transition_floor, "size")
+        self.assertEqual(P.TRANSITION_FLOOR_BASE_Y, transition_origin[1])
+        self.assertEqual(
+            P.FLOOR_Y,
+            transition_origin[1] + transition_size[1],
+        )
+
+        step_tops = []
+        for index in range(P.FRONT_STEP_COUNT):
+            step = operations[f"front-step-{index}"]
+            origin = _parameter(step, "origin")
+            size = _parameter(step, "size")
+            self.assertEqual(P.GRADE_Y, origin[1])
+            self.assertEqual(index * P.FRONT_STEP_TREAD, origin[2])
+            self.assertEqual(
+                P.FRONT_STEP_RISE * (index + 1),
+                size[1],
+            )
+            step_tops.append(origin[1] + size[1])
+        self.assertEqual(
+            [
+                P.GRADE_Y + P.FRONT_STEP_RISE * (index + 1)
+                for index in range(P.FRONT_STEP_COUNT)
+            ],
+            step_tops,
+        )
+        self.assertEqual(P.FLOOR_Y, step_tops[-1])
+
+        landing = operations["portico-floor"]
+        landing_origin = _parameter(landing, "origin")
+        landing_size = _parameter(landing, "size")
+        landing_top = landing_origin[1] + landing_size[1]
+        self.assertEqual(P.PORTICO_FLOOR_BASE_Y, landing_origin[1])
+        self.assertEqual(P.PORTICO_FLOOR_THICKNESS, landing_size[1])
+        self.assertEqual(step_tops[-1], landing_top)
+
+        door_threshold = _parameter(operations["door-tool"], "origin")[1]
+        interior_floor = _parameter(operations["drum-inner"], "axis_start")[1]
+        self.assertEqual(P.FLOOR_Y, door_threshold)
+        self.assertEqual(landing_top, door_threshold)
+        self.assertEqual(door_threshold, interior_floor)
+
+        column_bases = {
+            _parameter(operation, "axis_start")[1]
+            for operation in program.proposal.operations
+            if operation.op_id.startswith("column-shaft-r")
+        }
+        self.assertEqual({landing_top}, column_bases)
+
+        entablature_origin = _parameter(
+            operations["portico-mass"], "origin"
+        )
+        self.assertEqual(
+            landing_top + P.COLUMN_SHAFT + P.CAPITAL_H,
+            entablature_origin[1],
+        )
+
+    def test_transition_height_is_grade_to_top_not_wall_solid_thickness(self):
+        program = _geometry(0)
+        operations = {
+            operation.op_id: operation
+            for operation in program.proposal.operations
+        }
+        floor = operations["transition-floor"]
+        wall = operations["transition-box"]
+        floor_origin = _parameter(floor, "origin")
+        wall_origin = _parameter(wall, "origin")
+        wall_size = _parameter(wall, "size")
+        wall_top = wall_origin[1] + wall_size[1]
+
+        self.assertEqual(P.GRADE_Y, floor_origin[1])
+        self.assertEqual(P.FLOOR_Y, wall_origin[1])
+        self.assertEqual(P.TRANSITION_TOP_Y, wall_top)
+        self.assertEqual(P.TRANSITION_SUPERSTRUCTURE_HEIGHT, wall_size[1])
+        self.assertEqual(25.0, wall_size[1])
+
+        refs = {
+            "walls": "project:evidence/walls",
+            "orders": "project:evidence/orders",
+            "front": "project:evidence/front",
+            "typology": "project:evidence/typology",
+            "junction": "project:evidence/junction",
+        }
+        runner_context = P.create_runner_context(contracts=P.stage_contracts(refs))
+        realized = P._realized_declaration_values(
+            program,
+            0,
+            runner_context=runner_context,
+        )
+        self.assertEqual(
+            wall_top - floor_origin[1],
+            realized["transition-height-m"],
+        )
+        self.assertEqual(26.0, realized["transition-height-m"])
+        self.assertNotEqual(
+            wall_size[1],
+            realized["transition-height-m"],
+        )
+
+    def test_stage1_adjacent_physical_layers_touch_without_volume_overlap(self):
+        program = _geometry(1)
+        operations = {
+            operation.op_id: operation
+            for operation in program.proposal.operations
+        }
+
+        def bounds(operation):
+            if operation.kind.value == "solid":
+                origin = _parameter(operation, "origin")
+                size = _parameter(operation, "size")
+                return (
+                    tuple(origin),
+                    tuple(origin[index] + size[index] for index in range(3)),
+                )
+            if operation.kind.value == "revolve":
+                start = _parameter(operation, "axis_start")
+                end = _parameter(operation, "axis_end")
+                start_radius = _parameter(operation, "start_radius")
+                end_radius = _parameter(operation, "end_radius")
+                return (
+                    (
+                        min(start[0] - start_radius, end[0] - end_radius),
+                        min(start[1], end[1]),
+                        min(start[2] - start_radius, end[2] - end_radius),
+                    ),
+                    (
+                        max(start[0] + start_radius, end[0] + end_radius),
+                        max(start[1], end[1]),
+                        max(start[2] + start_radius, end[2] + end_radius),
+                    ),
+                )
+            if operation.kind.value == "extrusion":
+                profile = _parameter(operation, "profile")
+                vector = _parameter(operation, "vector")
+                points = [
+                    *profile,
+                    *[
+                        [point[index] + vector[index] for index in range(3)]
+                        for point in profile
+                    ],
+                ]
+                return (
+                    tuple(min(point[index] for point in points) for index in range(3)),
+                    tuple(max(point[index] for point in points) for index in range(3)),
+                )
+            self.fail(f"unsupported primitive in contact test: {operation.op_id}")
+
+        def assert_contact(first_id, second_id, axis):
+            first = bounds(operations[first_id])
+            second = bounds(operations[second_id])
+            self.assertTrue(
+                first[1][axis] == second[0][axis]
+                or second[1][axis] == first[0][axis],
+                (first_id, second_id, first, second),
+            )
+            overlaps = tuple(
+                min(first[1][index], second[1][index])
+                - max(first[0][index], second[0][index])
+                for index in range(3)
+            )
+            self.assertEqual(0.0, overlaps[axis])
+            self.assertTrue(
+                all(overlaps[index] > 0.0 for index in range(3) if index != axis),
+                (first_id, second_id, overlaps),
+            )
+            self.assertFalse(all(overlap > 0.0 for overlap in overlaps))
+
+        expected_y_spans = {
+            "plinth": (P.FOUNDATION_BASE_Y, P.GRADE_Y),
+            "rotunda-floor": (P.GRADE_Y, P.FLOOR_Y),
+            "transition-floor": (P.GRADE_Y, P.FLOOR_Y),
+            "portico-floor": (P.GRADE_Y, P.FLOOR_Y),
+        }
+        for op_id, expected in expected_y_spans.items():
+            actual = bounds(operations[op_id])
+            self.assertEqual(expected, (actual[0][1], actual[1][1]))
+
+        step_ids = [
+            f"front-step-{index}" for index in range(P.FRONT_STEP_COUNT)
+        ]
+        self.assertEqual(
+            [0.2, 0.4, 0.6000000000000001, 0.8, 1.0],
+            [bounds(operations[op_id])[1][1] for op_id in step_ids],
+        )
+        self.assertEqual(
+            P.FLOOR_Y,
+            bounds(operations["door-tool"])[0][1],
+        )
+        shaft_ids = sorted(
+            op_id for op_id in operations if op_id.startswith("column-shaft-r")
+        )
+        self.assertTrue(shaft_ids)
+        self.assertEqual(
+            {P.FLOOR_Y},
+            {bounds(operations[op_id])[0][1] for op_id in shaft_ids},
+        )
+
+        for floor_id in (
+            "rotunda-floor", "transition-floor", "portico-floor", *step_ids
+        ):
+            assert_contact("plinth", floor_id, 1)
+        assert_contact("rotunda-floor", "transition-floor", 2)
+        assert_contact("transition-floor", "portico-floor", 2)
+        for first, second in zip(step_ids, step_ids[1:]):
+            assert_contact(first, second, 2)
+        assert_contact(step_ids[-1], "portico-floor", 2)
+        assert_contact("rotunda-floor", "drum-outer", 1)
+        assert_contact("transition-floor", "transition-box", 1)
+        assert_contact("transition-floor", "door-tool", 1)
+        for shaft_id in shaft_ids:
+            assert_contact("portico-floor", shaft_id, 1)
+            capital_id = shaft_id.replace("column-shaft-", "column-capital-")
+            assert_contact(shaft_id, capital_id, 1)
+            assert_contact(capital_id, "portico-mass", 1)
+        assert_contact("portico-mass", "pediment", 1)
 
 
 if __name__ == "__main__":

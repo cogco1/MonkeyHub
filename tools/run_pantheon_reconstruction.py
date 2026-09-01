@@ -38,6 +38,8 @@ from _probe_paths import WORKSPACE_PROJECTS, resolve_probe_root  # noqa: E402
 from tools.projects.pantheon import monument_support as M  # noqa: E402
 
 from archflow.research.index import BranchDecisionContext  # noqa: E402
+from archflow.contracts.branch import branch_ref_to_dict  # noqa: E402
+from archflow.contracts.canonical import canonical_digest  # noqa: E402
 from archflow.capabilities.declaration import (  # noqa: E402
     DeclarationField,
     DeclarationKind,
@@ -47,10 +49,15 @@ from archflow.capabilities.declaration import (  # noqa: E402
     validate_stage_declarations,
 )
 from archflow.project import (  # noqa: E402
+    BranchRef,
     FilesystemProjectRepository,
     PersistenceArea,
     PersistenceDestination,
     RunRef,
+)
+from tools.pantheon_relation_control import (  # noqa: E402
+    compile_pantheon_relation_control,
+    pantheon_subject_record_payloads,
 )
 from archflow.state import (  # noqa: E402
     ComponentMaturity,
@@ -87,7 +94,23 @@ CENTER_X = 28.0
 CENTER_Z = 49.0
 DRUM_OUTER = 28.0        # 43.3 interior + 2 x 6.35 measured wall thickness
 DRUM_INNER = 21.65       # 43.3 m interior span (adopted)
-FLOOR_Y = 1.0            # stylobate top
+FLOOR_Y = 1.0            # project datum; cross-space equality is design-authorized
+STYLOBATE_THICKNESS = 1.0
+GRADE_Y = FLOOR_Y - STYLOBATE_THICKNESS
+FOUNDATION_BASE_Y = GRADE_Y - 0.5
+FOUNDATION_THICKNESS = GRADE_Y - FOUNDATION_BASE_Y
+PORTICO_FLOOR_THICKNESS = STYLOBATE_THICKNESS
+PORTICO_FLOOR_BASE_Y = FLOOR_Y - PORTICO_FLOOR_THICKNESS
+ROTUNDA_FLOOR_BASE_Y = GRADE_Y
+TRANSITION_FLOOR_BASE_Y = GRADE_Y
+TRANSITION_TOP_Y = 26.0
+TRANSITION_SUPERSTRUCTURE_HEIGHT = TRANSITION_TOP_Y - FLOOR_Y
+FRONT_STEP_COUNT = 5
+FRONT_STEP_TREAD = 0.6
+FRONT_STEP_RISE = (FLOOR_Y - GRADE_Y) / FRONT_STEP_COUNT
+FRONT_STEP_EPISTEMIC_STATUS = "SOFT_CANDIDATE"
+FRONT_STEP_CONFLICT_STATUS = "OPEN_HUMAN_REVIEW"
+DOOR_THRESHOLD_Y = FLOOR_Y
 SPRING_Y = 22.6          # floor + interior radius
 CROWN_Y = 44.3           # floor + adopted 43.3 interior height
 OCULUS_R = 4.55          # 9.1 m structural ring (adopted)
@@ -971,18 +994,37 @@ def _pantheon_geometry(
     CROWN_Y = profile.crown_y
     OCULUS_R = profile.oculus_radius
     PORTICO_W = profile.portico_width
+    GRADE_Y = FLOOR_Y - STYLOBATE_THICKNESS
+    FOUNDATION_BASE_Y = GRADE_Y - 0.5
+    FOUNDATION_THICKNESS = GRADE_Y - FOUNDATION_BASE_Y
+    PORTICO_FLOOR_BASE_Y = FLOOR_Y - PORTICO_FLOOR_THICKNESS
+    ROTUNDA_FLOOR_BASE_Y = GRADE_Y
+    TRANSITION_FLOOR_BASE_Y = GRADE_Y
+    TRANSITION_SUPERSTRUCTURE_HEIGHT = TRANSITION_TOP_Y - FLOOR_Y
+    FRONT_STEP_RISE = (FLOOR_Y - GRADE_Y) / FRONT_STEP_COUNT
+    DOOR_THRESHOLD_Y = FLOOR_Y
     evidence = (
         state.selected_schematic.option.proposal.evidence_refs[0],
     )
     operations = [
         M._solid("plinth", "plinth-object", "rotunda-binding",
-                 [0.0, 0.0, 0.5], [56.0, FLOOR_Y, 77.0]),
-        M._cylinder("drum-outer", "drum-outer-object", "rotunda-binding",
-                    FLOOR_Y, SPRING_Y, DRUM_OUTER,
-                    center_x=CENTER_X, center_z=CENTER_Z),
-        M._cylinder("drum-inner", "drum-inner-object", "rotunda-binding",
-                    FLOOR_Y, SPRING_Y + 0.5, DRUM_INNER,
-                    center_x=CENTER_X, center_z=CENTER_Z),
+                 [0.0, FOUNDATION_BASE_Y, 0.0],
+                 [56.0, FOUNDATION_THICKNESS, 77.0]),
+        _vertical_revolve(
+            "rotunda-floor", "rotunda-floor-object", "rotunda-binding",
+            x=CENTER_X, z=CENTER_Z, y0=ROTUNDA_FLOOR_BASE_Y, y1=FLOOR_Y,
+            start_radius=DRUM_OUTER,
+        ),
+        _vertical_revolve(
+            "drum-outer", "drum-outer-object", "rotunda-binding",
+            x=CENTER_X, z=CENTER_Z, y0=FLOOR_Y, y1=SPRING_Y,
+            start_radius=DRUM_OUTER,
+        ),
+        _vertical_revolve(
+            "drum-inner", "drum-inner-object", "rotunda-binding",
+            x=CENTER_X, z=CENTER_Z, y0=FLOOR_Y, y1=SPRING_Y + 0.5,
+            start_radius=DRUM_INNER,
+        ),
         M._loft(
             "dome-outer",
             "dome-outer-object",
@@ -1002,16 +1044,24 @@ def _pantheon_geometry(
     ]
     operations.extend(
         (
+            M._solid(
+                "transition-floor", "transition-floor-object",
+                "transition-binding",
+                [CENTER_X - 16.75, TRANSITION_FLOOR_BASE_Y, 15.0],
+                [33.5, FLOOR_Y - TRANSITION_FLOOR_BASE_Y, 6.0],
+            ),
             M._solid("transition-box", "transition-box-object",
                      "transition-binding",
-                     [CENTER_X - 16.75, 0.0, 15.0],
-                     [33.5, 26.0, 12.0]),
-            M._cylinder("transition-hug", "transition-hug-object",
-                        "transition-binding", -0.5, 27.5, DRUM_OUTER,
-                        center_x=CENTER_X, center_z=CENTER_Z),
+                     [CENTER_X - 16.75, FLOOR_Y, 15.0],
+                     [33.5, TRANSITION_SUPERSTRUCTURE_HEIGHT, 12.0]),
+            _vertical_revolve(
+                "transition-hug", "transition-hug-object",
+                "transition-binding", x=CENTER_X, z=CENTER_Z,
+                y0=-0.5, y1=27.5, start_radius=DRUM_OUTER,
+            ),
             M._solid("transition-door", "transition-door-object",
                      "transition-binding",
-                     [CENTER_X - 2.225, FLOOR_Y, 14.0],
+                     [CENTER_X - 2.225, DOOR_THRESHOLD_Y, 14.0],
                      [4.45, 7.53, 8.0]),
             M._difference(
                 "transition-block", "transition-block-object",
@@ -1026,6 +1076,7 @@ def _pantheon_geometry(
         "transition-binding": (
             "transition",
             {
+                "transition-floor-object",
                 "transition-box-object",
                 "transition-hug-object",
                 "transition-door-object",
@@ -1036,6 +1087,7 @@ def _pantheon_geometry(
             "rotunda",
             {
                 "plinth-object",
+                "rotunda-floor-object",
                 "drum-outer-object",
                 "drum-inner-object",
                 "drum-wall-object",
@@ -1058,14 +1110,15 @@ def _pantheon_geometry(
                      [PORTICO_W, 18.0, 15.0])
         )
     if stage >= 1:
-        portico_floor_y = FLOOR_Y + 1.0
-        entablature_y = portico_floor_y + COLUMN_SHAFT + CAPITAL_H
+        portico_floor_top_y = FLOOR_Y
+        entablature_y = portico_floor_top_y + COLUMN_SHAFT + CAPITAL_H
         operations.extend(
             (
                 M._solid("portico-floor", "portico-floor-object",
                          "portico-binding",
-                         [CENTER_X - PORTICO_W / 2.0, FLOOR_Y, 3.0],
-                         [PORTICO_W, 1.0, 12.0]),
+                         [CENTER_X - PORTICO_W / 2.0,
+                          PORTICO_FLOOR_BASE_Y, 3.0],
+                         [PORTICO_W, PORTICO_FLOOR_THICKNESS, 12.0]),
                 M._solid("portico-mass", "portico-mass-object",
                          "portico-binding",
                          [CENTER_X - PORTICO_W / 2.0, entablature_y, 0.0],
@@ -1077,16 +1130,17 @@ def _pantheon_geometry(
                             [CENTER_X, entablature_y + 9.7, 0.0]],
                            [0.0, 0.0, 15.0]),
                 M._solid("door-tool", "door-tool-object", "entry-binding",
-                         [CENTER_X - 2.225, FLOOR_Y, 19.0],
+                         [CENTER_X - 2.225, DOOR_THRESHOLD_Y, 19.0],
                          [4.45, 7.53, 9.0]),
-                M._cylinder("oculus-tool", "oculus-tool-object",
-                            "oculus-binding", CROWN_Y - 2.0,
-                            CROWN_Y + 3.5, OCULUS_R,
-                            center_x=CENTER_X, center_z=CENTER_Z),
+                _vertical_revolve(
+                    "oculus-tool", "oculus-tool-object", "oculus-binding",
+                    x=CENTER_X, z=CENTER_Z, y0=CROWN_Y - 2.0,
+                    y1=CROWN_Y + 3.5, start_radius=OCULUS_R,
+                ),
             )
         )
         front_step_objects: set[str] = set()
-        for index in range(5):
+        for index in range(FRONT_STEP_COUNT):
             op_id = f"front-step-{index}"
             operations.append(
                 M._solid(
@@ -1094,8 +1148,9 @@ def _pantheon_geometry(
                     f"{op_id}-object",
                     "front-step-binding",
                     [CENTER_X - PORTICO_W / 2.0,
-                     FLOOR_Y, index * 0.6],
-                    [PORTICO_W, 0.2 * (index + 1), 0.6],
+                     GRADE_Y, index * FRONT_STEP_TREAD],
+                    [PORTICO_W, FRONT_STEP_RISE * (index + 1),
+                     FRONT_STEP_TREAD],
                 )
             )
             front_step_objects.add(f"{op_id}-object")
@@ -1121,8 +1176,8 @@ def _pantheon_geometry(
                             "colonnade-binding",
                             x=x,
                             z=z,
-                            y0=portico_floor_y,
-                            y1=portico_floor_y + COLUMN_SHAFT,
+                            y0=portico_floor_top_y,
+                            y1=portico_floor_top_y + COLUMN_SHAFT,
                             start_radius=0.75,
                             end_radius=0.64,
                         ),
@@ -1132,8 +1187,8 @@ def _pantheon_geometry(
                             "colonnade-binding",
                             x=x,
                             z=z,
-                            y0=portico_floor_y + COLUMN_SHAFT,
-                            y1=portico_floor_y + COLUMN_SHAFT + CAPITAL_H,
+                            y0=portico_floor_top_y + COLUMN_SHAFT,
+                            y1=(portico_floor_top_y + COLUMN_SHAFT + CAPITAL_H),
                             start_radius=1.05,
                             end_radius=1.05,
                         ),
@@ -1153,17 +1208,16 @@ def _pantheon_geometry(
             result_id = f"dome-step-ring-{ring}"
             operations.extend(
                 (
-                    M._cylinder(
+                    _vertical_revolve(
                         outer_id, f"{outer_id}-object",
-                        "dome-step-binding", y0, y0 + 1.0,
-                        outer_radius,
-                        center_x=CENTER_X, center_z=CENTER_Z,
+                        "dome-step-binding", x=CENTER_X, z=CENTER_Z,
+                        y0=y0, y1=y0 + 1.0, start_radius=outer_radius,
                     ),
-                    M._cylinder(
+                    _vertical_revolve(
                         inner_id, f"{inner_id}-object",
-                        "dome-step-binding", y0 - 0.05, y0 + 1.05,
-                        inner_radius,
-                        center_x=CENTER_X, center_z=CENTER_Z,
+                        "dome-step-binding", x=CENTER_X, z=CENTER_Z,
+                        y0=y0 - 0.05, y1=y0 + 1.05,
+                        start_radius=inner_radius,
                     ),
                     M._difference(
                         result_id,
@@ -2030,11 +2084,38 @@ def _detail_column_layout(
     return tuple(layout)
 
 
+def _detail_entry_opening(program) -> dict[str, float]:
+    """Read the frozen entry datum and size from the neutral predecessor."""
+
+    matches = [
+        operation
+        for operation in program.proposal.operations
+        if operation.op_id == "door-tool"
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "Stage-3D requires one frozen Stage-1 door-tool predecessor"
+        )
+    parameters = _operation_parameters(matches[0])
+    origin = parameters["origin"]
+    size = parameters["size"]
+    threshold_y = float(origin[1])
+    opening_height = float(size[1])
+    return {
+        "threshold_y_m": threshold_y,
+        "head_y_m": threshold_y + opening_height,
+        "opening_width_m": float(size[0]),
+        "opening_height_m": opening_height,
+    }
+
+
 def _detail_enrichment_plan(
     program,
     *,
     external_asset: dict[str, object] | None = None,
     profile: PantheonRunnerProfile = DEFAULT_RUNNER_PROFILE,
+    datum_authorization_ref: str | None = None,
+    front_step_conflict_ref: str | None = None,
 ) -> dict[str, object]:
     """Compile an inspectable, branch-scoped plan without changing massing.
 
@@ -2047,6 +2128,7 @@ def _detail_enrichment_plan(
     if not isinstance(profile, PantheonRunnerProfile):
         raise TypeError("profile must be a PantheonRunnerProfile")
     layout = _detail_column_layout(program, center_x=profile.center_x)
+    entry_opening = _detail_entry_opening(program)
     row_distribution = [
         sum(1 for item in layout if item["row"] == row)
         for row in range(3)
@@ -2093,22 +2175,39 @@ def _detail_enrichment_plan(
                 "agrippa-inscription",
                 "bronze-door-leaves",
                 "entablature-and-pediment-cornice",
+                "front-approach-steps-and-datum",
             ],
         },
+        "decision_record_refs": [
+            ref
+            for ref in (datum_authorization_ref, front_step_conflict_ref)
+            if ref is not None
+        ],
         "massing_locks": {
             "axis_center_x_m": profile.center_x,
             "column_row_distribution": row_distribution,
             "column_centres": [
                 {
                     key: item[key]
-                    for key in ("column_id", "row", "column", "x", "z")
+                    for key in (
+                        "column_id", "row", "column", "x", "z", "base_y"
+                    )
                 }
                 for item in layout
             ],
             "column_total_height_m": DETAIL_TOTAL_COLUMN_H,
+            "portico_entablature_base_y_m": (
+                layout[0]["base_y"] + DETAIL_TOTAL_COLUMN_H
+            ),
             "drum_outer_radius_m": profile.drum_outer_radius,
             "drum_inner_radius_m": profile.drum_inner_radius,
             "portico_width_m": profile.portico_width,
+            "finished_floor_datum_relation": (
+                "portico_finished_floor == main_entry_threshold == "
+                "rotunda_finished_floor"
+            ),
+            "finished_floor_project_datum_m": profile.floor_y,
+            "absolute_historical_datum_ratified": False,
             "massing_mutations": [],
         },
         "detail_decisions": [
@@ -2152,7 +2251,8 @@ def _detail_enrichment_plan(
                     "letter_height_m": 0.70,
                     "font_role": "Roman-square-capitals",
                     "font_runtime_proxy": "Times New Roman",
-                    "relief_depth_m": 0.08,
+                    "geometry_mode": "rhino-text-object-no-relief",
+                    "relief_depth_m": None,
                 },
                 "dependencies": [
                     "predecessor:portico-binding",
@@ -2169,8 +2269,7 @@ def _detail_enrichment_plan(
                 "gate_eligible": False,
                 "implementation": {
                     "leaf_count": 2,
-                    "opening_width_m": 4.45,
-                    "opening_height_m": 7.53,
+                    **entry_opening,
                     "note": (
                         "preserve frozen 4.45 m predecessor opening; official "
                         "portal source reports about 4.90 m and remains an "
@@ -2200,6 +2299,38 @@ def _detail_enrichment_plan(
                     "decision:agrippa-inscription",
                 ],
                 "source_refs": [DETAIL_SOURCES["official_history"]],
+            },
+            {
+                "decision_id": "front-approach-steps-and-datum",
+                "constraint_class": FRONT_STEP_EPISTEMIC_STATUS,
+                "gate_eligible": False,
+                "historical_status": "unresolved",
+                "historical_fact_authority": False,
+                "implementation": {
+                    "realized_candidate_count": FRONT_STEP_COUNT,
+                    "open_count_alternatives": [5, 7],
+                    "candidate_rise_m": FRONT_STEP_RISE,
+                    "candidate_tread_m": FRONT_STEP_TREAD,
+                    "rise_tread_historically_ratified": False,
+                    "conflict_status": FRONT_STEP_CONFLICT_STATUS,
+                    "datum_relation": (
+                        "portico_finished_floor == main_entry_threshold == "
+                        "rotunda_finished_floor"
+                    ),
+                    "project_coordinate_datum_m": profile.floor_y,
+                    "absolute_historical_datum_ratified": False,
+                },
+                "dependencies": [
+                    "predecessor:front-step-binding",
+                    "predecessor:portico-binding",
+                    "predecessor:main-entry",
+                    "predecessor:rotunda-binding",
+                ],
+                "source_refs": [
+                    ref
+                    for ref in (datum_authorization_ref, front_step_conflict_ref)
+                    if ref is not None
+                ],
             },
         ],
         "asset_candidates": [
@@ -2243,7 +2374,10 @@ def _detail_enrichment_plan(
             "generic-rhino-translator-has-no-text-geometry-operation",
             "procedural-acanthus-and-volutes-are-morphology-proxies",
             "font-runtime-proxy-is-not-a-measured-letterform",
+            "inscription-relief-parked-after-rhino-explode-text-stall",
             "no-external-model-was-downloaded-without-authentication",
+            "front-step-count-5-vs-7-unresolved",
+            "front-step-rise-tread-not-historically-ratified",
         ],
     }
     if external_asset is not None:
@@ -2919,6 +3053,7 @@ def _realized_declaration_values(
     plinth = params("plinth")
     portico = params("portico-mass")
     transition = params("transition-box")
+    transition_floor = params("transition-floor")
     dome_profiles = params("dome-outer")["profiles"]
     values: dict[str, float] = {
         "drum-outer-diameter-m": 2.0 * float(outer["start_radius"]),
@@ -2933,7 +3068,11 @@ def _realized_declaration_values(
             - float(outer["start_radius"])
             - float(transition["origin"][2])
         ),
-        "transition-height-m": float(transition["size"][1]),
+        "transition-height-m": (
+            float(transition["origin"][1])
+            + float(transition["size"][1])
+            - float(transition_floor["origin"][1])
+        ),
         "transition-width-m": float(transition["size"][0]),
     }
     if stage >= 1:
@@ -3051,6 +3190,40 @@ def _candidate_structure_issues(
         if metrics["statuary_present"]:
             issues.append("stage3.unsourced_statuary_present")
     return tuple(issues)
+
+
+def _candidate_soft_decisions(
+    stage: int,
+    metrics: dict[str, object],
+) -> dict[str, object]:
+    """Expose unresolved project choices without turning them into hard gates."""
+
+    if stage < 1:
+        return {}
+    realized_count = int(metrics["front_step_count"])
+    return {
+        "front-approach-steps-and-datum": {
+            "epistemic_status": FRONT_STEP_EPISTEMIC_STATUS,
+            "conflict_status": FRONT_STEP_CONFLICT_STATUS,
+            "gate_eligible": False,
+            "hard_check": False,
+            "historical_fact_authority": False,
+            "realized_candidate_count": realized_count,
+            "selected_candidate_count": FRONT_STEP_COUNT,
+            "candidate_realization_status": (
+                "MATCH" if realized_count == FRONT_STEP_COUNT else "DRIFT"
+            ),
+            "open_count_alternatives": [5, 7],
+            "candidate_rise_m": FRONT_STEP_RISE,
+            "candidate_tread_m": FRONT_STEP_TREAD,
+            "rise_tread_historically_ratified": False,
+            "datum_relation": (
+                "portico_finished_floor == main_entry_threshold == "
+                "rotunda_finished_floor"
+            ),
+            "absolute_historical_datum_ratified": False,
+        }
+    }
 
 
 def _freeze_stage_contracts(
@@ -3269,6 +3442,330 @@ def _agent_evidence_proposal(
     }
 
 
+def _persist_stage_relation_control(
+    repository,
+    *,
+    run,
+    stage: int,
+    current_state,
+    current_program,
+    program_ref,
+    contract,
+    evidence_ref,
+    context_ref,
+    authorization_ref,
+    datum_authorization_ref,
+) -> dict[str, object]:
+    """Persist one exact-branch relation denominator and its checks.
+
+    The project-specific compiler does not choose paths.  This runner owns the
+    P036 destinations, retains every typed intermediate, and returns only the
+    no-authority summary embedded in the Stage review.  A generic AABB
+    assembly receipt is retained even when conservative boolean handling makes
+    it UNKNOWN; promotion is driven only by the separately retained Pantheon
+    topology receipt bound to every question/relation denominator.
+    """
+
+    branch = BranchRef(
+        run=run,
+        branch_id=f"stage-{stage}-candidate",
+        epoch=stage,
+    )
+    branch_destination = PersistenceDestination(
+        PersistenceArea.RUN_BRANCH,
+        run_id=run.run_id,
+        branch_id=branch.branch_id,
+    )
+
+    def put(record_kind: str, payload: Mapping[str, object]):
+        return repository.put_json(
+            run=run,
+            destination=branch_destination,
+            record_kind=record_kind,
+            payload=payload,
+        )
+
+    subject_records = pantheon_subject_record_payloads(
+        stage,
+        current_program,
+        branch,
+    )
+    component_proposal_ref = put(
+        f"relation-component-proposal-stage-{stage}",
+        subject_records.component_proposal_payload,
+    )
+    component_index_ref = put(
+        f"relation-component-index-stage-{stage}",
+        subject_records.component_index_payload,
+    )
+
+    stage_subject_payload = {
+        "schema": "P069StageRelationSubject@1",
+        "project_id": run.project_id,
+        "run_id": run.run_id,
+        "stage": stage,
+        "branch": branch_ref_to_dict(branch),
+        "design_state_digest": current_state.state_digest,
+        "geometry_program_ref": program_ref.uri,
+        "geometry_program_digest": current_program.program_digest,
+        "component_proposal_ref": component_proposal_ref.uri,
+        "component_proposal_digest": (
+            subject_records.component_proposal_digest
+        ),
+        "component_index_ref": component_index_ref.uri,
+        "component_index_digest": subject_records.component_index_digest,
+        "component_ids": list(
+            subject_records.component_index_payload["component_ids"]
+        ),
+        "binding_ids": list(
+            subject_records.component_index_payload["binding_ids"]
+        ),
+        "geometry_object_ids": list(
+            subject_records.component_index_payload["geometry_object_ids"]
+        ),
+        "stage_acceptance_authority": False,
+        "persistence_authority": False,
+        "canonical_write_authority": False,
+    }
+    stage_subject_digest = canonical_digest(stage_subject_payload)
+    stage_subject_ref = put(
+        f"relation-stage-subject-stage-{stage}",
+        stage_subject_payload,
+    )
+    scope_payload = {
+        "schema": "P069StageRelationScope@1",
+        "project_id": run.project_id,
+        "run_id": run.run_id,
+        "stage": stage,
+        "branch": branch_ref_to_dict(branch),
+        "design_state_digest": current_state.state_digest,
+        "geometry_program_ref": program_ref.uri,
+        "geometry_program_digest": current_program.program_digest,
+        "stage_subject_ref": stage_subject_ref.uri,
+        "stage_subject_digest": stage_subject_digest,
+        "declaration_contract_digest": canonical_digest(contract.to_dict()),
+        "human_authorization_ref": authorization_ref.uri,
+        "finished_floor_datum_authorization_ref": (
+            datum_authorization_ref.uri
+        ),
+        "evidence_proposal_ref": evidence_ref.uri,
+        "production_context_ref": context_ref.uri,
+        "stage_acceptance_authority": False,
+        "persistence_authority": False,
+        "canonical_write_authority": False,
+    }
+    scope_digest = canonical_digest(scope_payload)
+    scope_ref = put(f"relation-scope-stage-{stage}", scope_payload)
+    relation_evidence_refs = tuple(
+        sorted(
+            {
+                context_ref.uri,
+                datum_authorization_ref.uri,
+                evidence_ref.uri,
+                program_ref.uri,
+                scope_ref.uri,
+                stage_subject_ref.uri,
+            }
+        )
+    )
+    relation_authority_refs = tuple(
+        sorted((authorization_ref.uri, datum_authorization_ref.uri))
+    )
+    result = compile_pantheon_relation_control(
+        stage,
+        current_program,
+        branch,
+        scope_digest=scope_digest,
+        stage_subject_ref=stage_subject_ref.uri,
+        stage_subject_digest=stage_subject_digest,
+        component_proposal_ref=component_proposal_ref,
+        component_proposal_digest=(
+            subject_records.component_proposal_digest
+        ),
+        component_index_ref=component_index_ref,
+        component_index_digest=subject_records.component_index_digest,
+        evidence_refs=relation_evidence_refs,
+        authority_refs=relation_authority_refs,
+    )
+
+    inventory_ref = put(
+        f"stage-subject-inventory-stage-{stage}",
+        result.inventory.to_dict(),
+    )
+    authoring_context_ref = put(
+        f"relation-authoring-context-stage-{stage}",
+        result.context.to_dict(),
+    )
+    proposal_ref = put(
+        f"relation-authoring-proposal-stage-{stage}",
+        result.proposal.to_dict(),
+    )
+    compilation_ref = put(
+        f"relation-authoring-compilation-stage-{stage}",
+        result.compilation.to_dict(),
+    )
+    assembly_profile_ref = put(
+        f"relation-assembly-profile-stage-{stage}",
+        result.assembly_profile.to_dict(),
+    )
+    base_assembly_receipt_ref = put(
+        f"relation-base-assembly-receipt-stage-{stage}",
+        result.base_assembly_receipt.to_dict(),
+    )
+    topology_receipt_ref = put(
+        f"relation-program-topology-receipt-stage-{stage}",
+        result.program_topology_receipt.to_dict(),
+    )
+    walking_profile_ref = None
+    walking_receipt_ref = None
+    if result.walking_surface_profile is not None:
+        walking_profile_ref = put(
+            f"walking-surface-profile-stage-{stage}",
+            result.walking_surface_profile.to_dict(),
+        )
+    if result.walking_surface_receipt is not None:
+        walking_receipt_ref = put(
+            f"walking-surface-receipt-stage-{stage}",
+            result.walking_surface_receipt.to_dict(),
+        )
+    relation_verification_base_ref = put(
+        f"relation-verification-base-receipt-stage-{stage}",
+        result.relation_verification_base_receipt.to_dict(),
+    )
+
+    question_rows = []
+    for index, item in enumerate(result.question_verifications):
+        profile_ref = put(
+            f"relation-verification-profile-stage-{stage}-{index}",
+            item.profile.to_dict(),
+        )
+        receipt_ref = put(
+            f"relation-verification-receipt-stage-{stage}-{index}",
+            item.receipt.to_dict(),
+        )
+        question_rows.append(
+            {
+                "question_ref": (
+                    f"relation-question:{item.profile.question.question_id}"
+                ),
+                "profile_ref": profile_ref.uri,
+                "profile_digest": item.profile.profile_digest,
+                "receipt_ref": receipt_ref.uri,
+                "receipt_digest": item.receipt.receipt_digest,
+                "status": item.receipt.status.value,
+            }
+        )
+
+    effective_graph_ref = put(
+        f"relation-effective-graph-stage-{stage}",
+        result.effective_graph.to_dict(),
+    )
+    promotion_ref = None
+    promotion_status = None
+    if result.promotion is not None:
+        promotion_ref = put(
+            f"relation-promotion-stage-{stage}",
+            result.promotion.to_dict(),
+        )
+        promotion_status = result.promotion.receipt.status.value
+
+    unresolved_reason_codes = []
+    for row in question_rows:
+        if row["status"] != "pass":
+            unresolved_reason_codes.append(
+                "relation-question-not-pass:"
+                + str(row["question_ref"]).split(":", 1)[-1]
+            )
+    if result.program_topology_receipt.status.value != "pass":
+        unresolved_reason_codes.append("relation-program-topology-not-pass")
+    if (
+        result.walking_surface_receipt is not None
+        and result.walking_surface_receipt.status.value != "pass"
+    ):
+        unresolved_reason_codes.append("walking-surface-continuity-not-pass")
+    if result.promotion is None:
+        unresolved_reason_codes.append("relation-promotion-withheld")
+    source_status = (
+        "PASS"
+        if result.status.value == "pass" and result.promotion is not None
+        else "FAIL"
+        if result.status.value == "fail"
+        else "BLOCKED"
+    )
+    return {
+        "schema": "P069StageRelationControlSummary@1",
+        "status": source_status,
+        "branch": branch_ref_to_dict(branch),
+        "scope_ref": scope_ref.uri,
+        "scope_digest": scope_digest,
+        "stage_subject_ref": stage_subject_ref.uri,
+        "stage_subject_digest": stage_subject_digest,
+        "inventory_ref": inventory_ref.uri,
+        "inventory_digest": result.inventory.inventory_digest,
+        "context_ref": authoring_context_ref.uri,
+        "context_digest": result.context.context_digest,
+        "proposal_ref": proposal_ref.uri,
+        "proposal_digest": result.proposal.proposal_digest,
+        "compilation_ref": compilation_ref.uri,
+        "compilation_status": result.compilation.receipt.status.value,
+        "assembly_profile_ref": assembly_profile_ref.uri,
+        "assembly_profile_digest": result.assembly_profile.profile_digest,
+        "base_assembly_receipt_ref": base_assembly_receipt_ref.uri,
+        "base_assembly_receipt_digest": (
+            result.base_assembly_receipt.receipt_digest
+        ),
+        "base_assembly_receipt_status": (
+            result.base_assembly_receipt.status.value
+        ),
+        "program_topology_receipt_ref": topology_receipt_ref.uri,
+        "program_topology_receipt_digest": (
+            result.program_topology_receipt.receipt_digest
+        ),
+        "program_topology_receipt_status": (
+            result.program_topology_receipt.status.value
+        ),
+        "walking_surface_profile_ref": (
+            None if walking_profile_ref is None else walking_profile_ref.uri
+        ),
+        "walking_surface_profile_digest": (
+            None
+            if result.walking_surface_profile is None
+            else result.walking_surface_profile.profile_digest
+        ),
+        "walking_surface_receipt_ref": (
+            None if walking_receipt_ref is None else walking_receipt_ref.uri
+        ),
+        "walking_surface_receipt_digest": (
+            None
+            if result.walking_surface_receipt is None
+            else result.walking_surface_receipt.receipt_digest
+        ),
+        "walking_surface_receipt_status": (
+            None
+            if result.walking_surface_receipt is None
+            else result.walking_surface_receipt.status.value
+        ),
+        "relation_verification_base_receipt_ref": (
+            relation_verification_base_ref.uri
+        ),
+        "relation_verification_base_receipt_digest": (
+            result.relation_verification_base_receipt.receipt_digest
+        ),
+        "relation_verification_base_receipt_status": (
+            result.relation_verification_base_receipt.status.value
+        ),
+        "question_verifications": question_rows,
+        "promotion_ref": None if promotion_ref is None else promotion_ref.uri,
+        "promotion_status": promotion_status,
+        "effective_graph_ref": effective_graph_ref.uri,
+        "effective_graph_digest": result.effective_graph.graph_digest,
+        "generic_assembly_diagnostic_only": True,
+        "unresolved_reason_codes": unresolved_reason_codes,
+        "stage_acceptance_authority": False,
+        "canonical_write_authority": False,
+    }
+
+
 def _run_hold_candidate(
     root: Path,
     *,
@@ -3324,6 +3821,100 @@ def _run_hold_candidate(
         destination=candidate_destination,
         record_kind="agent-evidence-proposal",
         payload=_agent_evidence_proposal(profile),
+    )
+    authorization_ref = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="human-authorized-rederivation",
+        payload={
+            "schema": "P069HumanAuthorizedRederivation@1",
+            "project_id": run.project_id,
+            "run_id": run.run_id,
+            "request_text": "Redrive from the canonical base through Stage 4.",
+            "stage_interpretation": (
+                "complete the fourth P069 phase, formally numbered Stage 3"
+            ),
+            "derivation_mode": "fresh-from-canonical-version-0",
+            "relationship_policy_authorized": True,
+            "unsupported_dimensions_authorized": False,
+            "evidence_ratification_authority": False,
+            "stage_acceptance_authority": False,
+            "canonical_write_authority": False,
+        },
+    )
+    datum_authorization_ref = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="human-authorized-finished-floor-datum",
+        payload={
+            "schema": "P069HumanAuthorizedFinishedFloorDatum@1",
+            "project_id": run.project_id,
+            "run_id": run.run_id,
+            "request_context": [
+                "align the main entry and front approach datum",
+                "continue detailed reconstruction under that relation",
+            ],
+            "authorized_design_relation": (
+                "portico_finished_floor == main_entry_threshold == "
+                "rotunda_finished_floor"
+            ),
+            "project_coordinate_derivation": {
+                "grade_y_m": GRADE_Y,
+                "finished_floor_y_m": profile.floor_y,
+            },
+            "design_authority": True,
+            "historical_fact_authority": False,
+            "absolute_historical_datum_ratified": False,
+            "front_step_count_ratified": False,
+            "front_step_dimensions_ratified": False,
+            "stage_acceptance_authority": False,
+            "canonical_write_authority": False,
+        },
+    )
+    front_step_conflict_ref = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="front-step-count-open-conflict",
+        payload={
+            "schema": "P069FrontStepCountOpenConflict@1",
+            "project_id": run.project_id,
+            "run_id": run.run_id,
+            "decision_id": "front-approach-step-count",
+            "epistemic_status": FRONT_STEP_EPISTEMIC_STATUS,
+            "status": FRONT_STEP_CONFLICT_STATUS,
+            "alternatives": [
+                {
+                    "count": 5,
+                    "status": "CURRENT_SOFT_CANDIDATE",
+                    "basis": (
+                        "existing project candidate; no adopted historical "
+                        "dimension authority"
+                    ),
+                    "source_refs": [],
+                },
+                {
+                    "count": 7,
+                    "status": "UNRATIFIED_EXTERNAL_CLAIM",
+                    "basis": (
+                        "archaeological source locator retained for later "
+                        "page-level evidence review"
+                    ),
+                    "source_refs": [
+                        "https://zenodo.org/records/220943/files/Full35.pdf?download=1"
+                    ],
+                },
+            ],
+            "realized_candidate": {
+                "count": FRONT_STEP_COUNT,
+                "rise_m": FRONT_STEP_RISE,
+                "tread_m": FRONT_STEP_TREAD,
+            },
+            "historical_fact_authority": False,
+            "evidence_ratification_authority": False,
+            "gate_eligible": False,
+            "stage_acceptance_authority": False,
+            "canonical_write_authority": False,
+        },
     )
 
     context = M._rebase_context(
@@ -3465,11 +4056,34 @@ def _run_hold_candidate(
             derived = {}
         structure = _measure_program_structure(current_program)
         structure_issues = _candidate_structure_issues(stage, structure)
+        soft_decisions = _candidate_soft_decisions(stage, structure)
         program_ref = repository.put_json(
             run=run,
             destination=candidate_destination,
             record_kind=f"geometry-program-stage-{stage}",
             payload=current_program.to_dict(),
+        )
+        relation_control = _persist_stage_relation_control(
+            repository,
+            run=run,
+            stage=stage,
+            current_state=current_state,
+            current_program=current_program,
+            program_ref=program_ref,
+            contract=contract,
+            evidence_ref=evidence_ref,
+            context_ref=context_ref,
+            authorization_ref=authorization_ref,
+            datum_authorization_ref=datum_authorization_ref,
+        )
+        relation_issues = tuple(
+            str(item)
+            for item in relation_control["unresolved_reason_codes"]
+        )
+        checks_pass = (
+            declaration_error is None
+            and not structure_issues
+            and relation_control["status"] == "PASS"
         )
         review_ref = repository.put_json(
             run=run,
@@ -3497,12 +4111,13 @@ def _run_hold_candidate(
                 "declaration_error": declaration_error,
                 "structure_measures": structure,
                 "structure_issues": list(structure_issues),
-                "evidence_proposal_ref": evidence_ref.uri,
-                "checks_status": (
-                    "pass"
-                    if declaration_error is None and not structure_issues
-                    else "fail"
+                "soft_decisions": soft_decisions,
+                "open_conflicts": (
+                    [] if stage < 1 else [front_step_conflict_ref.uri]
                 ),
+                "evidence_proposal_ref": evidence_ref.uri,
+                "relation_control": relation_control,
+                "checks_status": "pass" if checks_pass else "fail",
                 "disposition": "HOLD",
                 "hold_reasons": [
                     "p078-p080-successor-scope-not-closed",
@@ -3518,14 +4133,12 @@ def _run_hold_candidate(
                 "stage": stage,
                 "program_ref": program_ref,
                 "review_ref": review_ref,
-                "checks_status": (
-                    "pass"
-                    if declaration_error is None and not structure_issues
-                    else "fail"
-                ),
+                "relation_control": relation_control,
+                "soft_decisions": soft_decisions,
+                "checks_status": "pass" if checks_pass else "fail",
                 "issues": tuple(
                     [declaration_error] if declaration_error else []
-                ) + structure_issues,
+                ) + structure_issues + relation_issues,
             }
         )
         predecessor_state = current_state
@@ -3541,6 +4154,27 @@ def _run_hold_candidate(
             "run_id": run.run_id,
             "source_run_id": source_run_id,
             "raw_request_ref": raw_request.uri,
+            "human_authorization_ref": authorization_ref.uri,
+            "finished_floor_datum_authorization_ref": (
+                datum_authorization_ref.uri
+            ),
+            "front_step_conflict_ref": front_step_conflict_ref.uri,
+            "soft_candidates": {
+                "front-approach-steps-and-datum": {
+                    "epistemic_status": FRONT_STEP_EPISTEMIC_STATUS,
+                    "realized_candidate_count": FRONT_STEP_COUNT,
+                    "candidate_rise_m": FRONT_STEP_RISE,
+                    "candidate_tread_m": FRONT_STEP_TREAD,
+                    "historical_fact_authority": False,
+                    "gate_eligible": False,
+                }
+            },
+            "open_conflicts": [front_step_conflict_ref.uri],
+            "canonical_base": {
+                "version": run.base.version,
+                "state_sha256": run.base.require_digest(),
+            },
+            "derivation_mode": "fresh-from-canonical",
             "provider_profile": "local-scripted-no-external-api",
             "provider_invocation_count": len(provider.calls),
             "stages": [
@@ -3548,6 +4182,7 @@ def _run_hold_candidate(
                     "stage": item["stage"],
                     "program_ref": item["program_ref"].uri,
                     "review_ref": item["review_ref"].uri,
+                    "relation_status": item["relation_control"]["status"],
                     "checks_status": item["checks_status"],
                     "issues": list(item["issues"]),
                 }
@@ -3564,6 +4199,9 @@ def _run_hold_candidate(
         "run": run,
         "stages": stages,
         "manifest_ref": manifest_ref,
+        "authorization_ref": authorization_ref,
+        "datum_authorization_ref": datum_authorization_ref,
+        "front_step_conflict_ref": front_step_conflict_ref,
         "final_program": predecessor_program,
         "final_state": predecessor_state,
         "provider_invocations": len(provider.calls),
@@ -3589,6 +4227,103 @@ def _rhino_metric_document_setup_lines() -> tuple[str, ...]:
     )
 
 
+_PANTHEON_COORDINATE_TRANSFORM = {
+    "source_axis_order": "x-right,y-up,z-depth-positive",
+    "source_vertical_axis": "Y",
+    "rhino_axis_order": "x-right,y-depth-positive,z-up",
+    "rhino_vertical_axis": "Z",
+    "mapping": "(x,y,z)->(x,z,y)",
+}
+
+
+def _candidate_material_ledger(program):
+    """Return the complete Stage-3 component material denominator.
+
+    Boolean tools are semantic design subjects but not retained physical
+    matter.  They receive an explicit ``reference-void`` disposition instead
+    of being silently omitted or falsely coloured as stone.
+    """
+
+    from archflow.capabilities.material import MaterialIntent, MaterialLedger
+
+    refs = adoption_refs()
+    components = {
+        item.component_id for item in program.proposal.semantic_bindings
+    }
+    assignments_by_component = {
+        "aedicula-ring": "white-marble",
+        "apse": "reference-void",
+        "coffers": "reference-void",
+        "colonnade": "granite-marble-order",
+        "dome": "roman-concrete",
+        "dome-step-rings": "roof-over-concrete",
+        "exedra-ring": "reference-void",
+        "front-steps": "stone-paving",
+        "main-entry": "reference-void",
+        "niche-ring": "reference-void",
+        "oculus": "reference-void",
+        "portico": "stone-superstructure",
+        "rotunda": "roman-concrete",
+        "transition": "roman-concrete",
+    }
+    missing = tuple(sorted(components - set(assignments_by_component)))
+    orphaned = tuple(sorted(set(assignments_by_component) - components))
+    if missing or orphaned:
+        raise RuntimeError(
+            "Pantheon material denominator drifted: "
+            f"missing={missing!r}; orphaned={orphaned!r}"
+        )
+    return MaterialLedger(
+        intents=(
+            MaterialIntent(
+                material_id="granite-marble-order",
+                label=(
+                    "candidate Egyptian granite shafts with white-marble "
+                    "bases and capitals"
+                ),
+                source_refs=(refs["orders"],),
+            ),
+            MaterialIntent(
+                material_id="reference-void",
+                label=(
+                    "subtractive opening or coffer reference; explicitly "
+                    "not retained physical matter"
+                ),
+                source_refs=(refs["walls"],),
+            ),
+            MaterialIntent(
+                material_id="roman-concrete",
+                label="candidate Roman concrete structural substrate",
+                source_refs=(refs["walls"],),
+            ),
+            MaterialIntent(
+                material_id="roof-over-concrete",
+                label=(
+                    "candidate roof covering over Roman concrete; exact "
+                    "historical covering remains a recorded variant"
+                ),
+                source_refs=(refs["walls"],),
+            ),
+            MaterialIntent(
+                material_id="stone-paving",
+                label="candidate stone approach and step construction",
+                source_refs=(refs["front"],),
+            ),
+            MaterialIntent(
+                material_id="stone-superstructure",
+                label="candidate stone portico entablature and pediment",
+                source_refs=(refs["front"], refs["typology"]),
+            ),
+            MaterialIntent(
+                material_id="white-marble",
+                label="candidate white-marble aedicula order",
+                source_refs=(refs["orders"],),
+            ),
+        ),
+        assignments=tuple(sorted(assignments_by_component.items())),
+    )
+
+
 def _write_speculative_rhino_workspace(
     result: dict[str, object],
 ) -> dict[str, Path | str]:
@@ -3596,36 +4331,12 @@ def _write_speculative_rhino_workspace(
 
     import textwrap
     from archflow.adapters.cad_program import translate_to_rhino_python
-    from archflow.capabilities.material import (
-        MaterialIntent,
-        MaterialLedger,
-        ledger_coverage,
-    )
+    from archflow.capabilities.material import ledger_coverage
 
     repository = result["repository"]
     run = result["run"]
     program = result["final_program"]
-    refs = adoption_refs()
-    ledger = MaterialLedger(
-        intents=(
-            MaterialIntent(
-                material_id="grey-granite",
-                label="candidate grey granite column shafts",
-                source_refs=(refs["orders"],),
-            ),
-            MaterialIntent(
-                material_id="roman-concrete",
-                label="candidate Roman concrete drum and dome substrate",
-                source_refs=(refs["walls"],),
-            ),
-        ),
-        assignments=(
-            ("colonnade", "grey-granite"),
-            ("dome", "roman-concrete"),
-            ("rotunda", "roman-concrete"),
-            ("transition", "roman-concrete"),
-        ),
-    )
+    ledger = _candidate_material_ledger(program)
     bindings = [
         {
             "binding_id": item.binding_id,
@@ -3641,6 +4352,7 @@ def _write_speculative_rhino_workspace(
         program,
         material_by_component=material_map,
         material_colors=colors,
+        provenance=_PANTHEON_COORDINATE_TRANSFORM,
     )
 
     workspace = (
@@ -3682,7 +4394,9 @@ def _write_speculative_rhino_workspace(
             f"    _saved = Rhino.RhinoDoc.ActiveDoc.WriteFile({escaped['model']!r}, _opts)",
             "    _status = {'schema': 'P069RhinoCandidateRunStatus@1', "
             "'status': 'ok' if _saved else 'save_failed', "
-            "'save_ok': bool(_saved), 'model_unit_system': 'Meters'}",
+            "'save_ok': bool(_saved), 'model_unit_system': 'Meters', "
+            "'source_vertical_axis': 'Y', 'rhino_vertical_axis': 'Z', "
+            "'coordinate_transform': '(x,y,z)->(x,z,y)'}",
             "except Exception as _exc:",
             "    _status = {'schema': 'P069RhinoCandidateRunStatus@1', "
             "'status': 'error', 'error_type': type(_exc).__name__, "
@@ -3690,7 +4404,7 @@ def _write_speculative_rhino_workspace(
             "finally:",
             f"    with open({escaped['status']!r}, 'w') as _f:",
             "        json.dump(_status, _f, sort_keys=True)",
-            "    Rhino.RhinoApp.Exit()",
+            "    Rhino.RhinoApp.Exit(False)",
             "",
         )
     )
@@ -3711,6 +4425,7 @@ def _write_speculative_rhino_workspace(
             "run_id": run.run_id,
             "program_digest": program.program_digest,
             "expected_model_unit_system": "Meters",
+            "coordinate_transform": dict(_PANTHEON_COORDINATE_TRANSFORM),
             "ledger": ledger.to_dict(),
             "coverage": coverage,
             "rhino_script_relative_path": wrapper_path.relative_to(
@@ -3747,11 +4462,7 @@ def _write_speculative_detail_rhino_workspace(
 
     import textwrap
     from archflow.adapters.cad_program import translate_to_rhino_python
-    from archflow.capabilities.material import (
-        MaterialIntent,
-        MaterialLedger,
-        ledger_coverage,
-    )
+    from archflow.capabilities.material import ledger_coverage
 
     repository = result["repository"]
     run = result["run"]
@@ -3759,27 +4470,7 @@ def _write_speculative_detail_rhino_workspace(
     profile = result["runner_profile"]
     if not isinstance(profile, PantheonRunnerProfile):
         raise TypeError("result runner_profile must be a PantheonRunnerProfile")
-    refs = adoption_refs(profile.project_id)
-    ledger = MaterialLedger(
-        intents=(
-            MaterialIntent(
-                material_id="grey-granite",
-                label="candidate grey granite column shafts",
-                source_refs=(refs["orders"],),
-            ),
-            MaterialIntent(
-                material_id="roman-concrete",
-                label="candidate Roman concrete drum and dome substrate",
-                source_refs=(refs["walls"],),
-            ),
-        ),
-        assignments=(
-            ("colonnade", "grey-granite"),
-            ("dome", "roman-concrete"),
-            ("rotunda", "roman-concrete"),
-            ("transition", "roman-concrete"),
-        ),
-    )
+    ledger = _candidate_material_ledger(program)
     bindings = [
         {
             "binding_id": item.binding_id,
@@ -3795,11 +4486,14 @@ def _write_speculative_detail_rhino_workspace(
         material_colors={
             item.material_id: item.color for item in ledger.intents
         },
+        provenance=_PANTHEON_COORDINATE_TRANSFORM,
     )
     plan = _detail_enrichment_plan(
         program,
         external_asset=external_asset,
         profile=profile,
+        datum_authorization_ref=result["datum_authorization_ref"].uri,
+        front_step_conflict_ref=result["front_step_conflict_ref"].uri,
     )
     plan.update({"project_id": run.project_id, "run_id": run.run_id})
     plan_ref = repository.put_json(
@@ -3851,14 +4545,14 @@ def _write_speculative_detail_rhino_workspace(
             *_rhino_metric_document_setup_lines(),
             textwrap.indent(translation.script, "    "),
             textwrap.indent(overlay, "    "),
-            f"    with open({escaped['measures']!r}, 'w', encoding='utf-8') as _f:",
+            f"    with open({escaped['measures']!r}, 'w') as _f:",
             "        json.dump(measures, _f, sort_keys=True)",
-            f"    with open({escaped['semantics']!r}, 'w', encoding='utf-8') as _f:",
+            f"    with open({escaped['semantics']!r}, 'w') as _f:",
             "        json.dump({'objects': _semantics, 'blocks': _blocks}, "
             "_f, sort_keys=True)",
-            f"    with open({escaped['detail']!r}, 'w', encoding='utf-8') as _f:",
+            f"    with open({escaped['detail']!r}, 'w') as _f:",
             "        json.dump(_detail_measures, _f, sort_keys=True, "
-            "ensure_ascii=False)",
+            "ensure_ascii=True)",
             "    _opts = Rhino.FileIO.FileWriteOptions()",
             "    _opts.SuppressDialogBoxes = True",
             "    _opts.SuppressAllInput = True",
@@ -3875,10 +4569,10 @@ def _write_speculative_detail_rhino_workspace(
             "'status': 'error', 'error_type': type(_exc).__name__, "
             "'error': str(_exc), 'traceback': traceback.format_exc()} ",
             "finally:",
-            f"    with open({escaped['status']!r}, 'w', encoding='utf-8') as _f:",
+            f"    with open({escaped['status']!r}, 'w') as _f:",
             "        json.dump(_status, _f, sort_keys=True, "
-            "ensure_ascii=False)",
-            "    Rhino.RhinoApp.Exit()",
+            "ensure_ascii=True)",
+            "    Rhino.RhinoApp.Exit(False)",
             "",
         )
     )
@@ -3898,6 +4592,7 @@ def _write_speculative_detail_rhino_workspace(
             "run_id": run.run_id,
             "program_digest": program.program_digest,
             "expected_model_unit_system": "Meters",
+            "coordinate_transform": dict(_PANTHEON_COORDINATE_TRANSFORM),
             "detail_plan_ref": plan_ref.uri,
             "detail_branch_identity": plan["branch_scope"]["branch_identity"],
             "external_asset_record_ref": (
@@ -3935,6 +4630,53 @@ def _write_speculative_detail_rhino_workspace(
     }
 
 
+def _candidate_expected_object_bounds(program) -> dict[str, dict]:
+    """Use the generic oracle, retaining conservative boolean envelopes locally."""
+
+    from types import SimpleNamespace
+    from archflow.adapters.cad_program import (
+        CadTranslationError,
+        expected_object_bounds,
+    )
+
+    try:
+        return expected_object_bounds(program)
+    except CadTranslationError:
+        boolean_ops = {
+            item.op_id: item
+            for item in program.proposal.operations
+            if item.kind.value == "boolean_difference"
+        }
+        filtered_proposal = replace(
+            program.proposal,
+            operations=tuple(
+                item
+                for item in program.proposal.operations
+                if item.op_id not in boolean_ops
+            ),
+        )
+        filtered = SimpleNamespace(
+            proposal=filtered_proposal,
+            operation_order=tuple(
+                op_id
+                for op_id in program.operation_order
+                if op_id not in boolean_ops
+            ),
+        )
+        bounds = expected_object_bounds(filtered)
+        for op_id in program.operation_order:
+            operation = boolean_ops.get(op_id)
+            if operation is None:
+                continue
+            parameters = _operation_parameters(operation)
+            base = sorted(operation.input_object_ids)[
+                int(parameters.get("base_index", 0))
+            ]
+            output = operation.output_object_ids[0]
+            bounds[output] = json.loads(json.dumps(bounds[base]))
+        return bounds
+
+
 def _candidate_cad_verification_summary(
     program,
     *,
@@ -3945,13 +4687,10 @@ def _candidate_cad_verification_summary(
 ) -> dict[str, object]:
     """Compare one external CAD realization at strict and contract scales."""
 
-    from archflow.adapters.cad_program import (
-        expected_object_bounds,
-        expected_object_semantics,
-    )
+    from archflow.adapters.cad_program import expected_object_semantics
     from run_cad_equivalence import compare, compare_semantics
 
-    expected = expected_object_bounds(program)
+    expected = _candidate_expected_object_bounds(program)
     expected_semantics = expected_object_semantics(program)
     strict_mismatches, max_deviation = compare(
         expected,
@@ -4013,11 +4752,148 @@ def _candidate_cad_verification_summary(
     }
 
 
+def _candidate_cad_datum_readback(
+    measures: Mapping[str, Mapping[str, object]],
+    *,
+    tolerance: float = 0.001,
+) -> dict[str, object]:
+    """Check the realized Rhino approach/threshold chain in source axes."""
+
+    issues: list[str] = []
+
+    def bounds(object_id: str) -> tuple[tuple[float, ...], tuple[float, ...]] | None:
+        raw = measures.get(object_id)
+        if not isinstance(raw, Mapping):
+            issues.append(f"missing realized datum object: {object_id}")
+            return None
+        minimum = raw.get("bbox_min")
+        maximum = raw.get("bbox_max")
+        if (
+            not isinstance(minimum, list)
+            or not isinstance(maximum, list)
+            or len(minimum) != 3
+            or len(maximum) != 3
+        ):
+            issues.append(f"invalid realized bbox: {object_id}")
+            return None
+        return (
+            tuple(float(value) for value in minimum),
+            tuple(float(value) for value in maximum),
+        )
+
+    def close(actual: float, expected: float, label: str) -> None:
+        if abs(actual - expected) > tolerance:
+            issues.append(
+                f"{label}: expected {expected:.6f}, got {actual:.6f}"
+            )
+
+    foundation = bounds("plinth-object")
+    floor_ids = (
+        "rotunda-floor-object",
+        "transition-floor-object",
+        "portico-floor-object",
+    )
+    floors = {object_id: bounds(object_id) for object_id in floor_ids}
+    if foundation is not None:
+        close(foundation[0][1], FOUNDATION_BASE_Y, "foundation bottom")
+        close(foundation[1][1], GRADE_Y, "foundation top")
+    for object_id, span in floors.items():
+        if span is None:
+            continue
+        close(span[0][1], GRADE_Y, f"{object_id} bottom")
+        close(span[1][1], FLOOR_Y, f"{object_id} top")
+        if foundation is not None:
+            close(
+                span[0][1],
+                foundation[1][1],
+                f"{object_id} foundation contact",
+            )
+
+    step_ids = tuple(
+        f"front-step-{index}-object" for index in range(FRONT_STEP_COUNT)
+    )
+    steps = {object_id: bounds(object_id) for object_id in step_ids}
+    for index, object_id in enumerate(step_ids):
+        span = steps[object_id]
+        if span is None:
+            continue
+        close(span[0][1], GRADE_Y, f"{object_id} bottom")
+        close(
+            span[1][1],
+            GRADE_Y + FRONT_STEP_RISE * (index + 1),
+            f"{object_id} top",
+        )
+        close(
+            span[0][2],
+            FRONT_STEP_TREAD * index,
+            f"{object_id} approach start",
+        )
+        close(
+            span[1][2],
+            FRONT_STEP_TREAD * (index + 1),
+            f"{object_id} approach end",
+        )
+
+    portico = floors["portico-floor-object"]
+    transition = floors["transition-floor-object"]
+    rotunda = floors["rotunda-floor-object"]
+    last_step = steps[step_ids[-1]]
+    if last_step is not None and portico is not None:
+        close(last_step[1][1], portico[1][1], "step-to-portico top datum")
+        close(last_step[1][2], portico[0][2], "step-to-portico plan contact")
+    if portico is not None and transition is not None:
+        close(portico[1][1], transition[1][1], "portico-transition top datum")
+        close(portico[1][2], transition[0][2], "portico-transition plan contact")
+    if transition is not None and rotunda is not None:
+        close(transition[1][1], rotunda[1][1], "transition-rotunda top datum")
+        close(transition[1][2], rotunda[0][2], "transition-rotunda plan contact")
+
+    shaft_ids = sorted(
+        object_id
+        for object_id in measures
+        if object_id.startswith("column-shaft-r")
+    )
+    if len(shaft_ids) != 16:
+        issues.append(
+            f"realized column shaft denominator: expected 16, got {len(shaft_ids)}"
+        )
+    for object_id in shaft_ids:
+        span = bounds(object_id)
+        if span is not None:
+            close(span[0][1], FLOOR_Y, f"{object_id} base datum")
+    transition_block = bounds("transition-block-object")
+    if transition_block is not None:
+        close(
+            transition_block[0][1],
+            FLOOR_Y,
+            "transition superstructure base datum",
+        )
+
+    return {
+        "schema": "P069CandidateCadDatumReadback@1",
+        "status": "PASS" if not issues else "FAIL",
+        "passed": not issues,
+        "tolerance_m": tolerance,
+        "source_axis_order": "x-right,y-up,z-approach-depth",
+        "finished_floor_datum_m": FLOOR_Y,
+        "front_step_epistemic_status": FRONT_STEP_EPISTEMIC_STATUS,
+        "front_step_count_historically_ratified": False,
+        "checked_floor_object_ids": list(floor_ids),
+        "checked_step_object_ids": list(step_ids),
+        "checked_shaft_count": len(shaft_ids),
+        "issues": issues,
+        "stage_acceptance_authority": False,
+        "canonical_write_authority": False,
+    }
+
+
 def _headless_three_dm_gate(
     model_path: Path,
     status: Mapping[str, object],
     *,
     expected_object_count: int | None = None,
+    axis_witness: Mapping[str, object] | None = None,
+    named_vertical_witnesses: Mapping[str, float] | None = None,
 ) -> dict[str, object]:
     """Verify saved model identity and metre units without starting Rhino."""
 
@@ -4032,6 +4908,25 @@ def _headless_three_dm_gate(
         )
     if status.get("model_unit_system") != "Meters":
         issues.append("Rhino run status did not attest Meters")
+    for field, expected in (
+        (
+            "source_vertical_axis",
+            _PANTHEON_COORDINATE_TRANSFORM["source_vertical_axis"],
+        ),
+        (
+            "rhino_vertical_axis",
+            _PANTHEON_COORDINATE_TRANSFORM["rhino_vertical_axis"],
+        ),
+        (
+            "coordinate_transform",
+            _PANTHEON_COORDINATE_TRANSFORM["mapping"],
+        ),
+    ):
+        if status.get(field) != expected:
+            issues.append(
+                f"Rhino run status coordinate field {field} diverged: "
+                f"expected {expected!r}, got {status.get(field)!r}"
+            )
     if (
         expected_object_count is not None
         and inspection.object_count != expected_object_count
@@ -4039,6 +4934,123 @@ def _headless_three_dm_gate(
         issues.append(
             "saved 3dm object count diverged: "
             f"expected {expected_object_count}, got {inspection.object_count}"
+        )
+    axis_witness_result = None
+    if axis_witness is not None:
+        witness_name = axis_witness.get("name")
+        expected_source_bbox = axis_witness.get("source_bbox")
+        if (
+            not isinstance(witness_name, str)
+            or not isinstance(expected_source_bbox, Mapping)
+            or not isinstance(expected_source_bbox.get("bbox_min"), list)
+            or not isinstance(expected_source_bbox.get("bbox_max"), list)
+        ):
+            raise TypeError("axis_witness must carry name and source bbox")
+        named = [
+            item
+            for item in inspection.named_object_bboxes
+            if item.get("name") == witness_name
+        ]
+        expected_min = [
+            float(expected_source_bbox["bbox_min"][0]),
+            float(expected_source_bbox["bbox_min"][2]),
+            float(expected_source_bbox["bbox_min"][1]),
+        ]
+        expected_max = [
+            float(expected_source_bbox["bbox_max"][0]),
+            float(expected_source_bbox["bbox_max"][2]),
+            float(expected_source_bbox["bbox_max"][1]),
+        ]
+        # Rhino's normal two-profile loft can overshoot a tapered circular
+        # endpoint by about 15 mm even though the axis endpoints remain exact.
+        # This witness tests the metre Y-up -> Z-up mapping, not strict surface
+        # equivalence (which is evaluated separately).  A 20 mm transverse
+        # allowance accepts that measured loft behaviour while an axis swap
+        # still misses by roughly the full 11.9 m shaft length.
+        tolerance = 0.02
+        witness_issues = []
+        actual_bbox = None
+        if len(named) != 1:
+            witness_issues.append(
+                "saved 3dm axis witness is missing or ambiguous: "
+                + witness_name
+            )
+        else:
+            actual_bbox = named[0].get("bbox")
+            if not isinstance(actual_bbox, Mapping):
+                witness_issues.append("saved 3dm axis witness bbox is absent")
+            else:
+                actual_min = actual_bbox.get("min")
+                actual_max = actual_bbox.get("max")
+                if (
+                    not isinstance(actual_min, list)
+                    or not isinstance(actual_max, list)
+                    or len(actual_min) != 3
+                    or len(actual_max) != 3
+                    or any(
+                        abs(float(actual) - expected) > tolerance
+                        for actual, expected in zip(
+                            (*actual_min, *actual_max),
+                            (*expected_min, *expected_max),
+                        )
+                    )
+                ):
+                    witness_issues.append(
+                        "saved 3dm axis witness does not match the mapped "
+                        "program bbox"
+                    )
+        issues.extend(witness_issues)
+        axis_witness_result = {
+            "name": witness_name,
+            "expected_rhino_bbox": {
+                "min": expected_min,
+                "max": expected_max,
+            },
+            "actual_rhino_bbox": actual_bbox,
+            "tolerance_m": tolerance,
+            "passed": not witness_issues,
+        }
+    vertical_witness_results: list[dict[str, object]] = []
+    for witness_name, expected_minimum in sorted(
+        (named_vertical_witnesses or {}).items()
+    ):
+        named = [
+            item
+            for item in inspection.named_object_bboxes
+            if item.get("name") == witness_name
+        ]
+        witness_issues: list[str] = []
+        actual_minimum = None
+        if len(named) != 1:
+            witness_issues.append(
+                "saved 3dm vertical witness is missing or ambiguous: "
+                + witness_name
+            )
+        else:
+            bbox = named[0].get("bbox")
+            minimum = bbox.get("min") if isinstance(bbox, Mapping) else None
+            if not isinstance(minimum, list) or len(minimum) != 3:
+                witness_issues.append(
+                    "saved 3dm vertical witness bbox is absent: "
+                    + witness_name
+                )
+            else:
+                actual_minimum = float(minimum[2])
+                if abs(actual_minimum - float(expected_minimum)) > 0.001:
+                    witness_issues.append(
+                        "saved 3dm vertical witness datum diverged: "
+                        f"{witness_name} expected {float(expected_minimum):.6f}, "
+                        f"got {actual_minimum:.6f}"
+                    )
+        issues.extend(witness_issues)
+        vertical_witness_results.append(
+            {
+                "name": witness_name,
+                "expected_minimum_z_m": float(expected_minimum),
+                "actual_minimum_z_m": actual_minimum,
+                "tolerance_m": 0.001,
+                "passed": not witness_issues,
+            }
         )
     return {
         "schema": "P069HeadlessThreeDmGate@1",
@@ -4053,6 +5065,9 @@ def _headless_three_dm_gate(
         "instance_definition_count": len(inspection.instance_definitions),
         "instance_reference_count": len(inspection.instance_references),
         "aggregate_bbox": inspection.aggregate_bbox,
+        "coordinate_transform": dict(_PANTHEON_COORDINATE_TRANSFORM),
+        "axis_witness": axis_witness_result,
+        "named_vertical_witnesses": vertical_witness_results,
         "issues": issues,
         "passed": not issues,
         "stage_acceptance_authority": False,

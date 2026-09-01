@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import unittest
 
@@ -10,6 +11,7 @@ from archflow.capabilities.programming import build_programming_snapshot
 from archflow.compilers.program import (
     ProgramAssumptionProposal,
     ProgramCompilationError,
+    ProgramMetricApplicabilityBinding,
     ProgramNodeProposal,
     ProgramProposalBundle,
     ProgramRangeProposal,
@@ -34,6 +36,9 @@ from archflow.state import (
     BriefSlot,
     DesignProgram,
     FactEpistemicStatus,
+    ObligationStatus,
+    ProgramMetricApplicability,
+    ProgramMetricApplicabilityDecision,
     ProgramMetricKind,
     ProgramNodeKind,
     ProgramRelationshipKind,
@@ -203,6 +208,273 @@ class ProgramCompilerTests(unittest.TestCase):
                 canonical = getattr(canonical_program, name)
                 self.assertIs(canonical, getattr(legacy_program, name))
                 self.assertIs(canonical, getattr(compilers_api, name))
+
+    def test_non_building_metrics_can_be_explicitly_not_applicable(self) -> None:
+        project_id = "case-sectional-episode"
+        run_id = "program-001"
+        request_ref = _request_ref(project_id)
+        decision_refs = tuple(
+            (
+                metric,
+                f"project://{project_id}/runs/{run_id}/records/"
+                f"metric-{metric.value}.json",
+            )
+            for metric in ProgramMetricKind
+        )
+        outside_run_ref = (
+            f"project://{project_id}/runs/program-002/records/"
+            "metric-net-area.json"
+        )
+        base = _base(project_id, "9")
+        brief = compile_design_brief(
+            project_id=project_id,
+            run_id=run_id,
+            base=base,
+            raw_request_ref=request_ref,
+            observations=(
+                BriefObservation(
+                    observation_id="sectional-episode",
+                    slot=BriefSlot.USE,
+                    kind=BriefClaimKind.USER_FACT,
+                    key="requested-use",
+                    value="a non-building sectional spatial episode",
+                    epistemic_status=FactEpistemicStatus.DECLARED,
+                    authority_id="authority.user",
+                    source_refs=(
+                        request_ref,
+                        *(ref for _, ref in decision_refs),
+                        outside_run_ref,
+                    ),
+                    resolves_slot=True,
+                ),
+                BriefObservation(
+                    observation_id="representation-scale",
+                    slot=BriefSlot.SIZE,
+                    kind=BriefClaimKind.USER_FACT,
+                    key="representation-scale",
+                    value="one quarter inch equals one foot",
+                    epistemic_status=FactEpistemicStatus.DECLARED,
+                    authority_id="authority.user",
+                    source_refs=(request_ref,),
+                    resolves_slot=True,
+                ),
+            ),
+        ).brief
+        decisions = tuple(
+            ProgramMetricApplicabilityBinding(
+                decision=ProgramMetricApplicabilityDecision(
+                    decision_id=f"waive-{metric.value}",
+                    project_id=project_id,
+                    run_id=run_id,
+                    base=base,
+                    metric=metric,
+                    applicability=(
+                        ProgramMetricApplicability.NOT_APPLICABLE
+                    ),
+                    rationale=(
+                        "The deliverable is a sectional episode, not a "
+                        "building program measured by this metric."
+                    ),
+                    authority_id="authority.user",
+                    source_refs=(request_ref,),
+                ),
+                decision_ref=decision_ref,
+            )
+            for metric, decision_ref in decision_refs
+        )
+        function = ProgramNodeProposal(
+            node_id="trace-event",
+            kind=ProgramNodeKind.FUNCTION,
+            label="trace one sectional event",
+            epistemic_status=FactEpistemicStatus.HYPOTHESIS,
+            source_refs=(request_ref,),
+            assumption_ids=("sectional-event-function",),
+        )
+        activity = ProgramNodeProposal(
+            node_id="move-through-section",
+            kind=ProgramNodeKind.ACTIVITY,
+            label="move through the sectional event",
+            epistemic_status=FactEpistemicStatus.HYPOTHESIS,
+            source_refs=(request_ref,),
+            assumption_ids=("sectional-event-function",),
+        )
+        assumption = ProgramAssumptionProposal(
+            assumption_id="sectional-event-function",
+            statement=(
+                "Test the declared sectional episode as a function rather "
+                "than a building use."
+            ),
+            source_refs=(request_ref,),
+        )
+        result = compile_design_program(
+            brief=brief,
+            proposals=ProgramProposalBundle(
+                assumptions=(assumption,),
+                nodes=(function, activity),
+                relationships=(
+                    ProgramRelationshipProposal(
+                        relationship_id="event-to-event",
+                        kind=ProgramRelationshipKind.CIRCULATION,
+                        source_node_id=function.node_id,
+                        target_node_id=activity.node_id,
+                        strength=ProgramRelationshipStrength.REQUIRED,
+                        directed=True,
+                        epistemic_status=FactEpistemicStatus.HYPOTHESIS,
+                        source_refs=(request_ref,),
+                        assumption_ids=(assumption.assumption_id,),
+                    ),
+                ),
+                metric_applicability=decisions,
+            ),
+        )
+
+        waived = {
+            item.subject_refs[0]: item
+            for item in result.program.obligations
+            if item.status is ObligationStatus.WAIVED
+        }
+        self.assertEqual(
+            set(waived),
+            {
+                f"program-metric:{metric.value}"
+                for metric in ProgramMetricKind
+            },
+        )
+        self.assertTrue(
+            all(
+                item.source_ref == item.validator_ref
+                for item in waived.values()
+            )
+        )
+        self.assertEqual(
+            {item.source_ref for item in waived.values()},
+            {decision_ref for _, decision_ref in decision_refs},
+        )
+        self.assertTrue(
+            {decision_ref for _, decision_ref in decision_refs}
+            <= set(result.program.evidence_refs)
+        )
+        self.assertEqual(result.program.ranges, ())
+        self.assertEqual(result.receipt.open_obligation_ids, ())
+        self.assertEqual(
+            {
+                value
+                for value in result.receipt.proposal_ids
+                if value.startswith("metric-applicability:")
+            },
+            {
+                f"metric-applicability:{item.decision.decision_id}"
+                for item in decisions
+            },
+        )
+        self.assertEqual(
+            DesignProgram.from_dict(result.program.to_dict()),
+            result.program,
+        )
+        self.assertFalse(
+            decisions[0].decision.to_dict()["hard_gate_waiver_authority"]
+        )
+        self.assertEqual(
+            ProgramMetricApplicabilityDecision.from_dict(
+                decisions[0].decision.to_dict()
+            ),
+            decisions[0].decision,
+        )
+
+        contradictory_range = ProgramRangeProposal(
+            range_id="invented-net-area",
+            metric=ProgramMetricKind.NET_AREA,
+            applies_to_node_id=function.node_id,
+            minimum=10.0,
+            maximum=20.0,
+            unit="square_metres",
+            scenario_id=None,
+            epistemic_status=FactEpistemicStatus.HYPOTHESIS,
+            source_refs=(request_ref,),
+            assumption_ids=("unsupported-area",),
+        )
+        with self.assertRaisesRegex(
+            ProgramCompilationError,
+            "not-applicable metric",
+        ):
+            compile_design_program(
+                brief=brief,
+                proposals=ProgramProposalBundle(
+                    assumptions=(
+                        assumption,
+                        ProgramAssumptionProposal(
+                            assumption_id="unsupported-area",
+                            statement="Test a deliberately conflicting area.",
+                            source_refs=(request_ref,),
+                        ),
+                    ),
+                    nodes=(function,),
+                    ranges=(contradictory_range,),
+                    metric_applicability=decisions,
+                ),
+            )
+
+        valid = decisions[0]
+        invalid_cases = (
+            (
+                "not exact-base",
+                replace(
+                    valid,
+                    decision=replace(
+                        valid.decision,
+                        base=ProjectVersionRef(
+                            project_id=project_id,
+                            version=1,
+                            state_sha256="8" * 64,
+                        ),
+                    ),
+                ),
+            ),
+            (
+                "not exact-base",
+                replace(
+                    valid,
+                    decision=replace(valid.decision, run_id="program-002"),
+                ),
+            ),
+            (
+                "absent from the exact-base brief",
+                replace(
+                    valid,
+                    decision_ref=(
+                        f"project://{project_id}/runs/{run_id}/records/"
+                        "missing-metric.json"
+                    ),
+                ),
+            ),
+            (
+                "outside the run",
+                replace(valid, decision_ref=outside_run_ref),
+            ),
+            (
+                "source is absent from the exact-base brief",
+                replace(
+                    valid,
+                    decision=replace(
+                        valid.decision,
+                        source_refs=(
+                            f"project://{project_id}/input/unbound.json",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        for message, invalid in invalid_cases:
+            with self.subTest(message=message), self.assertRaisesRegex(
+                ProgramCompilationError,
+                message,
+            ):
+                compile_design_program(
+                    brief=brief,
+                    proposals=ProgramProposalBundle(
+                        metric_applicability=(invalid,),
+                    ),
+                )
 
     def test_reference_program_preserves_schema_digests_and_behavior(self) -> None:
         result = compile_design_program(
