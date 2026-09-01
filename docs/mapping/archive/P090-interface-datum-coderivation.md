@@ -66,3 +66,9 @@ the proposal parser that must accept the new fields lives in
   the kernel.
 - Stop before weakening write-side exactness anywhere.
 - Stop if display-level mitigation would alter recorded geometry.
+
+
+## Completion
+
+- Completed: 2026-09-01
+- Evidence: Kernel: InterfaceDatum/DatumBinding/verify_datum_directions + compile-time resolution + CompiledGeometryProgram@3 with tolerant @2 reload; authored proposal contract untouched (frozen digest e9a07293 unchanged); riser-series test propagates one rise change to exactly its dependency closure. Villa migration: reconstruction-016 model sha 2f1b456e614b60f97dc810be3f3df415c9ded84fb6addb84e112b7b95019260b, receipt project://villa-rotonda-reconstruction/runs/reconstruction-016/branches/as-built-current-massing-control-v5/records/stage-5-datum-migration-receipt-637d45aa...json with @4 inspection record; authoritative both-inside grid scan: ZERO unwaived interpenetration families (baseline 36), 6 waived families owned by handoff item 7, 2 declared engagements (spiral sockets 19.5mm, wing foundation seats 8.3mm); stairs rebuilt as four solid masses from co-derived datums (rise=landing_top/23, going=(toe-passage_face)/22) with adopted-clearance vault recesses; embed constants in run-016 authoring: 0; mid-band rays hit continuous solid grade-to-surface

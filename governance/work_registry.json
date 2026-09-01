@@ -14139,8 +14139,8 @@
     {
       "id": "P090",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Make contact between dependent components correct by construction: hosts publish named interface datums as first-class geometry-program values, dependent boundaries reference the same value node along SUPPORT/HOST relation edges, the embed-overlap convention retires, and verification becomes a derivation-graph check backed by a Brep regression at model tolerance.",
       "depends_on": [
         "P047",
@@ -14182,16 +14182,15 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P090-interface-datum-coderivation.md",
+      "card": "docs/mapping/archive/P090-interface-datum-coderivation.md",
       "on_complete": {},
-      "actor": "claude",
       "verification_receipt": {
         "schema": "ArchFlowWorkVerification@1",
         "item_id": "P090",
         "actor": "claude",
-        "verified_at": "2026-09-01T18:34:01.670690+00:00",
+        "verified_at": "2026-09-01T19:44:13.105394+00:00",
         "contract_sha256": "af1e189fd35a6534b437040d42a0fe92e6144b8308467f65f4e11fbc4d861a13",
-        "scope_sha256": "992b1b70b98849d71b9e5649092af65f05ad5b7815023d1da81630fa8d76186b",
+        "scope_sha256": "78f22666603727c4a1c225855ed251f6c78162f42548f46e4eed2ae629909ab9",
         "commands": [
           {
             "argv": [
@@ -14202,9 +14201,9 @@
             ],
             "returncode": 0,
             "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "stderr_sha256": "75f04ee1c84675d80745dbb820732d3a0ade13b7672ee0b8ead275eb6127f419",
+            "stderr_sha256": "b6518f574bb58a93ffd34e105a728181415aded27c52ad61b484d52875b20189",
             "stdout_tail": "",
-            "stderr_tail": "................\n----------------------------------------------------------------------\nRan 16 tests in 0.054s\n\nOK\n"
+            "stderr_tail": "................\n----------------------------------------------------------------------\nRan 16 tests in 0.051s\n\nOK\n"
           },
           {
             "argv": [
@@ -14212,13 +14211,17 @@
               "tools/archcheck.py"
             ],
             "returncode": 0,
-            "stdout_sha256": "fe8159fb3cc399624db2a897c39dea02d655ebb489cfe3bb7b7e5e21d6b409e4",
+            "stdout_sha256": "a8b8950fe4deec4a1e69e95ed38dd284fd22cbc0e3a76f3d7f51df5a8bb54326",
             "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "stdout_tail": "ARCHITECTURE PASS (290 files, 1.762s)\n",
+            "stdout_tail": "ARCHITECTURE PASS (290 files, 1.684s)\n",
             "stderr_tail": ""
           }
         ]
-      }
+      },
+      "completed_on": "2026-09-01",
+      "evidence": [
+        "Kernel: InterfaceDatum/DatumBinding/verify_datum_directions + compile-time resolution + CompiledGeometryProgram@3 with tolerant @2 reload; authored proposal contract untouched (frozen digest e9a07293 unchanged); riser-series test propagates one rise change to exactly its dependency closure. Villa migration: reconstruction-016 model sha 2f1b456e614b60f97dc810be3f3df415c9ded84fb6addb84e112b7b95019260b, receipt project://villa-rotonda-reconstruction/runs/reconstruction-016/branches/as-built-current-massing-control-v5/records/stage-5-datum-migration-receipt-637d45aa...json with @4 inspection record; authoritative both-inside grid scan: ZERO unwaived interpenetration families (baseline 36), 6 waived families owned by handoff item 7, 2 declared engagements (spiral sockets 19.5mm, wing foundation seats 8.3mm); stairs rebuilt as four solid masses from co-derived datums (rise=landing_top/23, going=(toe-passage_face)/22) with adopted-clearance vault recesses; embed constants in run-016 authoring: 0; mid-band rays hit continuous solid grade-to-surface"
+      ]
     },
     {
       "id": "P091",
