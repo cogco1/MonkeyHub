@@ -867,7 +867,7 @@ class _Policy:
 
 
 class HierarchicalSearchRequestCompilerTests(unittest.TestCase):
-    def test_current_governance_replays_exact_stage_baseline(self):
+    def test_current_governance_replays_exact_branch_json_stage_baseline(self):
         context, _ = _context(
             phase=DesignPhase.PROGRAMMING.value,
             current_baseline=True,
@@ -897,21 +897,65 @@ class HierarchicalSearchRequestCompilerTests(unittest.TestCase):
             exact_record_ref(governance.baseline_coverage_record_ref),
             request.evidence_refs,
         )
+        governance_refs = (
+            governance.profile_record_ref,
+            *(item.record_ref for item in governance.closure_checks),
+            governance.closure_record_ref,
+            governance.convergence_record_ref,
+            governance.baseline_sources_record_ref,
+            governance.stage_subject_inventory_record_ref,
+            governance.baseline_coverage_record_ref,
+        )
+        expected_prefix = (
+            f"runs/{context.state.branch.run.run_id}/branches/"
+            f"{context.state.branch.branch_id}/records/"
+        )
+        for ref in governance_refs:
+            assert isinstance(ref, ProjectRecordRef)
+            self.assertTrue(ref.relative_path.startswith(expected_prefix))
+            self.assertEqual(ref.media_type, "application/json")
+            self.assertIn(exact_record_ref(ref), request.evidence_refs)
         self.assertEqual(
             SearchGovernanceEvidence.from_dict(governance.to_dict()),
             governance,
         )
 
-    def test_current_governance_rejects_run_level_stage_record(self):
+    def test_current_governance_rejects_run_level_stage_records(self):
         context, _ = _context(
             phase=DesignPhase.PROGRAMMING.value,
             current_baseline=True,
         )
-        run_level = _record(
-            context.state.branch.run,
-            "stage-baseline-sources",
-            "7",
+        governance = context.governance
+        fields = (
+            "profile_record_ref",
+            "closure_record_ref",
+            "convergence_record_ref",
+            "baseline_sources_record_ref",
+            "stage_subject_inventory_record_ref",
+            "baseline_coverage_record_ref",
         )
+        for index, field in enumerate(fields):
+            with self.subTest(field=field), self.assertRaisesRegex(
+                HierarchicalSearchProposalError,
+                "requested branch",
+            ):
+                compile_search_policy_request(
+                    replace(
+                        context,
+                        governance=replace(
+                            governance,
+                            **{
+                                field: _record(
+                                    context.state.branch.run,
+                                    field,
+                                    str(index + 1),
+                                )
+                            },
+                        ),
+                    )
+                )
+
+        retained = governance.closure_checks[0]
         with self.assertRaisesRegex(
             HierarchicalSearchProposalError,
             "requested branch",
@@ -920,8 +964,101 @@ class HierarchicalSearchRequestCompilerTests(unittest.TestCase):
                 replace(
                     context,
                     governance=replace(
-                        context.governance,
-                        baseline_sources_record_ref=run_level,
+                        governance,
+                        closure_checks=(
+                            replace(
+                                retained,
+                                record_ref=_record(
+                                    context.state.branch.run,
+                                    "closure-check",
+                                    "7",
+                                ),
+                            ),
+                        ),
+                    ),
+                )
+            )
+
+    def test_current_governance_rejects_cross_branch_and_cross_run_records(self):
+        context, _ = _context(
+            phase=DesignPhase.PROGRAMMING.value,
+            current_baseline=True,
+        )
+        governance = context.governance
+        original = governance.profile_record_ref
+        other_branches = (
+            replace(context.state.branch, branch_id="branch-b"),
+            BranchRef(
+                run=replace(
+                    context.state.branch.run,
+                    run_id="other-run",
+                ),
+                branch_id=context.state.branch.branch_id,
+                epoch=context.state.branch.epoch,
+            ),
+        )
+        for branch in other_branches:
+            crossed = replace(
+                original,
+                relative_path=(
+                    f"runs/{branch.run.run_id}/branches/{branch.branch_id}/"
+                    "records/stage-profile.json"
+                ),
+            )
+            with self.subTest(branch=branch), self.assertRaisesRegex(
+                HierarchicalSearchProposalError,
+                "requested branch",
+            ):
+                compile_search_policy_request(
+                    replace(
+                        context,
+                        governance=replace(
+                            governance,
+                            profile_record_ref=crossed,
+                        ),
+                    )
+                )
+
+    def test_current_governance_rejects_non_json_and_stale_epoch_scope(self):
+        context, _ = _context(
+            phase=DesignPhase.PROGRAMMING.value,
+            current_baseline=True,
+        )
+        governance = context.governance
+        with self.assertRaisesRegex(
+            HierarchicalSearchProposalError,
+            "not a JSON record",
+        ):
+            compile_search_policy_request(
+                replace(
+                    context,
+                    governance=replace(
+                        governance,
+                        profile_record_ref=replace(
+                            governance.profile_record_ref,
+                            media_type="application/octet-stream",
+                        ),
+                    ),
+                )
+            )
+
+        stale_branch = replace(
+            context.state.branch,
+            epoch=context.state.branch.epoch + 1,
+        )
+        with self.assertRaisesRegex(
+            HierarchicalSearchProposalError,
+            "profile crossed branch, epoch, stage, or state",
+        ):
+            compile_search_policy_request(
+                replace(
+                    context,
+                    governance=replace(
+                        governance,
+                        profile=replace(
+                            governance.profile,
+                            branch=stale_branch,
+                        ),
                     ),
                 )
             )

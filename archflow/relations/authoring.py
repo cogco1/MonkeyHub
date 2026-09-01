@@ -11,7 +11,7 @@ geometry/checker receipts before it can participate in stage acceptance.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import ClassVar
 
@@ -397,8 +397,16 @@ class RelationDerivationQuestion:
     basis_ids: tuple[str, ...]
     prompt: str
     allow_not_applicable: bool = False
+    rule_subject_refs: tuple[str, ...] | None = None
+    _replay_schema: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
-    SCHEMA: ClassVar[str] = "RelationDerivationQuestion@1"
+    SCHEMA: ClassVar[str] = "RelationDerivationQuestion@2"
+    LEGACY_SCHEMA: ClassVar[str] = "RelationDerivationQuestion@1"
 
     def __post_init__(self) -> None:
         identifier(self.question_id, "relation question_id")
@@ -423,6 +431,21 @@ class RelationDerivationQuestion:
                 allow_empty=True,
             ),
         )
+        rule_subject_refs = (
+            self.subject_refs
+            if self.rule_subject_refs is None
+            else deterministic_refs(
+                self.rule_subject_refs,
+                "relation question rule_subject_refs",
+            )
+        )
+        if not set(rule_subject_refs) <= set(
+            self.subject_refs + self.target_refs
+        ):
+            raise RelationAuthoringError(
+                "relation question rule subjects are outside its exact endpoints"
+            )
+        object.__setattr__(self, "rule_subject_refs", rule_subject_refs)
         kinds = _enum_tuple(
             self.allowed_relation_kinds,
             ArchitecturalRelationKind,
@@ -462,8 +485,9 @@ class RelationDerivationQuestion:
         return f"relation-question:{self.question_id}"
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "schema": self.SCHEMA,
+        schema = self._replay_schema or self.SCHEMA
+        payload = {
+            "schema": schema,
             "question_id": self.question_id,
             "projection": self.projection.value,
             "scenario_ref": self.scenario_ref,
@@ -476,29 +500,38 @@ class RelationDerivationQuestion:
             "allow_not_applicable": self.allow_not_applicable,
             **_AUTHORITY_FIELDS,
         }
+        if schema == self.SCHEMA:
+            payload["rule_subject_refs"] = list(self.rule_subject_refs or ())
+        return payload
 
     @classmethod
     def from_dict(cls, value: object) -> "RelationDerivationQuestion":
+        if not isinstance(value, dict):
+            raise TypeError("relation derivation question must be an object")
+        schema = value.get("schema")
+        if schema not in {cls.SCHEMA, cls.LEGACY_SCHEMA}:
+            raise RelationAuthoringError("unsupported relation question schema")
+        expected = {
+            "schema",
+            "question_id",
+            "projection",
+            "scenario_ref",
+            "subject_refs",
+            "target_refs",
+            "allowed_relation_kinds",
+            "rule_envelopes",
+            "basis_ids",
+            "prompt",
+            "allow_not_applicable",
+            *_AUTHORITY_FIELDS,
+        }
+        if schema == cls.SCHEMA:
+            expected.add("rule_subject_refs")
         payload = exact_mapping(
             value,
-            {
-                "schema",
-                "question_id",
-                "projection",
-                "scenario_ref",
-                "subject_refs",
-                "target_refs",
-                "allowed_relation_kinds",
-                "rule_envelopes",
-                "basis_ids",
-                "prompt",
-                "allow_not_applicable",
-                *_AUTHORITY_FIELDS,
-            },
+            expected,
             "relation derivation question",
         )
-        if payload["schema"] != cls.SCHEMA:
-            raise RelationAuthoringError("unsupported relation question schema")
         _require_false_authority(payload, "relation question")
         result = cls(
             question_id=payload["question_id"],
@@ -517,7 +550,14 @@ class RelationDerivationQuestion:
             basis_ids=tuple(_list(payload, "basis_ids")),
             prompt=payload["prompt"],
             allow_not_applicable=payload["allow_not_applicable"],
+            rule_subject_refs=(
+                tuple(_list(payload, "rule_subject_refs"))
+                if schema == cls.SCHEMA
+                else tuple(_list(payload, "subject_refs"))
+            ),
         )
+        if schema == cls.LEGACY_SCHEMA:
+            object.__setattr__(result, "_replay_schema", cls.LEGACY_SCHEMA)
         if result.to_dict() != payload:
             raise RelationAuthoringError("relation question roundtrip changed")
         return result
@@ -590,7 +630,12 @@ class RelationAuthoringContext:
             raise RelationAuthoringError("relation authoring context repeats a question")
         node_universe = set(node_refs)
         if any(
-            not set(question.subject_refs + question.target_refs) <= node_universe
+            not set(
+                question.subject_refs
+                + question.target_refs
+                + tuple(question.rule_subject_refs or ())
+            )
+            <= node_universe
             for question in questions
         ):
             raise RelationAuthoringError("relation question names an unknown node")
@@ -1452,10 +1497,13 @@ def _basis_refs(
     bindings = tuple(basis_by_id[item] for item in basis_ids)
     if any(
         item.basis_use is not required_use
-        or not set(question_refs) <= set(item.question_refs)
         or kind not in item.allowed_relation_kinds
         for item in bindings
-    ):
+    ) or not set(question_refs) <= {
+        question_ref
+        for item in bindings
+        for question_ref in item.question_refs
+    }:
         raise RelationAuthoringError("Agent used a basis outside its verified scope")
     statuses = {item.epistemic_status for item in bindings}
     if len(statuses) != 1:
@@ -1710,7 +1758,7 @@ def compile_relation_authoring(
         answer = answer_by_ref[question.ref]
         if any(
             not any((rule_id, subject_ref) in slot_keys for rule_id in answer.rule_ids)
-            for subject_ref in question.subject_refs
+            for subject_ref in tuple(question.rule_subject_refs or ())
         ):
             raise RelationAuthoringError(
                 f"{question.ref} did not cover every controller-authored subject"

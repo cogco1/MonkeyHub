@@ -659,6 +659,62 @@ class RelationAuthoringContractTests(unittest.TestCase):
         with self.assertRaisesRegex(RelationAuthoringError, "bidirectional"):
             compile_relation_authoring(context, tampered)
 
+    def test_one_relation_can_use_question_scoped_bases_as_a_complete_union(
+        self,
+    ) -> None:
+        context = _context(two_questions=True)
+        proposal = _two_question_proposal(context)
+        gravity_ref = QUESTION_REF
+        beam_ref = "relation-question:beam-support"
+        merged_ids = {"beam-on-column", "column-on-foundation"}
+        merged_relations = []
+        for relation in proposal.relations:
+            if relation.relation_id in {
+                "beam-question-column",
+                "beam-question-foundation",
+            }:
+                continue
+            if relation.relation_id in merged_ids:
+                relation = replace(
+                    relation,
+                    question_refs=tuple(sorted((gravity_ref, beam_ref))),
+                    basis_ids=("beam-topology", "gravity-topology"),
+                )
+            merged_relations.append(relation)
+        answers = tuple(
+            replace(
+                answer,
+                relation_ids=(
+                    tuple(sorted(merged_ids))
+                    if answer.question_ref == beam_ref
+                    else tuple(
+                        sorted({*answer.relation_ids} - {
+                            "beam-question-column",
+                            "beam-question-foundation",
+                        })
+                    )
+                ),
+            )
+            for answer in proposal.answers
+        )
+
+        result = compile_relation_authoring(
+            context,
+            replace(
+                proposal,
+                answers=answers,
+                relations=tuple(
+                    sorted(merged_relations, key=lambda item: item.relation_id)
+                ),
+            ),
+        )
+
+        self.assertEqual(
+            RelationAuthoringCompilationStatus.PROPOSAL_COMPILED,
+            result.receipt.status,
+        )
+        self.assertEqual(3, len(result.graph.relations))
+
     def test_unknown_question_cannot_hide_partial_relation_artifacts(self) -> None:
         context = _context(two_questions=True)
         gravity = _proposal(context)

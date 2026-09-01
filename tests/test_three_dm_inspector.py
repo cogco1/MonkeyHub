@@ -98,7 +98,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
         self.assertIsInstance(first, ThreeDmInspection)
         summary = first.to_dict()
         json.dumps(summary, allow_nan=False, sort_keys=True)
-        self.assertEqual(summary["schema"], "ThreeDmInspectionSummary@2")
+        self.assertEqual(summary["schema"], "ThreeDmInspectionSummary@4")
         self.assertEqual(
             summary["file_sha256"],
             hashlib.sha256(expected_bytes).hexdigest(),
@@ -184,6 +184,62 @@ class ThreeDmInspectorTests(unittest.TestCase):
             summary["named_object_bboxes"][0]["bbox"],
             {"min": [-1.0, 2.0, 3.0], "max": [-1.0, 2.0, 3.0]},
         )
+        self.assertEqual(summary["materials"], [])
+        self.assertEqual(summary["render_materials"], [])
+        self.assertEqual(len(summary["object_material_bindings"]), 4)
+        self.assertEqual(len(summary["object_geometry_analysis"]), 4)
+
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_native_material_table_and_object_attachment_are_read_back(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "native-material.3dm"
+            model = rhino3dm.File3dm()
+            layer = rhino3dm.Layer()
+            layer.Name = "Material"
+            layer_index = model.Layers.Add(layer)
+
+            material = rhino3dm.Material()
+            material.Name = "archflow-material:stucco"
+            material.DiffuseColor = (210, 205, 190, 255)
+            material.SetUserString("archflow:material_id", "stucco")
+            material.ToPhysicallyBased()
+            material_index = model.Materials.Add(material)
+
+            attributes = rhino3dm.ObjectAttributes()
+            attributes.LayerIndex = layer_index
+            attributes.Name = "material-point"
+            attributes.MaterialIndex = material_index
+            attributes.MaterialSource = (
+                rhino3dm.ObjectMaterialSource.MaterialFromObject
+            )
+            model.Objects.AddPoint(rhino3dm.Point3d(1, 2, 3), attributes)
+            self.assertTrue(model.Write(str(source), 8))
+
+            summary = inspect_three_dm(source).to_dict()
+
+        self.assertEqual(len(summary["materials"]), 1)
+        saved_material = summary["materials"][0]
+        self.assertEqual(saved_material["index"], 0)
+        self.assertEqual(saved_material["name"], "archflow-material:stucco")
+        self.assertEqual(
+            saved_material["diffuse_color_rgba"],
+            [210, 205, 190, 255],
+        )
+        self.assertTrue(saved_material["physically_based"])
+        self.assertEqual(
+            saved_material["user_strings"],
+            [{"key": "archflow:material_id", "value": "stucco"}],
+        )
+        self.assertEqual(summary["render_materials"], [])
+        self.assertEqual(len(summary["object_material_bindings"]), 1)
+        binding = summary["object_material_bindings"][0]
+        self.assertEqual(binding["name"], "material-point")
+        self.assertEqual(binding["material_source"], "MaterialFromObject")
+        self.assertEqual(binding["material_source_code"], 1)
+        self.assertEqual(binding["material_index"], 0)
+        self.assertEqual(binding["material_name"], "archflow-material:stucco")
+        self.assertEqual(binding["archflow_material_id"], "stucco")
+        self.assertIsNone(binding["render_material_instance_id"])
 
     def test_brep_bounds_use_retained_face_mesh_vertices(self) -> None:
         vertices = tuple(

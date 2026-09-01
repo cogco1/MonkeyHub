@@ -197,6 +197,16 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
             _function_parameter(
                 "points", GeometryParameterKind.POINTS3, unit=_METER
             ),
+            _function_parameter(
+                "retain_for_inspection",
+                GeometryParameterKind.BOOLEAN,
+                required=False,
+            ),
+            _function_parameter(
+                "hidden_for_inspection",
+                GeometryParameterKind.BOOLEAN,
+                required=False,
+            ),
         ),
     ),
     "extrusion": _function_contract(
@@ -209,6 +219,11 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
             _function_parameter(
                 "vector", GeometryParameterKind.VECTOR3, unit=_METER
             ),
+            _function_parameter(
+                "hidden_for_inspection",
+                GeometryParameterKind.BOOLEAN,
+                required=False,
+            ),
         ),
     ),
     "loft": _function_contract(
@@ -217,7 +232,21 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
         parameters=(
             _function_parameter("cap_ends", GeometryParameterKind.BOOLEAN),
             _function_parameter(
-                "closed_profile", GeometryParameterKind.BOOLEAN
+                "closed_profile",
+                GeometryParameterKind.BOOLEAN,
+                required=False,
+            ),
+            _function_parameter(
+                "loft_type",
+                GeometryParameterKind.TEXT,
+                required=False,
+                allowed_values=("normal", "straight"),
+            ),
+            _function_parameter(
+                "profile_basis",
+                GeometryParameterKind.TEXT,
+                required=False,
+                allowed_values=("polyline", "interpolated"),
             ),
             _function_parameter(
                 "profile_size", GeometryParameterKind.INTEGER

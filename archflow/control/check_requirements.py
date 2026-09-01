@@ -50,6 +50,12 @@ from archflow.validation.check_bridges import (
     ComponentLineageCheckProfile,
     SpatialLayoutCheckProfile,
 )
+from archflow.validation.vertical_circulation import (
+    VERTICAL_CIRCULATION_MATURITY_CHECKER_ID,
+    VerticalCirculationContract,
+    VerticalCirculationMaturity,
+    vertical_circulation_maturity_check_id,
+)
 
 if TYPE_CHECKING:
     from archflow.control.stage_subjects import StageSubjectInventory
@@ -81,6 +87,8 @@ def assembly_stage_requirement(
             }
         )
     )
+
+
     source_refs = tuple(
         sorted(
             {
@@ -107,6 +115,56 @@ def assembly_stage_requirement(
         basis_mode=RequirementBasisMode.AUTHORITY_BOUND,
         denominator_refs=profile.check_denominator,
         required_source_refs=source_refs,
+        required_authority_refs=authority_refs,
+    )
+
+
+def vertical_circulation_stage_requirement(
+    contract: VerticalCirculationContract,
+    *,
+    required_maturity: VerticalCirculationMaturity,
+    semantic_rule_refs: tuple[str, ...] = (),
+    semantic_basis_refs: tuple[str, ...] = (),
+    semantic_authority_refs: tuple[str, ...] = (),
+) -> StageCheckRequirement:
+    """Require one evidence-bound, recomputable circulation maturity contract.
+
+    Adopted stair criteria are the authority basis for the check.  Treating
+    this as universal would let the stage closure discard the RAG/source
+    evidence that selected those criteria even though the validator used it.
+    """
+
+    if not isinstance(contract, VerticalCirculationContract):
+        raise TypeError("contract must be a VerticalCirculationContract")
+    if not isinstance(required_maturity, VerticalCirculationMaturity):
+        raise TypeError("required_maturity must be VerticalCirculationMaturity")
+    for field, values in (
+        ("semantic_rule_refs", semantic_rule_refs),
+        ("semantic_basis_refs", semantic_basis_refs),
+        ("semantic_authority_refs", semantic_authority_refs),
+    ):
+        if not isinstance(values, tuple):
+            raise TypeError(f"{field} must be a tuple")
+    adoption_refs = contract.criteria.adoption_refs
+    source_refs = tuple(sorted({*contract.source_refs, *semantic_basis_refs}))
+    authority_refs = tuple(
+        sorted({*adoption_refs, *semantic_authority_refs})
+    )
+    return StageCheckRequirement(
+        requirement_id=vertical_circulation_maturity_check_id(
+            contract,
+            required_maturity,
+        ),
+        checker_id=VERTICAL_CIRCULATION_MATURITY_CHECKER_ID,
+        target_kind=RequirementTargetKind.ASSEMBLY,
+        basis_mode=RequirementBasisMode.AUTHORITY_BOUND,
+        denominator_refs=tuple(
+            sorted({contract.ref, *semantic_rule_refs})
+        ),
+        required_adoption_refs=adoption_refs,
+        required_source_refs=source_refs,
+        # An adoption is the retained authority decision that makes the
+        # project-specific criterion usable by this otherwise generic check.
         required_authority_refs=authority_refs,
     )
 
@@ -418,4 +476,5 @@ __all__ = [
     "relation_realization_stage_requirement",
     "stage_relation_inheritance_stage_requirement",
     "spatial_layout_stage_requirement",
+    "vertical_circulation_stage_requirement",
 ]

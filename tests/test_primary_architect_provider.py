@@ -28,7 +28,11 @@ from archflow.state.operational_state import (
     StateDomain,
     StateFact,
 )
-from tests.test_design_controller import _checkpoint, _experts
+from tests.test_design_controller import (
+    _checkpoint,
+    _experts,
+    _turn_subject_inventory,
+)
 
 
 def _hash(label: str) -> str:
@@ -438,6 +442,9 @@ class PrimaryArchitectRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.registry,
             phase_metadata=self.metadata,
             obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(
+                self.checkpoint
+            ),
         )
         target = self.checkpoint.tree.node(
             self.checkpoint.target_node_ref
@@ -566,6 +573,9 @@ class PrimaryArchitectRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.registry,
             phase_metadata=self.metadata,
             obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(
+                next_checkpoint
+            ),
         )
         next_target = next_checkpoint.tree.node(
             next_checkpoint.target_node_ref

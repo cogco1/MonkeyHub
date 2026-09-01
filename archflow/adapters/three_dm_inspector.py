@@ -81,10 +81,15 @@ class ThreeDmInspection:
     bbox_contributing_geometry_count: int
     named_object_bboxes: tuple[dict[str, object], ...] = ()
     visible_bounds_witnesses: tuple[dict[str, object], ...] = ()
+    materials: tuple[dict[str, object], ...] = ()
+    render_materials: tuple[dict[str, object], ...] = ()
+    object_material_bindings: tuple[dict[str, object], ...] = ()
+    object_geometry_sha256: tuple[dict[str, object], ...] = ()
+    object_geometry_analysis: tuple[dict[str, object], ...] = ()
     read_only: bool = True
     rhino_process_started: bool = False
 
-    SCHEMA: ClassVar[str] = "ThreeDmInspectionSummary@2"
+    SCHEMA: ClassVar[str] = "ThreeDmInspectionSummary@4"
 
     def to_dict(self) -> dict[str, object]:
         payload = {
@@ -112,6 +117,11 @@ class ThreeDmInspection:
             ),
             "named_object_bboxes": self.named_object_bboxes,
             "visible_bounds_witnesses": self.visible_bounds_witnesses,
+            "materials": self.materials,
+            "render_materials": self.render_materials,
+            "object_material_bindings": self.object_material_bindings,
+            "object_geometry_sha256": self.object_geometry_sha256,
+            "object_geometry_analysis": self.object_geometry_analysis,
             "read_only": self.read_only,
             "rhino_process_started": self.rhino_process_started,
         }
@@ -229,6 +239,8 @@ def _summarize_model(model: Any, rhino3dm: Any) -> dict[str, object]:
     )
     layers, layers_by_index = _layers(model, objects)
     object_rows, objects_by_id = _objects(objects, layers_by_index)
+    materials, materials_by_index = _materials(model)
+    render_materials, render_materials_by_id = _render_materials(model)
     definitions, definition_members = _definitions(model)
     references = _references(
         object_rows,
@@ -293,6 +305,21 @@ def _summarize_model(model: Any, rhino3dm: Any) -> dict[str, object]:
                 explicit_witnesses,
             )
         ),
+        "materials": tuple(materials),
+        "render_materials": tuple(render_materials),
+        "object_material_bindings": tuple(
+            _object_material_bindings(
+                object_rows,
+                materials_by_index,
+                render_materials_by_id,
+            )
+        ),
+        "object_geometry_sha256": tuple(
+            _object_geometry_sha256(object_rows)
+        ),
+        "object_geometry_analysis": tuple(
+            _object_geometry_analysis(object_rows)
+        ),
     }
 
 
@@ -351,6 +378,10 @@ def _objects(
             "id": object_id,
             "name": _string(attributes.Name, "object name"),
             "type": _enum_name(geometry.ObjectType, "object type"),
+            # Some rhino3dm geometry encoders include transient ordering state.
+            # Encode exactly once and reuse the digest everywhere in this
+            # inspection so independent controller views cannot contradict.
+            "geometry_sha256": _encoded_geometry_sha256(geometry),
             "layer_index": layer_index,
             "layer_id": None if layer is None else layer["id"],
             "layer_path": None if layer is None else layer["full_path"],
@@ -365,6 +396,359 @@ def _objects(
         by_id[object_id] = item
     rows.sort(key=lambda item: item["id"])
     return rows, by_id
+
+
+def _materials(
+    model: Any,
+) -> tuple[list[dict[str, object]], dict[int, dict[str, object]]]:
+    """Read the native openNURBS material table without renderer inference."""
+
+    rows: list[dict[str, object]] = []
+    by_index: dict[int, dict[str, object]] = {}
+    for index, material in enumerate(model.Materials):
+        material_id = _identifier(material.Id, "material id")
+        render_material_id = _identifier(
+            material.RenderMaterialInstanceId,
+            "render material instance id",
+        )
+        physically_based = bool(material.PhysicallyBased.Supported)
+        row: dict[str, object] = {
+            "index": index,
+            "id": material_id,
+            "name": _string(material.Name, "material name"),
+            "diffuse_color_rgba": _rgba(
+                material.DiffuseColor,
+                "material diffuse color",
+            ),
+            "render_material_instance_id": (
+                None if render_material_id == _EMPTY_UUID else render_material_id
+            ),
+            "physically_based": physically_based,
+            "physically_based_base_color": (
+                _color4f(
+                    material.PhysicallyBased.BaseColor,
+                    "physically based material base color",
+                )
+                if physically_based
+                else None
+            ),
+            "physically_based_metallic": (
+                _unit_interval(
+                    material.PhysicallyBased.Metallic,
+                    "physically based material metallic",
+                )
+                if physically_based
+                else None
+            ),
+            "physically_based_roughness": (
+                _unit_interval(
+                    material.PhysicallyBased.Roughness,
+                    "physically based material roughness",
+                )
+                if physically_based
+                else None
+            ),
+            "user_strings": _user_strings(material),
+        }
+        rows.append(row)
+        by_index[index] = row
+    return rows, by_index
+
+
+def _render_materials(
+    model: Any,
+) -> tuple[list[dict[str, object]], dict[str, dict[str, object]]]:
+    """Read persisted top-level render materials and their stable identities."""
+
+    rows: list[dict[str, object]] = []
+    by_id: dict[str, dict[str, object]] = {}
+    for render_content in model.RenderContent:
+        kind = _enum_name(render_content.Kind, "render content kind")
+        if kind.lower() != "material":
+            continue
+        render_material_id = _identifier(
+            render_content.Id,
+            "render material id",
+        )
+        if render_material_id in by_id:
+            raise ValueError("duplicate render material id")
+        row = {
+            "id": render_material_id,
+            "name": _string(render_content.Name, "render material name"),
+            "kind": kind,
+            "type_name": _string(
+                render_content.TypeName,
+                "render material type name",
+            ),
+            "type_id": _identifier(
+                render_content.TypeId,
+                "render material type id",
+            ),
+            "render_engine_id": _identifier(
+                render_content.RenderEngineId,
+                "render material engine id",
+            ),
+            "plug_in_id": _identifier(
+                render_content.PlugInId,
+                "render material plug-in id",
+            ),
+        }
+        rows.append(row)
+        by_id[render_material_id] = row
+    rows.sort(key=lambda item: (str(item["name"]), str(item["id"])))
+    return rows, by_id
+
+
+def _object_material_bindings(
+    object_rows: list[dict[str, Any]],
+    materials_by_index: dict[int, dict[str, object]],
+    render_materials_by_id: dict[str, dict[str, object]],
+) -> list[dict[str, object]]:
+    """Resolve each saved object's native material source and table links."""
+
+    rows: list[dict[str, object]] = []
+    for item in object_rows:
+        attributes = item["attributes"]
+        material_index = _integer(
+            attributes.MaterialIndex,
+            "object material index",
+        )
+        material = materials_by_index.get(material_index)
+        render_material_id = (
+            None
+            if material is None
+            else material["render_material_instance_id"]
+        )
+        render_material = (
+            render_materials_by_id.get(str(render_material_id))
+            if render_material_id is not None
+            else None
+        )
+        material_user_strings = (
+            {}
+            if material is None
+            else {
+                row["key"]: row["value"]
+                for row in material["user_strings"]
+            }
+        )
+        rows.append(
+            {
+                "object_id": item["id"],
+                "name": item["name"],
+                "layer_path": item["layer_path"],
+                "is_instance_definition_object": item[
+                    "is_instance_definition_object"
+                ],
+                "material_source": _enum_name(
+                    attributes.MaterialSource,
+                    "object material source",
+                ),
+                "material_source_code": _integer(
+                    attributes.MaterialSource,
+                    "object material source",
+                ),
+                "material_index": material_index,
+                "material_id": None if material is None else material["id"],
+                "material_name": (
+                    None if material is None else material["name"]
+                ),
+                "material_diffuse_color_rgba": (
+                    None
+                    if material is None
+                    else material["diffuse_color_rgba"]
+                ),
+                "archflow_material_id": material_user_strings.get(
+                    "archflow:material_id"
+                ),
+                "render_material_instance_id": render_material_id,
+                "render_material_name": (
+                    None
+                    if render_material is None
+                    else render_material["name"]
+                ),
+            }
+        )
+    rows.sort(key=lambda item: str(item["object_id"]))
+    return rows
+
+
+def _object_geometry_sha256(
+    object_rows: list[dict[str, Any]],
+) -> list[dict[str, object]]:
+    """Hash encoded geometry only; object attributes cannot affect the digest."""
+
+    rows: list[dict[str, object]] = []
+    for item in object_rows:
+        rows.append(
+            {
+                "object_id": item["id"],
+                "name": item["name"],
+                "type": item["type"],
+                "layer_path": item["layer_path"],
+                "is_instance_definition_object": item[
+                    "is_instance_definition_object"
+                ],
+                "geometry_sha256": item["geometry_sha256"],
+            }
+        )
+    rows.sort(key=lambda item: str(item["object_id"]))
+    return rows
+
+
+_GEOMETRY_ANALYSIS_PLANAR_TOLERANCE = 1.0e-9
+_GEOMETRY_ANALYSIS_CURVE_SAMPLE_COUNT = 17
+
+
+def _encoded_geometry_sha256(geometry: Any) -> str:
+    encoded = geometry.Encode()
+    if not isinstance(encoded, dict):
+        raise TypeError("encoded 3dm geometry must be a mapping")
+    canonical = json.dumps(
+        encoded,
+        allow_nan=False,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _surface_planarity_counts(
+    surfaces: tuple[Any, ...],
+) -> tuple[int, int]:
+    planar = 0
+    curved = 0
+    for surface in surfaces:
+        is_planar = getattr(surface, "IsPlanar", None)
+        if not callable(is_planar):
+            raise TypeError("surface does not expose deterministic planarity")
+        if bool(is_planar(_GEOMETRY_ANALYSIS_PLANAR_TOLERANCE)):
+            planar += 1
+        else:
+            curved += 1
+    return planar, curved
+
+
+def _curve_analysis(geometry: Any) -> dict[str, object]:
+    domain = geometry.Domain
+    lower = _number(domain.T0, "curve-domain lower bound")
+    upper = _number(domain.T1, "curve-domain upper bound")
+    if not upper > lower:
+        raise ValueError("curve domain must have positive extent")
+    samples = [
+        _point(
+            geometry.PointAt(
+                lower
+                + (upper - lower)
+                * index
+                / (_GEOMETRY_ANALYSIS_CURVE_SAMPLE_COUNT - 1)
+            ),
+            "curve analysis sample",
+        )
+        for index in range(_GEOMETRY_ANALYSIS_CURVE_SAMPLE_COUNT)
+    ]
+    return {
+        "curve_start": list(_point(geometry.PointAtStart, "curve start")),
+        "curve_end": list(_point(geometry.PointAtEnd, "curve end")),
+        "curve_closed": bool(geometry.IsClosed),
+        "curve_degree": _integer(geometry.Degree, "curve degree"),
+        "curve_span_count": _integer(
+            geometry.SpanCount,
+            "curve span count",
+        ),
+        "curve_samples": [list(item) for item in samples],
+    }
+
+
+def _object_geometry_analysis(
+    object_rows: list[dict[str, Any]],
+) -> list[dict[str, object]]:
+    """Read morphology facts from encoded geometry, never object metadata.
+
+    The analysis is intentionally narrow.  It exposes only the facts needed by
+    generic morphology/continuity gates: planar versus non-planar surface
+    denominators, solid/closed/manifold state, and a fixed complete curve
+    sample from exact curve endpoints.  User strings cannot affect any value.
+    """
+
+    rows: list[dict[str, object]] = []
+    for item in object_rows:
+        geometry = item["geometry"]
+        geometry_type = str(item["type"])
+        face_count: int | None = None
+        planar_face_count: int | None = None
+        curved_face_count: int | None = None
+        is_closed: bool | None = None
+        is_solid: bool | None = None
+        is_manifold: bool | None = None
+        curve_values: dict[str, object] = {
+            "curve_start": None,
+            "curve_end": None,
+            "curve_closed": None,
+            "curve_degree": None,
+            "curve_span_count": None,
+            "curve_samples": [],
+        }
+
+        surface_geometry: Any | None = None
+        if geometry_type == "Brep":
+            surface_geometry = geometry
+        elif geometry_type == "Extrusion":
+            surface_geometry = geometry.ToBrep(True)
+            if surface_geometry is None:
+                raise ValueError("extrusion could not be converted to a Brep")
+
+        if surface_geometry is not None:
+            faces = tuple(surface_geometry.Faces)
+            planar_face_count, curved_face_count = _surface_planarity_counts(
+                tuple(face.UnderlyingSurface() for face in faces)
+            )
+            face_count = len(faces)
+            is_solid = bool(surface_geometry.IsSolid)
+            is_closed = is_solid
+            is_manifold = bool(surface_geometry.IsManifold)
+        elif geometry_type == "Surface":
+            planar_face_count, curved_face_count = _surface_planarity_counts(
+                (geometry,)
+            )
+            face_count = 1
+            is_solid = False
+            is_closed = False
+        elif geometry_type == "Mesh":
+            face_count = len(tuple(geometry.Faces))
+            planar_face_count = face_count
+            curved_face_count = 0
+            is_closed = bool(geometry.IsClosed)
+            is_solid = is_closed
+            manifold = geometry.IsManifold(True)
+            if not isinstance(manifold, tuple) or len(manifold) != 3:
+                raise TypeError("mesh manifold analysis changed shape")
+            is_manifold = bool(manifold[0])
+        elif geometry_type == "Curve":
+            curve_values = _curve_analysis(geometry)
+
+        rows.append(
+            {
+                "object_id": item["id"],
+                "name": item["name"],
+                "type": geometry_type,
+                "layer_path": item["layer_path"],
+                "is_instance_definition_object": item[
+                    "is_instance_definition_object"
+                ],
+                "geometry_sha256": item["geometry_sha256"],
+                "face_count": face_count,
+                "planar_face_count": planar_face_count,
+                "curved_face_count": curved_face_count,
+                "is_closed": is_closed,
+                "is_solid": is_solid,
+                "is_manifold": is_manifold,
+                **curve_values,
+            }
+        )
+    rows.sort(key=lambda item: str(item["object_id"]))
+    return rows
 
 
 def _named_object_bboxes(
@@ -954,6 +1338,22 @@ def _rgba(value: Any, field: str) -> list[int]:
             raise ValueError(f"{field} channels must be between 0 and 255")
         channels.append(channel)
     return channels
+
+
+def _color4f(value: Any, field: str) -> list[float]:
+    if not isinstance(value, tuple) or len(value) != 4:
+        raise TypeError(f"{field} must be a four-channel tuple")
+    channels = [_number(channel, field) for channel in value]
+    if any(channel < 0.0 or channel > 1.0 for channel in channels):
+        raise ValueError(f"{field} channels must be between 0 and 1")
+    return channels
+
+
+def _unit_interval(value: Any, field: str) -> float:
+    number = _number(value, field)
+    if number < 0.0 or number > 1.0:
+        raise ValueError(f"{field} must be between 0 and 1")
+    return number
 
 
 def _units(value: Any) -> dict[str, object]:

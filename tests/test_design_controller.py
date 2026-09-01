@@ -4,6 +4,11 @@ import hashlib
 import unittest
 from dataclasses import replace
 
+from archflow.capabilities.visual_inventory import (
+    VisualSourceDisposition,
+    VisualSourceDispositionKind,
+    compile_visual_evidence_inventory,
+)
 from archflow.capabilities.experts import (
     ExpertAdvice,
     ExpertRegistry,
@@ -28,6 +33,25 @@ from archflow.control.check_requirements import (
     relation_authoring_stage_requirements,
     spatial_layout_stage_requirement,
 )
+from archflow.control.component_functions import (
+    DEFAULT_COMPONENT_FUNCTION_POLICY,
+    ComponentFunctionContract,
+    ComponentFunctionId,
+    ComponentFunctionLedger,
+    FunctionApplicability,
+    FunctionApplicabilityDecision,
+    FunctionClaimStatus,
+    FunctionEndpointBinding,
+    FunctionObligationClaim,
+    compile_component_function_ledger,
+)
+from archflow.control.function_relations import (
+    FunctionRelationEndpoint,
+    FunctionRelationEndpointBinding,
+    FunctionRelationEvidenceEnvelope,
+    FunctionRelationRequirementSet,
+    compile_function_relation_requirements,
+)
 from archflow.control.relation_checks import check_relation_coverage
 from archflow.control.relation_promotion import (
     promote_verified_relation_graph,
@@ -40,11 +64,19 @@ from archflow.control.stage_closure import (
     compile_composite_stage_closure,
 )
 from archflow.control.profile import StageRequirementProfileBinding
+from archflow.control.semantic_capabilities import (
+    bind_semantic_rule_packs,
+    current_semantic_capability_policy,
+)
 from archflow.control.stage_subjects import (
     StageSubjectDisposition,
     StageSubjectInventory,
     StageSubjectInventoryEntry,
     StageSubjectRoleObligation,
+)
+from archflow.control.stage_control_sources import (
+    ComponentFunctionBaselineSource,
+    VisualInventoryBaselineSource,
 )
 from archflow.control.requirements import (
     RequirementBasisMode,
@@ -64,10 +96,24 @@ from archflow.project import (
     ProjectVersionRef,
     RunRef,
 )
-from archflow.relations.authoring import compile_relation_authoring
+from archflow.relations.authoring import (
+    RelationAnswerStatus,
+    RelationAuthoringProposal,
+    RelationBasisBinding,
+    RelationBasisKind,
+    RelationBasisUse,
+    RelationDerivationAnswer,
+    RelationProposalSpec,
+    RelationRuleProposalSpec,
+    compile_relation_authoring,
+)
 from archflow.relations.contracts import (
+    ArchitecturalRelationKind,
     ArchitecturalNode,
     ArchitecturalNodeKind,
+    RelationEpistemicStatus,
+    RelationParticipant,
+    RelationProjection,
 )
 from archflow.runtime.clarification import (
     create_clarification_request,
@@ -155,6 +201,10 @@ from archflow.validation.check_bridges import (
     bridge_spatial_validation_receipt,
 )
 from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archflow.validation.stage_control import (
+    check_component_function_baseline,
+    check_visual_inventory_baseline,
+)
 from archflow.validation.spatial import validate_spatial_layout
 from tests.test_stage_baseline import physical_sources
 from tests.test_relation_authoring import (
@@ -1333,6 +1383,194 @@ def _stage_role_target_refs(
     }
 
 
+def _text_only_visual_inventory(
+    *,
+    source_ref: str = "evidence:controller-visual-disposition",
+    authority_ref: str = "authority:controller-visual-disposition",
+):
+    return compile_visual_evidence_inventory(
+        source_disposition=VisualSourceDisposition(
+            kind=VisualSourceDispositionKind.TEXT_ONLY,
+            source_refs=(source_ref,),
+            authority_refs=(authority_ref,),
+        ),
+        source_images=(),
+        rois=(),
+    )
+
+
+def _stage_function_control_values(
+    inventory: StageSubjectInventory,
+    *,
+    source_ref: str = "evidence:controller-function-relations",
+    authority_ref: str = "authority:controller-function-relations",
+) -> tuple[ComponentFunctionLedger, FunctionRelationRequirementSet]:
+    """Build a synthetic but complete project-authored function denominator."""
+
+    entries = inventory.entries
+    entry_by_id = {entry.component_id: entry for entry in entries}
+    support_peer_by_component = {
+        "beam": "column",
+        "column": "foundation",
+        "foundation": "column",
+        "roof": "beam",
+        "stage-root": "foundation",
+    }
+    contracts = []
+    envelopes = []
+    for entry in entries:
+        function_id = (
+            ComponentFunctionId.SUPPORT_OTHERS
+            if entry.component_id == "foundation"
+            else ComponentFunctionId.BE_SUPPORTED
+        )
+        spec = DEFAULT_COMPONENT_FUNCTION_POLICY.spec_for(function_id)
+        peer = entry_by_id[support_peer_by_component[entry.component_id]]
+        endpoint_bindings = tuple(
+            FunctionEndpointBinding(
+                role=role.role,
+                endpoint_refs=(
+                    (entry.identity_ref,)
+                    if role.component_slot
+                    else (peer.identity_ref,)
+                ),
+            )
+            for role in spec.endpoint_roles
+        )
+        claim = FunctionObligationClaim(
+            obligation_ref=spec.obligation_ref,
+            endpoint_bindings=endpoint_bindings,
+            maturity=spec.required_maturity,
+            status=FunctionClaimStatus.PASS,
+            evidence_refs=(source_ref,),
+            authority_refs=(authority_ref,),
+            contradiction_refs=(),
+        )
+        contracts.append(
+            ComponentFunctionContract(
+                contract_id=f"{entry.component_id}-function-contract",
+                branch=inventory.branch,
+                stage_id=inventory.stage_id,
+                subject_inventory_digest=inventory.inventory_digest,
+                component_ref=entry.identity_ref,
+                component_digest=entry.component_digest,
+                applicability_decisions=tuple(
+                    FunctionApplicabilityDecision(
+                        function_id=item,
+                        applicability=(
+                            FunctionApplicability.REQUIRED
+                            if item is function_id
+                            else FunctionApplicability.NOT_APPLICABLE
+                        ),
+                        evidence_refs=(source_ref,),
+                        authority_refs=(authority_ref,),
+                    )
+                    for item in ComponentFunctionId
+                ),
+                claims=(claim,),
+            )
+        )
+    ledger = compile_component_function_ledger(
+        ledger_id=f"{inventory.inventory_id}-functions",
+        inventory=inventory,
+        contracts=tuple(contracts),
+    )
+    for entry in entries:
+        function_id = (
+            ComponentFunctionId.SUPPORT_OTHERS
+            if entry.component_id == "foundation"
+            else ComponentFunctionId.BE_SUPPORTED
+        )
+        spec = DEFAULT_COMPONENT_FUNCTION_POLICY.spec_for(function_id)
+        peer = entry_by_id[support_peer_by_component[entry.component_id]]
+        envelopes.append(
+            FunctionRelationEvidenceEnvelope(
+                envelope_id=f"{entry.component_id}-function-relation",
+                branch=inventory.branch,
+                stage_id=inventory.stage_id,
+                subject_inventory_digest=inventory.inventory_digest,
+                function_ledger_ref=ledger.ledger_ref,
+                function_ledger_digest=ledger.ledger_digest,
+                component_ref=entry.identity_ref,
+                component_digest=entry.component_digest,
+                functional_obligation_ref=spec.obligation_ref,
+                projection=RelationProjection.SUPPORT,
+                relation_kind=ArchitecturalRelationKind.SUPPORT,
+                scenario_ref="scenario:gravity",
+                endpoint_bindings=tuple(
+                    FunctionRelationEndpointBinding(
+                        function_role=role.role,
+                        relation_role=(
+                            "supported"
+                            if role.role == "supported_component"
+                            else "supporter"
+                        ),
+                        endpoints=(
+                            FunctionRelationEndpoint(
+                                component_ref=(
+                                    entry.identity_ref
+                                    if role.component_slot
+                                    else peer.identity_ref
+                                ),
+                                component_digest=(
+                                    entry.component_digest
+                                    if role.component_slot
+                                    else peer.component_digest
+                                ),
+                            ),
+                        ),
+                    )
+                    for role in spec.endpoint_roles
+                ),
+                counted_function_role=next(
+                    role.role for role in spec.endpoint_roles if not role.component_slot
+                ),
+                basis_ids=(
+                    f"{entry.component_id}-function-policy",
+                    f"{entry.component_id}-function-topology",
+                ),
+                evidence_refs=(source_ref,),
+                authority_refs=(authority_ref,),
+                prompt=(
+                    "Identify the project-authored support relation for "
+                    f"{entry.identity_ref}."
+                ),
+            )
+        )
+    requirements = compile_function_relation_requirements(
+        set_id=f"{inventory.inventory_id}-function-relations",
+        ledger=ledger,
+        inventory=inventory,
+        envelopes=tuple(envelopes),
+    )
+    return ledger, requirements
+
+
+def _stage_function_control_source(
+    inventory: StageSubjectInventory,
+) -> ComponentFunctionBaselineSource:
+    ledger, requirements = _stage_function_control_values(inventory)
+    branch = inventory.branch
+    prefix = (
+        f"runs/{branch.run.run_id}/branches/"
+        f"{branch.branch_id}/records"
+    )
+    return ComponentFunctionBaselineSource(
+        ledger_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/component-function-ledger.json",
+            sha256=_hash("component-function-ledger-record"),
+        ),
+        ledger=ledger,
+        relation_requirements_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/function-relation-requirements.json",
+            sha256=_hash("function-relation-requirements-record"),
+        ),
+        relation_requirements=requirements,
+    )
+
+
 def _stage_subject_inventory(
     checkpoint: DesignControllerCheckpoint,
     closure: CompositeStageClosureReceipt,
@@ -1412,6 +1650,7 @@ def _stage_subject_inventory(
     index_digest = _hash(
         f"component-index:{closure.stage_id}:{closure.subject_digest}"
     )
+    visual_inventory_digest = _text_only_visual_inventory().inventory_digest
     return StageSubjectInventory(
         inventory_id="controller-stage-subjects",
         branch=branch,
@@ -1446,6 +1685,127 @@ def _stage_subject_inventory(
                 ("roof", "beam", "roof"),
             )
         ),
+        semantic_policy_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/semantic-capability-policy.json",
+            sha256=_hash("semantic-capability-policy-record"),
+        ),
+        semantic_policy=current_semantic_capability_policy(),
+        visual_inventory_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/visual-evidence-inventory.json",
+            sha256=visual_inventory_digest,
+        ),
+        visual_inventory_digest=visual_inventory_digest,
+    )
+
+
+def _turn_subject_inventory(
+    checkpoint: DesignControllerCheckpoint,
+    *,
+    semantic_kind: str = "stage-root",
+) -> StageSubjectInventory:
+    """Exact current turn inventory without inventing project geometry."""
+
+    branch = checkpoint.tree.branch
+    target = checkpoint.tree.node(checkpoint.target_node_ref)
+    subject_digest = target.operational_state.state_digest
+    level = baseline_level_for_design_phase(checkpoint.maturity.phase)
+    prefix = (
+        f"runs/{branch.run.run_id}/branches/"
+        f"{branch.branch_id}/records"
+    )
+    component_digest = _hash(
+        f"turn-component:{subject_digest}:{semantic_kind}"
+    )
+    policy = current_semantic_capability_policy()
+    bindings = bind_semantic_rule_packs(
+        policy=policy,
+        branch=branch,
+        stage_id=checkpoint.maturity.phase.value,
+        stage_subject_digest=subject_digest,
+        component_ref="design-component:stage-root",
+        component_digest=component_digest,
+        semantic_kind=semantic_kind,
+        baseline_level=level,
+    )
+    obligations = tuple(
+        StageSubjectRoleObligation(
+            role=role,
+            disposition=StageSubjectDisposition.NOT_APPLICABLE,
+            target_refs=(),
+            evidence_refs=("evidence:turn-subject-applicability",),
+            authority_refs=("authority:turn-subject-applicability",),
+        )
+        for role in sorted(BASELINE_LEVEL_ROLES[level], key=lambda item: item.value)
+    )
+    mandatory = tuple(
+        StageSubjectRoleObligation(
+            role=role,
+            disposition=StageSubjectDisposition.REQUIRED,
+            target_refs=("design-component:stage-root",),
+            evidence_refs=(binding.basis_ref,),
+            authority_refs=(binding.authority_ref,),
+        )
+        for binding in bindings
+        for role in binding.mandatory_roles
+    )
+    obligations = tuple(
+        sorted((*obligations, *mandatory), key=lambda item: item.role.value)
+    )
+    proposal_digest = _hash(
+        f"turn-proposal:{subject_digest}:{semantic_kind}"
+    )
+    index_digest = _hash(
+        f"turn-index:{subject_digest}:{semantic_kind}"
+    )
+    visual_inventory_digest = _hash(
+        f"turn-visual-inventory:{subject_digest}:{semantic_kind}"
+    )
+    return StageSubjectInventory(
+        inventory_id="controller-turn-subjects",
+        branch=branch,
+        stage_id=checkpoint.maturity.phase.value,
+        stage_subject_ref="artifact:controller-turn-subject",
+        stage_subject_digest=subject_digest,
+        baseline_level=level,
+        component_proposal_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/turn-component-proposal.json",
+            sha256=proposal_digest,
+        ),
+        component_proposal_digest=proposal_digest,
+        component_index_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/turn-component-index.json",
+            sha256=index_digest,
+        ),
+        component_index_digest=index_digest,
+        entries=(
+            StageSubjectInventoryEntry(
+                component_id="stage-root",
+                identity_ref="design-component:stage-root",
+                parent_component_id=None,
+                semantic_kind=semantic_kind,
+                component_digest=component_digest,
+                geometry_object_ids=(),
+                binding_ids=(),
+                role_obligations=obligations,
+            ),
+        ),
+        semantic_policy_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/turn-semantic-policy.json",
+            sha256=_hash("turn-semantic-policy-record"),
+        ),
+        semantic_policy=policy,
+        semantic_rule_pack_bindings=bindings,
+        visual_inventory_ref=ProjectRecordRef(
+            project_id=branch.run.project_id,
+            relative_path=f"{prefix}/turn-visual-evidence-inventory.json",
+            sha256=visual_inventory_digest,
+        ),
+        visual_inventory_digest=visual_inventory_digest,
     )
 
 
@@ -1456,6 +1816,7 @@ def _stage_relation_topology_evidence(
     scope_digest: str,
     source_ref: str = "evidence:controller-relations",
     authority_ref: str | None = None,
+    function_requirements: FunctionRelationRequirementSet | None = None,
 ) -> tuple[
     RelationTopologyBaselineSource,
     tuple[StageCheckRequirement, ...],
@@ -1479,6 +1840,53 @@ def _stage_relation_topology_evidence(
             f"{inventory.branch.branch_id}/records/"
             "stage-profile-authorization.json"
         )
+    questions = list(base_context.questions)
+    bases = [
+        replace(
+            basis,
+            evidence_refs=(source_ref,),
+            authority_refs=(authority_ref,),
+        )
+        for basis in base_context.bases
+    ]
+    if function_requirements is not None:
+        if (
+            function_requirements.branch != inventory.branch
+            or function_requirements.stage_id != inventory.stage_id
+            or function_requirements.subject_inventory_digest
+            != inventory.inventory_digest
+        ):
+            raise AssertionError("function requirements crossed the inventory")
+        questions.extend(function_requirements.topology_questions)
+        for requirement in function_requirements.requirements:
+            if len(requirement.question.basis_ids) != 2:
+                raise AssertionError("fixture requires one policy and one topology basis")
+            policy_basis_id, topology_basis_id = requirement.question.basis_ids
+            for basis_id, basis_use in (
+                (policy_basis_id, RelationBasisUse.POLICY),
+                (topology_basis_id, RelationBasisUse.TOPOLOGY),
+            ):
+                bases.append(
+                    RelationBasisBinding(
+                        basis_id=basis_id,
+                        basis_kind=(
+                            RelationBasisKind.HUMAN
+                            if basis_use is RelationBasisUse.POLICY
+                            else RelationBasisKind.RAG
+                        ),
+                        basis_use=basis_use,
+                        question_refs=(requirement.question.ref,),
+                        allowed_relation_kinds=(
+                            requirement.rule.relation_kind,
+                        ),
+                        epistemic_status=RelationEpistemicStatus.DERIVED,
+                        evidence_refs=requirement.rule.evidence_refs,
+                        authority_refs=requirement.rule.authority_refs,
+                        summary=(
+                            "Synthetic project-authored functional relation basis."
+                        ),
+                    )
+                )
     context = replace(
         base_context,
         branch=inventory.branch,
@@ -1503,48 +1911,135 @@ def _stage_relation_topology_evidence(
             )
             for component_id in relation_component_ids
         ),
-        bases=tuple(
-            replace(
-                basis,
-                evidence_refs=(source_ref,),
-                authority_refs=(authority_ref,),
-            )
-            for basis in base_context.bases
-        ),
+        questions=tuple(questions),
+        bases=tuple(bases),
     )
+    proposal = relation_proposal_fixture(context)
+    if function_requirements is not None:
+        answers = list(proposal.answers)
+        relations = list(proposal.relations)
+        rules = list(proposal.rules)
+        for requirement in function_requirements.requirements:
+            relation_id = f"functional-{requirement.question.question_id}"
+            policy_basis_id, topology_basis_id = requirement.question.basis_ids
+            participants = tuple(
+                RelationParticipant(
+                    role=binding.relation_role,
+                    node_ref=endpoint.component_ref,
+                    ordinal=(
+                        index if len(binding.endpoints) > 1 else None
+                    ),
+                )
+                for binding in requirement.endpoint_bindings
+                if binding.relation_role is not None
+                for index, endpoint in enumerate(binding.endpoints)
+            )
+            normalized_participants = tuple(
+                sorted(participants, key=lambda item: item.identity)
+            )
+            existing_index = next(
+                (
+                    index
+                    for index, relation in enumerate(relations)
+                    if relation.kind is requirement.rule.relation_kind
+                    and relation.scenario_ref == requirement.rule.scenario_ref
+                    and relation.participants == normalized_participants
+                ),
+                None,
+            )
+            if existing_index is None:
+                relations.append(
+                    RelationProposalSpec(
+                        relation_id=relation_id,
+                        question_refs=(requirement.question.ref,),
+                        kind=requirement.rule.relation_kind,
+                        participants=normalized_participants,
+                        scenario_ref=requirement.rule.scenario_ref,
+                        basis_ids=(topology_basis_id,),
+                    )
+                )
+            else:
+                existing = relations[existing_index]
+                relation_id = existing.relation_id
+                relations[existing_index] = replace(
+                    existing,
+                    question_refs=tuple(
+                        sorted(
+                            {
+                                *existing.question_refs,
+                                requirement.question.ref,
+                            }
+                        )
+                    ),
+                    basis_ids=tuple(
+                        sorted({*existing.basis_ids, topology_basis_id})
+                    ),
+                )
+            rules.append(
+                RelationRuleProposalSpec(
+                    rule_id=requirement.rule.rule_id,
+                    question_refs=(requirement.question.ref,),
+                    node_kind=requirement.rule.node_kind,
+                    semantic_kind=requirement.rule.semantic_kind,
+                    relation_kind=requirement.rule.relation_kind,
+                    subject_role=requirement.rule.subject_role,
+                    counted_role=requirement.rule.counted_role,
+                    minimum_count=requirement.rule.minimum_count,
+                    maximum_count=requirement.rule.maximum_count,
+                    scenario_ref=requirement.rule.scenario_ref,
+                    basis_ids=(policy_basis_id,),
+                )
+            )
+            answers.append(
+                RelationDerivationAnswer(
+                    question_ref=requirement.question.ref,
+                    status=RelationAnswerStatus.PROPOSED,
+                    relation_ids=(relation_id,),
+                    rule_ids=(requirement.rule.rule_id,),
+                    rationale=(
+                        "The exact component function obligation is represented "
+                        "by the project-authored relation."
+                    ),
+                )
+            )
+        proposal = RelationAuthoringProposal(
+            context_digest=context.context_digest,
+            answers=tuple(answers),
+            relations=tuple(relations),
+            rules=tuple(rules),
+        )
     compilation = compile_relation_authoring(
         context,
-        relation_proposal_fixture(context),
+        proposal,
     )
     open_requirements = relation_authoring_stage_requirements(
         context,
         compilation,
         inventory,
     )
-    verification_requirement = next(
-        item
-        for item in open_requirements
-        if item.requirement_id.startswith("relation-verification-")
-    )
-    verification_receipt = CheckReceiptEnvelope(
-        check_id=verification_requirement.requirement_id,
-        checker_id=verification_requirement.checker_id,
-        checker_version="1.0.0",
-        branch=inventory.branch,
-        scope_digest=scope_digest,
-        subject_refs=verification_requirement.denominator_refs,
-        subject_digest=inventory.stage_subject_digest,
-        status=CheckStatus.PASS,
-        source_refs=verification_requirement.required_source_refs,
-        authority_refs=verification_requirement.required_authority_refs,
-        coverage_denominator=verification_requirement.denominator_refs,
-        covered_refs=verification_requirement.denominator_refs,
+    verification_receipts = tuple(
+        CheckReceiptEnvelope(
+            check_id=requirement.requirement_id,
+            checker_id=requirement.checker_id,
+            checker_version="1.0.0",
+            branch=inventory.branch,
+            scope_digest=scope_digest,
+            subject_refs=requirement.denominator_refs,
+            subject_digest=inventory.stage_subject_digest,
+            status=CheckStatus.PASS,
+            source_refs=requirement.required_source_refs,
+            authority_refs=requirement.required_authority_refs,
+            coverage_denominator=requirement.denominator_refs,
+            covered_refs=requirement.denominator_refs,
+        )
+        for requirement in open_requirements
+        if requirement.requirement_id.startswith("relation-verification-")
     )
     promotion = promote_verified_relation_graph(
         context,
         compilation,
         inventory,
-        (verification_receipt,),
+        verification_receipts,
     )
     requirements = relation_authoring_stage_requirements(
         context,
@@ -1566,7 +2061,7 @@ def _stage_relation_topology_evidence(
             promotion=promotion,
         ),
         requirements,
-        (verification_receipt, coverage_receipt),
+        (*verification_receipts, coverage_receipt),
     )
 
 
@@ -1613,15 +2108,28 @@ def _complete_stage_inputs(
         seed_profile,
         sources,
     )
+    visual_inventory = _text_only_visual_inventory()
+    assert inventory.visual_inventory_ref is not None
+    visual_source = VisualInventoryBaselineSource(
+        branch=inventory.branch,
+        stage_id=inventory.stage_id,
+        stage_subject_inventory_digest=inventory.inventory_digest,
+        inventory_ref=inventory.visual_inventory_ref,
+        inventory=visual_inventory,
+    )
+    function_source = _stage_function_control_source(inventory)
     topology_source, _topology_requirements, topology_receipts = (
         _stage_relation_topology_evidence(
             inventory,
             state_digest=checkpoint.maturity.operational_state_digest,
             scope_digest=seed_profile.scope_digest,
+            function_requirements=function_source.relation_requirements,
         )
     )
     sources = replace(
         sources,
+        visual_inventory=(visual_source,),
+        component_functions=(function_source,),
         relation_topology=(topology_source,),
     )
     completed_profile = derive_stage_requirement_profile(
@@ -1631,7 +2139,21 @@ def _complete_stage_inputs(
         subject_digest=selected_digest,
         subject_inventory=inventory,
     )
-    all_receipts = (*receipts, *topology_receipts)
+    control_receipts = (
+        check_visual_inventory_baseline(
+            visual_source,
+            inventory,
+            scope_digest=seed_profile.scope_digest,
+            subject_digest=selected_digest,
+        ),
+        check_component_function_baseline(
+            function_source,
+            inventory,
+            scope_digest=seed_profile.scope_digest,
+            subject_digest=selected_digest,
+        ),
+    )
+    all_receipts = (*receipts, *control_receipts, *topology_receipts)
     closure = compile_composite_stage_closure(
         completed_profile,
         subject_digest=selected_digest,
@@ -1754,6 +2276,171 @@ def _event_backed_checkpoint() -> tuple[
 
 
 class DesignControllerTurnTests(unittest.TestCase):
+    def test_geometry_turn_requires_inventory_and_dispatches_stair_work(self) -> None:
+        checkpoint, _ = _checkpoint()
+        registry = ExpertRegistry()
+        registry.register(
+            ExpertSpec(
+                expert_id="expert-stair",
+                description="Read-only stair specialist",
+                topics=frozenset({"vertical-circulation"}),
+            ),
+            lambda snapshot: ExpertAdvice(
+                summary="Resolve the exact stair work-item clauses.",
+            ),
+        )
+        metadata = {
+            "expert-stair": PhaseExpertMetadata(
+                expert_id="expert-stair",
+                allowed_phases=frozenset(
+                    {DesignPhase.SCHEMATIC_DESIGN}
+                ),
+            )
+        }
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "requires an exact stage subject inventory",
+        ):
+            prepare_design_turn(
+                checkpoint,
+                registry,
+                phase_metadata=metadata,
+                obligation_topics={"resolve-grid": "structure"},
+            )
+
+        prepared = prepare_design_turn(
+            checkpoint,
+            registry,
+            phase_metadata=metadata,
+            obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(
+                checkpoint,
+                semantic_kind="stair",
+            ),
+        )
+        self.assertEqual(prepared.discovered_expert_ids, ("expert-stair",))
+        self.assertEqual(len(prepared.semantic_work_items), 1)
+        self.assertEqual(
+            len(prepared.required_semantic_response_refs),
+            1 + len(
+                prepared.semantic_work_items[0].binding.active_rule_ids
+            ),
+        )
+        consultation = consult_selected_experts(prepared, registry, ())
+        incomplete = GroundedArchitectAction(
+            action_id="stair-work-omitted",
+            checkpoint_digest=checkpoint.checkpoint_digest,
+            context_digest=prepared.context_digest,
+            operator=_operator(
+                checkpoint,
+                decision_id="stair-work-omitted-op",
+                discharge=True,
+            ),
+            responds_to_refs=(
+                _GLOBAL_COMMITMENT_REF,
+                "obligation:resolve-grid",
+            ),
+            selected_expert_ids=(),
+            adopted_advice_refs=(),
+            rejected_advice_refs=(),
+            tradeoff_rationale="An ordinary obligation cannot stand in for stair work.",
+        )
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "omitted mandatory semantic work",
+        ):
+            apply_architect_action(
+                checkpoint,
+                prepared,
+                consultation,
+                incomplete,
+                history_event_ref="design-event:stair-work-omitted",
+            )
+
+        complete = replace(
+            incomplete,
+            action_id="stair-work-addressed",
+            operator=_operator(
+                checkpoint,
+                decision_id="stair-work-addressed-op",
+                discharge=True,
+            ),
+            responds_to_refs=(
+                _GLOBAL_COMMITMENT_REF,
+                "obligation:resolve-grid",
+                *prepared.required_semantic_response_refs,
+            ),
+        )
+        transitioned = apply_architect_action(
+            checkpoint,
+            prepared,
+            consultation,
+            complete,
+            history_event_ref="design-event:stair-work-addressed",
+        )
+        prepared_again = prepare_design_turn(
+            transitioned.checkpoint,
+            registry,
+            phase_metadata=metadata,
+            obligation_topics={},
+            stage_subject_inventory=_turn_subject_inventory(
+                transitioned.checkpoint,
+                semantic_kind="stair",
+            ),
+        )
+        self.assertEqual(prepared_again.context.obligations, ())
+        self.assertEqual(
+            prepared_again.discovered_expert_ids,
+            ("expert-stair",),
+        )
+        self.assertTrue(prepared_again.required_semantic_response_refs)
+
+    def test_phase_advance_rejects_legacy_unbound_semantic_inventory(self) -> None:
+        checkpoint = _phase_ready_checkpoint()
+        closure = _stage_closure_receipt(checkpoint)
+        profile, sources, check_receipts, inventory = (
+            _stage_inputs_for_closure(checkpoint, closure)
+        )
+        legacy_inventory = replace(
+            inventory,
+            semantic_policy_ref=None,
+            semantic_policy=None,
+            semantic_rule_pack_bindings=(),
+        )
+        phase_gate = evaluate_forward_phase_gate(
+            checkpoint.maturity,
+            PhaseGateRequest(
+                request_id="reject-legacy-semantic-inventory",
+                branch=checkpoint.maturity.branch,
+                base_state_digest=(
+                    checkpoint.maturity.operational_state_digest
+                ),
+                from_phase=DesignPhase.SCHEMATIC_DESIGN,
+                to_phase=DesignPhase.DESIGN_DEVELOPMENT,
+                deliverable_refs=checkpoint.maturity.deliverable_refs,
+            ),
+        )
+
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "legacy stage subject inventory is read-only",
+        ):
+            advance_design_phase(
+                checkpoint,
+                phase_gate,
+                convergence_receipt=_stage_convergence_receipt(checkpoint),
+                requirement_profile=profile,
+                profile_binding=_stage_profile_binding(
+                    closure,
+                    legacy_inventory,
+                ),
+                closure_receipt=closure,
+                baseline_sources=sources,
+                subject_inventory=legacy_inventory,
+                check_receipts=check_receipts,
+                history_event_ref="design-event:legacy-inventory-rejected",
+            )
+
     def test_action_requires_active_hard_global_commitment(
         self,
     ) -> None:
@@ -1764,6 +2451,7 @@ class DesignControllerTurnTests(unittest.TestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(checkpoint),
         )
         consultation = consult_selected_experts(
             prepared,
@@ -1773,7 +2461,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         action = GroundedArchitectAction(
             action_id="missing-global-commitment",
             checkpoint_digest=checkpoint.checkpoint_digest,
-            context_digest=prepared.context.context_digest,
+            context_digest=prepared.context_digest,
             operator=_operator(
                 checkpoint,
                 decision_id="missing-global-commitment-op",
@@ -1811,6 +2499,7 @@ class DesignControllerTurnTests(unittest.TestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(checkpoint),
         )
         consultation = consult_selected_experts(
             prepared,
@@ -1823,7 +2512,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         action = GroundedArchitectAction(
             action_id="architect-grid-001",
             checkpoint_digest=checkpoint.checkpoint_digest,
-            context_digest=prepared.context.context_digest,
+            context_digest=prepared.context_digest,
             operator=_operator(
                 checkpoint,
                 decision_id="set-grid-spacing",
@@ -1884,12 +2573,13 @@ class DesignControllerTurnTests(unittest.TestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(checkpoint),
         )
         consultation = consult_selected_experts(prepared, registry, ())
         first_action = GroundedArchitectAction(
             action_id="reopen-grid-interfaces",
             checkpoint_digest=checkpoint.checkpoint_digest,
-            context_digest=prepared.context.context_digest,
+            context_digest=prepared.context_digest,
             operator=_operator(
                 checkpoint,
                 decision_id="reopen-grid-interfaces-op",
@@ -1921,6 +2611,9 @@ class DesignControllerTurnTests(unittest.TestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={},
+            stage_subject_inventory=_turn_subject_inventory(
+                first.checkpoint
+            ),
         )
         consultation_again = consult_selected_experts(
             prepared_again,
@@ -1933,7 +2626,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         unrelated_action = GroundedArchitectAction(
             action_id="unrelated-grid-note",
             checkpoint_digest=first.checkpoint.checkpoint_digest,
-            context_digest=prepared_again.context.context_digest,
+            context_digest=prepared_again.context_digest,
             operator=DecisionOperator(
                 decision_id="unrelated-grid-note-op",
                 decision_type="parameter-derivation",
@@ -2033,6 +2726,7 @@ class DesignControllerTurnTests(unittest.TestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(checkpoint),
         )
         consultation = consult_selected_experts(
             prepared,
@@ -2042,7 +2736,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         unaccounted = GroundedArchitectAction(
             action_id="unaccounted",
             checkpoint_digest=checkpoint.checkpoint_digest,
-            context_digest=prepared.context.context_digest,
+            context_digest=prepared.context_digest,
             operator=_operator(
                 checkpoint,
                 decision_id="unaccounted-op",
@@ -2099,6 +2793,7 @@ class DesignControllerTurnTests(unittest.TestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(checkpoint),
         )
         consultation = consult_selected_experts(
             prepared,
@@ -2108,7 +2803,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         first_action = GroundedArchitectAction(
             action_id="repeat-001",
             checkpoint_digest=checkpoint.checkpoint_digest,
-            context_digest=prepared.context.context_digest,
+            context_digest=prepared.context_digest,
             operator=_operator(
                 checkpoint,
                 decision_id="repeat-op-001",
@@ -2135,6 +2830,9 @@ class DesignControllerTurnTests(unittest.TestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(
+                first.checkpoint
+            ),
         )
         consultation_again = consult_selected_experts(
             prepared_again,
@@ -2144,7 +2842,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         repeated = GroundedArchitectAction(
             action_id="repeat-002",
             checkpoint_digest=first.checkpoint.checkpoint_digest,
-            context_digest=prepared_again.context.context_digest,
+            context_digest=prepared_again.context_digest,
             operator=_operator(
                 first.checkpoint,
                 decision_id="repeat-op-002",
@@ -2203,6 +2901,9 @@ class DesignControllerTurnTests(unittest.TestCase):
                     obligation_topics={
                         "resolve-grid": "structure"
                     },
+                    stage_subject_inventory=_turn_subject_inventory(
+                        checkpoint
+                    ),
                 )
                 consultation = consult_selected_experts(
                     prepared,
@@ -2217,7 +2918,7 @@ class DesignControllerTurnTests(unittest.TestCase):
                     checkpoint_digest=(
                         checkpoint.checkpoint_digest
                     ),
-                    context_digest=prepared.context.context_digest,
+                    context_digest=prepared.context_digest,
                     operator=DecisionOperator(
                         decision_id=f"{label}-operator",
                         decision_type="bounded-stop-test",
@@ -2268,6 +2969,7 @@ class DesignControllerTurnTests(unittest.TestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(checkpoint),
         )
         consultation = consult_selected_experts(
             prepared,
@@ -2277,7 +2979,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         action = GroundedArchitectAction(
             action_id="budget-last",
             checkpoint_digest=checkpoint.checkpoint_digest,
-            context_digest=prepared.context.context_digest,
+            context_digest=prepared.context_digest,
             operator=_operator(
                 checkpoint,
                 decision_id="budget-last-op",
@@ -2400,6 +3102,9 @@ class DesignControllerTurnTests(unittest.TestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={},
+            stage_subject_inventory=_turn_subject_inventory(
+                resumed.checkpoint
+            ),
         )
         consultation = consult_selected_experts(
             prepared,
@@ -2411,7 +3116,7 @@ class DesignControllerTurnTests(unittest.TestCase):
             checkpoint_digest=(
                 resumed.checkpoint.checkpoint_digest
             ),
-            context_digest=prepared.context.context_digest,
+            context_digest=prepared.context_digest,
             operator=DecisionOperator(
                 decision_id="detail-after-authority",
                 decision_type="parameter-derivation",
@@ -2620,6 +3325,9 @@ class DesignControllerTurnTests(unittest.TestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={},
+            stage_subject_inventory=_turn_subject_inventory(
+                result.checkpoint
+            ),
         )
         self.assertEqual(prepared.discovered_expert_ids, ())
 

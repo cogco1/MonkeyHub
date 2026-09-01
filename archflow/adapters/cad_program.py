@@ -74,7 +74,11 @@ def _physical_ids(proposal) -> tuple[str, ...]:
             object_id
             for op in proposal.operations
             for object_id in op.output_object_ids
-            if object_id not in consumed and op.kind.value != "curve"
+            if object_id not in consumed
+            and (
+                op.kind.value != "curve"
+                or bool(_params(op).get("retain_for_inspection", False))
+            )
         )
     )
 
@@ -187,7 +191,11 @@ def expected_object_semantics(
                 if components
                 else _ROOT_LAYER
             )
-            user_text = {"archflow:producer_op": operation.op_id}
+            user_text = {
+                "archflow:producer_op": operation.op_id,
+                "archflow:object_ref": f"cad-object:{object_id}",
+                "archflow:operation_ref": f"cad-operation:{operation.op_id}",
+            }
             if binding_ids:
                 user_text["archflow:bindings"] = ",".join(binding_ids)
             if components:
@@ -210,6 +218,9 @@ def expected_object_semantics(
                 "layer": layer,
                 "user_text": user_text,
             }
+            if bool(_params(operation).get("hidden_for_inspection", False)):
+                objects[object_id]["visible"] = False
+                user_text["archflow:inspection_witness"] = "hidden"
         if kind in ("array", "radial_array"):
             families[f"archflow-family-{operation.op_id}"] = int(
                 _params(operation)["count"]
@@ -288,14 +299,29 @@ def translate_to_rhino_python(
         out = operation.output_object_ids[0]
         ins = list(operation.input_object_ids)
         if kind == "curve":
-            losses.append(
-                {
-                    "code": "cad.curve_reference_only",
-                    "op_id": op_id,
-                    "kind": kind,
-                }
+            if not bool(params.get("retain_for_inspection", False)):
+                losses.append(
+                    {
+                        "code": "cad.curve_reference_only",
+                        "op_id": op_id,
+                        "kind": kind,
+                    }
+                )
+                lines.append(f"objects[{out!r}] = []  # reference curve omitted")
+                continue
+            basis = params.get("basis", "polyline")
+            points = params["points"]
+            pts = ", ".join(
+                f"({p[0]},{p[2]},{p[1]})" for p in points
             )
-            lines.append(f"objects[{out!r}] = []  # reference curve omitted")
+            if basis == "polyline":
+                lines.append(f"_register({out!r}, rs.AddPolyline([{pts}]))")
+            elif basis == "bezier":
+                lines.append(f"_register({out!r}, rs.AddInterpCurve([{pts}], 3))")
+            else:
+                raise CadTranslationError(
+                    f"curve {op_id} has unsupported basis {basis!r}"
+                )
             continue
         if kind == "solid":
             o, s = params["origin"], params["size"]
@@ -343,9 +369,19 @@ def translate_to_rhino_python(
             size = int(params["profile_size"])
             cap_ends = bool(params.get("cap_ends", True))
             loft_type = params.get("loft_type", "normal")
+            profile_basis = params.get("profile_basis", "polyline")
             if loft_type not in {"normal", "straight"}:
                 raise CadTranslationError(
                     f"loft {op_id} has unsupported loft_type {loft_type!r}"
+                )
+            if profile_basis not in {"polyline", "interpolated"}:
+                raise CadTranslationError(
+                    f"loft {op_id} has unsupported profile_basis "
+                    f"{profile_basis!r}"
+                )
+            if profile_basis == "interpolated" and size < 4:
+                raise CadTranslationError(
+                    f"loft {op_id} interpolated profiles require at least four points"
                 )
             rings = [
                 profiles[i : i + size]
@@ -356,7 +392,10 @@ def translate_to_rhino_python(
                 pts = ", ".join(
                     f"({p[0]},{p[2]},{p[1]})" for p in [*ring, ring[0]]
                 )
-                lines.append(f"_rings.append(rs.AddPolyline([{pts}]))")
+                if profile_basis == "interpolated":
+                    lines.append(f"_rings.append(rs.AddInterpCurve([{pts}], 3))")
+                else:
+                    lines.append(f"_rings.append(rs.AddPolyline([{pts}]))")
             lines.append(
                 "_srf = rs.AddLoftSrf(_rings)"
                 if loft_type == "normal"
@@ -488,6 +527,7 @@ def translate_to_rhino_python(
             "        if _meta.get('layer'): rs.ObjectLayer(_g, _meta['layer'])",
             "        for _k in sorted(_meta.get('user_text', {})):",
             "            rs.SetUserText(_g, _k, _meta['user_text'][_k])",
+            "        if _meta.get('visible') is False: rs.HideObject(_g)",
             "    _first = _guids[0]",
             "    _keys = rs.GetUserText(_first) or []",
             "    _semantics[_oid] = {",
@@ -553,12 +593,17 @@ def expected_object_bounds(program) -> dict[str, dict]:
     for op_id in program.operation_order:
         operation = operations[op_id]
         kind = operation.kind.value
-        if kind not in _SUPPORTED or kind == "curve":
+        if kind not in _SUPPORTED:
             continue
         params = _params(operation)
         out = operation.output_object_ids[0]
         ins = list(operation.input_object_ids)
-        if kind == "solid":
+        if kind == "curve":
+            if not bool(params.get("retain_for_inspection", False)):
+                continue
+            points[out] = [tuple(point) for point in params["points"]]
+            counts[out] = 1
+        elif kind == "solid":
             o, s = params["origin"], params["size"]
             points[out] = [
                 (o[0] + dx * s[0], o[1] + dy * s[1], o[2] + dz * s[2])

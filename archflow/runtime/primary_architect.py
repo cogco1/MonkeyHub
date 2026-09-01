@@ -46,7 +46,9 @@ SELECTION_INSTRUCTIONS = (
 ACTION_INSTRUCTIONS = (
     "Propose one evidence-grounded exact-base design operator. Account for "
     "every advice receipt and cite current commitments, obligations, "
-    "interfaces, or phase work. The proposal has no commit or world authority."
+    "interfaces, phase work, and every mandatory semantic work/rule ref. "
+    "Citing semantic work acknowledges treatment only; it never proves stage "
+    "acceptance. The proposal has no commit or world authority."
 )
 
 
@@ -207,11 +209,14 @@ async def run_primary_architect_turn(
         request_id=f"select-{checkpoint.checkpoint_digest[:24]}",
         phase=ModelPhase.CAPABILITY_SELECTION,
         checkpoint_digest=checkpoint.checkpoint_digest,
-        context_digest=prepared.context.context_digest,
+        context_digest=prepared.context_digest,
         payload={
             "schema": "PrimaryArchitectSelectionPrompt@1",
             "instructions": SELECTION_INSTRUCTIONS,
             "context": prepared.context.to_dict(),
+            "semantic_work_items": [
+                item.to_dict() for item in prepared.semantic_work_items
+            ],
             "available_capability_ids": list(
                 prepared.discovered_expert_ids
             ),
@@ -261,11 +266,17 @@ async def run_primary_architect_turn(
         })[:24]}",
         phase=ModelPhase.ACTION_PROPOSAL,
         checkpoint_digest=checkpoint.checkpoint_digest,
-        context_digest=prepared.context.context_digest,
+        context_digest=prepared.context_digest,
         payload={
             "schema": "PrimaryArchitectActionPrompt@1",
             "instructions": ACTION_INSTRUCTIONS,
             "context": prepared.context.to_dict(),
+            "semantic_work_items": [
+                item.to_dict() for item in prepared.semantic_work_items
+            ],
+            "required_semantic_response_refs": list(
+                prepared.required_semantic_response_refs
+            ),
             "selected_capability_ids": list(selected_expert_ids),
             "expert_receipts": [
                 _expert_receipt_payload(item)
@@ -373,7 +384,7 @@ def _parse_action(
     return GroundedArchitectAction(
         action_id=payload["action_id"],
         checkpoint_digest=checkpoint.checkpoint_digest,
-        context_digest=prepared.context.context_digest,
+        context_digest=prepared.context_digest,
         operator=DecisionOperator.from_dict(payload["operator"]),
         responds_to_refs=_strings(
             payload["responds_to_refs"],
@@ -457,7 +468,7 @@ def _receipt(
     identity = {
         "status": status.value,
         "checkpoint": checkpoint.checkpoint_digest,
-        "context": prepared.context.context_digest,
+        "context": prepared.context_digest,
         "selection": selection_receipt.receipt_id,
         "action": (
             None if action_receipt is None else action_receipt.receipt_id
@@ -470,7 +481,7 @@ def _receipt(
         receipt_id=f"primary-architect-{_digest(identity)[:24]}",
         status=status,
         checkpoint_digest=checkpoint.checkpoint_digest,
-        context_digest=prepared.context.context_digest,
+        context_digest=prepared.context_digest,
         selection_receipt=selection_receipt,
         action_receipt=action_receipt,
         controller_outcome=controller_outcome,

@@ -12,6 +12,11 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from archflow.capabilities.stair_solver import (
+    StairSolveRequest,
+    StairSolveResult,
+    StairSolveStatus,
+)
 from archflow.contracts.branch import branch_ref_from_dict, branch_ref_to_dict
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import exact_mapping, identifier
@@ -21,8 +26,11 @@ from archflow.control.check_requirements import (
     component_lineage_stage_requirement,
     material_binding_stage_requirement,
     spatial_layout_stage_requirement,
+    vertical_circulation_stage_requirement,
 )
 from archflow.control.requirements import (
+    RequirementBasisMode,
+    RequirementTargetKind,
     StageCheckRequirement,
     StageRequirementProfile,
 )
@@ -56,13 +64,27 @@ from archflow.validation.check_bridges import (
     bridge_spatial_validation_receipt,
 )
 from archflow.validation.component_lineage import StageComponentCoverageReceipt
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archflow.validation.contracts import (
+    CheckFinding,
+    CheckReceiptEnvelope,
+    CheckStatus,
+    FindingSeverity,
+)
 from archflow.validation.spatial import (
     SpatialValidationInput,
     validate_spatial_layout,
 )
+from archflow.validation.vertical_circulation import (
+    VerticalCirculationContract,
+    VerticalCirculationMaturity,
+    check_vertical_circulation_maturity,
+)
 
 if TYPE_CHECKING:
+    from archflow.control.stage_control_sources import (
+        ComponentFunctionBaselineSource,
+        VisualInventoryBaselineSource,
+    )
     from archflow.control.stage_subjects import StageSubjectInventory
     from archflow.control.relation_promotion import RelationPromotionResult
     from archflow.relations.authoring import (
@@ -94,6 +116,7 @@ class StageBaselineRole(StrEnum):
     LOAD_PATH = "load_path"
     MATERIAL_BINDING = "material_binding"
     CAD_READBACK = "cad_readback"
+    VERTICAL_CIRCULATION = "vertical_circulation"
 
 
 class StageBaselineStatus(StrEnum):
@@ -125,7 +148,11 @@ BASELINE_LEVEL_ROLES: dict[
             StageBaselineRole.MATERIAL_BINDING,
         }
     ),
-    StageBaselineLevel.COORDINATED: frozenset(StageBaselineRole),
+    StageBaselineLevel.COORDINATED: frozenset(
+        role
+        for role in StageBaselineRole
+        if role is not StageBaselineRole.VERTICAL_CIRCULATION
+    ),
 }
 
 _RELATION_SOURCE_KINDS_BY_LEVEL: dict[
@@ -142,6 +169,37 @@ _RELATION_SOURCE_KINDS_BY_LEVEL: dict[
     ),
 }
 
+
+def _required_source_kinds_for_role(
+    level: StageBaselineLevel,
+    role: StageBaselineRole,
+    *,
+    include_control: bool = True,
+) -> frozenset[str]:
+    if role is StageBaselineRole.COMPONENT_LINEAGE:
+        return frozenset({"component_lineage", "visual_inventory"}) if include_control else frozenset()
+    if role is StageBaselineRole.ASSEMBLY_RELATIONSHIPS:
+        return frozenset(
+            {
+                *({"component_functions"} if include_control else set()),
+                *_RELATION_SOURCE_KINDS_BY_LEVEL[level],
+            }
+        )
+    return frozenset()
+
+
+_VERTICAL_CIRCULATION_MATURITY_BY_LEVEL: dict[
+    StageBaselineLevel,
+    VerticalCirculationMaturity | None,
+] = {
+    StageBaselineLevel.PRE_GEOMETRY: None,
+    StageBaselineLevel.SPATIAL: VerticalCirculationMaturity.RESERVATION,
+    # A developed stair is a physical assembly, not only a walkable path.
+    # Support, load-path, host-cut, and applicable underpass evidence therefore
+    # become mandatory at the spatial -> developed boundary.
+    StageBaselineLevel.DEVELOPED: VerticalCirculationMaturity.ASSEMBLY,
+    StageBaselineLevel.COORDINATED: VerticalCirculationMaturity.ASSEMBLY,
+}
 
 DESIGN_PHASE_BASELINE_LEVEL: dict[DesignPhase, StageBaselineLevel] = {
     DesignPhase.RESEARCH_BRIEF: StageBaselineLevel.PRE_GEOMETRY,
@@ -363,6 +421,167 @@ class CadReadbackBaselineSource:
         if result.to_dict() != payload:
             raise StageBaselineError(
                 "CAD readback baseline source digest changed"
+            )
+        return result
+
+
+@dataclass(frozen=True, slots=True)
+class VerticalCirculationBaselineSource:
+    """Exact solver and readback lineage for one circulation contract.
+
+    The contract's SHA fields are claims until they are tied to retained typed
+    inputs.  The baseline therefore retains the solve request/result here and,
+    for any maturity that claims a realized walking path, names the exact CAD
+    readback source whose program and snapshot are being credited.
+    """
+
+    contract: VerticalCirculationContract
+    solve_request: StairSolveRequest
+    solve_result: StairSolveResult
+    readback_source_digest: str | None = None
+
+    SCHEMA = "VerticalCirculationBaselineSource@1"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.contract, VerticalCirculationContract):
+            raise TypeError("contract must be VerticalCirculationContract")
+        if not isinstance(self.solve_request, StairSolveRequest):
+            raise TypeError("solve_request must be StairSolveRequest")
+        if not isinstance(self.solve_result, StairSolveResult):
+            raise TypeError("solve_result must be StairSolveResult")
+        if self.solve_result.request_digest != self.solve_request.digest:
+            raise StageBaselineError(
+                "vertical-circulation solver result crossed its exact request"
+            )
+        expected_unit_ref = f"unit:{self.solve_request.length_unit.value}"
+        if self.contract.length_unit_ref != expected_unit_ref:
+            raise StageBaselineError(
+                "vertical-circulation contract crossed its exact solver unit"
+            )
+        result_digest = canonical_digest(self.solve_result.to_dict())
+        if self.contract.solver_result_digest != result_digest:
+            raise StageBaselineError(
+                "vertical-circulation contract crossed its exact solver result"
+            )
+        if (
+            self.contract.maturity
+            is not VerticalCirculationMaturity.RESERVATION
+            and (
+                self.solve_result.status is not StairSolveStatus.SOLVED
+                or self.solve_result.assembly is None
+            )
+        ):
+            raise StageBaselineError(
+                "resolved vertical circulation requires a solved stair result"
+            )
+        if (
+            self.contract.maturity
+            is not VerticalCirculationMaturity.RESERVATION
+            and self.contract.solver_tread_refs != self.solve_result.tread_refs
+        ):
+            raise StageBaselineError(
+                "vertical-circulation solver tread denominator changed"
+            )
+        if (
+            self.contract.maturity
+            is not VerticalCirculationMaturity.RESERVATION
+            and self.contract.solver_landing_refs
+            != self.solve_result.landing_refs
+        ):
+            raise StageBaselineError(
+                "vertical-circulation solver landing denominator changed"
+            )
+        for contract_interface, request_interface, role in (
+            (
+                self.contract.lower_interface,
+                self.solve_request.lower_interface,
+                "lower",
+            ),
+            (
+                self.contract.upper_interface,
+                self.solve_request.upper_interface,
+                "upper",
+            ),
+        ):
+            if (
+                contract_interface.role.value != request_interface.role.value
+                or contract_interface.relation_ref
+                != request_interface.relation_ref
+                or contract_interface.interface_ref
+                != request_interface.interface_ref
+                or contract_interface.level_ref != request_interface.level_ref
+                or contract_interface.datum_fact_ref
+                != request_interface.datum_fact_ref
+                or contract_interface.datum != request_interface.datum
+            ):
+                raise StageBaselineError(
+                    f"vertical-circulation contract crossed its exact {role} "
+                    "solver interface"
+                )
+        if (
+            self.contract.lower_landing_ownership.value
+            != self.solve_request.lower_landing_ownership.value
+            or self.contract.upper_landing_ownership.value
+            != self.solve_request.upper_landing_ownership.value
+        ):
+            raise StageBaselineError(
+                "vertical-circulation terminal landing ownership changed"
+            )
+        if self.readback_source_digest is not None:
+            object.__setattr__(
+                self,
+                "readback_source_digest",
+                require_sha256(
+                    self.readback_source_digest,
+                    "readback_source_digest",
+                ),
+            )
+
+    @property
+    def source_digest(self) -> str:
+        return canonical_digest(self._content_dict())
+
+    def _content_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "contract": self.contract.to_dict(),
+            "solve_request": self.solve_request.to_dict(),
+            "solve_result": self.solve_result.to_dict(),
+            "readback_source_digest": self.readback_source_digest,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._content_dict(), "source_digest": self.source_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "VerticalCirculationBaselineSource":
+        payload = exact_mapping(
+            value,
+            {
+                "schema",
+                "contract",
+                "solve_request",
+                "solve_result",
+                "readback_source_digest",
+                "source_digest",
+            },
+            "vertical-circulation baseline source",
+        )
+        if payload["schema"] != cls.SCHEMA:
+            raise StageBaselineError(
+                "unsupported vertical-circulation baseline source schema"
+            )
+        result = cls(
+            contract=VerticalCirculationContract.from_dict(payload["contract"]),
+            solve_request=StairSolveRequest.from_dict(
+                payload["solve_request"]
+            ),
+            solve_result=StairSolveResult.from_dict(payload["solve_result"]),
+            readback_source_digest=payload["readback_source_digest"],
+        )
+        if result.to_dict() != payload:
+            raise StageBaselineError(
+                "vertical-circulation baseline source digest changed"
             )
         return result
 
@@ -727,6 +946,9 @@ class StageBaselineSourceSet:
     assembly: tuple[AssemblyProfile, ...] = ()
     material_binding: tuple[MaterialBindingBaselineSource, ...] = ()
     cad_readback: tuple[CadReadbackBaselineSource, ...] = ()
+    visual_inventory: tuple["VisualInventoryBaselineSource", ...] = ()
+    component_functions: tuple["ComponentFunctionBaselineSource", ...] = ()
+    vertical_circulation: tuple[VerticalCirculationBaselineSource, ...] = ()
     relation_topology: tuple[RelationTopologyBaselineSource, ...] = ()
     relation_realization: tuple[RelationRealizationBaselineSource, ...] = ()
     relation_inheritance: tuple[
@@ -739,17 +961,33 @@ class StageBaselineSourceSet:
         repr=False,
         compare=False,
     )
+    _replay_schema: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
-    SCHEMA = "StageBaselineSourceSet@2"
+    SCHEMA = "StageBaselineSourceSet@4"
+    PREVIOUS_SCHEMA = "StageBaselineSourceSet@3"
+    SECONDARY_LEGACY_SCHEMA = "StageBaselineSourceSet@2"
     LEGACY_SCHEMA = "StageBaselineSourceSet@1"
 
     def __post_init__(self) -> None:
+        from archflow.control.stage_control_sources import (
+            ComponentFunctionBaselineSource,
+            VisualInventoryBaselineSource,
+        )
+
         for field, expected in (
             ("component_lineage", ComponentLineageBaselineSource),
             ("spatial_layout", SpatialLayoutBaselineSource),
             ("assembly", AssemblyProfile),
             ("material_binding", MaterialBindingBaselineSource),
             ("cad_readback", CadReadbackBaselineSource),
+            ("visual_inventory", VisualInventoryBaselineSource),
+            ("component_functions", ComponentFunctionBaselineSource),
+            ("vertical_circulation", VerticalCirculationBaselineSource),
             ("relation_topology", RelationTopologyBaselineSource),
             ("relation_realization", RelationRealizationBaselineSource),
             (
@@ -803,10 +1041,9 @@ class StageBaselineSourceSet:
         return self._legacy_read_only
 
     def _content_dict(self) -> dict[str, object]:
+        schema = self._replay_schema or self.SCHEMA
         payload: dict[str, object] = {
-            "schema": (
-                self.LEGACY_SCHEMA if self._legacy_read_only else self.SCHEMA
-            ),
+            "schema": schema,
             "component_lineage": [
                 item.to_dict() for item in self.component_lineage
             ],
@@ -819,7 +1056,7 @@ class StageBaselineSourceSet:
             ],
             "cad_readback": [item.to_dict() for item in self.cad_readback],
         }
-        if not self._legacy_read_only:
+        if schema in {self.SCHEMA, self.PREVIOUS_SCHEMA, self.SECONDARY_LEGACY_SCHEMA}:
             payload["relation_topology"] = [
                 item.to_dict() for item in self.relation_topology
             ]
@@ -828,6 +1065,17 @@ class StageBaselineSourceSet:
             ]
             payload["relation_inheritance"] = [
                 item.to_dict() for item in self.relation_inheritance
+            ]
+        if schema in {self.SCHEMA, self.PREVIOUS_SCHEMA} and self.vertical_circulation:
+            payload["vertical_circulation"] = [
+                item.to_dict() for item in self.vertical_circulation
+            ]
+        if schema == self.SCHEMA:
+            payload["visual_inventory"] = [
+                item.to_dict() for item in self.visual_inventory
+            ]
+            payload["component_functions"] = [
+                item.to_dict() for item in self.component_functions
             ]
         return payload
 
@@ -855,16 +1103,42 @@ class StageBaselineSourceSet:
             "cad_readback",
             "source_set_digest",
         }
+        from archflow.control.stage_control_sources import (
+            ComponentFunctionBaselineSource,
+            VisualInventoryBaselineSource,
+        )
         if schema == cls.SCHEMA:
+            expected = common | {
+                "visual_inventory",
+                "component_functions",
+                "relation_topology",
+                "relation_realization",
+                "relation_inheritance",
+            }
+            if "vertical_circulation" in value:
+                expected.add("vertical_circulation")
+            legacy = False
+            replay_schema = None
+        elif schema == cls.PREVIOUS_SCHEMA:
             expected = common | {
                 "relation_topology",
                 "relation_realization",
                 "relation_inheritance",
             }
-            legacy = False
+            legacy = True
+            replay_schema = cls.PREVIOUS_SCHEMA
+        elif schema == cls.SECONDARY_LEGACY_SCHEMA:
+            expected = common | {
+                "relation_topology",
+                "relation_realization",
+                "relation_inheritance",
+            }
+            legacy = True
+            replay_schema = cls.SECONDARY_LEGACY_SCHEMA
         elif schema == cls.LEGACY_SCHEMA:
             expected = common
             legacy = True
+            replay_schema = cls.LEGACY_SCHEMA
         else:
             raise StageBaselineError(
                 "unsupported stage baseline source set schema"
@@ -881,12 +1155,23 @@ class StageBaselineSourceSet:
             "material_binding",
             "cad_readback",
             *(
+                ("visual_inventory", "component_functions")
+                if schema == cls.SCHEMA
+                else ()
+            ),
+            *(
+                ("vertical_circulation",)
+                if schema in {cls.SCHEMA, cls.PREVIOUS_SCHEMA}
+                and "vertical_circulation" in payload
+                else ()
+            ),
+            *(
                 (
                     "relation_topology",
                     "relation_realization",
                     "relation_inheritance",
                 )
-                if not legacy
+                if schema != cls.LEGACY_SCHEMA
                 else ()
             ),
         ):
@@ -913,12 +1198,37 @@ class StageBaselineSourceSet:
                 CadReadbackBaselineSource.from_dict(item)
                 for item in payload["cad_readback"]
             ),
+            visual_inventory=(
+                tuple(
+                    VisualInventoryBaselineSource.from_dict(item)
+                    for item in payload["visual_inventory"]
+                )
+                if schema == cls.SCHEMA
+                else ()
+            ),
+            component_functions=(
+                tuple(
+                    ComponentFunctionBaselineSource.from_dict(item)
+                    for item in payload["component_functions"]
+                )
+                if schema == cls.SCHEMA
+                else ()
+            ),
+            vertical_circulation=(
+                tuple(
+                    VerticalCirculationBaselineSource.from_dict(item)
+                    for item in payload["vertical_circulation"]
+                )
+                if schema in {cls.SCHEMA, cls.PREVIOUS_SCHEMA}
+                and "vertical_circulation" in payload
+                else ()
+            ),
             relation_topology=(
                 tuple(
                     RelationTopologyBaselineSource.from_dict(item)
                     for item in payload["relation_topology"]
                 )
-                if not legacy
+                if schema != cls.LEGACY_SCHEMA
                 else ()
             ),
             relation_realization=(
@@ -926,7 +1236,7 @@ class StageBaselineSourceSet:
                     RelationRealizationBaselineSource.from_dict(item)
                     for item in payload["relation_realization"]
                 )
-                if not legacy
+                if schema != cls.LEGACY_SCHEMA
                 else ()
             ),
             relation_inheritance=(
@@ -934,12 +1244,13 @@ class StageBaselineSourceSet:
                     StageRelationInheritanceBaselineSource.from_dict(item)
                     for item in payload["relation_inheritance"]
                 )
-                if not legacy
+                if schema != cls.LEGACY_SCHEMA
                 else ()
             ),
         )
         if legacy:
             object.__setattr__(result, "_legacy_read_only", True)
+            object.__setattr__(result, "_replay_schema", replay_schema)
         if result.to_dict() != payload:
             raise StageBaselineError(
                 "stage baseline source set digest changed"
@@ -1081,6 +1392,425 @@ def _relation_roles_and_targets(
     )
 
 
+def _inventory_identity_refs(
+    subject_inventory: "StageSubjectInventory",
+    component_ids: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Resolve legacy validator component ids to current semantic identities.
+
+    The component-lineage and spatial validators predate
+    ``DesignComponent.identity_ref`` and therefore expose plain component ids.
+    Stage obligations, however, are authored against the retained semantic
+    identity (normally ``design-component:*``).  Crediting ``component:*`` here
+    would make a valid current inventory impossible to cover, while blindly
+    rewriting the prefix would guess identity.  The exact inventory is the
+    only authority for this join.
+    """
+
+    by_id = {item.component_id: item.identity_ref for item in subject_inventory.entries}
+    declared_targets = {
+        target_ref
+        for item in subject_inventory.entries
+        for obligation in item.role_obligations
+        for target_ref in obligation.target_refs
+    }
+    resolved: dict[str, str] = {}
+    for component_id in component_ids:
+        identity_ref = by_id.get(component_id)
+        if identity_ref is not None:
+            resolved[component_id] = identity_ref
+            continue
+        legacy_ref = f"component:{component_id}"
+        if legacy_ref in declared_targets:
+            resolved[component_id] = legacy_ref
+    for component_id in sorted(set(component_ids) - set(resolved)):
+        # Preserve the unresolved join in the exact denominator instead of
+        # guessing a semantic identity or aborting coverage compilation.  No
+        # stage-inventory obligation can be covered by this sentinel, so the
+        # applicable role remains OPEN and diagnostics retain the validator id.
+        resolved[component_id] = f"unresolved-component-id:{component_id}"
+    return tuple(sorted(resolved[item] for item in component_ids))
+
+
+def required_vertical_circulation_maturity(
+    level: StageBaselineLevel,
+) -> VerticalCirculationMaturity | None:
+    """Return the mechanically required circulation maturity for a level."""
+
+    if not isinstance(level, StageBaselineLevel):
+        raise TypeError("level must be StageBaselineLevel")
+    return _VERTICAL_CIRCULATION_MATURITY_BY_LEVEL[level]
+
+
+def check_vertical_circulation_baseline_maturity(
+    source: VerticalCirculationBaselineSource,
+    *,
+    required_maturity: VerticalCirculationMaturity,
+) -> CheckReceiptEnvelope:
+    """Recompute the stage result without trusting unproduced observations.
+
+    Reservation is a negative-space claim and may close from its typed
+    envelope.  Positive walking-surface and assembly observations currently
+    have no retained generic producer/replay source in the baseline contract;
+    a self-consistent nested receipt therefore remains UNKNOWN at the stage
+    boundary.  The hook is deliberately isolated so a future extractor can
+    replace this stop with a replay, rather than weakening the gate.
+    """
+
+    if not isinstance(source, VerticalCirculationBaselineSource):
+        raise TypeError("source must be VerticalCirculationBaselineSource")
+    if not isinstance(required_maturity, VerticalCirculationMaturity):
+        raise TypeError("required_maturity must be VerticalCirculationMaturity")
+    receipt = check_vertical_circulation_maturity(
+        source.contract,
+        required_maturity=required_maturity,
+    )
+    if (
+        required_maturity is VerticalCirculationMaturity.RESERVATION
+        or receipt.status is not CheckStatus.PASS
+    ):
+        return receipt
+    finding = CheckFinding(
+        code="vertical-circulation-producer-replay-unknown",
+        severity=FindingSeverity.UNKNOWN,
+        message=(
+            "resolved walking-surface and assembly observations lack a "
+            "retained generic producer/replay source"
+        ),
+        subject_refs=(source.contract.ref,),
+    )
+    return replace(
+        receipt,
+        status=CheckStatus.UNKNOWN,
+        findings=tuple(
+            sorted(
+                (*receipt.findings, finding),
+                key=lambda item: (item.code, item.subject_refs, item.message),
+            )
+        ),
+        covered_refs=(),
+    )
+
+
+def _bind_semantic_rule_coverage(
+    receipt: CheckReceiptEnvelope,
+    binding: object | None,
+) -> CheckReceiptEnvelope:
+    """Make every active framework rule part of the replayed denominator."""
+
+    if binding is None:
+        return receipt
+    rule_refs = tuple(getattr(binding, "rule_refs"))
+    binding_ref = getattr(binding, "ref")
+    basis_ref = getattr(binding, "basis_ref")
+    authority_ref = getattr(binding, "authority_ref")
+    denominator = tuple(
+        sorted({*receipt.coverage_denominator, binding_ref, *rule_refs})
+    )
+    return replace(
+        receipt,
+        subject_refs=denominator,
+        source_refs=tuple(sorted({*receipt.source_refs, basis_ref})),
+        authority_refs=tuple(
+            sorted({*receipt.authority_refs, authority_ref})
+        ),
+        coverage_denominator=denominator,
+        covered_refs=(
+            denominator if receipt.status is CheckStatus.PASS else ()
+        ),
+    )
+
+
+def _vertical_circulation_component_refs(
+    subject_inventory: "StageSubjectInventory",
+) -> tuple[str, ...]:
+    from archflow.control.stage_subjects import StageSubjectDisposition
+
+    def has_explicit_stair_semantics(semantic_kind: str) -> bool:
+        normalized = "-".join(
+            semantic_kind.casefold().replace("_", " ").split()
+        )
+        tokens = tuple(
+            token for token in normalized.split("-") if token
+        )
+        return (
+            any(
+                token
+                in {
+                    "stair",
+                    "stairs",
+                    "staircase",
+                    "stairway",
+                    "stairwell",
+                    "step",
+                    "steps",
+                }
+                for token in tokens
+            )
+            or any(
+                left == "vertical" and right == "circulation"
+                for left, right in zip(tokens, tokens[1:])
+            )
+        )
+
+    refs = {
+        entry.identity_ref
+        for entry in subject_inventory.entries
+        if (
+            (
+                next(
+                    (
+                        item.disposition
+                        for item in entry.role_obligations
+                        if item.role is StageBaselineRole.VERTICAL_CIRCULATION
+                    ),
+                    None,
+                )
+                is StageSubjectDisposition.REQUIRED
+            )
+            or (
+                subject_inventory.is_legacy_read_only
+                and
+                not any(
+                    item.role is StageBaselineRole.VERTICAL_CIRCULATION
+                    for item in entry.role_obligations
+                )
+                and has_explicit_stair_semantics(entry.semantic_kind)
+            )
+        )
+    }
+    return tuple(sorted(refs))
+
+
+def _vertical_circulation_semantic_binding(
+    subject_inventory: "StageSubjectInventory",
+    component_ref: str,
+) -> object | None:
+    """Return the one exact current stair binding for a component."""
+
+    if subject_inventory.is_legacy_read_only:
+        return None
+    matches = tuple(
+        item
+        for item in subject_inventory.semantic_rule_pack_bindings
+        if item.component_ref == component_ref
+        and item.capability_id.value == "stair"
+    )
+    if len(matches) != 1:
+        raise StageBaselineError(
+            "vertical-circulation subject lacks one exact stair rule-pack binding"
+        )
+    binding = matches[0]
+    if not binding.active_rule_ids:
+        raise StageBaselineError(
+            "vertical-circulation stair binding has no active rule denominator"
+        )
+    return binding
+
+
+def _require_vertical_circulation_source_alignment(
+    profile: StageRequirementProfile,
+    sources: StageBaselineSourceSet,
+    *,
+    subject_digest: str,
+    subject_inventory: "StageSubjectInventory",
+) -> None:
+    expected_refs = set(_vertical_circulation_component_refs(subject_inventory))
+    required_maturity = required_vertical_circulation_maturity(
+        subject_inventory.baseline_level
+    )
+    if required_maturity is None:
+        if sources.vertical_circulation:
+            raise StageBaselineError(
+                "pre-geometry baseline cannot consume a circulation geometry source"
+            )
+        return
+    seen_refs: set[str] = set()
+    topology_graphs = tuple(
+        source.promotion.graph for source in sources.relation_topology
+    )
+    if sources.vertical_circulation and expected_refs and (
+        len(sources.vertical_circulation) != len(expected_refs)
+    ):
+        raise StageBaselineError(
+            "vertical-circulation sources must cover every stair instance exactly once"
+        )
+    for source in sources.vertical_circulation:
+        contract = source.contract
+        exact_fields = (
+            (contract.branch, profile.branch, "branch"),
+            (contract.scope_digest, profile.scope_digest, "scope"),
+            (contract.stage_id, profile.stage_id, "stage"),
+            (
+                contract.stage_subject_ref,
+                profile.stage_subject_ref,
+                "stage subject ref",
+            ),
+            (
+                contract.stage_subject_digest,
+                subject_digest,
+                "stage subject digest",
+            ),
+            (
+                contract.design_state_digest,
+                profile.predecessor_state_digest,
+                "design state digest",
+            ),
+        )
+        for actual, expected, field in exact_fields:
+            if actual != expected:
+                raise StageBaselineError(
+                    f"vertical-circulation source crossed the exact {field}"
+                )
+        contract_refs = set(contract.component_refs)
+        if len(contract_refs) != 1:
+            raise StageBaselineError(
+                "vertical-circulation source must bind one exact stair component"
+            )
+        if not contract_refs.issubset(expected_refs):
+            raise StageBaselineError(
+                "vertical-circulation source names a non-circulation subject"
+            )
+        if seen_refs.intersection(contract_refs):
+            raise StageBaselineError(
+                "vertical-circulation sources overlap a subject denominator"
+            )
+        seen_refs.update(contract_refs)
+        component_ref = contract.component_refs[0]
+        if (
+            contract.aabb_precheck is None
+            or contract.aabb_precheck.component_ref != component_ref
+        ):
+            raise StageBaselineError(
+                "vertical-circulation source lacks its per-instance AABB envelope"
+            )
+        if contract.lower_interface.relation_ref == contract.upper_interface.relation_ref:
+            raise StageBaselineError(
+                "vertical-circulation terminal interfaces must bind distinct relations"
+            )
+        for interface in (contract.lower_interface, contract.upper_interface):
+            matches = tuple(
+                (graph, relation)
+                for graph in topology_graphs
+                for relation in graph.relations
+                if relation.ref == interface.relation_ref
+            )
+            if len(matches) != 1:
+                raise StageBaselineError(
+                    "vertical-circulation terminal relation_ref must name exactly "
+                    "one retained topology relation"
+                )
+            graph, relation = matches[0]
+            if (
+                graph.branch != profile.branch
+                or graph.stage_id != profile.stage_id
+                or graph.state_digest != profile.predecessor_state_digest
+                or graph.scope_digest != profile.scope_digest
+                or graph.stage_subject_digest != subject_digest
+                or graph.subject_inventory_digest
+                != subject_inventory.inventory_digest
+            ):
+                raise StageBaselineError(
+                    "vertical-circulation terminal relation crossed its exact "
+                    "retained topology context"
+                )
+            endpoint_refs = {item.node_ref for item in relation.participants}
+            if relation.kind.value not in {"access", "interface"}:
+                raise StageBaselineError(
+                    "vertical-circulation terminal relation must be ACCESS or INTERFACE"
+                )
+            if component_ref not in endpoint_refs or interface.level_ref not in endpoint_refs:
+                raise StageBaselineError(
+                    "vertical-circulation terminal relation endpoints do not "
+                    "match the stair component and interface level"
+                )
+
+        realized_path_claimed = (
+            contract.maturity is not VerticalCirculationMaturity.RESERVATION
+        )
+        if not realized_path_claimed:
+            if source.readback_source_digest is not None:
+                raise StageBaselineError(
+                    "circulation reservation cannot credit a CAD readback source"
+                )
+            continue
+        if source.readback_source_digest is None:
+            raise StageBaselineError(
+                "resolved vertical circulation lacks an exact CAD readback source"
+            )
+        readback_sources = tuple(
+            item
+            for item in sources.cad_readback
+            if item.source_digest == source.readback_source_digest
+        )
+        if len(readback_sources) != 1:
+            raise StageBaselineError(
+                "vertical circulation does not bind exactly one retained CAD "
+                "readback source"
+            )
+        readback_source = readback_sources[0]
+        profile_fields = (
+            (readback_source.profile.branch, contract.branch, "branch"),
+            (
+                readback_source.profile.scope_digest,
+                contract.scope_digest,
+                "scope",
+            ),
+            (readback_source.profile.stage_id, contract.stage_id, "stage"),
+            (
+                readback_source.profile.program_digest,
+                contract.program_digest,
+                "program digest",
+            ),
+            (
+                readback_source.profile.length_unit,
+                source.solve_request.length_unit.value,
+                "length unit",
+            ),
+            (
+                readback_source.profile.up_axis.value,
+                contract.up_axis.value,
+                "up axis",
+            ),
+            (
+                readback_source.snapshot.snapshot_digest,
+                contract.readback_digest,
+                "readback digest",
+            ),
+        )
+        for actual, expected, field in profile_fields:
+            if actual != expected:
+                raise StageBaselineError(
+                    "vertical circulation crossed its exact CAD " + field
+                )
+        expected_pairs = {
+            (item.object_ref, item.operation_ref)
+            for item in (
+                *contract.object_bindings,
+                *contract.interface_host_bindings,
+            )
+        }
+        profile_pairs = {
+            (item.object_ref, item.operation_ref)
+            for item in readback_source.profile.object_requirements
+        }
+        snapshot_pairs = {
+            (item.object_ref, item.operation_ref)
+            for item in readback_source.snapshot.objects
+        }
+        if not expected_pairs.issubset(profile_pairs) or not expected_pairs.issubset(
+            snapshot_pairs
+        ):
+            raise StageBaselineError(
+                "vertical circulation object/program bindings are absent from "
+                "the exact CAD readback"
+            )
+    if sources.vertical_circulation and seen_refs != expected_refs:
+        raise StageBaselineError(
+            "vertical-circulation sources must cover every stair instance exactly once"
+        )
+
+
 def _require_current_relation_source_alignment(
     profile: StageRequirementProfile,
     sources: StageBaselineSourceSet,
@@ -1111,6 +1841,98 @@ def _require_current_relation_source_alignment(
                 "relation baseline source crossed the exact profile, state, "
                 "scope, stage subject, or subject inventory"
             )
+
+    # A satisfied component-function row is only a claim about one component.
+    # It becomes a Stage 2/3 control chain only when the exact requirement-set
+    # questions and rules are consumed by one verified topology source.  Do not
+    # infer this join from semantic kind or from a broad graph-level PASS.
+    if (
+        len(sources.component_functions) == 1
+        and sources.component_functions[0].relation_requirements is not None
+        and topology_graphs
+    ):
+        requirement_set = (
+            sources.component_functions[0].relation_requirements
+        )
+        assert requirement_set is not None
+        for requirement in requirement_set.requirements:
+            matching_sources = tuple(
+                source
+                for source in sources.relation_topology
+                if any(
+                    question == requirement.question
+                    for question in source.context.questions
+                )
+            )
+            if len(matching_sources) != 1:
+                raise StageBaselineError(
+                    "each functional relation question must be consumed by one "
+                    "exact Stage 2 topology source"
+                )
+            topology_source = matching_sources[0]
+            basis_by_id = {
+                basis.basis_id: basis for basis in topology_source.context.bases
+            }
+            for basis_id in requirement.question.basis_ids:
+                basis = basis_by_id.get(basis_id)
+                if (
+                    basis is None
+                    or requirement.question.ref not in basis.question_refs
+                    or requirement.rule.relation_kind
+                    not in basis.allowed_relation_kinds
+                    or not set(requirement.rule.evidence_refs).issubset(
+                        basis.evidence_refs
+                    )
+                    or not set(requirement.rule.authority_refs).issubset(
+                        basis.authority_refs
+                    )
+                ):
+                    raise StageBaselineError(
+                        "functional relation question lacks its exact evidence-"
+                        "bound topology basis"
+                    )
+            policy = topology_source.compilation.policy
+            if policy is None or sum(
+                rule == requirement.rule for rule in policy.rules
+            ) != 1:
+                raise StageBaselineError(
+                    "functional relation rule was not consumed by the Stage 2 "
+                    "topology compilation"
+                )
+            expected_slot = requirement.slot
+            matching_slots = tuple(
+                slot
+                for slot in topology_source.compilation.slots
+                if (
+                    slot.stage_id == expected_slot.stage_id
+                    and slot.rule_id == expected_slot.rule_id
+                    and slot.node_ref == expected_slot.node_ref
+                    and slot.node_kind == expected_slot.node_kind
+                    and slot.semantic_kind == expected_slot.semantic_kind
+                    and slot.relation_kind == expected_slot.relation_kind
+                    and slot.subject_role == expected_slot.subject_role
+                    and slot.counted_role == expected_slot.counted_role
+                    and slot.minimum_count == expected_slot.minimum_count
+                    and slot.maximum_count == expected_slot.maximum_count
+                    and slot.scenario_ref == expected_slot.scenario_ref
+                    and slot.evidence_refs == expected_slot.evidence_refs
+                    and slot.authority_refs == expected_slot.authority_refs
+                    and slot.allow_not_applicable
+                    == expected_slot.allow_not_applicable
+                )
+            )
+            if len(matching_slots) != 1:
+                raise StageBaselineError(
+                    "functional relation obligation lacks one exact component-"
+                    "bound topology slot"
+                )
+            if not any(
+                requirement.question.ref in relation.source_refs
+                for relation in topology_source.promotion.graph.relations
+            ):
+                raise StageBaselineError(
+                    "functional relation question has no verified topology relation"
+                )
 
     topology_digests = tuple(
         sorted(graph.graph_digest for graph in topology_graphs)
@@ -1195,8 +2017,185 @@ def _expected_checks(
         subject_digest=subject_digest,
         subject_inventory=subject_inventory,
     )
+    _require_vertical_circulation_source_alignment(
+        profile,
+        sources,
+        subject_digest=subject_digest,
+        subject_inventory=subject_inventory,
+    )
+    required_circulation_maturity = required_vertical_circulation_maturity(
+        subject_inventory.baseline_level
+    )
     checks: list[_ExpectedBaselineCheck] = []
+    from archflow.control.component_functions import ComponentFunctionId
+    from archflow.validation.stage_control import (
+        check_component_function_baseline,
+        check_visual_inventory_baseline,
+        component_function_stage_requirement,
+        visual_inventory_stage_requirement,
+    )
+
+    visual_denominator = (
+        f"visual-inventory:"
+        f"{subject_inventory.visual_inventory_digest or 'missing'}",
+    )
+    visual_check_id = (
+        f"visual-inventory-{subject_inventory.inventory_digest[:24]}"
+    )
+    if len(sources.visual_inventory) == 1:
+        visual_source = sources.visual_inventory[0]
+        checks.append(
+            _ExpectedBaselineCheck(
+                requirement=visual_inventory_stage_requirement(
+                    visual_source,
+                    subject_inventory,
+                ),
+                receipt=check_visual_inventory_baseline(
+                    visual_source,
+                    subject_inventory,
+                    scope_digest=profile.scope_digest,
+                    subject_digest=subject_digest,
+                ),
+                source_kind="visual_inventory",
+                roles=(StageBaselineRole.COMPONENT_LINEAGE,),
+                role_targets=((StageBaselineRole.COMPONENT_LINEAGE, ()),),
+                source_digest=visual_source.source_digest,
+            )
+        )
+    else:
+        visual_requirement = StageCheckRequirement(
+            requirement_id=visual_check_id,
+            checker_id="visual-inventory-validator",
+            target_kind=RequirementTargetKind.COMPONENT,
+            basis_mode=RequirementBasisMode.UNIVERSAL,
+            denominator_refs=visual_denominator,
+        )
+        visual_receipt = CheckReceiptEnvelope(
+            check_id=visual_check_id,
+            checker_id="visual-inventory-validator",
+            checker_version="1.0.0",
+            branch=profile.branch,
+            scope_digest=profile.scope_digest,
+            subject_refs=visual_denominator,
+            subject_digest=subject_digest,
+            status=CheckStatus.FAIL,
+            findings=(
+                CheckFinding(
+                    code="visual-source-cardinality",
+                    severity=FindingSeverity.ERROR,
+                    message=(
+                        "stage baseline requires exactly one visual inventory source"
+                    ),
+                    subject_refs=visual_denominator,
+                ),
+            ),
+            coverage_denominator=visual_denominator,
+        )
+        checks.append(
+            _ExpectedBaselineCheck(
+                requirement=visual_requirement,
+                receipt=visual_receipt,
+                source_kind="visual_inventory",
+                roles=(StageBaselineRole.COMPONENT_LINEAGE,),
+                role_targets=((StageBaselineRole.COMPONENT_LINEAGE, ()),),
+                source_digest=canonical_digest(
+                    {
+                        "kind": "missing-or-ambiguous-visual-inventory",
+                        "inventory_digest": subject_inventory.inventory_digest,
+                    }
+                ),
+            )
+        )
+
+    function_denominator = tuple(
+        sorted(
+            f"function-evaluation:{entry.identity_ref}/{function_id.value}"
+            for entry in subject_inventory.entries
+            for function_id in ComponentFunctionId
+        )
+    )
+    function_check_id = (
+        f"component-functions-{subject_inventory.inventory_digest[:24]}"
+    )
+    if len(sources.component_functions) == 1:
+        function_source = sources.component_functions[0]
+        checks.append(
+            _ExpectedBaselineCheck(
+                requirement=component_function_stage_requirement(
+                    function_source,
+                    subject_inventory,
+                ),
+                receipt=check_component_function_baseline(
+                    function_source,
+                    subject_inventory,
+                    scope_digest=profile.scope_digest,
+                    subject_digest=subject_digest,
+                ),
+                source_kind="component_functions",
+                roles=(StageBaselineRole.ASSEMBLY_RELATIONSHIPS,),
+                role_targets=(
+                    (StageBaselineRole.ASSEMBLY_RELATIONSHIPS, ()),
+                ),
+                source_digest=function_source.source_digest,
+            )
+        )
+    else:
+        function_requirement = StageCheckRequirement(
+            requirement_id=function_check_id,
+            checker_id="component-function-validator",
+            target_kind=RequirementTargetKind.RELATION,
+            basis_mode=RequirementBasisMode.UNIVERSAL,
+            denominator_refs=function_denominator,
+        )
+        function_receipt = CheckReceiptEnvelope(
+            check_id=function_check_id,
+            checker_id="component-function-validator",
+            checker_version="1.0.0",
+            branch=profile.branch,
+            scope_digest=profile.scope_digest,
+            subject_refs=function_denominator,
+            subject_digest=subject_digest,
+            status=CheckStatus.FAIL,
+            findings=(
+                CheckFinding(
+                    code="function-source-cardinality",
+                    severity=FindingSeverity.ERROR,
+                    message=(
+                        "stage baseline requires exactly one component function ledger"
+                    ),
+                    subject_refs=(function_denominator[0],),
+                ),
+            ),
+            coverage_denominator=function_denominator,
+        )
+        checks.append(
+            _ExpectedBaselineCheck(
+                requirement=function_requirement,
+                receipt=function_receipt,
+                source_kind="component_functions",
+                roles=(StageBaselineRole.ASSEMBLY_RELATIONSHIPS,),
+                role_targets=(
+                    (StageBaselineRole.ASSEMBLY_RELATIONSHIPS, ()),
+                ),
+                source_digest=canonical_digest(
+                    {
+                        "kind": "missing-or-ambiguous-component-functions",
+                        "inventory_digest": subject_inventory.inventory_digest,
+                    }
+                ),
+            )
+        )
+    if subject_inventory.is_legacy_read_only:
+        checks.clear()
     for source in sources.component_lineage:
+        lineage_component_ids = tuple(
+            sorted(
+                {
+                    operation.ref.component_id
+                    for operation in source.source_receipt.predecessor_operations
+                }
+            )
+        )
         checks.append(
             _ExpectedBaselineCheck(
                 requirement=component_lineage_stage_requirement(source.profile),
@@ -1210,13 +2209,9 @@ def _expected_checks(
                 role_targets=(
                     (
                         StageBaselineRole.COMPONENT_LINEAGE,
-                        tuple(
-                            sorted(
-                                {
-                                    f"component:{operation.ref.component_id}"
-                                    for operation in source.source_receipt.predecessor_operations
-                                }
-                            )
+                        _inventory_identity_refs(
+                            subject_inventory,
+                            lineage_component_ids,
                         ),
                     ),
                 ),
@@ -1252,17 +2247,71 @@ def _expected_checks(
                 role_targets=(
                     (
                         StageBaselineRole.SPATIAL_ENVELOPE,
-                        tuple(
-                            sorted(
-                                f"component:{component_id}"
-                                for component_id in spatial_input.required_component_ids
-                            )
+                        _inventory_identity_refs(
+                            subject_inventory,
+                            spatial_input.required_component_ids,
                         ),
                     ),
                 ),
                 source_digest=source.source_digest,
             )
         )
+    if required_circulation_maturity is not None:
+        for source in sources.vertical_circulation:
+            contract = source.contract
+            semantic_binding = _vertical_circulation_semantic_binding(
+                subject_inventory,
+                contract.component_refs[0],
+            )
+            semantic_rule_refs = (
+                ()
+                if semantic_binding is None
+                else (
+                    semantic_binding.ref,
+                    *semantic_binding.rule_refs,
+                )
+            )
+            semantic_basis_refs = (
+                ()
+                if semantic_binding is None
+                else (semantic_binding.basis_ref,)
+            )
+            semantic_authority_refs = (
+                ()
+                if semantic_binding is None
+                else (semantic_binding.authority_ref,)
+            )
+            checks.append(
+                _ExpectedBaselineCheck(
+                    requirement=vertical_circulation_stage_requirement(
+                        contract,
+                        required_maturity=required_circulation_maturity,
+                        semantic_rule_refs=semantic_rule_refs,
+                        semantic_basis_refs=semantic_basis_refs,
+                        semantic_authority_refs=(
+                            semantic_authority_refs
+                        ),
+                    ),
+                    receipt=_bind_semantic_rule_coverage(
+                        check_vertical_circulation_baseline_maturity(
+                            source,
+                            required_maturity=(
+                                required_circulation_maturity
+                            ),
+                        ),
+                        semantic_binding,
+                    ),
+                    source_kind="vertical_circulation",
+                    roles=(StageBaselineRole.VERTICAL_CIRCULATION,),
+                    role_targets=(
+                        (
+                            StageBaselineRole.VERTICAL_CIRCULATION,
+                            contract.component_refs,
+                        ),
+                    ),
+                    source_digest=source.source_digest,
+                )
+            )
     for source in sources.assembly:
         checks.append(
             _ExpectedBaselineCheck(
@@ -1605,9 +2654,22 @@ class StageBaselineCoverageReceipt:
             )
         if not isinstance(self.status, StageBaselineStatus):
             raise TypeError("status must be StageBaselineStatus")
-        expected_roles = tuple(sorted(BASELINE_LEVEL_ROLES[self.level]))
-        if self.required_roles != expected_roles:
+        base_roles = tuple(sorted(BASELINE_LEVEL_ROLES[self.level]))
+        allowed_role_sets = {base_roles}
+        if self.level is not StageBaselineLevel.PRE_GEOMETRY:
+            allowed_role_sets.add(
+                tuple(
+                    sorted(
+                        {
+                            *BASELINE_LEVEL_ROLES[self.level],
+                            StageBaselineRole.VERTICAL_CIRCULATION,
+                        }
+                    )
+                )
+            )
+        if self.required_roles not in allowed_role_sets:
             raise StageBaselineError("required_roles do not match baseline level")
+        expected_roles = self.required_roles
         if not isinstance(self.coverage, tuple) or any(
             not isinstance(item, StageBaselineRoleCoverage)
             for item in self.coverage
@@ -1779,6 +2841,14 @@ def _inventory_covers_role(
 ) -> bool:
     from archflow.control.stage_subjects import StageSubjectDisposition
 
+    if role is StageBaselineRole.VERTICAL_CIRCULATION:
+        expected_refs = set(
+            _vertical_circulation_component_refs(subject_inventory)
+        )
+        return bool(expected_refs) and expected_refs.issubset(
+            covered_target_refs
+        )
+
     obligations = tuple(
         obligation
         for entry in subject_inventory.entries
@@ -1886,6 +2956,49 @@ def derive_stage_requirement_profile(
     )
 
 
+def derive_stage_baseline_check_receipts(
+    profile: StageRequirementProfile,
+    *,
+    sources: StageBaselineSourceSet,
+    subject_digest: str,
+    subject_inventory: "StageSubjectInventory",
+) -> tuple[CheckReceiptEnvelope, ...]:
+    """Recompute every framework-owned receipt from the exact typed sources.
+
+    Project-specific requirements may still require caller-supplied independent
+    receipts.  This function returns only the framework denominator and refuses
+    to do so until the supplied profile retains each corresponding requirement
+    exactly, preventing a caller from deriving receipts and then dropping their
+    requirements before closure.
+    """
+
+    if not isinstance(profile, StageRequirementProfile):
+        raise TypeError("profile must be StageRequirementProfile")
+    if not isinstance(sources, StageBaselineSourceSet):
+        raise TypeError("sources must be StageBaselineSourceSet")
+    subject_digest = require_sha256(subject_digest, "subject_digest")
+    _validated_subject_inventory_digest(
+        profile,
+        level=subject_inventory.baseline_level,
+        subject_digest=subject_digest,
+        subject_inventory=subject_inventory,
+    )
+    expected = _expected_checks(
+        profile,
+        sources,
+        subject_digest=subject_digest,
+        subject_inventory=subject_inventory,
+    )
+    requirements = {item.requirement_id: item for item in profile.requirements}
+    for item in expected:
+        if requirements.get(item.requirement.requirement_id) != item.requirement:
+            raise StageBaselineError(
+                "profile omits or changes a framework baseline requirement: "
+                + item.requirement.requirement_id
+            )
+    return tuple(item.receipt for item in expected)
+
+
 def compile_stage_baseline_coverage(
     profile: StageRequirementProfile,
     *,
@@ -1915,7 +3028,13 @@ def compile_stage_baseline_coverage(
     ):
         raise TypeError("check_receipts must contain CheckReceiptEnvelope")
 
-    required = tuple(sorted(BASELINE_LEVEL_ROLES[level]))
+    required_set = set(BASELINE_LEVEL_ROLES[level])
+    if (
+        required_vertical_circulation_maturity(level) is not None
+        and _vertical_circulation_component_refs(subject_inventory)
+    ):
+        required_set.add(StageBaselineRole.VERTICAL_CIRCULATION)
+    required = tuple(sorted(required_set))
     requirements = {item.requirement_id: item for item in profile.requirements}
     receipts_by_id: dict[str, list[CheckReceiptEnvelope]] = {}
     for receipt in check_receipts:
@@ -2002,9 +3121,12 @@ def compile_stage_baseline_coverage(
         for role, rows in sorted(role_rows.items())
         if rows
         and (
-            role is not StageBaselineRole.ASSEMBLY_RELATIONSHIPS
-            or sources.is_legacy_read_only
-            or _RELATION_SOURCE_KINDS_BY_LEVEL[level].issubset(
+            sources.is_legacy_read_only
+            or _required_source_kinds_for_role(
+                level,
+                role,
+                include_control=not subject_inventory.is_legacy_read_only,
+            ).issubset(
                 role_source_kinds[role]
             )
         )
@@ -2053,8 +3175,12 @@ __all__ = [
     "StageBaselineSourceSet",
     "StageBaselineStatus",
     "StageRelationInheritanceBaselineSource",
+    "VerticalCirculationBaselineSource",
+    "check_vertical_circulation_baseline_maturity",
+    "required_vertical_circulation_maturity",
     "baseline_level_for_design_phase",
     "compile_stage_baseline_coverage",
+    "derive_stage_baseline_check_receipts",
     "derive_stage_baseline_requirements",
     "derive_stage_requirement_profile",
 ]

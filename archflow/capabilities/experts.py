@@ -65,6 +65,32 @@ class ExpertEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class ExpertWorkItem:
+    """Detached controller work; it is not a dischargeable state obligation."""
+
+    work_ref: str
+    topic: str
+    statement: str
+    source_refs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for value, field in (
+            (self.work_ref, "work_ref"),
+            (self.topic, "topic"),
+            (self.statement, "statement"),
+        ):
+            _require_text(value, field)
+        if not isinstance(self.source_refs, tuple) or not self.source_refs:
+            raise ValueError("source_refs must be a non-empty tuple")
+        if len(self.source_refs) > _MAX_INPUT_ITEMS:
+            raise ValueError("too many work-item source refs")
+        if len(self.source_refs) != len(set(self.source_refs)):
+            raise ValueError("work-item source refs contain duplicates")
+        for value in self.source_refs:
+            _require_text(value, "work-item source ref")
+
+
+@dataclass(frozen=True, slots=True)
 class ExpertSnapshot:
     """Detached, immutable input bound to one canonical state version."""
 
@@ -73,6 +99,7 @@ class ExpertSnapshot:
     obligations: tuple[ExpertObligation, ...]
     evidence: tuple[ExpertEvidence, ...]
     design_program_ref: ProjectRecordRef | None = None
+    work_items: tuple[ExpertWorkItem, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.base_state, StateRef):
@@ -88,10 +115,19 @@ class ExpertSnapshot:
             raise TypeError("obligations must be a tuple")
         if not isinstance(self.evidence, tuple):
             raise TypeError("evidence must be a tuple")
+        if not isinstance(self.work_items, tuple) or any(
+            not isinstance(item, ExpertWorkItem) for item in self.work_items
+        ):
+            raise TypeError("work_items must contain ExpertWorkItem values")
         if len(self.obligations) > _MAX_INPUT_ITEMS:
             raise ValueError("too many obligations in expert snapshot")
         if len(self.evidence) > _MAX_INPUT_ITEMS:
             raise ValueError("too many evidence items in expert snapshot")
+        if len(self.work_items) > _MAX_INPUT_ITEMS:
+            raise ValueError("too many work items in expert snapshot")
+        work_refs = tuple(item.work_ref for item in self.work_items)
+        if len(work_refs) != len(set(work_refs)):
+            raise ValueError("expert work items contain duplicate refs")
 
     @classmethod
     def detach(
@@ -254,7 +290,10 @@ class ExpertRegistry:
         return self._specs[expert_id]
 
     def discover(self, snapshot: ExpertSnapshot) -> tuple[ExpertSpec, ...]:
-        topics = {item.topic for item in snapshot.obligations}
+        topics = {
+            *(item.topic for item in snapshot.obligations),
+            *(item.topic for item in snapshot.work_items),
+        }
         evidence_kinds = {item.kind for item in snapshot.evidence}
         relevant = (
             spec
@@ -346,7 +385,13 @@ def initial_expert_specs() -> tuple[ExpertSpec, ...]:
             expert_id="expert.circulation",
             description="Reviews entrances, connectivity, clearances, and routes.",
             topics=frozenset(
-                {"entrance", "connectivity", "circulation", "clear_height"}
+                {
+                    "entrance",
+                    "connectivity",
+                    "circulation",
+                    "clear_height",
+                    "vertical-circulation",
+                }
             ),
             required_evidence_kinds=frozenset({"voxel_observation"}),
         ),

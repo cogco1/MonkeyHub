@@ -12301,6 +12301,550 @@
       "evidence": [
         "140 targeted relation-control tests passed; compileall passed; ARCHITECTURE PASS (189 files); exact P036 byte-digest replay rejects forged same-path refs; full suite 1026 passed, 6 skipped, 40 known unrelated failures from missing promoted probes and stale oculus fixtures"
       ]
+    },
+    {
+      "id": "M084",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make every declared stair semantic mechanically activate one versioned framework rule pack, non-dischargeable design-turn work item, and exact staged vertical-circulation denominator that project callers cannot omit, weaken, retarget, or replace.",
+      "depends_on": [
+        "M083"
+      ],
+      "write_scope": [
+        "archflow/capabilities/experts.py",
+        "archflow/capabilities/stair_geometry.py",
+        "archflow/capabilities/stair_solver.py",
+        "archflow/control/__init__.py",
+        "archflow/control/baseline.py",
+        "archflow/control/check_requirements.py",
+        "archflow/control/semantic_capabilities.py",
+        "archflow/control/stage_subjects.py",
+        "archflow/runtime/__init__.py",
+        "archflow/runtime/design_controller.py",
+        "archflow/runtime/primary_architect.py",
+        "archflow/runtime/stage_subject_inventory.py",
+        "archflow/validation/vertical_circulation.py",
+        "tests/integration/test_design_state_resume.py",
+        "tests/test_design_controller.py",
+        "tests/test_primary_architect_provider.py",
+        "tests/test_production_route_quarantine.py",
+        "tests/test_semantic_capabilities.py",
+        "tests/test_stage_baseline.py",
+        "tests/test_stage_subject_inventory.py",
+        "tests/test_stair_geometry.py",
+        "tests/test_stair_solver.py",
+        "tests/test_vertical_circulation.py",
+        "governance/work_registry.json",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/"
+      ],
+      "acceptance": [
+        "Spatial, developed, and coordinated stair subjects automatically receive an exact mandatory vertical-circulation role and stage-specific rule set; caller omission is injected while caller weakening or retargeting fails.",
+        "An exact stair binding creates a non-dischargeable semantic design work item before expert discovery, activates the vertical-circulation expert without an ordinary state obligation, and requires every action to cite the work item plus every active rule reference.",
+        "Ordinary DesignObligation discharge cannot remove semantic work or satisfy a stage; every active semantic rule reference remains in the stage requirement and independent check-receipt denominator.",
+        "The semantic policy and each component binding are digest-bound to exact branch epoch stage subject and component content without acquiring design persistence acceptance or canonical-write authority.",
+        "P036 stage-exit save and reload independently replay the exact retained policy and proposal/index sources; missing changed stale or cross-context inputs fail without changing canonical HEAD.",
+        "Legacy inventory and bundle schemas remain read-only, cannot authorize a new phase advance, and cannot serve as a writable current-proof checkpoint anchor.",
+        "Stair-specific geometry and validation remain generic evidence-bound mechanisms with no building-specific answer in framework code."
+      ],
+      "tests": [
+        "Semantic policy deterministic replay injection and tamper rejection",
+        "Stair solver geometry and vertical-circulation maturity gates",
+        "Stage baseline and controller exact replay regressions",
+        "Architecture check compileall and diff audit"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "tests/test_semantic_capabilities.py",
+          "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_stair_semantics_automatically_inject_mandatory_rule_pack",
+          "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_stair_mandatory_role_cannot_be_na_or_retargeted",
+          "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_policy_replay_rejects_removed_binding_and_stale_state_index",
+          "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_policy_replay_rejects_rehashed_cross_context_bindings",
+          "tests/test_stair_solver.py",
+          "tests/test_stair_geometry.py",
+          "tests/test_vertical_circulation.py",
+          "tests/test_stage_baseline.py",
+          "tests/test_stage_relation_inheritance.py",
+          "tests/test_relation_realization.py",
+          "tests/test_relation_authoring.py",
+          "tests/test_relation_coverage.py",
+          "tests/test_design_controller.py",
+          "tests/test_primary_architect_provider.py",
+          "tests/test_production_route_quarantine.py",
+          "tests/test_expert_capabilities.py",
+          "tests/test_hierarchical_search_controller.py",
+          "tests/integration/test_design_state_resume.py",
+          "-q"
+        ],
+        [
+          "{python}",
+          "-m",
+          "compileall",
+          "-q",
+          "archflow",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M084-mandatory-semantic-capability-control.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M084",
+        "actor": "codex",
+        "verified_at": "2026-08-31T17:30:18.187541+00:00",
+        "contract_sha256": "a5dcda5fc744f01cc3c02f5e309afe170a72b4e07f2cd8ccfb6ce863cbc0649a",
+        "scope_sha256": "3f14ed4f6e358174023167deed8f93129b710198492ed7d15a502b0ac01a51e6",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "2ba1a434b8b221572881920633c9236b0fbf3576b72e0c2cf50d5c78b44e9171",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (193 files, 1.128s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "pytest",
+              "tests/test_semantic_capabilities.py",
+              "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_stair_semantics_automatically_inject_mandatory_rule_pack",
+              "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_stair_mandatory_role_cannot_be_na_or_retargeted",
+              "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_policy_replay_rejects_removed_binding_and_stale_state_index",
+              "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_policy_replay_rejects_rehashed_cross_context_bindings",
+              "tests/test_stair_solver.py",
+              "tests/test_stair_geometry.py",
+              "tests/test_vertical_circulation.py",
+              "tests/test_stage_baseline.py",
+              "tests/test_stage_relation_inheritance.py",
+              "tests/test_relation_realization.py",
+              "tests/test_relation_authoring.py",
+              "tests/test_relation_coverage.py",
+              "tests/test_design_controller.py",
+              "tests/test_primary_architect_provider.py",
+              "tests/test_production_route_quarantine.py",
+              "tests/test_expert_capabilities.py",
+              "tests/test_hierarchical_search_controller.py",
+              "tests/integration/test_design_state_resume.py",
+              "-q"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "1af88620150fbfcbaaebd96af3a6b8fb4b360746a61220a6b91c5614054653b8",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "........................................................................ [ 30%]\n........................................................................ [ 60%]\n........................................................................ [ 90%]\n.......................                                                  [100%]\n239 passed in 23.65s\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "compileall",
+              "-q",
+              "archflow",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-31",
+      "evidence": [
+        "239 targeted semantic-capability, stair, relation, controller, provider-quarantine, expert, search, and durable-resume tests passed; compileall passed; ARCHITECTURE PASS (193 files); exact Stage 2 work-item dispatch, per-rule validation denominator, legacy writable-anchor rejection, and canonical HEAD immutability were demonstrated."
+      ]
+    },
+    {
+      "id": "M085",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Close the gap between recorded stair obligations and developed geometry: current authoring requires an exact materialization gate and assembly maturity, so unresolved host opening, site support, or load path cannot become developed stair solids.",
+      "depends_on": [
+        "M084"
+      ],
+      "write_scope": [
+        "archflow/capabilities/stair_geometry.py",
+        "archflow/control/baseline.py",
+        "archflow/control/semantic_capabilities.py",
+        "tests/test_semantic_capabilities.py",
+        "tests/test_stair_geometry.py",
+        "tests/test_stair_solver.py",
+        "tests/test_vertical_circulation.py",
+        "tests/test_stage_baseline.py",
+        "tests/test_stage_subject_inventory.py",
+        "tests/integration/test_design_state_resume.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Current stair policy and pack v2 add developed site-support, support/load-path, and underpass-applicability rules while preserving v1 for exact historical replay only.",
+        "Developed vertical circulation requires assembly maturity; coordinated maturity retains assembly and adds coordination-only collision and guard questions.",
+        "StairMaterializationGate@1 binds one exact solve-result digest and exactly one evidence-bound disposition for every solver obligation.",
+        "HOST_OPENING, SITE_SUPPORT, or LOAD_PATH left OPEN blocks developed materialization; reservation gates, reservation semantics, stale solves, missing gates, and legacy bindings cannot emit developed geometry.",
+        "The gate carries no validation, stage-acceptance, selection, promotion, canonical-write, or building-specific design authority."
+      ],
+      "tests": [
+        "Semantic policy v1 replay and v2 current-authoring regressions",
+        "Stair materialization gate roundtrip tamper and OPEN-obligation rejection",
+        "Developed baseline assembly maturity and durable controller replay",
+        "Architecture check compileall and diff audit"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "tests/test_semantic_capabilities.py",
+          "tests/test_stair_geometry.py",
+          "tests/test_stair_solver.py",
+          "tests/test_vertical_circulation.py",
+          "tests/test_stage_baseline.py",
+          "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_stair_semantics_automatically_inject_mandatory_rule_pack",
+          "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_stair_mandatory_role_cannot_be_na_or_retargeted",
+          "tests/integration/test_design_state_resume.py",
+          "-q"
+        ],
+        [
+          "{python}",
+          "-m",
+          "compileall",
+          "-q",
+          "archflow",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M085-developed-stair-materialization-gate.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M085",
+        "actor": "codex",
+        "verified_at": "2026-08-31T20:57:37.261946+00:00",
+        "contract_sha256": "15797af886d941f03a2e22813ca117bcab99ff76230621dc0fe59aa85f0ca848",
+        "scope_sha256": "6fe90e658dd3c1687dbd76948d709d8935a9647ee00f6967b4a18a0fefcbed17",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "46553e58a2291f88725bf7704837a123ae4437cde9f4c8f36e94dca4103f6a97",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (193 files, 1.165s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "pytest",
+              "tests/test_semantic_capabilities.py",
+              "tests/test_stair_geometry.py",
+              "tests/test_stair_solver.py",
+              "tests/test_vertical_circulation.py",
+              "tests/test_stage_baseline.py",
+              "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_stair_semantics_automatically_inject_mandatory_rule_pack",
+              "tests/test_stage_subject_inventory.py::StageSubjectInventoryTests::test_stair_mandatory_role_cannot_be_na_or_retargeted",
+              "tests/integration/test_design_state_resume.py",
+              "-q"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "9a0c29cbefcfd9771466163dd153ad2028b543d743e04988fc247b6b7beead62",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "........................................................................ [ 68%]\n.................................                                        [100%]\n105 passed in 34.49s\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "compileall",
+              "-q",
+              "archflow",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-31",
+      "evidence": [
+        "83 focused semantic-capability, stair, vertical-circulation, baseline, and inventory tests plus 22 durable-resume tests passed; compileall, git diff check, and ARCHITECTURE PASS (193 files) passed; current policy v2 and exact developed materialization gate reject OPEN host-opening, site-support, and load-path obligations while v1 remains replay-only."
+      ]
+    },
+    {
+      "id": "M086",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Represent one exact durable predecessor-stage exit as a no-authority stage-entry proof that later materialization and presentation controls can consume without trusting a caller-authored stage label.",
+      "depends_on": [
+        "M083",
+        "M085"
+      ],
+      "write_scope": [
+        "archflow/state/design_maturity.py",
+        "tests/test_design_maturity.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "StageEntryProof@1 binds the deterministic phase gate, exact P036 stage-exit checkpoint ref, proof/checkpoint digests, and exact same-run same-branch successor epoch.",
+        "Construction and the exact guard reject cross-project records, wrong record paths or media types, stale epochs, cross-branch successors, and wrong from/to phases.",
+        "Exact roundtrip preserves identity while geometry, persistence, stage-acceptance, and canonical-write authority remain false.",
+        "This card does not claim the proof is already mandatory at every geometry, CAD, typed-loader, or viewer boundary."
+      ],
+      "tests": [
+        "Exact stage-entry proof roundtrip and guard pass",
+        "Stale epoch cross-branch and wrong-phase rejection",
+        "Architecture check compileall and diff audit"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "tests/test_design_maturity.py",
+          "-q"
+        ],
+        [
+          "{python}",
+          "-m",
+          "compileall",
+          "-q",
+          "archflow",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M086-exact-stage-entry-proof.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M086",
+        "actor": "codex",
+        "verified_at": "2026-08-31T21:05:27.542804+00:00",
+        "contract_sha256": "811f4a8aa7f5b0430f0841ec88d99f8c9ec38382a2cbfae0abc7623b6b9f8343",
+        "scope_sha256": "c1536c2884c8834c83e73e99b5a7fc27982270c5a69be06d2f43a3afe1b206b9",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "1d8914c5a7ed2c6f1f4eba1856325fa080c64144bf95c2433dd435a004a92666",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (193 files, 1.121s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "pytest",
+              "tests/test_design_maturity.py",
+              "-q"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "dcc038a247e132a5b20c58e4c095d4429c5deb23a841d4b4bb011a364a6b7dfe",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "..............                                                           [100%]\n14 passed in 0.19s\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "compileall",
+              "-q",
+              "archflow",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-31",
+      "evidence": [
+        "14 design-maturity tests passed including exact StageEntryProof roundtrip plus stale-epoch, cross-branch, and wrong-phase rejection; compileall, git diff check, tests.test_archcheck, and ARCHITECTURE PASS (193 files) passed. The value remains a no-authority foundation and is not claimed as universal CAD/viewer enforcement."
+      ]
+    },
+    {
+      "id": "M087",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Connect visual inventory, semantic subjects, evidence-bound component functions, architectural relations, physical realization, stage artifacts, and guarded CAD execution as one fail-closed reusable production route.",
+      "depends_on": [
+        "M083",
+        "M084",
+        "M085",
+        "M086"
+      ],
+      "write_scope": [
+        "archflow/adapters/stage_cad_execution.py",
+        "archflow/capabilities/visual_inventory.py",
+        "archflow/control/__init__.py",
+        "archflow/control/baseline.py",
+        "archflow/control/component_functions.py",
+        "archflow/control/function_diagnostics.py",
+        "archflow/control/function_relations.py",
+        "archflow/control/stage_artifacts.py",
+        "archflow/control/stage_control_sources.py",
+        "archflow/relations/authoring.py",
+        "archflow/runtime/__init__.py",
+        "archflow/runtime/design_controller.py",
+        "archflow/runtime/hierarchical_search.py",
+        "archflow/runtime/stage_artifact_chain.py",
+        "archflow/runtime/stage_control_chain.py",
+        "archflow/runtime/stage_subject_inventory.py",
+        "archflow/validation/stage_control.py",
+        "tests/integration/test_design_state_resume.py",
+        "tests/integration/test_stage_control_runtime.py",
+        "tests/test_component_functions.py",
+        "tests/test_function_diagnostics.py",
+        "tests/test_function_relations.py",
+        "tests/test_hierarchical_search_controller.py",
+        "tests/test_relation_authoring.py",
+        "tests/test_semantic_geometry_lifecycle.py",
+        "tests/test_stage_artifacts.py",
+        "tests/test_stage_cad_execution.py",
+        "tests/test_stage_control_chain.py",
+        "tests/test_stage_control_runtime.py",
+        "tests/test_stage_subject_inventory.py",
+        "tests/test_visual_inventory.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "One production runtime compiles exact image and ROI inventory, accepted physical-component joins, semantic stage subjects, evidence-bound function ledgers, and mandatory relation questions without caller-controlled denominator loss.",
+        "Unknown visual components, function applicability, evidence bases, relation questions, or physical realization remain typed and block the applicable stage gate.",
+        "Relation traversal endpoints are distinct from exact function-rule subjects, so support and load paths traverse in the physical direction while checking the correct component slot.",
+        "Stage 3 and later artifact claims bind the exact source set, coverage denominator, program, readback, P036 records, and stage-entry proof rather than trusting labels or nonempty record lists.",
+        "The stage-bound Rhino adapter executes only an exact guarded plan and returns a result bound to its guard, artifact claim, and raw executor receipt without acquiring persistence or acceptance authority.",
+        "P036 durable save and reload replays branch-local visual, function, relation, realization, and artifact records while canonical HEAD remains unchanged."
+      ],
+      "tests": [
+        "Visual inventory and unknown-component fail-closed coverage",
+        "Function and relation runtime-chain unit tests",
+        "Stage artifact and guarded CAD execution tests",
+        "P036 durable runtime-chain integration and tamper rejection",
+        "Related M083-M086 regression suites, compileall, architecture check, and diff audit"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "pytest",
+          "tests/test_visual_inventory.py",
+          "tests/test_component_functions.py",
+          "tests/test_function_relations.py",
+          "tests/test_relation_authoring.py",
+          "tests/test_stage_control_chain.py",
+          "tests/test_stage_control_runtime.py",
+          "tests/test_stage_artifacts.py",
+          "tests/test_stage_cad_execution.py",
+          "tests/integration/test_stage_control_runtime.py",
+          "tests/integration/test_design_state_resume.py",
+          "-q"
+        ],
+        [
+          "{python}",
+          "-m",
+          "compileall",
+          "-q",
+          "archflow",
+          "tests"
+        ]
+      ],
+      "card": "docs/mapping/archive/M087-visual-functional-stage-control-chain.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M087",
+        "actor": "codex",
+        "verified_at": "2026-08-31T23:22:59.811367+00:00",
+        "contract_sha256": "a7438173e26341e4c9540003dfe1084ba7c10454608539097369a12a7387bcb8",
+        "scope_sha256": "f3ed81adfca4507d576da6df3236edb76096f17d5e38724d9b3c1726472197a2",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "9cfe038eebadfdfbe8468fa034f7a209f91227ea74b1440bd478bbb35e8b4078",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (203 files, 1.160s)\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "pytest",
+              "tests/test_visual_inventory.py",
+              "tests/test_component_functions.py",
+              "tests/test_function_relations.py",
+              "tests/test_relation_authoring.py",
+              "tests/test_stage_control_chain.py",
+              "tests/test_stage_control_runtime.py",
+              "tests/test_stage_artifacts.py",
+              "tests/test_stage_cad_execution.py",
+              "tests/integration/test_stage_control_runtime.py",
+              "tests/integration/test_design_state_resume.py",
+              "-q"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "fde231632a354378938145e9b47059bfc887b2fa68980355520d606cbfa784e3",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "........................................................................ [ 58%]\n...................................................                      [100%]\n123 passed in 33.88s\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "compileall",
+              "-q",
+              "archflow",
+              "tests"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-31",
+      "evidence": [
+        "329 related M083-M087 tests passed; P036 StageArtifactArchive replay/tamper/epoch/HEAD integration passed; compileall, ARCHITECTURE PASS 203 files, and diff audit passed."
+      ]
     }
   ]
 }

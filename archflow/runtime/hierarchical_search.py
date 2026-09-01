@@ -313,6 +313,27 @@ def _require_branch_record(
     return exact_record_ref(ref)
 
 
+def _require_branch_json_record(
+    ref: ProjectRecordRef,
+    branch: BranchRef,
+    field: str,
+) -> str:
+    """Require one exact P036 JSON record in the requested branch.
+
+    Current controller governance is authored under the branch-local P036
+    record namespace.  Run-level records remain valid for genuinely
+    run-scoped search inputs, while predecessor replay keeps its own accepted
+    predecessor-branch rule.
+    """
+
+    exact_ref = _require_branch_record(ref, branch, field)
+    if ref.media_type != "application/json":
+        raise HierarchicalSearchProposalError(
+            f"{field} is not a JSON record in the requested branch"
+        )
+    return exact_ref
+
+
 def portfolio_candidate_ref(
     portfolio_id: str,
     revision: BranchRevisionRef,
@@ -1046,7 +1067,6 @@ def _validate_governance(
     context: HierarchicalSearchCompileInput,
 ) -> tuple[str, ...]:
     state = context.state
-    run = state.branch.run
     governance = context.governance
     if governance.is_legacy_read_only:
         raise HierarchicalSearchProposalError(
@@ -1058,17 +1078,17 @@ def _validate_governance(
     convergence = governance.convergence
     refs = list(
         (
-            _require_branch_record(
+            _require_branch_json_record(
                 governance.profile_record_ref,
                 state.branch,
                 "stage requirement profile record",
             ),
-            _require_branch_record(
+            _require_branch_json_record(
                 governance.closure_record_ref,
                 state.branch,
                 "stage closure record",
             ),
-            _require_branch_record(
+            _require_branch_json_record(
                 governance.convergence_record_ref,
                 state.branch,
                 "stage convergence record",
@@ -1095,7 +1115,7 @@ def _validate_governance(
     checks = tuple(item.receipt for item in governance.closure_checks)
     for item in governance.closure_checks:
         refs.append(
-            _require_branch_record(
+            _require_branch_json_record(
                 item.record_ref,
                 state.branch,
                 "stage closure check record",
@@ -1142,17 +1162,17 @@ def _validate_governance(
     )
     refs.extend(
         (
-            _require_branch_record(
+            _require_branch_json_record(
                 governance.baseline_sources_record_ref,
                 state.branch,
                 "stage baseline sources record",
             ),
-            _require_branch_record(
+            _require_branch_json_record(
                 governance.stage_subject_inventory_record_ref,
                 state.branch,
                 "stage subject inventory record",
             ),
-            _require_branch_record(
+            _require_branch_json_record(
                 governance.baseline_coverage_record_ref,
                 state.branch,
                 "stage baseline coverage record",

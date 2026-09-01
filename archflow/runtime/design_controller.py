@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
@@ -21,11 +21,15 @@ from archflow.capabilities.experts import (
     ExpertReceiptStatus,
     ExpertRegistry,
     ExpertSnapshot,
+    ExpertWorkItem,
 )
 from archflow.capabilities.phase_gates import (
     PhaseExpertMetadata,
     discover_phase_experts,
     validate_architect_selected_expert_order,
+)
+from archflow.capabilities.visual_inventory import (
+    VisualEvidenceInventoryReceipt,
 )
 from archflow.interaction.clarification import (
     AuthorityDecisionReceipt,
@@ -97,9 +101,18 @@ from archflow.control.convergence import (
     StageConvergenceReceipt,
     StageTransitionKind,
 )
+from archflow.control.component_functions import ComponentFunctionLedger
+from archflow.control.function_relations import FunctionRelationRequirementSet
+from archflow.control.stage_artifacts import (
+    StageArtifactClaim,
+    StageArtifactStatus,
+)
 from archflow.control.baseline import (
+    RelationRealizationBaselineSource,
+    RelationTopologyBaselineSource,
     StageBaselineCoverageReceipt,
     StageBaselineError,
+    StageBaselineLevel,
     StageBaselineRole,
     StageBaselineSourceSet,
     StageBaselineStatus,
@@ -117,12 +130,19 @@ from archflow.control.stage_closure import (
     compile_composite_stage_closure,
 )
 from archflow.control.profile import StageRequirementProfileBinding
+from archflow.control.semantic_capabilities import (
+    SemanticCapabilityPolicy,
+    SemanticDesignWorkItem,
+    compile_semantic_design_work_items,
+    require_current_semantic_capability_policy,
+)
 from archflow.control.stage_subjects import StageSubjectInventory
 from archflow.runtime.component_index import ComponentIndex
 from archflow.runtime.stage_subject_inventory import (
-    compile_stage_subject_inventory,
+    replay_stage_subject_inventory,
 )
 from archflow.state.spatial import SpatialOptionProposal
+from archflow.validation.cad_readback import CadReadbackSnapshot
 from archflow.validation.contracts import CheckReceiptEnvelope
 
 
@@ -530,6 +550,191 @@ def _record_ref_from_payload(
         raise DesignControllerError(f"{field} is invalid") from exc
 
 
+def _branch_ref_payload(ref: BranchRef) -> dict[str, object]:
+    return {
+        "project_id": ref.run.project_id,
+        "run_id": ref.run.run_id,
+        "run_base": _project_version_payload(ref.run.base),
+        "branch_id": ref.branch_id,
+        "branch_epoch": ref.epoch,
+    }
+
+
+def _branch_ref_from_payload(value: object, *, field: str) -> BranchRef:
+    if not isinstance(value, Mapping) or set(value) != {
+        "project_id",
+        "run_id",
+        "run_base",
+        "branch_id",
+        "branch_epoch",
+    }:
+        raise DesignControllerError(f"{field} schema drifted")
+    base = value["run_base"]
+    if not isinstance(base, Mapping) or set(base) != {
+        "project_id",
+        "version",
+        "state_sha256",
+    }:
+        raise DesignControllerError(f"{field} run_base schema drifted")
+    if base["project_id"] != value["project_id"]:
+        raise DesignControllerError(f"{field} run_base crossed projects")
+    try:
+        return BranchRef(
+            run=RunRef(
+                project_id=value["project_id"],
+                run_id=value["run_id"],
+                base=ProjectVersionRef(
+                    project_id=base["project_id"],
+                    version=base["version"],
+                    state_sha256=base["state_sha256"],
+                ),
+            ),
+            branch_id=value["branch_id"],
+            epoch=value["branch_epoch"],
+        )
+    except (TypeError, ValueError) as exc:
+        raise DesignControllerError(f"{field} is invalid") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class StageArtifactArchiveBundle:
+    """Independent P036 pointer to one replayable typed artifact claim.
+
+    The bundle deliberately does not assert that artifact bytes were read.  It
+    can only replay the typed ``ArtifactShaBinding`` retained by the claim
+    because ``ControllerRecordSink`` exposes JSON records, not artifact bytes.
+    """
+
+    branch: BranchRef
+    claim_ref: ProjectRecordRef
+    claim_digest: str
+    artifact_sha256: str
+
+    SCHEMA = "StageArtifactArchiveBundle@1"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.branch, BranchRef):
+            raise TypeError("branch must be a BranchRef")
+        if not isinstance(self.claim_ref, ProjectRecordRef):
+            raise TypeError("claim_ref must be a ProjectRecordRef")
+        object.__setattr__(
+            self,
+            "claim_digest",
+            _sha256(self.claim_digest, "claim_digest"),
+        )
+        object.__setattr__(
+            self,
+            "artifact_sha256",
+            _sha256(self.artifact_sha256, "artifact_sha256"),
+        )
+        expected_prefix = (
+            f"runs/{self.branch.run.run_id}/branches/"
+            f"{self.branch.branch_id}/records/"
+        )
+        if (
+            self.claim_ref.project_id != self.branch.run.project_id
+            or not self.claim_ref.relative_path.startswith(expected_prefix)
+            or self.claim_ref.media_type != "application/json"
+        ):
+            raise DesignControllerError(
+                "stage artifact claim record crossed project, run, or branch"
+            )
+
+    def _content_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "branch": _branch_ref_payload(self.branch),
+            "claim_ref": _record_ref_payload(self.claim_ref),
+            "claim_digest": self.claim_digest,
+            "artifact_sha256": self.artifact_sha256,
+            "artifact_bytes_readback": False,
+            "stage_acceptance_authority": False,
+            "canonical_write_authority": False,
+        }
+
+    @property
+    def bundle_digest(self) -> str:
+        return _digest(self._content_dict())
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._content_dict(), "bundle_digest": self.bundle_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "StageArtifactArchiveBundle":
+        expected = {
+            "schema",
+            "branch",
+            "claim_ref",
+            "claim_digest",
+            "artifact_sha256",
+            "artifact_bytes_readback",
+            "stage_acceptance_authority",
+            "canonical_write_authority",
+            "bundle_digest",
+        }
+        if not isinstance(value, Mapping) or set(value) != expected:
+            raise DesignControllerError(
+                "stage artifact archive bundle schema drifted"
+            )
+        if value.get("schema") != cls.SCHEMA:
+            raise DesignControllerError(
+                "unsupported stage artifact archive bundle schema"
+            )
+        if (
+            value.get("artifact_bytes_readback") is not False
+            or value.get("stage_acceptance_authority") is not False
+            or value.get("canonical_write_authority") is not False
+        ):
+            raise DesignControllerError(
+                "stage artifact archive bundle acquired unsupported authority"
+            )
+        bundle = cls(
+            branch=_branch_ref_from_payload(
+                value.get("branch"),
+                field="stage artifact archive branch",
+            ),
+            claim_ref=_record_ref_from_payload(
+                value.get("claim_ref"),
+                field="stage artifact claim_ref",
+            ),
+            claim_digest=value.get("claim_digest"),
+            artifact_sha256=value.get("artifact_sha256"),
+        )
+        if value.get("bundle_digest") != bundle.bundle_digest:
+            raise DesignControllerError(
+                "stage artifact archive bundle digest changed"
+            )
+        return bundle
+
+
+@dataclass(frozen=True, slots=True)
+class DurableStageArtifactArchive:
+    """Exact typed replay result; artifact bytes remain outside this port."""
+
+    bundle_ref: ProjectRecordRef
+    bundle: StageArtifactArchiveBundle
+    claim: StageArtifactClaim
+    artifact_bytes_readback: bool = field(default=False, init=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.bundle_ref, ProjectRecordRef):
+            raise TypeError("bundle_ref must be a ProjectRecordRef")
+        if not isinstance(self.bundle, StageArtifactArchiveBundle):
+            raise TypeError("bundle must be a StageArtifactArchiveBundle")
+        if not isinstance(self.claim, StageArtifactClaim):
+            raise TypeError("claim must be a StageArtifactClaim")
+        if (
+            self.claim.branch != self.bundle.branch
+            or self.claim.claim_digest != self.bundle.claim_digest
+            or self.claim.artifact is None
+            or self.claim.artifact.artifact_sha256
+            != self.bundle.artifact_sha256
+        ):
+            raise DesignControllerError(
+                "durable stage artifact archive identity disagrees"
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class StageExitArchiveBundle:
     """Exact P036 records required to authorize one durable stage exit."""
@@ -545,8 +750,15 @@ class StageExitArchiveBundle:
     baseline_coverage_ref: ProjectRecordRef
     check_receipt_refs: tuple[ProjectRecordRef, ...]
     requirement_basis_refs: tuple[ProjectRecordRef, ...] = ()
+    _replay_schema: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
-    SCHEMA = "StageExitArchiveBundle@3"
+    SCHEMA = "StageExitArchiveBundle@4"
+    PREVIOUS_SCHEMA = "StageExitArchiveBundle@3"
     LEGACY_SCHEMA = "StageExitArchiveBundle@2"
 
     def __post_init__(self) -> None:
@@ -646,7 +858,7 @@ class StageExitArchiveBundle:
 
     def _content_dict(self) -> dict[str, object]:
         return {
-            "schema": self.SCHEMA,
+            "schema": self._replay_schema or self.SCHEMA,
             "predecessor_checkpoint_ref": _record_ref_payload(
                 self.predecessor_checkpoint_ref
             ),
@@ -710,7 +922,8 @@ class StageExitArchiveBundle:
             raise DesignControllerError(
                 "stage-exit archive bundle schema drifted"
             )
-        if value.get("schema") != cls.SCHEMA:
+        schema = value.get("schema")
+        if schema not in {cls.SCHEMA, cls.PREVIOUS_SCHEMA}:
             raise DesignControllerError(
                 "unsupported stage-exit archive bundle schema"
             )
@@ -769,11 +982,17 @@ class StageExitArchiveBundle:
                 for item in raw_basis
             ),
         )
+        if schema == cls.PREVIOUS_SCHEMA:
+            object.__setattr__(bundle, "_replay_schema", schema)
         if value.get("bundle_digest") != bundle.bundle_digest:
             raise DesignControllerError(
                 "stage-exit archive bundle digest changed"
             )
         return bundle
+
+    @property
+    def is_legacy_read_only(self) -> bool:
+        return self._replay_schema is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1072,6 +1291,395 @@ class ProjectControllerArchiveAdapter:
             )
         return tuple(item.to_dict() for item in events)
 
+    def save_stage_artifact_archive(
+        self,
+        claim: StageArtifactClaim,
+    ) -> DurableStageArtifactArchive:
+        """Persist one independently replayable typed Stage 3 claim.
+
+        This operation writes branch JSON records only.  It neither writes nor
+        reads the artifact bytes named by ``claim.artifact`` and it never
+        changes canonical HEAD.
+        """
+
+        if not isinstance(claim, StageArtifactClaim):
+            raise TypeError("claim must be a StageArtifactClaim")
+        if claim.branch != self.branch:
+            raise DesignControllerError(
+                "stage artifact claim belongs to another branch or epoch"
+            )
+        if (
+            claim.status is not StageArtifactStatus.STAGE3_VERIFIED_CANDIDATE
+            or claim.artifact is None
+        ):
+            raise DesignControllerError(
+                "only a verified Stage 3 typed claim can be archived"
+            )
+
+        replayed = self._replay_stage_artifact_claim(claim)
+        if replayed != claim:
+            raise DesignControllerError(
+                "stage artifact claim changed during mechanical replay"
+            )
+
+        try:
+            current = self.load_latest_stage_artifact_archive()
+        except DesignControllerError as exc:
+            if str(exc) != (
+                "branch epoch has no durable stage artifact archive"
+            ):
+                raise
+            current = None
+        if current is not None:
+            if current.claim != claim:
+                raise DesignControllerError(
+                    "stage artifact archive is ambiguous within one branch epoch"
+                )
+            return current
+
+        claim_ref = self._repository.put_json(
+            run=self.branch.run,
+            destination=self._destination,
+            record_kind=(
+                f"stage-artifact-claim-e{self.branch.epoch:06d}-"
+                f"{claim.claim_digest[:20]}"
+            ),
+            payload=claim.to_dict(),
+        )
+        bundle = StageArtifactArchiveBundle(
+            branch=self.branch,
+            claim_ref=claim_ref,
+            claim_digest=claim.claim_digest,
+            artifact_sha256=claim.artifact.artifact_sha256,
+        )
+        bundle_ref = self._repository.put_json(
+            run=self.branch.run,
+            destination=self._destination,
+            record_kind=(
+                f"stage-artifact-archive-e{self.branch.epoch:06d}-"
+                f"{bundle.bundle_digest[:20]}"
+            ),
+            payload=bundle.to_dict(),
+        )
+        return self.load_stage_artifact_archive(bundle_ref)
+
+    def load_stage_artifact_archive(
+        self,
+        ref: ProjectRecordRef,
+    ) -> DurableStageArtifactArchive:
+        """Strictly replay one exact same-project/run/branch/epoch bundle."""
+
+        payload = self._load_exact_branch_json(
+            ref,
+            field="stage artifact archive record",
+        )
+        bundle = StageArtifactArchiveBundle.from_dict(payload)
+        if bundle.branch != self.branch:
+            raise DesignControllerError(
+                "stage artifact archive belongs to another run, branch, or epoch"
+            )
+        claim_payload = self._load_exact_branch_json(
+            bundle.claim_ref,
+            field="stage artifact claim record",
+        )
+        try:
+            claim = StageArtifactClaim.from_dict(claim_payload)
+        except (TypeError, ValueError) as exc:
+            raise DesignControllerError(
+                "stage artifact claim record cannot be replayed"
+            ) from exc
+        if (
+            claim.branch != self.branch
+            or claim.claim_digest != bundle.claim_digest
+            or claim.artifact is None
+            or claim.artifact.artifact_sha256 != bundle.artifact_sha256
+        ):
+            raise DesignControllerError(
+                "stage artifact archive and retained claim disagree"
+            )
+        replayed = self._replay_stage_artifact_claim(claim)
+        if replayed != claim:
+            raise DesignControllerError(
+                "retained stage artifact claim differs from mechanical replay"
+            )
+        return DurableStageArtifactArchive(
+            bundle_ref=ref,
+            bundle=bundle,
+            claim=claim,
+        )
+
+    def load_latest_stage_artifact_archive(
+        self,
+    ) -> DurableStageArtifactArchive:
+        """Load the sole archive for this exact epoch, ignoring history."""
+
+        candidates: list[DurableStageArtifactArchive] = []
+        for ref in self._repository.list_json(
+            run=self.branch.run,
+            destination=self._destination,
+        ):
+            payload = self._load_verified_json_record(
+                ref,
+                field="stage artifact archive candidate record",
+            )
+            if payload.get("schema") != StageArtifactArchiveBundle.SCHEMA:
+                continue
+            bundle = StageArtifactArchiveBundle.from_dict(payload)
+            if (
+                bundle.branch.run != self.branch.run
+                or bundle.branch.branch_id != self.branch.branch_id
+            ):
+                raise DesignControllerError(
+                    "stage artifact archive record identity changed"
+                )
+            if bundle.branch.epoch != self.branch.epoch:
+                continue
+            candidates.append(self.load_stage_artifact_archive(ref))
+        if not candidates:
+            raise DesignControllerError(
+                "branch epoch has no durable stage artifact archive"
+            )
+        if len(candidates) != 1:
+            raise DesignControllerError(
+                "stage artifact archive is ambiguous within one branch epoch"
+            )
+        return candidates[0]
+
+    def _replay_stage_artifact_claim(
+        self,
+        claim: StageArtifactClaim,
+    ) -> StageArtifactClaim:
+        """Read every typed P036 payload and rerun the current compiler."""
+
+        from archflow.runtime.stage_artifact_chain import (
+            compile_stage_artifact_claim,
+        )
+        from archflow.capabilities.geometry_proposal import (
+            load_compiled_geometry_program,
+        )
+        from archflow.state.design_maturity import StageEntryProof
+
+        if claim.branch != self.branch:
+            raise DesignControllerError(
+                "stage artifact claim crossed the exact branch or epoch"
+            )
+        required_scalars = (
+            claim.stage_entry_proof,
+            claim.stage_entry_proof_record,
+            claim.artifact,
+            claim.geometry_program,
+            claim.component_index,
+            claim.stage_subject_inventory,
+            claim.function_ledger,
+            claim.function_relation_requirements,
+            claim.stage_requirement_profile,
+            claim.baseline_sources,
+            claim.baseline_coverage,
+            claim.stage_closure,
+            claim.cad_readback,
+        )
+        if any(item is None for item in required_scalars):
+            raise DesignControllerError(
+                "stage artifact claim lacks a replayable typed denominator"
+            )
+        assert claim.stage_entry_proof is not None
+        assert claim.stage_entry_proof_record is not None
+        assert claim.artifact is not None
+        assert claim.geometry_program is not None
+        assert claim.component_index is not None
+        assert claim.stage_subject_inventory is not None
+        assert claim.function_ledger is not None
+        assert claim.function_relation_requirements is not None
+        assert claim.stage_requirement_profile is not None
+        assert claim.baseline_sources is not None
+        assert claim.baseline_coverage is not None
+        assert claim.stage_closure is not None
+        assert claim.cad_readback is not None
+
+        def load(binding: object, parser: object, field: str) -> object:
+            record_ref = getattr(binding, "record_ref", None)
+            payload = self._load_exact_branch_json(record_ref, field=field)
+            try:
+                return getattr(parser, "from_dict")(payload)
+            except (TypeError, ValueError) as exc:
+                raise DesignControllerError(
+                    f"{field} cannot be replayed as its typed payload"
+                ) from exc
+
+        proof = load(
+            claim.stage_entry_proof_record,
+            StageEntryProof,
+            "stage entry proof record",
+        )
+        program_payload = self._load_exact_branch_json(
+            claim.geometry_program.record_ref,
+            field="geometry program record",
+        )
+        try:
+            program = load_compiled_geometry_program(program_payload)
+        except (TypeError, ValueError) as exc:
+            raise DesignControllerError(
+                "geometry program record cannot be replayed as its typed payload"
+            ) from exc
+        component_index = load(
+            claim.component_index,
+            ComponentIndex,
+            "component index record",
+        )
+        subject_inventory = load(
+            claim.stage_subject_inventory,
+            StageSubjectInventory,
+            "stage subject inventory record",
+        )
+        function_ledger = load(
+            claim.function_ledger,
+            ComponentFunctionLedger,
+            "component function ledger record",
+        )
+        function_requirements = load(
+            claim.function_relation_requirements,
+            FunctionRelationRequirementSet,
+            "function relation requirements record",
+        )
+        profile = load(
+            claim.stage_requirement_profile,
+            StageRequirementProfile,
+            "stage requirement profile record",
+        )
+        baseline_sources = load(
+            claim.baseline_sources,
+            StageBaselineSourceSet,
+            "stage baseline sources record",
+        )
+        baseline_coverage = load(
+            claim.baseline_coverage,
+            StageBaselineCoverageReceipt,
+            "stage baseline coverage record",
+        )
+        closure = load(
+            claim.stage_closure,
+            CompositeStageClosureReceipt,
+            "stage closure record",
+        )
+        readback = load(
+            claim.cad_readback,
+            CadReadbackSnapshot,
+            "CAD readback record",
+        )
+        stage_checks = tuple(
+            load(item, CheckReceiptEnvelope, "stage check receipt record")
+            for item in claim.stage_checks
+        )
+        topology_sources = tuple(
+            load(
+                item,
+                RelationTopologyBaselineSource,
+                "relation topology source record",
+            )
+            for item in claim.relation_topology
+        )
+        realization_sources = tuple(
+            load(
+                item,
+                RelationRealizationBaselineSource,
+                "relation realization source record",
+            )
+            for item in claim.relation_realization
+        )
+        realization_receipts = tuple(
+            load(
+                item,
+                CheckReceiptEnvelope,
+                "functional verification receipt record",
+            )
+            for item in claim.functional_verification
+        )
+
+        if proof != claim.stage_entry_proof:
+            raise DesignControllerError(
+                "stage entry proof differs from its exact P036 record"
+            )
+        if (
+            program.program_digest != claim.geometry_program.content_digest
+            or component_index.index_digest
+            != claim.component_index.content_digest
+            or readback.snapshot_digest != claim.cad_readback.content_digest
+        ):
+            raise DesignControllerError(
+                "stage artifact scalar record content digest changed"
+            )
+        if (
+            tuple(sorted(item.source_digest for item in topology_sources))
+            != tuple(
+                sorted(
+                    item.source_digest
+                    for item in baseline_sources.relation_topology
+                )
+            )
+            or tuple(
+                sorted(item.source_digest for item in realization_sources)
+            )
+            != tuple(
+                sorted(
+                    item.source_digest
+                    for item in baseline_sources.relation_realization
+                )
+            )
+        ):
+            raise DesignControllerError(
+                "relation source records differ from the retained baseline set"
+            )
+        if any(item.program != program for item in realization_sources):
+            raise DesignControllerError(
+                "geometry program record differs from relation realization"
+            )
+        if any(item.readback != readback for item in realization_sources):
+            raise DesignControllerError(
+                "CAD readback record differs from relation realization"
+            )
+
+        try:
+            return compile_stage_artifact_claim(
+                claim_id=claim.claim_id,
+                stage_entry_proof=proof,
+                stage_entry_proof_record=claim.stage_entry_proof_record,
+                artifact=claim.artifact,
+                geometry_program_record=claim.geometry_program,
+                component_index_record=claim.component_index,
+                stage_subject_inventory_record=claim.stage_subject_inventory,
+                stage_subject_inventory=subject_inventory,
+                function_ledger_record=claim.function_ledger,
+                function_ledger=function_ledger,
+                function_requirement_record=(
+                    claim.function_relation_requirements
+                ),
+                function_requirements=function_requirements,
+                stage_requirement_profile_record=(
+                    claim.stage_requirement_profile
+                ),
+                stage_requirement_profile=profile,
+                stage_check_receipt_records=claim.stage_checks,
+                stage_check_receipts=stage_checks,
+                baseline_sources_record=claim.baseline_sources,
+                baseline_sources=baseline_sources,
+                baseline_coverage_record=claim.baseline_coverage,
+                baseline_coverage=baseline_coverage,
+                stage_closure_record=claim.stage_closure,
+                stage_closure=closure,
+                cad_readback_record=claim.cad_readback,
+                topology_source_records=claim.relation_topology,
+                realization_source_records=claim.relation_realization,
+                realization_receipt_records=claim.functional_verification,
+                viewer_refs=claim.viewer_refs,
+                diagnostic_refs=claim.diagnostic_refs,
+            )
+        except DesignControllerError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise DesignControllerError(
+                "stage artifact claim failed mechanical replay"
+            ) from exc
+
     def save_checkpoint(
         self,
         checkpoint: DesignControllerCheckpoint,
@@ -1092,6 +1700,13 @@ class ProjectControllerArchiveAdapter:
         ):
             raise TypeError(
                 "stage_exit_bundle must be a StageExitArchiveBundle"
+            )
+        if (
+            stage_exit_bundle is not None
+            and stage_exit_bundle.is_legacy_read_only
+        ):
+            raise DesignControllerError(
+                "legacy stage-exit archive bundle is read-only"
             )
 
         current = self._latest_checkpoint_or_none()
@@ -1176,6 +1791,7 @@ class ProjectControllerArchiveAdapter:
             stage_exit_anchor_ref = self._checkpoint_anchor_ref(
                 current.record_ref,
                 current_payload,
+                require_writable=True,
             )
             if (
                 self._phase_requires_stage_exit_anchor(
@@ -1553,6 +2169,8 @@ class ProjectControllerArchiveAdapter:
         self,
         ref: ProjectRecordRef,
         payload: Mapping[str, Any],
+        *,
+        require_writable: bool = False,
     ) -> ProjectRecordRef | None:
         schema = payload.get("schema")
         if schema in {
@@ -1570,15 +2188,39 @@ class ProjectControllerArchiveAdapter:
                 isinstance(proof, Mapping)
                 and proof.get("schema") == self.STAGE_EXIT_PROOF_SCHEMA
             ):
+                parsed = self._parse_stage_exit_proof(proof)
+                bundle = StageExitArchiveBundle.from_dict(
+                    parsed["bundle"]
+                )
+                if require_writable and bundle.is_legacy_read_only:
+                    raise DesignControllerError(
+                        "read-only semantic-policy stage-exit anchor cannot "
+                        "authorize new controller state"
+                    )
                 return ref
             return None
         raw_anchor = payload.get("stage_exit_anchor_ref")
         if raw_anchor is None:
             return None
-        return _record_ref_from_payload(
+        anchor_ref = _record_ref_from_payload(
             raw_anchor,
             field="stage_exit_anchor_ref",
         )
+        if require_writable:
+            anchor_payload = self._load_verified_json_record(
+                anchor_ref,
+                field="writable stage-exit anchor record",
+            )
+            if self._checkpoint_anchor_ref(
+                anchor_ref,
+                anchor_payload,
+                require_writable=True,
+            ) != anchor_ref:
+                raise DesignControllerError(
+                    "read-only stage-exit anchor cannot authorize new "
+                    "controller state"
+                )
+        return anchor_ref
 
     def load_latest_checkpoint(self) -> DurableControllerResume:
         candidates: list[
@@ -1834,6 +2476,47 @@ class ProjectControllerArchiveAdapter:
                     field="baseline_coverage_ref",
                 )
             )
+            for source in baseline_sources.visual_inventory:
+                persisted_visual_source = VisualEvidenceInventoryReceipt.from_dict(
+                    self._load_exact_branch_json(
+                        source.inventory_ref,
+                        field="baseline visual_inventory_ref",
+                    )
+                )
+                if persisted_visual_source != source.inventory:
+                    raise DesignControllerError(
+                        "baseline visual inventory differs from exact P036 record"
+                    )
+            for source in baseline_sources.component_functions:
+                persisted_function_ledger = ComponentFunctionLedger.from_dict(
+                    self._load_exact_branch_json(
+                        source.ledger_ref,
+                        field="baseline component function ledger_ref",
+                    )
+                )
+                if persisted_function_ledger != source.ledger:
+                    raise DesignControllerError(
+                        "baseline component function ledger differs from exact P036 record"
+                    )
+                if source.relation_requirements_ref is not None:
+                    persisted_relation_requirements = (
+                        FunctionRelationRequirementSet.from_dict(
+                            self._load_exact_branch_json(
+                                source.relation_requirements_ref,
+                                field=(
+                                    "baseline function relation requirements_ref"
+                                ),
+                            )
+                        )
+                    )
+                    if (
+                        persisted_relation_requirements
+                        != source.relation_requirements
+                    ):
+                        raise DesignControllerError(
+                            "baseline function relation requirements differ "
+                            "from exact P036 record"
+                        )
         except DesignControllerError:
             raise
         except (TypeError, ValueError) as exc:
@@ -1869,6 +2552,12 @@ class ProjectControllerArchiveAdapter:
                 *(source.branch for source in baseline_sources.relation_topology),
                 *(source.branch for source in baseline_sources.relation_realization),
                 *(source.branch for source in baseline_sources.relation_inheritance),
+                *(
+                    source.contract.branch
+                    for source in baseline_sources.vertical_circulation
+                ),
+                *(source.branch for source in baseline_sources.visual_inventory),
+                *(source.branch for source in baseline_sources.component_functions),
             )
         ):
             raise DesignControllerError(
@@ -1898,25 +2587,57 @@ class ProjectControllerArchiveAdapter:
             raise DesignControllerError(
                 "profile binding does not identify the exact stage subject inventory"
             )
+        if (
+            subject_inventory.is_legacy_read_only
+            != bundle.is_legacy_read_only
+        ):
+            raise DesignControllerError(
+                "stage-exit bundle and semantic-policy generation disagree"
+            )
         try:
-            rebuilt_inventory = compile_stage_subject_inventory(
-                inventory_id=subject_inventory.inventory_id,
-                branch=subject_inventory.branch,
-                stage_id=subject_inventory.stage_id,
-                stage_subject_ref=subject_inventory.stage_subject_ref,
-                stage_subject_digest=(
-                    subject_inventory.stage_subject_digest
-                ),
-                baseline_level=subject_inventory.baseline_level,
+            if subject_inventory.semantic_policy is not None:
+                persisted_policy = SemanticCapabilityPolicy.from_dict(
+                    self._load_exact_branch_json(
+                        subject_inventory.semantic_policy_ref,
+                        field="semantic_policy_ref",
+                    )
+                )
+                if persisted_policy != subject_inventory.semantic_policy:
+                    raise DesignControllerError(
+                        "stage subject semantic policy differs from exact P036 record"
+                    )
+            persisted_visual_inventory = None
+            persisted_visual_inventory_ref = None
+            if subject_inventory.visual_inventory_ref is not None:
+                persisted_visual_inventory_ref = (
+                    subject_inventory.visual_inventory_ref
+                )
+                persisted_visual_inventory = (
+                    VisualEvidenceInventoryReceipt.from_dict(
+                        self._load_exact_branch_json(
+                            persisted_visual_inventory_ref,
+                            field="visual_inventory_ref",
+                        )
+                    )
+                )
+                if (
+                    persisted_visual_inventory.inventory_digest
+                    != subject_inventory.visual_inventory_digest
+                ):
+                    raise DesignControllerError(
+                        "stage subject visual inventory digest disagrees"
+                    )
+            rebuilt_inventory = replay_stage_subject_inventory(
+                inventory=subject_inventory,
                 component_proposal=component_proposal,
                 component_proposal_ref=bundle.component_proposal_ref,
                 component_index=component_index,
                 component_index_ref=bundle.component_index_ref,
-                role_obligations={
-                    entry.component_id: entry.role_obligations
-                    for entry in subject_inventory.entries
-                },
+                visual_inventory=persisted_visual_inventory,
+                visual_inventory_ref=persisted_visual_inventory_ref,
             )
+        except DesignControllerError:
+            raise
         except (TypeError, ValueError) as exc:
             raise DesignControllerError(
                 "stage subject inventory cannot be rebuilt from exact sources"
@@ -2002,6 +2723,7 @@ class ProjectControllerArchiveAdapter:
             for entry in subject_inventory.entries
             for obligation in entry.role_obligations
             for ref in obligation.authority_refs
+            if ref.startswith("project://")
         }
         binding_authority_uris = {
             ref.uri for ref in binding.authority_refs
@@ -2032,6 +2754,16 @@ class ProjectControllerArchiveAdapter:
             )
             if not ref.startswith("project://")
         }
+        framework_internal_refs.update(
+            ref
+            for semantic_binding in (
+                subject_inventory.semantic_rule_pack_bindings
+            )
+            for ref in (
+                semantic_binding.basis_ref,
+                semantic_binding.authority_ref,
+            )
+        )
         all_basis_refs = profile_basis_uris | inventory_basis_uris
         unbacked_internal_refs = {
             ref
@@ -2407,6 +3139,7 @@ class ProjectControllerArchiveAdapter:
         anchor_ref = self._checkpoint_anchor_ref(
             predecessor_checkpoint_ref,
             predecessor_payload,
+            require_writable=True,
         )
         if anchor_ref is None:
             raise DesignControllerError(
@@ -2924,6 +3657,7 @@ class ProjectControllerArchiveAdapter:
                 anchor_ref = predecessor_adapter._checkpoint_anchor_ref(
                     ref,
                     payload,
+                    require_writable=True,
                 )
                 if anchor_ref is None:
                     raise DesignControllerError(
@@ -2993,6 +3727,8 @@ class PreparedDesignTurn:
     context: ContextSlice
     snapshot: ExpertSnapshot
     discovered_expert_ids: tuple[str, ...]
+    subject_inventory_digest: str | None = None
+    semantic_work_items: tuple[SemanticDesignWorkItem, ...] = ()
 
     def __post_init__(self) -> None:
         _sha256(self.checkpoint_digest, "checkpoint_digest")
@@ -3002,6 +3738,59 @@ class PreparedDesignTurn:
             raise TypeError("snapshot must be an ExpertSnapshot")
         _tuple(self.discovered_expert_ids, "discovered_expert_ids")
         _unique(self.discovered_expert_ids, "discovered_expert_ids")
+        if self.subject_inventory_digest is not None:
+            _sha256(
+                self.subject_inventory_digest,
+                "subject_inventory_digest",
+            )
+        if not isinstance(self.semantic_work_items, tuple) or any(
+            not isinstance(item, SemanticDesignWorkItem)
+            for item in self.semantic_work_items
+        ):
+            raise TypeError(
+                "semantic_work_items must contain SemanticDesignWorkItem values"
+            )
+        if self.semantic_work_items and self.subject_inventory_digest is None:
+            raise DesignControllerError(
+                "semantic work requires an exact subject inventory"
+            )
+        if any(
+            item.inventory_digest != self.subject_inventory_digest
+            for item in self.semantic_work_items
+        ):
+            raise DesignControllerError(
+                "semantic work items crossed the exact subject inventory"
+            )
+        if tuple(item.work_ref for item in self.snapshot.work_items) != tuple(
+            item.ref for item in self.semantic_work_items
+        ):
+            raise DesignControllerError(
+                "expert snapshot semantic work differs from the prepared turn"
+            )
+
+    @property
+    def context_digest(self) -> str:
+        if self.subject_inventory_digest is None:
+            return self.context.context_digest
+        return _digest(
+            {
+                "schema": "PreparedDesignTurnContext@2",
+                "context_digest": self.context.context_digest,
+                "subject_inventory_digest": self.subject_inventory_digest,
+                "semantic_work_item_digests": [
+                    item.work_item_digest
+                    for item in self.semantic_work_items
+                ],
+            }
+        )
+
+    @property
+    def required_semantic_response_refs(self) -> tuple[str, ...]:
+        return tuple(
+            ref
+            for item in self.semantic_work_items
+            for ref in item.required_response_refs
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -3223,6 +4012,7 @@ def prepare_design_turn(
     *,
     phase_metadata: Mapping[str, PhaseExpertMetadata],
     obligation_topics: Mapping[str, str],
+    stage_subject_inventory: StageSubjectInventory | None = None,
     evidence: tuple[ExpertEvidence, ...] = (),
 ) -> PreparedDesignTurn:
     if not isinstance(checkpoint, DesignControllerCheckpoint):
@@ -3236,6 +4026,63 @@ def prepare_design_turn(
     if checkpoint.iteration >= checkpoint.max_iterations:
         raise DesignControllerError(
             "iteration budget exhausted; create a stopped checkpoint"
+        )
+    baseline_level = baseline_level_for_design_phase(
+        checkpoint.maturity.phase
+    )
+    if baseline_level is StageBaselineLevel.PRE_GEOMETRY:
+        if stage_subject_inventory is not None:
+            raise DesignControllerError(
+                "pre-geometry turn cannot consume a stage subject inventory"
+            )
+        semantic_work_items: tuple[SemanticDesignWorkItem, ...] = ()
+        subject_inventory_digest = None
+    else:
+        if not isinstance(stage_subject_inventory, StageSubjectInventory):
+            raise DesignControllerError(
+                "geometry-stage turn requires an exact stage subject inventory"
+            )
+        target_state = checkpoint.tree.node(
+            checkpoint.target_node_ref
+        ).operational_state
+        if stage_subject_inventory.is_legacy_read_only:
+            raise DesignControllerError(
+                "legacy stage subject inventory cannot dispatch design work"
+            )
+        require_current_semantic_capability_policy(
+            stage_subject_inventory.semantic_policy
+        )
+        exact_fields = (
+            (stage_subject_inventory.branch, checkpoint.tree.branch, "branch"),
+            (
+                stage_subject_inventory.stage_id,
+                checkpoint.maturity.phase.value,
+                "stage",
+            ),
+            (
+                stage_subject_inventory.stage_subject_digest,
+                target_state.state_digest,
+                "stage subject",
+            ),
+            (
+                stage_subject_inventory.baseline_level,
+                baseline_level,
+                "baseline level",
+            ),
+        )
+        for actual, expected, field in exact_fields:
+            if actual != expected:
+                raise DesignControllerError(
+                    f"stage subject inventory crossed the exact turn {field}"
+                )
+        subject_inventory_digest = (
+            stage_subject_inventory.inventory_digest
+        )
+        semantic_work_items = compile_semantic_design_work_items(
+            inventory_digest=subject_inventory_digest,
+            bindings=(
+                stage_subject_inventory.semantic_rule_pack_bindings
+            ),
         )
     context = ContextSliceCompiler().compile(
         checkpoint.tree,
@@ -3265,6 +4112,29 @@ def prepare_design_turn(
             for item in context.obligations
         ),
         evidence=evidence,
+        work_items=tuple(
+            ExpertWorkItem(
+                work_ref=item.ref,
+                topic=item.topic,
+                statement=(
+                    "Resolve the exact semantic capability work for "
+                    f"{item.binding.component_ref}: "
+                    + ", ".join(item.binding.active_rule_ids)
+                ),
+                source_refs=tuple(
+                    sorted(
+                        {
+                            f"stage-subject-inventory:{item.inventory_digest}",
+                            item.binding.ref,
+                            item.binding.basis_ref,
+                            item.binding.authority_ref,
+                            *item.rule_refs,
+                        }
+                    )
+                ),
+            )
+            for item in semantic_work_items
+        ),
     )
     discovered = discover_phase_experts(
         registry,
@@ -3279,6 +4149,8 @@ def prepare_design_turn(
         discovered_expert_ids=tuple(
             item.expert_id for item in discovered
         ),
+        subject_inventory_digest=subject_inventory_digest,
+        semantic_work_items=semantic_work_items,
     )
 
 
@@ -3303,7 +4175,7 @@ def consult_selected_experts(
     )
     return ExpertConsultation(
         checkpoint_digest=prepared.checkpoint_digest,
-        context_digest=prepared.context.context_digest,
+        context_digest=prepared.context_digest,
         selected_expert_ids=selected,
         receipts=receipts,
     )
@@ -3328,9 +4200,9 @@ def apply_architect_action(
             "turn input is stale against checkpoint"
         )
     if (
-        action.context_digest != prepared.context.context_digest
+        action.context_digest != prepared.context_digest
         or consultation.context_digest
-        != prepared.context.context_digest
+        != prepared.context_digest
     ):
         raise DesignControllerError("turn context digest is stale")
     if action.selected_expert_ids != consultation.selected_expert_ids:
@@ -3351,6 +4223,7 @@ def apply_architect_action(
         *(item.ref for item in prepared.context.interfaces),
         f"phase-task:{checkpoint.maturity.phase.value}",
         *checkpoint.decision_context_refs,
+        *prepared.required_semantic_response_refs,
     }
     unknown_responses = set(action.responds_to_refs) - (
         available_response_refs
@@ -3358,6 +4231,14 @@ def apply_architect_action(
     if unknown_responses:
         raise DesignControllerError(
             f"action responds to unavailable refs: {sorted(unknown_responses)}"
+        )
+    missing_semantic_refs = set(
+        prepared.required_semantic_response_refs
+    ) - set(action.responds_to_refs)
+    if missing_semantic_refs:
+        raise DesignControllerError(
+            "Architect action omitted mandatory semantic work: "
+            f"{sorted(missing_semantic_refs)}"
         )
     governing_commitment_refs = {
         f"commitment:{item.commitment_id}"
@@ -3577,6 +4458,14 @@ def _require_exact_current_stage_closure(
         )
     if not isinstance(subject_inventory, StageSubjectInventory):
         raise TypeError("subject_inventory must be a StageSubjectInventory")
+    if subject_inventory.is_legacy_read_only:
+        raise DesignControllerError(
+            "legacy stage subject inventory is read-only and cannot authorize "
+            "a new phase advance"
+        )
+    require_current_semantic_capability_policy(
+        subject_inventory.semantic_policy
+    )
     if not isinstance(check_receipts, tuple) or any(
         not isinstance(item, CheckReceiptEnvelope) for item in check_receipts
     ):
@@ -3602,6 +4491,13 @@ def _require_exact_current_stage_closure(
     ):
         raise DesignControllerError(
             "stage relation baseline source is cross-branch or stale"
+        )
+    if any(
+        source.contract.branch != state.branch
+        for source in baseline_sources.vertical_circulation
+    ):
+        raise DesignControllerError(
+            "vertical-circulation baseline source is cross-branch or stale"
         )
     if (
         requirement_profile.branch != state.branch
@@ -3659,6 +4555,7 @@ def _require_exact_current_stage_closure(
         for entry in subject_inventory.entries
         for obligation in entry.role_obligations
         for ref in obligation.authority_refs
+        if ref.startswith("project://")
     }
     binding_authority_refs = {
         ref.uri for ref in profile_binding.authority_refs

@@ -16,6 +16,7 @@ from typing import Any, Mapping
 
 from archflow.project.refs import (
     BranchRef,
+    ProjectRecordRef,
     ProjectVersionRef,
     RunRef,
 )
@@ -641,6 +642,199 @@ class PhaseGateReceipt:
             status=PhaseGateStatus(value["status"]),
             authority=GateCertificationSource(value["authority"]),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class StageEntryProof:
+    """Durable proof that one exact predecessor gate entered a new phase.
+
+    The proof binds the in-memory deterministic phase-gate receipt to the
+    P036 checkpoint record that retains the independently admitted stage-exit
+    proof.  It grants no geometry, persistence, or canonical-write authority;
+    downstream producers use it only as a mandatory stage-entry guard.
+    """
+
+    phase_gate: PhaseGateReceipt
+    stage_exit_checkpoint_ref: ProjectRecordRef
+    stage_exit_proof_digest: str
+    predecessor_checkpoint_digest: str
+    successor_checkpoint_digest: str
+    successor_branch: BranchRef
+
+    SCHEMA = "StageEntryProof@1"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.phase_gate, PhaseGateReceipt):
+            raise TypeError("phase_gate must be a PhaseGateReceipt")
+        if not isinstance(self.stage_exit_checkpoint_ref, ProjectRecordRef):
+            raise TypeError(
+                "stage_exit_checkpoint_ref must be a ProjectRecordRef"
+            )
+        for field in (
+            "stage_exit_proof_digest",
+            "predecessor_checkpoint_digest",
+            "successor_checkpoint_digest",
+        ):
+            object.__setattr__(
+                self,
+                field,
+                _sha256(getattr(self, field), field),
+            )
+        if not isinstance(self.successor_branch, BranchRef):
+            raise TypeError("successor_branch must be a BranchRef")
+        predecessor_branch = self.phase_gate.branch
+        if (
+            self.successor_branch.run != predecessor_branch.run
+            or self.successor_branch.branch_id
+            != predecessor_branch.branch_id
+            or self.successor_branch.epoch != predecessor_branch.epoch + 1
+        ):
+            raise DesignMaturityError(
+                "stage-entry proof does not bind one exact successor epoch"
+            )
+        if (
+            self.stage_exit_checkpoint_ref.project_id
+            != self.successor_branch.run.project_id
+        ):
+            raise DesignMaturityError(
+                "stage-entry checkpoint belongs to another project"
+            )
+        expected_prefix = (
+            f"runs/{self.successor_branch.run.run_id}/branches/"
+            f"{self.successor_branch.branch_id}/records/"
+        )
+        if not self.stage_exit_checkpoint_ref.relative_path.startswith(
+            expected_prefix
+        ):
+            raise DesignMaturityError(
+                "stage-entry checkpoint is not retained on the exact branch"
+            )
+        if self.stage_exit_checkpoint_ref.media_type != "application/json":
+            raise DesignMaturityError(
+                "stage-entry checkpoint must be a P036 JSON record"
+            )
+
+    @property
+    def proof_digest(self) -> str:
+        return _digest(self._content_dict())
+
+    @property
+    def ref(self) -> str:
+        return f"stage-entry-proof:{self.proof_digest}"
+
+    def _content_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "phase_gate": self.phase_gate.to_dict(),
+            "stage_exit_checkpoint_ref": {
+                "project_id": self.stage_exit_checkpoint_ref.project_id,
+                "relative_path": (
+                    self.stage_exit_checkpoint_ref.relative_path
+                ),
+                "sha256": self.stage_exit_checkpoint_ref.sha256,
+                "media_type": self.stage_exit_checkpoint_ref.media_type,
+            },
+            "stage_exit_proof_digest": self.stage_exit_proof_digest,
+            "predecessor_checkpoint_digest": (
+                self.predecessor_checkpoint_digest
+            ),
+            "successor_checkpoint_digest": self.successor_checkpoint_digest,
+            "successor_branch": _branch_to_dict(self.successor_branch),
+            "stage_acceptance_authority": False,
+            "geometry_mutation_authority": False,
+            "persistence_authority": False,
+            "canonical_write_authority": False,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._content_dict(), "proof_digest": self.proof_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "StageEntryProof":
+        if not isinstance(value, Mapping) or set(value) != {
+            "schema",
+            "phase_gate",
+            "stage_exit_checkpoint_ref",
+            "stage_exit_proof_digest",
+            "predecessor_checkpoint_digest",
+            "successor_checkpoint_digest",
+            "successor_branch",
+            "stage_acceptance_authority",
+            "geometry_mutation_authority",
+            "persistence_authority",
+            "canonical_write_authority",
+            "proof_digest",
+        }:
+            raise DesignMaturityError("stage-entry proof schema drifted")
+        if value["schema"] != cls.SCHEMA or any(
+            value[field] is not False
+            for field in (
+                "stage_acceptance_authority",
+                "geometry_mutation_authority",
+                "persistence_authority",
+                "canonical_write_authority",
+            )
+        ):
+            raise DesignMaturityError("stage-entry proof acquired authority")
+        record = value["stage_exit_checkpoint_ref"]
+        if not isinstance(record, Mapping) or set(record) != {
+            "project_id",
+            "relative_path",
+            "sha256",
+            "media_type",
+        }:
+            raise DesignMaturityError(
+                "stage-entry checkpoint reference schema drifted"
+            )
+        result = cls(
+            phase_gate=PhaseGateReceipt.from_dict(value["phase_gate"]),
+            stage_exit_checkpoint_ref=ProjectRecordRef(
+                project_id=record["project_id"],
+                relative_path=record["relative_path"],
+                sha256=record["sha256"],
+                media_type=record["media_type"],
+            ),
+            stage_exit_proof_digest=value["stage_exit_proof_digest"],
+            predecessor_checkpoint_digest=value[
+                "predecessor_checkpoint_digest"
+            ],
+            successor_checkpoint_digest=value[
+                "successor_checkpoint_digest"
+            ],
+            successor_branch=_branch_from_dict(value["successor_branch"]),
+        )
+        if result.to_dict() != value:
+            raise DesignMaturityError("stage-entry proof digest changed")
+        return result
+
+
+def require_stage_entry_proof(
+    proof: StageEntryProof,
+    *,
+    successor_branch: BranchRef,
+    from_phase: DesignPhase,
+    to_phase: DesignPhase,
+) -> StageEntryProof:
+    """Reject absent, stale, cross-branch, or wrong-phase entry evidence."""
+
+    if not isinstance(proof, StageEntryProof):
+        raise TypeError("proof must be a StageEntryProof")
+    if not isinstance(successor_branch, BranchRef):
+        raise TypeError("successor_branch must be a BranchRef")
+    if not isinstance(from_phase, DesignPhase) or not isinstance(
+        to_phase,
+        DesignPhase,
+    ):
+        raise TypeError("stage-entry phases must be DesignPhase values")
+    if (
+        proof.successor_branch != successor_branch
+        or proof.phase_gate.from_phase is not from_phase
+        or proof.phase_gate.to_phase is not to_phase
+    ):
+        raise DesignMaturityError(
+            "stage-entry proof is absent, stale, cross-branch, or wrong-phase"
+        )
+    return proof
 
 
 def evaluate_forward_phase_gate(

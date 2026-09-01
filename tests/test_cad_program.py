@@ -47,6 +47,52 @@ def program(*operations, bindings=()):
 
 
 class TranslateTest(unittest.TestCase):
+    def test_curve_can_be_retained_as_a_saved_inspection_witness(self):
+        build = program(
+            op(
+                "passage-path",
+                "curve",
+                ["passage-path-object"],
+                basis="polyline",
+                points=[
+                    [0.0, 0.9, 0.0],
+                    [1.0, 0.9, 0.0],
+                    [1.0, 0.9, -1.0],
+                ],
+                retain_for_inspection=True,
+                hidden_for_inspection=True,
+            )
+        )
+
+        translation = translate_to_rhino_python(build)
+
+        self.assertEqual(
+            ("passage-path-object",), translation.physical_object_ids
+        )
+        self.assertIn("rs.AddPolyline", translation.script)
+        self.assertIn("archflow:object_ref", translation.script)
+        self.assertIn("cad-operation:passage-path", translation.script)
+        self.assertIn("rs.HideObject", translation.script)
+        self.assertFalse(
+            expected_object_semantics(build)["objects"]
+            ["passage-path-object"]["visible"]
+        )
+        self.assertEqual(
+            "hidden",
+            expected_object_semantics(build)["objects"]
+            ["passage-path-object"]["user_text"]
+            ["archflow:inspection_witness"],
+        )
+        self.assertEqual((), translation.losses)
+        self.assertEqual(
+            {
+                "bbox_min": [0.0, 0.9, -1.0],
+                "bbox_max": [1.0, 0.9, 0.0],
+                "brep_count": 1,
+            },
+            expected_object_bounds(build)["passage-path-object"],
+        )
+
     def test_loft_cap_ends_is_explicit_and_backward_compatible(self):
         parameters = {
             "profile_size": 4,
@@ -113,6 +159,50 @@ class TranslateTest(unittest.TestCase):
                         "loft",
                         ["invalid-object"],
                         loft_type="smooth-ish",
+                        **parameters,
+                    )
+                )
+            )
+
+    def test_loft_interpolated_profile_emits_true_nurbs_curve(self):
+        parameters = {
+            "profile_size": 5,
+            "profiles": [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.5, 0.0, 1.0],
+                [0.5, 0.0, 1.5],
+                [0.0, 0.0, 1.0],
+                [0.0, 2.0, 0.0],
+                [1.0, 2.0, 0.0],
+                [1.5, 2.0, 1.0],
+                [0.5, 2.0, 1.5],
+                [0.0, 2.0, 1.0],
+            ],
+        }
+        translation = translate_to_rhino_python(
+            program(
+                op(
+                    "curved",
+                    "loft",
+                    ["curved-object"],
+                    profile_basis="interpolated",
+                    **parameters,
+                )
+            )
+        )
+
+        self.assertIn("rs.AddInterpCurve", translation.script)
+        self.assertNotIn("rs.AddPolyline", translation.script)
+
+        with self.assertRaisesRegex(CadTranslationError, "unsupported profile_basis"):
+            translate_to_rhino_python(
+                program(
+                    op(
+                        "invalid-basis",
+                        "loft",
+                        ["invalid-object"],
+                        profile_basis="faceted-ish",
                         **parameters,
                     )
                 )
@@ -417,6 +507,8 @@ class SemanticEmissionTest(unittest.TestCase):
         self.assertEqual(
             {
                 "archflow:producer_op": "ring",
+                "archflow:object_ref": "cad-object:ring-object",
+                "archflow:operation_ref": "cad-operation:ring",
                 "archflow:bindings": "ring-binding",
                 "archflow:component": "colonnade",
                 "archflow:commitments": "commitment:preserve-envelope",
@@ -431,7 +523,12 @@ class SemanticEmissionTest(unittest.TestCase):
         slab = semantics["objects"]["slab-object"]
         self.assertEqual("archflow", slab["layer"])
         self.assertEqual(
-            {"archflow:producer_op": "slab"}, slab["user_text"]
+            {
+                "archflow:producer_op": "slab",
+                "archflow:object_ref": "cad-object:slab-object",
+                "archflow:operation_ref": "cad-operation:slab",
+            },
+            slab["user_text"],
         )
 
     def test_script_emits_native_semantic_carriers(self):

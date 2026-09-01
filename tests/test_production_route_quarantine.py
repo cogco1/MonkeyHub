@@ -19,7 +19,11 @@ from archflow.runtime.design_controller import prepare_design_turn
 from archflow.runtime.primary_architect import run_primary_architect_turn
 from archflow.runtime.production_compiler import ProductionRootCompiler
 from archflow.state import ArtifactRef
-from tests.test_design_controller import _checkpoint, _experts
+from tests.test_design_controller import (
+    _checkpoint,
+    _experts,
+    _turn_subject_inventory,
+)
 from tests.test_production_root_compiler import (
     IDENTITY,
     _MemoryRepository,
@@ -84,6 +88,7 @@ class ProductionRouteQuarantineTests(unittest.IsolatedAsyncioTestCase):
             registry,
             phase_metadata=metadata,
             obligation_topics={"resolve-grid": "structure"},
+            stage_subject_inventory=_turn_subject_inventory(checkpoint),
         )
         raw = _RawProvider()
 

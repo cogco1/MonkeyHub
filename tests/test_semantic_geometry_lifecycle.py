@@ -97,6 +97,17 @@ def _design_state(stage: int):
             sorted(components.values(), key=lambda item: item.component_id)
         ),
     )
+    developed_components = {
+        item.component_id: item for item in state.components
+    }
+    developed_surface = developed_components["primary-surface"]
+    for component_id in ("oculus", "coffers"):
+        if component_id in components and component_id not in developed_components:
+            developed_components[component_id] = replace(
+                developed_surface,
+                component_id=component_id,
+                revision=0,
+            )
     return replace(
         state,
         selected_schematic=replace(
@@ -105,6 +116,12 @@ def _design_state(stage: int):
                 state.selected_schematic.option,
                 proposal=current_proposal,
             ),
+        ),
+        components=tuple(
+            sorted(
+                developed_components.values(),
+                key=lambda item: item.component_id,
+            )
         ),
     )
 
@@ -391,6 +408,11 @@ class SemanticGeometryLifecycleTests(unittest.TestCase):
                     shell_state.selected_schematic.option,
                     proposal=without_oculus,
                 ),
+            ),
+            components=tuple(
+                item
+                for item in shell_state.components
+                if item.component_id != "oculus"
             ),
         )
         candidate = _geometry_proposal(

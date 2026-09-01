@@ -6,7 +6,14 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
+from archflow.capabilities.visual_inventory import (
+    VisualEvidenceInventoryReceipt,
+    VisualSourceDisposition,
+    VisualSourceDispositionKind,
+    compile_visual_evidence_inventory,
+)
 from archflow.contracts.canonical import canonical_digest
 from archflow.control.baseline import (
     BASELINE_LEVEL_ROLES,
@@ -32,6 +39,23 @@ from archflow.control.check_requirements import (
     relation_authoring_stage_requirements,
     spatial_layout_stage_requirement,
 )
+from archflow.control.component_functions import (
+    DEFAULT_COMPONENT_FUNCTION_POLICY,
+    ComponentFunctionContract,
+    ComponentFunctionId,
+    FunctionApplicability,
+    FunctionApplicabilityDecision,
+    FunctionClaimStatus,
+    FunctionEndpointBinding,
+    FunctionObligationClaim,
+    compile_component_function_ledger,
+)
+from archflow.control.function_relations import (
+    FunctionRelationEndpoint,
+    FunctionRelationEndpointBinding,
+    FunctionRelationEvidenceEnvelope,
+    compile_function_relation_requirements,
+)
 from archflow.project import (
     BranchRef,
     FilesystemProjectRepository,
@@ -40,6 +64,9 @@ from archflow.project import (
     ProjectRecordRef,
 )
 from archflow.control.profile import StageRequirementProfileBinding
+from archflow.control.semantic_capabilities import (
+    current_semantic_capability_policy,
+)
 from archflow.control.requirements import (
     RequirementBasisMode,
     RequirementTargetKind,
@@ -52,13 +79,20 @@ from archflow.control.stage_subjects import (
     StageSubjectInventory,
     StageSubjectRoleObligation,
 )
+from archflow.control.stage_control_sources import (
+    ComponentFunctionBaselineSource,
+    VisualInventoryBaselineSource,
+)
 from archflow.runtime import (
     DesignControllerCheckpoint,
     DesignControllerError,
     ProjectControllerArchiveAdapter,
 )
 from archflow.runtime.component_index import ComponentIndex, ComponentIndexEntry
-from archflow.runtime.design_controller import StageExitArchiveBundle
+from archflow.runtime.design_controller import (
+    StageArtifactArchiveBundle,
+    StageExitArchiveBundle,
+)
 from archflow.runtime.hierarchical_search import (
     HierarchicalSearchProposalError,
     _replay_search_relation_predecessors,
@@ -71,6 +105,10 @@ from archflow.runtime.state_reducer import (
 )
 from archflow.runtime.stage_subject_inventory import (
     compile_stage_subject_inventory,
+)
+from archflow.relations.contracts import (
+    ArchitecturalRelationKind,
+    RelationProjection,
 )
 from archflow.state import initialize_canonical_project
 from archflow.state.design_state import (
@@ -99,6 +137,10 @@ from archflow.validation.assembly import (
 )
 from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archflow.validation.spatial import validate_spatial_layout
+from archflow.validation.stage_control import (
+    check_component_function_baseline,
+    check_visual_inventory_baseline,
+)
 from tests.test_design_controller import (
     _checkpoint,
     _phase_ready_checkpoint,
@@ -173,6 +215,156 @@ def _bind_checkpoint(
 
 def _digest(label: str) -> str:
     return hashlib.sha256(label.encode("utf-8")).hexdigest()
+
+
+def _durable_function_control_values(
+    inventory: StageSubjectInventory,
+    *,
+    source_ref: str,
+    authority_ref: str,
+):
+    """Build non-overlapping functional relations for durable Stage 2 replay."""
+
+    entries = inventory.entries
+    entry_by_id = {entry.component_id: entry for entry in entries}
+    contracts = []
+    relation_specs = []
+    for entry in entries:
+        if entry.component_id == "stage-root":
+            function_id = ComponentFunctionId.SUPPORT_OTHERS
+            peer = entry_by_id["foundation"]
+            projection = RelationProjection.SUPPORT
+            relation_kind = ArchitecturalRelationKind.LOAD_TRANSFER
+            relation_roles = {
+                "supported_component": "receiver",
+                "supporting_component": "sender",
+            }
+        else:
+            function_id = ComponentFunctionId.BE_HOSTED
+            peer = entry_by_id[entry.parent_component_id]
+            projection = RelationProjection.HOST
+            relation_kind = ArchitecturalRelationKind.HOST
+            relation_roles = {
+                "host_component": "host",
+                "hosted_component": "hosted",
+            }
+        spec = DEFAULT_COMPONENT_FUNCTION_POLICY.spec_for(function_id)
+        endpoint_bindings = tuple(
+            FunctionEndpointBinding(
+                role=role.role,
+                endpoint_refs=(
+                    (entry.identity_ref,)
+                    if role.component_slot
+                    else (peer.identity_ref,)
+                ),
+            )
+            for role in spec.endpoint_roles
+        )
+        claim = FunctionObligationClaim(
+            obligation_ref=spec.obligation_ref,
+            endpoint_bindings=endpoint_bindings,
+            maturity=spec.required_maturity,
+            status=FunctionClaimStatus.PASS,
+            evidence_refs=(source_ref,),
+            authority_refs=(authority_ref,),
+            contradiction_refs=(),
+        )
+        contracts.append(
+            ComponentFunctionContract(
+                contract_id=f"{entry.component_id}-durable-function-contract",
+                branch=inventory.branch,
+                stage_id=inventory.stage_id,
+                subject_inventory_digest=inventory.inventory_digest,
+                component_ref=entry.identity_ref,
+                component_digest=entry.component_digest,
+                applicability_decisions=tuple(
+                    FunctionApplicabilityDecision(
+                        function_id=item,
+                        applicability=(
+                            FunctionApplicability.REQUIRED
+                            if item is function_id
+                            else FunctionApplicability.NOT_APPLICABLE
+                        ),
+                        evidence_refs=(source_ref,),
+                        authority_refs=(authority_ref,),
+                    )
+                    for item in ComponentFunctionId
+                ),
+                claims=(claim,),
+            )
+        )
+        relation_specs.append(
+            (
+                entry,
+                peer,
+                spec,
+                projection,
+                relation_kind,
+                relation_roles,
+            )
+        )
+    ledger = compile_component_function_ledger(
+        ledger_id=f"{inventory.inventory_id}-durable-functions",
+        inventory=inventory,
+        contracts=tuple(contracts),
+    )
+    envelopes = tuple(
+        FunctionRelationEvidenceEnvelope(
+            envelope_id=f"{entry.component_id}-durable-function-relation",
+            branch=inventory.branch,
+            stage_id=inventory.stage_id,
+            subject_inventory_digest=inventory.inventory_digest,
+            function_ledger_ref=ledger.ledger_ref,
+            function_ledger_digest=ledger.ledger_digest,
+            component_ref=entry.identity_ref,
+            component_digest=entry.component_digest,
+            functional_obligation_ref=spec.obligation_ref,
+            projection=projection,
+            relation_kind=relation_kind,
+            scenario_ref="scenario:durable-stage-2-functions",
+            endpoint_bindings=tuple(
+                FunctionRelationEndpointBinding(
+                    function_role=role.role,
+                    relation_role=relation_roles[role.role],
+                    endpoints=(
+                        FunctionRelationEndpoint(
+                            component_ref=(
+                                entry.identity_ref
+                                if role.component_slot
+                                else peer.identity_ref
+                            ),
+                            component_digest=(
+                                entry.component_digest
+                                if role.component_slot
+                                else peer.component_digest
+                            ),
+                        ),
+                    ),
+                )
+                for role in spec.endpoint_roles
+            ),
+            counted_function_role=next(
+                role.role for role in spec.endpoint_roles if not role.component_slot
+            ),
+            basis_ids=(
+                f"{entry.component_id}-durable-function-policy",
+                f"{entry.component_id}-durable-function-topology",
+            ),
+            evidence_refs=(source_ref,),
+            authority_refs=(authority_ref,),
+            prompt=(
+                "Identify the exact project-authored functional relation for "
+                f"{entry.identity_ref}."
+            ),
+        )
+        for entry, peer, spec, projection, relation_kind, relation_roles in relation_specs
+    )
+    return ledger, compile_function_relation_requirements(
+        set_id=f"{inventory.inventory_id}-durable-function-relations",
+        ledger=ledger,
+        inventory=inventory,
+        envelopes=envelopes,
+    )
 
 
 def _project_record_payload(ref: ProjectRecordRef) -> dict[str, object]:
@@ -338,12 +530,17 @@ def _stage_role_target_refs(
 def _stage_exit_inputs(
     checkpoint: DesignControllerCheckpoint,
     *,
+    repository: FilesystemProjectRepository,
+    destination: PersistenceDestination,
     source_ref: str,
     authority_ref: str,
     component_proposal: SpatialOptionProposal,
     component_proposal_ref: ProjectRecordRef,
     component_index: ComponentIndex,
     component_index_ref: ProjectRecordRef,
+    semantic_policy_ref: ProjectRecordRef,
+    visual_inventory: VisualEvidenceInventoryReceipt,
+    visual_inventory_ref: ProjectRecordRef,
     claim_basis: tuple[str, str, str, str, str] | None = None,
 ):
     branch = checkpoint.maturity.branch
@@ -576,12 +773,66 @@ def _stage_exit_inputs(
         component_proposal_ref=component_proposal_ref,
         component_index=component_index,
         component_index_ref=component_index_ref,
+        visual_inventory=visual_inventory,
+        visual_inventory_ref=visual_inventory_ref,
+        semantic_policy=current_semantic_capability_policy(),
+        semantic_policy_ref=semantic_policy_ref,
         role_obligations={
             component.component_id: obligations_for(
                 component.component_id
             )
             for component in component_proposal.components
         },
+    )
+    visual_source = VisualInventoryBaselineSource(
+        branch=branch,
+        stage_id=stage_id,
+        stage_subject_inventory_digest=inventory.inventory_digest,
+        inventory_ref=visual_inventory_ref,
+        inventory=visual_inventory,
+    )
+    function_ledger, function_requirements = _durable_function_control_values(
+        inventory,
+        source_ref=source_ref,
+        authority_ref=authority_ref,
+    )
+    function_ledger_record = repository.put_json(
+        run=branch.run,
+        destination=destination,
+        record_kind="component-function-ledger",
+        payload=function_ledger.to_dict(),
+    )
+    function_requirements_record = repository.put_json(
+        run=branch.run,
+        destination=destination,
+        record_kind="function-relation-requirements",
+        payload=function_requirements.to_dict(),
+    )
+    function_source = ComponentFunctionBaselineSource(
+        ledger_ref=function_ledger_record,
+        ledger=function_ledger,
+        relation_requirements_ref=function_requirements_record,
+        relation_requirements=function_requirements,
+    )
+    sources = replace(
+        sources,
+        visual_inventory=(visual_source,),
+        component_functions=(function_source,),
+    )
+    receipts = (
+        *receipts,
+        check_visual_inventory_baseline(
+            visual_source,
+            inventory,
+            scope_digest=scope_digest,
+            subject_digest=subject_digest,
+        ),
+        check_component_function_baseline(
+            function_source,
+            inventory,
+            scope_digest=scope_digest,
+            subject_digest=subject_digest,
+        ),
     )
     topology_source, _topology_requirements, topology_receipts = (
         _stage_relation_topology_evidence(
@@ -590,6 +841,7 @@ def _stage_exit_inputs(
             scope_digest=scope_digest,
             source_ref=source_ref,
             authority_ref=authority_ref,
+            function_requirements=function_requirements,
         )
     )
     sources = replace(
@@ -773,6 +1025,27 @@ def _prepare_stage_exit(
         record_kind="stage-component-index",
         payload=component_index.to_dict(),
     )
+    semantic_policy_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="semantic-capability-policy",
+        payload=current_semantic_capability_policy().to_dict(),
+    )
+    visual_inventory = compile_visual_evidence_inventory(
+        source_disposition=VisualSourceDisposition(
+            kind=VisualSourceDispositionKind.TEXT_ONLY,
+            source_refs=(source_record.uri,),
+            authority_refs=(authority_record.uri,),
+        ),
+        source_images=(),
+        rois=(),
+    )
+    visual_inventory_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="visual-evidence-inventory",
+        payload=visual_inventory.to_dict(),
+    )
     if anchor_proposal:
         stage_deliverable = previous.maturity.deliverables[0]
         previous = replace(
@@ -831,12 +1104,17 @@ def _prepare_stage_exit(
         stage_subject_inventory,
     ) = _stage_exit_inputs(
         previous,
+        repository=repository,
+        destination=destination,
         source_ref=source_record.uri,
         authority_ref=authority_record.uri,
         component_proposal=component_proposal,
         component_proposal_ref=component_proposal_record,
         component_index=component_index,
         component_index_ref=component_index_record,
+        semantic_policy_ref=semantic_policy_record,
+        visual_inventory=visual_inventory,
+        visual_inventory_ref=visual_inventory_record,
         claim_basis=(
             claim_record.uri,
             applicability_record.uri,
@@ -924,15 +1202,26 @@ def _prepare_stage_exit(
         component_index_ref=component_index_record,
         check_receipt_refs=check_records,
         requirement_basis_refs=(
-            (
-                claim_record,
-                applicability_record,
-                adoption_record,
-                source_record,
-                authority_record,
-            )
-            if claim_bound
-            else (source_record, authority_record)
+            *(
+                (
+                    claim_record,
+                    applicability_record,
+                    adoption_record,
+                    source_record,
+                    authority_record,
+                )
+                if claim_bound
+                else (source_record, authority_record)
+            ),
+            *(
+                ref
+                for source in baseline_sources.component_functions
+                for ref in (
+                    source.ledger_ref,
+                    source.relation_requirements_ref,
+                )
+                if ref is not None
+            ),
         ),
     )
 
@@ -998,6 +1287,362 @@ def _proof_checkpoint_payload(
     }
 
 
+def _persist_verified_stage_artifact_claim(
+    repository: FilesystemProjectRepository,
+    *,
+    run,
+    destination: PersistenceDestination,
+):
+    """Build one full typed Stage 3 denominator and persist every input."""
+
+    from archflow.control.baseline import StageBaselineLevel
+    from archflow.control.stage_artifacts import (
+        ArtifactShaBinding,
+        RecordDigestBinding,
+    )
+    from archflow.control.stage_closure import StageClosureStatus
+    from archflow.runtime.stage_artifact_chain import (
+        compile_relation_realization_baseline_source,
+        compile_stage_artifact_claim,
+    )
+    from archflow.runtime.stage_control_chain import (
+        finalize_stage_control_chain,
+        prepare_stage_control_chain,
+    )
+    from archflow.state.design_maturity import (
+        DeliverableRole,
+        PhaseGateReceipt,
+        StageEntryProof,
+    )
+    from archflow.state.model import ArtifactRef
+    from archflow.validation.relation_realization import (
+        check_relation_realization,
+    )
+    from tests.integration.test_stage_control_runtime import (
+        _add_project_relation_denominator,
+        _answer_project_questions,
+        _complete_stage_sources,
+        _compile_stage_evidence,
+    )
+    from tests.test_stage_artifact_chain import _realization_inputs, _sha
+    from tests.test_stage_control_runtime import (
+        _proposal as stage_relation_proposal,
+        _raw_inputs,
+        _verification_receipts,
+    )
+    from tests.test_stage_subject_inventory import (
+        _stair_sources,
+        _text_only_visual_inventory,
+    )
+
+    base_proposal, base_index, _base_branch = _stair_sources()
+    access_component = next(
+        item
+        for item in base_proposal.components
+        if item.component_id == "exterior-stair-east"
+    )
+    access_component = replace(
+        access_component,
+        semantic_kind="exterior-access-assembly",
+    )
+    base_proposal = replace(
+        base_proposal,
+        components=tuple(
+            sorted(
+                (
+                    access_component
+                    if item.component_id == access_component.component_id
+                    else item
+                    for item in base_proposal.components
+                ),
+                key=lambda item: item.component_id,
+            )
+        ),
+    )
+    base_index = replace(
+        base_index,
+        component_proposal_digest=base_proposal.proposal_digest,
+        entries=tuple(
+            sorted(
+                (
+                    replace(item, component=access_component)
+                    if item.component_id == access_component.component_id
+                    else item
+                    for item in base_index.entries
+                ),
+                key=lambda item: item.component_id,
+            )
+        ),
+    )
+    branch = BranchRef(run=run, branch_id="candidate-a", epoch=3)
+    component_index = replace(
+        base_index,
+        project_id=run.project_id,
+        run_id=run.run_id,
+        base=run.base,
+    )
+    visual_inventory = _text_only_visual_inventory()
+    semantic_policy = current_semantic_capability_policy()
+    proposal_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="runtime-proposal",
+        payload=base_proposal.to_dict(),
+    )
+    component_index_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="runtime-component-index",
+        payload=component_index.to_dict(),
+    )
+    visual_inventory_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="runtime-visual-inventory",
+        payload=visual_inventory.to_dict(),
+    )
+    semantic_policy_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="runtime-semantic-policy",
+        payload=semantic_policy.to_dict(),
+    )
+    exact_refs = {
+        "runtime-proposal": proposal_record,
+        "runtime-component-index": component_index_record,
+        "runtime-visual-inventory": visual_inventory_record,
+        "runtime-semantic-policy": semantic_policy_record,
+    }
+
+    def exact_ref(_branch, name: str, _sha256: str):  # type: ignore[no-untyped-def]
+        return exact_refs[name]
+
+    with patch(
+        "tests.test_stage_control_runtime._stair_sources",
+        return_value=(base_proposal, component_index, branch),
+    ), patch(
+        "tests.test_stage_control_runtime._record_ref",
+        side_effect=exact_ref,
+    ):
+        raw = _raw_inputs(
+            stage_id=DesignPhase.DESIGN_DEVELOPMENT.value,
+            baseline_level=StageBaselineLevel.DEVELOPED,
+            access_semantic_kind="exterior-access-assembly",
+        )
+    _add_project_relation_denominator(raw)
+    prepared = prepare_stage_control_chain(**raw)
+    proposal = _answer_project_questions(
+        prepared,
+        stage_relation_proposal(prepared),
+    )
+    function_ledger_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="runtime-function-ledger",
+        payload=prepared.function_ledger.to_dict(),
+    )
+    function_requirements_record = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="runtime-function-requirements",
+        payload=prepared.relation_requirements.to_dict(),
+    )
+    finalized = finalize_stage_control_chain(
+        prepared=prepared,
+        relation_proposal=proposal,
+        function_ledger_ref=function_ledger_record,
+        relation_requirements_ref=function_requirements_record,
+        verification_receipts=_verification_receipts(prepared, proposal),
+    )
+    topology = finalized.topology_source
+    program, readback, manifest, independent_receipts = _realization_inputs(
+        topology
+    )
+    realization = compile_relation_realization_baseline_source(
+        topology,
+        program=program,
+        readback=readback,
+        manifest=manifest,
+        verification_receipts=independent_receipts,
+    )
+    sources = _complete_stage_sources(prepared, finalized, realization)
+    profile, stage_receipts, coverage, closure = _compile_stage_evidence(
+        prepared,
+        sources,
+    )
+    if closure.status is not StageClosureStatus.SATISFIED:
+        raise AssertionError("fixture Stage 3 closure did not satisfy")
+    realization_check = check_relation_realization(
+        realization.graph,
+        realization.manifest,
+        realization.program,
+        realization.readback,
+        verification_receipts=realization.verification_receipts,
+    )
+
+    stage_exit_checkpoint_ref = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="runtime-stage-exit-checkpoint-ref",
+        payload={
+            "schema": "StageExitCheckpointFixture@1",
+            "branch_epoch": branch.epoch,
+        },
+    )
+    predecessor = replace(branch, epoch=branch.epoch - 1)
+    gate = PhaseGateReceipt(
+        receipt_id="runtime-schematic-exit",
+        request_id="runtime-enter-development",
+        branch=predecessor,
+        base_state_digest=_sha("runtime-schematic-state"),
+        from_phase=DesignPhase.SCHEMATIC_DESIGN,
+        to_phase=DesignPhase.DESIGN_DEVELOPMENT,
+        required_roles=(
+            DeliverableRole.SCHEMATIC_OPTIONS,
+            DeliverableRole.SCHEMATIC_SELECTION,
+        ),
+        accepted_deliverable_refs=(
+            "deliverable:runtime-options",
+            "deliverable:runtime-selection",
+        ),
+    )
+    proof = StageEntryProof(
+        phase_gate=gate,
+        stage_exit_checkpoint_ref=stage_exit_checkpoint_ref,
+        stage_exit_proof_digest=_sha("runtime-stage-exit-proof"),
+        predecessor_checkpoint_digest=_sha("runtime-predecessor-checkpoint"),
+        successor_checkpoint_digest=_sha("runtime-successor-checkpoint"),
+        successor_branch=branch,
+    )
+
+    def persist(name: str, value: object) -> ProjectRecordRef:
+        return repository.put_json(
+            run=run,
+            destination=destination,
+            record_kind=name,
+            payload=value.to_dict(),  # type: ignore[attr-defined]
+        )
+
+    proof_record = persist("runtime-stage-entry-proof", proof)
+    program_record = persist("runtime-geometry-program", program)
+    inventory_record = persist(
+        "runtime-stage-subject-inventory",
+        prepared.inventory,
+    )
+    profile_record = persist("runtime-stage-requirement-profile", profile)
+    baseline_sources_record = persist("runtime-baseline-sources", sources)
+    coverage_record = persist("runtime-baseline-coverage", coverage)
+    closure_record = persist("runtime-stage-closure", closure)
+    readback_record = persist("runtime-cad-readback", readback)
+    topology_record = persist("runtime-relation-topology", topology)
+    realization_record = persist("runtime-relation-realization", realization)
+    stage_check_records = tuple(
+        persist(f"runtime-stage-check-{index:03d}", receipt)
+        for index, receipt in enumerate(stage_receipts)
+    )
+    all_realization_receipts = tuple(
+        sorted(
+            (realization_check, *independent_receipts),
+            key=lambda item: item.receipt_digest,
+        )
+    )
+    realization_receipt_records = tuple(
+        persist(f"runtime-relation-check-{index:03d}", receipt)
+        for index, receipt in enumerate(all_realization_receipts)
+    )
+
+    artifact_sha = _sha("runtime-stage3-candidate")
+    artifact = ArtifactShaBinding(
+        artifact_ref=ArtifactRef(
+            artifact_id="runtime-stage3-candidate",
+            uri=(
+                f"project://{run.project_id}/runs/{run.run_id}/branches/"
+                f"{branch.branch_id}/artifacts/runtime-stage3-candidate.3dm"
+            ),
+            media_type="model/vnd.rhino",
+            sha256=artifact_sha,
+        ),
+        artifact_sha256=artifact_sha,
+    )
+
+    def binding(ref: ProjectRecordRef, digest: str) -> RecordDigestBinding:
+        return RecordDigestBinding(record_ref=ref, content_digest=digest)
+
+    return compile_stage_artifact_claim(
+        claim_id="runtime-durable-stage3-claim",
+        stage_entry_proof=proof,
+        stage_entry_proof_record=binding(proof_record, proof.proof_digest),
+        artifact=artifact,
+        geometry_program_record=binding(program_record, program.program_digest),
+        component_index_record=binding(
+            component_index_record,
+            prepared.inventory.component_index_digest,
+        ),
+        stage_subject_inventory_record=binding(
+            inventory_record,
+            prepared.inventory.inventory_digest,
+        ),
+        stage_subject_inventory=prepared.inventory,
+        function_ledger_record=binding(
+            function_ledger_record,
+            prepared.function_ledger.ledger_digest,
+        ),
+        function_ledger=prepared.function_ledger,
+        function_requirement_record=binding(
+            function_requirements_record,
+            prepared.relation_requirements.set_digest,
+        ),
+        function_requirements=prepared.relation_requirements,
+        stage_requirement_profile_record=binding(
+            profile_record,
+            profile.profile_digest,
+        ),
+        stage_requirement_profile=profile,
+        stage_check_receipt_records=tuple(
+            binding(ref, receipt.receipt_digest)
+            for ref, receipt in zip(
+                stage_check_records,
+                stage_receipts,
+                strict=True,
+            )
+        ),
+        stage_check_receipts=stage_receipts,
+        baseline_sources_record=binding(
+            baseline_sources_record,
+            sources.source_set_digest,
+        ),
+        baseline_sources=sources,
+        baseline_coverage_record=binding(
+            coverage_record,
+            coverage.receipt_digest,
+        ),
+        baseline_coverage=coverage,
+        stage_closure_record=binding(
+            closure_record,
+            closure.receipt_digest,
+        ),
+        stage_closure=closure,
+        cad_readback_record=binding(
+            readback_record,
+            readback.snapshot_digest,
+        ),
+        topology_source_records=(
+            binding(topology_record, topology.source_digest),
+        ),
+        realization_source_records=(
+            binding(realization_record, realization.source_digest),
+        ),
+        realization_receipt_records=tuple(
+            binding(ref, receipt.receipt_digest)
+            for ref, receipt in zip(
+                realization_receipt_records,
+                all_realization_receipts,
+                strict=True,
+            )
+        ),
+    )
+
+
 def _persist_true_legacy_stage_exit_checkpoint(
     repository: FilesystemProjectRepository,
     adapter: ProjectControllerArchiveAdapter,
@@ -1043,18 +1688,27 @@ def _persist_true_legacy_stage_exit_checkpoint(
             promotion=source.promotion,
         )
     }
+    current_control_requirement_ids = {
+        requirement.requirement_id
+        for requirement in current_profile.requirements
+        if requirement.checker_id
+        in {"visual-inventory-validator", "component-function-validator"}
+    }
+    legacy_removed_requirement_ids = (
+        topology_requirement_ids | current_control_requirement_ids
+    )
     legacy_profile = replace(
         current_profile,
         requirements=tuple(
             requirement
             for requirement in current_profile.requirements
-            if requirement.requirement_id not in topology_requirement_ids
+            if requirement.requirement_id not in legacy_removed_requirement_ids
         ),
     )
     legacy_receipts = tuple(
         receipt
         for receipt in current_receipts
-        if receipt.check_id not in topology_requirement_ids
+        if receipt.check_id not in legacy_removed_requirement_ids
     )
     legacy_closure = compile_composite_stage_closure(
         legacy_profile,
@@ -1067,6 +1721,8 @@ def _persist_true_legacy_stage_exit_checkpoint(
     current_sources_payload.pop("relation_topology")
     current_sources_payload.pop("relation_realization")
     current_sources_payload.pop("relation_inheritance")
+    current_sources_payload.pop("visual_inventory")
+    current_sources_payload.pop("component_functions")
     source_content = {
         key: value
         for key, value in current_sources_payload.items()
@@ -1216,6 +1872,20 @@ def _persist_true_legacy_stage_exit_checkpoint(
     legacy_bundle_content["baseline_coverage_ref"] = _project_record_payload(
         legacy_baseline_record
     )
+    current_control_record_paths = {
+        ref.relative_path
+        for source in current_sources.component_functions
+        for ref in (
+            source.ledger_ref,
+            source.relation_requirements_ref,
+        )
+        if ref is not None
+    }
+    legacy_bundle_content["requirement_basis_refs"] = [
+        ref
+        for ref in legacy_bundle_content["requirement_basis_refs"]
+        if ref["relative_path"] not in current_control_record_paths
+    ]
     legacy_bundle_content.pop("stage_subject_inventory_ref")
     legacy_bundle_content.pop("component_proposal_ref")
     legacy_bundle_content.pop("component_index_ref")
@@ -1272,6 +1942,145 @@ def _persist_true_legacy_stage_exit_checkpoint(
 
 
 class DurableDesignStateResumeTests(unittest.TestCase):
+    def test_stage3_artifact_archive_replays_exact_typed_p036_denominator(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            canonical = initialize_canonical_project(
+                "stage-artifact-archive"
+            )
+            _event, sealed = make_initialization_event(
+                canonical,
+                actor_id="system",
+            )
+            root = Path(temporary) / "stage-artifact-archive"
+            repository = FilesystemProjectRepository.initialize(
+                root,
+                project_id="stage-artifact-archive",
+                initial_state=canonical_state_to_dict(sealed),
+            )
+            head_before = repository.read_head()
+            run = repository.create_run("run-004")
+            destination = PersistenceDestination(
+                PersistenceArea.RUN_BRANCH,
+                run_id=run.run_id,
+                branch_id="candidate-a",
+            )
+            claim = _persist_verified_stage_artifact_claim(
+                repository,
+                run=run,
+                destination=destination,
+            )
+            adapter = ProjectControllerArchiveAdapter(
+                repository,
+                branch=claim.branch,
+            )
+            archived = adapter.save_stage_artifact_archive(claim)
+            self.assertEqual(claim, archived.claim)
+            self.assertFalse(archived.artifact_bytes_readback)
+            self.assertEqual(
+                archived,
+                adapter.save_stage_artifact_archive(claim),
+            )
+            self.assertEqual(head_before, repository.read_head())
+
+            historical_bundle = replace(
+                archived.bundle,
+                branch=replace(claim.branch, epoch=claim.branch.epoch - 1),
+            )
+            historical_ref = repository.put_json(
+                run=run,
+                destination=destination,
+                record_kind="stage-artifact-archive-historical-epoch",
+                payload=historical_bundle.to_dict(),
+            )
+            self.assertEqual(
+                archived.bundle_ref,
+                adapter.load_latest_stage_artifact_archive().bundle_ref,
+            )
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "another run, branch, or epoch",
+            ):
+                adapter.load_stage_artifact_archive(historical_ref)
+
+            other_epoch = ProjectControllerArchiveAdapter(
+                repository,
+                branch=replace(claim.branch, epoch=claim.branch.epoch + 1),
+            )
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "another run, branch, or epoch",
+            ):
+                other_epoch.load_stage_artifact_archive(archived.bundle_ref)
+            other_branch = ProjectControllerArchiveAdapter(
+                repository,
+                branch=replace(claim.branch, branch_id="candidate-b"),
+            )
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "another branch",
+            ):
+                other_branch.load_stage_artifact_archive(archived.bundle_ref)
+            other_run_ref = repository.create_run("run-005")
+            other_run = ProjectControllerArchiveAdapter(
+                repository,
+                branch=BranchRef(
+                    run=other_run_ref,
+                    branch_id=claim.branch.branch_id,
+                    epoch=claim.branch.epoch,
+                ),
+            )
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "another branch",
+            ):
+                other_run.load_stage_artifact_archive(archived.bundle_ref)
+
+            repository.put_json(
+                run=run,
+                destination=destination,
+                record_kind="stage-artifact-archive-same-epoch-duplicate",
+                payload=archived.bundle.to_dict(),
+            )
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "ambiguous within one branch epoch",
+            ):
+                adapter.load_latest_stage_artifact_archive()
+
+            tampered_claim_payload = claim.to_dict()
+            tampered_claim_payload["claim_id"] = "tampered-stage3-claim"
+            tampered_claim_ref = repository.put_json(
+                run=run,
+                destination=destination,
+                record_kind="stage-artifact-claim-tampered",
+                payload=tampered_claim_payload,
+            )
+            tampered_bundle = StageArtifactArchiveBundle(
+                branch=claim.branch,
+                claim_ref=tampered_claim_ref,
+                claim_digest=claim.claim_digest,
+                artifact_sha256=archived.bundle.artifact_sha256,
+            )
+            tampered_bundle_ref = repository.put_json(
+                run=run,
+                destination=destination,
+                record_kind="stage-artifact-archive-tampered",
+                payload=tampered_bundle.to_dict(),
+            )
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "claim record cannot be replayed",
+            ):
+                adapter.load_stage_artifact_archive(tampered_bundle_ref)
+            self.assertEqual(head_before, repository.read_head())
+
+            del adapter
+            del repository
+            reopened = FilesystemProjectRepository.open(root)
+            self.assertEqual(head_before, reopened.read_head())
+
     def test_restart_reloads_checkpoint_from_one_project_repository(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             canonical = initialize_canonical_project(
@@ -1348,6 +2157,10 @@ class DurableDesignStateResumeTests(unittest.TestCase):
                 advanced,
                 stage_exit_bundle=bundle,
             )
+            self.assertEqual(
+                adapter.load_checkpoint(record).checkpoint,
+                advanced,
+            )
             payload = repository.load_json(record)
             self.assertEqual(
                 payload["schema"],
@@ -1384,17 +2197,106 @@ class DurableDesignStateResumeTests(unittest.TestCase):
                 inventory.component_index_digest,
                 component_index.index_digest,
             )
+            self.assertEqual(
+                bundle.SCHEMA,
+                bundle.to_dict()["schema"],
+            )
+            self.assertFalse(bundle.is_legacy_read_only)
+            self.assertFalse(inventory.is_legacy_read_only)
+            self.assertEqual(
+                inventory.semantic_policy,
+                current_semantic_capability_policy(),
+            )
+            self.assertEqual(
+                repository.load_json(inventory.semantic_policy_ref),
+                inventory.semantic_policy.to_dict(),
+            )
+            baseline_sources = StageBaselineSourceSet.from_dict(
+                repository.load_json(bundle.baseline_sources_ref)
+            )
+            self.assertEqual(len(baseline_sources.visual_inventory), 1)
+            self.assertEqual(len(baseline_sources.component_functions), 1)
+            visual_source = baseline_sources.visual_inventory[0]
+            function_source = baseline_sources.component_functions[0]
+            self.assertEqual(
+                repository.load_json(visual_source.inventory_ref),
+                visual_source.inventory.to_dict(),
+            )
+            self.assertEqual(
+                repository.load_json(function_source.ledger_ref),
+                function_source.ledger.to_dict(),
+            )
+            self.assertIsNotNone(function_source.relation_requirements_ref)
+            self.assertIsNotNone(function_source.relation_requirements)
+            self.assertEqual(
+                repository.load_json(function_source.relation_requirements_ref),
+                function_source.relation_requirements.to_dict(),
+            )
+            branch_record_prefix = (
+                f"runs/{advanced.tree.branch.run.run_id}/branches/"
+                f"{advanced.tree.branch.branch_id}/records/"
+            )
+            durable_control_refs = (
+                visual_source.inventory_ref,
+                function_source.ledger_ref,
+                function_source.relation_requirements_ref,
+            )
+            self.assertEqual(
+                len({ref.relative_path for ref in durable_control_refs}),
+                3,
+            )
+            self.assertTrue(
+                all(
+                    ref.relative_path.startswith(branch_record_prefix)
+                    for ref in durable_control_refs
+                )
+            )
+            topology = baseline_sources.relation_topology[0]
+            relation_requirements = function_source.relation_requirements
+            self.assertIsNotNone(topology.compilation.policy)
+            for requirement in relation_requirements.requirements:
+                self.assertIn(
+                    requirement.question.ref,
+                    {item.ref for item in topology.context.questions},
+                )
+                self.assertEqual(
+                    sum(
+                        item == requirement.rule
+                        for item in topology.compilation.policy.rules
+                    ),
+                    1,
+                )
+                self.assertEqual(
+                    sum(
+                        item.rule_id == requirement.slot.rule_id
+                        and item.node_ref == requirement.slot.node_ref
+                        for item in topology.compilation.slots
+                    ),
+                    1,
+                )
             self.assertIn(
                 bundle.component_proposal_ref.uri,
                 previous.maturity.deliverables[0].evidence_refs,
             )
             self.assertEqual(len(proof["baseline_sources_digest"]), 64)
             self.assertEqual(len(proof["baseline_coverage_digest"]), 64)
-            self.assertTrue(
-                all(
+            self.assertEqual(
+                {
+                    ref.relative_path
+                    for ref in bundle.requirement_basis_refs
+                    if ref.relative_path.startswith(branch_record_prefix)
+                },
+                {
+                    function_source.ledger_ref.relative_path,
+                    function_source.relation_requirements_ref.relative_path,
+                },
+            )
+            self.assertEqual(
+                sum(
                     ref.relative_path.startswith("runs/research-001/")
                     for ref in bundle.requirement_basis_refs
-                )
+                ),
+                2,
             )
             assembly_payloads = tuple(
                 repository.load_json(ref)
@@ -1438,6 +2340,201 @@ class DurableDesignStateResumeTests(unittest.TestCase):
                 "ambiguous latest checkpoint lineage",
             ):
                 adapter.load_latest_checkpoint()
+
+    def test_phase_exit_rejects_missing_exact_semantic_policy_record_without_head_change(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repository, adapter, previous, advanced, bundle = (
+                _prepare_stage_exit(
+                    Path(temporary) / "controller-semantic-policy-tamper",
+                    project_id="controller-semantic-policy-tamper",
+                )
+            )
+            head_before = repository.read_head()
+            prefix = (
+                f"runs/{previous.tree.branch.run.run_id}/branches/"
+                f"{previous.tree.branch.branch_id}/records"
+            )
+            inventory = StageSubjectInventory.from_dict(
+                repository.load_json(bundle.stage_subject_inventory_ref)
+            )
+            forged_inventory = replace(
+                inventory,
+                semantic_policy_ref=ProjectRecordRef(
+                    project_id=previous.tree.branch.run.project_id,
+                    relative_path=f"{prefix}/missing-semantic-policy.json",
+                    sha256="0" * 64,
+                ),
+            )
+            destination = PersistenceDestination(
+                PersistenceArea.RUN_BRANCH,
+                run_id=previous.tree.branch.run.run_id,
+                branch_id=previous.tree.branch.branch_id,
+            )
+            forged_inventory_ref = repository.put_json(
+                run=previous.tree.branch.run,
+                destination=destination,
+                record_kind="forged-stage-subject-inventory",
+                payload=forged_inventory.to_dict(),
+            )
+            binding = StageRequirementProfileBinding.from_dict(
+                repository.load_json(bundle.profile_binding_ref)
+            )
+            forged_binding = replace(
+                binding,
+                stage_subject_inventory_ref=forged_inventory_ref,
+                stage_subject_inventory_digest=forged_inventory.inventory_digest,
+            )
+            forged_binding_ref = repository.put_json(
+                run=previous.tree.branch.run,
+                destination=destination,
+                record_kind="forged-stage-profile-binding",
+                payload=forged_binding.to_dict(),
+            )
+            forged_bundle = replace(
+                bundle,
+                stage_subject_inventory_ref=forged_inventory_ref,
+                profile_binding_ref=forged_binding_ref,
+            )
+
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "semantic_policy_ref",
+            ):
+                adapter.save_checkpoint(
+                    advanced,
+                    stage_exit_bundle=forged_bundle,
+                )
+            self.assertEqual(head_before, repository.read_head())
+
+    def test_phase_exit_rejects_changed_exact_semantic_policy_record_without_head_change(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repository, adapter, previous, advanced, bundle = (
+                _prepare_stage_exit(
+                    Path(temporary) / "controller-semantic-policy-changed",
+                    project_id="controller-semantic-policy-changed",
+                )
+            )
+            head_before = repository.read_head()
+            destination = PersistenceDestination(
+                PersistenceArea.RUN_BRANCH,
+                run_id=previous.tree.branch.run.run_id,
+                branch_id=previous.tree.branch.branch_id,
+            )
+            changed_policy_payload = copy.deepcopy(
+                current_semantic_capability_policy().to_dict()
+            )
+            changed_policy_payload["policy_version"] = 3
+            changed_policy_payload["policy_digest"] = canonical_digest(
+                {
+                    key: value
+                    for key, value in changed_policy_payload.items()
+                    if key != "policy_digest"
+                }
+            )
+            changed_policy_ref = repository.put_json(
+                run=previous.tree.branch.run,
+                destination=destination,
+                record_kind="changed-semantic-capability-policy",
+                payload=changed_policy_payload,
+            )
+            inventory = StageSubjectInventory.from_dict(
+                repository.load_json(bundle.stage_subject_inventory_ref)
+            )
+            forged_inventory = replace(
+                inventory,
+                semantic_policy_ref=changed_policy_ref,
+            )
+            forged_inventory_ref = repository.put_json(
+                run=previous.tree.branch.run,
+                destination=destination,
+                record_kind="changed-policy-stage-subject-inventory",
+                payload=forged_inventory.to_dict(),
+            )
+            binding = StageRequirementProfileBinding.from_dict(
+                repository.load_json(bundle.profile_binding_ref)
+            )
+            forged_binding = replace(
+                binding,
+                stage_subject_inventory_ref=forged_inventory_ref,
+                stage_subject_inventory_digest=forged_inventory.inventory_digest,
+            )
+            forged_binding_ref = repository.put_json(
+                run=previous.tree.branch.run,
+                destination=destination,
+                record_kind="changed-policy-stage-profile-binding",
+                payload=forged_binding.to_dict(),
+            )
+            forged_bundle = replace(
+                bundle,
+                stage_subject_inventory_ref=forged_inventory_ref,
+                profile_binding_ref=forged_binding_ref,
+            )
+
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "semantic policy differs from exact P036 record",
+            ):
+                adapter.save_checkpoint(
+                    advanced,
+                    stage_exit_bundle=forged_bundle,
+                )
+            self.assertEqual(head_before, repository.read_head())
+
+            forged_proof = copy.deepcopy(
+                adapter._admit_stage_exit(  # noqa: SLF001
+                    previous,
+                    advanced,
+                    bundle,
+                )
+            )
+            forged_proof["bundle"]["stage_subject_inventory_ref"] = (
+                _project_record_payload(forged_inventory_ref)
+            )
+            forged_proof["bundle"]["profile_binding_ref"] = (
+                _project_record_payload(forged_binding_ref)
+            )
+            forged_proof["bundle"]["bundle_digest"] = canonical_digest(
+                {
+                    key: value
+                    for key, value in forged_proof["bundle"].items()
+                    if key != "bundle_digest"
+                }
+            )
+            forged_proof["stage_subject_inventory_digest"] = (
+                forged_inventory.inventory_digest
+            )
+            forged_proof["profile_binding_digest"] = (
+                forged_binding.binding_digest
+            )
+            forged_proof["proof_digest"] = canonical_digest(
+                {
+                    key: value
+                    for key, value in forged_proof.items()
+                    if key != "proof_digest"
+                }
+            )
+            forged_checkpoint = _proof_checkpoint_payload(
+                adapter,
+                advanced,
+                checkpoint_schema=adapter.PROOF_CHECKPOINT_SCHEMA,
+                proof=forged_proof,
+            )
+            forged_checkpoint_ref = repository.put_json(
+                run=previous.tree.branch.run,
+                destination=destination,
+                record_kind="changed-policy-stage-exit-checkpoint",
+                payload=forged_checkpoint,
+            )
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "semantic policy differs from exact P036 record",
+            ):
+                adapter.load_checkpoint(forged_checkpoint_ref)
+            self.assertEqual(head_before, repository.read_head())
 
     def test_phase_exit_archive_rejects_unreadable_or_leaking_refs(
         self,
@@ -1908,7 +3005,7 @@ class DurableDesignStateResumeTests(unittest.TestCase):
                     stage_exit_bundle=reduced_bundle,
                 )
 
-    def test_claim_bound_basis_requires_all_five_exact_p036_records(
+    def test_claim_bound_basis_requires_all_exact_p036_records(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1919,9 +3016,14 @@ class DurableDesignStateResumeTests(unittest.TestCase):
                     claim_bound=True,
                 )
             )
-            basis_by_kind = {
-                repository.load_json(ref)["kind"]: ref
+            basis_payloads = tuple(
+                (ref, repository.load_json(ref))
                 for ref in bundle.requirement_basis_refs
+            )
+            basis_by_kind = {
+                payload["kind"]: ref
+                for ref, payload in basis_payloads
+                if "kind" in payload
             }
             self.assertEqual(
                 set(basis_by_kind),
@@ -1931,6 +3033,17 @@ class DurableDesignStateResumeTests(unittest.TestCase):
                     "adoption",
                     "source",
                     "authority",
+                },
+            )
+            self.assertEqual(
+                {
+                    payload["schema"]
+                    for _ref, payload in basis_payloads
+                    if "kind" not in payload
+                },
+                {
+                    "ComponentFunctionLedger@2",
+                    "FunctionRelationRequirementSet@1",
                 },
             )
 
@@ -2491,6 +3604,68 @@ class DurableDesignStateResumeTests(unittest.TestCase):
                 "read-only|current stage-exit proof|proof anchor",
             ):
                 adapter.save_checkpoint(followup)
+
+    def test_current_proof_with_v3_bundle_is_readable_but_not_writable_anchor(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repository, adapter, previous, advanced, bundle = (
+                _prepare_stage_exit(
+                    Path(temporary) / "controller-v3-bundle-anchor",
+                    project_id="controller-v3-bundle-anchor",
+                )
+            )
+            head_before = repository.read_head()
+            current_proof = adapter._admit_stage_exit(  # noqa: SLF001
+                previous,
+                advanced,
+                bundle,
+            )
+            legacy_bundle_content = copy.deepcopy(bundle.to_dict())
+            legacy_bundle_content.pop("bundle_digest")
+            legacy_bundle_content["schema"] = bundle.PREVIOUS_SCHEMA
+            legacy_bundle = {
+                **legacy_bundle_content,
+                "bundle_digest": canonical_digest(legacy_bundle_content),
+            }
+            self.assertTrue(
+                StageExitArchiveBundle.from_dict(
+                    legacy_bundle
+                ).is_legacy_read_only
+            )
+            proof_content = copy.deepcopy(current_proof)
+            proof_content.pop("proof_digest")
+            proof_content["bundle"] = legacy_bundle
+            proof = {
+                **proof_content,
+                "proof_digest": canonical_digest(proof_content),
+            }
+            payload = _proof_checkpoint_payload(
+                adapter,
+                advanced,
+                checkpoint_schema=adapter.CHECKPOINT_SCHEMA,
+                proof=proof,
+            )
+            record = repository.put_json(
+                run=advanced.tree.branch.run,
+                destination=PersistenceDestination(
+                    PersistenceArea.RUN_BRANCH,
+                    run_id=advanced.tree.branch.run.run_id,
+                    branch_id=advanced.tree.branch.branch_id,
+                ),
+                record_kind="current-proof-v3-bundle-anchor",
+                payload=payload,
+            )
+            with self.assertRaisesRegex(
+                DesignControllerError,
+                "read-only semantic-policy stage-exit anchor",
+            ):
+                adapter._checkpoint_anchor_ref(  # noqa: SLF001
+                    record,
+                    payload,
+                    require_writable=True,
+                )
+            self.assertEqual(head_before, repository.read_head())
 
     def test_true_legacy_stage_exit_proof_cannot_anchor_next_epoch_write(
         self,

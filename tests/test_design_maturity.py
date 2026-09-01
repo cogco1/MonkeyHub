@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from archflow.capabilities.experts import (
@@ -20,6 +21,7 @@ from archflow.capabilities.phase_gates import (
 )
 from archflow.project.refs import (
     BranchRef,
+    ProjectRecordRef,
     ProjectVersionRef,
     RunRef,
 )
@@ -35,10 +37,12 @@ from archflow.state.design_maturity import (
     PhaseDeliverable,
     PhaseGateReceipt,
     PhaseGateRequest,
+    StageEntryProof,
     compile_backward_revision,
     evaluate_forward_phase_gate,
     next_design_phase,
     require_current_phase_gate,
+    require_stage_entry_proof,
 )
 from archflow.state.operational_state import (
     DependencyEdge,
@@ -123,7 +127,102 @@ def _maturity(
     )
 
 
+def _stage_entry_proof() -> StageEntryProof:
+    maturity = _maturity(DesignPhase.SCHEMATIC_DESIGN)
+    target = DesignPhase.DESIGN_DEVELOPMENT
+    phase_gate = evaluate_forward_phase_gate(
+        maturity,
+        PhaseGateRequest(
+            request_id="enter-design-development",
+            branch=maturity.branch,
+            base_state_digest=maturity.operational_state_digest,
+            from_phase=maturity.phase,
+            to_phase=target,
+            deliverable_refs=maturity.deliverable_refs,
+        ),
+    )
+    successor = replace(
+        maturity.branch,
+        epoch=maturity.branch.epoch + 1,
+    )
+    return StageEntryProof(
+        phase_gate=phase_gate,
+        stage_exit_checkpoint_ref=ProjectRecordRef(
+            project_id=successor.run.project_id,
+            relative_path=(
+                f"runs/{successor.run.run_id}/branches/"
+                f"{successor.branch_id}/records/stage-entry.json"
+            ),
+            sha256=_hash("stage-entry-record"),
+        ),
+        stage_exit_proof_digest=_hash("stage-exit-proof"),
+        predecessor_checkpoint_digest=_hash("schematic-checkpoint"),
+        successor_checkpoint_digest=_hash("developed-checkpoint"),
+        successor_branch=successor,
+    )
+
+
 class DesignMaturityGateTests(unittest.TestCase):
+    def test_stage_entry_proof_roundtrip_and_exact_guard(self) -> None:
+        proof = _stage_entry_proof()
+
+        self.assertEqual(StageEntryProof.from_dict(proof.to_dict()), proof)
+        self.assertEqual(
+            require_stage_entry_proof(
+                proof,
+                successor_branch=proof.successor_branch,
+                from_phase=DesignPhase.SCHEMATIC_DESIGN,
+                to_phase=DesignPhase.DESIGN_DEVELOPMENT,
+            ),
+            proof,
+        )
+        payload = proof.to_dict()
+        self.assertFalse(payload["stage_acceptance_authority"])
+        self.assertFalse(payload["geometry_mutation_authority"])
+        self.assertFalse(payload["persistence_authority"])
+        self.assertFalse(payload["canonical_write_authority"])
+
+    def test_stage_entry_guard_rejects_stale_successor_epoch(self) -> None:
+        proof = _stage_entry_proof()
+        stale = replace(
+            proof.successor_branch,
+            epoch=proof.successor_branch.epoch + 1,
+        )
+
+        with self.assertRaisesRegex(DesignMaturityError, "stale"):
+            require_stage_entry_proof(
+                proof,
+                successor_branch=stale,
+                from_phase=DesignPhase.SCHEMATIC_DESIGN,
+                to_phase=DesignPhase.DESIGN_DEVELOPMENT,
+            )
+
+    def test_stage_entry_guard_rejects_cross_branch_successor(self) -> None:
+        proof = _stage_entry_proof()
+        foreign = replace(
+            proof.successor_branch,
+            branch_id="option-b",
+        )
+
+        with self.assertRaisesRegex(DesignMaturityError, "cross-branch"):
+            require_stage_entry_proof(
+                proof,
+                successor_branch=foreign,
+                from_phase=DesignPhase.SCHEMATIC_DESIGN,
+                to_phase=DesignPhase.DESIGN_DEVELOPMENT,
+            )
+
+    def test_stage_entry_guard_rejects_wrong_phase_claim(self) -> None:
+        proof = _stage_entry_proof()
+
+        with self.assertRaisesRegex(DesignMaturityError, "wrong-phase"):
+            require_stage_entry_proof(
+                proof,
+                successor_branch=proof.successor_branch,
+                from_phase=DesignPhase.DESIGN_DEVELOPMENT,
+                to_phase=DesignPhase.CANDIDATE_COORDINATION,
+            )
+
     def test_forward_matrix_accepts_only_immediate_next_phase(self) -> None:
         for phase in DESIGN_PHASES[:-1]:
             with self.subTest(phase=phase):
