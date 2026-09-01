@@ -50,3 +50,9 @@ obligations are what keeps converged search from dying untextualized.
   path.
 - Stop before granting the catalog or either gate any authority beyond
   typed refusal.
+
+
+## Completion
+
+- Completed: 2026-09-01
+- Evidence: Catalog confrontation gate: every intended family answered by receipted selection or typed declination with reason; unanswered, doubled, stray, and out-of-catalog answers all refuse typed. Harvest obligations: one OPEN obligation or recorded waiver per inline family, closed only by a component-harvest-closure binding a same-family template; emergency waiver path stays open on the record. Decline-harvest-offer cycle proven end to end in tests. Live ledger: villa reconstruction-016 carries six real obligations bound to the datum-migration receipt - exterior-stair closed same-day against the harvested palladian template (closure 22a24942), five OPEN assigned to P092 (portico-assembly, roof-family, underpass-vault, wall-with-openings, window-door-array). 10 new tests; suite 1534 passed; ARCHITECTURE PASS (294 files)

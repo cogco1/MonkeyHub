@@ -14354,8 +14354,8 @@
     {
       "id": "P093",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "ready",
+      "stream": "archive",
+      "status": "done",
       "goal": "Put the catalog on the write path and the harvest on the acceptance path: geometry authoring opens only after a per-family selected template ref or typed declination with reason, and stage acceptance emits a harvest obligation or recorded waiver for every family produced inline, reusing P050 selection receipts and the existing obligation machinery with no new authority.",
       "depends_on": [
         "P091"
@@ -14392,8 +14392,46 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P093-catalog-harvest-gates.md",
-      "on_complete": {}
+      "card": "docs/mapping/archive/P093-catalog-harvest-gates.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P093",
+        "actor": "claude",
+        "verified_at": "2026-09-01T20:28:30.289679+00:00",
+        "contract_sha256": "36b2849311275c93fea159c4bd037621dd658cd51d84049f6b1924b8240b1b1f",
+        "scope_sha256": "15ff64d58883c0cf75f5b885f458ef75f8b4dabc3afe0b120509fb7de52f2324",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_catalog_and_harvest_gates"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "4b97eb7f5f1d4cef08d5576205345e276ad5525df347ece20d634c0ed33a2087",
+            "stdout_tail": "",
+            "stderr_tail": "..........\n----------------------------------------------------------------------\nRan 10 tests in 0.312s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "3bc14dbd8d4a7a94858c3e59e127bf1dbb793c1a8f362263eaeef37e011acc35",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (294 files, 1.813s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-01",
+      "evidence": [
+        "Catalog confrontation gate: every intended family answered by receipted selection or typed declination with reason; unanswered, doubled, stray, and out-of-catalog answers all refuse typed. Harvest obligations: one OPEN obligation or recorded waiver per inline family, closed only by a component-harvest-closure binding a same-family template; emergency waiver path stays open on the record. Decline-harvest-offer cycle proven end to end in tests. Live ledger: villa reconstruction-016 carries six real obligations bound to the datum-migration receipt - exterior-stair closed same-day against the harvested palladian template (closure 22a24942), five OPEN assigned to P092 (portico-assembly, roof-family, underpass-vault, wall-with-openings, window-door-array). 10 new tests; suite 1534 passed; ARCHITECTURE PASS (294 files)"
+      ]
     }
   ]
 }
