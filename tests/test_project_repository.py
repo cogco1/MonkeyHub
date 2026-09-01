@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -315,6 +316,56 @@ class ProjectRepositoryTests(unittest.TestCase):
 
         self.assertEqual(self.repository.read_head(), accepted)
         self.assertEqual(self.repository.load_current_state(), {"selected": "a"})
+
+    def test_concurrent_head_readers_survive_cas_replacement(self) -> None:
+        """HEAD reads racing os.replace must not leak PermissionError or
+        misreport a healthy project as corrupt (Windows sharing violation)."""
+
+        errors: list[BaseException] = []
+        stop = threading.Event()
+
+        def reader() -> None:
+            while not stop.is_set():
+                try:
+                    self.repository.read_head()
+                    self.repository.load_current_state()
+                except BaseException as exc:  # noqa: BLE001 - assert below
+                    errors.append(exc)
+                    return
+
+        threads = [
+            threading.Thread(target=reader, name=f"head-reader-{index}")
+            for index in range(4)
+        ]
+        for thread in threads:
+            thread.start()
+        commits = 12
+        try:
+            for index in range(commits):
+                run = self.repository.create_run(f"concurrent-{index:03d}")
+                prepared = self.repository.prepare_transition(
+                    run=run,
+                    expected=run.base,
+                    replacement_state={"step": index},
+                    decision_receipt=_decision(
+                        self.repository,
+                        run,
+                        status="accepted",
+                    ),
+                )
+                self.repository.compare_and_swap(
+                    expected=prepared.expected,
+                    event=prepared.event,
+                    replacement=prepared.replacement,
+                )
+        finally:
+            stop.set()
+            for thread in threads:
+                thread.join(timeout=30)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(self.repository.read_head().version, commits)
+        self.repository.verify()
 
     def test_head_cas_is_exclusive_across_processes(self) -> None:
         base = self.repository.read_head()

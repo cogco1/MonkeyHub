@@ -76,6 +76,9 @@ _PROJECT_LOCKS: dict[str, threading.RLock] = {}
 _HEAD_LOCK_TIMEOUT_SECONDS = 10.0
 _HEAD_LOCK_RETRY_SECONDS = 0.05
 
+_HEAD_SHARE_RETRY_ATTEMPTS = 200
+_HEAD_SHARE_RETRY_SECONDS = 0.005
+
 
 def _project_lock(root: Path) -> threading.RLock:
     key = os.path.normcase(str(root.resolve(strict=False)))
@@ -180,13 +183,62 @@ def _read_bytes(path: Path) -> bytes:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
+    return _parse_json_document(_read_bytes(path), path.name)
+
+
+def _parse_json_document(data: bytes, name: str) -> dict[str, Any]:
     try:
-        value = json.loads(_read_bytes(path).decode("utf-8"))
+        value = json.loads(data.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ProjectIntegrityError(f"invalid JSON record: {path.name}") from exc
+        raise ProjectIntegrityError(f"invalid JSON record: {name}") from exc
     if not isinstance(value, dict):
-        raise ProjectIntegrityError(f"JSON record is not an object: {path.name}")
+        raise ProjectIntegrityError(f"JSON record is not an object: {name}")
     return value
+
+
+def _retry_windows_sharing(operation, *, subject: str):
+    """Absorb transient Windows sharing violations around the HEAD swap.
+
+    On Windows, ``os.replace`` onto a file a concurrent reader holds open and
+    opening the file while a replace is in flight both surface as
+    ``PermissionError``.  A brief bounded retry keeps readers from
+    misreporting a healthy project as corrupt and keeps the compare-and-swap
+    writer from leaking a bare ``PermissionError``; exhaustion fails with the
+    typed ``ProjectHeadLocked``.  POSIX behavior is unchanged: the retry only
+    engages on Windows.
+    """
+
+    last_error: PermissionError | None = None
+    for _ in range(_HEAD_SHARE_RETRY_ATTEMPTS):
+        try:
+            return operation()
+        except PermissionError as exc:
+            if os.name != "nt":
+                raise
+            last_error = exc
+            time.sleep(_HEAD_SHARE_RETRY_SECONDS)
+    raise ProjectHeadLocked(
+        f"concurrent HEAD access kept the project head busy: {subject}"
+    ) from last_error
+
+
+def _read_shared_json(path: Path) -> dict[str, Any]:
+    """Read a JSON document that a concurrent ``os.replace`` may be swapping."""
+
+    def read() -> bytes:
+        try:
+            return path.read_bytes()
+        except OSError as exc:
+            if os.name == "nt" and isinstance(exc, PermissionError):
+                raise
+            raise ProjectIntegrityError(
+                f"cannot read project record: {path.name}"
+            ) from exc
+
+    return _parse_json_document(
+        _retry_windows_sharing(read, subject=path.name),
+        path.name,
+    )
 
 
 def _write_immutable(path: Path, data: bytes) -> None:
@@ -225,7 +277,13 @@ def _replace_atomic(path: Path, data: bytes) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        # On Windows a concurrent HEAD reader briefly blocks the replace
+        # with a sharing violation; retry within a bound instead of leaking
+        # a bare PermissionError from a healthy race.
+        _retry_windows_sharing(
+            lambda: os.replace(temporary, path),
+            subject=path.name,
+        )
         # No post-replace fsync: raising after the swap is already visible
         # would break the caller's "exception means no promotion" contract,
         # which matters more than flushing the rename's directory metadata.
@@ -1037,7 +1095,10 @@ class FilesystemProjectRepository:
     def _read_head_document(
         self,
     ) -> tuple[ProjectVersionRef, ProjectRecordRef, ProjectRecordRef]:
-        payload = _read_json(self.layout.head)
+        # HEAD is the one mutable document: a concurrent compare_and_swap may
+        # be replacing it right now, so the read must tolerate the transient
+        # Windows sharing violation instead of reporting corruption.
+        payload = _read_shared_json(self.layout.head)
         if set(payload) != {
             "schema",
             "project_id",

@@ -18,7 +18,9 @@ from archflow.project.refs import BranchRef
 from archflow.state.commitments import Commitment, CommitmentStatus
 from archflow.state.decision_operator import (
     CompiledDecisionTransition,
+    DecisionCompilationError,
     DecisionOperator,
+    _refresh_obligation_readiness,
     compile_decision_operator,
 )
 from archflow.state.operational_state import (
@@ -757,7 +759,8 @@ def compile_tree_phase_change(
     _unique(obligation_ids, "added obligation ids")
     next_nodes = []
     for node in tree.nodes:
-        obligations = node.operational_state.obligations
+        state = node.operational_state
+        obligations = state.obligations
         if node.ref == obligation_target_ref:
             existing_ids = {
                 item.obligation_id for item in obligations
@@ -774,22 +777,74 @@ def compile_tree_phase_change(
                     key=lambda item: item.obligation_id,
                 )
             )
-        next_nodes.append(
-            DesignStateNode(
-                path=path_by_old_ref[node.ref],
-                operational_state=replace(
-                    node.operational_state,
-                    branch=next_branch,
-                    phase=next_phase,
-                    obligations=obligations,
-                ),
-                allowed_authority_ids=node.allowed_authority_ids,
-                child_refs=tuple(
-                    ref_map[item] for item in node.child_refs
-                ),
-                phase_deliverable_refs=(),
+        # Readiness must be recompiled against the successor phase before
+        # constructing the successor state: any obligation conditioned on
+        # state:phase would otherwise disagree with the state's own
+        # readiness invariant validator and deadlock the whole transition.
+        try:
+            refreshed = _refresh_obligation_readiness(
+                facts={item.ref: item for item in state.facts},
+                bindings={item.ref: item for item in state.bindings},
+                locks={
+                    item.target_ref: item for item in state.locks
+                },
+                commitments={
+                    item.commitment_id: item
+                    for item in state.commitments
+                },
+                obligations={
+                    item.obligation_id: item for item in obligations
+                },
+                dependencies={
+                    item.ref: item for item in state.dependencies
+                },
+                phase=next_phase,
+                invalidated=frozenset(state.invalidated_refs),
+            )
+        except DecisionCompilationError as exc:
+            raise DesignStateError(
+                "phase-change readiness compilation failed for "
+                f"{node.ref}: {exc}"
+            ) from exc
+        if node.ref == obligation_target_ref:
+            for item in add_obligations:
+                compiled = refreshed[item.obligation_id]
+                if compiled.status is not item.status:
+                    raise DesignStateError(
+                        "phase obligation readiness mismatch: "
+                        f"{item.obligation_id} must be "
+                        f"{compiled.status.value}"
+                    )
+        obligations = tuple(
+            sorted(
+                refreshed.values(),
+                key=lambda item: item.obligation_id,
             )
         )
+        try:
+            next_nodes.append(
+                DesignStateNode(
+                    path=path_by_old_ref[node.ref],
+                    operational_state=replace(
+                        state,
+                        branch=next_branch,
+                        phase=next_phase,
+                        obligations=obligations,
+                    ),
+                    allowed_authority_ids=node.allowed_authority_ids,
+                    child_refs=tuple(
+                        ref_map[item] for item in node.child_refs
+                    ),
+                    phase_deliverable_refs=(),
+                )
+            )
+        except DesignStateError:
+            raise
+        except ValueError as exc:
+            raise DesignStateError(
+                "phase transition produced an invalid node state for "
+                f"{node.ref}: {exc}"
+            ) from exc
     next_interfaces = tuple(
         replace(
             item,
@@ -798,11 +853,18 @@ def compile_tree_phase_change(
         )
         for item in tree.interfaces
     )
-    next_tree = DesignStateTree(
-        branch=next_branch,
-        nodes=tuple(next_nodes),
-        interfaces=next_interfaces,
-    )
+    try:
+        next_tree = DesignStateTree(
+            branch=next_branch,
+            nodes=tuple(next_nodes),
+            interfaces=next_interfaces,
+        )
+    except DesignStateError:
+        raise
+    except ValueError as exc:
+        raise DesignStateError(
+            f"phase transition produced an invalid tree: {exc}"
+        ) from exc
     return PhaseTreeTransition(
         tree=next_tree,
         previous_phase=previous_phase,
