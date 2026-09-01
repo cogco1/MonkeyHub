@@ -1,0 +1,30 @@
+{
+  "name": "archflow-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:rhino3dm": "node scripts/sync-rhino3dm.mjs",
+    "dev": "npm run sync:rhino3dm && vite",
+    "backend": "py -3.12 run_server.py",
+    "launch": "py -3.12 launch.py",
+    "start": "npm run build && npm run launch",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run sync:rhino3dm && tsc --noEmit && vite build",
+    "test:backend": "py -3.12 -m unittest discover -s backend/tests -t . -v"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "rhino3dm": "8.32.2",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@types/three": "0.185.4",
+    "@vitejs/plugin-react": "6.1.1",
+    "typescript": "7.0.2",
+    "vite": "8.2.2"
+  }
+}

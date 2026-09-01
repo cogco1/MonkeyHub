@@ -47,6 +47,59 @@ workspace journal is loaded and archived by the separate recovery runtime;
 P005 hard usability, commitment monitoring, aesthetics, player approval, and
 canonical promotion remain downstream.
 
+## Pascal Editor execution boundary
+
+`pascal_execution.py` treats Pascal Editor as a replaceable speculative scene
+backend, never as design or persistence authority. The adapter accepts only a
+`CompiledGeometryProgram` plus its matching successful
+`GeometryCompilationReceipt`; a raw model message or uncompiled geometry
+proposal cannot reach Pascal through this boundary.
+
+The topology lowerer compiles box-like `solid`, polygon `extrusion`, axial
+frustum `revolve`, and equal-ring `loft` operations into Pascal `block` nodes.
+Stable block ids and node metadata bind project, run, branch, exact canonical
+base, proposal, compiled-program, compilation-receipt, object, stage, and
+coordinate mapping. The caller must explicitly select either a right-handed
+Z-up source mapping or a right-handed Y-up source mapping into Pascal's
+X/Z-ground, Y-up metre frame; source-axis inference is not permitted.
+
+High-level booleans still require a neutral compiled boundary mesh for exact
+translation. A caller may explicitly enable the non-accepting open-boolean
+preview used for visual prototyping; the plan and receipt then retain a named
+translation issue and remain `candidate_evidence_with_issues`. Unsupported
+operations otherwise fail before external mutation. Programs are evaluated in
+their compiled `operation_order`. During an exact predecessor transition,
+existing managed objects with the same object digest are verified and treated
+as no-ops; revisions and retirements still require their exact preconditions.
+
+Execution requires an existing saved Pascal scene plus its exact scene version
+and graph SHA-256. The adapter checks `get_project_status`, reloads that exact
+scene, reads it, prepares one deterministic `apply_patch`, applies at most once,
+then reads back the graph and calls `validate_scene`, `verify_scene`, and
+`get_project_status`. A stale scene fails before apply. Timeout or transport
+failure after apply starts remains `outcome_unknown` and is never replayed
+automatically.
+
+Pascal's general layout verification is retained as evidence, not interpreted
+as a stage gate. For example, a valid Stage 1 massing block may still be called
+an empty level by a wall/room-oriented Pascal check; that produces
+`candidate_evidence_with_issues`, not design rejection or acceptance. ArchFlow
+stage validators and the human acceptance boundary remain downstream.
+
+`allow_scene_write` is false by default. With writes disabled, `execute()`
+performs the exact-base read and returns the prepared patch receipt without
+calling `apply_patch`; `preview()` exposes the same read-only preparation. The
+adapter writes no files, receives no repository or committer, and every receipt
+states that design-acceptance, hard-gate, and canonical-write authority are
+false. A caller that retains the receipt must use the generic project ports.
+
+The transport command is explicit and dependency-free from ArchFlow's point of
+view. Pin the Pascal source/runtime used by that command. During the initial
+integration check, Pascal main commit `67ea40efdf4a03f5897005def56e45189f2c1b69`
+and its frozen lockfile passed the relevant upstream patch/save tests; the
+independently published `1.0.0-beta.6` npm tree did not provide the same working
+Windows runtime and must not be treated as equivalent evidence.
+
 ## Read-only voxel observation
 
 `VoxelObservationExtractor` consumes a saved, workspace-owned `VoxelScan@1`
