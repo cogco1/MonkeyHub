@@ -124,12 +124,13 @@ def fetch_web_evidence(
 
     request = urllib.request.Request(url, headers={"User-Agent": user_agent})
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        final_url = response.geturl()
         raw = response.read(_MAX_BYTES + 1)
     if len(raw) > _MAX_BYTES:
         raise WebEvidenceError("page exceeds the snapshot byte bound")
     text = extract_text(raw.decode("utf-8", "replace"))
     return WebEvidenceSnapshot(
-        url=url,
+        url=final_url,
         retrieved_at=retrieved_at,
         content_sha256=hashlib.sha256(raw).hexdigest(),
         content_bytes=len(raw),

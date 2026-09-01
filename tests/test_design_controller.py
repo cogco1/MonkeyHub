@@ -37,6 +37,7 @@ from archflow.runtime.design_controller import (
     MidRunRequirementStatus,
     advance_design_phase,
     apply_architect_action,
+    close_reopened_nodes,
     compile_mid_run_requirement,
     consult_selected_experts,
     pause_for_clarification,
@@ -89,6 +90,12 @@ from archflow.state.operational_state import (
     StateLock,
     StateDomain,
     StateFact,
+)
+from archflow.state.stage_convergence import (
+    StageConvergenceOutcome,
+    StageConvergencePotential,
+    StageConvergenceReceipt,
+    StageTransitionKind,
 )
 
 
@@ -867,6 +874,79 @@ def _phase_ready_checkpoint() -> DesignControllerCheckpoint:
     )
 
 
+def _convergence_potential(
+    *,
+    open_refs: tuple[str, ...] = (),
+    invalidated_refs: tuple[str, ...] = (),
+) -> StageConvergencePotential:
+    return StageConvergencePotential(
+        hard_gate_failure_refs=(),
+        conflict_refs=(),
+        tolerance_failure_refs=(),
+        missing_mandatory_obligation_refs=(),
+        blocked_mandatory_obligation_refs=(),
+        open_mandatory_obligation_refs=open_refs,
+        invalidated_refs=invalidated_refs,
+        revalidation_refs=(),
+    )
+
+
+def _stage_convergence_receipt(
+    checkpoint: DesignControllerCheckpoint,
+    *,
+    outcome: StageConvergenceOutcome = StageConvergenceOutcome.PROGRESS,
+    transition_kind: StageTransitionKind = StageTransitionKind.RESOLVE,
+    potential_before: StageConvergencePotential | None = None,
+    potential_after: StageConvergencePotential | None = None,
+    receipt_branch: BranchRef | None = None,
+    child_state_digest: str | None = None,
+) -> StageConvergenceReceipt:
+    state = checkpoint.tree.node(
+        checkpoint.target_node_ref
+    ).operational_state
+    rejected = outcome is StageConvergenceOutcome.REJECTED
+    return StageConvergenceReceipt(
+        receipt_id=f"scr-{_hash(checkpoint.checkpoint_digest)[:24]}",
+        outcome=outcome,
+        request_id="controller-stage-close",
+        stage="schematic-design",
+        transition_kind=transition_kind,
+        branch=state.branch if receipt_branch is None else receipt_branch,
+        policy_digest=_hash("controller-stage-policy"),
+        parent_state_digest=_hash("controller-parent-state"),
+        child_state_digest=(
+            state.state_digest
+            if child_state_digest is None
+            else child_state_digest
+        ),
+        parent_sufficient_digest=_hash("controller-parent-sufficient"),
+        child_sufficient_digest=state.sufficient_digest,
+        parent_evidence_digest=_hash("controller-parent-evidence"),
+        child_evidence_digest=_hash("controller-child-evidence"),
+        potential_before=(
+            _convergence_potential(
+                open_refs=("obligation:prior-stage-work",)
+            )
+            if potential_before is None
+            else potential_before
+        ),
+        potential_after=(
+            _convergence_potential()
+            if potential_after is None
+            else potential_after
+        ),
+        protected_refs=(),
+        changed_protected_refs=(),
+        mandatory_obligation_ids=(),
+        added_mandatory_obligation_ids=(),
+        dependency_closure=(),
+        authorization_ref=None,
+        reason_codes=(
+            ("stage_convergence.test_rejected",) if rejected else ()
+        ),
+    )
+
+
 def _event_backed_checkpoint() -> tuple[
     DesignControllerCheckpoint,
     tuple[object, ...],
@@ -1056,6 +1136,155 @@ class DesignControllerTurnTests(unittest.TestCase):
             result.checkpoint.status,
             ControllerStatus.READY,
         )
+
+    def test_reopened_refs_accumulate_and_close_only_named_nodes(
+        self,
+    ) -> None:
+        checkpoint, nodes = _checkpoint()
+        registry, metadata = _experts()
+        prepared = prepare_design_turn(
+            checkpoint,
+            registry,
+            phase_metadata=metadata,
+            obligation_topics={"resolve-grid": "structure"},
+        )
+        consultation = consult_selected_experts(prepared, registry, ())
+        first_action = GroundedArchitectAction(
+            action_id="reopen-grid-interfaces",
+            checkpoint_digest=checkpoint.checkpoint_digest,
+            context_digest=prepared.context.context_digest,
+            operator=_operator(
+                checkpoint,
+                decision_id="reopen-grid-interfaces-op",
+                discharge=True,
+            ),
+            responds_to_refs=(
+                _GLOBAL_COMMITMENT_REF,
+                "obligation:resolve-grid",
+            ),
+            selected_expert_ids=(),
+            adopted_advice_refs=(),
+            rejected_advice_refs=(),
+            tradeoff_rationale="Resolve the grid and retain interface scope.",
+        )
+        first = apply_architect_action(
+            checkpoint,
+            prepared,
+            consultation,
+            first_action,
+            history_event_ref="design-event:first-interface-reopen",
+        )
+        expected = tuple(
+            sorted((nodes["stair"].ref, nodes["facade"].ref))
+        )
+        self.assertEqual(first.checkpoint.reopened_node_refs, expected)
+
+        prepared_again = prepare_design_turn(
+            first.checkpoint,
+            registry,
+            phase_metadata=metadata,
+            obligation_topics={},
+        )
+        consultation_again = consult_selected_experts(
+            prepared_again,
+            registry,
+            (),
+        )
+        target_state = first.checkpoint.tree.node(
+            first.checkpoint.target_node_ref
+        ).operational_state
+        unrelated_action = GroundedArchitectAction(
+            action_id="unrelated-grid-note",
+            checkpoint_digest=first.checkpoint.checkpoint_digest,
+            context_digest=prepared_again.context.context_digest,
+            operator=DecisionOperator(
+                decision_id="unrelated-grid-note-op",
+                decision_type="parameter-derivation",
+                base_state_digest=target_state.state_digest,
+                authority_id="structure-agent",
+                intent="Record an unrelated local grid note.",
+                add_facts=(
+                    StateFact(
+                        domain=StateDomain.PARAMETER,
+                        key="grid-depth-note",
+                        value="retained",
+                        source_ref="evidence://analysis/grid-depth-note",
+                    ),
+                ),
+                evidence_refs=("evidence://analysis/grid-depth-note",),
+            ),
+            responds_to_refs=(_GLOBAL_COMMITMENT_REF,),
+            selected_expert_ids=(),
+            adopted_advice_refs=(),
+            rejected_advice_refs=(),
+            tradeoff_rationale="This local note changes no named interface.",
+        )
+        second = apply_architect_action(
+            first.checkpoint,
+            prepared_again,
+            consultation_again,
+            unrelated_action,
+            history_event_ref="design-event:unrelated-after-reopen",
+        )
+        self.assertEqual(second.checkpoint.reopened_node_refs, expected)
+        self.assertEqual(second.receipt.invalidated_node_refs, ())
+        self.assertEqual(second.receipt.revalidation_node_refs, ())
+
+        repair_receipt = _stage_convergence_receipt(
+            second.checkpoint,
+            outcome=StageConvergenceOutcome.REPAIR,
+            transition_kind=StageTransitionKind.REPAIR,
+            potential_before=_convergence_potential(
+                invalidated_refs=expected
+            ),
+            potential_after=_convergence_potential(
+                invalidated_refs=(nodes["facade"].ref,)
+            ),
+        )
+        unrelated_repair = _stage_convergence_receipt(
+            second.checkpoint,
+            outcome=StageConvergenceOutcome.REPAIR,
+            transition_kind=StageTransitionKind.REPAIR,
+            potential_before=_convergence_potential(
+                invalidated_refs=(nodes["facade"].ref,)
+            ),
+            potential_after=_convergence_potential(),
+        )
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "does not prove the named reopened refs closed",
+        ):
+            close_reopened_nodes(
+                second.checkpoint,
+                unrelated_repair,
+                resolved_node_refs=(nodes["stair"].ref,),
+                history_event_ref="design-event:unrelated-repair-close",
+            )
+        closed = close_reopened_nodes(
+            second.checkpoint,
+            repair_receipt,
+            resolved_node_refs=(nodes["stair"].ref,),
+            history_event_ref="design-event:stair-repair-closed",
+        )
+        self.assertIs(
+            closed.receipt.outcome,
+            ControllerOutcome.REOPENED_REFS_CLOSED,
+        )
+        self.assertEqual(
+            closed.checkpoint.reopened_node_refs,
+            (nodes["facade"].ref,),
+        )
+        self.assertIs(closed.stage_convergence, repair_receipt)
+        with self.assertRaisesRegex(
+            DesignControllerError,
+            "outside the current reopened set",
+        ):
+            close_reopened_nodes(
+                closed.checkpoint,
+                repair_receipt,
+                resolved_node_refs=(nodes["envelope"].ref,),
+                history_event_ref="design-event:invalid-close",
+            )
 
     def test_action_must_account_for_advice_and_current_work(
         self,
@@ -1512,6 +1741,7 @@ class DesignControllerTurnTests(unittest.TestCase):
                         ),
                     ),
                 ),
+                convergence_receipt=_stage_convergence_receipt(blocked),
                 history_event_ref="design-event:blocked-advance",
             )
 
@@ -1526,12 +1756,14 @@ class DesignControllerTurnTests(unittest.TestCase):
             to_phase=DesignPhase.DESIGN_DEVELOPMENT,
             deliverable_refs=checkpoint.maturity.deliverable_refs,
         )
+        convergence_receipt = _stage_convergence_receipt(checkpoint)
         result = advance_design_phase(
             checkpoint,
             evaluate_forward_phase_gate(
                 checkpoint.maturity,
                 request,
             ),
+            convergence_receipt=convergence_receipt,
             history_event_ref="design-event:phase-advanced",
         )
 
@@ -1543,6 +1775,7 @@ class DesignControllerTurnTests(unittest.TestCase):
             result.checkpoint.maturity.phase,
             DesignPhase.DESIGN_DEVELOPMENT,
         )
+        self.assertIs(result.stage_convergence, convergence_receipt)
         self.assertTrue(
             all(
                 node.operational_state.phase
@@ -1573,6 +1806,74 @@ class DesignControllerTurnTests(unittest.TestCase):
         )
         self.assertEqual(prepared.discovered_expert_ids, ())
 
+    def test_phase_advance_rejects_reopen_stale_cross_and_nonzero(
+        self,
+    ) -> None:
+        checkpoint = _phase_ready_checkpoint()
+        request = PhaseGateRequest(
+            request_id="strict-stage-convergence",
+            branch=checkpoint.maturity.branch,
+            base_state_digest=checkpoint.maturity.operational_state_digest,
+            from_phase=DesignPhase.SCHEMATIC_DESIGN,
+            to_phase=DesignPhase.DESIGN_DEVELOPMENT,
+            deliverable_refs=checkpoint.maturity.deliverable_refs,
+        )
+        phase_gate = evaluate_forward_phase_gate(
+            checkpoint.maturity,
+            request,
+        )
+        valid = _stage_convergence_receipt(checkpoint)
+        reopened = replace(
+            checkpoint,
+            reopened_node_refs=(checkpoint.tree.root.ref,),
+        )
+        with self.assertRaisesRegex(DesignControllerError, "reopened nodes"):
+            advance_design_phase(
+                reopened,
+                phase_gate,
+                convergence_receipt=_stage_convergence_receipt(reopened),
+                history_event_ref="design-event:reopened-rejected",
+            )
+
+        invalid_receipts = (
+            (
+                replace(valid, child_state_digest=_hash("stale-child")),
+                "stale against current state",
+            ),
+            (
+                replace(
+                    valid,
+                    branch=replace(valid.branch, branch_id="option-b"),
+                ),
+                "cross-branch or stale",
+            ),
+            (
+                replace(
+                    valid,
+                    potential_after=_convergence_potential(
+                        open_refs=("obligation:still-open",)
+                    ),
+                ),
+                "potential is not closed",
+            ),
+            (
+                _stage_convergence_receipt(
+                    checkpoint,
+                    outcome=StageConvergenceOutcome.REJECTED,
+                ),
+                "receipt was rejected",
+            ),
+        )
+        for receipt, message in invalid_receipts:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(DesignControllerError, message):
+                    advance_design_phase(
+                        checkpoint,
+                        phase_gate,
+                        convergence_receipt=receipt,
+                        history_event_ref="design-event:convergence-rejected",
+                    )
+
     def test_backward_revision_reopens_only_impacted_deliverable(
         self,
     ) -> None:
@@ -1594,6 +1895,7 @@ class DesignControllerTurnTests(unittest.TestCase):
                     ),
                 ),
             ),
+            convergence_receipt=_stage_convergence_receipt(checkpoint),
             history_event_ref="design-event:advance-before-revision",
         ).checkpoint
         changed_ref = advanced.maturity.deliverable_refs[0]

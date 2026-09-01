@@ -89,6 +89,11 @@ from archflow.state.operational_state import (
     ObligationStatus,
     require_logical_ref,
 )
+from archflow.state.stage_convergence import (
+    StageConvergenceOutcome,
+    StageConvergenceReceipt,
+    StageTransitionKind,
+)
 
 
 _MAX_ITEMS = 4096
@@ -107,6 +112,7 @@ class ControllerStatus(StrEnum):
 
 class ControllerOutcome(StrEnum):
     TRANSITIONED = "transitioned"
+    REOPENED_REFS_CLOSED = "reopened_refs_closed"
     PHASE_ADVANCED = "phase_advanced"
     PHASE_REVISED = "phase_revised"
     STOPPED_STALE_BASE = "stopped_stale_base"
@@ -903,6 +909,7 @@ class ControllerTurnResult:
     phase_transition: PhaseTreeTransition | None = None
     phase_gate: PhaseGateReceipt | None = None
     backward_revision: BackwardRevisionResult | None = None
+    stage_convergence: StageConvergenceReceipt | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1192,6 +1199,7 @@ def apply_architect_action(
         reopened_node_refs=tuple(
             sorted(
                 {
+                    *checkpoint.reopened_node_refs,
                     *nested.invalidated_node_refs,
                     *nested.revalidation_node_refs,
                 }
@@ -1220,13 +1228,148 @@ def apply_architect_action(
     )
 
 
+def _require_exact_current_stage_convergence(
+    checkpoint: DesignControllerCheckpoint,
+    receipt: StageConvergenceReceipt,
+) -> None:
+    """Require one non-rejected P080 receipt for the exact current state."""
+
+    if not isinstance(receipt, StageConvergenceReceipt):
+        raise TypeError(
+            "convergence_receipt must be a StageConvergenceReceipt"
+        )
+    target = checkpoint.tree.node(checkpoint.target_node_ref)
+    state = target.operational_state
+    if (
+        receipt.branch != state.branch
+        or receipt.branch != checkpoint.tree.branch
+        or receipt.branch != checkpoint.maturity.branch
+    ):
+        raise DesignControllerError(
+            "stage convergence receipt is cross-branch or stale"
+        )
+    if (
+        receipt.child_state_digest != state.state_digest
+        or receipt.child_state_digest
+        != checkpoint.maturity.operational_state_digest
+        or receipt.child_sufficient_digest != state.sufficient_digest
+    ):
+        raise DesignControllerError(
+            "stage convergence receipt is stale against current state"
+        )
+    if receipt.outcome is StageConvergenceOutcome.REJECTED:
+        raise DesignControllerError(
+            "stage convergence receipt was rejected"
+        )
+
+
+def _require_stage_exit_convergence(
+    checkpoint: DesignControllerCheckpoint,
+    receipt: StageConvergenceReceipt,
+) -> None:
+    """Add the closed-potential requirement used only at stage exit."""
+
+    _require_exact_current_stage_convergence(checkpoint, receipt)
+    if not receipt.potential_after.is_zero:
+        raise DesignControllerError(
+            "stage convergence potential is not closed"
+        )
+    if not receipt.stage_ready:
+        raise DesignControllerError(
+            "stage convergence receipt cannot support stage exit"
+        )
+
+
+def close_reopened_nodes(
+    checkpoint: DesignControllerCheckpoint,
+    convergence_receipt: StageConvergenceReceipt,
+    *,
+    resolved_node_refs: tuple[str, ...],
+    history_event_ref: str,
+) -> ControllerTurnResult:
+    """Close only explicitly named reopened nodes after exact repair proof."""
+
+    require_logical_ref(history_event_ref, "history_event_ref")
+    if checkpoint.status is not ControllerStatus.READY:
+        raise DesignControllerError(
+            "only a ready checkpoint can close reopened nodes"
+        )
+    _tuple(resolved_node_refs, "resolved_node_refs")
+    if not resolved_node_refs:
+        raise DesignControllerError(
+            "resolved_node_refs must name a dependency-local scope"
+        )
+    for ref in resolved_node_refs:
+        require_logical_ref(ref, "resolved_node_ref")
+    _unique(resolved_node_refs, "resolved_node_refs")
+    unknown = set(resolved_node_refs) - set(
+        checkpoint.reopened_node_refs
+    )
+    if unknown:
+        raise DesignControllerError(
+            "cannot close refs outside the current reopened set: "
+            f"{sorted(unknown)}"
+        )
+    _require_exact_current_stage_convergence(
+        checkpoint,
+        convergence_receipt,
+    )
+    if (
+        convergence_receipt.outcome
+        is not StageConvergenceOutcome.REPAIR
+        or convergence_receipt.transition_kind
+        is not StageTransitionKind.REPAIR
+    ):
+        raise DesignControllerError(
+            "closing reopened nodes requires an exact repair receipt"
+        )
+    before_deficits = set(
+        convergence_receipt.potential_before.deficit_refs
+    )
+    after_deficits = set(
+        convergence_receipt.potential_after.deficit_refs
+    )
+    unresolved_by_receipt = set(resolved_node_refs) - before_deficits
+    still_open_by_receipt = set(resolved_node_refs) & after_deficits
+    if unresolved_by_receipt or still_open_by_receipt:
+        raise DesignControllerError(
+            "repair receipt does not prove the named reopened refs closed: "
+            f"not_in_before={sorted(unresolved_by_receipt)}, "
+            f"still_in_after={sorted(still_open_by_receipt)}"
+        )
+    remaining = tuple(
+        sorted(
+            set(checkpoint.reopened_node_refs) - set(resolved_node_refs)
+        )
+    )
+    next_checkpoint = replace(
+        checkpoint,
+        history_event_refs=(
+            *checkpoint.history_event_refs,
+            history_event_ref,
+        ),
+        reopened_node_refs=remaining,
+    )
+    return _result(
+        previous=checkpoint,
+        checkpoint=next_checkpoint,
+        outcome=ControllerOutcome.REOPENED_REFS_CLOSED,
+        history_event_ref=history_event_ref,
+        reason=(
+            "exact repair receipt closed explicitly named reopened nodes"
+        ),
+        stage_convergence=convergence_receipt,
+    )
+
+
 def advance_design_phase(
     checkpoint: DesignControllerCheckpoint,
     receipt: PhaseGateReceipt,
     *,
+    convergence_receipt: StageConvergenceReceipt,
     history_event_ref: str,
 ) -> ControllerTurnResult:
-    """Advance only after obligations close and P039 revalidates the gate."""
+    """Advance only after P039 and exact-current P080 both close."""
 
     require_logical_ref(history_event_ref, "history_event_ref")
     if checkpoint.status is not ControllerStatus.READY:
@@ -1246,6 +1389,15 @@ def advance_design_phase(
         raise DesignControllerError(
             f"phase cannot advance with active obligations: {active}"
         )
+    if checkpoint.reopened_node_refs:
+        raise DesignControllerError(
+            "phase cannot advance with reopened nodes: "
+            f"{checkpoint.reopened_node_refs}"
+        )
+    _require_stage_exit_convergence(
+        checkpoint,
+        convergence_receipt,
+    )
     require_current_phase_gate(checkpoint.maturity, receipt)
     phase_transition = compile_tree_phase_change(
         checkpoint.tree,
@@ -1291,6 +1443,7 @@ def advance_design_phase(
         ),
         phase_transition=phase_transition,
         phase_gate=receipt,
+        stage_convergence=convergence_receipt,
     )
 
 
@@ -1750,6 +1903,7 @@ def resume_authority_pause(
         reopened_node_refs=tuple(
             sorted(
                 {
+                    *checkpoint.reopened_node_refs,
                     *nested.invalidated_node_refs,
                     *nested.revalidation_node_refs,
                 }
@@ -1796,6 +1950,7 @@ def _checkpoint_after_nested_event(
         reopened_node_refs=tuple(
             sorted(
                 {
+                    *checkpoint.reopened_node_refs,
                     *nested.invalidated_node_refs,
                     *nested.revalidation_node_refs,
                 }
@@ -1816,6 +1971,7 @@ def _result(
     phase_transition: PhaseTreeTransition | None = None,
     phase_gate: PhaseGateReceipt | None = None,
     backward_revision: BackwardRevisionResult | None = None,
+    stage_convergence: StageConvergenceReceipt | None = None,
 ) -> ControllerTurnResult:
     payload = {
         "outcome": outcome.value,
@@ -1824,6 +1980,11 @@ def _result(
         "action": None if action is None else action.action_digest,
         "history_event_ref": history_event_ref,
         "reason": reason,
+        "stage_convergence": (
+            None
+            if stage_convergence is None
+            else stage_convergence.receipt_id
+        ),
     }
     return ControllerTurnResult(
         checkpoint=checkpoint,
@@ -1864,4 +2025,5 @@ def _result(
         phase_transition=phase_transition,
         phase_gate=phase_gate,
         backward_revision=backward_revision,
+        stage_convergence=stage_convergence,
     )

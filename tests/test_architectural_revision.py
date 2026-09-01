@@ -10,6 +10,17 @@ from archflow.adapters.model_provider import (
     ModelInvocationStatus,
 )
 from archflow.capabilities.geometry_proposal import proposal_edit_authoring_output
+from archflow.capabilities.evidence_sufficiency import (
+    DecisionNode,
+    DecisionUniverseRevision,
+    EvidenceClaimBinding,
+    EvidenceRule,
+    EvidenceSufficiencyPolicy,
+    FrontierStatus,
+    build_research_frontier,
+    compile_decision_universe_closure,
+    compile_evidence_sufficiency,
+)
 from archflow.capabilities.semantic_spatial_authoring import (
     semantic_spatial_authoring_output,
 )
@@ -58,6 +69,46 @@ def _canonical(value: object) -> str:
         separators=(",", ":"),
         sort_keys=True,
     )
+
+
+def _p079_acceptance(scope_digest: str):
+    decision_ref = "decision:fixture-layout"
+    universe = DecisionUniverseRevision(
+        universe_id="revision-universe",
+        revision_id="revision-universe-001",
+        scope_digest=scope_digest,
+        ontology_ref="project:ontology/revision-001",
+        nodes=(DecisionNode(decision_ref, "project:decision"),),
+        seed_refs=(decision_ref,),
+    )
+    policy = EvidenceSufficiencyPolicy(
+        policy_id="revision-policy",
+        rules=(
+            EvidenceRule(
+                obligation_id="fixture-layout-basis",
+                target_ref=decision_ref,
+            ),
+        ),
+    )
+    closure = compile_decision_universe_closure(universe, policy)
+    sufficiency = compile_evidence_sufficiency(
+        universe,
+        policy,
+        claims=(
+            EvidenceClaimBinding(
+                binding_id="fixture-layout-binding",
+                obligation_id="fixture-layout-basis",
+                target_ref=decision_ref,
+                fact_ref="fact:fixture-layout",
+                source_ref="source:fixture-layout",
+                source_family_ref="family:primary",
+                claim_key="claim:fixture-layout",
+                position_key="position:accepted",
+            ),
+        ),
+    )
+    frontier = build_research_frontier(closure, sufficiency)
+    return universe, policy, closure, sufficiency, frontier
 
 
 def _failed_entry_contract(
@@ -481,6 +532,69 @@ class ArchitecturalRevisionCompilerTests(unittest.IsolatedAsyncioTestCase):
             evidence_collector=revision_collector,
             geometry_provider_identity=IDENTITY,
         )
+        with self.assertRaisesRegex(
+            ArchitecturalRevisionError,
+            "requires its persisted RAG index",
+        ):
+            replace(
+                compiler,
+                selection_ref=ProjectRecordRef(
+                    project_id=context.run.project_id,
+                    relative_path=(
+                        f"runs/{context.run.run_id}/records/"
+                        f"branch-selection-{'a' * 64}.json"
+                    ),
+                    sha256="a" * 64,
+                ),
+            )
+
+        branch_scope_digest = "b" * 64
+        branch_index_ref = ProjectRecordRef(
+            project_id=context.run.project_id,
+            relative_path=(
+                f"runs/{context.run.run_id}/branches/classical/records/"
+                f"branch-basis-{'b' * 64}.json"
+            ),
+            sha256="b" * 64,
+        )
+        with self.assertRaisesRegex(
+            ArchitecturalRevisionError,
+            "exact P079 acceptance",
+        ):
+            replace(
+                compiler,
+                branch_basis_index_ref=branch_index_ref,
+                expected_branch_scope_digest=branch_scope_digest,
+                branch_decision_refs=("decision:fixture-layout",),
+            )
+
+        acceptance = _p079_acceptance(branch_scope_digest)
+        branch_compiler = replace(
+            compiler,
+            branch_basis_index_ref=branch_index_ref,
+            expected_branch_scope_digest=branch_scope_digest,
+            branch_decision_refs=("decision:fixture-layout",),
+            branch_decision_universe=acceptance[0],
+            branch_evidence_policy=acceptance[1],
+            branch_universe_closure=acceptance[2],
+            branch_evidence_sufficiency=acceptance[3],
+            branch_research_frontier=acceptance[4],
+        )
+        self.assertIs(
+            branch_compiler.branch_research_frontier.status,
+            FrontierStatus.COMPLETE,
+        )
+        with self.assertRaisesRegex(
+            ArchitecturalRevisionError,
+            "crosses the expected research scope",
+        ):
+            replace(
+                branch_compiler,
+                branch_decision_universe=replace(
+                    acceptance[0],
+                    scope_digest="c" * 64,
+                ),
+            )
 
         revised = await compiler.compile(
             run=context.run,

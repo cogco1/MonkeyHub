@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Mapping, Sequence
+from typing import Mapping, Protocol, Sequence
 
 from archflow.capabilities.precedent import PrecedentFact
 from archflow.state.build_policy import (
@@ -33,6 +33,18 @@ _WINDOW_CHARS = 700
 
 class ResearchError(ValueError):
     """A research query, window set, or candidate output is invalid."""
+
+
+class ResearchQuery(Protocol):
+    """Structural contract shared by legacy and branch-bound queries."""
+
+    query_id: str
+    decision_refs: tuple[str, ...]
+
+    @property
+    def query_digest(self) -> str: ...
+
+    def to_dict(self) -> dict[str, object]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,7 +137,7 @@ def extract_windows(
 
 
 def research_prompt(
-    query: PrecedentQuery,
+    query: ResearchQuery,
     *,
     snapshot_ref: str,
     snapshot_text_sha256: str,
@@ -133,15 +145,29 @@ def research_prompt(
 ) -> dict[str, object]:
     """The bounded research invocation payload."""
 
+    scope = getattr(query, "scope", None)
+    branch_bound = scope is not None
+    output_schema = (
+        "BranchPrecedentResearchOutput@1"
+        if branch_bound
+        else "PrecedentResearchOutput@1"
+    )
+    required_fields = ["schema", "query_id", "candidates"]
+    if branch_bound:
+        required_fields.extend(("query_digest", "scope_digest"))
     return {
-        "schema": "PrecedentResearchPrompt@1",
+        "schema": (
+            "BranchPrecedentResearchPrompt@1"
+            if branch_bound
+            else "PrecedentResearchPrompt@1"
+        ),
         "query": query.to_dict(),
         "snapshot_ref": snapshot_ref,
         "snapshot_text_sha256": snapshot_text_sha256,
         "windows": [dict(window) for window in windows],
         "output_contract": {
-            "schema": "PrecedentResearchOutput@1",
-            "required_fields": ["schema", "query_id", "candidates"],
+            "schema": output_schema,
+            "required_fields": required_fields,
             "candidate_fields": [
                 "fact_id",
                 "statement",
@@ -170,6 +196,14 @@ def research_prompt(
                 "topic must be one of topic_values; strength must be one of "
                 "strength_values",
                 "candidates carry no authority and adopt nothing themselves",
+                *(
+                    [
+                        "query_digest and scope_digest must echo the supplied "
+                        "branch-bound query exactly"
+                    ]
+                    if branch_bound
+                    else []
+                ),
             ],
         },
         "authority": {
@@ -183,7 +217,7 @@ def research_prompt(
 def parse_research_output(
     output: Mapping[str, object],
     *,
-    query: PrecedentQuery,
+    query: ResearchQuery,
     snapshot_ref: str,
     snapshot_text: str,
     snapshot_text_sha256: str,
@@ -193,10 +227,21 @@ def parse_research_output(
 
     if not isinstance(output, Mapping):
         raise ResearchError("research output must be a mapping")
-    if output.get("schema") != "PrecedentResearchOutput@1":
+    scope = getattr(query, "scope", None)
+    expected_schema = (
+        "BranchPrecedentResearchOutput@1"
+        if scope is not None
+        else "PrecedentResearchOutput@1"
+    )
+    if output.get("schema") != expected_schema:
         raise ResearchError("research output schema drifted")
     if output.get("query_id") != query.query_id:
         raise ResearchError("research output does not answer this query")
+    if scope is not None and (
+        output.get("query_digest") != query.query_digest
+        or output.get("scope_digest") != scope.scope_digest
+    ):
+        raise ResearchError("research output crossed branch scope")
     candidates = output.get("candidates")
     if not isinstance(candidates, list) or not candidates:
         raise ResearchError("research output carries no candidates")

@@ -40,6 +40,7 @@ from archflow.project import (
     PersistenceDestination,
     bootstrap_raw_request_project,
     canonical_json_sha256,
+    locate_project,
 )
 from archflow.runtime.family_compiler import (
     bind_component_family_realization,
@@ -80,6 +81,16 @@ from tools.run_experiment import (
     rebuild_result_index,
     select_assignment_context,
 )
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _project_root(project_id: str) -> Path:
+    return locate_project(
+        project_id,
+        local_projects_root=REPOSITORY_ROOT / "probes",
+    ).root
 
 
 CASE_SPECS = (
@@ -384,7 +395,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
     ) -> None:
         root = Path(__file__).resolve().parents[2]
         source_repository = FilesystemProjectRepository.open(
-            root / "probes" / "p062-clinic-case"
+            _project_root("p062-clinic-case")
         )
         source_run = source_repository.load_run("experiment-001")
         source_refs = [
@@ -535,7 +546,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
         }
         for project_id, _ in CASE_SPECS:
             repository = FilesystemProjectRepository.open(
-                root / "probes" / project_id
+                _project_root(project_id)
             )
             run = repository.load_run("experiment-001")
             records = tuple(
@@ -695,7 +706,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
     def test_promoted_study_retains_pre_provider_rejection_honestly(self) -> None:
         root = Path(__file__).resolve().parents[2]
         repository = FilesystemProjectRepository.open(
-            root / "probes" / "p062-experiment-study"
+            _project_root("p062-experiment-study")
         )
         run = repository.load_run("study-001")
         refs = repository.list_json(
@@ -804,7 +815,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
         )
         source_repositories = {
             project_id: FilesystemProjectRepository.open(
-                root / "probes" / project_id
+                _project_root(project_id)
             )
             for project_id, _ in CASE_SPECS
         }
@@ -818,7 +829,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
     def test_successor_study_freezes_only_preflight_ready_contexts(self) -> None:
         root = Path(__file__).resolve().parents[2]
         repository = FilesystemProjectRepository.open(
-            root / "probes" / "p062-experiment-study"
+            _project_root("p062-experiment-study")
         )
         run = repository.load_run("study-002")
         payloads = tuple(
@@ -894,7 +905,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
         self.assertFalse(diagnosis["retry_performed"])
         source_repositories = {
             project_id: FilesystemProjectRepository.open(
-                root / "probes" / project_id
+                _project_root(project_id)
             )
             for project_id, _ in CASE_SPECS
         }
@@ -943,7 +954,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
     def test_windows_wrapper_timeout_is_retained_without_rewriting_the_study(self) -> None:
         root = Path(__file__).resolve().parents[2]
         repository = FilesystemProjectRepository.open(
-            root / "probes" / "p062-experiment-study"
+            _project_root("p062-experiment-study")
         )
         run = repository.load_run("study-003")
         payloads = tuple(
@@ -1115,7 +1126,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
     def test_provider_success_rejection_recovery_starts_a_new_frozen_study(self) -> None:
         root = Path(__file__).resolve().parents[2]
         repository = FilesystemProjectRepository.open(
-            root / "probes" / "p062-experiment-study"
+            _project_root("p062-experiment-study")
         )
         failed_run = repository.load_run("study-005")
         failed_payloads = tuple(
@@ -1247,7 +1258,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
     def test_selection_contract_study_retains_two_successes_and_timeout(self) -> None:
         root = Path(__file__).resolve().parents[2]
         repository = FilesystemProjectRepository.open(
-            root / "probes" / "p062-experiment-study"
+            _project_root("p062-experiment-study")
         )
         predecessor = repository.load_run("study-010")
         predecessor_payloads = tuple(
@@ -1626,7 +1637,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
         self.assertFalse(alternative_index.evidence_table_ready)
 
         clinic_repository = FilesystemProjectRepository.open(
-            root / "probes" / "p062-clinic-case"
+            _project_root("p062-clinic-case")
         )
         clinic_run = clinic_repository.load_run("experiment-001")
         clinic_payloads = tuple(
@@ -1844,7 +1855,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
     def test_known_p056_p060_p061_receipts_require_exact_schema_and_status(self) -> None:
         root = Path(__file__).resolve().parents[2]
         p060 = FilesystemProjectRepository.open(
-            root / "probes" / "p060-architectural-usability"
+            _project_root("p060-architectural-usability")
         )
         p060_run = p060.load_run("architectural-usability-001")
         architectural = bind_terminal_record(
@@ -1864,7 +1875,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
         self.assertEqual("passed", architectural.source_status)
 
         p061 = FilesystemProjectRepository.open(
-            root / "probes" / "p061-component-family-protocol"
+            _project_root("p061-component-family-protocol")
         )
         p061_run = p061.load_run("mesh-001")
         compilation = bind_terminal_record(
@@ -2308,7 +2319,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
     ) -> None:
         root = Path(__file__).resolve().parents[2]
         repository = FilesystemProjectRepository.open(
-            root / "probes" / "p062-experiment-study"
+            _project_root("p062-experiment-study")
         )
         expected = {
             "study-016": (ExperimentAttemptStatus.PIPELINE_REJECTED, 4, 0),

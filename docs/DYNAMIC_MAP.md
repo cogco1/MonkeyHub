@@ -9,7 +9,7 @@
 - Phase: **P7 - semantic geometry production closure proven**
 - Registry updated: **2026-08-28**
 - Product capability: **runtime=architectural_failure_revision_typed; adapters=voxel_observation_and_cli_retrieval_proven**
-- Next bounded transition: finish active work: P066
+- Next bounded transition: finish active work: P066, P069
 
 ## Architecture coverage
 
@@ -63,8 +63,8 @@ These are the main responsibility chains. Individual cards retain their exact fa
 | --- | --- | ---: | --- |
 | Retirement | Replacement-first removal of old ownership | 0 | [R](mapping/retirement/INDEX.md) |
 | Modify | Scoped repair of the active path | 0 | [M](mapping/modify/INDEX.md) |
-| Planning | Not implemented or not yet accepted | 1 | [P](mapping/planning/INDEX.md) |
-| Archive | Completed and evidenced work | 138 | [A](mapping/archive/INDEX.md) |
+| Planning | Not implemented or not yet accepted | 2 | [P](mapping/planning/INDEX.md) |
+| Archive | Completed and evidenced work | 142 | [A](mapping/archive/INDEX.md) |
 
 R, M, and P are parallel ledgers, not mandatory runtime stages. Archive is
 the cleared construction record, not a fourth execution phase.
@@ -74,6 +74,7 @@ the cleared construction record, not a fourth execution phase.
 | ID | Stream | Status | Goal | Card |
 | --- | --- | --- | --- | --- |
 | P066 | planning | active | Derive a monument-class building with a live model provider through the staged production runtime: the model authors the coarse proposal, selection, geometry, and stage deepenings itself under the frozen contracts, with every failed or timed-out attempt retained and no scripted fallback. | [P066](mapping/planning/P066-live-monument-derivation.md) |
+| P069 | planning | active | Full-scale reconstruction reference derivation as the runtime workspace's first tenant: four staged derivations at metre-cell footprint granularity inside the 4096 bound, each stage passing its declaration gate and axial-symmetry gate, every dimension citing an adopted fact or a typed widened-range uncertainty, materials assigned through the provenance ledger, final fidelity measured against the adopted dimensions, records living in the workspace with anchors in the repo. | [P069](mapping/planning/P069-pantheon-reconstruction.md) |
 
 ## Module state
 

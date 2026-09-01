@@ -48,12 +48,17 @@ from archflow.state.geometry_program import digest_value  # noqa: E402
 sys.path.insert(0, str(ROOT / "tools"))
 from _probe_paths import resolve_probe_root  # noqa: E402
 
-PROJECT_ID = "p066-live-monument"
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--now", required=True)
+    parser.add_argument(
+        "--project-id",
+        required=True,
+        help="target project owning this research (records land "
+             "inside it; no default on purpose)",
+    )
     parser.add_argument("--run-id", default="research-001")
     parser.add_argument("--query-id", required=True)
     parser.add_argument("--question", required=True)
@@ -63,7 +68,7 @@ def main(argv=None) -> int:
     parser.add_argument("--codex", default="codex.cmd")
     args = parser.parse_args(argv)
 
-    repository = FilesystemProjectRepository.open(resolve_probe_root(PROJECT_ID))
+    repository = FilesystemProjectRepository.open(resolve_probe_root(args.project_id))
     try:
         run = repository.load_run(args.run_id)
     except Exception:

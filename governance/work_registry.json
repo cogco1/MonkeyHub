@@ -11624,6 +11624,472 @@
       "evidence": [
         "material.py: MaterialIntent (mandatory non-empty source_refs, deterministic display color), MaterialLedger (assignments only over declared intents), ledger_coverage joining bindings with typed unassigned and orphan lists. CAD projection: material layer colors + archflow:material user text, in the semantic round-trip expectation; IFC projection: pset entry + IfcMaterial via IfcRelAssociatesMaterial (re-read verified). Live monument ledger: granite (colonnade, citing the retained octastyle adoption quote 'large granite Corinthian columns') and roman-concrete (rotunda+dome, citing the research-006 multi-source adoption); 7 components honestly typed unassigned, coverage 30 percent; material CAD script sha retained; material IFC export VERIFIED into workspace exports. tests/test_material.py (7) green; suite 621; archcheck PASS."
       ]
+    },
+    {
+      "id": "P069",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Full-scale reconstruction reference derivation as the runtime workspace's first tenant: four staged derivations at metre-cell footprint granularity inside the 4096 bound, each stage passing its declaration gate and axial-symmetry gate, every dimension citing an adopted fact or a typed widened-range uncertainty, materials assigned through the provenance ledger, final fidelity measured against the adopted dimensions, records living in the workspace with anchors in the repo.",
+      "depends_on": [
+        "P068",
+        "M069",
+        "P076",
+        "P077"
+      ],
+      "write_scope": [
+        "tools/run_pantheon_reconstruction.py",
+        "tools/_probe_paths.py",
+        "tests/test_pantheon_reconstruction_gates.py",
+        "probes/",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/PANTHEON_RECONSTRUCTION_PLAN.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The project is bootstrapped in the runtime workspace; the repo holds only an anchor.",
+        "Stage 0 passes a project-authored declaration contract whose every range cites retained adoptions, plus the axial-symmetry gate, before any ACCEPTED archive.",
+        "Stages 1-3 deepen the same component identities through the exact-predecessor lifecycle with their own gates; dimensions cite adoptions or typed uncertainties, never inventions.",
+        "The material ledger covers the components with citable sources and types the remainder unassigned.",
+        "A fidelity receipt compares realized measures against the adopted dimensions; CAD/IFC externalizations carry materials."
+      ],
+      "tests": [
+        "Stage gate integration on the derivation runner",
+        "Architecture V3 scope diff compileall and full discovery"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_pantheon_reconstruction_gates"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P069-pantheon-reconstruction.md",
+      "on_complete": {},
+      "actor": "codex"
+    },
+    {
+      "id": "P078",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make the selected Candidate a real retrieval boundary: evidence-backed scorecards resolve through explicit automatic or human-in-the-loop policy, alternatives remain parked with rationale, and every later query, source allowlist, decision universe, adoption, basis shard, prompt context, and next-round work item carries the exact selected branch scope.",
+      "depends_on": [
+        "P033",
+        "P067",
+        "P070",
+        "P076"
+      ],
+      "write_scope": [
+        "archflow/capabilities/branch_research.py",
+        "archflow/capabilities/basis_index.py",
+        "archflow/capabilities/research.py",
+        "archflow/capabilities/semantic_spatial_authoring.py",
+        "archflow/capabilities/README.md",
+        "archflow/adapters/web_evidence.py",
+        "archflow/runtime/branch_research.py",
+        "archflow/runtime/architectural_revision.py",
+        "archflow/runtime/README.md",
+        "tests/test_branch_conditioned_rag.py",
+        "tests/test_architectural_revision.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Automatic selection changes no state below its score or margin threshold or on a tie; deserialisation and application replay the winner, threshold, margin, permitted algorithm authority, exact active Candidate heads and complete loser set.",
+        "Human-in-the-loop selection requires an explicit permitted authority and may choose a lower-scored candidate; pending human review leaves the portfolio byte-identical.",
+        "Every scorecard binds an exact-revision BranchResearchProfile; selecting a Candidate simultaneously selects its decision universe, included and excluded search terms, domain allowlist, and profile evidence, while BranchResearchScope binds content-addressed P036 source SchematicOptionSet and OperationalMarkovState records that runtime reloads with the selected profile before every write.",
+        "Branch queries cannot widen decisions, vocabulary, or sources; typed snapshots bind exact query and Candidate revision, requested and final URLs are checked, and research output must echo the exact query and scope digests.",
+        "Only an explicit adoption bound to the exact branch query and full P036 snapshot URI can enter a per-scope basis index; foreign, same-name cross-branch and legacy-unscoped facts are excluded and uncovered decisions compile the complete next query wave.",
+        "BranchDecisionContext is compiled only after P036 reload and deterministic re-derivation; a P078-selected production revision requires that index and matches it to the predecessor selected Candidate, while advance_feedback_wave persists the complete next query and BranchRAGProgress loop through P036 RUN_BRANCH."
+      ],
+      "tests": [
+        "Candidate convergence, branch isolation, retrieval narrowing, prompt consumption, progress and P036 reload",
+        "Architecture firewall and focused adjacent regression"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_branch_conditioned_rag",
+          "tests.test_decision_research",
+          "tests.test_basis_index",
+          "tests.test_stage_declarations",
+          "tests.test_semantic_spatial_authoring",
+          "tests.test_architectural_revision",
+          "tests.test_web_precedent",
+          "tests.test_design_portfolio",
+          "tests.integration.test_branch_portfolio_reload"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P078-branch-conditioned-rag.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P078",
+        "actor": "codex",
+        "verified_at": "2026-08-28T21:37:14.550218+00:00",
+        "contract_sha256": "11c325ed011f4bcad1c5c69b2882d64161db2ecba1a053dea86f51923b6f3b48",
+        "scope_sha256": "fc554b96324424cf07a0408ffe75544008819729c8d61f841cb6dbc481816d8e",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_branch_conditioned_rag",
+              "tests.test_decision_research",
+              "tests.test_basis_index",
+              "tests.test_stage_declarations",
+              "tests.test_semantic_spatial_authoring",
+              "tests.test_architectural_revision",
+              "tests.test_web_precedent",
+              "tests.test_design_portfolio",
+              "tests.integration.test_branch_portfolio_reload"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "e2c68f73eea57f1ea4b7e2d8263b587c4008be112cd52b15afae552fcf2eb87f",
+            "stdout_tail": "",
+            "stderr_tail": "..............................................................Executing <Task finished name='Task-75' coro=<ArchitecturalRevisionCompilerTests.test_failed_entry_drives_atomic_model_authored_successor() done, defined at D:\\ARCHFLOW_V4\\tests\\test_architectural_revision.py:359> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.172 seconds\n................\n----------------------------------------------------------------------\nRan 78 tests in 1.838s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "078a44acfa559a5edbaee3feb1ea96131a90811c9013d9aebf48b574e8838a9a",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (136 files, 0.859s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "Branch-conditioned Candidate selection, P036 source/profile replay, exact query-snapshot-adoption indexing, durable feedback waves, and predecessor-bound semantic context verified; 78 focused tests and architecture firewall pass."
+      ]
+    },
+    {
+      "id": "P079",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Compile project-authored decision-universe closure, dependency edges, evidence sufficiency, source diversity, uncertainty, conflict review, and bounded saturation into a typed fail-closed branch research receipt without silently widening a P078 scope.",
+      "depends_on": [
+        "P076",
+        "P077",
+        "P078"
+      ],
+      "write_scope": [
+        "archflow/capabilities/evidence_sufficiency.py",
+        "tests/test_evidence_sufficiency.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Mandatory decisions satisfy project-authored adopted-fact, independent-source-family, and uncertainty policies before completion.",
+        "Required dependency edges are resolved or typed open; newly discovered decisions emit an exact predecessor-bound successor-universe proposal and never widen the current scope.",
+        "Material conflicts require an explicit authorised resolution and otherwise return human_review_required.",
+        "Bounded saturation distinguishes continue, universe expansion, human review, and complete without framework-owned building vocabulary.",
+        "Historical-colonnade and modern-learning-pavilion synthetic cases prove facts alone cannot close a missing relation, conflict, or dependency decision."
+      ],
+      "tests": [
+        "Evidence sufficiency, dependency closure, conflict routing, universe expansion, saturation, and cross-typology fixtures",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_evidence_sufficiency"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P079-evidence-sufficiency-closure.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P079",
+        "actor": "codex",
+        "verified_at": "2026-08-28T23:01:56.550498+00:00",
+        "contract_sha256": "1ed5ed22f45e7b4fcf037209441a4dc4b94e75b14f1d1d35b75db7364415c2e7",
+        "scope_sha256": "8b714c137bd102ae19a02e96b8badd2fefa882d8ac99464ba607472a8905f65d",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_evidence_sufficiency"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "3af354abd6afd2f4f662a367159a8b8107385935ded6c8a2b929734becedb43c",
+            "stdout_tail": "",
+            "stderr_tail": "............\n----------------------------------------------------------------------\nRan 12 tests in 0.002s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "d09501edb3ed9db512016f1a2bcf3c37944eb66dff231c5815ffd2f038b26a06",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (138 files, 0.751s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "Modality-neutral decision-universe closure and evidence-sufficiency compiler now separates fact presence from adequate research. It binds exact predecessor universe/scope expansion, required edges, source-family diversity, qualifiers, typed uncertainty, policy-authorised conflict review, bounded no-novelty saturation, and explicit continue/universe-expansion/human-review/complete frontier states. Text, visual region, drawing/sketch, measurement, and derivation evidence remain typed candidates; historical and modern synthetic cases plus 12 focused tests pass; architecture firewall passes."
+      ]
+    },
+    {
+      "id": "P080",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Make staged design convergence machine-checkable through exact parent-child state binding, protected-lock inheritance, mandatory-obligation and failure vectors, dependency-local reopening, and explicit progress, repair, scope-expansion, or rejection receipts.",
+      "depends_on": [
+        "P039",
+        "P040",
+        "P041",
+        "P068",
+        "M075"
+      ],
+      "write_scope": [
+        "archflow/state/stage_convergence.py",
+        "tests/test_stage_convergence.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "The receipt binds branch, stage, exact parent-child digests, transition kind, locks, obligations, gate failures, conflicts, tolerance failures, invalidations, and revalidations.",
+        "Refine, resolve, and repair preserve protected locks and strictly reduce a deterministic convergence vector; no-op and regression reject.",
+        "Scope expansion is explicit, bounded, authorised, and never reported as ordinary progress; locked-decision reopening is limited to its supplied dependency closure.",
+        "Stale parent state, unexplained invalidation, open mandatory obligations, and unauthorised lock changes fail closed.",
+        "Historical and modern synthetic cases prove the mechanism without framework-owned building vocabulary."
+      ],
+      "tests": [
+        "Exact-base binding, vector monotonicity, lock inheritance, bounded reopening, repair, scope expansion, and cross-typology fixtures",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_stage_convergence"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P080-stage-convergence-receipt.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P080",
+        "actor": "codex",
+        "verified_at": "2026-08-28T22:57:59.925532+00:00",
+        "contract_sha256": "594cc33abacf0ce49178cb8033bdf23824952d4dcc23c025dfdee9f09286a456",
+        "scope_sha256": "bedf2d1862a255ed41e4a614c7d0c636d5e72ab0403f3b6931d59a2dc23bb8e7",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_stage_convergence"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "40e6a3053d86436d6aa245501343227a2e81436f4f14da71a21257468605aff6",
+            "stdout_tail": "",
+            "stderr_tail": "..........\n----------------------------------------------------------------------\nRan 10 tests in 0.006s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "d09501edb3ed9db512016f1a2bcf3c37944eb66dff231c5815ffd2f038b26a06",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (138 files, 0.751s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "StageConvergencePolicy and exact-state evaluator bind parent/child digests, protected locks, mandatory obligations, external gate/conflict/tolerance/revalidation deficits, lexicographic potential, and dependency-local scope expansion. Refine/resolve/repair require strict decrease; ordinary hidden expansion and protected drift reject; authorised grid revision is typed scope_expansion. Historical colonnade and modern grid/core/facade/MEP synthetic tests: 10 green; compileall and architecture firewall pass."
+      ]
+    },
+    {
+      "id": "P081",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Close the P079/P080 branch-to-stage path, expose panel data, and compare execution cost.",
+      "depends_on": [
+        "P079",
+        "P080"
+      ],
+      "write_scope": [
+        "archflow/capabilities/branch_research.py",
+        "archflow/capabilities/basis_index.py",
+        "archflow/runtime/branch_research.py",
+        "archflow/runtime/architectural_revision.py",
+        "archflow/runtime/design_controller.py",
+        "archflow/runtime/token_accounting.py",
+        "archflow/project/location.py",
+        "archflow/project/__init__.py",
+        "tools/_probe_paths.py",
+        "tools/run_pantheon_reconstruction.py",
+        "tests/test_branch_conditioned_rag.py",
+        "tests/test_architectural_revision.py",
+        "tests/test_design_controller.py",
+        "tests/test_token_accounting.py",
+        "tests/test_pantheon_reconstruction_gates.py",
+        "tests/test_project_location.py",
+        "tests/integration/test_decision_design_closure.py",
+        "tests/integration/test_component_family_realization.py",
+        "tests/integration/test_multi_building_experiments.py",
+        "tests/integration/test_project_derived_architectural_usability.py",
+        "tests/fixtures/modern_learning_pavilion.json",
+        "docs/EXPERIMENT_PROTOCOL.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Exact COMPLETE P079 context is mandatory; expansion creates a successor P078 scope.",
+        "Stage exit requires an exact current P080 receipt; stale, regressive, or hidden expansion rejects.",
+        "A synthetic modern fixture proves generic dependency and state closure.",
+        "Hard feasibility filters before soft/HITL ranking; preference cannot offset code, safety, dimension, or standard failure.",
+        "Text, visual, drawing/sketch, measurement, and derivation evidence share one typed frontier; model labels remain candidates.",
+        "Pantheon later-stage archival requires both exact receipts.",
+        "P060/P061/P062 evidence reloads through workspace relocation anchors.",
+        "archflow.project owns read-only project discovery and anchor integrity; tools/tests only configure roots.",
+        "Comparable initial/revision telemetry makes no unsupported token-saving claim."
+      ],
+      "tests": [
+        "Branch/stage, modern, Pantheon, relocation, and token comparison",
+        "Full discovery plus architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_branch_conditioned_rag",
+          "tests.test_design_controller",
+          "tests.test_token_accounting",
+          "tests.test_pantheon_reconstruction_gates",
+          "tests.integration.test_decision_design_closure"
+        ],
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests",
+          "-t",
+          "."
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P081-branch-stage-closure-integration.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P081",
+        "actor": "codex",
+        "verified_at": "2026-08-28T23:43:56.737502+00:00",
+        "contract_sha256": "1233a2c4647e97ba4b7f5f89852c4983b1c71f660a18b01892b2343a97aae098",
+        "scope_sha256": "2a85710b4e2f128b972282e794f8edb66082c0d286b36f3ed228a0c387387961",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_branch_conditioned_rag",
+              "tests.test_design_controller",
+              "tests.test_token_accounting",
+              "tests.test_pantheon_reconstruction_gates",
+              "tests.integration.test_decision_design_closure"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "aa4916afb6695b76589733ba2b4cb35cd4c6c6e08d55d3022821767ce79905ef",
+            "stdout_tail": "",
+            "stderr_tail": "...........................................................\n----------------------------------------------------------------------\nRan 59 tests in 1.177s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "discover",
+              "-s",
+              "tests",
+              "-t",
+              "."
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "6542631d083debdf06e5d2efbea05f43e15a33e2c9dddae7000a64fe379ba9c5",
+            "stdout_tail": "",
+            "stderr_tail": "rams\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.140 seconds\n.................................................................................................................................................................................................................................................................................................................................ss.....................................................................................................Executing <Task finished name='Task-341' coro=<ProductionRootCompilerTests.test_current_state_reaches_selected_initial_semantic_geometry() done, defined at D:\\ARCHFLOW_V4\\tests\\test_production_root_compiler.py:634> result=None created at C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio\\runners.py:100> took 0.109 seconds\n..............................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 788 tests in 102.288s\n\nOK (skipped=6)\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "0fe124660a787b5a91e6bdf08961ffa676a3644ef21d0af16e24e1e9064c0974",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (140 files, 1.033s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-08-28",
+      "evidence": [
+        "P079 COMPLETE is now mandatory on branch design context; P080 exact current stage-ready receipts gate phase exit and Pantheon stage 1-3 archival. Hard feasibility can be required and filters before soft/HITL ranking; missing, unresolved, or violated hard assessment cannot win. Multimodal evidence and the synthetic modern fixture exercise generic closure. archflow.project now owns typed read-only local/anchor/workspace discovery with manifest/hash validation, and P060/P061/P062 reload through their workspace anchors. Comparable token accounting reports missing direct telemetry instead of claiming savings. Verification: 788 tests passed with 6 skipped, P081 targeted commands passed, compileall and architecture firewall passed. The actual Pantheon v2 derivation remains P069 work and was not claimed here."
+      ]
     }
   ]
 }

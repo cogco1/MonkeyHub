@@ -1,0 +1,10 @@
+{
+ "schema": "ProbeRelocationAnchor@1",
+ "project_id": "p066-live-monument",
+ "moved_to": "D:\\PROJECTS\\01_ACTIVE_当前项目\\ARCHFLOW CAADRIA 2027\\V4_RUNTIME\\workspace\\projects\\p066-live-monument",
+ "moved_on": "2026-08-30",
+ "file_count": 151,
+ "total_bytes": 3362420,
+ "project_json_sha256": "52c9673420805d2188d045fdd7d37861b8f25c9ae4cce0f949df6d65e8f6bd28",
+ "note": "live-monument design/research project relocated per spec 6.1; project:// URIs resolve via moved_to"
+}

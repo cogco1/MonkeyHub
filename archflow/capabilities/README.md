@@ -180,3 +180,49 @@ adoption under a named authority promotes them, and each adopted fact
 compiles into a build-policy constraint whose provenance chains
 constraint to adoption to snapshot to URL. The provider must answer
 these constraints through the existing required-response validation.
+
+## Branch-conditioned research
+
+`branch_research.py` separates candidate comparison from research scope. A
+project supplies evidence-backed criterion scores, an exact-revision research
+profile for every Candidate, and either an automatic or human-in-the-loop
+selection rule. Automatic selection is legal only when the
+named algorithm authority is allowed by the portfolio policy and both the
+minimum score and minimum margin pass; an exact tie always enters HITL even
+when the configured minimum margin is zero. Deserialisation and application
+replay the winner, threshold, margin, authority, active Candidate heads, and
+complete loser set. Otherwise the result is an immutable
+`human_review_required` decision and the portfolio is unchanged. A selected
+winner becomes `SELECTED`; every unselected candidate is retained as `PARKED`
+with the same decision and evidence rather than being deleted.
+
+Selection chooses the winning Candidate's research profile as part of the
+same immutable decision; callers cannot select one branch and then freely
+substitute another branch's decision universe, vocabulary, or source policy.
+The resulting `BranchResearchScope@1` is derived from the exact source
+`SchematicOptionSet` and current `OperationalMarkovState`, and retains
+content-addressed P036 refs for both source objects; callers cannot inject a
+same-run `BranchRef` or later rewrite the profile. It binds research to the
+canonical base, source operational branch, candidate portfolio and revision,
+full content-addressed P036 selection ref, active decision universe,
+branch-defining and excluded search terms, domain allowlist, and context refs.
+`BranchPrecedentQuery@1` can narrow but cannot widen that envelope. Branch
+research output must echo both the query and scope digests, and an explicit
+`PrecedentAdoption@1` must be bound back to the same query before any fact can
+enter a branch basis.
+
+`build_branch_basis_index()` ignores legacy and foreign-scope evidence. It
+requires an exact query/adoption/`BranchEvidenceSnapshot@1` join by full P036
+record URI (never basename), verifies the quote against typed retained text,
+and validates both requested and final redirected URLs against the branch
+allowlist. It initializes shards from the complete active decision universe
+and reports missing decisions instead of silently omitting them.
+`compile_next_branch_queries()` opens exactly those missing decisions;
+`BranchRAGProgress@1` exposes the covered count, uncovered refs, next-query
+refs, and continue/complete status for a later progress panel. A bounded
+`BranchDecisionContext@1`, including the full verified scope, is compiled by
+the runtime only after the P036 index is reloaded and re-derived. The public
+semantic capability cannot claim or inject persisted branch evidence. The
+private production authoring path additionally requires the current
+operational state and a runtime-derived expected scope digest, so a valid
+sibling Candidate context cannot be substituted.
