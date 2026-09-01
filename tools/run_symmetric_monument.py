@@ -43,7 +43,7 @@ AXIS_INDEX = 0
 
 
 def derive(args) -> int:
-    import tests.integration.test_monument_derivation as monument
+    from tools.projects.pantheon import monument_support as monument
 
     monument.PROJECT_ID = args.project_id
     monument.RUN_ID = args.run_id

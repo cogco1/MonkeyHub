@@ -4,6 +4,9 @@ import json
 import unittest
 from pathlib import Path
 
+import archflow.compilers as compilers_api
+import archflow.compilers.resources as canonical_resources
+import archflow.runtime.resource_compiler as legacy_resources
 from archflow.adapters.site_observation import (
     SiteObservationAuthorization,
     authorize_site_observation,
@@ -11,13 +14,12 @@ from archflow.adapters.site_observation import (
 from archflow.capabilities.constructability import (
     build_constructability_snapshot,
 )
-from archflow.project import ProjectVersionRef
-from archflow.runtime.brief_compiler import compile_design_brief
-from archflow.runtime.program_compiler import (
+from archflow.compilers.brief import compile_design_brief
+from archflow.compilers.program import (
     ProgramProposalBundle,
     compile_design_program,
 )
-from archflow.runtime.resource_compiler import (
+from archflow.compilers.resources import (
     BuildAssumptionProposal,
     BuildBudgetProposal,
     BuildPolicyProposal,
@@ -27,7 +29,8 @@ from archflow.runtime.resource_compiler import (
     StagingAssumptionProposal,
     compile_build_policy,
 )
-from archflow.runtime.site_compiler import compile_site_context
+from archflow.compilers.site import compile_site_context
+from archflow.project import ProjectVersionRef
 from archflow.state import (
     BuildPolicy,
     BuildStagingMode,
@@ -36,6 +39,7 @@ from archflow.state import (
     ResourcePolicyMode,
     SiteBounds,
 )
+from archflow.state.geometry_program import digest_value
 
 
 _SITE_FIXTURES = Path(__file__).parent / "fixtures" / "site"
@@ -106,6 +110,46 @@ def _source(project_id: str, name: str) -> str:
 
 
 class BuildPolicyTests(unittest.TestCase):
+    def test_legacy_facade_and_package_export_canonical_objects(self) -> None:
+        for name in legacy_resources.__all__:
+            with self.subTest(name=name):
+                canonical = getattr(canonical_resources, name)
+                self.assertIs(canonical, getattr(legacy_resources, name))
+                self.assertIs(canonical, getattr(compilers_api, name))
+
+    def test_reference_policy_preserves_schema_digests_and_authority(self) -> None:
+        brief, program, site = _contexts()
+        result = compile_build_policy(
+            brief=brief,
+            program=program,
+            site_context=site,
+            proposal=BuildPolicyProposal(
+                resource_mode=ResourcePolicyMode.CREATIVE,
+                staging_mode=BuildStagingMode.SINGLE_PASS,
+                disposable_sandbox=True,
+                unbounded_resources=True,
+                authority_id="authority.user",
+                source_refs=(brief.raw_request_ref,),
+            ),
+        )
+
+        self.assertEqual("BuildPolicy@1", result.policy.SCHEMA)
+        self.assertEqual(
+            "6a7c29ede5da80d8f2865b9ca1997966e06b608a2553e8be6847ffa0a3a297e8",
+            result.policy.policy_digest,
+        )
+        self.assertEqual("ResourceCompilationReceipt@1", result.receipt.SCHEMA)
+        self.assertEqual(
+            "resource-compilation.554a47b74bca98b89561a55b",
+            result.receipt.compilation_id,
+        )
+        self.assertEqual(
+            "3912f5fa83f3ae0ef49e13ad26b139d4c7262c1c76ae0166c22c53580e671866",
+            digest_value(result.receipt.to_dict()),
+        )
+        self.assertIs(result.receipt.to_dict()["generation_authority"], False)
+        self.assertIs(result.receipt.to_dict()["palette_selected"], False)
+
     def test_explicit_creative_unbounded_sandbox_has_no_resource_default_gap(
         self,
     ) -> None:

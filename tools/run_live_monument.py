@@ -18,9 +18,8 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-for entry in (str(ROOT), str(ROOT / "tests")):
-    if entry not in sys.path:
-        sys.path.insert(0, entry)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from archflow.capabilities.geometry_proposal import (  # noqa: E402
     GeometryProposalProviderIdentity,
@@ -42,11 +41,13 @@ from archflow.runtime.production_runtime import (  # noqa: E402
     ProductionRuntimeStepFailed,
     run_or_resume_production_step,
 )
-from tests.integration.test_monument_derivation import (  # noqa: E402
+from tools.projects.monument_common.context import (  # noqa: E402
+    rebase_authoring_context,
+)
+from tools.projects.pantheon.monument_support import (  # noqa: E402
     PROMPT,
     _monument_context,
 )
-from tests.test_production_root_compiler import _rebase_context  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "tools"))
 from _probe_paths import resolve_probe_root  # noqa: E402
@@ -244,7 +245,7 @@ def main(argv=None) -> int:
             repository.load_json(context_ref)
         )
     else:
-        context = _rebase_context(_monument_context(), run)
+        context = rebase_authoring_context(_monument_context(), run)
         context_ref = repository.put_json(
             run=run,
             destination=destination,

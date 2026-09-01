@@ -185,6 +185,55 @@ class ProjectRepositoryTests(unittest.TestCase):
             b"voxel-data",
         )
 
+    def test_fixed_run_batch_creates_all_siblings_or_none(self) -> None:
+        base = self.repository.read_head()
+        run_a, run_b = self.repository.create_run_batch(
+            ("run-a", "run-b"),
+            base=base,
+            require_current_base=True,
+        )
+
+        self.assertEqual(run_a, self.repository.load_run("run-a"))
+        self.assertEqual(run_b, self.repository.load_run("run-b"))
+        self.assertEqual(base, run_a.base)
+        self.assertEqual(base, run_b.base)
+
+    def test_fixed_run_batch_precheck_does_not_leave_first_sibling(self) -> None:
+        self.repository.create_run("run-existing")
+
+        with self.assertRaises(ProjectAlreadyExists):
+            self.repository.create_run_batch(
+                ("run-new", "run-existing"),
+                base=self.repository.read_head(),
+                require_current_base=True,
+            )
+
+        self.assertFalse(self.repository.layout.run("run-new").root.exists())
+
+    def test_fixed_run_batch_rolls_back_new_roots_on_second_write_failure(self) -> None:
+        from archflow.project import repository as repository_module
+
+        original = repository_module._write_immutable
+
+        def fail_second_manifest(path: Path, data: bytes) -> None:
+            if path == self.repository.layout.run("run-b").manifest:
+                raise OSError("second manifest probe")
+            original(path, data)
+
+        with patch(
+            "archflow.project.repository._write_immutable",
+            side_effect=fail_second_manifest,
+        ):
+            with self.assertRaisesRegex(OSError, "second manifest probe"):
+                self.repository.create_run_batch(
+                    ("run-a", "run-b"),
+                    base=self.repository.read_head(),
+                    require_current_base=True,
+                )
+
+        self.assertFalse(self.repository.layout.run("run-a").root.exists())
+        self.assertFalse(self.repository.layout.run("run-b").root.exists())
+
     def test_cross_project_absolute_and_escape_references_fail(self) -> None:
         run = self.repository.create_run("run-001")
         with self.assertRaises(ValueError):

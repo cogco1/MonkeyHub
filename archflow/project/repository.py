@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import threading
 import time
 from collections.abc import Mapping
@@ -480,6 +481,100 @@ class FilesystemProjectRepository:
             ):
                 directory.mkdir(parents=True, exist_ok=True)
         return run
+
+    def create_run_batch(
+        self,
+        run_ids: tuple[str, ...],
+        *,
+        base: ProjectVersionRef | None = None,
+        require_current_base: bool = False,
+    ) -> tuple[RunRef, ...]:
+        """Create an exact run set or leave no member of the set behind.
+
+        This is intentionally narrower than a general record transaction: it
+        atomically guards fixed sibling-run bootstrap under the repository's
+        process and HEAD locks, and rolls back only roots proven absent before
+        this call if filesystem creation fails.
+        """
+
+        if not isinstance(run_ids, tuple) or not run_ids:
+            raise TypeError("run_ids must be a non-empty tuple")
+        for run_id in run_ids:
+            require_identifier(run_id, "run_id")
+        if len(set(run_ids)) != len(run_ids):
+            raise ValueError("run_ids must be unique")
+        if not isinstance(require_current_base, bool):
+            raise TypeError("require_current_base must be bool")
+        chosen_base = base or self.read_head()
+        self._require_project_version(chosen_base, durable=True)
+        runs = tuple(
+            RunRef(self._manifest.project_id, run_id, chosen_base)
+            for run_id in run_ids
+        )
+        layouts = tuple(self.layout.run(run.run_id) for run in runs)
+        created_roots: list[Path] = []
+        with self._lock, self._head_lock:
+            if require_current_base:
+                current, _, _ = self._read_head_document()
+                if current != chosen_base:
+                    raise StaleProjectHead(
+                        "fixed run batch no longer shares the current canonical base"
+                    )
+            existing = [
+                layout.root
+                for layout in layouts
+                if layout.root.exists() or layout.manifest.exists()
+            ]
+            if existing:
+                raise ProjectAlreadyExists(
+                    "run batch target already exists: "
+                    + ", ".join(str(path) for path in existing)
+                )
+            try:
+                for run, run_layout in zip(runs, layouts, strict=True):
+                    resolved_root = run_layout.root.resolve(strict=False)
+                    resolved_runs = self.layout.runs.resolve(strict=False)
+                    if (
+                        not resolved_root.is_relative_to(resolved_runs)
+                        or resolved_root.parent != resolved_runs
+                    ):
+                        raise ProjectIntegrityError(
+                            "run batch target escaped the assigned runs root"
+                        )
+                    created_roots.append(resolved_root)
+                    payload = {
+                        "schema": "ProjectRun@1",
+                        "project_id": run.project_id,
+                        "run_id": run.run_id,
+                        "base": _version_dict(run.base),
+                    }
+                    _write_immutable(run_layout.manifest, _json_bytes(payload))
+                    for directory in (
+                        run_layout.records,
+                        run_layout.branches,
+                        run_layout.candidates,
+                        run_layout.reviews,
+                        run_layout.workspaces,
+                        run_layout.recovery,
+                    ):
+                        directory.mkdir(parents=True, exist_ok=True)
+            except BaseException as exc:
+                cleanup_failures: list[str] = []
+                for created_root in reversed(created_roots):
+                    try:
+                        if created_root.exists():
+                            shutil.rmtree(created_root)
+                    except OSError as cleanup_exc:  # pragma: no cover - OS fault
+                        cleanup_failures.append(
+                            f"{created_root}: {cleanup_exc}"
+                        )
+                if cleanup_failures:
+                    raise ProjectIntegrityError(
+                        "run batch failed and rollback was incomplete: "
+                        + "; ".join(cleanup_failures)
+                    ) from exc
+                raise
+        return runs
 
     def load_run(self, run_id: str) -> RunRef:
         require_identifier(run_id, "run_id")

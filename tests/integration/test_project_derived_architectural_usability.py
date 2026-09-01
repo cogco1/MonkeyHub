@@ -11,10 +11,11 @@ from archflow.project import (
     PersistenceDestination,
     ProjectVersionRef,
     bootstrap_raw_request_project,
+    locate_project,
 )
 from archflow.realization import realize_geometry
 from archflow.runtime.brief_compiler import BriefObservation, compile_design_brief
-from archflow.runtime.geometry_compiler import compile_geometry_program
+from archflow.compilers.geometry import compile_geometry_program
 from archflow.state import BriefClaimKind, BriefSlot, FactEpistemicStatus
 from archflow.validation.architectural import (
     ArchitecturalCriterion,
@@ -36,7 +37,11 @@ from tests.test_sandbox_realization import compiled_room
 
 PROJECT_ID = "p060-architectural-usability"
 RUN_ID = "architectural-usability-001"
-PROBE_ROOT = Path(__file__).resolve().parents[2] / "probes" / PROJECT_ID
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+PROBE_ROOT = locate_project(
+    PROJECT_ID,
+    local_projects_root=REPOSITORY_ROOT / "probes",
+).root
 
 
 def _artifact(

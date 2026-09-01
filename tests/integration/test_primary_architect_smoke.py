@@ -11,11 +11,13 @@ from unittest.mock import patch
 from archflow.adapters.model_provider import (
     AsyncJsonCommandModelProvider,
     ModelCommandProtocol,
+    ModelProviderSpec,
+    create_codex_cli_model_provider,
+)
+from archflow.ports.model import (
     ModelInvocationRequest,
     ModelInvocationStatus,
     ModelPhase,
-    ModelProviderSpec,
-    create_codex_cli_model_provider,
 )
 from archflow.production import (
     InvocationEvidenceCollector,
@@ -27,7 +29,7 @@ from archflow.project import (
     PersistenceDestination,
     ProjectAlreadyExists,
 )
-from archflow.project.production_transition import (
+from archflow.runtime.persistence.production_transition import (
     load_production_transition,
     persist_failed_production_attempt,
     production_intent_digest,

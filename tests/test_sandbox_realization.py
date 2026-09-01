@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import unittest
 
-from archflow.runtime.geometry_compiler import compile_geometry_program
+from archflow.compilers.geometry import compile_geometry_program
 from archflow.state.geometry_program import (
     AffineTransform,
     AssemblyKind,

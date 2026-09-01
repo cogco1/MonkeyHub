@@ -213,6 +213,37 @@ remaining explicitly not developed, hard-approved, candidate-built, or
 canonically committed. Equal-depth divergent archives are reported as
 ambiguous instead of choosing the first registered record.
 
+`branch_research.py` persists the candidate selection decision at run scope,
+reloads that exact P036 record as the only runtime input allowed to apply the
+selection, and immediately persists the resulting portfolio. `create_scope()`
+reloads the persisted selection, source option set, source Markov state, and
+latest portfolio before compiling and immediately persisting the scope; the
+pure capability helpers are not public persistence entrypoints. It then routes
+the selected scope, queries, typed branch snapshots, explicit adoptions,
+derived basis, and progress records through P036's existing `RUN_BRANCH`
+destination. Two candidates may therefore use the same decision ref, query
+id, or snapshot filename without sharing a persistence directory or basis
+index.
+
+Before every post-selection write, the archive uses
+`BranchPortfolioArchive.load_latest()` to recheck the exact portfolio,
+selected Candidate head, operational-state digest, selection transition, and
+content-addressed decision. It also reloads the source option set and Markov
+state and replays the winning scorecard's complete research profile; the
+scope's decisions, include/exclude vocabulary, allowlist, and evidence cannot
+be edited after selection. An older scope remains historical evidence but
+cannot continue writing after the portfolio changes.
+
+`advance_feedback_wave()` is the production feedback-loop checkpoint. It
+rebuilds the index from retained adoptions, persists the exact complete next
+query wave, and persists `BranchRAGProgress`; retrieval and human adoption
+remain explicit boundaries before the next call. `load_index()` reloads the
+P036 index and deterministically re-derives it from the retained exact
+query/adoption/snapshot records. `ArchitecturalRevisionCompiler` requires this
+path for a P078 branch-selection record, derives the legal identity from the
+predecessor selected portfolio, rejects a valid sibling Candidate index, and
+passes only the runtime-built bounded context to the private provider path.
+
 ## Durable design-development checkpoints
 
 `development_controller.py` persists `DevelopedDesignState@1` only through the
@@ -468,8 +499,26 @@ repository records after filtering by exact project, run, branch, and epoch;
 retained checkpoints from an earlier epoch cannot poison current-epoch
 recovery, while current-epoch ambiguity or event-chain drift still fails
 closed. There is no mutable `latest` pointer or standalone controller
-directory. Project `HEAD` is unchanged until the separate accepted candidate
-commit boundary advances it.
+directory.
+
+A forward phase is durable only on the first checkpoint of the next branch
+epoch and only with a `StageExitArchiveBundle`. The adapter reads the exact
+prior-epoch checkpoint and the P036 profile, authorization binding, closure,
+check receipts, exact component proposal/index, `StageSubjectInventory@1`, and
+replayable baseline proof back from storage. It verifies P036 record-byte SHA
+separately from typed semantic digests, recompiles the inventory, recomputes
+closure and framework baseline coverage, and retains the proof in the new
+checkpoint record. The predecessor stage deliverable must already cite the
+exact component-proposal record; a caller cannot authorize a synchronously
+shrunk replacement universe at exit time. The current `@3` record also binds every later same-epoch
+checkpoint to the exact stage-exit anchor and previous checkpoint. Historical
+checkpoint schemas `@1` and proof-era `@2` remain strictly readable but cannot
+be extended or used as an authority anchor; neither can bypass the current
+proof on a later phase exit. Claim-bound exits read back claim,
+applicability, adoption, source, and authority basis records by exact P036 URI
+and SHA. Project `HEAD` is unchanged until the separate accepted candidate
+commit boundary advances it. Custom project runners that write records without
+this adapter remain outside this durable stage-exit contract.
 
 ## Primary Architect model boundary
 

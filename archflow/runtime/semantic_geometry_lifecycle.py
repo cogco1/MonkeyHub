@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import Mapping
 
 from archflow.project.refs import require_identifier
-from archflow.runtime.geometry_compiler import (
+from archflow.compilers.geometry import (
     AssetSubstitutionReceipt,
     CompiledGeometryProgram,
     GeometryCompilationReceipt,

@@ -2,12 +2,15 @@
 
 import unittest
 
-from archflow.capabilities.relation_coverage import (
+import archflow.capabilities.relation_coverage as legacy_relation_discovery
+import archflow.evidence.relation_discovery as canonical_relation_discovery
+from archflow.evidence.relation_discovery import (
     RelationCoverageError,
     detect_program_edges,
     enumerate_candidate_relations,
     relation_coverage_ledger,
 )
+from archflow.state.geometry_program import digest_value
 
 
 def obj(object_id, minimum, maximum, binding_id, physical=True):
@@ -107,6 +110,39 @@ class LedgerTest(unittest.TestCase):
     def setUp(self):
         self.candidates = enumerate_candidate_relations(
             SCENE, BINDINGS, tolerance=20.0
+        )
+
+    def test_legacy_facade_reexports_canonical_objects_by_identity(self):
+        for name in legacy_relation_discovery.__all__:
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(canonical_relation_discovery, name),
+                    getattr(legacy_relation_discovery, name),
+                )
+
+    def test_reference_ledger_preserves_digest_and_authority_boundary(self):
+        candidates = enumerate_candidate_relations(
+            SCENE,
+            BINDINGS,
+            tolerance=0.0,
+        )
+        ledger = relation_coverage_ledger(
+            candidates,
+            detected={},
+            declared=(),
+        )
+
+        self.assertEqual("RelationCoverageLedger@1", ledger["schema"])
+        self.assertEqual(
+            "b9a65b2c03e1abd37da2193ff5f6698a713c32141cd93afb6c5ffaa337bb9e3d",
+            digest_value(ledger),
+        )
+        self.assertIs(ledger["authority"], False)
+        self.assertNotIn("relationship_requirement_authority", ledger)
+        self.assertNotIn("stage_closure_authority", ledger)
+        self.assertEqual(
+            "uncovered_relation",
+            ledger["candidates"][0]["resolution"]["status"],
         )
 
     def test_uncovered_pairs_are_typed_not_silent(self):

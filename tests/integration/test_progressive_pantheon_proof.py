@@ -9,7 +9,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.adapters.model_provider import (
+from archflow.ports.model import (
     ModelInvocationReceipt,
     ModelInvocationStatus,
 )
@@ -34,7 +34,7 @@ from archflow.project import (
     bootstrap_raw_request_project,
     canonical_json_sha256,
 )
-from archflow.project.production_transition import (
+from archflow.runtime.persistence.production_transition import (
     ProductionRecordRole,
     persist_compiled_production_transition,
     production_intent_digest,
@@ -46,7 +46,7 @@ from archflow.realization import (
     derive_voxel_view,
     realize_geometry,
 )
-from archflow.runtime.geometry_compiler import compile_geometry_program
+from archflow.compilers.geometry import compile_geometry_program
 from archflow.runtime.production_compiler import (
     ProductionRootCompiler,
     schematic_selection_output,

@@ -9,12 +9,14 @@ from pathlib import Path
 from archflow.adapters.model_provider import (
     AsyncJsonCommandModelProvider,
     ModelCommandProtocol,
+    ModelProviderSpec,
+    create_codex_cli_model_provider,
+)
+from archflow.ports.model import (
     ModelInvocationReceipt,
     ModelInvocationRequest,
     ModelInvocationStatus,
     ModelPhase,
-    ModelProviderSpec,
-    create_codex_cli_model_provider,
 )
 from archflow.production import ProviderIdentity, activate_model_provider
 from archflow.runtime.design_controller import prepare_design_turn

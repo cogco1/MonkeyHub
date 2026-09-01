@@ -105,7 +105,7 @@ def _evaluator(assignment: Assignment):
 
     def evaluate(graph: BaselineGraph):
         try:
-            from archflow.runtime.geometry_compiler import (  # noqa: F401
+            from archflow.compilers.geometry import (  # noqa: F401
                 compile_geometry_program,
             )
         except ImportError:

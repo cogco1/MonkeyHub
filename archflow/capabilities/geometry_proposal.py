@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
-from archflow.adapters.model_provider import (
+from archflow.ports.model import (
     AsyncModelProvider,
     ModelInvocationReceipt,
     ModelInvocationRequest,
@@ -31,7 +31,7 @@ from archflow.project import (
     RunRef,
     require_destination,
 )
-from archflow.runtime.geometry_compiler import (
+from archflow.compilers.geometry import (
     AssetSubstitutionReceipt,
     CompiledGeometryObject,
     CompiledGeometryProgram,

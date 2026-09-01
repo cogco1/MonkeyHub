@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.adapters.model_provider import (
+from archflow.ports.model import (
     ModelInvocationReceipt,
     ModelInvocationStatus,
 )
@@ -36,7 +36,7 @@ from archflow.project import (
     bootstrap_external_project,
 )
 from archflow.project.digests import canonical_json_sha256
-from archflow.project.production_transition import (
+from archflow.runtime.persistence.production_transition import (
     load_failed_production_attempts,
     load_production_transition,
 )
@@ -74,6 +74,9 @@ from archflow.state.design_maturity import (
     evaluate_forward_phase_gate,
 )
 from archflow.state.developed_design import DevelopedDesignState
+from tools.projects.monument_common.context import (
+    rebase_authoring_context as _rebase_context,
+)
 from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from tests.test_sandbox_realization import compiled_room
 from tests.test_semantic_spatial_authoring import _ScriptedProvider
@@ -91,117 +94,6 @@ IDENTITY = GeometryProposalProviderIdentity(
     provider_version="1",
     provider_fingerprint="f" * 64,
 )
-
-
-def _rebase_program(program, run):  # type: ignore[no-untyped-def]
-    digest = run.base.require_digest()
-    return replace(
-        program,
-        project_id=run.project_id,
-        run_id=run.run_id,
-        base=run.base,
-        assumptions=tuple(
-            replace(item, base_state_sha256=digest)
-            for item in program.assumptions
-        ),
-        nodes=tuple(
-            replace(item, base_state_sha256=digest) for item in program.nodes
-        ),
-        ranges=tuple(
-            replace(item, base_state_sha256=digest) for item in program.ranges
-        ),
-        relationships=tuple(
-            replace(item, base_state_sha256=digest)
-            for item in program.relationships
-        ),
-        scenarios=tuple(
-            replace(item, base_state_sha256=digest)
-            for item in program.scenarios
-        ),
-    )
-
-
-def _rebase_policy(policy, run, program, site):  # type: ignore[no-untyped-def]
-    digest = run.base.require_digest()
-
-    def provenance(value):  # type: ignore[no-untyped-def]
-        return replace(value, base_state_sha256=digest)
-
-    def provenanced(values):  # type: ignore[no-untyped-def]
-        return tuple(
-            replace(item, provenance=provenance(item.provenance))
-            for item in values
-        )
-
-    return replace(
-        policy,
-        project_id=run.project_id,
-        run_id=run.run_id,
-        base=run.base,
-        program_digest=program.program_digest,
-        site_context_digest=site.context_digest,
-        policy_provenance=provenance(policy.policy_provenance),
-        assumptions=tuple(
-            replace(item, base_state_sha256=digest)
-            for item in policy.assumptions
-        ),
-        availability=provenanced(policy.availability),
-        demands=provenanced(policy.demands),
-        protected_rules=provenanced(policy.protected_rules),
-        budget_limits=provenanced(policy.budget_limits),
-        staging_assumptions=provenanced(policy.staging_assumptions),
-        constraints=provenanced(policy.constraints),
-    )
-
-
-def _rebase_context(
-    context: ProductionAuthoringContext,
-    run,
-):  # type: ignore[no-untyped-def]
-    branch = replace(context.state.branch, run=run)
-    state = replace(context.state, branch=branch)
-    deliverables = tuple(
-        replace(
-            item,
-            branch=branch,
-            base_state_digest=state.state_digest,
-        )
-        for item in context.maturity.deliverables
-    )
-    maturity = replace(
-        context.maturity,
-        branch=branch,
-        operational_state_digest=state.state_digest,
-        deliverables=deliverables,
-    )
-    gate = evaluate_forward_phase_gate(
-        maturity,
-        PhaseGateRequest(
-            request_id=context.phase_gate.request_id,
-            branch=branch,
-            base_state_digest=state.state_digest,
-            from_phase=context.phase_gate.from_phase,
-            to_phase=context.phase_gate.to_phase,
-            deliverable_refs=tuple(item.ref for item in deliverables),
-        ),
-    )
-    program = _rebase_program(context.program, run)
-    site = replace(
-        context.site_context,
-        project_id=run.project_id,
-        run_id=run.run_id,
-        base=run.base,
-    )
-    policy = _rebase_policy(context.build_policy, run, program, site)
-    return replace(
-        context,
-        state=state,
-        maturity=maturity,
-        phase_gate=gate,
-        program=program,
-        site_context=site,
-        build_policy=policy,
-    )
 
 
 class _MemoryRepository:

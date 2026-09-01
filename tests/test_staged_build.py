@@ -6,7 +6,7 @@ import unittest
 from archflow.project.refs import ProjectVersionRef
 from archflow.realization import realize_geometry
 from archflow.runtime.candidate_assembly import CandidatePolicyKind
-from archflow.runtime.geometry_compiler import compile_geometry_program
+from archflow.compilers.geometry import compile_geometry_program
 from archflow.runtime.staged_build import (
     BuildRunStatus,
     MaterialAccountReceipt,

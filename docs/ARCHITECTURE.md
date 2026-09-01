@@ -15,9 +15,32 @@ Diagram variants:
 Both versions share the same nodes and connectors. Only language-specific
 copy and typography differ.
 
-## Hierarchical search control policy
+## Authority-oriented package spine
 
-The stage controller may delegate search-budget advice through one
+The directory tree follows the same authority ordering as the runtime
+contracts.  The intended dependency spine is:
+
+```text
+tools/projects/<project-id>       project composition, no framework defaults
+             |
+          runtime                orchestration, recovery, P036-backed writes
+             |
+          control                profiles, baseline roles, closure, convergence
+          /     \
+ validation   compilers          read-only checks / pure transformations
+      |          |
+ materials  capabilities         domain ledgers / detached expert surfaces
+       \       /
+ evidence + research             source, claim, applicability, adoption, RAG
+             |
+       state + ports              immutable state / external-world protocols
+             |
+    contracts + project refs      canonical encoding / identity and P036
+
+adapters -> implement ports; adapters never own durable domain schemas
+```
+
+The stage controller may delegate search-budget advice through one additional
 proposal-only seam:
 
 ```text
@@ -70,6 +93,80 @@ denominator and receipt lineage and cannot re-originate a smaller one. The
 result can be bridged to the existing `CheckReceiptEnvelope`, but the bridge
 does not infer a complete typology, write project data, attach itself to every
 runner, accept a stage, or replace `CompositeStageClosureReceipt`.
+
+The `DesignController` stage-control path is intentionally conjunctive rather
+than a sequence of substitutable summaries:
+
+```text
+exact retained SpatialOptionProposal + ComponentIndex
+  -> StageSubjectInventory
+  + actual StageRequirementProfile
+  + persistent exact-profile-and-inventory authorization binding
+  + independent CheckReceiptEnvelope records
+  + CompositeStageClosureReceipt
+  + framework minimum physical-role coverage
+  + exact stage convergence
+  + phase gate
+  + P036 readback of the predecessor and exact stage-exit proof bundle
+  -> one durable phase exit may proceed
+```
+
+For building work, the framework physical minimum rises by maturity: spatial stages
+require component lineage, spatial envelope, assembly relationships, opening
+clearance, and load path; developed stages also require material binding;
+coordinated stages also require exact CAD readback.  The earlier research,
+programming, and site phases remain under the independent P079 evidence-
+sufficiency and claim-applicability gates rather than an empty physical check
+being mislabeled as evidence coverage.  Project RAG determines
+which researched claims and applicability records authorize project-specific
+parameters and relations.  It does not replace universal identity, coverage,
+collision, support-graph, or readback checks.
+
+Baseline credit is replay-based.  Spatial coverage retains the normalized
+validator input and reruns the validator; assembly coverage closes every
+required subject role and discovered relation candidate in its bound
+stage-subject manifest.  A smaller check-receipt denominator or a retained
+`PASS` summary cannot earn a framework role.
+
+`StageSubjectInventory@1` supplies the stage denominator.  Its runtime compiler
+mechanically joins the exact retained `SpatialOptionProposal@2` and
+`ComponentIndex@1`; the proposal and index must name exactly the same component
+set.  Every resulting semantic component carries one `REQUIRED` or
+`NOT_APPLICABLE` obligation for every role in the selected baseline level.
+Both dispositions retain their evidence and authority; required roles also
+name their exact target references, while not-applicable roles name no target.
+Neither component names nor a check result may infer or erase those
+obligations.
+
+P036 verifies two different identities at this boundary.  A
+`ProjectRecordRef.sha256` identifies the exact retained JSON record bytes; the
+proposal, component index, inventory, binding, and receipts also carry their
+own schema-defined semantic digests.  The adapter verifies each record SHA,
+parses and verifies each typed digest, recompiles the inventory from the read-
+back proposal and index, and requires exact equality.  The predecessor maturity
+deliverable for the stage subject must also retain the exact proposal record as
+its artifact or evidence reference.  Consequently a later stage cannot pass by
+silently shrinking the proposal, index, inventory, manifests, and requirements
+together.
+
+That guarantee starts at the retained proposal; it is not a typology oracle.
+If a controller-native Stage 0 proposal never declared a roof, structure,
+opening, circulation element, or other component required by the design brief,
+typology, RAG evidence, or a human decision, the inventory cannot invent it.
+Genesis completeness therefore remains a separate evidence- and authority-
+bound design admission responsibility.
+
+This contract is implemented and tested at the controller and P036 archive
+boundary; it is not yet an automatic property of every repository tool.
+Legacy/custom reconstruction runners that close `OperationalMarkovState` or
+write project records directly—including the current Parthenon and Pantheon
+HOLD paths—have not yet been migrated to this admission route.  Their local
+gates remain candidate evidence, not proof that the generic stage-control path
+ran.  New formal runners must use the common controller/P036 route; migrating
+the retained legacy histories requires an explicit human-authorized migration
+contract over its exact retained predecessor, or a new controller-native Stage
+0.  In particular, P087 cannot gain generic admission authority from a
+fabricated bridge or predecessor checkpoint for `reconstruction-004`.
 
 ## Semantic-to-geometry bridge
 

@@ -10,6 +10,7 @@ from archflow.project import (
     PersistenceDestination,
     ProjectVersionRef,
     bootstrap_raw_request_project,
+    locate_project,
 )
 from archflow.realization import HybridScene, SandboxRealizationReceipt, realize_geometry
 from archflow.runtime.family_compiler import (
@@ -23,7 +24,7 @@ from archflow.runtime.family_compiler import (
     compile_component_families,
     compile_component_family_lifecycle,
 )
-from archflow.runtime.geometry_compiler import compile_geometry_program
+from archflow.compilers.geometry import compile_geometry_program
 from archflow.runtime.semantic_geometry_lifecycle import (
     SemanticGeometryLifecycleStatus,
     compile_semantic_geometry_lifecycle,
@@ -45,7 +46,11 @@ PROJECT_ID = "p061-component-family-protocol"
 PARAMETRIC_RUN = "parametric-001"
 MESH_RUN = "mesh-001"
 LIFECYCLE_RUN = "lifecycle-001"
-PROBE_ROOT = Path(__file__).resolve().parents[2] / "probes" / PROJECT_ID
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+PROBE_ROOT = locate_project(
+    PROJECT_ID,
+    local_projects_root=REPOSITORY_ROOT / "probes",
+).root
 
 
 def _rebase_state(state, *, project_id: str, run_id: str, base: ProjectVersionRef):

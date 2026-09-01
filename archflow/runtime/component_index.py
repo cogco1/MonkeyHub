@@ -19,7 +19,7 @@ from archflow.project.refs import (
     RunRef,
     require_identifier,
 )
-from archflow.runtime.geometry_compiler import CompiledGeometryProgram
+from archflow.compilers.geometry import CompiledGeometryProgram
 from archflow.runtime.semantic_geometry_lifecycle import (
     InitialSemanticGeometryReceipt,
     SemanticGeometryLifecycleReceipt,

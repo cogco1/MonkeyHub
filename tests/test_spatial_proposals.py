@@ -20,11 +20,11 @@ from archflow.project import (
     ProjectVersionRef,
     RunRef,
 )
-from archflow.runtime.brief_compiler import (
+from archflow.compilers.brief import (
     BriefObservation,
     compile_design_brief,
 )
-from archflow.runtime.program_compiler import (
+from archflow.compilers.program import (
     ProgramAssumptionProposal,
     ProgramNodeProposal,
     ProgramProposalBundle,
@@ -32,12 +32,12 @@ from archflow.runtime.program_compiler import (
     ProgramRelationshipProposal,
     compile_design_program,
 )
-from archflow.runtime.resource_compiler import (
+from archflow.compilers.resources import (
     BuildPolicyProposal,
     ConstructabilityConstraintProposal,
     compile_build_policy,
 )
-from archflow.runtime.site_compiler import compile_site_context
+from archflow.compilers.site import compile_site_context
 from archflow.state import (
     BriefClaimKind,
     BriefSlot,

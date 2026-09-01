@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from enum import StrEnum
 
-from archflow.adapters.model_provider import (
+from archflow.ports.model import (
     AsyncModelProvider,
     ModelInvocationReceipt,
     ModelInvocationRequest,

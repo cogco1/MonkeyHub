@@ -1,12 +1,19 @@
 {
   "schema": "ArchFlowArchitecturePolicy@1",
   "source_root": "archflow",
+  "checked_source_roots": [
+    "archflow",
+    "tools"
+  ],
   "probe_root": "probes",
   "forbidden_instance_literals": [
     "16x12",
     "community library",
     "live_library",
     "pantheon",
+    "parthenon",
+    "p087",
+    "pentelic",
     "reading room",
     "repair workshop",
     "service desk",
@@ -177,6 +184,96 @@
     }
   ],
   "forbidden_layer_imports": [
+    {
+      "source": "archflow",
+      "targets": [
+        "docs",
+        "tests",
+        "tools"
+      ],
+      "reason": "Reusable framework code cannot import repository tooling, tests, or documentation modules. Probe imports are rejected by the dedicated probe reverse-import rule."
+    },
+    {
+      "source": "tools",
+      "targets": [
+        "tests"
+      ],
+      "reason": "Repository tools cannot acquire implementation or fixtures from the test suite."
+    },
+    {
+      "source": "archflow/contracts",
+      "targets": [
+        "archflow.adapters",
+        "archflow.capabilities",
+        "archflow.compilers",
+        "archflow.control",
+        "archflow.evidence",
+        "archflow.materials",
+        "archflow.research",
+        "archflow.runtime",
+        "archflow.validation"
+      ],
+      "reason": "Canonical contract primitives may depend on project identity only, never on higher domain, control, runtime, or adapter layers."
+    },
+    {
+      "source": "archflow/ports",
+      "targets": [
+        "archflow.adapters",
+        "archflow.capabilities",
+        "archflow.compilers",
+        "archflow.control",
+        "archflow.runtime",
+        "archflow.validation"
+      ],
+      "reason": "External-world protocols may depend on stable identity contracts, never on their concrete adapters, orchestration, control, or validation implementations."
+    },
+    {
+      "source": "archflow/evidence",
+      "targets": [
+        "archflow.adapters",
+        "archflow.capabilities",
+        "archflow.compilers",
+        "archflow.control",
+        "archflow.materials",
+        "archflow.research",
+        "archflow.runtime",
+        "archflow.validation"
+      ],
+      "reason": "Evidence records cannot acquire retrieval implementation, validation, orchestration, or stage-control authority."
+    },
+    {
+      "source": "archflow/research",
+      "targets": [
+        "archflow.adapters",
+        "archflow.capabilities",
+        "archflow.compilers",
+        "archflow.control",
+        "archflow.materials",
+        "archflow.runtime",
+        "archflow.validation"
+      ],
+      "reason": "Research selection and indexing cannot depend on runtime orchestration, concrete adapters, validation, or control."
+    },
+    {
+      "source": "archflow/materials",
+      "targets": [
+        "archflow.adapters",
+        "archflow.capabilities",
+        "archflow.compilers",
+        "archflow.control",
+        "archflow.research",
+        "archflow.runtime"
+      ],
+      "reason": "Material intent and binding validation cannot depend on project runners, orchestration, or concrete adapters."
+    },
+    {
+      "source": "archflow/control",
+      "targets": [
+        "archflow.adapters",
+        "archflow.runtime"
+      ],
+      "reason": "The control plane consumes typed receipts but cannot depend on concrete adapters or runtime orchestration."
+    },
     {
       "source": "archflow/evaluation",
       "targets": [

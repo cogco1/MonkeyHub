@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from archflow.adapters.model_provider import (
+from archflow.ports.model import (
     ModelInvocationReceipt,
     ModelInvocationStatus,
 )

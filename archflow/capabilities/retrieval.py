@@ -7,10 +7,9 @@ from dataclasses import dataclass
 from archflow.adapters.cli_retrieval import (
     CliProviderSpec,
     CliRetrievalAdapter,
-    RetrievalQuery,
-    RetrievalReceipt,
     missing_provider_receipt,
 )
+from archflow.ports.retrieval import RetrievalQuery, RetrievalReceipt
 
 
 @dataclass(frozen=True, slots=True)

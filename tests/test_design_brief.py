@@ -4,17 +4,19 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.project import ProjectVersionRef
-from archflow.runtime.brief_compiler import (
+import archflow.compilers.brief as canonical_brief
+import archflow.runtime.brief_compiler as legacy_brief
+from archflow.compilers.brief import (
     BriefIntentObservation,
     BriefObservation,
     compile_design_brief,
 )
-from archflow.runtime.commitment_compiler import (
+from archflow.compilers.commitments import (
     IntentObservation,
     IntentOperator,
     IntentTerm,
 )
+from archflow.project import ProjectVersionRef
 from archflow.state import (
     BriefClaimKind,
     BriefSlot,
@@ -23,6 +25,7 @@ from archflow.state import (
     DesignBrief,
     FactEpistemicStatus,
 )
+from archflow.state.geometry_program import digest_value
 
 
 def _base(project_id: str = "case-a") -> ProjectVersionRef:
@@ -79,6 +82,42 @@ def _size_intent(project_id: str = "case-a") -> BriefIntentObservation:
 
 
 class DesignBriefTests(unittest.TestCase):
+    def test_legacy_facade_reexports_canonical_objects_by_identity(self) -> None:
+        for name in legacy_brief.__all__:
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(canonical_brief, name),
+                    getattr(legacy_brief, name),
+                )
+
+    def test_reference_brief_preserves_schema_digests_and_behavior(self) -> None:
+        result = compile_design_brief(
+            project_id="case-a",
+            run_id="brief-001",
+            base=_base(),
+            raw_request_ref=_request_ref(),
+            observations=(_use_observation(),),
+            intent_observations=(_size_intent(),),
+        )
+
+        self.assertEqual("DesignBrief@1", result.brief.SCHEMA)
+        self.assertEqual(
+            "58ae6543da7d3e9fc319f87e5fc8e20e27988cb5cc4ebbf962e8a9fd42cd6c02",
+            result.brief.brief_digest,
+        )
+        self.assertEqual("BriefCompilationReceipt@1", result.receipt.SCHEMA)
+        self.assertEqual(
+            "brief-8eeb35647765aeaeb589",
+            result.receipt.compilation_id,
+        )
+        self.assertEqual(
+            "c4de78fa3e8397aae050f8057ad448a3ac0d792f590e50d5fc05fa40cdb12a18",
+            digest_value(result.receipt.to_dict()),
+        )
+        self.assertIs(result.receipt.to_dict()["generation_authority"], False)
+        self.assertEqual(1, len(result.brief.constraint_proposals))
+        self.assertEqual(1, len(result.brief.proposed_commitments))
+
     def test_minimal_use_only_prompt_keeps_other_slots_unknown(self) -> None:
         result = compile_design_brief(
             project_id="case-a",
@@ -408,8 +447,8 @@ class DesignBriefTests(unittest.TestCase):
         ).read_text(encoding="utf-8") + (
             Path(__file__).parents[1]
             / "archflow"
-            / "runtime"
-            / "brief_compiler.py"
+            / "compilers"
+            / "brief.py"
         ).read_text(encoding="utf-8")
         lowered = sources.lower()
         for forbidden in (

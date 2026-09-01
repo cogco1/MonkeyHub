@@ -2,7 +2,11 @@
 
 import unittest
 
-from archflow.capabilities.research import (
+import archflow.research as stable_research
+from archflow.capabilities import research as legacy_research
+from archflow.contracts.canonical import canonical_digest
+from archflow.research import query as canonical_query
+from archflow.research.query import (
     PrecedentQuery,
     ResearchError,
     decode_research_json,
@@ -66,6 +70,73 @@ def parse(candidates, query=None):
         snapshot_text_sha256=SNAPSHOT_SHA,
         annotator="model:test",
     )
+
+
+class ResearchQueryOwnershipTests(unittest.TestCase):
+    def test_capability_facade_and_package_exports_preserve_identity(self):
+        for name in legacy_research.__all__:
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(legacy_research, name),
+                    getattr(canonical_query, name),
+                )
+                self.assertIs(
+                    getattr(stable_research, name),
+                    getattr(canonical_query, name),
+                )
+
+    def test_precedent_query_schema_payload_and_digest_remain_fixed(self):
+        query = make_query()
+        self.assertEqual("PrecedentQuery@1", query.SCHEMA)
+        self.assertEqual(
+            {
+                "schema": "PrecedentQuery@1",
+                "query_id": "order-proportions",
+                "question": "What proportions govern the columns?",
+                "decision_refs": [
+                    "declaration:column-diameter-m",
+                    "declaration:column-shaft-m",
+                ],
+                "search_terms": ["ratio", "columns"],
+                "jurisdiction": None,
+                "domain_allowlist": [],
+                "adoption_authority": False,
+                "canonical_write_authority": False,
+            },
+            query.to_dict(),
+        )
+        self.assertEqual(
+            "80a57cece09d235f035bf9ee2c7df94b93188adfa4ebe2e521401b50792c28f2",
+            query.query_digest,
+        )
+
+    def test_parsed_fact_schema_payload_and_digest_remain_fixed(self):
+        facts, rejections = parse([make_candidate()])
+        self.assertEqual((), rejections)
+        fact = facts[0]
+        self.assertEqual("PrecedentFact@1", fact.SCHEMA)
+        self.assertEqual(
+            {
+                "schema": "PrecedentFact@1",
+                "fact_id": "slenderness-ratio",
+                "statement": "Column slenderness is about 10:1.",
+                "quote": "Their height to width ratio is about 10:1.",
+                "quote_start": 41,
+                "quote_end": 83,
+                "snapshot_ref": "project://p/runs/r/records/snapshot-1",
+                "snapshot_text_sha256": SNAPSHOT_SHA,
+                "annotator": "model:test",
+                "annotator_is_harness": False,
+                "topic": "support",
+                "strength": "soft",
+                "decision_refs": ["declaration:column-diameter-m"],
+            },
+            fact.to_dict(),
+        )
+        self.assertEqual(
+            "b98575a115333c0878ba7904adc38c4854755cead0c0c29add2ae41da47c959b",
+            canonical_digest(fact.to_dict()),
+        )
 
 
 class PrecedentQueryTest(unittest.TestCase):
