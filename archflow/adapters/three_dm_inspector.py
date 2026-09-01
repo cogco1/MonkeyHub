@@ -136,6 +136,56 @@ class ThreeDmInspection:
         )
 
 
+# Single-source schema key sets (P088).  Consumers import these instead
+# of hand-copying key lists; the @1 core is exactly the field set every
+# retained version shares and every read-only renderer requires.
+_V1_INSPECTION_KEYS = frozenset(
+    {
+        "schema",
+        "file_sha256",
+        "file_bytes",
+        "three_dm_version",
+        "archive_version",
+        "units",
+        "layers",
+        "object_count",
+        "top_level_object_count",
+        "instance_definition_member_count",
+        "object_counts_by_type",
+        "object_counts_by_layer",
+        "instance_definitions",
+        "instance_references",
+        "document_user_strings",
+        "object_user_strings",
+        "aggregate_bbox",
+        "bbox_contributing_geometry_count",
+        "read_only",
+        "rhino_process_started",
+    }
+)
+_V3_ADDED_KEYS = frozenset(
+    {
+        "named_object_bboxes",
+        "visible_bounds_witnesses",
+        "materials",
+        "render_materials",
+        "object_material_bindings",
+        "object_geometry_sha256",
+    }
+)
+_V4_ADDED_KEYS = frozenset({"object_geometry_analysis"})
+
+REQUIRED_INSPECTION_KEYS = _V1_INSPECTION_KEYS
+INSPECTION_SCHEMA_KEY_SETS: dict[str, frozenset[str]] = {
+    "ThreeDmInspectionSummary@1": _V1_INSPECTION_KEYS,
+    "ThreeDmInspectionSummary@3": _V1_INSPECTION_KEYS | _V3_ADDED_KEYS,
+    "ThreeDmInspectionSummary@4": (
+        _V1_INSPECTION_KEYS | _V3_ADDED_KEYS | _V4_ADDED_KEYS
+    ),
+}
+SUPPORTED_INSPECTION_SCHEMAS = frozenset(INSPECTION_SCHEMA_KEY_SETS)
+
+
 def inspect_three_dm(path: Path) -> ThreeDmInspection:
     """Return a deterministic JSON-compatible summary of one ``.3dm`` file.
 

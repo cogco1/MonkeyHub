@@ -32,6 +32,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
+import sys
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from archflow.adapters.three_dm_inspector import (  # noqa: E402
+    INSPECTION_SCHEMA_KEY_SETS,
+    REQUIRED_INSPECTION_KEYS,
+    SUPPORTED_INSPECTION_SCHEMAS,
+)
+from archflow.contracts.reading import read_key_diagnostics  # noqa: E402
+
 _STAGE_RE = re.compile(r"^(?P<kind>.+?)-(?P<stage>\d{3})-[0-9a-f]{64}\.json$")
 _DIGEST_RE = re.compile(r"-(?P<digest>[0-9a-f]{64})\.json$")
 _CANONICAL_RE = re.compile(r"^state-v(?P<version>\d+)-[0-9a-f]{64}\.json$")
@@ -41,7 +54,6 @@ _STAGE_PACK_SCHEMAS = frozenset({"StageEvidencePack@1"})
 _PANEL_SNAPSHOT_SCHEMAS = frozenset(
     {"StageEvidencePanelSnapshot@1", "PantheonStageProgressSnapshot@1"}
 )
-_THREE_DM_SCHEMAS = frozenset({"ThreeDmInspectionSummary@1"})
 _MAX_STAGE_BYTES = 16_000_000
 
 _STAGE_PACK_KEYS = frozenset(
@@ -101,32 +113,6 @@ _PANTHEON_SNAPSHOT_KEYS = frozenset(
         "view_authority",
     }
 )
-_THREE_DM_KEYS = frozenset(
-    {
-        "schema",
-        "file_sha256",
-        "file_bytes",
-        "three_dm_version",
-        "archive_version",
-        "units",
-        "layers",
-        "object_count",
-        "top_level_object_count",
-        "instance_definition_member_count",
-        "object_counts_by_type",
-        "object_counts_by_layer",
-        "instance_definitions",
-        "instance_references",
-        "document_user_strings",
-        "object_user_strings",
-        "aggregate_bbox",
-        "bbox_contributing_geometry_count",
-        "read_only",
-        "rhino_process_started",
-    }
-)
-
-
 class StagePanelError(ValueError):
     """An explicit Stage panel input is unreadable or malformed."""
 
@@ -1309,15 +1295,30 @@ def adapt_panel_input(payload: object) -> dict[str, object]:
 
 
 def adapt_three_dm_inspection(payload: object) -> dict[str, object]:
-    """Normalize the exact headless ThreeDmInspectionSummary@1 contract."""
+    """Normalize a supported headless ThreeDmInspectionSummary record.
+
+    Version-aware and read-tolerant (P088): a missing required key fails
+    closed; unknown keys inside a supported version become warning
+    diagnostics and the read continues. Write-side exactness is the
+    producer's contract, not this reader's.
+    """
 
     inspection = _schema_guard(
         payload,
-        supported=_THREE_DM_SCHEMAS,
+        supported=SUPPORTED_INSPECTION_SCHEMAS,
         label="3DM inspection",
     )
-    _exact_keys(inspection, _THREE_DM_KEYS, "ThreeDmInspectionSummary@1")
-    diagnostics: list[dict[str, str]] = []
+    schema = inspection["schema"]
+    missing, diagnostics = read_key_diagnostics(
+        inspection,
+        required=REQUIRED_INSPECTION_KEYS,
+        known=INSPECTION_SCHEMA_KEY_SETS[schema],
+        label=schema,
+    )
+    if missing:
+        raise StagePanelError(
+            "3DM inspection is missing required keys: " + ", ".join(missing)
+        )
     if inspection["read_only"] is not True:
         diagnostics.append(
             {
@@ -1424,7 +1425,7 @@ def adapt_three_dm_inspection(payload: object) -> dict[str, object]:
             required=True,
         ),
         "bbox": {
-            "source": "ThreeDmInspectionSummary@1.aggregate_bbox",
+            "source": f"{schema}.aggregate_bbox",
             "coordinate_system": "rhino_native_xyz",
             "aggregate": bbox,
             "contributing_geometry_count": inspection[
@@ -3949,7 +3950,8 @@ def main() -> None:
         "--three-dm-inspection",
         type=Path,
         help=(
-            "optional injected ThreeDmInspectionSummary@1 JSON used only when the "
+            "optional injected ThreeDmInspectionSummary JSON (any supported "
+            "version) used only when the "
             "direct headless inspector dependency is unavailable"
         ),
     )

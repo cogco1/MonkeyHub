@@ -1,5 +1,11 @@
 """Small, dependency-light contracts shared across ArchFlow domains."""
 
+from archflow.contracts.authority import (
+    DEFAULT_AUTHORITY_FIELDS,
+    AuthorityContractError,
+    no_authority,
+    require_no_authority,
+)
 from archflow.contracts.branch import (
     branch_ref_from_dict,
     branch_ref_to_dict,
@@ -13,15 +19,24 @@ from archflow.contracts.canonical import (
     canonical_json_bytes,
     require_sha256,
 )
+from archflow.contracts.reading import read_key_diagnostics
+from archflow.contracts.references import digest_keys, require_single_digest
 
 __all__ = [
+    "AuthorityContractError",
     "CanonicalValueError",
+    "DEFAULT_AUTHORITY_FIELDS",
     "branch_ref_from_dict",
     "branch_ref_to_dict",
     "canonical_digest",
     "canonical_json",
     "canonical_json_bytes",
+    "digest_keys",
+    "no_authority",
+    "read_key_diagnostics",
     "require_exact_branch",
+    "require_no_authority",
     "require_same_branch",
     "require_sha256",
+    "require_single_digest",
 ]
