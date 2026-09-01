@@ -14226,8 +14226,8 @@
     {
       "id": "P091",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "ready",
+      "stream": "archive",
+      "status": "done",
       "goal": "Define the component-template record kind and its promotion path: anatomy from the run-014 recovery triple generalized to mathematics reference, applicability domain, and interface obligations; module-bound ratio-band parameters with per-value evidence refs in a treatise-page structure; project-first storage with component-import promotion to a library store supplied to P050 authoring with receipted selection; reuse as re-derivation with per-project evidence re-binding.",
       "depends_on": [
         "P050",
@@ -14266,8 +14266,46 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P091-component-template-library.md",
-      "on_complete": {}
+      "card": "docs/mapping/archive/P091-component-template-library.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P091",
+        "actor": "claude",
+        "verified_at": "2026-09-01T20:17:45.990020+00:00",
+        "contract_sha256": "eef483c0e677202a4e5f608557e138bfd763cc41ab032b93496fff32d1efbebb",
+        "scope_sha256": "264c3bf9802b60b71faff8a008c81f934893b3a4175ed181b0eff765f710ef87",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_component_templates"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "5142861fbaf5536c3e7def320d5e98f56c9d295e58c49fe1f801236a9cc35e9c",
+            "stdout_tail": "",
+            "stderr_tail": ".............\n----------------------------------------------------------------------\nRan 13 tests in 0.365s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "646a367eb6c13dfe0417a9c3e834c18e60e84e264ad6134379476cae842ec8e8",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (293 files, 1.710s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-01",
+      "evidence": [
+        "ComponentTemplate@1 treatise-page contract (module + ratio-band/count/expression parameters each carrying basis refs - bare numbers fail typed; MEETS/SUPPORTS/HOSTS_VOID/FILLS_VOID/INTERSECTS_FORBIDDEN/CLEARANCE/ENGAGEMENT obligations against P090 datum roles; plates, applicability, editions, case votes). Library flows: harvest/promote/import with two-vote guard (waiver path recorded) and mandatory evidence rebinding on import (incomplete rebinding fails typed, provenance travels unchanged). P050 catalog selection receipted end-to-end with a scripted provider; out-of-catalog selection cannot be accepted. First live harvest: palladian-exterior-stair from villa reconstruction-016 promoted into the new component-library P036 project under recorded waiver project://villa-rotonda-reconstruction/runs/reconstruction-016/records/component-two-vote-waiver-29f54769....json; template digest 57f1489e identical in source and library. 13 new tests; suite 1524 passed; ARCHITECTURE PASS (293 files)"
+      ]
     },
     {
       "id": "P092",

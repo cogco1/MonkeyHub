@@ -1,0 +1,665 @@
+"""Component template records — reusable typology as provenance-bound data.
+
+P091: a converged project component becomes a citable input for future
+projects. The anatomy generalizes the run-014 underpass recovery triple:
+a *mathematics reference* (which architecture-side solver realizes it),
+an *applicability domain*, and *interface obligations* expressed in the
+P090 datum vocabulary. Parameters are module-bound ratio bands or
+derivation expressions, each carrying its own evidence references — a
+template never ships a bare number. The record reads as a treatise
+page: plates, numbers, usage notes, sources, edition lineage.
+
+Reuse is re-derivation, never copying: geometry is rebaked per project
+by the referenced solver, and evidence re-binds in the receiving
+project. Promotion to the shared library demands the two-vote rule —
+a ratio earns library status only after surviving two non-isomorphic
+cases — or an explicitly recorded waiver.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from enum import StrEnum
+
+from archflow.contracts.authority import no_authority
+from archflow.contracts.canonical import canonical_json, require_sha256
+from archflow.project.refs import require_identifier
+
+LIBRARY_PROMOTION_MIN_VOTES = 2
+
+_MAX_ITEMS = 256
+_MAX_TEXT = 2_000
+
+
+class ComponentTemplateError(ValueError):
+    """A component template payload violates its contract."""
+
+
+class ParameterForm(StrEnum):
+    MODULE_RATIO = "module_ratio"
+    COUNT = "count"
+    EXPRESSION = "expression"
+
+
+class ObligationKind(StrEnum):
+    MEETS = "meets"
+    SUPPORTS = "supports"
+    HOSTS_VOID = "hosts_void"
+    FILLS_VOID = "fills_void"
+    INTERSECTS_FORBIDDEN = "intersects_forbidden"
+    CLEARANCE = "clearance"
+    ENGAGEMENT = "engagement"
+
+
+_INTERVAL_KINDS = frozenset(
+    {ObligationKind.CLEARANCE, ObligationKind.ENGAGEMENT}
+)
+
+
+def _text(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ComponentTemplateError(f"{field} must be non-empty text")
+    if len(value) > _MAX_TEXT:
+        raise ComponentTemplateError(f"{field} exceeds the text bound")
+    return value
+
+
+def _ref(value: object, field: str) -> str:
+    text = _text(value, field)
+    if ":" not in text or any(ch.isspace() for ch in text):
+        raise ComponentTemplateError(
+            f"{field} must be a typed reference like evidence:... or "
+            f"project://..., got {text!r}"
+        )
+    return text
+
+
+def _refs(
+    values: object,
+    field: str,
+    *,
+    allow_empty: bool = False,
+) -> tuple[str, ...]:
+    if not isinstance(values, tuple):
+        raise ComponentTemplateError(f"{field} must be a tuple")
+    if len(values) > _MAX_ITEMS or (not values and not allow_empty):
+        raise ComponentTemplateError(f"{field} has an invalid item count")
+    out = tuple(_ref(item, field) for item in values)
+    if out != tuple(sorted(set(out))):
+        raise ComponentTemplateError(
+            f"{field} requires unique deterministic references"
+        )
+    return out
+
+
+def _texts(
+    values: object,
+    field: str,
+    *,
+    allow_empty: bool = False,
+) -> tuple[str, ...]:
+    if not isinstance(values, tuple):
+        raise ComponentTemplateError(f"{field} must be a tuple")
+    if len(values) > _MAX_ITEMS or (not values and not allow_empty):
+        raise ComponentTemplateError(f"{field} has an invalid item count")
+    return tuple(_text(item, field) for item in values)
+
+
+def _finite(value: object, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ComponentTemplateError(f"{field} must be a finite number")
+    number = float(value)
+    if number != number or number in (float("inf"), float("-inf")):
+        raise ComponentTemplateError(f"{field} must be a finite number")
+    return number
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateModule:
+    """The unit every module-ratio parameter multiplies (材份 discipline)."""
+
+    name: str
+    definition: str
+    unit: str
+
+    SCHEMA = "TemplateModule@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.name, "module name")
+        _text(self.definition, "module definition")
+        _text(self.unit, "module unit")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "name": self.name,
+            "definition": self.definition,
+            "unit": self.unit,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "TemplateModule":
+        if not isinstance(value, dict) or set(value) != {
+            "schema", "name", "definition", "unit",
+        }:
+            raise ComponentTemplateError("template module payload malformed")
+        if value["schema"] != cls.SCHEMA:
+            raise ComponentTemplateError("template module schema changed")
+        return cls(
+            name=value["name"],
+            definition=value["definition"],
+            unit=value["unit"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateParameter:
+    """One number of the treatise page, never bare of its sources."""
+
+    name: str
+    form: ParameterForm
+    value_json: str
+    basis_refs: tuple[str, ...]
+
+    SCHEMA = "TemplateParameter@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.name, "parameter name")
+        if not isinstance(self.form, ParameterForm):
+            raise ComponentTemplateError("parameter form is invalid")
+        if not isinstance(self.value_json, str):
+            raise ComponentTemplateError("parameter value_json must be text")
+        try:
+            value = json.loads(self.value_json)
+        except json.JSONDecodeError as exc:
+            raise ComponentTemplateError(
+                "parameter value must contain JSON"
+            ) from exc
+        if canonical_json(value) != self.value_json:
+            raise ComponentTemplateError(
+                "parameter value JSON must be canonical"
+            )
+        normalized = self._validated(value)
+        object.__setattr__(self, "value_json", canonical_json(normalized))
+        object.__setattr__(
+            self,
+            "basis_refs",
+            _refs(self.basis_refs, f"parameter {self.name} basis_refs"),
+        )
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        name: str,
+        form: ParameterForm,
+        value: object,
+        basis_refs: tuple[str, ...],
+    ) -> "TemplateParameter":
+        return cls(
+            name=name,
+            form=form,
+            value_json=canonical_json(value),
+            basis_refs=basis_refs,
+        )
+
+    def _validated(self, value: object) -> object:
+        label = f"parameter {self.name}"
+        if self.form is ParameterForm.MODULE_RATIO:
+            if not isinstance(value, dict) or set(value) != {
+                "min", "max", "adopted",
+            }:
+                raise ComponentTemplateError(
+                    f"{label} ratio requires min, max, adopted"
+                )
+            low = _finite(value["min"], f"{label} min")
+            high = _finite(value["max"], f"{label} max")
+            if low > high:
+                raise ComponentTemplateError(f"{label} band is inverted")
+            adopted = value["adopted"]
+            if adopted is not None:
+                adopted = _finite(adopted, f"{label} adopted")
+                if not low <= adopted <= high:
+                    raise ComponentTemplateError(
+                        f"{label} adopted value leaves its band"
+                    )
+            return {"adopted": adopted, "max": high, "min": low}
+        if self.form is ParameterForm.COUNT:
+            if not isinstance(value, dict) or set(value) != {
+                "min", "max", "adopted",
+            }:
+                raise ComponentTemplateError(
+                    f"{label} count requires min, max, adopted"
+                )
+            low, high = value["min"], value["max"]
+            for item, sub in ((low, "min"), (high, "max")):
+                if isinstance(item, bool) or not isinstance(item, int):
+                    raise ComponentTemplateError(
+                        f"{label} {sub} must be an integer"
+                    )
+            if low < 0 or low > high:
+                raise ComponentTemplateError(f"{label} count band is invalid")
+            adopted = value["adopted"]
+            if adopted is not None:
+                if isinstance(adopted, bool) or not isinstance(adopted, int):
+                    raise ComponentTemplateError(
+                        f"{label} adopted must be an integer"
+                    )
+                if not low <= adopted <= high:
+                    raise ComponentTemplateError(
+                        f"{label} adopted value leaves its band"
+                    )
+            return {"adopted": adopted, "max": high, "min": low}
+        if not isinstance(value, dict) or set(value) != {
+            "expression", "adopted",
+        }:
+            raise ComponentTemplateError(
+                f"{label} expression requires expression, adopted"
+            )
+        _text(value["expression"], f"{label} expression")
+        adopted = value["adopted"]
+        if adopted is not None:
+            adopted = _finite(adopted, f"{label} adopted")
+        return {"adopted": adopted, "expression": value["expression"]}
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "name": self.name,
+            "form": self.form.value,
+            "value_json": self.value_json,
+            "basis_refs": list(self.basis_refs),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "TemplateParameter":
+        if not isinstance(value, dict) or set(value) != {
+            "schema", "name", "form", "value_json", "basis_refs",
+        }:
+            raise ComponentTemplateError(
+                "template parameter payload malformed"
+            )
+        if value["schema"] != cls.SCHEMA:
+            raise ComponentTemplateError("template parameter schema changed")
+        return cls(
+            name=value["name"],
+            form=ParameterForm(value["form"]),
+            value_json=value["value_json"],
+            basis_refs=tuple(value["basis_refs"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateObligation:
+    """One interface duty the instantiated component owes its context."""
+
+    obligation_id: str
+    kind: ObligationKind
+    counterpart: str
+    datum_role: str | None = None
+    interval_m: tuple[float, float] | None = None
+    basis_refs: tuple[str, ...] = ()
+
+    SCHEMA = "TemplateObligation@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.obligation_id, "obligation_id")
+        if not isinstance(self.kind, ObligationKind):
+            raise ComponentTemplateError("obligation kind is invalid")
+        require_identifier(self.counterpart, "obligation counterpart")
+        if self.datum_role is not None:
+            require_identifier(self.datum_role, "obligation datum_role")
+        if self.kind in _INTERVAL_KINDS:
+            if (
+                not isinstance(self.interval_m, tuple)
+                or len(self.interval_m) != 2
+            ):
+                raise ComponentTemplateError(
+                    f"{self.kind.value} obligation requires an interval"
+                )
+            low = _finite(self.interval_m[0], "obligation interval min")
+            high = _finite(self.interval_m[1], "obligation interval max")
+            if low < 0 or low > high:
+                raise ComponentTemplateError(
+                    "obligation interval is invalid"
+                )
+            object.__setattr__(self, "interval_m", (low, high))
+        elif self.interval_m is not None:
+            raise ComponentTemplateError(
+                f"{self.kind.value} obligation carries no interval"
+            )
+        object.__setattr__(
+            self,
+            "basis_refs",
+            _refs(
+                self.basis_refs,
+                f"obligation {self.obligation_id} basis_refs",
+                allow_empty=True,
+            ),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "obligation_id": self.obligation_id,
+            "kind": self.kind.value,
+            "counterpart": self.counterpart,
+            "datum_role": self.datum_role,
+            "interval_m": (
+                list(self.interval_m) if self.interval_m is not None else None
+            ),
+            "basis_refs": list(self.basis_refs),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "TemplateObligation":
+        if not isinstance(value, dict) or set(value) != {
+            "schema", "obligation_id", "kind", "counterpart",
+            "datum_role", "interval_m", "basis_refs",
+        }:
+            raise ComponentTemplateError(
+                "template obligation payload malformed"
+            )
+        if value["schema"] != cls.SCHEMA:
+            raise ComponentTemplateError("template obligation schema changed")
+        interval = value["interval_m"]
+        return cls(
+            obligation_id=value["obligation_id"],
+            kind=ObligationKind(value["kind"]),
+            counterpart=value["counterpart"],
+            datum_role=value["datum_role"],
+            interval_m=tuple(interval) if interval is not None else None,
+            basis_refs=tuple(value["basis_refs"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TemplatePlate:
+    """One witness image of the treatise page."""
+
+    plate_id: str
+    media_type: str
+    sha256: str
+    caption: str
+
+    SCHEMA = "TemplatePlate@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.plate_id, "plate_id")
+        _text(self.media_type, "plate media_type")
+        object.__setattr__(
+            self, "sha256", require_sha256(self.sha256, "plate sha256")
+        )
+        _text(self.caption, "plate caption")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "plate_id": self.plate_id,
+            "media_type": self.media_type,
+            "sha256": self.sha256,
+            "caption": self.caption,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "TemplatePlate":
+        if not isinstance(value, dict) or set(value) != {
+            "schema", "plate_id", "media_type", "sha256", "caption",
+        }:
+            raise ComponentTemplateError("template plate payload malformed")
+        if value["schema"] != cls.SCHEMA:
+            raise ComponentTemplateError("template plate schema changed")
+        return cls(
+            plate_id=value["plate_id"],
+            media_type=value["media_type"],
+            sha256=value["sha256"],
+            caption=value["caption"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CaseVote:
+    """One non-isomorphic case in which this template survived."""
+
+    project_id: str
+    run_id: str
+    receipt_ref: str
+
+    SCHEMA = "CaseVote@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.project_id, "vote project_id")
+        require_identifier(self.run_id, "vote run_id")
+        _ref(self.receipt_ref, "vote receipt_ref")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "receipt_ref": self.receipt_ref,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "CaseVote":
+        if not isinstance(value, dict) or set(value) != {
+            "schema", "project_id", "run_id", "receipt_ref",
+        }:
+            raise ComponentTemplateError("case vote payload malformed")
+        if value["schema"] != cls.SCHEMA:
+            raise ComponentTemplateError("case vote schema changed")
+        return cls(
+            project_id=value["project_id"],
+            run_id=value["run_id"],
+            receipt_ref=value["receipt_ref"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ComponentTemplate:
+    """One treatise page: a reusable component as a provenance-bound record."""
+
+    template_id: str
+    family: str
+    edition: int
+    mathematics_ref: str
+    module: TemplateModule
+    parameters: tuple[TemplateParameter, ...]
+    obligations: tuple[TemplateObligation, ...]
+    plates: tuple[TemplatePlate, ...]
+    applicability: tuple[str, ...]
+    basis_refs: tuple[str, ...]
+    case_votes: tuple[CaseVote, ...]
+    harvested_from_project: str
+    harvested_from_run: str
+    open_boundaries: tuple[str, ...] = ()
+    predecessor_ref: str | None = None
+
+    SCHEMA = "ComponentTemplate@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.template_id, "template_id")
+        require_identifier(self.family, "template family")
+        if isinstance(self.edition, bool) or not isinstance(self.edition, int):
+            raise ComponentTemplateError("edition must be an integer")
+        if self.edition < 1:
+            raise ComponentTemplateError("edition must be positive")
+        _ref(self.mathematics_ref, "mathematics_ref")
+        if not isinstance(self.module, TemplateModule):
+            raise ComponentTemplateError("module must be a TemplateModule")
+        self._items(self.parameters, TemplateParameter, "parameters", "name")
+        self._items(
+            self.obligations,
+            TemplateObligation,
+            "obligations",
+            "obligation_id",
+        )
+        self._items(self.plates, TemplatePlate, "plates", "plate_id")
+        object.__setattr__(
+            self,
+            "applicability",
+            _texts(self.applicability, "applicability"),
+        )
+        object.__setattr__(
+            self,
+            "open_boundaries",
+            _texts(self.open_boundaries, "open_boundaries", allow_empty=True),
+        )
+        object.__setattr__(
+            self, "basis_refs", _refs(self.basis_refs, "template basis_refs")
+        )
+        if not isinstance(self.case_votes, tuple) or not self.case_votes:
+            raise ComponentTemplateError(
+                "template requires at least its harvest case vote"
+            )
+        if any(
+            not isinstance(item, CaseVote) for item in self.case_votes
+        ):
+            raise ComponentTemplateError("case_votes contains an invalid item")
+        keys = tuple(
+            (item.project_id, item.run_id) for item in self.case_votes
+        )
+        if keys != tuple(sorted(set(keys))):
+            raise ComponentTemplateError(
+                "case_votes require unique deterministic cases"
+            )
+        require_identifier(
+            self.harvested_from_project, "harvested_from_project"
+        )
+        require_identifier(self.harvested_from_run, "harvested_from_run")
+        if self.predecessor_ref is not None:
+            _ref(self.predecessor_ref, "predecessor_ref")
+
+    @staticmethod
+    def _items(
+        values: object,
+        item_type: type,
+        field: str,
+        id_field: str,
+    ) -> None:
+        if not isinstance(values, tuple) or not values:
+            raise ComponentTemplateError(f"{field} must be a non-empty tuple")
+        if any(not isinstance(item, item_type) for item in values):
+            raise ComponentTemplateError(f"{field} contains an invalid item")
+        ids = tuple(getattr(item, id_field) for item in values)
+        if ids != tuple(sorted(set(ids))):
+            raise ComponentTemplateError(
+                f"{field} requires unique deterministic identities"
+            )
+
+    def distinct_vote_projects(self) -> tuple[str, ...]:
+        return tuple(sorted({item.project_id for item in self.case_votes}))
+
+    def cited_basis_refs(self) -> tuple[str, ...]:
+        refs = set(self.basis_refs)
+        for parameter in self.parameters:
+            refs.update(parameter.basis_refs)
+        for obligation in self.obligations:
+            refs.update(obligation.basis_refs)
+        return tuple(sorted(refs))
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "template_id": self.template_id,
+            "family": self.family,
+            "edition": self.edition,
+            "predecessor_ref": self.predecessor_ref,
+            "mathematics_ref": self.mathematics_ref,
+            "module": self.module.to_dict(),
+            "parameters": [item.to_dict() for item in self.parameters],
+            "obligations": [item.to_dict() for item in self.obligations],
+            "plates": [item.to_dict() for item in self.plates],
+            "applicability": list(self.applicability),
+            "open_boundaries": list(self.open_boundaries),
+            "basis_refs": list(self.basis_refs),
+            "case_votes": [item.to_dict() for item in self.case_votes],
+            "harvested_from_project": self.harvested_from_project,
+            "harvested_from_run": self.harvested_from_run,
+            **no_authority(
+                (
+                    "canonical_write_authority",
+                    "design_authority",
+                    "stage_acceptance_authority",
+                )
+            ),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ComponentTemplate":
+        expected = {
+            "schema", "template_id", "family", "edition", "predecessor_ref",
+            "mathematics_ref", "module", "parameters", "obligations",
+            "plates", "applicability", "open_boundaries", "basis_refs",
+            "case_votes", "harvested_from_project", "harvested_from_run",
+            "canonical_write_authority", "design_authority",
+            "stage_acceptance_authority",
+        }
+        if not isinstance(value, dict) or set(value) != expected:
+            raise ComponentTemplateError(
+                "component template payload malformed"
+            )
+        if value["schema"] != cls.SCHEMA:
+            raise ComponentTemplateError("component template schema changed")
+        if (
+            value["canonical_write_authority"] is not False
+            or value["design_authority"] is not False
+            or value["stage_acceptance_authority"] is not False
+        ):
+            raise ComponentTemplateError(
+                "component template acquired forbidden authority"
+            )
+        return cls(
+            template_id=value["template_id"],
+            family=value["family"],
+            edition=value["edition"],
+            predecessor_ref=value["predecessor_ref"],
+            mathematics_ref=value["mathematics_ref"],
+            module=TemplateModule.from_dict(value["module"]),
+            parameters=tuple(
+                TemplateParameter.from_dict(item)
+                for item in value["parameters"]
+            ),
+            obligations=tuple(
+                TemplateObligation.from_dict(item)
+                for item in value["obligations"]
+            ),
+            plates=tuple(
+                TemplatePlate.from_dict(item) for item in value["plates"]
+            ),
+            applicability=tuple(value["applicability"]),
+            open_boundaries=tuple(value["open_boundaries"]),
+            basis_refs=tuple(value["basis_refs"]),
+            case_votes=tuple(
+                CaseVote.from_dict(item) for item in value["case_votes"]
+            ),
+            harvested_from_project=value["harvested_from_project"],
+            harvested_from_run=value["harvested_from_run"],
+        )
+
+
+def require_library_votes(
+    template: ComponentTemplate,
+    *,
+    waiver_ref: str | None = None,
+) -> None:
+    """Fail closed unless the two-vote rule holds or a waiver is recorded.
+
+    A ratio enters the shared library only after surviving two
+    non-isomorphic cases (distinct projects). A recorded waiver reference
+    lifts the guard explicitly and auditable — never silently.
+    """
+
+    if not isinstance(template, ComponentTemplate):
+        raise ComponentTemplateError("template must be a ComponentTemplate")
+    if waiver_ref is not None:
+        _ref(waiver_ref, "two-vote waiver_ref")
+        return
+    votes = template.distinct_vote_projects()
+    if len(votes) < LIBRARY_PROMOTION_MIN_VOTES:
+        raise ComponentTemplateError(
+            "library promotion requires votes from at least "
+            f"{LIBRARY_PROMOTION_MIN_VOTES} distinct projects, found "
+            f"{list(votes)}; record a waiver to proceed deliberately"
+        )
