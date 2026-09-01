@@ -196,6 +196,10 @@ class CompiledGeometryProgram:
     datum_bindings: tuple[DatumBinding, ...] = ()
 
     SCHEMA = "CompiledGeometryProgram@3"
+    # Retained generations that still reload exactly (P090 bumped @2 -> @3;
+    # @2 records predate interface datums and reload with empty datum fields).
+    RETAINED_SCHEMAS = ("CompiledGeometryProgram@2",)
+    ACCEPTED_SCHEMAS = (SCHEMA, *RETAINED_SCHEMAS)
 
     def __post_init__(self) -> None:
         if not isinstance(self.proposal, GeometryProgramProposal):

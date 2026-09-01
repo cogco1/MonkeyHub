@@ -20,6 +20,7 @@ from archflow.compilers.geometry import (
 )
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.geometry_program import GeometryProgramProposal, digest_value
+from archflow.state.geometry_program import DatumBinding, InterfaceDatum
 from archflow.state.operational_state import require_logical_ref
 from archflow.state.spatial import (
     ComponentTransitionReceipt,
@@ -357,8 +358,15 @@ def compile_semantic_geometry_lifecycle(
     active_commitment_refs: tuple[str, ...] = (),
     available_asset_digests: Mapping[str, str] | None = None,
     asset_substitutions: tuple[AssetSubstitutionReceipt, ...] = (),
+    interface_datums: tuple[InterfaceDatum, ...] = (),
+    datum_bindings: tuple[DatumBinding, ...] = (),
 ) -> SemanticGeometryLifecycleResult:
-    """Compile both successor values or expose neither of them."""
+    """Compile both successor values or expose neither of them.
+
+    ``interface_datums``/``datum_bindings`` reach the geometry compiler
+    so successor programs derive bound parameters from published datums
+    (P090 on the lifecycle path).
+    """
 
     require_identifier(transaction_id, "transaction_id")
     for value, expected, field in (
@@ -440,6 +448,8 @@ def compile_semantic_geometry_lifecycle(
         available_asset_digests=available_asset_digests,
         prior_program=prior_program,
         asset_substitutions=asset_substitutions,
+        interface_datums=interface_datums,
+        datum_bindings=datum_bindings,
     )
     if geometry.receipt.status is not GeometryCompileStatus.COMPILED:
         details = ", ".join(

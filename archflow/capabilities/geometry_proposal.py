@@ -1439,10 +1439,29 @@ async def produce_geometry_program_proposal(
     realization_requirements: tuple[Mapping[str, object], ...] = (),
     initial_repair_issues: tuple[GeometryProposalIssue, ...] = (),
     rejected_round_ref: ProjectRecordRef | None = None,
+    interface_datums: tuple[InterfaceDatum, ...] = (),
+    datum_bindings: tuple[DatumBinding, ...] = (),
+    catalog_confrontation_ref: ProjectRecordRef | None = None,
 ) -> GeometryProposalProductionResult:
-    """Author, compile, and persist bounded proposal rounds without fallback."""
+    """Author, compile, and persist bounded proposal rounds without fallback.
+
+    ``interface_datums``/``datum_bindings`` reach the compiler so bound
+    parameters derive from published datums (P090 on the write path).
+    ``catalog_confrontation_ref`` names a CatalogConfrontationReceipt@1
+    record; when supplied, the model may select only templates that the
+    confrontation selected (P093 on the write path) — a declined family
+    cannot be quietly re-selected by the model.
+    """
 
     destination = require_destination(destination, producer="geometry proposal producer")
+    if not isinstance(interface_datums, tuple) or any(
+        not isinstance(item, InterfaceDatum) for item in interface_datums
+    ):
+        raise TypeError("interface_datums contains an invalid item")
+    if not isinstance(datum_bindings, tuple) or any(
+        not isinstance(item, DatumBinding) for item in datum_bindings
+    ):
+        raise TypeError("datum_bindings contains an invalid item")
     _validate_inputs(
         run,
         destination,
@@ -1468,6 +1487,24 @@ async def produce_geometry_program_proposal(
         for ref in template_refs
     )
     allowed_template_uris = frozenset(ref.uri for ref in template_refs)
+    if catalog_confrontation_ref is not None:
+        if not isinstance(catalog_confrontation_ref, ProjectRecordRef):
+            raise TypeError("catalog_confrontation_ref must be a ProjectRecordRef")
+        confrontation = repository.load_json(catalog_confrontation_ref)
+        if confrontation.get("schema") != "CatalogConfrontationReceipt@1":
+            raise GeometryProposalProductionError(
+                "catalog_confrontation_ref does not name a CatalogConfrontationReceipt@1"
+            )
+        confronted = frozenset(
+            str(row["template_ref"])
+            for row in confrontation.get("answers", ())
+            if isinstance(row, Mapping) and row.get("answer") == "selected"
+        )
+        if not confronted <= allowed_template_uris:
+            raise GeometryProposalProductionError(
+                "catalog confrontation selected templates outside the supplied project records"
+            )
+        allowed_template_uris = confronted
     available_interface_refs = _available_interface_refs(
         spatial_option,
     )
@@ -1643,6 +1680,8 @@ async def produce_geometry_program_proposal(
                         active_commitment_refs=required_commitment_refs,
                         available_asset_digests=assets,
                         prior_program=prior_program,
+                        interface_datums=interface_datums,
+                        datum_bindings=datum_bindings,
                     )
                 except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                     collected.append(
@@ -3109,6 +3148,11 @@ _COMPILED_PROGRAM_SCHEMA_KEYS = {
     "CompiledGeometryProgram@3": _COMPILED_PROGRAM_BASE_KEYS
     | {"interface_datums", "datum_bindings"},
 }
+if set(_COMPILED_PROGRAM_SCHEMA_KEYS) != set(CompiledGeometryProgram.ACCEPTED_SCHEMAS):
+    raise AssertionError(
+        "compiled program loader key sets drifted from "
+        "CompiledGeometryProgram.ACCEPTED_SCHEMAS"
+    )
 
 
 def load_compiled_geometry_program(value: object) -> CompiledGeometryProgram:

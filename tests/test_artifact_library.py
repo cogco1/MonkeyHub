@@ -194,5 +194,59 @@ class ImportedPackageTests(unittest.TestCase):
             ImportedPackageReference.from_dict(payload)
 
 
+class RetainedProgramGenerationTests(unittest.TestCase):
+    """@2 canonical program records (pre-P090) must still wrap exactly."""
+
+    def _legacy_payload(self) -> dict:
+        from tests.test_sandbox_realization import compiled_room
+
+        _, program, _ = compiled_room()
+        payload = {
+            key: item for key, item in program.to_dict().items()
+            if key not in ("interface_datums", "datum_bindings")
+        }
+        payload["schema"] = "CompiledGeometryProgram@2"
+        return payload
+
+    def test_retained_generation_wraps(self) -> None:
+        from archflow.runtime.artifact_library import (
+            CanonicalProgramRecord,
+            _canonical,
+            _digest,
+        )
+
+        payload = self._legacy_payload()
+        record = CanonicalProgramRecord(
+            program_json=_canonical(payload), program_digest=_digest(payload)
+        )
+        self.assertEqual(record.payload["schema"], "CompiledGeometryProgram@2")
+
+    def test_unknown_generation_is_refused(self) -> None:
+        from archflow.runtime.artifact_library import (
+            ArtifactLibraryError,
+            CanonicalProgramRecord,
+            _canonical,
+            _digest,
+        )
+
+        payload = self._legacy_payload()
+        payload["schema"] = "CompiledGeometryProgram@1"
+        with self.assertRaises(ArtifactLibraryError):
+            CanonicalProgramRecord(
+                program_json=_canonical(payload), program_digest=_digest(payload)
+            )
+
+    def test_accepted_schemas_single_sourced(self) -> None:
+        from archflow.capabilities.geometry_proposal import (
+            _COMPILED_PROGRAM_SCHEMA_KEYS,
+        )
+        from archflow.compilers.geometry import CompiledGeometryProgram
+
+        self.assertEqual(
+            set(_COMPILED_PROGRAM_SCHEMA_KEYS),
+            set(CompiledGeometryProgram.ACCEPTED_SCHEMAS),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

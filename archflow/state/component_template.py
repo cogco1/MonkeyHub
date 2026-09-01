@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from archflow.contracts.authority import no_authority
+from archflow.state.geometry_program import InterfaceDatum
 from archflow.contracts.canonical import canonical_json, require_sha256
 from archflow.project.refs import require_identifier
 
@@ -663,3 +664,44 @@ def require_library_votes(
             f"{LIBRARY_PROMOTION_MIN_VOTES} distinct projects, found "
             f"{list(votes)}; record a waiver to proceed deliberately"
         )
+
+
+def verify_template_datums(
+    template: ComponentTemplate,
+    published: tuple[InterfaceDatum, ...],
+    binding: "dict[str, str] | None" = None,
+) -> tuple[str, ...]:
+    """Resolve every obligation datum_role against published datums.
+
+    An obligation names a *role* ("landing-top"); a project publishes
+    *datums* (InterfaceDatum ids). ``binding`` maps role to datum id.
+    Without this check the link is string coincidence — the same
+    disease as relations by coordinate coincidence, one level up.
+    Returns sorted violation messages; empty means every role resolves
+    to a datum the project actually publishes.
+    """
+
+    if not isinstance(template, ComponentTemplate):
+        raise ComponentTemplateError("template must be a ComponentTemplate")
+    if not isinstance(published, tuple) or any(
+        not isinstance(item, InterfaceDatum) for item in published
+    ):
+        raise ComponentTemplateError("published must be a tuple of InterfaceDatum")
+    binding = dict(binding or {})
+    ids = {item.datum_id for item in published}
+    violations: list[str] = []
+    for obligation in template.obligations:
+        role = obligation.datum_role
+        if role is None:
+            continue
+        target = binding.get(role)
+        if target is None:
+            violations.append(
+                f"{obligation.obligation_id}: role {role!r} has no datum binding"
+            )
+        elif target not in ids:
+            violations.append(
+                f"{obligation.obligation_id}: role {role!r} is bound to "
+                f"{target!r}, which no published datum provides"
+            )
+    return tuple(sorted(violations))

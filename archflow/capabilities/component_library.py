@@ -12,7 +12,9 @@ injected repository ports.
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Mapping
+from types import ModuleType
 
 from archflow.contracts.authority import no_authority
 from archflow.project import (
@@ -28,6 +30,8 @@ from archflow.state.component_template import (
     require_library_votes,
 )
 
+MATHEMATICS_REF_PREFIX = "capability:"
+
 TEMPLATE_RECORD_KIND = "component-template"
 PROMOTION_RECEIPT_KIND = "component-promotion-receipt"
 IMPORT_RECEIPT_KIND = "component-import-receipt"
@@ -37,6 +41,42 @@ _RECEIPT_AUTHORITY = (
     "design_authority",
     "stage_acceptance_authority",
 )
+
+
+def resolve_mathematics_ref(ref: str) -> ModuleType:
+    """Resolve a template's mathematics reference to the solver module.
+
+    ``capability:<dotted.module>`` must import and expose at least one
+    public ``solve_*`` or ``compile_*`` callable — a template may not
+    point at mathematics that does not exist in the architecture.
+    """
+
+    if not isinstance(ref, str) or not ref.startswith(MATHEMATICS_REF_PREFIX):
+        raise ComponentTemplateError(
+            f"mathematics_ref must start with {MATHEMATICS_REF_PREFIX!r}"
+        )
+    dotted = ref[len(MATHEMATICS_REF_PREFIX):]
+    if not dotted.startswith("archflow."):
+        raise ComponentTemplateError(
+            "mathematics_ref must name an archflow module, got " + repr(dotted)
+        )
+    try:
+        module = importlib.import_module(dotted)
+    except ImportError as exc:
+        raise ComponentTemplateError(
+            f"mathematics_ref {ref!r} does not resolve: {exc}"
+        ) from exc
+    entry = [
+        name for name in dir(module)
+        if (name.startswith("solve_") or name.startswith("compile_"))
+        and callable(getattr(module, name))
+    ]
+    if not entry:
+        raise ComponentTemplateError(
+            f"mathematics_ref {ref!r} resolves to a module without a "
+            "solve_*/compile_* entry point"
+        )
+    return module
 
 
 def harvest_component_template(
@@ -57,6 +97,7 @@ def harvest_component_template(
         raise ComponentTemplateError(
             "template harvest project does not match the writing project"
         )
+    resolve_mathematics_ref(template.mathematics_ref)
     return repository.put_json(
         run=run,
         destination=destination,

@@ -65,3 +65,14 @@ re-binds in the receiving project.
 
 - Completed: 2026-09-01
 - Evidence: ComponentTemplate@1 treatise-page contract (module + ratio-band/count/expression parameters each carrying basis refs - bare numbers fail typed; MEETS/SUPPORTS/HOSTS_VOID/FILLS_VOID/INTERSECTS_FORBIDDEN/CLEARANCE/ENGAGEMENT obligations against P090 datum roles; plates, applicability, editions, case votes). Library flows: harvest/promote/import with two-vote guard (waiver path recorded) and mandatory evidence rebinding on import (incomplete rebinding fails typed, provenance travels unchanged). P050 catalog selection receipted end-to-end with a scripted provider; out-of-catalog selection cannot be accepted. First live harvest: palladian-exterior-stair from villa reconstruction-016 promoted into the new component-library P036 project under recorded waiver project://villa-rotonda-reconstruction/runs/reconstruction-016/records/component-two-vote-waiver-29f54769....json; template digest 57f1489e identical in source and library. 13 new tests; suite 1524 passed; ARCHITECTURE PASS (293 files)
+
+## Acceptance delta (recorded 2026-09-01, post-completion self-review)
+
+- "realized on a test project": at completion the receipted-selection
+  test asserted the receipt only. `test_catalog_selection_is_receipted`
+  now also calls `realize_geometry` on the accepted program.
+- "interface obligations … expressed against P090 datums": obligation
+  `datum_role` fields were carried but never resolved. `verify_template_datums`
+  (state/component_template.py) now reports an unbound role or a role bound
+  to an unpublished datum as a violation; `mathematics_ref` is resolved at
+  harvest by M090.

@@ -72,3 +72,27 @@ the proposal parser that must accept the new fields lives in
 
 - Completed: 2026-09-01
 - Evidence: Kernel: InterfaceDatum/DatumBinding/verify_datum_directions + compile-time resolution + CompiledGeometryProgram@3 with tolerant @2 reload; authored proposal contract untouched (frozen digest e9a07293 unchanged); riser-series test propagates one rise change to exactly its dependency closure. Villa migration: reconstruction-016 model sha 2f1b456e614b60f97dc810be3f3df415c9ded84fb6addb84e112b7b95019260b, receipt project://villa-rotonda-reconstruction/runs/reconstruction-016/branches/as-built-current-massing-control-v5/records/stage-5-datum-migration-receipt-637d45aa...json with @4 inspection record; authoritative both-inside grid scan: ZERO unwaived interpenetration families (baseline 36), 6 waived families owned by handoff item 7, 2 declared engagements (spiral sockets 19.5mm, wing foundation seats 8.3mm); stairs rebuilt as four solid masses from co-derived datums (rise=landing_top/23, going=(toe-passage_face)/22) with adopted-clearance vault recesses; embed constants in run-016 authoring: 0; mid-band rays hit continuous solid grade-to-surface
+
+## Acceptance delta (recorded 2026-09-01, post-completion self-review)
+
+Recorded so the completion evidence above is read correctly:
+
+- The villa migration's authoring was, at completion, a prose transcript
+  of an interactive Rhino session, not an executable. It has since been
+  re-authored as `migrate_stage5_to_datum_contact.py` and run six times
+  to a fixed point; the pipeline output (sha `f53ff09e67e3008a0c20d3764fbd5706b7757e01287d7fa7e0ab30b905c8f63f`) is now the canonical
+  run-016 model and the interactive model cited above (sha 2f1b456e…) is
+  archived beside it. The 12 objects that differ (8 spiral landings, 4
+  floor plates) are corrections of an interactive mis-step.
+- The datum-migration receipt cited above (637d45aa…) restated datum
+  values as literals. It is superseded by `stage-5-datum-migration-receipt-5bc0da60f726905ca3e459ab856567e97a6d7d49d1062b4d5488f329d7fe4939.json`, whose datums are
+  read from the model's host geometry and which carries the pipeline
+  script's digest.
+- "Datum-shared joints verify by derivation-graph check as the primary
+  proof" holds for programs compiled through the kernel
+  (`verify_datum_directions`). The villa model was produced by a Rhino
+  boolean pipeline from bbox-read datums, not by the compiler realizing a
+  datum-bound program; for the villa the both-inside grid scan is the
+  primary proof, and the graph check is not exercised.
+- The kernel had no production caller at completion; wiring into the
+  producer and lifecycle is M090.

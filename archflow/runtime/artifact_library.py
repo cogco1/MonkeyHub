@@ -194,7 +194,10 @@ class CanonicalProgramRecord:
             payload = json.loads(self.program_json)
         except json.JSONDecodeError as exc:
             raise ArtifactLibraryError("program_json is invalid JSON") from exc
-        if not isinstance(payload, dict) or payload.get("schema") != CompiledGeometryProgram.SCHEMA:
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema") not in CompiledGeometryProgram.ACCEPTED_SCHEMAS
+        ):
             raise ArtifactLibraryError("program_json is not a compiled geometry program")
         if _canonical(payload) != self.program_json:
             raise ArtifactLibraryError("program_json must be canonical JSON")

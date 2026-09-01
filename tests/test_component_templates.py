@@ -12,6 +12,7 @@ from archflow.capabilities.component_library import (
     harvest_component_template,
     import_component_template,
     promote_component_template,
+    resolve_mathematics_ref,
 )
 from archflow.capabilities.geometry_proposal import (
     GeometryProposalPolicy,
@@ -36,6 +37,12 @@ from archflow.state.component_template import (
     TemplateParameter,
     TemplatePlate,
     require_library_votes,
+    verify_template_datums,
+)
+from archflow.state.geometry_program import (
+    InterfaceDatum,
+    InterfaceDatumKind,
+    LengthUnit,
 )
 from tests.test_geometry_compiler import COMMITMENT
 from tests.test_geometry_proposal_producer import (
@@ -43,6 +50,7 @@ from tests.test_geometry_proposal_producer import (
     _ScriptedProvider,
     _spatial_option,
 )
+from archflow.realization import realize_geometry
 from tests.test_sandbox_realization import compiled_room
 
 _BASIS = (
@@ -193,6 +201,81 @@ class TemplateContractTests(unittest.TestCase):
 
     def test_cited_basis_refs_aggregate(self) -> None:
         self.assertEqual(_stair_template().cited_basis_refs(), _BASIS)
+
+
+class DatumRoleResolutionTests(unittest.TestCase):
+    def _published(self):
+        return (
+            InterfaceDatum.create(
+                datum_id="datum-landing-top",
+                kind=InterfaceDatumKind.LEVEL,
+                published_by="obj-landing-bridge-west",
+                value=3.57,
+                unit=LengthUnit.METER,
+            ),
+            InterfaceDatum.create(
+                datum_id="datum-terrain-grade",
+                kind=InterfaceDatumKind.LEVEL,
+                published_by="obj-terrain-platform",
+                value=0.0,
+                unit=LengthUnit.METER,
+            ),
+        )
+
+    def test_unbound_role_is_a_violation(self) -> None:
+        violations = verify_template_datums(
+            _stair_template(), self._published(),
+            {"landing-top": "datum-landing-top",
+             "terrain-grade": "datum-terrain-grade"},
+        )
+        self.assertEqual(len(violations), 1)
+        self.assertIn("passage-outer-face", violations[0])
+
+    def test_binding_to_unpublished_datum_is_a_violation(self) -> None:
+        violations = verify_template_datums(
+            _stair_template(), self._published(),
+            {"landing-top": "datum-landing-top",
+             "terrain-grade": "datum-terrain-grade",
+             "passage-outer-face": "datum-nobody-published"},
+        )
+        self.assertEqual(len(violations), 1)
+        self.assertIn("no published datum provides", violations[0])
+
+    def test_fully_resolved_template_passes(self) -> None:
+        published = self._published() + (
+            InterfaceDatum.create(
+                datum_id="datum-passage-outer-face-west",
+                kind=InterfaceDatumKind.PLANE,
+                published_by="obj-underpass-west-landing-left-wing",
+                value={"origin": [-15.05, 0, 0], "normal": [-1, 0, 0]},
+                unit=LengthUnit.METER,
+            ),
+        )
+        self.assertEqual(
+            verify_template_datums(
+                _stair_template(), published,
+                {"landing-top": "datum-landing-top",
+                 "terrain-grade": "datum-terrain-grade",
+                 "passage-outer-face": "datum-passage-outer-face-west"},
+            ),
+            (),
+        )
+
+
+class MathematicsRefTests(unittest.TestCase):
+    def test_stair_solver_resolves(self) -> None:
+        module = resolve_mathematics_ref(_stair_template().mathematics_ref)
+        self.assertTrue(hasattr(module, "solve_exterior_stair") or any(
+            name.startswith("solve_") for name in dir(module)
+        ))
+
+    def test_unknown_module_fails_closed(self) -> None:
+        with self.assertRaises(ComponentTemplateError):
+            resolve_mathematics_ref("capability:archflow.capabilities.no_such_solver")
+
+    def test_non_archflow_ref_fails_closed(self) -> None:
+        with self.assertRaises(ComponentTemplateError):
+            resolve_mathematics_ref("capability:os.path")
 
 
 class TwoVoteRuleTests(unittest.TestCase):
@@ -432,6 +515,11 @@ class ProducerSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             record["selected_template_refs"], [self.template_ref.uri]
         )
+        # P091 acceptance: "...and realized on a test project"
+        realized = realize_geometry(
+            result.program, workspace_id="template-selected-proposal"
+        )
+        self.assertIsNotNone(realized.scene)
 
     async def test_out_of_catalog_selection_fails_typed(self) -> None:
         provider = _ScriptedProvider(

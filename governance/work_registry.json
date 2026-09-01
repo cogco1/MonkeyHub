@@ -14432,6 +14432,99 @@
       "evidence": [
         "Catalog confrontation gate: every intended family answered by receipted selection or typed declination with reason; unanswered, doubled, stray, and out-of-catalog answers all refuse typed. Harvest obligations: one OPEN obligation or recorded waiver per inline family, closed only by a component-harvest-closure binding a same-family template; emergency waiver path stays open on the record. Decline-harvest-offer cycle proven end to end in tests. Live ledger: villa reconstruction-016 carries six real obligations bound to the datum-migration receipt - exterior-stair closed same-day against the harvested palladian template (closure 22a24942), five OPEN assigned to P092 (portico-assembly, roof-family, underpass-vault, wall-with-openings, window-door-array). 10 new tests; suite 1534 passed; ARCHITECTURE PASS (294 files)"
       ]
+    },
+    {
+      "id": "M090",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Bounded repair from the 2026-09-01 self-review: put the P090 datum kernel and the P093 catalog gate on the production write path (producer and lifecycle forward interface_datums/datum_bindings to the compiler; producer narrows admissible templates to a recorded catalog confrontation), resolve P091 template mathematics_ref at harvest and obligation datum_role against published datums, all fail-closed and with no record schema change.",
+      "depends_on": [
+        "P090",
+        "P091",
+        "P093"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "archflow/capabilities/component_library.py",
+        "archflow/runtime/semantic_geometry_lifecycle.py",
+        "archflow/state/component_template.py",
+        "archflow/runtime/artifact_library.py",
+        "archflow/compilers/geometry.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "A datum bound to an operation parameter through the producer lands on the compiled program with the derived value; the authored proposal never restated it.",
+        "A family declined in a recorded confrontation cannot be re-selected by the model; a selected family passes; a non-confrontation record fails typed.",
+        "Harvest of a template whose mathematics_ref does not resolve to an archflow solver module fails typed; the stair template resolves.",
+        "An obligation datum_role without a binding or bound to an unpublished datum is reported as a violation.",
+        "Full unittest suite and the architecture firewall pass.",
+        "Retained CompiledGeometryProgram@2 canonical program records still wrap in the artifact library; the accepted schema set is declared once on the program class and consumed by both readers."
+      ],
+      "tests": [
+        "Producer datum derivation and catalog gate on the write path",
+        "Mathematics-ref and datum-role resolution",
+        "Lifecycle compile regression",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_production_wiring",
+          "tests.test_component_templates",
+          "tests.test_semantic_geometry_lifecycle"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M090-production-wiring-of-datums-and-catalog.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M090",
+        "actor": "claude",
+        "verified_at": "2026-09-01T23:44:03.129421+00:00",
+        "contract_sha256": "560191632abeb6d975d4230523e4dda5933f2fb4863344dcb2c4842ad0099c06",
+        "scope_sha256": "a1b55e7e98d2d647feb7295ec8f563e89832d9254dfda60ecd9399c37e39a574",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_production_wiring",
+              "tests.test_component_templates",
+              "tests.test_semantic_geometry_lifecycle"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d19b4622434e4ccd540b67bf128d678249cb8e7e0ea9f2bac67b5b3146a3afbe",
+            "stdout_tail": "",
+            "stderr_tail": "..............................\n----------------------------------------------------------------------\nRan 30 tests in 0.882s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e8938caf65664327d397d19dcee4e5b1fc64c45df487806b6a86c278d737d739",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (294 files, 1.826s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-01",
+      "evidence": [
+        "Production wiring: produce_geometry_program_proposal and compile_semantic_geometry_lifecycle accept and forward interface_datums/datum_bindings to compile_geometry_program (a bound parameter derives on the compiled program, never restated by the authored proposal); the producer accepts catalog_confrontation_ref (CatalogConfrontationReceipt@1) and narrows the model's admissible template set to the confrontation's selections - a declined family cannot be re-selected, a foreign record fails typed. resolve_mathematics_ref resolves capability:<archflow module> to an importable solver with a solve_*/compile_* entry point and harvest fails closed otherwise; verify_template_datums resolves obligation datum_role against published datums. Read-path repair found by the full suite: CompiledGeometryProgram now declares RETAINED_SCHEMAS/ACCEPTED_SCHEMAS once, consumed by CanonicalProgramRecord and the proposal loader's key set (retained @2 records in the relocated probes wrap again). Tests: test_production_wiring (4), MathematicsRefTests (3), DatumRoleResolutionTests, RetainedProgramGenerationTests (3); full suite 1667 OK (6 external skips); ARCHITECTURE PASS (294 files)."
+      ]
     }
   ]
 }
