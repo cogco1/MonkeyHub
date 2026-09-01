@@ -27,11 +27,6 @@ from archflow.adapters.pascal_execution import (
 )
 from archflow.project import ProjectVersionRef
 from archflow.runtime.geometry_compiler import compile_geometry_program
-from archflow.state.candidate_program import (
-    CandidateProgramProjection,
-    CandidateProgramValue,
-    CandidateValueFacet,
-)
 from archflow.state.geometry_program import (
     AffineTransform,
     CoordinateFrame,
@@ -44,9 +39,11 @@ from archflow.state.geometry_program import (
     LengthUnit,
     SemanticBinding,
 )
+from tests.test_design_development import _coordinated_state
 
 
-BASE = ProjectVersionRef("pascal-demo", 7, "c" * 64)
+DEVELOPED_STATE = _coordinated_state()[3]
+BASE = DEVELOPED_STATE.base
 EVIDENCE = "evidence:pascal-adapter-test"
 BEFORE_HASH = "a" * 64
 AFTER_HASH = "b" * 64
@@ -59,46 +56,6 @@ TOOLS = (
     VALIDATE_TOOL,
     VERIFY_TOOL,
 )
-
-
-def _projection() -> CandidateProgramProjection:
-    values = tuple(
-        sorted(
-            (
-                CandidateProgramValue.create(
-                    value_id=value_id,
-                    facet=facet,
-                    value={"source": "project-authored", "facet": facet.value},
-                    source_refs=(EVIDENCE,),
-                    derivation_refs=("option:selected",),
-                )
-                for value_id, facet in (
-                    ("area", CandidateValueFacet.AREA),
-                    ("coordinate", CandidateValueFacet.COORDINATE),
-                    ("massing-dimension", CandidateValueFacet.DIMENSION),
-                    ("function", CandidateValueFacet.FUNCTION),
-                    ("material", CandidateValueFacet.MATERIAL),
-                    ("topology", CandidateValueFacet.TOPOLOGY),
-                )
-            ),
-            key=lambda item: item.value_id,
-        )
-    )
-    return CandidateProgramProjection(
-        project_id=BASE.project_id,
-        run_id="run-stage-one",
-        base=BASE,
-        developed_state_digest="d" * 64,
-        portfolio_id="portfolio",
-        portfolio_digest="e" * 64,
-        selected_branch_id="branch-a",
-        selected_revision_id="revision-a",
-        selected_revision_digest="f" * 64,
-        selected_option_ref="option:selected",
-        selection_transition_id="selection-a",
-        selection_decision_ref="decision:selected",
-        values=values,
-    )
 
 
 def _vector(name: str, value: list[float]) -> GeometryParameter:
@@ -120,7 +77,7 @@ def _points(name: str, value: list[list[float]]) -> GeometryParameter:
 
 
 def _compiled(*, kind: GeometryOperationKind = GeometryOperationKind.SOLID):
-    projection = _projection()
+    state = DEVELOPED_STATE
     parameters = (
         (
             _vector("origin", [1.0, 2.0, 3.0]),
@@ -140,10 +97,10 @@ def _compiled(*, kind: GeometryOperationKind = GeometryOperationKind.SOLID):
     )
     proposal = GeometryProgramProposal(
         proposal_id="massing-proposal",
-        project_id=projection.project_id,
-        run_id=projection.run_id,
-        base=projection.base,
-        candidate_program_digest=projection.projection_digest,
+        project_id=state.project_id,
+        run_id=state.run_id,
+        base=state.base,
+        design_state_digest=state.state_digest,
         predecessor_program_digest=None,
         length_unit=LengthUnit.METER,
         tolerance=GeometryTolerance(0.001, 0.001),
@@ -159,8 +116,8 @@ def _compiled(*, kind: GeometryOperationKind = GeometryOperationKind.SOLID):
         semantic_bindings=(
             SemanticBinding(
                 binding_id="massing-binding",
+                component_id="building",
                 object_ids=("massing-object",),
-                candidate_value_ids=("massing-dimension",),
                 commitment_refs=(),
                 evidence_refs=(EVIDENCE,),
             ),
@@ -168,7 +125,7 @@ def _compiled(*, kind: GeometryOperationKind = GeometryOperationKind.SOLID):
         operations=(operation,),
         assemblies=(),
     )
-    result = compile_geometry_program(projection, proposal)
+    result = compile_geometry_program(state, proposal)
     if result.program is None:
         raise AssertionError(result.receipt.to_dict())
     return result.program, result.receipt
@@ -358,7 +315,10 @@ class PascalPatchCompilerTests(unittest.TestCase):
         binding = node["metadata"]["archflow"]
         self.assertEqual(binding["object_id"], "massing-object")
         self.assertEqual(binding["stage"], 1)
-        self.assertEqual(binding["base"]["state_sha256"], "c" * 64)
+        self.assertEqual(
+            binding["base"]["state_sha256"],
+            BASE.require_digest(),
+        )
         positions = {
             tuple(vertex["position"])
             for vertex in node["topology"]["vertices"]

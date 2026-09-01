@@ -94,7 +94,7 @@ if TYPE_CHECKING:
     from archflow.relations.contracts import ArchitecturalRelationGraph
     from archflow.relations.coverage import RelationNotApplicable
     from archflow.relations.realization import RelationRealizationManifest
-    from archflow.runtime.geometry_compiler import CompiledGeometryProgram
+    from archflow.compilers.geometry import CompiledGeometryProgram
 
 
 class StageBaselineError(ValueError):
@@ -732,7 +732,7 @@ class RelationRealizationBaselineSource:
     def __post_init__(self) -> None:
         from archflow.relations.contracts import ArchitecturalRelationGraph
         from archflow.relations.realization import RelationRealizationManifest
-        from archflow.runtime.geometry_compiler import CompiledGeometryProgram
+        from archflow.compilers.geometry import CompiledGeometryProgram
 
         if not isinstance(self.graph, ArchitecturalRelationGraph):
             raise TypeError("graph must be ArchitecturalRelationGraph")
