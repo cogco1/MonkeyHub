@@ -40,6 +40,146 @@ class ProgramMetricKind(StrEnum):
     TOTAL_FLOOR_AREA = "total_floor_area"
 
 
+class ProgramMetricApplicability(StrEnum):
+    """Whether one program metric belongs to the current project type."""
+
+    APPLICABLE = "applicable"
+    NOT_APPLICABLE = "not_applicable"
+
+
+@dataclass(frozen=True, slots=True)
+class ProgramMetricApplicabilityDecision:
+    """Exact-base decision that carries no metric value or gate authority."""
+
+    decision_id: str
+    project_id: str
+    run_id: str
+    base: ProjectVersionRef
+    metric: ProgramMetricKind
+    applicability: ProgramMetricApplicability
+    rationale: str
+    authority_id: str
+    source_refs: tuple[str, ...]
+
+    SCHEMA = "ProgramMetricApplicabilityDecision@1"
+
+    def __post_init__(self) -> None:
+        require_local_id(self.decision_id, "decision_id")
+        require_identifier(self.project_id, "project_id")
+        require_identifier(self.run_id, "run_id")
+        if not isinstance(self.base, ProjectVersionRef):
+            raise TypeError("base must be ProjectVersionRef")
+        if self.base.project_id != self.project_id:
+            raise ValueError(
+                "metric applicability decision and base belong to different projects"
+            )
+        self.base.require_digest()
+        if not isinstance(self.metric, ProgramMetricKind):
+            raise TypeError("metric must be ProgramMetricKind")
+        if not isinstance(self.applicability, ProgramMetricApplicability):
+            raise TypeError(
+                "applicability must be ProgramMetricApplicability"
+            )
+        _text(self.rationale, "rationale")
+        _text(self.authority_id, "authority_id")
+        _refs(self.source_refs, "source_refs")
+
+    @property
+    def decision_digest(self) -> str:
+        return _digest(self.to_dict())
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "decision_id": self.decision_id,
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "base": {
+                "project_id": self.base.project_id,
+                "version": self.base.version,
+                "state_sha256": self.base.require_digest(),
+            },
+            "metric": self.metric.value,
+            "applicability": self.applicability.value,
+            "rationale": self.rationale,
+            "authority_id": self.authority_id,
+            "source_refs": list(self.source_refs),
+            "metric_value_authority": False,
+            "generation_authority": False,
+            "hard_gate_waiver_authority": False,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        value: object,
+    ) -> ProgramMetricApplicabilityDecision:
+        payload = _mapping(value, "program metric applicability decision")
+        _exact(
+            payload,
+            {
+                "schema",
+                "decision_id",
+                "project_id",
+                "run_id",
+                "base",
+                "metric",
+                "applicability",
+                "rationale",
+                "authority_id",
+                "source_refs",
+                "metric_value_authority",
+                "generation_authority",
+                "hard_gate_waiver_authority",
+            },
+            "program metric applicability decision",
+        )
+        if payload["schema"] != cls.SCHEMA:
+            raise ValueError(
+                "unsupported program metric applicability decision schema"
+            )
+        if any(
+            payload[field] is not False
+            for field in (
+                "metric_value_authority",
+                "generation_authority",
+                "hard_gate_waiver_authority",
+            )
+        ):
+            raise ValueError(
+                "metric applicability cannot claim value, generation, or hard-gate authority"
+            )
+        base = _mapping(payload["base"], "base")
+        _exact(
+            base,
+            {"project_id", "version", "state_sha256"},
+            "base",
+        )
+        return cls(
+            decision_id=payload["decision_id"],
+            project_id=payload["project_id"],
+            run_id=payload["run_id"],
+            base=ProjectVersionRef(
+                project_id=base["project_id"],
+                version=base["version"],
+                state_sha256=base["state_sha256"],
+            ),
+            metric=_enum(
+                ProgramMetricKind,
+                payload["metric"],
+                "metric",
+            ),
+            applicability=_enum(
+                ProgramMetricApplicability,
+                payload["applicability"],
+                "applicability",
+            ),
+            rationale=payload["rationale"],
+            authority_id=payload["authority_id"],
+            source_refs=_strings(payload["source_refs"], "source_refs"),
+        )
+
+
 class ProgramRelationshipKind(StrEnum):
     """Non-geometric relationship hypotheses available to later design."""
 

@@ -13,6 +13,13 @@ from archflow.project.digests import (
     project_state_sha256,
 )
 from archflow.project.layout import ProjectLayout, RunLayout
+from archflow.project.location import (
+    ProjectLocation,
+    ProjectLocationError,
+    ProjectLocationKind,
+    locate_project,
+    open_located_project,
+)
 from archflow.project.manifest import (
     ProjectManifest,
     ProjectManifestError,
@@ -71,6 +78,9 @@ __all__ = [
     "ProjectHeadLocked",
     "ProjectIntegrityError",
     "ProjectLayout",
+    "ProjectLocation",
+    "ProjectLocationError",
+    "ProjectLocationKind",
     "ProjectLoader",
     "ProjectManifest",
     "ProjectManifestError",
@@ -92,5 +102,7 @@ __all__ = [
     "bootstrap_external_project",
     "initialize_runtime",
     "load_runtime_config",
+    "locate_project",
+    "open_located_project",
     "require_destination",
 ]

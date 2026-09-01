@@ -394,7 +394,44 @@ async def author_semantic_spatial_option(
     declaration_contract: "StageDeclarationContract | None" = None,
     decision_basis: Mapping[str, object] | None = None,
 ) -> SemanticSpatialAuthoringResult:
-    """Ask one provider for a co-authored component and massing proposal."""
+    """Public unscoped authoring boundary; it cannot claim persisted RAG."""
+
+    return await _author_semantic_spatial_option(
+        provider,
+        request_id=request_id,
+        state=state,
+        maturity=maturity,
+        phase_gate=phase_gate,
+        program=program,
+        site_context=site_context,
+        build_policy=build_policy,
+        repair_feedback=repair_feedback,
+        alternative_context=alternative_context,
+        revision_context=revision_context,
+        declaration_contract=declaration_contract,
+        decision_basis=decision_basis,
+    )
+
+
+async def _author_semantic_spatial_option(
+    provider: AsyncModelProvider,
+    *,
+    request_id: str,
+    state: OperationalMarkovState,
+    maturity: DesignMaturityState,
+    phase_gate: PhaseGateReceipt,
+    program: DesignProgram,
+    site_context: SiteContext,
+    build_policy: BuildPolicy,
+    repair_feedback: Mapping[str, object] | None = None,
+    alternative_context: Mapping[str, object] | None = None,
+    revision_context: Mapping[str, object] | None = None,
+    declaration_contract: "StageDeclarationContract | None" = None,
+    decision_basis: Mapping[str, object] | None = None,
+    branch_research_context: object | None = None,
+    expected_branch_scope_digest: str | None = None,
+) -> SemanticSpatialAuthoringResult:
+    """Internal authoring path for runtime-verified branch context."""
 
     validate_spatial_authoring_context(
         state=state,
@@ -438,7 +475,37 @@ async def author_semantic_spatial_option(
                 "declaration_contract must be StageDeclarationContract"
             )
         prompt["declaration_contract"] = declaration_contract.to_dict()
-    if decision_basis is not None:
+    branch_inputs = (branch_research_context, expected_branch_scope_digest)
+    if any(item is not None for item in branch_inputs):
+        if any(item is None for item in branch_inputs):
+            raise ValueError(
+                "verified branch context and expected scope must be supplied together"
+            )
+        from archflow.capabilities.basis_index import (
+            BranchDecisionContext,
+        )
+
+        if not isinstance(branch_research_context, BranchDecisionContext):
+            raise TypeError(
+                "branch_research_context must be BranchDecisionContext"
+            )
+        if not isinstance(expected_branch_scope_digest, str):
+            raise TypeError("expected_branch_scope_digest must be text")
+        bounded_context = _validated_branch_research_context(
+            branch_research_context.to_dict(),
+            state=state,
+            expected_scope_digest=expected_branch_scope_digest,
+        )
+        context_basis = bounded_context["decision_basis"]
+        if decision_basis is not None and _validated_decision_basis(
+            decision_basis
+        ) != context_basis:
+            raise ValueError(
+                "decision_basis disagrees with branch_research_context"
+            )
+        prompt["branch_research_context"] = bounded_context
+        prompt["decision_basis"] = context_basis
+    elif decision_basis is not None:
         prompt["decision_basis"] = _validated_decision_basis(decision_basis)
     if repair_feedback is not None:
         prompt["repair_feedback"] = _validated_repair_feedback(
@@ -650,6 +717,44 @@ def _validated_decision_basis(value: Mapping[str, object]) -> dict:
             "decision_basis exceeds the prompt bound "
             f"({len(encoded)} > {_MAX_DECISION_BASIS_CHARS} chars); "
             "select fewer shards"
+        )
+    return validated
+
+
+_MAX_BRANCH_RESEARCH_CONTEXT_CHARS = 30_000
+
+
+def _validated_branch_research_context(
+    value: Mapping[str, object],
+    *,
+    state: OperationalMarkovState,
+    expected_scope_digest: str,
+) -> dict[str, object]:
+    """Validate a branch identity and its bounded decision-basis envelope."""
+
+    if not isinstance(state, OperationalMarkovState):
+        raise TypeError("state must be OperationalMarkovState")
+    _sha256(expected_scope_digest, "expected_branch_scope_digest")
+    from archflow.capabilities.basis_index import BranchDecisionContext
+
+    context = BranchDecisionContext.from_dict(value)
+    scope = context.scope
+    if (
+        scope.scope_digest != expected_scope_digest
+        or scope.source_branch != state.branch
+        or scope.operational_state_digest != state.state_digest
+    ):
+        raise ValueError(
+            "branch research context is foreign or stale for this authoring state"
+        )
+    basis = _validated_decision_basis(context.decision_basis)
+    validated = context.to_dict()
+    validated["decision_basis"] = basis
+    size = len(json.dumps(validated, sort_keys=True, default=str))
+    if size > _MAX_BRANCH_RESEARCH_CONTEXT_CHARS:
+        raise ValueError(
+            "branch_research_context exceeds the prompt bound "
+            f"({size} > {_MAX_BRANCH_RESEARCH_CONTEXT_CHARS} chars)"
         )
     return validated
 

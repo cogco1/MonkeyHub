@@ -63,6 +63,8 @@ from archflow.state.component_family import (
 from archflow.state.design_program import (
     DesignProgram,
     ProgramAssumption,
+    ProgramMetricApplicability,
+    ProgramMetricApplicabilityDecision,
     ProgramMetricKind,
     ProgramNode,
     ProgramNodeKind,
@@ -336,6 +338,8 @@ __all__ = [
     "PortfolioTransitionKind",
     "ProgramAssumption",
     "ProgramErrorCode",
+    "ProgramMetricApplicability",
+    "ProgramMetricApplicabilityDecision",
     "ProgramMetricKind",
     "ProgramNode",
     "ProgramNodeKind",

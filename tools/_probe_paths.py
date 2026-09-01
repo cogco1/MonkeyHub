@@ -8,8 +8,9 @@ then the anchor's ``moved_to``, then the workspace convention path.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
+from archflow.project import locate_project
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_PROJECTS = Path(
@@ -19,21 +20,11 @@ WORKSPACE_PROJECTS = Path(
 
 
 def resolve_probe_root(project_id: str) -> Path:
-    repo_probe = ROOT / "probes" / project_id
-    if (repo_probe / "project.json").exists():
-        return repo_probe
-    anchor_path = ROOT / "probes" / f"{project_id}.anchor.json"
-    if anchor_path.exists():
-        anchor = json.loads(anchor_path.read_text(encoding="utf-8"))
-        moved = Path(anchor["moved_to"])
-        if (moved / "project.json").exists():
-            return moved
-        raise FileNotFoundError(
-            f"{project_id}: anchor points to missing {moved}"
-        )
-    workspace_probe = WORKSPACE_PROJECTS / project_id
-    if (workspace_probe / "project.json").exists():
-        return workspace_probe
-    raise FileNotFoundError(
-        f"probe {project_id!r} not found in repo, anchors, or workspace"
-    )
+    """Host-configured compatibility adapter over archflow.project."""
+
+    return locate_project(
+        project_id,
+        local_projects_root=ROOT / "probes",
+        relocation_anchor_root=ROOT / "probes",
+        workspace_projects_root=WORKSPACE_PROJECTS,
+    ).root
