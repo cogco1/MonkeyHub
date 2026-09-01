@@ -49,6 +49,10 @@ except ModuleNotFoundError:  # pragma: no cover - direct CLI import path
     from _probe_paths import resolve_probe_root
 
 from archflow.adapters.three_dm_inspector import inspect_three_dm
+from archflow.adapters.three_dm_witness import (
+    add_axis_aligned_box_brep_witnesses,
+    primary_three_dm_objects,
+)
 from archflow.capabilities.stage_evidence_pack import (
     CrossRunStagePackPredecessor,
     StageArtifactBinding,
@@ -2064,9 +2068,11 @@ def create_stage4_model(
         parameters = operation["parameters"]
         assert isinstance(parameters, Mapping)
         kind = str(operation["kind"])
+        box_brep = False
         if kind in {"box", "bearing_block", "doric_abacus", "entablature_layer"}:
             geometry = _box_brep(parameters["origin"], parameters["size"])
             add = model.Objects.AddBrep
+            box_brep = True
         elif kind == "doric_shaft":
             geometry = _doric_shaft_mesh(parameters)
             add = model.Objects.AddMesh
@@ -2132,6 +2138,7 @@ def create_stage4_model(
                 if geometry_type == "mesh"
                 else model.Objects.AddBrep
             )
+            box_brep = geometry_type == "brep"
         else:
             raise ParthenonStage4Error(f"unsupported Stage 4 geometry kind: {kind}")
 
@@ -2167,7 +2174,14 @@ def create_stage4_model(
                 user_strings["archflow:total_column_height_m"] = str(declared_total)
         for key, value in user_strings.items():
             attributes.SetUserString(key, value)
-        add(geometry, attributes)
+        source_id = add(geometry, attributes)
+        if box_brep:
+            add_axis_aligned_box_brep_witnesses(
+                model,
+                source_object_id=source_id,
+                brep=geometry,
+                layer_index=attributes.LayerIndex,
+            )
     if not model.Write(str(path), 8):
         raise ParthenonStage4Error(f"rhino3dm failed to write {path}")
     return len(operations)
@@ -2193,6 +2207,7 @@ def validate_stage4_material_bindings(
             "checks": {},
             "failures": ["rhino3dm could not read the Stage 4 model for material validation"],
         }
+    objects = primary_three_dm_objects(model)
 
     expected_by_id = {
         str(operation["operation_id"]): str(operation["material_id"])
@@ -2217,8 +2232,7 @@ def validate_stage4_material_bindings(
     resolved_binding_count = 0
     semantic_identity_count = 0
     display_color_only_count = 0
-    for index in range(len(model.Objects)):
-        model_object = model.Objects[index]
+    for model_object in objects:
         attributes = model_object.Attributes
         operation_id = str(attributes.Name)
         seen_ids.add(operation_id)
@@ -2304,7 +2318,7 @@ def validate_stage4_material_bindings(
     return {
         "passed": not failures,
         "checks": {
-            "object_count": len(model.Objects),
+            "object_count": len(objects),
             "expected_operation_count": expected_count,
             "material_table_count": len(model.Materials),
             "material_table_ids": list(material_names),
@@ -2571,7 +2585,7 @@ def validate_stage4_spatial_model(
     model = rhino3dm.File3dm.Read(str(path))
     if model is None:
         raise ParthenonStage4Error(f"cannot read Stage 4 model: {path}")
-    objects = tuple(model.Objects)
+    objects = primary_three_dm_objects(model)
     by_operation = {str(item["operation_id"]): item for item in operations}
     names = tuple(item.Attributes.Name or "" for item in objects)
     failures: list[str] = []
@@ -4457,7 +4471,7 @@ def verify_stage4_persisted_run_chain(
         if model is None:
             failures.append("retained Stage 4 3DM cannot be read back")
         else:
-            if len(model.Objects) != 687:
+            if len(primary_three_dm_objects(model)) != 687:
                 failures.append("retained Stage 4 3DM object denominator drifted")
             if model.Settings.ModelUnitSystem != rhino3dm.UnitSystem.Meters:
                 failures.append("retained Stage 4 3DM is not metre-based")

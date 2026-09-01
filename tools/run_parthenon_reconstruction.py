@@ -29,6 +29,10 @@ try:  # Package import in tests; direct import when executed as a script.
 except ModuleNotFoundError:
     from _probe_paths import WORKSPACE_PROJECTS
 from archflow.adapters.three_dm_inspector import inspect_three_dm
+from archflow.adapters.three_dm_witness import (
+    add_axis_aligned_box_brep_witnesses,
+    primary_three_dm_objects,
+)
 from archflow.adapters.web_evidence import fetch_web_evidence
 from archflow.capabilities.branch_research import (
     BranchResearchScope,
@@ -1569,9 +1573,11 @@ def _create_three_dm(
         parameters = operation["parameters"]
         assert isinstance(parameters, Mapping)
         kind = operation["kind"]
+        box_brep = False
         if kind == "box":
             geometry = _box_brep(parameters["origin"], parameters["size"])
             add = model.Objects.AddBrep
+            box_brep = True
         elif kind in {"tapered_column", "fluted_column", "ionic_column"}:
             geometry = _column_mesh(
                 parameters["center"],
@@ -1618,7 +1624,14 @@ def _create_three_dm(
             "archflow:source_refs": _canonical(operation["source_refs"]),
         }.items():
             attributes.SetUserString(key, value)
-        add(geometry, attributes)
+        source_id = add(geometry, attributes)
+        if box_brep:
+            add_axis_aligned_box_brep_witnesses(
+                model,
+                source_object_id=source_id,
+                brep=geometry,
+                layer_index=attributes.LayerIndex,
+            )
     if not model.Write(str(path), 8):
         raise RuntimeError(f"rhino3dm failed to write {path}")
     return len(operations)
@@ -1680,7 +1693,7 @@ def validate_stage_spatial_model(path: Path, stage: int):
     model = rhino3dm.File3dm.Read(str(path))
     if model is None:
         raise RuntimeError(f"cannot read spatial-validation model: {path}")
-    objects = tuple(model.Objects)
+    objects = primary_three_dm_objects(model)
     if not objects:
         raise RuntimeError("spatial-validation model contains no objects")
     object_bounds = tuple(item.Geometry.GetBoundingBox() for item in objects)
