@@ -1909,9 +1909,17 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
         self.assertEqual("compiled", compilation.source_status)
         self.assertEqual("realized", realization.source_status)
 
-        p058 = FilesystemProjectRepository.open(
-            root / "probes" / "p058-progressive-pantheon"
-        )
+        try:
+            from tools._probe_paths import resolve_probe_root
+
+            p058_root = resolve_probe_root("p058-progressive-pantheon")
+        except Exception:
+            p058_root = root / "probes" / "p058-progressive-pantheon"
+        if not (p058_root / "project.json").is_file():
+            self.skipTest(
+                "external workspace evidence probe p058 unavailable"
+            )
+        p058 = FilesystemProjectRepository.open(p058_root)
         p058_run = p058.load_run("fresh-pantheon-001")
         production = bind_terminal_record(
             p058,

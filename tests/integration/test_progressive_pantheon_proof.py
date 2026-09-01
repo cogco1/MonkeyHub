@@ -114,11 +114,18 @@ PROMPT = (
     "then deepen the dome through an oculus and local coffering without "
     "loading a prior final design."
 )
-PROBE_ROOT = (
-    Path(__file__).resolve().parents[2]
-    / "probes"
-    / PROJECT_ID
-)
+def _probe_root() -> Path:
+    """Resolve the relocated evidence probe; an absent root triggers skips."""
+
+    try:
+        from tools._probe_paths import resolve_probe_root
+
+        return resolve_probe_root(PROJECT_ID)
+    except Exception:
+        return Path(__file__).resolve().parents[2] / "probes" / PROJECT_ID
+
+
+PROBE_ROOT = _probe_root()
 IDENTITY = GeometryProposalProviderIdentity(
     provider_id="scripted-radial-author",
     model_id="scripted-radial-model",
@@ -1266,6 +1273,8 @@ class ProgressivePantheonIntegrationTests(unittest.TestCase):
         self.assertFalse(manifest["claims"]["architectural_usability"])
 
     def test_promoted_probe_reloads_p036_and_p053_provenance(self) -> None:
+        if not (PROBE_ROOT / "project.json").is_file():
+            self.skipTest("external workspace evidence probe unavailable")
         repository = FilesystemProjectRepository.open(PROBE_ROOT)
         run = repository.load_run(RUN_ID)
         records = repository.list_json(
@@ -1301,6 +1310,8 @@ class ProgressivePantheonIntegrationTests(unittest.TestCase):
         self.assertEqual("not-run", manifest["live_agent_cli"]["status"])
 
     def test_probe_has_no_case_code_or_external_final_answer(self) -> None:
+        if not (PROBE_ROOT / "project.json").is_file():
+            self.skipTest("external workspace evidence probe unavailable")
         files = tuple(path for path in PROBE_ROOT.rglob("*") if path.is_file())
         source = Path(__file__).read_text(encoding="utf-8")
         forbidden_source_fragments = (

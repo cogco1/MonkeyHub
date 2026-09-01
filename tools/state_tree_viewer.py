@@ -44,6 +44,12 @@ from archflow.adapters.three_dm_inspector import (  # noqa: E402
     SUPPORTED_INSPECTION_SCHEMAS,
 )
 from archflow.contracts.reading import read_key_diagnostics  # noqa: E402
+from archflow.capabilities.stage_evidence_pack import (  # noqa: E402
+    STAGE_EVIDENCE_PACK_KEYS,
+)
+from tools.build_pantheon_progress_snapshot import (  # noqa: E402
+    PANTHEON_STAGE_PROGRESS_SNAPSHOT_KEYS,
+)
 
 _STAGE_RE = re.compile(r"^(?P<kind>.+?)-(?P<stage>\d{3})-[0-9a-f]{64}\.json$")
 _DIGEST_RE = re.compile(r"-(?P<digest>[0-9a-f]{64})\.json$")
@@ -56,30 +62,9 @@ _PANEL_SNAPSHOT_SCHEMAS = frozenset(
 )
 _MAX_STAGE_BYTES = 16_000_000
 
-_STAGE_PACK_KEYS = frozenset(
-    {
-        "schema",
-        "project_id",
-        "run_id",
-        "base",
-        "branch",
-        "scope_ref",
-        "stage",
-        "program_digest",
-        "contract_ref",
-        "predecessor",
-        "supersedes_pack_ref",
-        "bindings",
-        "artifacts",
-        "gaps",
-        "closure",
-        "compilation_status",
-        "selection_authority",
-        "evidence_authority",
-        "stage_acceptance_authority",
-        "canonical_write_authority",
-    }
-)
+_STAGE_PACK_KEYS = STAGE_EVIDENCE_PACK_KEYS
+# StageEvidencePanelSnapshot@1 has no in-repo emitter: this viewer owns
+# the input contract for externally supplied panel snapshots (M088).
 _PANEL_SNAPSHOT_KEYS = frozenset(
     {
         "schema",
@@ -94,25 +79,7 @@ _PANEL_SNAPSHOT_KEYS = frozenset(
         "canonical_write_authority",
     }
 )
-_PANTHEON_SNAPSHOT_KEYS = frozenset(
-    {
-        "candidate_manifest",
-        "canonical_head",
-        "canonical_write_authority",
-        "current_stage_run_id",
-        "detail_candidate",
-        "expected_model_workspaces",
-        "formal_closure",
-        "generated_at",
-        "model",
-        "model_alignment",
-        "project_id",
-        "schema",
-        "stage_acceptance_authority",
-        "stages",
-        "view_authority",
-    }
-)
+_PANTHEON_SNAPSHOT_KEYS = PANTHEON_STAGE_PROGRESS_SNAPSHOT_KEYS
 class StagePanelError(ValueError):
     """An explicit Stage panel input is unreadable or malformed."""
 

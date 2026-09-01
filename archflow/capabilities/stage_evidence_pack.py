@@ -6,6 +6,7 @@ class and function identity.
 """
 
 from archflow.evidence.stage_pack import (
+    STAGE_EVIDENCE_PACK_KEYS,
     CrossRunStagePackPredecessor,
     StageArtifactBinding,
     StageArtifactRole,
@@ -23,6 +24,7 @@ from archflow.evidence.stage_pack import (
 )
 
 __all__ = [
+    "STAGE_EVIDENCE_PACK_KEYS",
     "CrossRunStagePackPredecessor",
     "StageArtifactBinding",
     "StageArtifactRole",

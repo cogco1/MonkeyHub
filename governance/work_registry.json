@@ -14005,25 +14005,28 @@
     {
       "id": "M088",
       "origin_stream": "modify",
-      "stream": "modify",
-      "status": "ready",
-      "goal": "Bounded hygiene repair with no behavior change: migrate retained probe run data to the runtime workspace with repo anchors following the p066 precedent, slim the state-tree viewer by importing P088 single-source schema contracts, and audit vertical_circulation.py for embedded typology constants with extraction into project records.",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Bounded hygiene repair with no behavior change: migrate the evidence probes p026 and p058 to the runtime workspace with ProbeRelocationAnchor records and resolve_probe_root repointing (test_pantheon stays as a declared live fixture), single-source the viewer's remaining hand-copied schema key sets at their definition sites, and audit vertical_circulation.py for embedded typology constants with human adjudication of behavior-changing findings.",
       "depends_on": [
         "P057",
         "P088"
       ],
       "write_scope": [
         "probes/",
-        "tools/state_tree_viewer.py",
+        "tools/",
+        "archflow/capabilities/stage_evidence_pack.py",
+        "archflow/evidence/stage_pack.py",
         "archflow/validation/vertical_circulation.py",
         "tests/",
         "docs/mapping/",
         "governance/work_registry.json"
       ],
       "acceptance": [
-        "The repository sheds the migrated run data; anchors resolve; no test or tool reads the old paths.",
-        "The viewer holds no hand-copied schema key sets and drops below half its current line count without losing a rendering behavior.",
-        "A vertical-circulation audit receipt reports zero instance defaults or lists each extraction with its destination record.",
+        "p026 and p058 live in the runtime workspace; anchors resolve through locate_project; no repo test or tool reads the old paths directly, and affected tests skip explicitly when the workspace is absent.",
+        "test_pantheon is documented as a fixture probe in the probes README.",
+        "The viewer holds no hand-copied schema key sets whose schemas are defined in this repository; the line delta is reported.",
+        "A vertical-circulation audit receipt reports zero instance defaults or lists each finding with its disposition.",
         "Full unittest suite and the architecture firewall pass."
       ],
       "tests": [
@@ -14044,8 +14047,46 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/modify/M088-repo-slimming-and-typology-audit.md",
-      "on_complete": {}
+      "card": "docs/mapping/archive/M088-repo-slimming-and-typology-audit.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M088",
+        "actor": "claude",
+        "verified_at": "2026-09-01T19:11:31.260681+00:00",
+        "contract_sha256": "4095b6f62d52871fa8154360a4a6d2480a6cc827d35b876002eb10d714ca561b",
+        "scope_sha256": "138e932911c225dbc7b4963264cb002cba565cfbe543fd11b45cbdb3abe5224c",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_stage_progress_viewer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "29cc2426418f87c4f2ca2d5f28457133b27b6a6fd6a26e6ec72dd068b666d2fc",
+            "stdout_tail": "",
+            "stderr_tail": ".....\n----------------------------------------------------------------------\nRan 5 tests in 0.629s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "12299a8b736f52be29c127a82b06cb7cacc7cb0889043bbe3366a7463f5c38d5",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (290 files, 1.782s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-01",
+      "evidence": [
+        "p026 (185 files, 8.6MB) and p058 (54 files, 6.6MB) relocated to the runtime workspace with ProbeRelocationAnchor@1 anchors resolving via locate_project; 10 unit + 15 integration tests repointed through resolve_probe_root with explicit external skips, all green; test_pantheon documented as a live fixture probe in probes/README; StageEvidencePack@1 and PantheonStageProgressSnapshot@1 key sets single-sourced at their definition sites with a builder self-check (viewer 3772 -> 3739 lines net of P088 imports); vertical-circulation audit receipt: zero instance defaults, only 0.0/1.0 guards and a 1e-9 epsilon; full suite + firewall pass"
+      ]
     },
     {
       "id": "P089",

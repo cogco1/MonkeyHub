@@ -79,3 +79,17 @@ the same project.
 
 Later compilers may add further derived records only through the same injected
 repository boundary.
+
+## Relocated evidence probes and fixture probes (M088)
+
+Bulk evidence probes live in the runtime workspace and leave a
+`ProbeRelocationAnchor@1` here (`p026-sandbox-gold`,
+`p058-progressive-pantheon`, and the earlier p03x/p05x/p06x/p07x
+relocations). Tools and tests resolve them through
+`tools/_probe_paths.resolve_probe_root`, and tests that need relocated
+evidence skip explicitly when the workspace is absent.
+
+`test_pantheon` and `test_library` are **live fixture probes**: unit
+tests in the standard suite read them directly, so they stay in the
+repository and must not be relocated. `p013-*` and
+`p027-terrain-adaptation` are small retained probes kept in place.

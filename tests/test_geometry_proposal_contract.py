@@ -39,7 +39,20 @@ from tests.test_sandbox_realization import compiled_room
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROBE_ROOT = ROOT / "probes" / "p026-sandbox-gold"
+
+
+def _probe_root() -> Path:
+    """Resolve the relocated evidence probe; an absent root triggers skips."""
+
+    try:
+        from tools._probe_paths import resolve_probe_root
+
+        return resolve_probe_root("p026-sandbox-gold")
+    except Exception:
+        return ROOT / "probes" / "p026-sandbox-gold"
+
+
+PROBE_ROOT = _probe_root()
 RUN_007_LINEAGE = ProjectRecordRef(
     project_id="p026-sandbox-gold",
     relative_path=(

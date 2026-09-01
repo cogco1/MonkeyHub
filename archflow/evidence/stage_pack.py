@@ -657,6 +657,33 @@ class StageEvidencePack:
     supersedes_pack_ref: ProjectRecordRef | None = None
 
     SCHEMA = "StageEvidencePack@1"
+    # Single-source record key set (M088): from_dict validates against it
+    # and read-only consumers (state-tree viewer) import it instead of
+    # hand-copying the list.
+    RECORD_KEYS = frozenset(
+        {
+            "schema",
+            "project_id",
+            "run_id",
+            "base",
+            "branch",
+            "scope_ref",
+            "stage",
+            "program_digest",
+            "contract_ref",
+            "predecessor",
+            "supersedes_pack_ref",
+            "bindings",
+            "artifacts",
+            "gaps",
+            "closure",
+            "compilation_status",
+            "selection_authority",
+            "evidence_authority",
+            "stage_acceptance_authority",
+            "canonical_write_authority",
+        }
+    )
 
     def __post_init__(self) -> None:
         require_identifier(self.project_id, "project_id")
@@ -958,28 +985,7 @@ class StageEvidencePack:
         payload = _mapping(value, "stage evidence pack")
         _exact(
             payload,
-            {
-                "schema",
-                "project_id",
-                "run_id",
-                "base",
-                "branch",
-                "scope_ref",
-                "stage",
-                "program_digest",
-                "contract_ref",
-                "predecessor",
-                "supersedes_pack_ref",
-                "bindings",
-                "artifacts",
-                "gaps",
-                "closure",
-                "compilation_status",
-                "selection_authority",
-                "evidence_authority",
-                "stage_acceptance_authority",
-                "canonical_write_authority",
-            },
+            set(cls.RECORD_KEYS),
             "stage evidence pack",
         )
         if (
@@ -1115,3 +1121,7 @@ def compile_stage_evidence_pack(
         predecessor=predecessor,
         supersedes_pack_ref=supersedes_pack_ref,
     )
+
+
+# Single-source key set for StageEvidencePack@1 records (M088).
+STAGE_EVIDENCE_PACK_KEYS = StageEvidencePack.RECORD_KEYS

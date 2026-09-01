@@ -52,6 +52,29 @@ _STAGE_LABELS = {
 _RELATION_CONTROL_SCHEMA = "P069StageRelationControlSummary@1"
 _RELATION_PROGRESS_SCHEMA = "P069StageRelationControlProgress@1"
 
+# Single-source key set for the snapshot this tool emits (M088); the
+# state-tree viewer imports it instead of hand-copying the list, and the
+# builder self-checks its payload against it before returning.
+PANTHEON_STAGE_PROGRESS_SNAPSHOT_KEYS = frozenset(
+    {
+        "candidate_manifest",
+        "canonical_head",
+        "canonical_write_authority",
+        "current_stage_run_id",
+        "detail_candidate",
+        "expected_model_workspaces",
+        "formal_closure",
+        "generated_at",
+        "model",
+        "model_alignment",
+        "project_id",
+        "schema",
+        "stage_acceptance_authority",
+        "stages",
+        "view_authority",
+    }
+)
+
 
 class PantheonProgressSnapshotError(RuntimeError):
     pass
@@ -838,7 +861,7 @@ def build_snapshot(
             }
 
     head = repository.read_head()
-    return {
+    payload = {
         "schema": "PantheonStageProgressSnapshot@1",
         "project_id": stage_run.project_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -862,6 +885,11 @@ def build_snapshot(
         "stage_acceptance_authority": False,
         "canonical_write_authority": False,
     }
+    if set(payload) != PANTHEON_STAGE_PROGRESS_SNAPSHOT_KEYS:
+        raise PantheonProgressSnapshotError(
+            "snapshot payload drifted from its declared key set"
+        )
+    return payload
 
 
 def _parser() -> argparse.ArgumentParser:
