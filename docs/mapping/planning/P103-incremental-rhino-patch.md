@@ -1,6 +1,6 @@
 # P103 — Incremental Rhino patch
 
-**Status:** active — registered 2026-09-02; two acceptance items open (block-instance arrays, the fixed Rhino cost)
+**Status:** completed 2026-09-02 (Claude). The fixed Rhino cost moved to P104, which is a new mechanism, not a retirement.
 **Lane:** productization and componentization
 **Retires:** delete-all-and-rebuild as the *only* export path. The full rebuild stays as the
 equivalence oracle (a patch must read back identical to a rebuild of the same program).
@@ -28,7 +28,7 @@ villa run is several programs. A column-height change that moves four objects sh
 
 ## Acceptance
 
-- [x] `tests/test_cad_patch.py` (7): no-op; capital change rebuilds 6 of 14; column height moves the chain even
+- [x] `tests/test_cad_patch.py` (8): no-op; capital change rebuilds 6 of 14; column height moves the chain even
       where digests hold (bounds criterion); retirement/addition; identity-only change selects nothing;
       subset translation; patch plan carries the selection and the whole-document denominator.
 - [x] Villa west portico (reference-001): abacus side 1.12 → 1.20 rebuilt 6, kept 8; column height 6.426 → 7.0
@@ -44,9 +44,28 @@ villa run is several programs. A column-height change that moves four objects sh
       the runner: hall-wall what-if (2.5 → 3.0 piedi) patched 8 of 18 objects, kept 10, oracle equal; reverting it
       restamped the structure seat (0 rebuilt, 9 kept) and patched the envelope back (8/10), oracle equal — all
       readbacks verified. Wall clock 37.2–37.8 s per path either way: the COM start and save are the cost.
-- [ ] Prior programs with block-instance arrays (P099 typed instances) fail typed to a rebuild; carrying
-      instance definitions by name is the next mechanism.
-- [ ] The fixed Rhino cost: a resident Rhino (one process across seats/runs) is the only way below ~30 s; out of scope here.
+- [x] **Block-instance families are carried, not refused.** The blanket refusal is gone: the prelude rebuilds every
+      instance definition in the prior file from its own member geometry and re-adds each instance reference against
+      it (`AddInstanceObject`), and the carry is now verified by *name set* rather than a bare object count, since one
+      arrayed object id is many Rhino objects. Live proof on the villa west band (run `array-patch-001`,
+      `block-array-patch.report.json`): the `ground-left` opening arrayed to two placements makes a block family;
+      widening the unrelated `attic-a` then patches, rebuilding 27 objects and keeping 35, of which the five
+      `…-ground-left-…-array` objects are the carried family. Readback verified; the oracle rebuilt the same program
+      in full and agreed on all 46 objects at 0.0 m.
+## Handed to P104
+
+The fixed Rhino cost is not a patch problem and is not solved here. Every path measured on real projects costs the
+same to the second, because the variable part is small and the COM start and save are not:
+
+| Path | Objects rebuilt | Wall clock |
+|---|---|---|
+| Rocca envelope, full rebuild | 18 | 37.9 s |
+| Rocca envelope, patch | 8 | 37.2 s |
+| Rocca structure, restamp | 0 | 37.5 s |
+| Villa envelope, patch carrying a block family | 27 | 37.3 s |
+
+A resident Rhino process is the only way below it, and that is a new mechanism rather than a retirement, so it is
+its own card: P104.
 
 ## Known parallel abstraction (retirement condition)
 

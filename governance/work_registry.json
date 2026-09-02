@@ -576,7 +576,8 @@
         "P093",
         "P100",
         "P102",
-        "P103"
+        "P103",
+        "P104"
       ],
       "purpose": "Freeze new capability surface and consolidate: discipline moves from scribes to machinery, one record-driven runner replaces per-building monoliths, contact becomes correct by construction through shared interface datums, and converged project components harvest into provenance-bound template records that future projects cite instead of rebuilding."
     }
@@ -15354,7 +15355,7 @@
       "id": "P103",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "active",
+      "status": "completed",
       "goal": "Incremental Rhino patch: a changed program rebuilds only the operations its structural digests and analytic bounds mark, closed under input edges; kept objects are carried by name from the prior document and re-stamped; an identity-only change is a restamp; the readback denominator stays the whole document; the runner exports by program digest and patches on a prior export with an optional full-rebuild oracle.",
       "depends_on": [
         "P099",
@@ -15395,6 +15396,52 @@
         ]
       ],
       "card": "docs/mapping/planning/P103-incremental-rhino-patch.md",
+      "on_complete": {},
+      "actor": "claude"
+    },
+    {
+      "id": "P104",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "A resident Rhino export host: one COM process across the exports of a run, with exact ownership proven per script and document isolation between exports, so the incremental patch path's saved work turns into saved wall clock. Retires one process per export; the per-export bridge stays as the fallback and the equivalence oracle.",
+      "depends_on": [
+        "P089",
+        "P103"
+      ],
+      "write_scope": [
+        "archflow/adapters/",
+        "archflow/runtime/",
+        "tools/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "One Rhino process runs every seat export of a run; ownership is proven once and re-proven per script.",
+        "Second and later exports cost materially less than the first, measured on the villa and Rocca and reported as a table.",
+        "Per-process export remains available, is what the oracle uses, and a host failure falls back to it with a typed receipt.",
+        "Documents do not leak between exports; a violation fails typed.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "tests.test_cad_execution",
+        "tests.test_cad_patch"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_cad_execution",
+          "tests.test_cad_patch"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P104-resident-rhino-export-host.md",
       "on_complete": {},
       "actor": "claude"
     }

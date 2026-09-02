@@ -18,10 +18,22 @@ from tests.test_geometry_compiler import COMMITMENT, _proposal, _state
 from tests.test_wall_window_families import _only
 
 
-def _compile(rows):
+def _compile(rows, *, array_seed: str | None = None):
+    """The slice as a compiled program; ``array_seed`` adds a P099-style block array over that operation."""
+
     context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
     produced = produce_rows(rows, context)
     operations = tuple(replace(op, semantic_binding_ids=("building-binding",)) for e in produced for op in e.operations)
+    if array_seed is not None:
+        from archflow.state.geometry_program import GeometryOperation, GeometryOperationKind, GeometryParameter, GeometryParameterKind, LengthUnit
+
+        seed = next(op for op in operations if op.op_id == array_seed)
+        operations += (GeometryOperation(
+            op_id=f"{array_seed}-array", kind=GeometryOperationKind.ARRAY, output_object_ids=(f"{seed.output_object_ids[0]}-array",),
+            input_object_ids=seed.output_object_ids, frame_id=seed.frame_id,
+            parameters=(GeometryParameter.create(name="count", kind=GeometryParameterKind.INTEGER, value=3),
+                        GeometryParameter.create(name="step", kind=GeometryParameterKind.VECTOR3, value=[0.0, 0.0, 1.0], unit=LengthUnit.METER)),
+            semantic_binding_ids=seed.semantic_binding_ids),)
     bindings = tuple(b for e in produced for b in e.bindings)
     datums = tuple(sorted(list(context.published.values()) + list(_levels().datums()), key=lambda d: d.datum_id))
     state = _state()
@@ -91,6 +103,19 @@ class PatchSelectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             translate_to_rhino_python(b, operation_subset=("nowhere",))
 
+    def test_a_prior_program_with_a_block_array_is_patchable(self) -> None:
+        """P099 typed instances: the array's definition and references are carried, not refused."""
+
+        prior = _compile(_rows(), array_seed="capitals-west-0")
+        self.assertIn("obj-capitals-west-0-array", {o.object_id for o in prior.objects})
+        changed = _compile(_capital_rows(half_extent=0.6), array_seed="capitals-west-0")
+        selection = select_patch_operations(changed, prior)                                   # no longer a blanket refusal
+        self.assertIn("capitals-west-0-array", selection.rebuilt_op_ids)                      # the array consumes a rebuilt seed
+        self.assertIn("obj-capitals-west-0-array", selection.delete_object_names)
+        self.assertNotIn("obj-capitals-west-0", selection.kept_object_ids)                    # the seed is consumed, never physical
+        self.assertEqual(set(selection.kept_object_ids), {f"obj-columns-west-{k}" for k in range(6)} | {"obj-entablature-west", "obj-pediment-west"})
+        self.assertTrue(select_patch_operations(_compile(_rows(), array_seed="capitals-west-0"), prior).empty)
+
     def test_patch_plan_carries_the_selection_and_the_whole_denominator(self) -> None:
         a = _compile(_rows())
         b = _compile(_capital_rows(half_extent=0.6))
@@ -106,7 +131,9 @@ class PatchSelectionTests(unittest.TestCase):
             script = plan.script_path.read_text(encoding="utf-8")
             self.assertIn("File3dm.Read", script)
             self.assertIn("'obj-capitals-west-0'", script)
-            self.assertIn("_patch_kept != 8", script)
+            self.assertIn("_patch_expected_names = set(json.loads(", script)                # identity, not a bare count
+            self.assertIn("AddInstanceObject", script)                                       # block families survive the carry
+            self.assertIn("InstanceDefinitions.Add", script)
             self.assertIn("_patch_semantics = json.loads(", script)
             self.assertIn("obj-columns-west-0", script.split("_patch_semantics = json.loads(")[1].split("\n")[0])
             self.assertEqual(plan.to_dict()["patch"]["prior_model_sha256"], plan.patch["prior_model_sha256"])
