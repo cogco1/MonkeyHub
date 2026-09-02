@@ -31,7 +31,7 @@ from archflow.state.component_template import (
     TemplateParameter,
 )
 from archflow.state.design_maturity import DesignPhase
-from archflow.state.geometry_program import InterfaceDatumKind
+from archflow.state.geometry_program import InterfaceDatumKind, ProjectGrids, ProjectLevels
 from archflow.state.spatial import DesignComponent
 
 LIBRARY_PROMOTION_MIN_VOTES = 2
@@ -489,8 +489,20 @@ def bind_assembly_template(
     datum_bindings: tuple[tuple[str, str], ...],
     parameters: tuple[TemplateParameter, ...] = (),
     evidence_rebinding: tuple[tuple[str, str], ...] = (),
+    project_levels: ProjectLevels | None = None,
+    project_grids: ProjectGrids | None = None,
 ) -> AssemblyTemplateBinding:
-    """Bind a template to one project; every gap fails typed."""
+    """Bind a template to one project; every gap fails typed.
+
+    With project levels or grids supplied (P098), a required LEVEL datum
+    must bind to a project level id and a required PLANE datum to a grid
+    axis id; a missing level is a typed failure, never a default.
+    """
+
+    if project_levels is not None and not isinstance(project_levels, ProjectLevels):
+        raise AssemblyTemplateError("project_levels must be ProjectLevels")
+    if project_grids is not None and not isinstance(project_grids, ProjectGrids):
+        raise AssemblyTemplateError("project_grids must be ProjectGrids")
 
     if not isinstance(template, BuildingAssemblyTemplate):
         raise AssemblyTemplateError("template must be a BuildingAssemblyTemplate")
@@ -545,12 +557,22 @@ def bind_assembly_template(
             elif tuple(sorted(rb.indices)) != tuple(sorted(role.indexing)):
                 raise AssemblyTemplateError(f"role {role.role_id!r} indices differ from the template indexing")
     datum_roles = {d.datum_role for d in template.datums}
+    datum_kinds = {d.datum_role: d.kind for d in template.datums}
     seen = set()
     for datum_role, datum_id in datum_bindings:
         if datum_role not in datum_roles:
             raise AssemblyTemplateError(f"binding names unknown datum role {datum_role!r}")
         require_identifier(datum_id, "datum_id")
         seen.add(datum_role)
+        kind = datum_kinds[datum_role]
+        if kind is InterfaceDatumKind.LEVEL and project_levels is not None and datum_id not in project_levels.datum_ids:
+            raise AssemblyTemplateError(
+                f"required level {datum_role!r} binds {datum_id!r}, which is not a project level"
+            )
+        if kind is InterfaceDatumKind.PLANE and project_grids is not None and datum_id not in project_grids.datum_ids:
+            raise AssemblyTemplateError(
+                f"required plane {datum_role!r} binds {datum_id!r}, which is not a project grid axis"
+            )
     # a datum role is required only where its publishing role is bound (not declined)
     for d in template.datums:
         publisher = bound[d.published_by_role]

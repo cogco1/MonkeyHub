@@ -1236,3 +1236,315 @@ class GeometryProgramProposal:
             "hard_gate_authority": False,
             "canonical_write_authority": False,
         }
+
+
+# ---------------------------------------------------------------- P098
+# Project levels and grids: the storeys and axes every element of one
+# building references. Published once per run by the coordination seat;
+# seats derive their LEVEL / PLANE datums from them instead of restating
+# elevations per object and per side. A level carries its evidence: the
+# kernel never defaults one.
+
+
+def _finite_float(value: object, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise GeometryProgramError(f"{field} must be a number")
+    number = float(value)
+    if not math.isfinite(number):
+        raise GeometryProgramError(f"{field} must be finite")
+    return number
+
+
+def _basis(value: object, field: str) -> tuple[str, ...]:
+    if not isinstance(value, tuple) or not value or any(
+        not isinstance(item, str) or not item for item in value
+    ):
+        raise GeometryProgramError(f"{field} requires at least one basis ref")
+    if tuple(sorted(set(value))) != value:
+        raise GeometryProgramError(f"{field} basis_refs must be sorted and unique")
+    return value
+
+
+def _plan_vector(value: object, field: str) -> tuple[float, float, float]:
+    if not isinstance(value, tuple) or len(value) != 3:
+        raise GeometryProgramError(f"{field} must be a 3-vector")
+    vector = tuple(_finite_float(item, field) for item in value)
+    return (vector[0], vector[1], vector[2])
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectLevel:
+    """One storey or building datum: an elevation with its evidence."""
+
+    level_id: str
+    role: str
+    elevation: float
+    basis_refs: tuple[str, ...]
+
+    SCHEMA = "ProjectLevel@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.level_id, "level_id")
+        require_identifier(self.role, "level role")
+        object.__setattr__(self, "elevation", _finite_float(self.elevation, f"level {self.level_id} elevation"))
+        _basis(self.basis_refs, f"level {self.level_id}")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "level_id": self.level_id,
+            "role": self.role,
+            "elevation": self.elevation,
+            "basis_refs": list(self.basis_refs),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> ProjectLevel:
+        if not isinstance(value, dict) or value.get("schema") != cls.SCHEMA:
+            raise GeometryProgramError("project level payload malformed")
+        return cls(
+            level_id=value["level_id"],
+            role=value["role"],
+            elevation=value["elevation"],
+            basis_refs=tuple(value["basis_refs"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectGridAxis:
+    """One plan axis: a vertical plane through a line in plan."""
+
+    axis_id: str
+    role: str
+    origin: tuple[float, float, float]
+    direction: tuple[float, float, float]
+    basis_refs: tuple[str, ...]
+
+    SCHEMA = "ProjectGridAxis@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.axis_id, "axis_id")
+        require_identifier(self.role, "axis role")
+        object.__setattr__(self, "origin", _plan_vector(self.origin, f"axis {self.axis_id} origin"))
+        direction = _plan_vector(self.direction, f"axis {self.axis_id} direction")
+        if direction[1] != 0.0:
+            raise GeometryProgramError(f"axis {self.axis_id} direction must lie in plan (Y is up)")
+        if direction[0] == 0.0 and direction[2] == 0.0:
+            raise GeometryProgramError(f"axis {self.axis_id} direction must be nonzero")
+        object.__setattr__(self, "direction", direction)
+        _basis(self.basis_refs, f"axis {self.axis_id}")
+
+    @property
+    def normal(self) -> tuple[float, float, float]:
+        """Unit normal of the vertical plane containing the axis."""
+
+        dx, _, dz = self.direction
+        length = math.hypot(dx, dz)
+        return (dz / length, 0.0, -dx / length)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "axis_id": self.axis_id,
+            "role": self.role,
+            "origin": list(self.origin),
+            "direction": list(self.direction),
+            "basis_refs": list(self.basis_refs),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> ProjectGridAxis:
+        if not isinstance(value, dict) or value.get("schema") != cls.SCHEMA:
+            raise GeometryProgramError("project grid axis payload malformed")
+        return cls(
+            axis_id=value["axis_id"],
+            role=value["role"],
+            origin=tuple(value["origin"]),
+            direction=tuple(value["direction"]),
+            basis_refs=tuple(value["basis_refs"]),
+        )
+
+
+def _unique_roles(items, id_field: str, label: str) -> None:
+    ids = [getattr(item, id_field) for item in items]
+    if ids != sorted(ids) or len(set(ids)) != len(ids):
+        raise GeometryProgramError(f"{label} must be sorted by id and unique")
+    roles = [item.role for item in items]
+    if len(set(roles)) != len(roles):
+        raise GeometryProgramError(f"{label} roles must be unique")
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectLevels:
+    """The storeys of one run, published once by the coordination seat."""
+
+    project_id: str
+    published_by: str
+    levels: tuple[ProjectLevel, ...]
+
+    SCHEMA = "ProjectLevels@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.project_id, "project_id")
+        require_identifier(self.published_by, "levels published_by")
+        if not isinstance(self.levels, tuple) or not self.levels or any(
+            not isinstance(item, ProjectLevel) for item in self.levels
+        ):
+            raise GeometryProgramError("levels must be a non-empty tuple of ProjectLevel")
+        _unique_roles(self.levels, "level_id", "project levels")
+
+    def level(self, role: str) -> ProjectLevel:
+        for item in self.levels:
+            if item.role == role:
+                return item
+        raise GeometryProgramError(f"project has no level with role {role!r}")
+
+    @property
+    def datum_ids(self) -> tuple[str, ...]:
+        return tuple(item.level_id for item in self.levels)
+
+    def datum(self, role: str) -> InterfaceDatum:
+        """The LEVEL datum every consumer of this storey binds to."""
+
+        item = self.level(role)
+        return InterfaceDatum.create(
+            datum_id=item.level_id,
+            kind=InterfaceDatumKind.LEVEL,
+            published_by=self.published_by,
+            value=item.elevation,
+            unit=LengthUnit.METER,
+            basis_refs=item.basis_refs,
+        )
+
+    def datums(self) -> tuple[InterfaceDatum, ...]:
+        return tuple(self.datum(item.role) for item in self.levels)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "project_id": self.project_id,
+            "published_by": self.published_by,
+            "levels": [item.to_dict() for item in self.levels],
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> ProjectLevels:
+        if not isinstance(value, dict) or value.get("schema") != cls.SCHEMA:
+            raise GeometryProgramError("project levels payload malformed")
+        return cls(
+            project_id=value["project_id"],
+            published_by=value["published_by"],
+            levels=tuple(ProjectLevel.from_dict(item) for item in value["levels"]),
+        )
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(canonical_json(self.to_dict()).encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectGrids:
+    """The plan axes of one run, published once by the coordination seat."""
+
+    project_id: str
+    published_by: str
+    axes: tuple[ProjectGridAxis, ...]
+
+    SCHEMA = "ProjectGrids@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.project_id, "project_id")
+        require_identifier(self.published_by, "grids published_by")
+        if not isinstance(self.axes, tuple) or not self.axes or any(
+            not isinstance(item, ProjectGridAxis) for item in self.axes
+        ):
+            raise GeometryProgramError("axes must be a non-empty tuple of ProjectGridAxis")
+        _unique_roles(self.axes, "axis_id", "project grid axes")
+
+    def axis(self, role: str) -> ProjectGridAxis:
+        for item in self.axes:
+            if item.role == role:
+                return item
+        raise GeometryProgramError(f"project has no grid axis with role {role!r}")
+
+    @property
+    def datum_ids(self) -> tuple[str, ...]:
+        return tuple(item.axis_id for item in self.axes)
+
+    def datum(self, role: str) -> InterfaceDatum:
+        item = self.axis(role)
+        return InterfaceDatum.create(
+            datum_id=item.axis_id,
+            kind=InterfaceDatumKind.PLANE,
+            published_by=self.published_by,
+            value={"origin": list(item.origin), "normal": list(item.normal)},
+            unit=LengthUnit.METER,
+            basis_refs=item.basis_refs,
+        )
+
+    def datums(self) -> tuple[InterfaceDatum, ...]:
+        return tuple(self.datum(item.role) for item in self.axes)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "project_id": self.project_id,
+            "published_by": self.published_by,
+            "axes": [item.to_dict() for item in self.axes],
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> ProjectGrids:
+        if not isinstance(value, dict) or value.get("schema") != cls.SCHEMA:
+            raise GeometryProgramError("project grids payload malformed")
+        return cls(
+            project_id=value["project_id"],
+            published_by=value["published_by"],
+            axes=tuple(ProjectGridAxis.from_dict(item) for item in value["axes"]),
+        )
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(canonical_json(self.to_dict()).encode("utf-8")).hexdigest()
+
+
+def verify_project_datums(
+    datums: tuple[InterfaceDatum, ...],
+    levels: ProjectLevels | None = None,
+    grids: ProjectGrids | None = None,
+) -> tuple[str, ...]:
+    """Check seat-published datums against the project levels and grids.
+
+    A seat datum that names a project level or axis id must be that
+    datum: same kind, same value, same publisher. Anything else is a
+    seat overwriting a project datum. Returns sorted violation messages;
+    empty means every named level or axis is derived, not restated.
+    """
+
+    expected: dict[str, InterfaceDatum] = {}
+    for record in (levels, grids):
+        if record is None:
+            continue
+        for item in record.datums():
+            expected[item.datum_id] = item
+    violations: list[str] = []
+    for datum in datums:
+        if not isinstance(datum, InterfaceDatum):
+            raise TypeError("datums must be InterfaceDatum items")
+        reference = expected.get(datum.datum_id)
+        if reference is None:
+            continue
+        if datum.kind is not reference.kind:
+            violations.append(
+                f"datum {datum.datum_id} restates a project {reference.kind.value} as a {datum.kind.value}"
+            )
+        elif datum.value_json != reference.value_json or datum.unit is not reference.unit:
+            violations.append(
+                f"datum {datum.datum_id} restates project value {reference.value_json} as {datum.value_json}"
+            )
+        elif datum.published_by != reference.published_by:
+            violations.append(
+                f"datum {datum.datum_id} is published by {datum.published_by}, not by {reference.published_by}"
+            )
+    return tuple(sorted(violations))
+

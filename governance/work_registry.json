@@ -15033,8 +15033,8 @@
     {
       "id": "P098",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "ready",
+      "stream": "archive",
+      "status": "done",
       "goal": "Project-level Level and Grid records published once per run by the coordination seat; seat datums and assembly-template required datums resolve to level/grid roles instead of per-object, per-side values; storey becomes a container role so spaces and egress read the realized building.",
       "depends_on": [
         "P090",
@@ -15073,8 +15073,46 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P098-project-levels-and-grids.md",
-      "on_complete": {}
+      "card": "docs/mapping/archive/P098-project-levels-and-grids.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P098",
+        "actor": "claude",
+        "verified_at": "2026-09-02T10:47:21.524983+00:00",
+        "contract_sha256": "7f0c9e52e78e8aa366bc6196f03a64a370ab3f4a98100e0228d1b1a8cbfaba98",
+        "scope_sha256": "94abf2c1e7d6c216062a08bf10986b7a36ca1173f28c986ad4e135b7817b28ed",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_project_levels"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "d9853af017010fbcf76d87c8fe46b87ae058237da982d900a1181a4a916ad331",
+            "stdout_tail": "",
+            "stderr_tail": "..........\n----------------------------------------------------------------------\nRan 10 tests in 0.024s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "517078d91d4ddbe622366fc7830ef8d5154c463d59980f3f05850274a536d1aa",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (297 files, 1.703s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-02",
+      "evidence": [
+        "tests/test_project_levels.py (10); villa run-017 project-datums-rebind-receipt-63aebfac: 12/12 seat programs accepted, equivalent to the accepted programs within 1 mm, per-side storey datums 8->0"
+      ]
     },
     {
       "id": "P099",

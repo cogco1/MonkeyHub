@@ -28,7 +28,7 @@ from archflow.state.developed_design import (
     DevelopmentDiscipline,
     DevelopmentObligationStatus,
 )
-from archflow.state.geometry_program import InterfaceDatum
+from archflow.state.geometry_program import InterfaceDatum, ProjectGrids, ProjectLevels, verify_project_datums
 from archflow.state.spatial import DesignComponent, SpatialOptionProposal
 
 _RECORD_AUTHORITY = (
@@ -454,6 +454,7 @@ class SeatAuthoringContext:
     components: tuple[DesignComponent, ...]
     inherited_commitment_refs: tuple[str, ...]
     handovers: tuple[SeatHandover, ...]
+    project_datums: tuple[InterfaceDatum, ...] = ()
 
     SCHEMA = "SeatAuthoringContext@1"
 
@@ -468,6 +469,7 @@ class SeatAuthoringContext:
             "components": [item.to_dict() for item in self.components],
             "inherited_commitment_refs": list(self.inherited_commitment_refs),
             "handovers": [item.to_dict() for item in self.handovers],
+            "project_datums": [item.to_dict() for item in self.project_datums],
             **no_authority(_RECORD_AUTHORITY),
         }
 
@@ -482,8 +484,19 @@ def project_seat_context(
     design_state: DevelopedDesignState,
     inherited_commitment_refs: tuple[str, ...],
     handovers: tuple[SeatHandover, ...] = (),
+    project_levels: ProjectLevels | None = None,
+    project_grids: ProjectGrids | None = None,
 ) -> SeatAuthoringContext:
-    """Project the design state onto one seat; sibling subtrees never leak."""
+    """Project the design state onto one seat; sibling subtrees never leak.
+
+    Project levels and grids (P098) enter every seat's context as
+    datums: a seat binds to them, it never restates them.
+    """
+
+    if project_levels is not None and not isinstance(project_levels, ProjectLevels):
+        raise SeatError("project_levels must be ProjectLevels")
+    if project_grids is not None and not isinstance(project_grids, ProjectGrids):
+        raise SeatError("project_grids must be ProjectGrids")
 
     if not isinstance(seat, SeatSpec):
         raise SeatError("seat must be SeatSpec")
@@ -526,7 +539,41 @@ def project_seat_context(
         components=components,
         inherited_commitment_refs=refs,
         handovers=tuple(sorted(handovers, key=lambda item: item.from_seat)),
+        project_datums=tuple(
+            sorted(
+                (project_levels.datums() if project_levels is not None else ())
+                + (project_grids.datums() if project_grids is not None else ()),
+                key=lambda item: item.datum_id,
+            )
+        ),
     )
+
+
+def check_seat_datums(
+    *,
+    seat: SeatSpec,
+    published_datums: tuple[InterfaceDatum, ...],
+    project_levels: ProjectLevels | None = None,
+    project_grids: ProjectGrids | None = None,
+) -> None:
+    """Fail typed when a seat publishes over a project level or axis (P098).
+
+    The seat may bind to a project datum and may publish its own
+    component datums; it may not publish a datum carrying a project
+    level or axis id with another kind, value, unit or publisher.
+    """
+
+    if not isinstance(seat, SeatSpec):
+        raise SeatError("seat must be SeatSpec")
+    if seat.reviewer:
+        raise SeatError("a reviewer seat publishes nothing")
+    violations = verify_project_datums(
+        tuple(published_datums), project_levels, project_grids
+    )
+    if violations:
+        raise SeatError(
+            f"seat {seat.seat_id!r} overwrites project datums: " + "; ".join(violations)
+        )
 
 
 def schedule_seats(seats: tuple[SeatSpec, ...]) -> tuple[tuple[str, ...], ...]:
