@@ -14092,13 +14092,15 @@
       "id": "P089",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "ready",
+      "status": "active",
       "goal": "Extract the reconstruction execution protocol from the three per-building runner monoliths into one record-driven runner whose per-building input is a project record pack; record-ref loading verifies digests at the repository port and retires hand-pinned SHA constants; orchestration only, with no derivation, gate, or authority semantics change and no building answer in the framework.",
       "depends_on": [
-        "P069",
         "P083",
         "P087",
-        "P088"
+        "P088",
+        "P092",
+        "P095",
+        "P098"
       ],
       "write_scope": [
         "tools/",
@@ -14117,9 +14119,8 @@
         "Full unittest suite and the architecture firewall pass."
       ],
       "tests": [
-        "Runner replay equivalence against retained pantheon, parthenon, and villa records",
-        "Record-ref digest verification fail-closed paths",
-        "Architecture firewall"
+        "tests.test_project_runner",
+        "tests.test_archcheck"
       ],
       "verification_commands": [
         [
@@ -14134,7 +14135,8 @@
         ]
       ],
       "card": "docs/mapping/planning/P089-record-driven-reconstruction-runner.md",
-      "on_complete": {}
+      "on_complete": {},
+      "actor": "claude"
     },
     {
       "id": "P090",

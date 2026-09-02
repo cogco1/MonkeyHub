@@ -1,7 +1,7 @@
 # P089 — Record-driven reconstruction runner
 
 - Origin: Planning
-- Status: Ready after P069, P083, P087, P088
+- Status: Active (first cut landed 2026-09-02; P069 dropped from the dependencies — the Pantheon card is codex's and the runner does not need it)
 - Depends on: P069, P083, P087, P088
 
 ## Goal
@@ -54,3 +54,41 @@ semantics change, and no building answer enters the framework.
   proceed.
 - Stop before touching `run_pantheon_reconstruction.py` while P069 holds
   it in an active write scope — sequencing is enforced by the dependency.
+
+## First cut (2026-09-02)
+
+`archflow/runtime/project_runner.py` + `tools/run_project.py`: a project
+enters as record packs — `SchematicPack@1` (levels, volumes, zones,
+connections, component tree, evidence) becomes a real
+`SpatialOptionProposal` → `SchematicOption` → `SelectedSchematicInput` →
+`DevelopedDesignState` through the state dataclasses' own validation
+(the portfolio ceremony is replaced by one declared selection record);
+`ElementPack@1` lists what each seat authors (wall with hosted openings
+and types, prism, ring, loft, column-array, dome-cap, or a typed
+declination with a reason) bound to project levels by id, heights as
+level differences or the element's own dimensions; `SeatPack@1`,
+`ProjectLevels@1`, `ProjectGrids@1`. The runner schedules seat rounds
+(P095), produces, authors one proposal per seat through the real
+producer (a recorded provider that returns the proposal and refuses a
+second round), gates coverage (every owned leaf has an element or a
+declination; unowned leaves are listed on the run receipt), checks seat
+datums (P098), compiles handovers with realized bounds as exclusions for
+consuming seats, optionally exports to Rhino with read-back, and writes
+stage receipts with wall time and a run receipt.
+Tests: `tests/test_project_runner.py` (5): pack → state, malformed
+packs, two seats through the producer with handover datums, an earlier
+seat's realized bounds refusing a later opening, coverage strict/relaxed.
+
+Rocca Pisana ran from packs end to end (`rocca-pisana/make_packs.py`,
+run `runner-002`): structure seat 9 objects, envelope seat 20 objects,
+both exported and read back, 78 s wall time, 11 unowned leaves listed,
+2 declinations with reasons. The three hand-written scripts it replaces
+(`derive_south_portico.py`, `derive_main_block.py`, and the villa seat
+scripts' orchestration) are 300–500 lines each.
+
+Not yet (the card's acceptance stands): pantheon and parthenon replay
+from retained records; villa replay beyond the west band; hand-pinned
+SHA constants on the authoring path; the front of the pipeline (brief,
+program, site, build policy) is still declared, not compiled from
+evidence; the `portico_geometry` producer is not in the registry yet.
+
