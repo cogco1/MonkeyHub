@@ -27,7 +27,7 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Iterable, Mapping
 
 _SUPPORTED = {
     "solid",
@@ -288,8 +288,13 @@ def translate_to_rhino_python(
     provenance: Mapping[str, str] | None = None,
     material_by_component: Mapping[str, str] | None = None,
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
+    operation_subset: Iterable[str] | None = None,
 ) -> CadTranslation:
     """Emit one deterministic, semantics-carrying rhinoscriptsyntax script.
+
+    With ``operation_subset`` (P103 patch) only those operations are
+    emitted, in program order, and only their physical outputs are named
+    and measured; the rest of the document is the patch base's business.
 
     With a material assignment, component layers take the material's
     display color and objects carry ``archflow:material`` user text —
@@ -300,6 +305,14 @@ def translate_to_rhino_python(
     operations = {op.op_id: op for op in proposal.operations}
     order = list(program.operation_order)
     physical = _physical_ids(proposal)
+    if operation_subset is not None:
+        subset = set(operation_subset)
+        unknown = sorted(subset - set(order))
+        if unknown:
+            raise ValueError(f"operation_subset names unknown operations: {unknown}")
+        order = [op_id for op_id in order if op_id in subset]
+        emitted = {out for op_id in order for out in operations[op_id].output_object_ids}
+        physical = tuple(object_id for object_id in physical if object_id in emitted)
     semantics = expected_object_semantics(
         program, material_by_component=material_by_component
     )

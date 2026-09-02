@@ -1,0 +1,169 @@
+"""P100: derivation table + semantic references.
+
+Numbers get names and bases; elements are placed by reference and lowered
+through one resolver; elevation references stay symbolic for the compiler.
+"""
+from __future__ import annotations
+
+import unittest
+
+from archflow.capabilities.reference_resolver import (
+    AxisPoint,
+    GridIntersection,
+    GridRef,
+    HostAlong,
+    HostLine,
+    LevelRef,
+    OffsetFrom,
+    ReferenceContext,
+    ReferenceError,
+    lower_element_references,
+    parse_reference,
+    resolve_elevation,
+    resolve_plan,
+)
+from archflow.state.derivation import (
+    DerivationError,
+    DerivationTable,
+    DerivedQuantity,
+    evaluate,
+    expression_names,
+    substitute,
+)
+from archflow.state.geometry_program import ProjectGridAxis, ProjectGrids, ProjectLevel, ProjectLevels
+
+BASIS = ("reading:demo",)
+
+
+def _table() -> DerivationTable:
+    return DerivationTable("demo", (
+        DerivedQuantity("body_side", "21.42", "m", BASIS, "declared"),
+        DerivedQuantity("body_half", "body_side / 2", "m"),
+        DerivedQuantity("column_diameter", "0.714", "m", BASIS, "declared"),
+        DerivedQuantity("column_height", "9 * column_diameter", "m", ("rule:ionic-nine-diameters",)),
+        DerivedQuantity("axis_spacing", "2.25 * column_diameter", "m"),
+        DerivedQuantity("stair_riser", "service_top / risers", "m"),
+        DerivedQuantity("clamped", "min(max(body_half, 5), 12) + abs(-1) + round(sqrt(16), 0)", "m"),
+    ))
+
+
+def _grids() -> ProjectGrids:
+    return ProjectGrids(project_id="demo", published_by="seat-coordination", axes=(
+        ProjectGridAxis("axis-1", "1", (-10.71, 0.0, 0.0), (0.0, 0.0, 1.0), BASIS),
+        ProjectGridAxis("axis-6", "6", (10.71, 0.0, 0.0), (0.0, 0.0, 1.0), BASIS),
+        ProjectGridAxis("axis-a", "A", (0.0, 0.0, -10.71), (1.0, 0.0, 0.0), BASIS),
+        ProjectGridAxis("axis-f", "F", (0.0, 0.0, 10.71), (1.0, 0.0, 0.0), BASIS),
+    ))
+
+
+def _levels() -> ProjectLevels:
+    return ProjectLevels(project_id="demo", published_by="seat-coordination", levels=(
+        ProjectLevel("level-eaves", "eaves", 13.388, BASIS), ProjectLevel("level-ground", "terrain-grade", 0.0, BASIS),
+        ProjectLevel("level-piano-nobile", "piano-nobile", 3.57, BASIS)))
+
+
+class DerivationTests(unittest.TestCase):
+    def test_quantities_evaluate_in_dependency_order_with_inputs(self) -> None:
+        derived = evaluate(_table(), {"service_top": 3.57, "risers": 23})
+        self.assertAlmostEqual(derived["column_height"], 6.426)
+        self.assertAlmostEqual(derived["axis_spacing"], 1.6065)
+        self.assertAlmostEqual(derived["stair_riser"], 3.57 / 23)
+        self.assertAlmostEqual(derived["clamped"], 10.71 + 1 + 4)
+        by_name = {v.name: v for v in derived.values}
+        self.assertEqual(by_name["column_height"].inputs, ("column_diameter",))
+        self.assertEqual(by_name["stair_riser"].inputs, ("service_top", "risers"))
+        self.assertEqual(by_name["column_height"].epistemic_status, "derived")
+        self.assertEqual(len(derived.digest), 64)
+        self.assertEqual(DerivationTable.from_dict(_table().to_dict()), _table())
+        self.assertEqual(expression_names("a + b * (c - a)"), ("a", "b", "c"))
+
+    def test_gaps_fail_typed(self) -> None:
+        with self.assertRaises(DerivationError):
+            evaluate(_table())                                              # service_top / risers unknown
+        with self.assertRaises(DerivationError):
+            evaluate(DerivationTable("d", (DerivedQuantity("a", "b + 1", "m"), DerivedQuantity("b", "a * 2", "m"))))
+        with self.assertRaises(DerivationError):
+            evaluate(DerivationTable("d", (DerivedQuantity("a", "1 / (2 - 2)", "m"),)))
+        with self.assertRaises(DerivationError):
+            DerivedQuantity("a", "import os", "m")
+        with self.assertRaises(DerivationError):
+            DerivedQuantity("a", "a ** 2", "m")
+        with self.assertRaises(DerivationError):
+            evaluate(DerivationTable("d", (DerivedQuantity("x", "1", "m"),)), {"x": 2.0})   # shadowing a reading
+
+    def test_substitution_replaces_named_quantities_anywhere(self) -> None:
+        derived = evaluate(_table(), {"service_top": 3.57, "risers": 23})
+        value = substitute({"spacing": "@axis_spacing", "list": ["@column_height", 1.0], "text": "plain"}, derived)
+        self.assertAlmostEqual(value["spacing"], 1.6065)
+        self.assertAlmostEqual(value["list"][0], 6.426)
+        self.assertEqual(value["text"], "plain")
+        with self.assertRaises(DerivationError):
+            substitute("@nothing", derived)
+
+
+class ResolverTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.context = ReferenceContext(grids=_grids(), levels=_levels(), hosts={"wall-west": HostLine((-10.71, -10.71), (0.0, 1.0))})
+
+    def test_plan_references_resolve_from_the_grids_and_hosts(self) -> None:
+        self.assertEqual(resolve_plan(GridIntersection("axis-1", "axis-a"), self.context), (-10.71, -10.71))
+        self.assertEqual(resolve_plan(GridIntersection("F", "6"), self.context), (10.71, 10.71))
+        self.assertEqual(resolve_plan(AxisPoint("axis-1", 5.0), self.context), (-10.71, 5.0))
+        self.assertEqual(resolve_plan(GridRef("axis-a"), self.context), (0.0, -10.71))
+        self.assertEqual(resolve_plan(HostAlong("wall-west", 3.16), self.context), (-10.71, -7.55))
+        self.assertEqual(resolve_plan(HostAlong("wall-west", 3.16, across=0.42), self.context), (-10.29, -7.55))
+        with self.assertRaises(ReferenceError):
+            resolve_plan(GridIntersection("axis-1", "axis-6"), self.context)     # parallel
+        with self.assertRaises(ReferenceError):
+            resolve_plan(HostAlong("wall-north", 1.0), self.context)
+
+    def test_elevation_references_stay_symbolic(self) -> None:
+        self.assertEqual(resolve_elevation(LevelRef("level-piano-nobile"), self.context), ("level-piano-nobile", 0.0))
+        self.assertEqual(resolve_elevation(OffsetFrom("level-piano-nobile", 1.53), self.context), ("level-piano-nobile", 1.53))
+        with self.assertRaises(ReferenceError):
+            resolve_elevation(LevelRef("level-attic"), self.context)
+        self.assertEqual(parse_reference({"grid": ["A", "1"]}), GridIntersection("A", "1"))
+        self.assertEqual(parse_reference({"offset_from": {"level": "level-ground", "offset": 0.45}}), OffsetFrom("level-ground", 0.45))
+
+    def test_lowering_a_reference_pack_yields_the_coordinate_pack(self) -> None:
+        derived = evaluate(_table(), {"service_top": 3.57, "risers": 23})
+        pack = {"schema": "ElementPack@1", "elements": [
+            {"element_id": "wall-west", "component_id": "exterior-walls", "producer": "wall",
+             "references": {"line": {"from": {"grid": ["1", "A"]}, "to": {"grid": ["1", "F"]}, "face": "exterior", "inward": [1, 0]},
+                            "base": {"level": "level-ground"}, "top": {"level": "level-eaves"}},
+             "params": {"thickness": 0.42, "openings": [
+                 {"opening_id": "window-left", "kind": "window", "at": {"host": {"element": "wall-west", "along": 3.16}}, "width": 1.32,
+                  "sill": {"offset_from": {"level": "level-piano-nobile", "offset": 1.53}}, "head": {"offset_from": {"level": "level-piano-nobile", "offset": 4.58}}}]}},
+            {"element_id": "portico-columns", "component_id": "portico-columns", "producer": "column-array",
+             "references": {"at": {"grid": ["1", "A"]}, "direction": "A", "base": {"level": "level-piano-nobile"}},
+             "params": {"count": 6, "spacing": "@axis_spacing", "radius": 0.357, "height": "@column_height"}},
+        ]}
+        lowered = lower_element_references(pack, grids=_grids(), levels=_levels(), derived=derived)
+        wall, columns = lowered["elements"]
+        self.assertEqual(wall["base_level"], "level-ground")
+        self.assertEqual(wall["params"]["top_level"], "level-eaves")
+        self.assertEqual(wall["params"]["origin"], [-10.71, -10.71])
+        self.assertEqual(wall["params"]["direction"], [0.0, 1.0])
+        self.assertAlmostEqual(wall["params"]["length"], 21.42)
+        opening = wall["params"]["openings"][0]
+        self.assertAlmostEqual(opening["along"], 3.16)
+        self.assertAlmostEqual(opening["sill"], 3.57 + 1.53)                 # relative to the wall's own base level
+        self.assertAlmostEqual(opening["head"], 3.57 + 4.58)
+        self.assertEqual(columns["base_level"], "level-piano-nobile")
+        self.assertEqual(columns["params"]["origin"], [-10.71, -10.71])
+        self.assertEqual(columns["params"]["direction"], [1.0, 0.0])
+        self.assertAlmostEqual(columns["params"]["spacing"], 1.6065)
+        self.assertAlmostEqual(columns["params"]["height"], 6.426)
+        self.assertNotIn("references", wall)
+
+    def test_lowering_refuses_a_top_offset_and_unknown_axes(self) -> None:
+        bad = {"schema": "ElementPack@1", "elements": [{"element_id": "w", "component_id": "c", "producer": "wall",
+               "references": {"line": {"from": {"grid": ["1", "A"]}, "to": {"grid": ["1", "F"]}}, "base": {"level": "level-ground"}, "top": {"offset_from": {"level": "level-eaves", "offset": 0.1}}}, "params": {"thickness": 0.4}}]}
+        with self.assertRaises(ReferenceError):
+            lower_element_references(bad, grids=_grids(), levels=_levels())
+        with self.assertRaises(ReferenceError):
+            lower_element_references({"schema": "ElementPack@1", "elements": [{"element_id": "c", "component_id": "c", "producer": "prism", "references": {"at": {"grid": ["9", "A"]}}, "params": {}}]}, grids=_grids(), levels=_levels())
+
+
+if __name__ == "__main__":
+    unittest.main()

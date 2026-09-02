@@ -21,7 +21,9 @@ from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Mapping
 
+from archflow.adapters.cad_patch import CadPatchError, build_patch_prelude, select_patch_operations
 from archflow.adapters.cad_program import (
+    _physical_ids,
     expected_object_bounds,
     expected_object_semantics,
     translate_to_rhino_python,
@@ -245,6 +247,7 @@ class RhinoCadExportPlan:
     expected_bounds: dict[str, dict[str, object]]
     expected_object_counts: tuple[tuple[str, int], ...]
     readback_tolerance: float
+    patch: dict[str, object] | None = None
 
     SCHEMA = "RhinoCadExportPlan@4"
 
@@ -433,6 +436,7 @@ class RhinoCadExportPlan:
                     for key, count in self.expected_object_counts
                 ],
                 "readback_tolerance": self.readback_tolerance,
+                "patch": _json_copy(self.patch) if self.patch else None,
                 "canonical_write_authority": False,
             }
         )
@@ -579,6 +583,20 @@ class RhinoCadExecutionReceipt:
         )
 
 
+@dataclass(frozen=True)
+class RhinoPatchBase:
+    """The prior saved document and the program it realized (P103)."""
+
+    prior_model_path: Path
+    prior_program: CompiledGeometryProgram
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.prior_model_path, Path):
+            raise TypeError("prior_model_path must be pathlib.Path")
+        if not isinstance(self.prior_program, CompiledGeometryProgram):
+            raise TypeError("prior_program must be CompiledGeometryProgram")
+
+
 def prepare_rhino_three_dm_export(
     program: CompiledGeometryProgram,
     *,
@@ -589,8 +607,14 @@ def prepare_rhino_three_dm_export(
     provenance: Mapping[str, str] | None = None,
     material_by_component: Mapping[str, str] | None = None,
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
+    patch: RhinoPatchBase | None = None,
 ) -> RhinoCadExportPlan:
-    """Prepare one immutable export plan in an existing explicit workspace."""
+    """Prepare one immutable export plan in an existing explicit workspace.
+
+    With ``patch`` the plan rebuilds only the selected operations on top of
+    the prior document's kept objects; the readback denominator is still
+    the whole program, so a patch is verified exactly like a rebuild.
+    """
 
     if not isinstance(binding, RhinoCadProgramBinding):
         raise TypeError("binding must be RhinoCadProgramBinding")
@@ -618,11 +642,37 @@ def prepare_rhino_three_dm_export(
         if target.exists():
             raise CadExecutionError(f"speculative output already exists: {target.name}")
     supplied = _provenance(identity, provenance)
+    selection = None
+    patch_prelude = None
+    patch_record: dict[str, object] | None = None
+    if patch is not None:
+        if not isinstance(patch, RhinoPatchBase):
+            raise TypeError("patch must be RhinoPatchBase")
+        prior_model = patch.prior_model_path.resolve()
+        if not prior_model.is_file():
+            raise CadExecutionError(f"patch base model does not exist: {prior_model}")
+        try:
+            selection = select_patch_operations(program, patch.prior_program)
+        except CadPatchError as exc:
+            raise CadExecutionError(f"patch not expressible: {exc}") from exc
+        if selection.empty:
+            raise CadExecutionError("nothing to patch: the program realizes the prior document already")
+        patch_prelude = build_patch_prelude(
+            selection,
+            prior_model_path=prior_model,
+            semantics=expected_object_semantics(program, material_by_component=material_by_component)["objects"],
+        )
+        patch_record = {
+            **selection.to_dict(),
+            "prior_model_path": str(prior_model),
+            "prior_model_sha256": _sha256_bytes(prior_model.read_bytes()),
+        }
     translation = translate_to_rhino_python(
         program,
         provenance=supplied,
         material_by_component=material_by_component,
         material_colors=material_colors,
+        operation_subset=None if selection is None else selection.rebuilt_op_ids,
     )
     if translation.losses:
         raise CadExecutionError(
@@ -647,7 +697,8 @@ def prepare_rhino_three_dm_export(
         )
     )
     translation_sha256 = _sha256_text(translation.script)
-    physical_object_ids = tuple(sorted(translation.physical_object_ids))
+    # a patch names only the rebuilt objects in its script; the denominator stays the whole document
+    physical_object_ids = tuple(sorted(translation.physical_object_ids if selection is None else _physical_ids(program.proposal)))
     expected_document_user_text = tuple(
         sorted((f"archflow:{key}", value) for key, value in supplied.items())
     )
@@ -681,6 +732,7 @@ def prepare_rhino_three_dm_export(
         completion_token=completion_token,
         length_unit=unit,
         readback_tolerance=tolerance,
+        patch_prelude=patch_prelude,
     )
     try:
         with script_path.open("x", encoding="utf-8", newline="\n") as stream:
@@ -708,6 +760,7 @@ def prepare_rhino_three_dm_export(
         expected_bounds=bounds,
         expected_object_counts=counts,
         readback_tolerance=tolerance,
+        patch=patch_record,
     )
 
 
@@ -1606,6 +1659,7 @@ def _export_script(
     completion_token: str,
     length_unit: str,
     readback_tolerance: float,
+    patch_prelude: str | None = None,
 ) -> str:
     unit_enum = _UNIT_TO_RHINO[length_unit][0]
     mesh_tolerance = _positive_finite(
@@ -1618,11 +1672,15 @@ def _export_script(
         completion_token=completion_token,
         status="succeeded",
     )
+    opening = (
+        patch_prelude.rstrip("\n")
+        if patch_prelude
+        else "_existing = rs.AllObjects() or []\nif _existing: rs.DeleteObjects(_existing)"
+    )
     body = "\n".join(
         (
-            "_existing = rs.AllObjects() or []",
-            "if _existing: rs.DeleteObjects(_existing)",
             f"Rhino.RhinoDoc.ActiveDoc.AdjustModelUnitSystem(Rhino.UnitSystem.{unit_enum}, False)",
+            opening,
             "rs.EnableRedraw(False)",
             translated_script.rstrip("\n"),
             "rs.EnableRedraw(True)",
