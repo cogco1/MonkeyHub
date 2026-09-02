@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-09-01",
+  "updated_on": "2026-09-02",
   "phase": "P7 - semantic geometry production closure proven",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -14936,6 +14936,98 @@
       "completed_on": "2026-09-01",
       "evidence": [
         "check_handover_exclusions (discipline_seats): every consuming object entering a handover EXCLUSION_BOUNDS by more than the tolerance on all three axes is reported with its depth; a shared face is contact; DeclaredEngagement (subject, host, reason, basis) silences exactly its pair. Villa run-017 west detail seat: 14 analytic violations before (12 course-into-entablature pairs + 2 pediment-vs-roof), 12 silenced by declared engagements, the remaining 2 resolved against the RhinoCommon both-inside probe as axis-aligned-box false positives (records handover-exclusion-check-73315a3c, handover-exclusion-resolution-b5e50d92). 13 seat tests; ARCHITECTURE PASS."
+      ]
+    },
+    {
+      "id": "P097",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Production policy, opt-in and recorded: derivable bookkeeping (revision preconditions, semantic acknowledgements) completed by the producer from records; progress-based round budget under a hard cap; resume from a rejected round without restarting the chain; partial acceptance of the reduced program with typed deferrals for object-scoped failures; typed stall escalation with the last proposal kept. Experiments keep the one-attempt rule; hard validators and single-writer promotion untouched.",
+      "depends_on": [
+        "P063",
+        "P090",
+        "P095",
+        "M097"
+      ],
+      "write_scope": [
+        "archflow/capabilities/geometry_proposal.py",
+        "archflow/compilers/geometry.py",
+        "archflow/runtime/production_compiler.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Completion on: missing revision preconditions / semantic acknowledgements for unchanged-intent edits compile with per-object completion records; off: refusal unchanged.",
+        "Progress budget continues while the issue set strictly shrinks under a hard cap and escalates when it stops.",
+        "Resume from a rejected round continues the same lineage without re-authoring the spatial option.",
+        "Partial acceptance yields an ACCEPTED reduced program plus deferral records for dropped objects and dependents; non-object-scoped issues block it.",
+        "Escalation record carries the issue list and the last proposal ref.",
+        "Experiment policy reproduces today's behaviour on the existing producer tests; full suite and firewall pass."
+      ],
+      "tests": [
+        "Completion on/off",
+        "Progress budget",
+        "Resume",
+        "Partial acceptance",
+        "Escalation",
+        "Experiment equivalence",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_production_policy",
+          "tests.test_geometry_proposal_producer"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P097-production-policy.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P097",
+        "actor": "claude",
+        "verified_at": "2026-09-02T08:52:47.077235+00:00",
+        "contract_sha256": "7b370e8dd0653f36c6c387c60eecdf03ffa657abc6b7fda24ad00af503265a21",
+        "scope_sha256": "1f013519d5e2518b079d2e3e417cb1707aded42880c30ffc8806b3268184729e",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_production_policy",
+              "tests.test_geometry_proposal_producer"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "9754c0916a8fe031fc157bc3c21e13a3af5cd45aa867be618b918c9eefddb24d",
+            "stdout_tail": "",
+            "stderr_tail": "........................................\n----------------------------------------------------------------------\nRan 40 tests in 5.410s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "5596a1fc24b44efd2300ceb7312e711834e878485eb1dfc1a86fec377ed3d066",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (297 files, 1.807s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-02",
+      "evidence": [
+        "GeometryProposalPolicy gains four opt-in production flags (defaults = experiment policy, bit-for-bit on the existing producer tests): complete_bookkeeping fills missing revision preconditions (prior object digest) and unacknowledged binding/input/frame changes from records, recompiles without a model call and records geometry-proposal-completion-NN; progress_budget continues past the bounded budget only while the issue set strictly shrinks (hard cap 32) and stops on stall; partial_acceptance compiles the reduced proposal when every remaining compiler issue is object-scoped and deferrable (prior objects restored, new objects and dependents removed) and records geometry-proposal-deferral; escalate_on_stall records geometry-proposal-escalation with the issue list and last proposal; resume_geometry_program_proposal continues from the escalation's last round through rejected_round_ref without re-authoring the spatial option. Hard validators, single-writer promotion and no-silent-fallback untouched; production_compiler passes the policy through unchanged. 9 tests in test_production_policy; full suite green apart from the known Windows flakes; ARCHITECTURE PASS (297 files)."
       ]
     }
   ]

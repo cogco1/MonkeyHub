@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
@@ -31,6 +31,7 @@ from archflow.project import (
     RunRef,
     require_destination,
 )
+from archflow.contracts.authority import no_authority
 from archflow.compilers.geometry import (
     AssetSubstitutionReceipt,
     CompiledGeometryObject,
@@ -1120,7 +1121,16 @@ class GeometryProposalProviderIdentity:
 
 @dataclass(frozen=True, slots=True)
 class GeometryProposalPolicy:
+    """Round policy. Defaults are the experiment policy (one bounded budget,
+    no completion, no partial acceptance). Production flags (P097) are
+    opt-in and every use of them is recorded on the run.
+    """
+
     maximum_rounds: int
+    complete_bookkeeping: bool = False
+    progress_budget: int | None = None
+    partial_acceptance: bool = False
+    escalate_on_stall: bool = False
 
     SCHEMA = "GeometryProposalPolicy@1"
 
@@ -1133,9 +1143,197 @@ class GeometryProposalPolicy:
             raise GeometryProposalProductionError(
                 "maximum_rounds must be between 1 and 16"
             )
+        for name in ("complete_bookkeeping", "partial_acceptance", "escalate_on_stall"):
+            if not isinstance(getattr(self, name), bool):
+                raise GeometryProposalProductionError(f"{name} must be a bool")
+        if self.progress_budget is not None and (
+            not isinstance(self.progress_budget, int)
+            or isinstance(self.progress_budget, bool)
+            or not self.maximum_rounds <= self.progress_budget <= 32
+        ):
+            raise GeometryProposalProductionError(
+                "progress_budget must be between maximum_rounds and 32"
+            )
+
+    @property
+    def production(self) -> bool:
+        return bool(
+            self.complete_bookkeeping
+            or self.progress_budget is not None
+            or self.partial_acceptance
+            or self.escalate_on_stall
+        )
+
+    @property
+    def round_cap(self) -> int:
+        return self.progress_budget or self.maximum_rounds
 
     def to_dict(self) -> dict[str, object]:
-        return {"schema": self.SCHEMA, "maximum_rounds": self.maximum_rounds}
+        return {
+            "schema": self.SCHEMA,
+            "maximum_rounds": self.maximum_rounds,
+            "complete_bookkeeping": self.complete_bookkeeping,
+            "progress_budget": self.progress_budget,
+            "partial_acceptance": self.partial_acceptance,
+            "escalate_on_stall": self.escalate_on_stall,
+        }
+
+
+_PRODUCTION_AUTHORITY = (
+    "canonical_write_authority",
+    "design_authority",
+    "stage_acceptance_authority",
+)
+_COMPLETABLE_CODES = frozenset({
+    GeometryIssueCode.MISSING_REVISION_PRECONDITION,
+    GeometryIssueCode.UNACKNOWLEDGED_SEMANTIC_CHANGE,
+    GeometryIssueCode.UNACKNOWLEDGED_DEPENDENCY_CHANGE,
+    GeometryIssueCode.UNACKNOWLEDGED_FRAME_CHANGE,
+})
+_DEFERRABLE_CODES = _COMPLETABLE_CODES | frozenset({
+    GeometryIssueCode.UNKNOWN_BINDING,
+    GeometryIssueCode.UNOWNED_OBJECT,
+    GeometryIssueCode.AMBIGUOUS_OBJECT_OWNER,
+    GeometryIssueCode.UNKNOWN_OBJECT,
+    GeometryIssueCode.DUPLICATE_OBJECT,
+    GeometryIssueCode.UNKNOWN_ASSET,
+    GeometryIssueCode.MISSING_ASSET,
+    GeometryIssueCode.INVALID_ASSET_SUBSTITUTION,
+    GeometryIssueCode.UNKNOWN_DATUM,
+    GeometryIssueCode.INVALID_DATUM_BINDING,
+    GeometryIssueCode.RESTATED_DATUM_PARAMETER,
+})
+
+
+def complete_bookkeeping(
+    proposal: GeometryProgramProposal,
+    prior_program: CompiledGeometryProgram,
+    issues: tuple[GeometryIssue, ...],
+    *,
+    reason_ref: str,
+) -> tuple[GeometryProgramProposal, dict[str, object]] | None:
+    """Fill derivable edit bookkeeping the model omitted (P097 knob 1).
+
+    Only the four completable codes are handled and only when every
+    issue is one of them. A revision precondition is the prior object's
+    exact digest; an acknowledgement names the changed binding, input or
+    frame the compiler already identified. Returns the completed proposal
+    and a completion summary, or None when completion does not apply.
+    """
+
+    if not issues or any(item.code not in _COMPLETABLE_CODES for item in issues):
+        return None
+    prior_objects = {item.object_id: item.object_digest for item in prior_program.objects}
+    revisions = {item.object_id: item for item in proposal.revisions}
+    operations = {op.op_id: op for op in proposal.operations}
+    added_revisions: list[str] = []
+    acknowledgements: list[dict[str, str]] = []
+    for issue in issues:
+        if issue.code is GeometryIssueCode.MISSING_REVISION_PRECONDITION:
+            object_id = issue.subject_id
+            if object_id in revisions or object_id not in prior_objects:
+                return None
+            revisions[object_id] = ObjectRevisionPrecondition(
+                object_id=object_id,
+                expected_digest=prior_objects[object_id],
+                reason_refs=(reason_ref,),
+            )
+            added_revisions.append(object_id)
+            continue
+        op = operations.get(issue.subject_id)
+        if op is None:
+            return None
+        changed = issue.detail.rsplit(" ", 1)[-1]
+        if issue.code is GeometryIssueCode.UNACKNOWLEDGED_SEMANTIC_CHANGE:
+            op = replace(op, responds_to_binding_ids=tuple(sorted(set(op.responds_to_binding_ids) | {changed})))
+            acknowledgements.append({"op_id": op.op_id, "binding_id": changed})
+        elif issue.code is GeometryIssueCode.UNACKNOWLEDGED_DEPENDENCY_CHANGE:
+            op = replace(op, responds_to_object_ids=tuple(sorted(set(op.responds_to_object_ids) | {changed})))
+            acknowledgements.append({"op_id": op.op_id, "object_id": changed})
+        else:
+            op = replace(op, responds_to_frame_ids=tuple(sorted(set(op.responds_to_frame_ids) | {op.frame_id})))
+            acknowledgements.append({"op_id": op.op_id, "frame_id": op.frame_id})
+        operations[op.op_id] = op
+    completed = replace(
+        proposal,
+        revisions=tuple(sorted(revisions.values(), key=lambda item: item.object_id)),
+        operations=tuple(operations[op.op_id] for op in proposal.operations),
+    )
+    summary = {
+        "schema": "ProtocolCompletion@1",
+        "reason_ref": reason_ref,
+        "revision_preconditions": sorted(added_revisions),
+        "acknowledgements": acknowledgements,
+        "authored_proposal_digest": proposal.proposal_digest,
+        "completed_proposal_digest": completed.proposal_digest,
+    }
+    return completed, summary
+
+
+def reduce_for_partial_acceptance(
+    proposal: GeometryProgramProposal,
+    prior_program: CompiledGeometryProgram | None,
+    issues: tuple[GeometryIssue, ...],
+    datum_bindings: tuple[DatumBinding, ...],
+) -> tuple[GeometryProgramProposal, tuple[DatumBinding, ...], dict[str, object]] | None:
+    """Drop the failing objects and their dependents (P097 knob 4).
+
+    A failing op that exists in the prior program is restored from it
+    (the change is deferred); a failing new op is removed together with
+    every op consuming its outputs. Returns the reduced proposal, the
+    surviving datum bindings and a deferral summary, or None when any
+    issue is not object-scoped or not deferrable.
+    """
+
+    if not issues or any(item.code not in _DEFERRABLE_CODES for item in issues):
+        return None
+    ops = {op.op_id: op for op in proposal.operations}
+    producer_of = {oid: op.op_id for op in proposal.operations for oid in op.output_object_ids}
+    failing: set[str] = set()
+    for item in issues:
+        if item.subject_id in ops:
+            failing.add(item.subject_id)
+        elif item.subject_id in producer_of:
+            failing.add(producer_of[item.subject_id])
+        else:
+            return None
+    prior_ops = {} if prior_program is None else {op.op_id: op for op in prior_program.proposal.operations}
+    restored: dict[str, object] = {}
+    removed: set[str] = set()
+    queue = sorted(failing)
+    while queue:
+        op_id = queue.pop()
+        if op_id in restored or op_id in removed:
+            continue
+        if op_id in prior_ops:
+            restored[op_id] = prior_ops[op_id]
+            continue
+        removed.add(op_id)
+        outputs = set(ops[op_id].output_object_ids)
+        for other in proposal.operations:
+            if other.op_id not in removed and other.op_id not in restored and outputs & set(other.input_object_ids):
+                queue.append(other.op_id)
+    removed_objects = {oid for op_id in removed for oid in ops[op_id].output_object_ids}
+    restored_objects = {oid for op_id in restored for oid in ops[op_id].output_object_ids}
+    operations = tuple(restored.get(op.op_id, op) for op in proposal.operations if op.op_id not in removed)
+    bindings = []
+    for binding in proposal.semantic_bindings:
+        kept = tuple(oid for oid in binding.object_ids if oid not in removed_objects)
+        if kept:
+            bindings.append(replace(binding, object_ids=kept) if kept != binding.object_ids else binding)
+    revisions = tuple(item for item in proposal.revisions if item.object_id not in removed_objects | restored_objects)
+    surviving = tuple(item for item in datum_bindings if item.op_id not in removed and item.op_id not in restored)
+    reduced = replace(proposal, operations=operations, semantic_bindings=tuple(bindings), revisions=revisions)
+    summary = {
+        "schema": "PartialAcceptanceDeferral@1",
+        "deferred_ops_removed": sorted(removed),
+        "deferred_ops_restored_from_prior": sorted(restored),
+        "deferred_object_ids": sorted(removed_objects | restored_objects),
+        "issues": [{"code": item.code.value, "subject_id": item.subject_id, "detail": item.detail} for item in issues],
+        "authored_proposal_digest": proposal.proposal_digest,
+        "reduced_proposal_digest": reduced.proposal_digest,
+    }
+    return reduced, surviving, summary
 
 
 @dataclass(frozen=True, slots=True)
@@ -1408,6 +1606,9 @@ class GeometryProposalProductionResult:
     proposal_ref: ProjectRecordRef | None
     proposal: GeometryProgramProposal | None
     program: CompiledGeometryProgram | None
+    completion_refs: tuple[ProjectRecordRef, ...] = ()
+    deferral_ref: ProjectRecordRef | None = None
+    escalation_ref: ProjectRecordRef | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1577,7 +1778,11 @@ async def produce_geometry_program_proposal(
             rejected_round_ref=rejected_round_ref,
         )
 
-    for round_index in range(1, policy.maximum_rounds + 1):
+    previous_issue_count: int | None = None
+    last_proposal: GeometryProgramProposal | None = None
+    last_compiler_issues: tuple[GeometryIssue, ...] = ()
+    completion_refs: list[ProjectRecordRef] = []
+    for round_index in range(1, policy.round_cap + 1):
         request_payload = _request_payload(
             spatial_option_ref,
             spatial_option,
@@ -1702,13 +1907,50 @@ async def produce_geometry_program_proposal(
                     )
                 else:
                     compiler_receipt = compilation.receipt.to_dict()
+                    compiler_issues = compilation.receipt.issues
+                    if compilation.program is None and policy.complete_bookkeeping and prior_program is not None:
+                        # P097 knob 1: derivable bookkeeping is filled from records,
+                        # recompiled without a model call, and recorded.
+                        completed = complete_bookkeeping(
+                            proposal,
+                            prior_program,
+                            compiler_issues,
+                            reason_ref=f"protocol-completion:{run.run_id}:round-{round_index:02d}",
+                        )
+                        if completed is not None:
+                            proposal, completion_summary = completed
+                            compilation = compile_geometry_program(
+                                design_state,
+                                proposal,
+                                active_commitment_refs=required_commitment_refs,
+                                available_asset_digests=assets,
+                                prior_program=prior_program,
+                                interface_datums=interface_datums,
+                                datum_bindings=datum_bindings,
+                            )
+                            compiler_receipt = compilation.receipt.to_dict()
+                            compiler_issues = compilation.receipt.issues
+                            if compilation.program is not None:
+                                completion_refs.append(
+                                    repository.put_json(
+                                        run=run,
+                                        destination=destination,
+                                        record_kind=f"geometry-proposal-completion-{round_index:02d}",
+                                        payload={
+                                            **completion_summary,
+                                            "round_index": round_index,
+                                            **no_authority(_PRODUCTION_AUTHORITY),
+                                        },
+                                    )
+                                )
                     if compilation.program is None:
+                        last_compiler_issues = compiler_issues
                         collected.extend(
                             _compiler_repair_issue(
                                 item,
                                 prior_program,
                             )
-                            for item in compilation.receipt.issues
+                            for item in compiler_issues
                         )
                     else:
                         round_status = GeometryProposalRoundStatus.ACCEPTED
@@ -1774,6 +2016,7 @@ async def produce_geometry_program_proposal(
                 proposal_ref,
                 proposal,
                 program,
+                tuple(completion_refs),
             )
         if round_status is GeometryProposalRoundStatus.REFUSED:
             lineage_ref = _persist_lineage(
@@ -1805,7 +2048,107 @@ async def produce_geometry_program_proposal(
             rejected_round_ref=None,
         )
         repair_issues = issues
+        if proposal is not None:
+            last_proposal = proposal
+        # P097 knob 2: beyond the bounded budget, continue only while the
+        # issue set strictly shrinks; a stall ends the run.
+        issue_count = len(issues)
+        if round_index >= policy.maximum_rounds and (
+            policy.progress_budget is None
+            or (previous_issue_count is not None and issue_count >= previous_issue_count)
+        ):
+            break
+        previous_issue_count = issue_count
 
+    # P097 knob 4: accept the reduced program when every remaining issue is
+    # object-scoped; the dropped objects become typed deferrals.
+    if policy.partial_acceptance and last_proposal is not None and last_compiler_issues:
+        reduced = reduce_for_partial_acceptance(
+            last_proposal, prior_program, last_compiler_issues, datum_bindings
+        )
+        if reduced is not None:
+            reduced_proposal, surviving_bindings, deferral_summary = reduced
+            try:
+                reduced_compilation = compile_geometry_program(
+                    design_state,
+                    reduced_proposal,
+                    active_commitment_refs=required_commitment_refs,
+                    available_asset_digests=assets,
+                    prior_program=prior_program,
+                    interface_datums=interface_datums,
+                    datum_bindings=surviving_bindings,
+                )
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                reduced_compilation = None
+            if reduced_compilation is not None and reduced_compilation.program is not None:
+                deferral_ref = repository.put_json(
+                    run=run,
+                    destination=destination,
+                    record_kind="geometry-proposal-deferral",
+                    payload={
+                        **deferral_summary,
+                        "round_refs": [item.uri for item in round_refs],
+                        **no_authority(_PRODUCTION_AUTHORITY),
+                    },
+                )
+                proposal_ref = repository.put_json(
+                    run=run,
+                    destination=destination,
+                    record_kind="geometry-program-proposal",
+                    payload=_proposal_record(
+                        reduced_proposal,
+                        spatial_option_ref,
+                        required_commitment_refs,
+                        provider_identity,
+                        (),
+                        round_refs[-1],
+                    ),
+                )
+                lineage_ref = _persist_lineage(
+                    repository,
+                    run,
+                    destination,
+                    GeometryProposalStatus.ACCEPTED,
+                    spatial_option_ref,
+                    spatial_option.proposal_digest,
+                    design_state,
+                    required_commitment_refs,
+                    provider_identity,
+                    tuple(round_refs),
+                    proposal_ref,
+                    reduced_proposal.proposal_digest,
+                )
+                return GeometryProposalProductionResult(
+                    GeometryProposalStatus.ACCEPTED,
+                    lineage_ref,
+                    tuple(round_refs),
+                    proposal_ref,
+                    reduced_proposal,
+                    reduced_compilation.program,
+                    tuple(completion_refs),
+                    deferral_ref,
+                    None,
+                )
+    # P097 knob 5: a stall hands over the exact issue list with the last
+    # proposal kept, instead of a bare exhaustion.
+    escalation_ref: ProjectRecordRef | None = None
+    if policy.escalate_on_stall and round_refs:
+        escalation_ref = repository.put_json(
+            run=run,
+            destination=destination,
+            record_kind="geometry-proposal-escalation",
+            payload={
+                "schema": "GeometryProposalEscalation@1",
+                "spatial_option_ref": spatial_option_ref.uri,
+                "design_state_digest": design_state.state_digest,
+                "round_refs": [item.uri for item in round_refs],
+                "last_round_ref": round_refs[-1].uri,
+                "last_proposal_digest": None if last_proposal is None else last_proposal.proposal_digest,
+                "issues": [{"code": item.code, "detail": item.detail} for item in repair_issues],
+                "policy": policy.to_dict(),
+                **no_authority(_PRODUCTION_AUTHORITY),
+            },
+        )
     lineage_ref = _persist_lineage(
         repository,
         run,
@@ -1827,6 +2170,43 @@ async def produce_geometry_program_proposal(
         None,
         None,
         None,
+        tuple(completion_refs),
+        None,
+        escalation_ref,
+    )
+
+
+async def resume_geometry_program_proposal(
+    repository: GeometryProposalRepository,
+    provider: object,
+    *,
+    escalation_ref: ProjectRecordRef,
+    run: RunRef,
+    **kwargs: Any,
+) -> GeometryProposalProductionResult:
+    """Continue an escalated run from its last rejected round (P097 knob 3).
+
+    The accepted chain (spatial option, design state) is not re-authored;
+    the resumed round carries the exact repair issues of the escalation's
+    last round through ``rejected_round_ref``.
+    """
+
+    payload = repository.load_json(escalation_ref)
+    if payload.get("schema") != "GeometryProposalEscalation@1":
+        raise GeometryProposalProductionError(
+            "escalation_ref does not name a GeometryProposalEscalation@1"
+        )
+    uri = payload["last_round_ref"]
+    relative = uri.split(f"project://{run.project_id}/", 1)[1]
+    sha = relative.rsplit("-", 1)[1].split(".json")[0]
+    rejected = ProjectRecordRef(
+        project_id=run.project_id,
+        relative_path=relative,
+        sha256=sha,
+        media_type="application/json",
+    )
+    return await produce_geometry_program_proposal(
+        repository, provider, run=run, rejected_round_ref=rejected, **kwargs
     )
 
 
