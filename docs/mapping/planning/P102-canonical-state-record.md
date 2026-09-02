@@ -1,6 +1,6 @@
 # P102 — Canonical StateRecord (one government)
 
-**Status:** active — registered 2026-09-02; one acceptance item open (the compiler still reads `DevelopedDesignState`)
+**Status:** completed 2026-09-02 (Claude). Every acceptance item met; the residual derivation is named below.
 **Lane:** productization and componentization (P088–P093, P100)
 **Retires:** `DevelopedDesignState` as an *authoring input*. It stays only as a forwarded view
 (`developed_design_view`) with lineage, until the producer loop reads `StateRecord@1` directly.
@@ -52,9 +52,21 @@ input or relation endpoint that does not exist.
       declared engagement measured, datum must hold the face), other kinds report `unchecked`, nothing is healed.
       Villa reference-001 readback: 4/4 held, gaps 0.00000 (record `relation-check-report-a-56e12e9d…`);
       `tests/test_relation_checks.py` 4/4 (a moved column violates and is not healed).
-- [ ] `developed_design_view` marked `lineage.retired_at` once the *compiler* reads the record directly (the production
-      entry and the runner already take the record; the view is called from exactly two places: `_as_developed_state`
-      and `run_project`).
+- [x] **The compiler reads the record directly.** `compile_geometry_program` no longer requires a
+      `DevelopedDesignState`: it asks a state four identity questions (project, run, base, state digest) plus the
+      semantic component tree, and both the record and the legacy state answer them (`_state_identity`). The record
+      answers natively — it gained `base`, `run_ref` and a `state_digest` that is the digest of its own projection —
+      and `design_components_of` is the single component-tree builder the projection uses too. The production layer
+      keeps the record as the binding and hands it to all three compiler call sites; `run_project` binds an authored
+      (portable) record to the run's identity and canonical base first. Villa and Rocca equivalence re-run at 0.0 m
+      (`equivalence-003` in both projects).
+
+**What actually retired:** `DevelopedDesignState` as a *required input type* of the compiler, and as an authored
+input anywhere on the production path. **What did not, and why:** `developed_design_view` remains as the record's
+own *derived projection*, in the same category as the geometry program and the receipts. It is what the record's
+`state_digest` cites and what answers "does this spatial-option record match this state" in the production layer.
+Deleting it would not remove a government; it would remove a derivation. It is called from three places, all of
+which pass a record.
 
 ## Do-not-do
 

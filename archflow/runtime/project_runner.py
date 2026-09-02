@@ -564,6 +564,9 @@ def run_project(
     # a raw create_run or a copied pack from acquiring a stage by side effect.
     if record.project_id != run.project_id:
         raise ProjectRunnerError("state record belongs to another project")
+    # an authored record is portable; this run binds it to its own identity and canonical base,
+    # and that binding is exactly what the compiler checks against every proposal (P102)
+    record = replace(record, run_id=run.run_id, base=run.base)
     state = developed_design_view(record, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
     stage_guard.require(
         repository,

@@ -465,16 +465,13 @@ def _frame_digests(
 
 
 def _semantic_digests(
-    state: DevelopedDesignState,
+    identity: "_StateIdentity",
     proposal: GeometryProgramProposal,
     active_commitment_refs: frozenset[str],
     issues: list[GeometryIssue],
 ) -> tuple[dict[str, str], dict[str, str]]:
-    components = {
-        item.component_id: item
-        for item in state.selected_schematic.option.proposal.components
-    }
-    developments = {item.component_id: item for item in state.components}
+    components = {item.component_id: item for item in identity.components}
+    developments = {item.component_id: item for item in identity.developments}
     component_digests = {
         component_id: digest_value(
             {
@@ -1116,6 +1113,38 @@ def resolve_interface_datums(
     return replace(proposal, operations=resolved_operations)
 
 
+@dataclass(frozen=True, slots=True)
+class _StateIdentity:
+    """What binding a program to a state actually requires (P102)."""
+
+    project_id: str
+    run_id: str
+    base: object
+    state_digest: str
+    components: tuple
+    developments: tuple
+
+
+def _state_identity(state: object) -> _StateIdentity:
+    """The canonical ``StateRecord@1`` or the developed-design projection it yields.
+
+    The compiler never reads a design decision off the state: it checks that
+    the proposal and the state are exact-base peers. Both the record and the
+    legacy state answer those four questions, so the compiler depends on the
+    question, not on either class.
+    """
+
+    from archflow.state.state_record import StateRecord, design_components_of
+
+    if isinstance(state, StateRecord):
+        components, developments = design_components_of(state), ()
+    elif isinstance(state, DevelopedDesignState):
+        components, developments = state.selected_schematic.option.proposal.components, state.components
+    else:
+        raise TypeError("state must be StateRecord or DevelopedDesignState")
+    return _StateIdentity(state.project_id, state.run_id, state.base, state.state_digest, tuple(components), tuple(developments))
+
+
 def compile_geometry_program(
     state: DevelopedDesignState,
     proposal: GeometryProgramProposal,
@@ -1134,8 +1163,7 @@ def compile_geometry_program(
     together with the datums and bindings as its derivation receipt.
     """
 
-    if not isinstance(state, DevelopedDesignState):
-        raise TypeError("state must be DevelopedDesignState")
+    identity = _state_identity(state)
     if not isinstance(proposal, GeometryProgramProposal):
         raise TypeError("proposal must be GeometryProgramProposal")
     if not isinstance(active_commitment_refs, tuple):
@@ -1174,10 +1202,10 @@ def compile_geometry_program(
         issues,
     )
     if (
-        proposal.project_id != state.project_id
-        or proposal.run_id != state.run_id
-        or proposal.base != state.base
-        or proposal.design_state_digest != state.state_digest
+        proposal.project_id != identity.project_id
+        or proposal.run_id != identity.run_id
+        or proposal.base != identity.base
+        or proposal.design_state_digest != identity.state_digest
     ):
         _issue(
             issues,
@@ -1188,7 +1216,7 @@ def compile_geometry_program(
 
     frame_digests = _frame_digests(proposal, issues)
     semantic_digests, component_digests = _semantic_digests(
-        state,
+        identity,
         proposal,
         frozenset(active_refs),
         issues,

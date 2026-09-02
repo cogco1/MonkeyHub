@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from archflow.contracts.canonical import canonical_json
-from archflow.project.refs import RunRef, require_identifier
+from archflow.project.refs import ProjectVersionRef, RunRef, require_identifier
 from archflow.state.operational_state import DependencyEdge, DependencyEffect, DesignObligation
 from archflow.relations.contracts import ArchitecturalRelationKind
 
@@ -238,7 +238,7 @@ class StageBinding:
         return cls(value.get("workflow_ref"), value.get("envelope_ref"), value.get("stage_id"), value.get("predecessor_exit_binding_ref"))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class StateRecord:
     project_id: str
     run_id: str
@@ -253,6 +253,7 @@ class StateRecord:
     decision_ref: str | None = None
     invalidated_refs: tuple[str, ...] = ()
     option: Mapping[str, Any] = field(default_factory=dict)     # the declared selection: option_id, label, typology, rationale, footprint_cells, assumption_refs
+    base: ProjectVersionRef | None = None                       # the canonical version this record was authored against
 
     SCHEMA = "StateRecord@1"
 
@@ -287,6 +288,11 @@ class StateRecord:
                 if end not in known:
                     raise StateRecordError(f"relation {r.relation_id}: unknown entity {end!r}")
         _refs(self.evidence_refs, "evidence_refs"); _refs(self.basis_refs, "basis_refs"); _refs(self.invalidated_refs, "invalidated_refs")
+        if self.base is not None:
+            if not isinstance(self.base, ProjectVersionRef):
+                raise StateRecordError("base must be a ProjectVersionRef")
+            if self.base.project_id != self.project_id:
+                raise StateRecordError("base belongs to another project")
         if not isinstance(self.option, Mapping):
             raise StateRecordError("option must be a mapping")
         object.__setattr__(self, "option", dict(self.option))
@@ -352,13 +358,38 @@ class StateRecord:
                     queue.append(downstream)
         return tuple(sorted(seen))
 
+    # ---- identity the geometry compiler checks (P102)
+    @property
+    def run_ref(self) -> RunRef:
+        """The run this record was authored in; needs ``base``."""
+
+        if self.base is None:
+            raise StateRecordError("this record carries no base: it cannot name its own run")
+        return RunRef(self.project_id, self.run_id, self.base)
+
+    @property
+    def state_digest(self) -> str:
+        """The digest of the developed-design projection this record yields.
+
+        The compiler binds a program to a state by this digest. The
+        projection is a pure function of the record, so citing it cites the
+        record; the value is computed once and kept.
+        """
+
+        cached = getattr(self, "_state_digest_cache", None)
+        if cached is None:
+            cached = developed_design_view(self, run=self.run_ref).state_digest
+            object.__setattr__(self, "_state_digest_cache", cached)
+        return cached
+
     # ---- serialization
     def to_dict(self) -> dict[str, object]:
         return {"schema": self.SCHEMA, "project_id": self.project_id, "run_id": self.run_id, "entities": [e.to_dict() for e in self.entities],
                 "parameters": [p.to_dict() for p in self.parameters], "relations": [r.to_dict() for r in self.relations],
                 "obligations": [o.to_dict() for o in self.obligations], "evidence_refs": list(self.evidence_refs), "basis_refs": list(self.basis_refs),
                 "predecessor_ref": self.predecessor_ref, "stage": self.stage.to_dict(), "decision_ref": self.decision_ref, "invalidated_refs": list(self.invalidated_refs),
-                "option": dict(self.option)}
+                "option": dict(self.option),
+                "base": None if self.base is None else {"project_id": self.base.project_id, "version": self.base.version, "state_sha256": self.base.state_sha256}}
 
     @classmethod
     def from_dict(cls, value: object) -> "StateRecord":
@@ -368,7 +399,8 @@ class StateRecord:
                    tuple(Parameter.from_dict(p) for p in value.get("parameters", ())), tuple(Relation.from_dict(r) for r in value.get("relations", ())),
                    tuple(DesignObligation.from_dict(o) for o in value.get("obligations", ())), tuple(value.get("evidence_refs", ())), tuple(value.get("basis_refs", ())),
                    value.get("predecessor_ref"), StageBinding.from_dict(value.get("stage")), value.get("decision_ref"), tuple(value.get("invalidated_refs", ())),
-                   dict(value.get("option", {})))
+                   dict(value.get("option", {})),
+                   None if value.get("base") is None else ProjectVersionRef(value["base"]["project_id"], int(value["base"]["version"]), value["base"].get("state_sha256")))
 
     @property
     def digest(self) -> str:
@@ -376,6 +408,37 @@ class StateRecord:
 
 
 # ---------------------------------------------------------------- typed views of the record
+def design_components_of(record: StateRecord, *, source_ref: str | None = None) -> tuple:
+    """The record's ``Component@1`` entities as the semantic component tree.
+
+    The geometry compiler digests this tree per component, so the record must
+    answer the question itself. An entity that carries a full
+    ``DesignComponent@1`` payload is taken exactly; one that carries only the
+    semantics a record needs (kind, intent, volumes) is completed with the
+    schematic defaults. This is the only builder: the developed-design
+    projection uses it too, so there is one component tree, not two.
+    """
+
+    from archflow.state.spatial import ComponentMaturity, DesignComponent
+
+    out = []
+    for e in record.entities_of("Component@1"):
+        fields = dict(e.fields)
+        payload = {**fields, "component_id": e.entity_id, "parent_component_id": e.parent_id}
+        if payload.get("schema") == DesignComponent.SCHEMA:
+            out.append(DesignComponent.from_dict(payload))
+            continue
+        refs = tuple(sorted({*(fields.get("source_refs") or ()), *((source_ref,) if source_ref else ()), *record.evidence_refs}))
+        if not refs:
+            raise StateRecordError(f"component {e.entity_id} has no source: give the entity source_refs, or the record evidence")
+        out.append(DesignComponent(
+            component_id=e.entity_id, parent_component_id=e.parent_id, semantic_kind=str(fields.get("semantic_kind", "component")),
+            intent=str(fields.get("intent", e.entity_id)), maturity=ComponentMaturity(str(fields.get("maturity", "schematic"))),
+            revision=int(fields.get("revision", 1)), volume_ids=tuple(fields.get("volume_ids", ())),
+            unresolved_child_roles=tuple(fields.get("unresolved_child_roles", ())), source_refs=refs))
+    return tuple(out)
+
+
 def project_levels_of(record: StateRecord, *, published_by: str = "seat-coordination"):
     """The record's Level@1 entities as the published project levels (P098)."""
 
@@ -413,8 +476,11 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
     call is a lineage event, not a second source of truth.
     """
 
+    from dataclasses import replace as _replace
+
     from archflow.runtime.project_runner import SchematicPack, bootstrap_developed_state
-    from archflow.state.spatial import ComponentMaturity, DesignComponent
+
+    replace_volume_ids = lambda component, volume_ids: _replace(component, volume_ids=volume_ids)
 
     components = record.entities_of("Component@1")
     if not components:
@@ -423,12 +489,12 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
     if not evidence:
         raise StateRecordError("a developed-design view needs at least one evidence ref")
     option = dict(record.option)
-    option_id = option_id or option.get("option_id")
-    if option_id is None:
-        raise StateRecordError("a developed-design view needs an option id (record.option or the caller)")
+    option_id = option_id or option.get("option_id") or (record.decision_ref or "").split(":", 1)[-1] or None
+    if not option_id:
+        raise StateRecordError("a developed-design view needs an option id (record.option, record.decision_ref, or the caller)")
     volumes, zones, massing_levels, connections = (record.entities_of(s) for s in ("Volume@1", "Space@1", "MassingLevel@1", "Connection@1"))
     if volumes and zones and massing_levels:
-        design_components = tuple(DesignComponent.from_dict({**e.fields, "component_id": e.entity_id, "parent_component_id": e.parent_id}) for e in components)
+        design_components = design_components_of(record, source_ref=evidence[0])
         pack = SchematicPack(
             project_id=record.project_id, option_id=option_id, label=str(option.get("label", option_id)), typology=str(option.get("typology", "declared")),
             rationale=str(option.get("rationale", "declared from the state record")), evidence_refs=evidence,
@@ -445,11 +511,7 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
     levels = record.entities_of("Level@1")
     elevations = sorted(float(l.fields.get("elevation", 0.0)) for l in levels) or [0.0, 1.0]
     top = max(elevations[-1], elevations[0] + 1.0)
-    design_components = []
-    for e in components:
-        design_components.append(DesignComponent(component_id=e.entity_id, parent_component_id=e.parent_id, semantic_kind=str(e.fields.get("semantic_kind", "component")),
-                                                 intent=str(e.fields.get("intent", e.entity_id)), maturity=ComponentMaturity(str(e.fields.get("maturity", "schematic"))), revision=int(e.fields.get("revision", 1)),
-                                                 volume_ids=("block",) if e.parent_id is None else (), unresolved_child_roles=(), source_refs=(evidence_ref,)))
+    design_components = tuple(replace_volume_ids(c, ("block",) if c.parent_component_id is None else ()) for c in design_components_of(record, source_ref=evidence_ref))
     pack = SchematicPack(project_id=record.project_id, option_id=option_id, label=f"{record.project_id} state record {record.digest[:12]}", typology=str(record.entity(components[0].entity_id).fields.get("typology", "declared")),
                          rationale="view of a StateRecord@1; not a second source of truth", evidence_refs=(evidence_ref,),
                          levels=({"level_id": "record", "base_y": int(elevations[0]), "height": max(1, int(top - elevations[0] + 0.999))},),

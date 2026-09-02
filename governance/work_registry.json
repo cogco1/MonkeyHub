@@ -15304,7 +15304,7 @@
       "id": "P102",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "active",
+      "status": "completed",
       "goal": "One canonical StateRecord@1 (entities by schema, parameters with lineage, relations with datum roles, propagation and validator bindings, kernel obligations kept apart, stage binding) ends the two-government state; the production entry and the project runner read the record; DevelopedDesignState survives only as a retirement-bound view; relation validators run from the record against realized bounds.",
       "depends_on": [
         "P100",

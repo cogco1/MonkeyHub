@@ -136,6 +136,40 @@ class StateRecordTests(unittest.TestCase):
         with self.assertRaises(StateRecordError):
             StateRecord(pack.project_id, "run-1", tuple(entities) + (Entity("z2", "Space@1", {"program_node_refs": [], "level_ids": [], "volume_ids": ["nowhere"]}),))
 
+    def test_the_compiler_binds_a_program_to_the_record_itself(self) -> None:
+        """P102 last step: the record answers the four identity questions, so the compiler takes it directly."""
+
+        from dataclasses import replace
+        from archflow.compilers.geometry import compile_geometry_program
+        from tests.test_geometry_compiler import COMMITMENT, _proposal, _state
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            record = replace(_record(), run_id=run.run_id, base=run.base)
+            self.assertEqual(record.run_ref, run)
+            view = developed_design_view(record, run=run)
+            self.assertEqual(record.state_digest, view.state_digest)                     # the record cites its own projection
+            self.assertEqual(StateRecord.from_dict(record.to_dict()).base, run.base)     # base survives the round trip
+
+            legacy = _state()                                                            # the compiler fixture's own state
+            proposal = _proposal(legacy)
+            by_view = compile_geometry_program(legacy, proposal, active_commitment_refs=(COMMITMENT,))
+            self.assertIsNotNone(by_view.program)
+            bound = replace(record, project_id=legacy.project_id, run_id=legacy.run_id, base=legacy.base)
+            peer = replace(proposal, project_id=bound.project_id, run_id=bound.run_id, base=bound.base, design_state_digest=bound.state_digest)
+            self.assertNotEqual(bound.state_digest, legacy.state_digest)                 # different states, same contract
+            by_record = compile_geometry_program(bound, peer, active_commitment_refs=(COMMITMENT,))
+            self.assertIsNotNone(by_record.program, [(i.code.value, i.detail) for i in by_record.receipt.issues])
+            self.assertEqual([o.object_id for o in by_record.program.objects], [o.object_id for o in by_view.program.objects])
+
+            with self.assertRaises(TypeError):
+                compile_geometry_program(object(), peer, active_commitment_refs=(COMMITMENT,))
+            stale = replace(peer, design_state_digest="0" * 64)
+            self.assertIsNone(compile_geometry_program(bound, stale, active_commitment_refs=(COMMITMENT,)).program)   # not exact-base peers
+            with self.assertRaises(StateRecordError):
+                _record().state_digest                                                    # a record with no base cannot name its run
+
     def test_developed_design_view_forwards_to_the_legacy_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})

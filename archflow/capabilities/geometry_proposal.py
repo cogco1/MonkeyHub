@@ -1653,8 +1653,7 @@ def _as_developed_state(design_state, *, run: RunRef):
     if isinstance(design_state, StateRecord):
         if not design_state.evidence_refs:
             raise GeometryProposalProductionError("a StateRecord at the production entry must carry at least one evidence ref")
-        option_id = design_state.option.get("option_id") or (design_state.decision_ref or "decision:state-record").split(":", 1)[-1]
-        return developed_design_view(design_state, run=run, option_id=option_id, evidence_ref=design_state.evidence_refs[0])
+        return developed_design_view(design_state, run=run, evidence_ref=design_state.evidence_refs[0])
     return design_state
 
 
@@ -1711,6 +1710,8 @@ async def produce_geometry_program_proposal(
             raise TypeError("seat_scope must be a non-empty tuple of component ids")
         if tuple(sorted(set(seat_scope))) != seat_scope:
             raise TypeError("seat_scope must be sorted and unique")
+    # the record binds the program; the projection answers the spatial-option and component questions (P102)
+    state_binding = design_state
     design_state = _as_developed_state(design_state, run=run)
     _validate_inputs(
         run,
@@ -1930,7 +1931,7 @@ async def produce_geometry_program_proposal(
             if proposal is not None and not collected:
                 try:
                     compilation = compile_geometry_program(
-                        design_state,
+                        state_binding,
                         proposal,
                         active_commitment_refs=required_commitment_refs,
                         available_asset_digests=assets,
@@ -1957,7 +1958,7 @@ async def produce_geometry_program_proposal(
                         if completed is not None:
                             proposal, completion_summary = completed
                             compilation = compile_geometry_program(
-                                design_state,
+                                state_binding,
                                 proposal,
                                 active_commitment_refs=required_commitment_refs,
                                 available_asset_digests=assets,
@@ -2107,7 +2108,7 @@ async def produce_geometry_program_proposal(
             reduced_proposal, surviving_bindings, deferral_summary = reduced
             try:
                 reduced_compilation = compile_geometry_program(
-                    design_state,
+                    state_binding,
                     reduced_proposal,
                     active_commitment_refs=required_commitment_refs,
                     available_asset_digests=assets,
