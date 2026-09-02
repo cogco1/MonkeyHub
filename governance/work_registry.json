@@ -14310,19 +14310,23 @@
     {
       "id": "P092",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "ready",
+      "stream": "archive",
+      "status": "done",
       "goal": "Harvest the wall-with-openings and window/door-array families from the villa run-012 monolith into solver-plus-bridge capability pairs on the stair pattern, typology lifted into P091 template records and contact through P090 datums; replay villa as reconstruction-016 through the P089 runner with object equivalence against the repaired run-014 model as the acceptance instrument and reuse metrics as paper evidence. (Scope note 2026-09-02: harvest as element families — wall by location line, base/top level and thickness with openings hosted and cut by the compiler; window/door as hosted types with sill/head level roles — not as operation copies; the four seat programs of run-017 are the basis.)",
       "depends_on": [
-        "P089",
         "P090",
-        "P091"
+        "P091",
+        "P095",
+        "P098"
       ],
       "write_scope": [
         "archflow/capabilities/",
         "tests/",
         "docs/mapping/",
-        "governance/work_registry.json"
+        "governance/work_registry.json",
+        "archflow/adapters/cad_program.py",
+        "archflow/state/geometry_program.py",
+        "archflow/realization/sandbox.py"
       ],
       "acceptance": [
         "Wall and window solvers are authority-free with a passing no-instance-default static scan; bridges bake local-basis assemblies to neutral geometry programs.",
@@ -14331,10 +14335,8 @@
         "Three reuse metrics are reported: runs-to-acceptance per stage, inline geometry bytes per run, catalog hit rate."
       ],
       "tests": [
-        "Solver enumeration and negative paths with scripted inputs",
-        "Void-hosting negotiation between wall and window solvers",
-        "Replay equivalence harness against retained run-014 records",
-        "Architecture firewall"
+        "tests.test_wall_window_families",
+        "tests.test_archcheck"
       ],
       "verification_commands": [
         [
@@ -14348,8 +14350,47 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P092-wall-window-family-extraction.md",
-      "on_complete": {}
+      "card": "docs/mapping/archive/P092-wall-window-family-extraction.md",
+      "on_complete": {},
+      "notes": "",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P092",
+        "actor": "claude",
+        "verified_at": "2026-09-02T11:14:38.136944+00:00",
+        "contract_sha256": "e2bfc8006fe21a52b210abd356be5ec9ed87560e8598297c0d2d08490b9eb7c4",
+        "scope_sha256": "e98200528d63c13e5be5154dac23a75b7aa61a59d9dbef94c543d38b38fed0e1",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_wall_window_families"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "08b3cad696a35c99eb5d4fcf04d5b257f2520d2b7d42499d4430a8b2bb191684",
+            "stdout_tail": "",
+            "stderr_tail": "...........\n----------------------------------------------------------------------\nRan 11 tests in 0.027s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "a7d20a4d25e00d11171661aafa27cdf32e5af1dfb07381a11637789d4007905d",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (299 files, 2.019s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-02",
+      "evidence": [
+        "tests/test_wall_window_families.py (11); villa run-017 wall-elements-receipt-adfd5867: west band as 1 wall + 11 openings + 3 types, members 0.0 m off run-016, attic b/c refused behind the portico roof, Rhino export read back"
+      ]
     },
     {
       "id": "P093",
@@ -15118,7 +15159,7 @@
       "id": "P099",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "ready",
+      "status": "active",
       "goal": "Type-to-instance propagation: an instance's binding to a template edition is a dependency edge, so a new edition reopens exactly its instances' closure (P063 lifted to the type level); repeated instances of one type compile to ARRAY/ASSET_INSTANCE operations and one CAD block definition instead of per-instance coordinates.",
       "depends_on": [
         "P063",
@@ -15156,7 +15197,8 @@
         ]
       ],
       "card": "docs/mapping/planning/P099-type-to-instance-propagation.md",
-      "on_complete": {}
+      "on_complete": {},
+      "actor": "claude"
     }
   ]
 }

@@ -69,15 +69,40 @@ def lift_to_base_level(points, params: Mapping[str, object], op_id: str):
     """
 
     if "base_level" not in params:
+        if "base_offset" in params:
+            raise CadTranslationError(
+                f"{op_id}: base_offset without a datum-bound base_level restates an elevation"
+            )
         return [tuple(float(v) for v in p) for p in points]
     raw = params["base_level"]
     if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw):
         raise CadTranslationError(f"{op_id}: base_level must be a finite number")
+    # P092: an element's own vertical dimension above its storey (a sill
+    # height, a frame seat) rides on the datum instead of restating it.
+    offset = params.get("base_offset", 0.0)
+    if isinstance(offset, bool) or not isinstance(offset, (int, float)) or not math.isfinite(offset):
+        raise CadTranslationError(f"{op_id}: base_offset must be a finite number")
     lifted = [tuple(float(v) for v in p) for p in points]
     if not lifted:
         return lifted
-    shift = float(raw) - min(p[1] for p in lifted)
+    shift = float(raw) + float(offset) - min(p[1] for p in lifted)
     return [(p[0], p[1] + shift, p[2]) for p in lifted]
+
+def _is_axis_aligned_box(profile, vector) -> bool:
+    """True for a rectangular, axis-aligned, level profile extruded along Y."""
+
+    if len(profile) != 4 or len(vector) != 3:
+        return False
+    if float(vector[0]) != 0.0 or float(vector[2]) != 0.0 or float(vector[1]) == 0.0:
+        return False
+    ys = {round(float(p[1]), 12) for p in profile}
+    xs = sorted({round(float(p[0]), 12) for p in profile})
+    zs = sorted({round(float(p[2]), 12) for p in profile})
+    if len(ys) != 1 or len(xs) != 2 or len(zs) != 2:
+        return False
+    corners = {(x, z) for x in xs for z in zs}
+    return {(round(float(p[0]), 12), round(float(p[2]), 12)) for p in profile} == corners
+
 
 def _params(operation) -> dict[str, object]:
     decoded = {}
@@ -611,6 +636,7 @@ def expected_object_bounds(program) -> dict[str, dict]:
     operations = {op.op_id: op for op in proposal.operations}
     points: dict[str, list] = {}
     counts: dict[str, int] = {}
+    boxes: set[str] = set()   # objects known to be axis-aligned boxes
     for op_id in program.operation_order:
         operation = operations[op_id]
         kind = operation.kind.value
@@ -633,6 +659,7 @@ def expected_object_bounds(program) -> dict[str, dict]:
                 for dz in (0, 1)
             ]
             counts[out] = 1
+            boxes.add(out)
         elif kind == "extrusion":
             profile = lift_to_base_level(params["profile"], params, op_id)
             vector = params["vector"]
@@ -641,6 +668,8 @@ def expected_object_bounds(program) -> dict[str, dict]:
                 for p in profile
             ]
             counts[out] = 1
+            if _is_axis_aligned_box(profile, vector):
+                boxes.add(out)
         elif kind == "revolve":
             a0, a1 = params["axis_start"], params["axis_end"]
             axis = [float(a1[i]) - float(a0[i]) for i in range(3)]
@@ -687,10 +716,20 @@ def expected_object_bounds(program) -> dict[str, dict]:
                     or cutter_min[axis] > base_max[axis]
                     for axis in range(3)
                 )
-                strictly_internal = all(
+                internal = [
                     base_min[axis] < cutter_min[axis]
                     and cutter_max[axis] < base_max[axis]
                     for axis in range(3)
+                ]
+                # Any base keeps its extrema under a cutter strictly inside
+                # it on every axis. A box base also keeps them under a
+                # cutter strictly inside on at least one axis: no face of
+                # a box can be removed whole by such a cutter, so a
+                # through-cut opening (P092) leaves the wall's bounds.
+                # Other shapes may hold an extremum at a single point the
+                # cutter reaches, so they fail closed.
+                strictly_internal = all(internal) or (
+                    base in boxes and any(internal)
                 )
                 if not disjoint and not strictly_internal:
                     raise CadTranslationError(

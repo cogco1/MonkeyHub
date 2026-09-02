@@ -12,11 +12,14 @@ injected repository ports.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import importlib
 from collections.abc import Mapping
 from types import ModuleType
 
 from archflow.contracts.authority import no_authority
+from archflow.state.operational_state import DependencyEdge, DependencyEffect
 from archflow.project import (
     FilesystemProjectRepository,
     PersistenceDestination,
@@ -28,6 +31,9 @@ from archflow.state.component_template import (
     ComponentTemplate,
     ComponentTemplateError,
     require_library_votes,
+    ComponentInstance,
+    instance_edition_edge,
+    template_edition_ref,
 )
 
 MATHEMATICS_REF_PREFIX = "capability:"
@@ -221,3 +227,117 @@ def import_component_template(
         },
     )
     return template_ref, receipt_ref
+
+
+# ---------------------------------------------------------------- P099
+_MAX_CLOSURE = 10_000
+PROPAGATION_RECORD_KIND = "template-edition-propagation"
+
+
+def revalidation_closure(
+    roots: tuple[str, ...], dependencies: tuple[DependencyEdge, ...]
+) -> tuple[str, ...]:
+    """Everything downstream of ``roots`` along invalidating edges (P063 semantics)."""
+
+    adjacency: dict[str, set[str]] = {}
+    for edge in dependencies:
+        if not isinstance(edge, DependencyEdge):
+            raise ComponentTemplateError("dependencies must be DependencyEdge items")
+        if edge.effect not in {DependencyEffect.INVALIDATES, DependencyEffect.REQUIRES_REVALIDATION}:
+            continue
+        adjacency.setdefault(edge.upstream_ref, set()).add(edge.downstream_ref)
+    visited = set(roots)
+    queue = sorted(roots)
+    while queue:
+        current = queue.pop(0)
+        for downstream in sorted(adjacency.get(current, ())):
+            if downstream in visited:
+                continue
+            visited.add(downstream)
+            if len(visited) > _MAX_CLOSURE:
+                raise ComponentTemplateError("revalidation closure exceeds bounded item count")
+            queue.append(downstream)
+    return tuple(sorted(visited))
+
+
+@dataclass(frozen=True, slots=True)
+class EditionPropagation:
+    """What a new template edition reopens, and what it leaves untouched."""
+
+    template_id: str
+    from_editions: tuple[int, ...]
+    to_edition: int
+    promoted_ref: str
+    reopened: tuple[str, ...]
+    retained: tuple[tuple[str, str], ...]
+    closure: tuple[str, ...]
+
+    SCHEMA = "TemplateEditionPropagation@1"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "template_id": self.template_id,
+            "from_editions": list(self.from_editions),
+            "to_edition": self.to_edition,
+            "promoted_ref": self.promoted_ref,
+            "reopened_instance_ids": list(self.reopened),
+            "retained_instances": [{"instance_id": i, "digest": d} for i, d in self.retained],
+            "closure": list(self.closure),
+            "effect": DependencyEffect.REQUIRES_REVALIDATION.value,
+            **no_authority(_RECORD_AUTHORITY),
+        }
+
+
+def propagate_template_edition(
+    instances: tuple[ComponentInstance, ...],
+    promoted: ComponentTemplate,
+    *,
+    promoted_ref: str,
+    dependencies: tuple[DependencyEdge, ...] = (),
+) -> EditionPropagation:
+    """Mark the instances a new edition reopens; nothing is rewritten.
+
+    Every instance of an earlier edition of the promoted template, and
+    everything downstream of it along invalidating edges (a program, a
+    stage receipt), lands in ``reopened``; instances of other templates
+    or of the same edition are retained by digest. The accepted programs
+    stay as they are: reopening is a revalidation duty, not an edit.
+    """
+
+    if not isinstance(promoted, ComponentTemplate):
+        raise ComponentTemplateError("promoted must be a ComponentTemplate")
+    if not isinstance(instances, tuple) or any(not isinstance(i, ComponentInstance) for i in instances):
+        raise ComponentTemplateError("instances must be ComponentInstance items")
+    ids = [i.instance_id for i in instances]
+    if len(set(ids)) != len(ids):
+        raise ComponentTemplateError("instance ids must be unique")
+    same = [i for i in instances if i.template_id == promoted.template_id]
+    if any(i.edition > promoted.edition for i in same):
+        raise ComponentTemplateError("an edition change must move forward")
+    older = tuple(sorted({i.edition for i in same if i.edition < promoted.edition}))
+    roots = tuple(template_edition_ref(promoted.template_id, e) for e in older)
+    edges = tuple(instance_edition_edge(i) for i in instances) + tuple(dependencies)
+    closure = revalidation_closure(roots, edges) if roots else ()
+    reopened = tuple(sorted(i.instance_id for i in instances if i.ref in closure))
+    retained = tuple((i.instance_id, i.digest) for i in instances if i.instance_id not in reopened)
+    return EditionPropagation(
+        template_id=promoted.template_id, from_editions=older, to_edition=promoted.edition,
+        promoted_ref=promoted_ref, reopened=reopened, retained=retained, closure=closure,
+    )
+
+
+def record_edition_propagation(
+    repository: FilesystemProjectRepository,
+    *,
+    run: RunRef,
+    destination: PersistenceDestination,
+    propagation: EditionPropagation,
+) -> ProjectRecordRef:
+    destination = require_destination(destination, producer="template edition propagation")
+    if not isinstance(propagation, EditionPropagation):
+        raise ComponentTemplateError("propagation must be an EditionPropagation")
+    return repository.put_json(
+        run=run, destination=destination, record_kind=PROPAGATION_RECORD_KIND, payload=propagation.to_dict()
+    )
+

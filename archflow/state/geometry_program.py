@@ -630,18 +630,39 @@ _REQUIRED_ASSEMBLY_ROLES = {
 }
 
 
+_ENVELOPE_ASSEMBLY_ROLES = {
+    AssemblyKind.DOOR: frozenset(
+        {AssemblyRole.HOST_CUT, AssemblyRole.FRAME, AssemblyRole.LEAF}
+    ),
+    AssemblyKind.WINDOW: frozenset(
+        {AssemblyRole.HOST_CUT, AssemblyRole.FRAME, AssemblyRole.GLAZING}
+    ),
+}
+
+
 def required_assembly_roles(
     kind: AssemblyKind,
+    maturity: "DetailMaturity | None" = None,
 ) -> tuple[AssemblyRole, ...]:
-    """Return the canonical protocol roles required by one assembly kind."""
+    """Return the canonical protocol roles required by one assembly kind.
+
+    Without a maturity (or at FUNCTIONAL / FINE) the full protocol set is
+    required. At ENVELOPE maturity (P092) an opening is a hosted void
+    with its frame and its infill; hardware and clearance are duties of
+    the functional stage, not of the envelope.
+    """
 
     if not isinstance(kind, AssemblyKind):
         raise TypeError("kind must be AssemblyKind")
+    if maturity is not None and not isinstance(maturity, DetailMaturity):
+        raise TypeError("maturity must be DetailMaturity")
+    table = (
+        _ENVELOPE_ASSEMBLY_ROLES
+        if maturity is DetailMaturity.ENVELOPE
+        else _REQUIRED_ASSEMBLY_ROLES
+    )
     return tuple(
-        sorted(
-            _REQUIRED_ASSEMBLY_ROLES.get(kind, frozenset()),
-            key=lambda item: item.value,
-        )
+        sorted(table.get(kind, frozenset()), key=lambda item: item.value)
     )
 
 
@@ -673,7 +694,9 @@ class HostedAssembly:
             raise GeometryProgramError(
                 "assembly members require unique deterministic roles"
             )
-        required = set(required_assembly_roles(self.kind))
+        if not isinstance(self.maturity, DetailMaturity):
+            raise TypeError("maturity must be DetailMaturity")
+        required = set(required_assembly_roles(self.kind, self.maturity))
         missing = required - set(roles)
         if missing:
             raise GeometryProgramError(

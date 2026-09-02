@@ -396,7 +396,9 @@ class ExpectedBoundsTest(unittest.TestCase):
         self.assertEqual([0.0, 0.0, 1.0], beam["bbox_min"])
         self.assertEqual([10.0, 4.0, 5.0], beam["bbox_max"])
 
-    def test_boolean_difference_that_can_change_extrema_fails_closed(self):
+    def test_box_keeps_its_bounds_under_a_through_cut(self):
+        # P092: a notch or a through-hole strictly inside a box on one
+        # axis cannot remove a whole face, so the box's bounds survive.
         build = program(
             op(
                 "base",
@@ -404,6 +406,36 @@ class ExpectedBoundsTest(unittest.TestCase):
                 ["base-object"],
                 origin=[0.0, 0.0, 0.0],
                 size=[10.0, 10.0, 10.0],
+            ),
+            op(
+                "cut",
+                "solid",
+                ["cut-object"],
+                origin=[4.0, 4.0, 9.0],
+                size=[2.0, 2.0, 2.0],
+            ),
+            op(
+                "difference",
+                "boolean_difference",
+                ["result-object"],
+                ["base-object", "cut-object"],
+                base_index=0,
+            ),
+        )
+        result = expected_object_bounds(build)["result-object"]
+        self.assertEqual([0.0, 0.0, 0.0], result["bbox_min"])
+        self.assertEqual([10.0, 10.0, 10.0], result["bbox_max"])
+
+    def test_boolean_difference_that_can_change_extrema_fails_closed(self):
+        # a triangular prism holds its +Z extremum along one edge: a cutter
+        # reaching that edge can alter the extremum, so bounds fail closed
+        build = program(
+            op(
+                "base",
+                "extrusion",
+                ["base-object"],
+                profile=[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [5.0, 0.0, 10.0]],
+                vector=[0.0, 10.0, 0.0],
             ),
             op(
                 "cut",

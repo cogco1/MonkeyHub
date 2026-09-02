@@ -975,6 +975,10 @@ def _lift_to_base_level(
     """Apply an optional datum-bound ``base_level`` (program Y) to points."""
 
     if "base_level" not in parameters:
+        if "base_offset" in parameters:
+            raise SandboxRealizationError(
+                f"{operation_id}: base_offset without a datum-bound base_level"
+            )
         return points
     raw = parameters["base_level"]
     if (
@@ -985,9 +989,18 @@ def _lift_to_base_level(
         raise SandboxRealizationError(
             f"{operation_id}: base_level must be a finite number"
         )
+    offset = parameters.get("base_offset", 0.0)
+    if (
+        isinstance(offset, bool)
+        or not isinstance(offset, (int, float))
+        or not math.isfinite(offset)
+    ):
+        raise SandboxRealizationError(
+            f"{operation_id}: base_offset must be a finite number"
+        )
     if not points:
         return points
-    shift = float(raw) - min(point[1] for point in points)
+    shift = float(raw) + float(offset) - min(point[1] for point in points)
     return tuple((p[0], p[1] + shift, p[2]) for p in points)
 
 

@@ -182,6 +182,15 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
     "boolean_intersection": _function_contract(
         minimum_inputs=2,
         maximum_inputs=None,
+        parameters=(
+            # P092: an aperture volume is opening evidence, not material;
+            # it may be exported hidden.
+            _function_parameter(
+                "hidden_for_inspection",
+                GeometryParameterKind.BOOLEAN,
+                required=False,
+            ),
+        ),
     ),
     "boolean_union": _function_contract(
         minimum_inputs=2,
@@ -221,6 +230,14 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
             ),
             _function_parameter(
                 "vector", GeometryParameterKind.VECTOR3, unit=_METER
+            ),
+            # P092: an element's own seat height above its datum-bound
+            # base_level (a sill, a frame seat); meaningless without one.
+            _function_parameter(
+                "base_offset",
+                GeometryParameterKind.NUMBER,
+                unit=_METER,
+                required=False,
             ),
             _function_parameter(
                 "hidden_for_inspection",

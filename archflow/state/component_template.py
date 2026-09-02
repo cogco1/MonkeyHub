@@ -24,6 +24,7 @@ from enum import StrEnum
 
 from archflow.contracts.authority import no_authority
 from archflow.state.geometry_program import InterfaceDatum
+from archflow.state.operational_state import DependencyEdge, DependencyEffect
 from archflow.contracts.canonical import canonical_json, require_sha256
 from archflow.project.refs import require_identifier
 
@@ -705,3 +706,100 @@ def verify_template_datums(
                 f"{target!r}, which no published datum provides"
             )
     return tuple(sorted(violations))
+
+
+# ---------------------------------------------------------------- P099
+# A placed instance of a template edition. The binding is a dependency
+# edge, so a new edition reopens exactly the instances of the old one
+# (P063 repair lifted to the type level). An instance names what
+# realizes it (operation and object ids), never a coordinate.
+
+
+def template_edition_ref(template_id: str, edition: int) -> str:
+    require_identifier(template_id, "template_id")
+    if isinstance(edition, bool) or not isinstance(edition, int) or edition < 1:
+        raise ComponentTemplateError("edition must be a positive integer")
+    return f"template:{template_id}-edition-{edition}"
+
+
+@dataclass(frozen=True, slots=True)
+class ComponentInstance:
+    instance_id: str
+    template_id: str
+    edition: int
+    template_ref: str
+    project_id: str
+    run_id: str
+    placement_refs: tuple[str, ...]
+    host_ref: str | None = None
+
+    SCHEMA = "ComponentInstance@1"
+
+    def __post_init__(self) -> None:
+        require_identifier(self.instance_id, "instance_id")
+        template_edition_ref(self.template_id, self.edition)
+        _ref(self.template_ref, "instance template_ref")
+        require_identifier(self.project_id, "project_id")
+        require_identifier(self.run_id, "run_id")
+        object.__setattr__(
+            self, "placement_refs", _refs(self.placement_refs, "instance placement_refs")
+        )
+        if self.host_ref is not None:
+            _ref(self.host_ref, "instance host_ref")
+
+    @property
+    def ref(self) -> str:
+        return f"instance:{self.instance_id}"
+
+    @property
+    def edition_ref(self) -> str:
+        return template_edition_ref(self.template_id, self.edition)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "instance_id": self.instance_id,
+            "template_id": self.template_id,
+            "edition": self.edition,
+            "template_ref": self.template_ref,
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "placement_refs": list(self.placement_refs),
+            "host_ref": self.host_ref,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ComponentInstance":
+        if not isinstance(value, dict) or value.get("schema") != cls.SCHEMA:
+            raise ComponentTemplateError("component instance payload malformed")
+        return cls(
+            instance_id=value["instance_id"],
+            template_id=value["template_id"],
+            edition=value["edition"],
+            template_ref=value["template_ref"],
+            project_id=value["project_id"],
+            run_id=value["run_id"],
+            placement_refs=tuple(value["placement_refs"]),
+            host_ref=value.get("host_ref"),
+        )
+
+    @property
+    def digest(self) -> str:
+        import hashlib
+
+        return hashlib.sha256(canonical_json(self.to_dict()).encode("utf-8")).hexdigest()
+
+
+def instance_edition_edge(instance: ComponentInstance) -> DependencyEdge:
+    """The instance depends on its template edition: a new edition reopens it."""
+
+    if not isinstance(instance, ComponentInstance):
+        raise ComponentTemplateError("instance must be a ComponentInstance")
+    return DependencyEdge(
+        upstream_ref=instance.edition_ref,
+        downstream_ref=instance.ref,
+        relation="instantiates_template_edition",
+        source_ref=instance.template_ref,
+        effect=DependencyEffect.REQUIRES_REVALIDATION,
+    )
+
