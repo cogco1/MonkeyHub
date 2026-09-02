@@ -10,9 +10,14 @@ are authority-free and persist through the injected repository ports.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
+from archflow.control.stage_closure import (
+    CompositeStageClosureReceipt,
+    StageClosureStatus,
+)
 from archflow.contracts.authority import no_authority
+from archflow.contracts.canonical import require_sha256
 from archflow.project import (
     FilesystemProjectRepository,
     PersistenceDestination,
@@ -32,10 +37,21 @@ from archflow.state.assembly_template import (
     require_assembly_votes,
 )
 from archflow.state.component_template import CaseVote, TemplateParameter
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.design_maturity import (
+    DesignMaturityState,
+    DesignPhase,
+    StageEntryProof,
+)
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.geometry_program import DatumBinding, InterfaceDatum
 from archflow.state.spatial import ComponentMaturity
+from archflow.state.stage_workflow import (
+    ProjectStageWorkflow,
+    StageExitBinding,
+    StageExitStatus,
+    StageRunEnvelope,
+    require_stage_exit_binding,
+)
 
 CANDIDATE_RECORD_KIND = "assembly-template-candidate"
 TEMPLATE_RECORD_KIND = "assembly-template"
@@ -51,6 +67,274 @@ _PHASE_BY_MATURITY = {
     ComponentMaturity.DEVELOPED: DesignPhase.DESIGN_DEVELOPMENT,
     ComponentMaturity.DETAILED: DesignPhase.CANDIDATE_COORDINATION,
 }
+
+VoteRecordLoader = Callable[[str], Mapping[str, object]]
+
+
+def _load_vote_record(
+    loader: VoteRecordLoader,
+    ref: str,
+    *,
+    field: str,
+) -> Mapping[str, object]:
+    try:
+        payload = loader(ref)
+    except Exception as exc:
+        raise AssemblyTemplateError(
+            f"cannot load {field} {ref!r}: {exc}"
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise AssemblyTemplateError(f"{field} loader returned a non-object")
+    return payload
+
+
+def _verify_stage_qualified_vote(
+    vote: CaseVote,
+    loader: VoteRecordLoader,
+) -> None:
+    """Resolve and verify one exact binding/state/stage-proof chain."""
+
+    if not vote.stage_qualified:
+        raise AssemblyTemplateError(
+            "organisation_only vote cannot enter stage verification"
+        )
+
+    binding_payload = _load_vote_record(
+        loader,
+        vote.receipt_ref,
+        field="assembly binding receipt",
+    )
+    binding_fields = {
+        "schema",
+        "template_ref",
+        "template_digest",
+        "project_id",
+        "run_id",
+        "role_bindings",
+        "datum_bindings",
+        "parameters",
+        "evidence_rebinding",
+        "canonical_write_authority",
+        "design_authority",
+    }
+    if (
+        set(binding_payload) != binding_fields
+        or binding_payload.get("schema") != AssemblyTemplateBinding.SCHEMA
+        or binding_payload.get("canonical_write_authority") is not False
+        or binding_payload.get("design_authority") is not False
+        or not isinstance(binding_payload.get("role_bindings"), list)
+        or not binding_payload.get("role_bindings")
+        or not isinstance(binding_payload.get("datum_bindings"), list)
+        or not isinstance(binding_payload.get("parameters"), list)
+        or not isinstance(binding_payload.get("evidence_rebinding"), list)
+    ):
+        raise AssemblyTemplateError(
+            "stage-qualified vote receipt is not an "
+            f"{AssemblyTemplateBinding.SCHEMA} record"
+        )
+    if (
+        binding_payload.get("project_id") != vote.project_id
+        or binding_payload.get("run_id") != vote.run_id
+    ):
+        raise AssemblyTemplateError(
+            "stage-qualified vote receipt belongs to another project or run"
+        )
+    try:
+        require_sha256(
+            binding_payload.get("template_digest"),
+            "assembly binding template_digest",
+        )
+    except (TypeError, ValueError) as exc:
+        raise AssemblyTemplateError(
+            "stage-qualified vote receipt has no valid template digest"
+        ) from exc
+
+    workflow_payload = _load_vote_record(
+        loader,
+        vote.workflow_ref,
+        field="project stage workflow",
+    )
+    try:
+        workflow = ProjectStageWorkflow.from_dict(workflow_payload)
+    except (TypeError, ValueError) as exc:
+        raise AssemblyTemplateError(
+            "stage-qualified vote workflow is not a "
+            "ProjectStageWorkflow@1"
+        ) from exc
+    if (
+        workflow.project_id != vote.project_id
+        or workflow.workflow_digest != vote.workflow_digest
+    ):
+        raise AssemblyTemplateError(
+            "stage-qualified vote workflow is cross-project or has a "
+            "different digest"
+        )
+
+    envelope_payload = _load_vote_record(
+        loader,
+        vote.stage_envelope_ref,
+        field="stage run envelope",
+    )
+    try:
+        envelope = StageRunEnvelope.from_dict(envelope_payload)
+    except (TypeError, ValueError) as exc:
+        raise AssemblyTemplateError(
+            "stage-qualified vote envelope is not a StageRunEnvelope@1"
+        ) from exc
+    if envelope.envelope_digest != vote.envelope_digest:
+        raise AssemblyTemplateError(
+            "stage-qualified vote envelope digest does not match the "
+            "loaded envelope"
+        )
+    try:
+        workflow_stage = workflow.stage_at(vote.stage_index)
+    except (TypeError, ValueError) as exc:
+        raise AssemblyTemplateError(
+            "stage-qualified vote stage_index is outside the workflow"
+        ) from exc
+    if (
+        envelope.project_id != vote.project_id
+        or envelope.run_id != vote.run_id
+        or envelope.branch_id != vote.branch_id
+        or envelope.branch_epoch != vote.branch_epoch
+        or envelope.workflow_ref != vote.workflow_ref
+        or envelope.workflow_digest != vote.workflow_digest
+        or envelope.stage_id != vote.stage_id
+        or envelope.stage_index != vote.stage_index
+        or envelope.phase is not vote.phase
+        or envelope.subject_ref != vote.state_ref
+        or envelope.state_digest != vote.state_digest
+        or workflow_stage.stage_id != vote.stage_id
+        or workflow_stage.phase is not vote.phase
+        or envelope.required_roles != workflow_stage.required_roles
+        or envelope.required_checks != workflow_stage.required_checks
+        or envelope.close_obligation.obligation_id
+        != workflow_stage.close_obligation_id
+    ):
+        raise AssemblyTemplateError(
+            "stage-qualified vote envelope is cross-scope, stale, or does "
+            "not match the exact workflow Stage and state"
+        )
+
+    state_payload = _load_vote_record(
+        loader,
+        vote.state_ref,
+        field="design maturity state",
+    )
+    try:
+        maturity = DesignMaturityState.from_dict(state_payload)
+    except (TypeError, ValueError) as exc:
+        raise AssemblyTemplateError(
+            "stage-qualified vote state is not a DesignMaturityState@1"
+        ) from exc
+    if maturity.state_digest != vote.state_digest:
+        raise AssemblyTemplateError(
+            "stage-qualified vote state digest does not match the loaded state"
+        )
+    branch = maturity.branch
+    if (
+        branch.run.project_id != vote.project_id
+        or branch.run.run_id != vote.run_id
+        or branch.run.base.version != envelope.base_version
+        or branch.run.base.require_digest() != envelope.base_state_sha256
+        or branch.branch_id != vote.branch_id
+        or branch.epoch != vote.branch_epoch
+        or maturity.phase is not vote.phase
+    ):
+        raise AssemblyTemplateError(
+            "stage-qualified vote state is cross-project, cross-run, "
+            "cross-branch, stale, or wrong-stage"
+        )
+
+    proof_payload = _load_vote_record(
+        loader,
+        vote.stage_proof_ref,
+        field="stage-entry proof",
+    )
+    try:
+        proof = StageEntryProof.from_dict(proof_payload)
+    except (TypeError, ValueError) as exc:
+        raise AssemblyTemplateError(
+            "stage-qualified vote proof is not a StageEntryProof@1"
+        ) from exc
+    if proof.proof_digest != vote.stage_proof_digest:
+        raise AssemblyTemplateError(
+            "stage-qualified vote proof digest does not match the loaded proof"
+        )
+    if vote.stage_proof_ref.startswith("stage-entry-proof:") and (
+        vote.stage_proof_ref != proof.ref
+    ):
+        raise AssemblyTemplateError(
+            "stage-qualified vote proof reference does not match its digest"
+        )
+    if (
+        proof.successor_branch != branch
+        or proof.phase_gate.to_phase is not vote.phase
+    ):
+        raise AssemblyTemplateError(
+            "stage-qualified vote proof does not enter the loaded exact state"
+        )
+
+    exit_payload = _load_vote_record(
+        loader,
+        vote.stage_exit_ref,
+        field="stage exit binding",
+    )
+    try:
+        exit_binding = StageExitBinding.from_dict(exit_payload)
+    except (TypeError, ValueError) as exc:
+        raise AssemblyTemplateError(
+            "stage-qualified vote exit is not a StageExitBinding@1"
+        ) from exc
+    if exit_binding.exit_digest != vote.stage_exit_digest:
+        raise AssemblyTemplateError(
+            "stage-qualified vote exit digest does not match the loaded "
+            "binding"
+        )
+    try:
+        require_stage_exit_binding(
+            envelope,
+            exit_binding,
+            envelope_ref=vote.stage_envelope_ref,
+        )
+    except (TypeError, ValueError) as exc:
+        raise AssemblyTemplateError(
+            "stage-qualified vote exit does not bind the exact envelope"
+        ) from exc
+    if (
+        exit_binding.status is not StageExitStatus.SATISFIED
+        or exit_binding.closure_ref != vote.stage_closure_ref
+        or exit_binding.closure_digest != vote.closure_digest
+    ):
+        raise AssemblyTemplateError(
+            "stage-qualified vote exit is not SATISFIED by the named exact "
+            "closure"
+        )
+
+    closure_payload = _load_vote_record(
+        loader,
+        vote.stage_closure_ref,
+        field="stage closure",
+    )
+    try:
+        closure = CompositeStageClosureReceipt.from_dict(closure_payload)
+    except (TypeError, ValueError) as exc:
+        raise AssemblyTemplateError(
+            "stage-qualified vote closure is not a "
+            "CompositeStageClosureReceipt@1"
+        ) from exc
+    if (
+        closure.receipt_digest != vote.closure_digest
+        or closure.status is not StageClosureStatus.SATISFIED
+        or closure.stage_id != vote.stage_id
+        or closure.branch != branch
+        or closure.stage_subject_ref != vote.state_ref
+        or closure.subject_digest != vote.state_digest
+    ):
+        raise AssemblyTemplateError(
+            "stage-qualified vote closure is not SATISFIED for the exact "
+            "workflow Stage, branch, and state"
+        )
 
 
 def roles_from_design_state(
@@ -172,16 +456,19 @@ def record_assembly_candidate(
     if not isinstance(source_ref, ProjectRecordRef):
         raise AssemblyTemplateError("source_ref must be a ProjectRecordRef")
     votes = template.distinct_vote_projects()
+    qualified_votes = template.distinct_stage_qualified_vote_projects()
     candidate_ref = library.put_json(
         run=library_run, destination=library_destination, record_kind=CANDIDATE_RECORD_KIND, payload=template.to_dict()
     )
     obligation_ref = library.put_json(
         run=library_run, destination=library_destination, record_kind=SECOND_CASE_OBLIGATION_KIND,
         payload={
-            "schema": "AssemblySecondCaseObligation@1", "template_id": template.template_id, "typology": template.typology,
+            "schema": "AssemblySecondCaseObligation@2", "template_id": template.template_id, "typology": template.typology,
             "candidate_ref": candidate_ref.uri, "source_ref": source_ref.uri, "source_sha256": source_ref.sha256,
-            "vote_projects": list(votes), "status": "OPEN" if len(votes) < 2 else "SATISFIED",
-            "statement": "A second, non-isomorphic project of the same typology must bind this template and its stable roles must survive the comparison before promotion.",
+            "vote_projects": list(votes),
+            "stage_qualified_vote_projects": list(qualified_votes),
+            "status": "OPEN" if len(qualified_votes) < 2 else "SATISFIED",
+            "statement": "Two non-isomorphic projects of the same typology must bind this template under exact standard-stage state and stage-entry proof before promotion.",
             **no_authority(_RECEIPT_AUTHORITY),
         },
     )
@@ -195,21 +482,57 @@ def promote_assembly_template(
     library_destination: PersistenceDestination,
     template: BuildingAssemblyTemplate,
     candidate_ref: ProjectRecordRef,
+    record_loader: VoteRecordLoader | None = None,
     waiver_ref: str | None = None,
 ) -> tuple[ProjectRecordRef, ProjectRecordRef]:
-    """Promote under the two-vote rule or a recorded waiver."""
+    """Promote verified stage-qualified votes or a recorded waiver."""
 
     library_destination = require_destination(library_destination, producer="assembly promotion")
     require_assembly_votes(template, waiver_ref=waiver_ref)
+    verified_votes: tuple[CaseVote, ...] = ()
+    if waiver_ref is None:
+        if record_loader is None or not callable(record_loader):
+            raise AssemblyTemplateError(
+                "assembly promotion requires a vote record loader"
+            )
+        verified = []
+        for vote in template.case_votes:
+            if not vote.stage_qualified:
+                continue
+            _verify_stage_qualified_vote(vote, record_loader)
+            verified.append(vote)
+        verified_votes = tuple(verified)
+        verified_projects = tuple(
+            sorted({vote.project_id for vote in verified_votes})
+        )
+        if len(verified_projects) < 2:
+            raise AssemblyTemplateError(
+                "assembly promotion requires two independently verified "
+                "stage-qualified projects"
+            )
+    else:
+        verified_projects = ()
     template_ref = library.put_json(
         run=library_run, destination=library_destination, record_kind=TEMPLATE_RECORD_KIND, payload=template.to_dict()
     )
     receipt_ref = library.put_json(
         run=library_run, destination=library_destination, record_kind=PROMOTION_RECEIPT_KIND,
         payload={
-            "schema": "AssemblyPromotionReceipt@1", "template_id": template.template_id, "edition": template.edition,
+            "schema": "AssemblyPromotionReceipt@2", "template_id": template.template_id, "edition": template.edition,
             "template_ref": template_ref.uri, "candidate_ref": candidate_ref.uri, "candidate_sha256": candidate_ref.sha256,
-            "vote_projects": list(template.distinct_vote_projects()), "two_vote_waiver_ref": waiver_ref,
+            "vote_projects": list(verified_projects),
+            "declared_stage_qualified_vote_projects": list(
+                template.distinct_stage_qualified_vote_projects()
+            ),
+            "organisation_only_vote_projects": sorted(
+                {
+                    vote.project_id
+                    for vote in template.case_votes
+                    if not vote.stage_qualified
+                }
+            ),
+            "verified_votes": [vote.to_dict() for vote in verified_votes],
+            "two_vote_waiver_ref": waiver_ref,
             **no_authority(_RECEIPT_AUTHORITY),
         },
     )
@@ -233,6 +556,6 @@ def record_assembly_binding(
 
 __all__ = [
     "BINDING_RECORD_KIND", "CANDIDATE_RECORD_KIND", "PROMOTION_RECEIPT_KIND", "SECOND_CASE_OBLIGATION_KIND",
-    "TEMPLATE_RECORD_KIND", "harvest_assembly_template", "promote_assembly_template", "record_assembly_binding",
+    "TEMPLATE_RECORD_KIND", "VoteRecordLoader", "harvest_assembly_template", "promote_assembly_template", "record_assembly_binding",
     "record_assembly_candidate", "relations_from_datum_bindings", "roles_from_design_state",
 ]

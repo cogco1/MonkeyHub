@@ -15,18 +15,35 @@ from pathlib import Path
 from archflow.capabilities.declaration import DeclarationQuadrant
 from archflow.capabilities.discipline_seats import SeatSpec
 from archflow.capabilities.geometry_proposal import GeometryProposalProviderIdentity
-from archflow.project import FilesystemProjectRepository
+from archflow.control.stage_closure import (
+    CompositeStageClosureReceipt,
+    StageClosureStatus,
+)
+from archflow.project import (
+    FilesystemProjectRepository,
+    PersistenceArea,
+    PersistenceDestination,
+)
 from archflow.runtime.project_runner import (
     ElementPack,
     ProjectRunnerError,
     RunOptions,
     SchematicPack,
+    StageExecutionGuard,
     bootstrap_developed_state,
     run_project,
 )
 from archflow.state.design_maturity import DesignPhase
 from archflow.state.developed_design import DevelopmentDiscipline
 from archflow.state.geometry_program import ProjectLevel, ProjectLevels
+from archflow.state.operational_state import DesignObligation
+from archflow.state.stage_workflow import (
+    ProjectStage,
+    ProjectStageWorkflow,
+    StageExitBinding,
+    open_stage_run_envelope,
+)
+from archflow.project.refs import BranchRef
 
 EVIDENCE = "evidence:demo-survey"
 BASIS = (EVIDENCE,)
@@ -92,6 +109,72 @@ def _options(**overrides) -> RunOptions:
     return RunOptions(**fields)
 
 
+def _stage_guard(repository, run, pack, options) -> StageExecutionGuard:
+    state = bootstrap_developed_state(
+        pack,
+        run=run,
+        portfolio_id=options.portfolio_id,
+        branch_id=options.branch_id,
+        selection_decision_ref=options.selection_decision_ref,
+    )
+    workflow = ProjectStageWorkflow(
+        project_id=run.project_id,
+        workflow_id="runner-test-workflow",
+        stages=(
+            ProjectStage(
+                stage_id="stage-0-test-production",
+                stage_index=0,
+                phase=DesignPhase.DESIGN_DEVELOPMENT,
+                required_roles=("geometry-program", "model-inspection"),
+                required_checks=("object-operation-bijection",),
+                close_obligation_id="close-stage-0-test-production",
+            ),
+        ),
+        basis_refs=("decision:runner-stage-test",),
+    )
+    destination = PersistenceDestination(
+        PersistenceArea.RUN_RECORD,
+        run_id=run.run_id,
+    )
+    workflow_ref = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="project-stage-workflow",
+        payload=workflow.to_dict(),
+    )
+    envelope = open_stage_run_envelope(
+        workflow,
+        workflow_ref=workflow_ref.uri,
+        run_id=run.run_id,
+        base_version=run.base.version,
+        base_state_sha256=run.base.require_digest(),
+        branch_id=options.branch_id,
+        branch_epoch=options.branch_epoch,
+        subject_ref="state:developed-design-state",
+        state_digest=state.state_digest,
+        stage_index=0,
+        close_obligation=DesignObligation(
+            obligation_id="close-stage-0-test-production",
+            statement="Remain open until independent stage checks close.",
+            source_ref="workflow:runner-test-workflow/stage-0",
+            subject_refs=("state:developed-design-state",),
+            validator_ref="validator:composite-stage-closure",
+        ),
+    )
+    envelope_ref = repository.put_json(
+        run=run,
+        destination=destination,
+        record_kind="stage-run-envelope",
+        payload=envelope.to_dict(),
+    )
+    return StageExecutionGuard(
+        workflow=workflow,
+        workflow_record_ref=workflow_ref,
+        envelope=envelope,
+        envelope_record_ref=envelope_ref,
+    )
+
+
 class BootstrapTests(unittest.TestCase):
     def test_pack_becomes_a_real_developed_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -118,27 +201,36 @@ class BootstrapTests(unittest.TestCase):
 class RunTests(unittest.TestCase):
     def _run(self, elements: ElementPack, **overrides):
         self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
         repository = FilesystemProjectRepository.initialize(Path(self.temporary.name) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
         run = repository.create_run("run-1")
         pack = _schematic()
-        state = bootstrap_developed_state(pack, run=run, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared")
-        return repository, run_project(repository, run=run, schematic=pack, elements=elements, seats=_seats(state.active_phase), levels=_levels(), grids=None, options=_options(**overrides))
+        options = _options(**overrides)
+        state = bootstrap_developed_state(pack, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+        guard = _stage_guard(repository, run, pack, options)
+        return repository, run_project(repository, run=run, stage_guard=guard, schematic=pack, elements=elements, seats=_seats(state.active_phase), levels=_levels(), grids=None, options=options)
 
     def test_two_seats_run_through_the_producer_with_receipts(self) -> None:
         repository, receipt = self._run(_elements())
-        self.assertTrue(receipt["accepted"], receipt["stages"])
-        stages = {s["seat_id"]: s for s in receipt["stages"]}
-        self.assertEqual(stages["seat-structure"]["status"], "accepted")
-        self.assertEqual(stages["seat-structure"]["objects"], 4)
-        self.assertEqual(stages["seat-envelope"]["status"], "accepted")
-        self.assertGreaterEqual(stages["seat-envelope"]["objects"], 2)                      # cut wall + aperture
-        self.assertEqual(stages["seat-envelope"]["round"], 1)
-        self.assertTrue(all(s["wall_time_s"] >= 0.0 for s in receipt["stages"]))
+        self.assertTrue(receipt["seat_execution_complete"], receipt["seat_results"])
+        self.assertNotIn("accepted", receipt)
+        self.assertEqual(receipt["stage"]["status"], "OPEN")
+        self.assertFalse(receipt["stage_acceptance_authority"])
+        seats = {s["seat_id"]: s for s in receipt["seat_results"]}
+        self.assertEqual(seats["seat-structure"]["status"], "proposal_accepted")
+        self.assertEqual(seats["seat-structure"]["objects"], 4)
+        self.assertEqual(seats["seat-envelope"]["status"], "proposal_accepted")
+        self.assertGreaterEqual(seats["seat-envelope"]["objects"], 2)                      # cut wall + aperture
+        self.assertEqual(seats["seat-envelope"]["round"], 1)
+        self.assertTrue(all(s["wall_time_s"] >= 0.0 for s in receipt["seat_results"]))
         self.assertIn("receipt_ref", receipt)
-        program = repository.load_json(_ref(stages["seat-envelope"]["program_ref"]))
+        program = repository.load_json(_ref(seats["seat-envelope"]["program_ref"]))
         datum_ids = {d["datum_id"] for d in program["interface_datums"]}
         self.assertIn("portico-columns-top", datum_ids)                                        # handed over from the structure seat
         self.assertIn("level-cornice", datum_ids)
+        record_names = [path.name for path in repository.layout.run("run-1").records.glob("*.json")]
+        self.assertTrue(any(name.startswith("seat-round-receipt-") for name in record_names))
+        self.assertFalse(any(name.startswith("runner-stage-receipt-") for name in record_names))
 
     def test_realized_bounds_of_an_earlier_seat_exclude_a_later_opening(self) -> None:
         with self.assertRaises(ProjectRunnerError) as caught:
@@ -152,10 +244,139 @@ class RunTests(unittest.TestCase):
         with self.assertRaises(ProjectRunnerError):
             self._run(elements)
         repository, receipt = self._run(elements, strict_coverage=False)
-        stages = {s["seat_id"]: s for s in receipt["stages"]}
-        self.assertEqual(stages["seat-structure"]["status"], "empty")
-        self.assertEqual(stages["seat-structure"]["undeclared_components"], ["portico-columns"])
-        self.assertEqual(stages["seat-envelope"]["status"], "accepted")
+        seats = {s["seat_id"]: s for s in receipt["seat_results"]}
+        self.assertEqual(seats["seat-structure"]["status"], "empty")
+        self.assertEqual(seats["seat-structure"]["undeclared_components"], ["portico-columns"])
+        self.assertEqual(seats["seat-envelope"]["status"], "proposal_accepted")
+
+    def test_unretained_or_cross_run_stage_envelope_fails_before_seat_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            other = repository.create_run("run-2")
+            options = _options()
+            pack = _schematic()
+            guard = _stage_guard(repository, other, pack, options)
+            state = bootstrap_developed_state(pack, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+            with self.assertRaisesRegex(ProjectRunnerError, "another project or run"):
+                run_project(repository, run=run, stage_guard=guard, schematic=pack, elements=_elements(), seats=_seats(state.active_phase), levels=_levels(), grids=None, options=options)
+            record_names = [path.name for path in repository.layout.run("run-1").records.glob("*.json")]
+            self.assertFalse(any(name.startswith("runner-schematic-pack-") for name in record_names))
+
+    def test_cross_run_successor_requires_retained_satisfied_predecessor_close(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            predecessor_run = repository.create_run("run-0")
+            run = repository.create_run("run-1")
+            options = _options()
+            pack = _schematic()
+            state = bootstrap_developed_state(pack, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+            workflow = ProjectStageWorkflow(
+                project_id="demo",
+                workflow_id="cross-run-test",
+                stages=(
+                    ProjectStage(
+                        "stage-0-evidence",
+                        0,
+                        DesignPhase.DESIGN_DEVELOPMENT,
+                        ("evidence-denominator",),
+                        ("evidence-coverage",),
+                        "close-stage-0-evidence",
+                    ),
+                    ProjectStage(
+                        "stage-1-geometry",
+                        1,
+                        DesignPhase.DESIGN_DEVELOPMENT,
+                        ("geometry-program",),
+                        ("object-operation-bijection",),
+                        "close-stage-1-geometry",
+                    ),
+                ),
+                basis_refs=("decision:cross-run-test",),
+            )
+            destination0 = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=predecessor_run.run_id)
+            workflow_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind="project-stage-workflow", payload=workflow.to_dict())
+            predecessor = open_stage_run_envelope(
+                workflow,
+                workflow_ref=workflow_ref.uri,
+                run_id=predecessor_run.run_id,
+                base_version=predecessor_run.base.version,
+                base_state_sha256=predecessor_run.base.require_digest(),
+                branch_id=options.branch_id,
+                branch_epoch=1,
+                subject_ref="state:stage-0-evidence",
+                state_digest="0" * 64,
+                stage_index=0,
+                close_obligation=DesignObligation(
+                    "close-stage-0-evidence",
+                    "Close only through the evidence checks.",
+                    "workflow:cross-run-test/stage-0",
+                    subject_refs=("state:stage-0-evidence",),
+                    validator_ref="validator:composite-stage-closure",
+                ),
+            )
+            predecessor_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind="stage-run-envelope", payload=predecessor.to_dict())
+            closure = CompositeStageClosureReceipt(
+                profile_id="stage-0-profile",
+                profile_digest="1" * 64,
+                stage_id=predecessor.stage_id,
+                branch=BranchRef(predecessor_run, options.branch_id, 1),
+                stage_subject_ref=predecessor.subject_ref,
+                subject_digest=predecessor.state_digest,
+                check_receipt_digests=(),
+                findings=(),
+                status=StageClosureStatus.SATISFIED,
+            )
+            closure_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind="composite-stage-closure", payload=closure.to_dict())
+            exit_binding = StageExitBinding.bind(
+                predecessor,
+                envelope_ref=predecessor_ref.uri,
+                closure_ref=closure_ref.uri,
+                closure_digest=closure.receipt_digest,
+            )
+            exit_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind="stage-exit-binding", payload=exit_binding.to_dict())
+            successor = open_stage_run_envelope(
+                workflow,
+                workflow_ref=workflow_ref.uri,
+                run_id=run.run_id,
+                base_version=run.base.version,
+                base_state_sha256=run.base.require_digest(),
+                branch_id=options.branch_id,
+                branch_epoch=1,
+                subject_ref="state:developed-design-state",
+                state_digest=state.state_digest,
+                stage_index=1,
+                close_obligation=DesignObligation(
+                    "close-stage-1-geometry",
+                    "Close only through geometry checks.",
+                    "workflow:cross-run-test/stage-1",
+                    subject_refs=("state:developed-design-state",),
+                    validator_ref="validator:composite-stage-closure",
+                ),
+                predecessor=predecessor,
+                predecessor_ref=predecessor_ref.uri,
+                predecessor_exit=exit_binding,
+                predecessor_exit_ref=exit_ref.uri,
+            )
+            destination1 = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
+            successor_ref = repository.put_json(run=run, destination=destination1, record_kind="stage-run-envelope", payload=successor.to_dict())
+            guard = StageExecutionGuard(
+                workflow,
+                workflow_ref,
+                successor,
+                successor_ref,
+                predecessor,
+                predecessor_ref,
+                exit_binding,
+                exit_ref,
+                closure,
+                closure_ref,
+            )
+
+            receipt = run_project(repository, run=run, stage_guard=guard, schematic=pack, elements=_elements(), seats=_seats(state.active_phase), levels=_levels(), grids=None, options=options)
+            self.assertTrue(receipt["seat_execution_complete"])
+            self.assertEqual(receipt["stage"]["stage_index"], 1)
+            self.assertEqual(receipt["stage"]["status"], "OPEN")
 
 
 def _ref(uri: str):

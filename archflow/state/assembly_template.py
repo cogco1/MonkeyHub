@@ -375,6 +375,19 @@ class BuildingAssemblyTemplate:
     def distinct_vote_projects(self) -> tuple[str, ...]:
         return tuple(sorted({v.project_id for v in self.case_votes}))
 
+    def distinct_stage_qualified_vote_projects(self) -> tuple[str, ...]:
+        """Projects whose votes carry standard stage-lifecycle evidence."""
+
+        return tuple(
+            sorted(
+                {
+                    vote.project_id
+                    for vote in self.case_votes
+                    if vote.stage_qualified
+                }
+            )
+        )
+
     @property
     def digest(self) -> str:
         return _digest(self.to_dict())
@@ -410,17 +423,19 @@ class BuildingAssemblyTemplate:
 
 
 def require_assembly_votes(template: BuildingAssemblyTemplate, *, waiver_ref: str | None = None) -> None:
-    """Two distinct projects before promotion, or a recorded waiver."""
+    """Two stage-qualified projects before promotion, or a waiver."""
 
     if not isinstance(template, BuildingAssemblyTemplate):
         raise AssemblyTemplateError("template must be a BuildingAssemblyTemplate")
     if waiver_ref is not None:
         _text(waiver_ref, "two-vote waiver_ref")
         return
-    votes = template.distinct_vote_projects()
+    votes = template.distinct_stage_qualified_vote_projects()
     if len(votes) < LIBRARY_PROMOTION_MIN_VOTES:
         raise AssemblyTemplateError(
-            f"assembly promotion requires votes from at least {LIBRARY_PROMOTION_MIN_VOTES} distinct projects, found {list(votes)}"
+            "assembly promotion requires stage-qualified votes from at least "
+            f"{LIBRARY_PROMOTION_MIN_VOTES} distinct projects, found "
+            f"{list(votes)}"
         )
 
 

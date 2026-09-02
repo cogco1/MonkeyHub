@@ -2,7 +2,7 @@
 
 - Origin: Planning
 - Status: Active (first cut landed 2026-09-02; P069 dropped from the dependencies — the Pantheon card is codex's and the runner does not need it)
-- Depends on: P069, P083, P087, P088
+- Depends on: P083, P087, P088, P092, P095, P098
 
 ## Goal
 
@@ -28,12 +28,17 @@ semantics change, and no building answer enters the framework.
 - Hand-pinned SHA constants and load-module-by-SHA patterns reach zero
   on the authoring path; loading is by verified record ref.
 - Per-stage wall time is reported in the run summary.
+- Before any seat write, require an exact retained workflow/envelope; Stage N
+  also requires the exact prior state/exit/SATISFIED closure and base/branch.
+- Phase, project Stage, and Seat remain distinct; seat outcome is not Stage acceptance.
 - Full unittest suite and the architecture firewall pass.
 
 ## Write scope
 
 - `tools/`
 - `archflow/runtime/`
+- `archflow/state/`
+- `archflow/capabilities/`
 - `archflow/project/`
 - `tests/`
 - `probes/`
@@ -62,7 +67,8 @@ enters as record packs — `SchematicPack@1` (levels, volumes, zones,
 connections, component tree, evidence) becomes a real
 `SpatialOptionProposal` → `SchematicOption` → `SelectedSchematicInput` →
 `DevelopedDesignState` through the state dataclasses' own validation
-(the portfolio ceremony is replaced by one declared selection record);
+(the declared selection remains an authority-free stage input, not a
+replacement for stage entry/closure);
 `ElementPack@1` lists what each seat authors (wall with hosted openings
 and types, prism, ring, loft, column-array, dome-cap, or a typed
 declination with a reason) bound to project levels by id, heights as
@@ -74,7 +80,7 @@ second round), gates coverage (every owned leaf has an element or a
 declination; unowned leaves are listed on the run receipt), checks seat
 datums (P098), compiles handovers with realized bounds as exclusions for
 consuming seats, optionally exports to Rhino with read-back, and writes
-stage receipts with wall time and a run receipt.
+seat-round receipts with wall time and an authority-free run receipt.
 Tests: `tests/test_project_runner.py` (5): pack → state, malformed
 packs, two seats through the producer with handover datums, an earlier
 seat's realized bounds refusing a later opening, coverage strict/relaxed.
@@ -92,3 +98,15 @@ SHA constants on the authoring path; the front of the pipeline (brief,
 program, site, build policy) is still declared, not compiled from
 evidence; the `portico_geometry` producer is not in the registry yet.
 
+## Stage/seat authority correction (2026-09-02)
+
+The first cut mislabeled discipline-seat proposal outcomes as Stage results.
+The hardened runner now requires a retained ordered workflow and exact
+stage-run envelope before any seat write. Stage N additionally binds the
+exact project/base/semantic branch, Stage N-1 envelope/state, retained exit,
+and SATISFIED composite closure. `SeatRoundReceipt@1` and
+`RunnerRunReceipt@2.seat_execution_complete` carry no stage authority; the
+current close obligation remains OPEN. Legacy `CaseVote@1` records migrate to
+organisation-only evidence and cannot promote templates. Villa Rotonda's
+project-owned Stage 0-5 workflow is frozen in P036 run `workflow-001`; all
+older runs remain `LEGACY_UNQUALIFIED_BASIS`, with canonical HEAD at version 0.

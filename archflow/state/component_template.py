@@ -23,10 +23,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from archflow.contracts.authority import no_authority
-from archflow.state.geometry_program import InterfaceDatum
-from archflow.state.operational_state import DependencyEdge, DependencyEffect
 from archflow.contracts.canonical import canonical_json, require_sha256
 from archflow.project.refs import require_identifier
+from archflow.state.design_maturity import DesignPhase
+from archflow.state.geometry_program import InterfaceDatum
+from archflow.state.operational_state import DependencyEdge, DependencyEffect
 
 LIBRARY_PROMOTION_MIN_VOTES = 2
 
@@ -420,20 +421,137 @@ class TemplatePlate:
         )
 
 
+class CaseVoteKind(StrEnum):
+    """What one case vote is allowed to prove."""
+
+    ORGANISATION_ONLY = "organisation_only"
+    STAGE_QUALIFIED = "stage_qualified"
+
+
 @dataclass(frozen=True, slots=True)
 class CaseVote:
-    """One non-isomorphic case in which this template survived."""
+    """One non-isomorphic case in which this template survived.
+
+    ``organisation_only`` records remain useful comparison evidence, but do
+    not prove that the template survived a standard design stage.  A
+    ``stage_qualified`` vote therefore binds an exact project Stage workflow,
+    run envelope, satisfied closure, maturity state, and phase-entry proof.
+    ``phase`` is deliberately separate from ``stage_id``/``stage_index``:
+    several project Stages may share one broad design phase.
+
+    ``CaseVote@1`` is accepted on read and migrates to an
+    ``organisation_only`` ``CaseVote@2`` on the next write.  This prevents a
+    legacy record with no stage evidence from silently acquiring promotion
+    weight.
+    """
 
     project_id: str
     run_id: str
     receipt_ref: str
+    vote_kind: CaseVoteKind = CaseVoteKind.ORGANISATION_ONLY
+    branch_id: str | None = None
+    branch_epoch: int | None = None
+    phase: DesignPhase | None = None
+    workflow_ref: str | None = None
+    workflow_digest: str | None = None
+    stage_id: str | None = None
+    stage_index: int | None = None
+    state_ref: str | None = None
+    state_digest: str | None = None
+    stage_proof_ref: str | None = None
+    stage_proof_digest: str | None = None
+    stage_envelope_ref: str | None = None
+    envelope_digest: str | None = None
+    stage_exit_ref: str | None = None
+    stage_exit_digest: str | None = None
+    stage_closure_ref: str | None = None
+    closure_digest: str | None = None
 
-    SCHEMA = "CaseVote@1"
+    SCHEMA = "CaseVote@2"
+    LEGACY_SCHEMA = "CaseVote@1"
 
     def __post_init__(self) -> None:
         require_identifier(self.project_id, "vote project_id")
         require_identifier(self.run_id, "vote run_id")
         _ref(self.receipt_ref, "vote receipt_ref")
+        if not isinstance(self.vote_kind, CaseVoteKind):
+            raise ComponentTemplateError("vote_kind must be a CaseVoteKind")
+
+        qualification = (
+            self.branch_id,
+            self.branch_epoch,
+            self.phase,
+            self.workflow_ref,
+            self.workflow_digest,
+            self.stage_id,
+            self.stage_index,
+            self.state_ref,
+            self.state_digest,
+            self.stage_proof_ref,
+            self.stage_proof_digest,
+            self.stage_envelope_ref,
+            self.envelope_digest,
+            self.stage_exit_ref,
+            self.stage_exit_digest,
+            self.stage_closure_ref,
+            self.closure_digest,
+        )
+        if self.vote_kind is CaseVoteKind.ORGANISATION_ONLY:
+            if any(value is not None for value in qualification):
+                raise ComponentTemplateError(
+                    "organisation_only vote cannot carry stage qualification"
+                )
+            return
+
+        if any(value is None for value in qualification):
+            raise ComponentTemplateError(
+                "stage_qualified vote requires exact workflow, project Stage, "
+                "branch, phase, state, stage-proof, envelope, exit binding, "
+                "and closure references and digests"
+            )
+        require_identifier(self.branch_id, "vote branch_id")
+        if (
+            isinstance(self.branch_epoch, bool)
+            or not isinstance(self.branch_epoch, int)
+            or self.branch_epoch < 0
+        ):
+            raise ComponentTemplateError(
+                "vote branch_epoch must be a non-negative integer"
+            )
+        if not isinstance(self.phase, DesignPhase):
+            raise ComponentTemplateError("vote phase must be a DesignPhase")
+        require_identifier(self.stage_id, "vote stage_id")
+        if (
+            isinstance(self.stage_index, bool)
+            or not isinstance(self.stage_index, int)
+            or self.stage_index < 0
+        ):
+            raise ComponentTemplateError(
+                "vote stage_index must be a non-negative integer"
+            )
+        _ref(self.workflow_ref, "vote workflow_ref")
+        _ref(self.state_ref, "vote state_ref")
+        _ref(self.stage_proof_ref, "vote stage_proof_ref")
+        _ref(self.stage_envelope_ref, "vote stage_envelope_ref")
+        _ref(self.stage_exit_ref, "vote stage_exit_ref")
+        _ref(self.stage_closure_ref, "vote stage_closure_ref")
+        for field in (
+            "workflow_digest",
+            "state_digest",
+            "stage_proof_digest",
+            "envelope_digest",
+            "stage_exit_digest",
+            "closure_digest",
+        ):
+            object.__setattr__(
+                self,
+                field,
+                require_sha256(getattr(self, field), f"vote {field}"),
+            )
+
+    @property
+    def stage_qualified(self) -> bool:
+        return self.vote_kind is CaseVoteKind.STAGE_QUALIFIED
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -441,20 +559,91 @@ class CaseVote:
             "project_id": self.project_id,
             "run_id": self.run_id,
             "receipt_ref": self.receipt_ref,
+            "vote_kind": self.vote_kind.value,
+            "branch_id": self.branch_id,
+            "branch_epoch": self.branch_epoch,
+            "phase": self.phase.value if self.phase is not None else None,
+            "workflow_ref": self.workflow_ref,
+            "workflow_digest": self.workflow_digest,
+            "stage_id": self.stage_id,
+            "stage_index": self.stage_index,
+            "state_ref": self.state_ref,
+            "state_digest": self.state_digest,
+            "stage_proof_ref": self.stage_proof_ref,
+            "stage_proof_digest": self.stage_proof_digest,
+            "stage_envelope_ref": self.stage_envelope_ref,
+            "envelope_digest": self.envelope_digest,
+            "stage_exit_ref": self.stage_exit_ref,
+            "stage_exit_digest": self.stage_exit_digest,
+            "stage_closure_ref": self.stage_closure_ref,
+            "closure_digest": self.closure_digest,
         }
 
     @classmethod
     def from_dict(cls, value: object) -> "CaseVote":
-        if not isinstance(value, dict) or set(value) != {
-            "schema", "project_id", "run_id", "receipt_ref",
-        }:
+        if not isinstance(value, dict):
             raise ComponentTemplateError("case vote payload malformed")
-        if value["schema"] != cls.SCHEMA:
-            raise ComponentTemplateError("case vote schema changed")
+        if value.get("schema") == cls.LEGACY_SCHEMA:
+            if set(value) != {
+                "schema",
+                "project_id",
+                "run_id",
+                "receipt_ref",
+            }:
+                raise ComponentTemplateError("legacy case vote payload malformed")
+            return cls(
+                project_id=value["project_id"],
+                run_id=value["run_id"],
+                receipt_ref=value["receipt_ref"],
+            )
+        if set(value) != {
+            "schema",
+            "project_id",
+            "run_id",
+            "receipt_ref",
+            "vote_kind",
+            "branch_id",
+            "branch_epoch",
+            "phase",
+            "workflow_ref",
+            "workflow_digest",
+            "stage_id",
+            "stage_index",
+            "state_ref",
+            "state_digest",
+            "stage_proof_ref",
+            "stage_proof_digest",
+            "stage_envelope_ref",
+            "envelope_digest",
+            "stage_exit_ref",
+            "stage_exit_digest",
+            "stage_closure_ref",
+            "closure_digest",
+        } or value.get("schema") != cls.SCHEMA:
+            raise ComponentTemplateError("case vote payload malformed")
+        phase = value["phase"]
         return cls(
             project_id=value["project_id"],
             run_id=value["run_id"],
             receipt_ref=value["receipt_ref"],
+            vote_kind=CaseVoteKind(value["vote_kind"]),
+            branch_id=value["branch_id"],
+            branch_epoch=value["branch_epoch"],
+            phase=DesignPhase(phase) if phase is not None else None,
+            workflow_ref=value["workflow_ref"],
+            workflow_digest=value["workflow_digest"],
+            stage_id=value["stage_id"],
+            stage_index=value["stage_index"],
+            state_ref=value["state_ref"],
+            state_digest=value["state_digest"],
+            stage_proof_ref=value["stage_proof_ref"],
+            stage_proof_digest=value["stage_proof_digest"],
+            stage_envelope_ref=value["stage_envelope_ref"],
+            envelope_digest=value["envelope_digest"],
+            stage_exit_ref=value["stage_exit_ref"],
+            stage_exit_digest=value["stage_exit_digest"],
+            stage_closure_ref=value["stage_closure_ref"],
+            closure_digest=value["closure_digest"],
         )
 
 
@@ -802,4 +991,3 @@ def instance_edition_edge(instance: ComponentInstance) -> DependencyEdge:
         source_ref=instance.template_ref,
         effect=DependencyEffect.REQUIRES_REVALIDATION,
     )
-

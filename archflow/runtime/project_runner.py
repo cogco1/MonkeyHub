@@ -19,8 +19,11 @@ The runner owns orchestration only: seat rounds from ``schedule_seats``,
 producers, one proposal per seat through the real producer, coverage and
 datum gates, handovers to consuming seats (published datums and realized
 bounds as exclusions), optional CAD export with read-back, and receipts
-with per-stage wall time. It grants no authority: every record it writes
-carries the authority-free flags.
+with per-seat wall time.  It will not run without a retained
+``ProjectStageWorkflow@1`` and exact ``StageRunEnvelope@1``.  A successful
+seat proposal is never reported as stage acceptance: the stage close
+obligation remains OPEN until the independent stage-artifact/check/closure
+path satisfies it.  Every record written here remains authority-free.
 """
 from __future__ import annotations
 
@@ -55,6 +58,10 @@ from archflow.contracts.canonical import canonical_json
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus
 from archflow.project import FilesystemProjectRepository, PersistenceArea, PersistenceDestination
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef, require_identifier
+from archflow.control.stage_closure import (
+    CompositeStageClosureReceipt,
+    StageClosureStatus,
+)
 from archflow.state.design_maturity import DesignPhase
 from archflow.state.design_portfolio import BranchRevisionRef
 from archflow.state.developed_design import (
@@ -81,6 +88,13 @@ from archflow.state.geometry_program import (
     SemanticBinding,
 )
 from archflow.state.site_context import SiteBounds
+from archflow.state.stage_workflow import (
+    ProjectStageWorkflow,
+    StageExitBinding,
+    StageRunEnvelope,
+    require_stage_exit_binding,
+    require_stage_run_envelope,
+)
 from archflow.state.spatial import (
     DesignComponent,
     MassingVolume,
@@ -464,7 +478,7 @@ class RecordedProposalProvider:
 
 # ---------------------------------------------------------------- the run
 @dataclass(frozen=True, slots=True)
-class StageResult:
+class SeatResult:
     seat_id: str
     round_index: int
     status: str
@@ -493,7 +507,153 @@ class RunOptions:
     export: bool = False
     workspace_root: Path | None = None
     powershell: Path | None = None
-    stage_prefix: str = "runner"
+
+
+@dataclass(frozen=True, slots=True)
+class StageExecutionGuard:
+    """Verified retained inputs required before any seat record is written.
+
+    Stage zero needs only the workflow and its own envelope.  A successor
+    additionally needs the exact predecessor envelope, its retained
+    ``StageExitBinding@1`` and the independently compiled SATISFIED closure
+    receipt named by that binding.  Passing equivalent-looking in-memory
+    payloads without their P036 refs is intentionally insufficient.
+    """
+
+    workflow: ProjectStageWorkflow
+    workflow_record_ref: ProjectRecordRef
+    envelope: StageRunEnvelope
+    envelope_record_ref: ProjectRecordRef
+    predecessor: StageRunEnvelope | None = None
+    predecessor_record_ref: ProjectRecordRef | None = None
+    predecessor_exit: StageExitBinding | None = None
+    predecessor_exit_record_ref: ProjectRecordRef | None = None
+    predecessor_closure: CompositeStageClosureReceipt | None = None
+    predecessor_closure_record_ref: ProjectRecordRef | None = None
+
+    def require(
+        self,
+        repository: FilesystemProjectRepository,
+        *,
+        run: RunRef,
+        branch: BranchRef,
+        state: DevelopedDesignState,
+        seats: tuple[SeatSpec, ...],
+    ) -> None:
+        def retained(ref: ProjectRecordRef, payload: Mapping[str, object], label: str) -> None:
+            if ref.project_id != run.project_id:
+                raise ProjectRunnerError(f"{label} belongs to another project")
+            try:
+                actual = repository.load_json(ref)
+            except Exception as exc:
+                raise ProjectRunnerError(f"{label} is not an exact retained P036 record") from exc
+            if actual != dict(payload):
+                raise ProjectRunnerError(f"{label} retained content does not match the supplied typed record")
+
+        retained(self.workflow_record_ref, self.workflow.to_dict(), "stage workflow")
+        retained(self.envelope_record_ref, self.envelope.to_dict(), "stage envelope")
+        if self.envelope.workflow_ref != self.workflow_record_ref.uri:
+            raise ProjectRunnerError("stage envelope does not name the retained workflow record")
+        if self.envelope.project_id != run.project_id or self.envelope.run_id != run.run_id:
+            raise ProjectRunnerError("stage envelope belongs to another project or run")
+        if (
+            self.envelope.base_version != run.base.version
+            or self.envelope.base_state_sha256 != run.base.require_digest()
+        ):
+            raise ProjectRunnerError("stage envelope does not bind the run's exact canonical base")
+        if (
+            self.envelope.branch_id != branch.branch_id
+            or self.envelope.branch_epoch != branch.epoch
+        ):
+            raise ProjectRunnerError("stage envelope belongs to another branch or epoch")
+        if self.envelope.state_digest != state.state_digest:
+            raise ProjectRunnerError("stage envelope does not bind the exact developed state")
+        if self.envelope.phase is not state.active_phase:
+            raise ProjectRunnerError("stage envelope phase disagrees with the developed state")
+        if any(
+            self.envelope.phase not in seat.phases
+            for seat in seats
+            if not seat.reviewer
+        ):
+            raise ProjectRunnerError("a producing seat is not admitted in the envelope phase")
+
+        require_stage_run_envelope(
+            self.workflow,
+            self.envelope,
+            workflow_ref=self.workflow_record_ref.uri,
+            predecessor=self.predecessor,
+            predecessor_ref=(
+                None
+                if self.predecessor_record_ref is None
+                else self.predecessor_record_ref.uri
+            ),
+            predecessor_exit=self.predecessor_exit,
+            predecessor_exit_ref=(
+                None
+                if self.predecessor_exit_record_ref is None
+                else self.predecessor_exit_record_ref.uri
+            ),
+        )
+        successor_values = (
+            self.predecessor,
+            self.predecessor_record_ref,
+            self.predecessor_exit,
+            self.predecessor_exit_record_ref,
+            self.predecessor_closure,
+            self.predecessor_closure_record_ref,
+        )
+        if self.envelope.stage_index == 0:
+            if any(value is not None for value in successor_values):
+                raise ProjectRunnerError("stage 0 cannot carry predecessor completion")
+            return
+        if any(value is None for value in successor_values):
+            raise ProjectRunnerError(
+                "stage N requires retained predecessor envelope, exit binding, and closure"
+            )
+        assert self.predecessor is not None
+        assert self.predecessor_record_ref is not None
+        assert self.predecessor_exit is not None
+        assert self.predecessor_exit_record_ref is not None
+        assert self.predecessor_closure is not None
+        assert self.predecessor_closure_record_ref is not None
+        retained(
+            self.predecessor_record_ref,
+            self.predecessor.to_dict(),
+            "predecessor stage envelope",
+        )
+        retained(
+            self.predecessor_exit_record_ref,
+            self.predecessor_exit.to_dict(),
+            "predecessor stage exit binding",
+        )
+        retained(
+            self.predecessor_closure_record_ref,
+            self.predecessor_closure.to_dict(),
+            "predecessor stage closure",
+        )
+        require_stage_exit_binding(
+            self.predecessor,
+            self.predecessor_exit,
+            envelope_ref=self.predecessor_record_ref.uri,
+        )
+        closure = self.predecessor_closure
+        if self.predecessor_exit.closure_ref != self.predecessor_closure_record_ref.uri:
+            raise ProjectRunnerError("stage exit binding does not name the retained closure")
+        if (
+            closure.status is not StageClosureStatus.SATISFIED
+            or closure.receipt_digest != self.predecessor_exit.closure_digest
+            or closure.stage_id != self.predecessor.stage_id
+            or closure.stage_subject_ref != self.predecessor.subject_ref
+            or closure.subject_digest != self.predecessor.state_digest
+            or closure.branch.run.project_id != self.predecessor.project_id
+            or closure.branch.run.run_id != self.predecessor.run_id
+            or closure.branch.run.base.version != self.predecessor.base_version
+            or closure.branch.run.base.require_digest()
+            != self.predecessor.base_state_sha256
+            or closure.branch.branch_id != self.predecessor.branch_id
+            or closure.branch.epoch != self.predecessor.branch_epoch
+        ):
+            raise ProjectRunnerError("predecessor closure is not SATISFIED for the exact stage state")
 
 
 def _subtree_leaves(proposal: SpatialOptionProposal, subtree: tuple[str, ...]) -> tuple[str, ...]:
@@ -539,6 +699,7 @@ def run_project(
     repository: FilesystemProjectRepository,
     *,
     run: RunRef,
+    stage_guard: StageExecutionGuard,
     schematic: SchematicPack,
     elements: ElementPack,
     seats: tuple[SeatSpec, ...],
@@ -546,18 +707,27 @@ def run_project(
     grids: ProjectGrids | None,
     options: RunOptions,
 ) -> dict[str, object]:
-    """Run every seat round over the packs; return the run receipt payload."""
+    """Run admitted seat rounds; return an authority-free stage-run receipt."""
 
     started = time.perf_counter()
     destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
     branch = BranchRef(run=run, branch_id=options.branch_id, epoch=options.branch_epoch)
     branch_destination = PersistenceDestination(PersistenceArea.RUN_BRANCH, run_id=run.run_id, branch_id=options.branch_id)
     put = lambda kind, payload: repository.put_json(run=run, destination=destination, record_kind=kind, payload=payload)
+    # Compute and admit the exact state before the first write.  This prevents
+    # a raw create_run or a copied pack from acquiring a stage by side effect.
+    state = bootstrap_developed_state(schematic, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+    stage_guard.require(
+        repository,
+        run=run,
+        branch=branch,
+        state=state,
+        seats=seats,
+    )
     schematic_ref = put("runner-schematic-pack", {**schematic.to_dict(), **no_authority(_AUTH)})
     elements_ref = put("runner-element-pack", {**elements.to_dict(), **no_authority(_AUTH)})
     levels_ref = put("project-levels", {**levels.to_dict(), **no_authority(_AUTH)})
     grids_ref = put("project-grids", {**grids.to_dict(), **no_authority(_AUTH)}).uri if grids is not None else None
-    state = bootstrap_developed_state(schematic, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
     proposal_tree = state.selected_schematic.option.proposal
     spatial_ref = put("selected-spatial-option", proposal_tree.to_dict())
     state_ref = put("developed-design-state", {**state.to_dict(), **no_authority(_AUTH)}) if hasattr(state, "to_dict") else None
@@ -567,7 +737,7 @@ def run_project(
     project_datums = tuple(sorted(levels.datums() + (grids.datums() if grids is not None else ()), key=lambda d: d.datum_id))
     programs: dict[str, Any] = {}
     handovers_for: dict[str, list] = {s.seat_id: [] for s in seats}
-    results: list[StageResult] = []
+    results: list[SeatResult] = []
     frame = CoordinateFrame(frame_id=FRAME_ID, parent_frame_id=None, transform_from_parent=AffineTransform.identity(), source_refs=tuple(schematic.evidence_refs[:1]) or (schematic_ref.uri,))
     for round_index, round_seats in enumerate(rounds):
         for seat_id in round_seats:
@@ -594,7 +764,7 @@ def run_project(
             if undeclared and options.strict_coverage:
                 raise ProjectRunnerError(f"seat {seat_id!r} owns components with no element and no declination: {undeclared}")
             if not covered:
-                results.append(StageResult(seat_id, round_index, "empty", None, None, 0, covered, undeclared, (), time.perf_counter() - t0, declined=declined))
+                results.append(SeatResult(seat_id, round_index, "empty", None, None, 0, covered, undeclared, (), time.perf_counter() - t0, declined=declined))
                 continue
             by_component: dict[str, list[str]] = {}
             for op in produced.operations:
@@ -613,7 +783,7 @@ def run_project(
                 seat_scope=subtree, interface_datums=datums, datum_bindings=produced.bindings))
             issues = tuple(row for r in result.round_refs for row in repository.load_json(r).get("issues", []))
             if result.status is not GeometryProposalStatus.ACCEPTED:
-                results.append(StageResult(seat_id, round_index, result.status.value, None, None, 0, covered, undeclared, issues, time.perf_counter() - t0))
+                results.append(SeatResult(seat_id, round_index, result.status.value, None, None, 0, covered, undeclared, issues, time.perf_counter() - t0))
                 break
             program = result.program
             program_ref = put("seat-geometry-program", program.to_dict())
@@ -629,12 +799,12 @@ def run_project(
                     handovers_for[consumer.seat_id].append(handover)
             cad = None
             if options.export:
-                cad = _export(repository, run, branch, branch_destination, program, f"{options.stage_prefix}-{seat_id}", options,
-                              {"target": "PROJECT_RUNNER", "seat": seat_id, "candidate_status": "HOLD", "frame_semantics": "BUILDING_LOCAL_Y_UP", "schematic_pack_ref": schematic_ref.uri, "element_pack_ref": elements_ref.uri})
-            stage = StageResult(seat_id, round_index, "accepted", program_ref.uri, program.program_digest, len(program.objects), covered, undeclared, issues, time.perf_counter() - t0, cad, declined=declined,
-                                declination_reasons={e.component_id: str(e.params.get("reason")) for e in own if e.producer == "declined"})
-            receipt_ref = put("runner-stage-receipt", {"schema": "RunnerStageReceipt@1", **_stage_dict(stage), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], **no_authority(_AUTH)})
-            results.append(replace(stage, receipt_ref=receipt_ref.uri))
+                cad = _export(repository, run, branch, branch_destination, program, f"{stage_guard.envelope.stage_id}-{seat_id}", options,
+                              {"target": "PROJECT_RUNNER", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, "seat": seat_id, "candidate_status": "HOLD", "frame_semantics": "BUILDING_LOCAL_Y_UP", "schematic_pack_ref": schematic_ref.uri, "element_pack_ref": elements_ref.uri})
+            seat_result = SeatResult(seat_id, round_index, "proposal_accepted", program_ref.uri, program.program_digest, len(program.objects), covered, undeclared, issues, time.perf_counter() - t0, cad, declined=declined,
+                                     declination_reasons={e.component_id: str(e.params.get("reason")) for e in own if e.producer == "declined"})
+            receipt_ref = put("seat-round-receipt", {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], **no_authority(_AUTH)})
+            results.append(replace(seat_result, receipt_ref=receipt_ref.uri))
         else:
             continue
         break
@@ -643,11 +813,23 @@ def run_project(
         owned_any.update(owned_subtree(proposal_tree, seat.owned_component_ids))
     unowned = tuple(sorted(c for c in _subtree_leaves(proposal_tree, tuple(c.component_id for c in proposal_tree.components)) if c not in owned_any))
     payload = {
-        "schema": "RunnerRunReceipt@1", "project_id": run.project_id, "run_id": run.run_id, "schematic_pack_ref": schematic_ref.uri, "element_pack_ref": elements_ref.uri,
+        "schema": "RunnerRunReceipt@2", "project_id": run.project_id, "run_id": run.run_id, "schematic_pack_ref": schematic_ref.uri, "element_pack_ref": elements_ref.uri,
         "unowned_components": list(unowned),
         "levels_ref": levels_ref.uri, "grids_ref": grids_ref, "spatial_option_ref": spatial_ref.uri, "design_state_ref": state_ref.uri if state_ref else None,
-        "design_state_digest": state.state_digest, "rounds": [list(r) for r in rounds], "stages": [_stage_dict(s) for s in results],
-        "accepted": all(s.status in ("accepted", "empty") for s in results) and any(s.status == "accepted" for s in results),
+        "design_state_digest": state.state_digest,
+        "workflow_ref": stage_guard.workflow_record_ref.uri,
+        "workflow_digest": stage_guard.workflow.workflow_digest,
+        "stage_envelope_ref": stage_guard.envelope_record_ref.uri,
+        "stage_envelope_digest": stage_guard.envelope.envelope_digest,
+        "stage": {
+            "stage_id": stage_guard.envelope.stage_id,
+            "stage_index": stage_guard.envelope.stage_index,
+            "phase": stage_guard.envelope.phase.value,
+            "status": "OPEN",
+            "close_obligation_id": stage_guard.envelope.close_obligation.obligation_id,
+        },
+        "rounds": [list(r) for r in rounds], "seat_results": [_seat_dict(s) for s in results],
+        "seat_execution_complete": all(s.status in ("proposal_accepted", "empty") for s in results) and any(s.status == "proposal_accepted" for s in results),
         "wall_time_s": round(time.perf_counter() - started, 3), **no_authority(_AUTH),
     }
     payload["receipt_ref"] = put("runner-run-receipt", payload).uri
@@ -674,8 +856,8 @@ def _exclusion_bounds(handover) -> tuple:
     return tuple(out)
 
 
-def _stage_dict(stage: StageResult) -> dict[str, object]:
-    return {"seat_id": stage.seat_id, "round": stage.round_index, "status": stage.status, "program_ref": stage.program_ref, "program_digest": stage.program_digest,
-            "objects": stage.objects, "covered_components": list(stage.covered_components), "undeclared_components": list(stage.undeclared_components),
-            "declined_components": list(stage.declined), "declination_reasons": dict(stage.declination_reasons),
-            "issues": list(stage.issues), "wall_time_s": round(stage.wall_time_s, 3), "cad": stage.cad, "receipt_ref": stage.receipt_ref}
+def _seat_dict(seat: SeatResult) -> dict[str, object]:
+    return {"seat_id": seat.seat_id, "round": seat.round_index, "status": seat.status, "program_ref": seat.program_ref, "program_digest": seat.program_digest,
+            "objects": seat.objects, "covered_components": list(seat.covered_components), "undeclared_components": list(seat.undeclared_components),
+            "declined_components": list(seat.declined), "declination_reasons": dict(seat.declination_reasons),
+            "issues": list(seat.issues), "wall_time_s": round(seat.wall_time_s, 3), "cad": seat.cad, "receipt_ref": seat.receipt_ref}

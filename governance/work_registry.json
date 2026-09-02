@@ -14105,6 +14105,8 @@
       "write_scope": [
         "tools/",
         "archflow/runtime/",
+        "archflow/state/",
+        "archflow/capabilities/",
         "archflow/project/",
         "tests/",
         "probes/",
@@ -14115,11 +14117,15 @@
         "One runner replays the pantheon, parthenon, and villa stage flows from their retained records, producing digest-equal stage packs wherever predecessors are unchanged.",
         "Per-building runner tools retire to archive stubs; building-specific behavior lives only in project records.",
         "Hand-pinned SHA constants and load-module-by-SHA patterns reach zero on the authoring path; loading is by verified record ref.",
-        "Per-stage wall time is reported in the run summary.",
+        "Per-seat and total stage-run wall time are reported in the run summary.",
+        "Exact retained workflow/envelope and predecessor closure guard every Stage; Phase, Stage, and Seat cannot be conflated.",
         "Full unittest suite and the architecture firewall pass."
       ],
       "tests": [
+        "tests.test_stage_workflow",
         "tests.test_project_runner",
+        "tests.test_freeze_project_stage_workflow",
+        "tests.test_assembly_template",
         "tests.test_archcheck"
       ],
       "verification_commands": [
@@ -14127,7 +14133,10 @@
           "{python}",
           "-m",
           "unittest",
-          "tests.test_reconstruction_runner"
+          "tests.test_stage_workflow",
+          "tests.test_project_runner",
+          "tests.test_freeze_project_stage_workflow",
+          "tests.test_assembly_template"
         ],
         [
           "{python}",
