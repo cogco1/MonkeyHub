@@ -14690,6 +14690,90 @@
       "evidence": [
         "SeatSpec@1 (owned subtrees, disciplines, phases, quadrants, consumed handovers, reviewer flag), owned_subtree/ancestors over the component tree, compile_handover -> SeatHandover@1 (published datums by owned components/objects, exclusion bounds for owned realized objects, OPEN obligations of the receiving disciplines; byte-identical on repeat; no authority flags), project_seat_context -> SeatAuthoringContext@1 (owned subtree + ancestors + inherited commitment refs + consumed handovers; wrong phase, foreign or stale handover fail typed), schedule_seats (topological parallel rounds, reviewers last, cycles and unknown seats fail typed). Producer gains seat_scope and refuses out-of-scope semantic bindings with the typed issue seat_scope_violation. Three-seat demonstration through the real producer: structure seat publishes bearing-level on its own object, handover carries exactly that datum plus its exclusion bounds, envelope seat derives sill_level=3.57 from it without restating, detail seat is refused when binding the envelope subtree. 11 tests; ARCHITECTURE PASS (295 files); full suite 1678 with two pre-existing Windows flakes (viewer HTTP socket abort, context-recovery hook against an uncommitted worktree) that pass in isolation."
       ]
+    },
+    {
+      "id": "M096",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Datum-bound base_level for extrusion and loft: the CAD translator, analytic bounds replay, and sandbox realization consume one optional parameter that lifts a profile's lowest point onto a datum level, so P090 derivation reaches geometry instead of stopping at a parameter; absent parameter leaves every op unchanged.",
+      "depends_on": [
+        "P090",
+        "P095"
+      ],
+      "write_scope": [
+        "archflow/adapters/cad_program.py",
+        "archflow/realization/sandbox.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "lift_to_base_level shifts the lowest point onto the level, keeps shape, passes through when absent, fails typed on non-finite or non-numeric input.",
+        "A datum bound to base_level through the real producer moves the object in sandbox realization, expected_object_bounds, and the emitted Rhino script while the authored profile stays at Y = 0.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "Lift helper",
+        "Datum to sandbox, bounds, and script end to end",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_base_level_datum",
+          "tests.test_cad_program",
+          "tests.test_sandbox_realization"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M096-datum-bound-base-level.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M096",
+        "actor": "claude",
+        "verified_at": "2026-09-02T01:28:03.375017+00:00",
+        "contract_sha256": "ca696506f025eb08a8e108e5f12ab8f81e00a47c94282493402bee8ec5132c3f",
+        "scope_sha256": "9d7df3df727eca90c5636ba19289fafa6dc77f3ecfd649a1c66afc017887f04a",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_base_level_datum",
+              "tests.test_cad_program",
+              "tests.test_sandbox_realization"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "869878d9fffa4ded837c141e81d0dae3fbc26be149006e931837bce290660332",
+            "stdout_tail": "",
+            "stderr_tail": ".................................\n----------------------------------------------------------------------\nRan 33 tests in 0.191s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "9dcdfa6c361fd51b4e2918e91bd2a0b572c9b9e3c38a016894cc1c47e89454a2",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (295 files, 1.741s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-01",
+      "evidence": [
+        "lift_to_base_level (cad_program) and _lift_to_base_level (sandbox) apply one optional datum-bindable parameter base_level to extrusion and loft profiles: the lowest point is lifted onto the level, shape kept, absent parameter leaves every op unchanged, non-finite or non-numeric fails typed. End to end: a LEVEL datum bound to base_level through the real producer moves the object in the sandbox realization, the analytic bounds replay, and the emitted Rhino script while the authored profile stays at Y = 0. Live proof: villa run-017 west portico through three seats (P095) realized in Rhino via the COM export with readback verified - 49 objects, every derived level (landing 3.570, column top 9.798, abacus top 9.980, entablature soffit/top 9.980/11.335, course seats, wall and opening levels) lands within 1 mm of its datum; 5 tests in test_base_level_datum; full suite 1683 with only the known viewer socket flake (passes alone); ARCHITECTURE PASS (295 files)."
+      ]
     }
   ]
 }

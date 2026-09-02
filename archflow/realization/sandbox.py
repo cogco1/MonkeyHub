@@ -966,6 +966,31 @@ def _matrix4(
     return matrix
 
 
+
+def _lift_to_base_level(
+    points: tuple[tuple[float, float, float], ...],
+    parameters: Mapping[str, object],
+    operation_id: str,
+) -> tuple[tuple[float, float, float], ...]:
+    """Apply an optional datum-bound ``base_level`` (program Y) to points."""
+
+    if "base_level" not in parameters:
+        return points
+    raw = parameters["base_level"]
+    if (
+        isinstance(raw, bool)
+        or not isinstance(raw, (int, float))
+        or not math.isfinite(raw)
+    ):
+        raise SandboxRealizationError(
+            f"{operation_id}: base_level must be a finite number"
+        )
+    if not points:
+        return points
+    shift = float(raw) - min(point[1] for point in points)
+    return tuple((p[0], p[1] + shift, p[2]) for p in points)
+
+
 def _points3(
     parameters: Mapping[str, object],
     name: str,
@@ -1435,11 +1460,15 @@ def _operation_geometry(
     if operation.kind is GeometryOperationKind.EXTRUSION:
         profile = tuple(
             _transform_point(matrix, point)
-            for point in _points3(
+            for point in _lift_to_base_level(
+                _points3(
+                    parameters,
+                    "profile",
+                    operation.op_id,
+                    minimum=3,
+                ),
                 parameters,
-                "profile",
                 operation.op_id,
-                minimum=3,
             )
         )
         vector = _transform_vector(
@@ -1494,11 +1523,15 @@ def _operation_geometry(
             bounds,
         )
     if operation.kind is GeometryOperationKind.LOFT:
-        points = _points3(
+        points = _lift_to_base_level(
+            _points3(
+                parameters,
+                "profiles",
+                operation.op_id,
+                minimum=4,
+            ),
             parameters,
-            "profiles",
             operation.op_id,
-            minimum=4,
         )
         profile_size = _integer(
             parameters,

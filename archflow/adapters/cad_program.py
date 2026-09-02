@@ -58,6 +58,27 @@ class CadTranslation:
     layer_colors: tuple[tuple[str, tuple[int, int, int]], ...]
 
 
+
+def lift_to_base_level(points, params: Mapping[str, object], op_id: str):
+    """Apply an optional datum-bound ``base_level`` to profile points.
+
+    ``base_level`` (P090, M096) is the elevation the profile's lowest
+    point must sit on. Elevation is the program's Y axis. The profile
+    keeps its shape; only its elevation derives from the datum, so a
+    dependent object never restates the level it sits on.
+    """
+
+    if "base_level" not in params:
+        return [tuple(float(v) for v in p) for p in points]
+    raw = params["base_level"]
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw):
+        raise CadTranslationError(f"{op_id}: base_level must be a finite number")
+    lifted = [tuple(float(v) for v in p) for p in points]
+    if not lifted:
+        return lifted
+    shift = float(raw) - min(p[1] for p in lifted)
+    return [(p[0], p[1] + shift, p[2]) for p in lifted]
+
 def _params(operation) -> dict[str, object]:
     decoded = {}
     for parameter in operation.parameters:
@@ -349,7 +370,7 @@ def translate_to_rhino_python(
                 ]
             )
         elif kind == "extrusion":
-            profile = params["profile"]
+            profile = lift_to_base_level(params["profile"], params, op_id)
             vector = params["vector"]
             pts = ", ".join(
                 f"({p[0]},{p[2]},{p[1]})" for p in [*profile, profile[0]]
@@ -365,7 +386,7 @@ def translate_to_rhino_python(
                 ]
             )
         elif kind == "loft":
-            profiles = params["profiles"]
+            profiles = lift_to_base_level(params["profiles"], params, op_id)
             size = int(params["profile_size"])
             cap_ends = bool(params.get("cap_ends", True))
             loft_type = params.get("loft_type", "normal")
@@ -613,7 +634,8 @@ def expected_object_bounds(program) -> dict[str, dict]:
             ]
             counts[out] = 1
         elif kind == "extrusion":
-            profile, vector = params["profile"], params["vector"]
+            profile = lift_to_base_level(params["profile"], params, op_id)
+            vector = params["vector"]
             points[out] = [tuple(p) for p in profile] + [
                 (p[0] + vector[0], p[1] + vector[1], p[2] + vector[2])
                 for p in profile
@@ -647,7 +669,10 @@ def expected_object_bounds(program) -> dict[str, dict]:
             points[out] = pts
             counts[out] = 1
         elif kind == "loft":
-            points[out] = [tuple(p) for p in params["profiles"]]
+            points[out] = [
+                tuple(p)
+                for p in lift_to_base_level(params["profiles"], params, op_id)
+            ]
             counts[out] = 1
         elif kind == "boolean_union":
             points[out] = [p for i in ins for p in points[i]]
