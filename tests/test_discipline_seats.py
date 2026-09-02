@@ -13,7 +13,9 @@ from dataclasses import replace
 
 from archflow.capabilities.declaration import DeclarationQuadrant
 from archflow.capabilities.discipline_seats import (
+    DeclaredEngagement,
     HandoverKind,
+    check_handover_exclusions,
     SeatError,
     SeatSpec,
     ancestors,
@@ -400,6 +402,37 @@ class ThreeSeatDemonstrationTests(_ProducerFixture):
             schedule_seats(tuple(self.seats.values())),
             (("seat-structure",), ("seat-envelope",), ("seat-detail",), ("seat-review",)),
         )
+
+
+class ExclusionEnforcementTests(unittest.TestCase):
+    """M097: exclusion bounds carried by a handover are checked, not just carried."""
+
+    def setUp(self) -> None:
+        self.state, self.program, _ = compiled_room()
+        self.seats = _seats(self.state.active_phase)
+        binding = self.program.proposal.semantic_bindings[0]
+        structure_bindings = (replace(binding, binding_id="structure-binding", component_id="primary-support", object_ids=("floor",)),)
+        self.handover = compile_handover(
+            from_seat=self.seats["structure"], to_seat=self.seats["detail"], design_state=self.state,
+            program_bindings=structure_bindings, realized_bounds={"floor": ((0.0, 0.0, 0.0), (4.0, 0.2, 4.0))},
+        )
+
+    def test_entering_is_reported_contact_is_not(self) -> None:
+        bounds = {
+            "moulding": ((1.0, 0.1, 1.0), (2.0, 0.5, 2.0)),   # enters the floor by 0.1 in Y
+            "column": ((1.0, 0.2, 1.0), (1.5, 6.0, 1.5)),     # sits on the floor: shared face
+        }
+        violations = check_handover_exclusions(self.handover, bounds)
+        self.assertEqual([(v.subject_id, v.host_id) for v in violations], [("moulding", "floor")])
+        self.assertAlmostEqual(violations[0].depth[1], 0.1)
+
+    def test_declared_engagement_silences_exactly_its_pair(self) -> None:
+        bounds = {"moulding": ((1.0, 0.1, 1.0), (2.0, 0.5, 2.0)), "other": ((3.0, 0.1, 3.0), (3.5, 0.3, 3.5))}
+        engagement = DeclaredEngagement("moulding", "floor", "carved into the slab", ("evidence:x",))
+        remaining = check_handover_exclusions(self.handover, bounds, engagements=(engagement,))
+        self.assertEqual([v.subject_id for v in remaining], ["other"])
+        with self.assertRaises(SeatError):
+            DeclaredEngagement("moulding", "floor", "", ("evidence:x",))
 
 
 if __name__ == "__main__":

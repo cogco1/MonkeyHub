@@ -537,8 +537,13 @@ def bind_assembly_template(
             raise AssemblyTemplateError(
                 f"role {role.role_id!r} cardinality {expected} not met: bound {actual}"
             )
-        if role.indexing and rb.indices and tuple(sorted(rb.indices)) != tuple(sorted(role.indexing)):
-            raise AssemblyTemplateError(f"role {role.role_id!r} indices differ from the template indexing")
+        if role.indexing and rb.indices:
+            if role.cardinality.project_derived:
+                stray = sorted(set(rb.indices) - set(role.indexing))
+                if stray:
+                    raise AssemblyTemplateError(f"role {role.role_id!r} indices outside the template indexing: {stray}")
+            elif tuple(sorted(rb.indices)) != tuple(sorted(role.indexing)):
+                raise AssemblyTemplateError(f"role {role.role_id!r} indices differ from the template indexing")
     datum_roles = {d.datum_role for d in template.datums}
     seen = set()
     for datum_role, datum_id in datum_bindings:

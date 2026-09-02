@@ -375,6 +375,74 @@ def compile_handover(
 
 
 @dataclass(frozen=True, slots=True)
+class DeclaredEngagement:
+    """A consuming object allowed to enter one host's exclusion bound, on record."""
+
+    subject_id: str
+    host_id: str
+    reason: str
+    basis_refs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        require_identifier(self.subject_id, "engagement subject_id")
+        require_identifier(self.host_id, "engagement host_id")
+        if not isinstance(self.reason, str) or not self.reason.strip():
+            raise SeatError("an engagement needs a reason")
+        if not isinstance(self.basis_refs, tuple) or not self.basis_refs or any(
+            not isinstance(item, str) or not item for item in self.basis_refs
+        ):
+            raise SeatError("an engagement needs at least one basis ref")
+
+    def to_dict(self) -> dict[str, object]:
+        return {"subject_id": self.subject_id, "host_id": self.host_id, "reason": self.reason, "basis_refs": list(self.basis_refs)}
+
+
+@dataclass(frozen=True, slots=True)
+class ExclusionViolation:
+    subject_id: str
+    host_id: str
+    depth: tuple[float, float, float]
+
+    def to_dict(self) -> dict[str, object]:
+        return {"subject_id": self.subject_id, "host_id": self.host_id, "depth": list(self.depth)}
+
+
+def check_handover_exclusions(
+    handover: SeatHandover,
+    object_bounds: Mapping[str, Bounds],
+    *,
+    tolerance: float = 0.001,
+    engagements: tuple[DeclaredEngagement, ...] = (),
+) -> tuple[ExclusionViolation, ...]:
+    """Report consuming objects that enter a handover's exclusion bounds (M097).
+
+    A shared face is contact, not a violation: every axis must overlap by
+    more than ``tolerance``. A declared engagement silences exactly its
+    (subject, host) pair and nothing else.
+    """
+
+    if not isinstance(handover, SeatHandover):
+        raise SeatError("handover must be a SeatHandover")
+    if not isinstance(tolerance, (int, float)) or isinstance(tolerance, bool) or tolerance < 0:
+        raise SeatError("tolerance must be a non-negative number")
+    allowed = {(e.subject_id, e.host_id) for e in engagements}
+    violations: list[ExclusionViolation] = []
+    for constraint in handover.constraints:
+        if constraint.kind is not HandoverKind.EXCLUSION_BOUNDS:
+            continue
+        payload = json.loads(constraint.payload_json)
+        host_lo, host_hi = payload["min"], payload["max"]
+        for subject_id in sorted(object_bounds):
+            if subject_id == constraint.subject_id or (subject_id, constraint.subject_id) in allowed:
+                continue
+            lo, hi = object_bounds[subject_id]
+            depth = tuple(min(hi[k], host_hi[k]) - max(lo[k], host_lo[k]) for k in range(3))
+            if all(d > tolerance for d in depth):
+                violations.append(ExclusionViolation(subject_id=subject_id, host_id=constraint.subject_id, depth=tuple(round(d, 6) for d in depth)))
+    return tuple(sorted(violations, key=lambda v: (v.subject_id, v.host_id)))
+
+
+@dataclass(frozen=True, slots=True)
 class SeatAuthoringContext:
     """What one seat may read: its subtree, ancestors, principles, handovers."""
 
@@ -504,6 +572,9 @@ def schedule_seats(seats: tuple[SeatSpec, ...]) -> tuple[tuple[str, ...], ...]:
 
 __all__ = [
     "Bounds",
+    "DeclaredEngagement",
+    "ExclusionViolation",
+    "check_handover_exclusions",
     "HandoverConstraint",
     "HandoverKind",
     "SeatAuthoringContext",

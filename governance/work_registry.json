@@ -14859,6 +14859,84 @@
       "evidence": [
         "BuildingAssemblyTemplate@1 (state/assembly_template.py): roles with parent, function, fixed or project-derived cardinality (COUNT band with basis), first phase, indexing, component-template family and required datum roles; relations over ArchitecturalRelationKind naming the datum role each carries; typed required datums with publishing role; required checks; case votes; open boundaries; the schema refuses floats and numeric vectors outside module-ratio bands, unknown parents, unknown roles, undeclared datum roles, and project-derived counts without a COUNT parameter. AssemblyTemplateBinding@1 + bind_assembly_template fail typed on unbound-undeclined roles, unmet counts, and unbound datum roles whose publisher is bound. assembly_library: roles_from_design_state, relations_from_datum_bindings (SUPPORT relations a project's datum bindings already prove), harvest, candidate with OPEN second-case obligation, promotion under two votes or waiver, binding record. Villa harvest (run-017): candidate centralized-palladian-villa d08f9545 with 42 roles (41 retained + indexed portico-side), 37 relations (11 derived from run-017 bindings, 26 declared with evidence), 18 datum roles, 31 checks, 3 COUNT parameters, one vote, 5 open boundaries, zero floats; library candidate 8b3f22ba, second-case obligation b2ed230d OPEN, villa binding d62762d3. 8 tests; full suite 1691 with the two known Windows flakes only (both pass alone; hook test passes on a committed tree); authority-literal ratchet held; ARCHITECTURE PASS (297 files)."
       ]
+    },
+    {
+      "id": "M097",
+      "origin_stream": "modify",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Enforce P095 handover exclusion bounds: check_handover_exclusions reports every consuming object entering a from-seat exclusion bound beyond tolerance unless the pair is a declared engagement with reason and basis; wired into the seat scripts' verify phase and recorded.",
+      "depends_on": [
+        "P095",
+        "M096"
+      ],
+      "write_scope": [
+        "archflow/capabilities/discipline_seats.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Entering an exclusion bound beyond tolerance is reported with depth; a declared engagement silences exactly its pair; zero-depth contact is not a violation.",
+        "Villa run-017 detail seat reports the four course-into-entablature pairs; a declared engagement silences them.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "Exclusion depth, engagement silencing, contact",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_discipline_seats"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/M097-handover-exclusion-enforcement.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "M097",
+        "actor": "claude",
+        "verified_at": "2026-09-02T03:56:20.943953+00:00",
+        "contract_sha256": "496879b79e6f14f5c194eb5f2e9a46c55f67725a178d4bb61ea4bb6e4871f3c0",
+        "scope_sha256": "10dfce026728048f812595f2ecb85e090ed97e454ca120f9028e86a10e775bf7",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_discipline_seats"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "25521fcf2263ad93d5ef34ea78c63b3458a36387973adb0cb02f7dfd3c77c616",
+            "stdout_tail": "",
+            "stderr_tail": ".............\n----------------------------------------------------------------------\nRan 13 tests in 0.323s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "59875d27ffb7cbffb623dfeff2eb12add001ed8c7e70fb05a88231f45bde5f29",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (297 files, 1.711s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-01",
+      "evidence": [
+        "check_handover_exclusions (discipline_seats): every consuming object entering a handover EXCLUSION_BOUNDS by more than the tolerance on all three axes is reported with its depth; a shared face is contact; DeclaredEngagement (subject, host, reason, basis) silences exactly its pair. Villa run-017 west detail seat: 14 analytic violations before (12 course-into-entablature pairs + 2 pediment-vs-roof), 12 silenced by declared engagements, the remaining 2 resolved against the RhinoCommon both-inside probe as axis-aligned-box false positives (records handover-exclusion-check-73315a3c, handover-exclusion-resolution-b5e50d92). 13 seat tests; ARCHITECTURE PASS."
+      ]
     }
   ]
 }

@@ -163,6 +163,24 @@ class BindingTests(unittest.TestCase):
                 role_bindings=self._bindings(), datum_bindings=(), parameters=(self.count,),
             )
 
+    def test_project_derived_indexed_role_accepts_a_subset(self) -> None:
+        indexed = replace(self.template, roles=tuple(
+            replace(r, indexing=("east", "north", "south", "west")) if r.role_id == "portico" else r for r in self.template.roles
+        ))
+        one = TemplateParameter.create(name="portico-count", form=ParameterForm.COUNT, value={"min": 1, "max": 4, "adopted": 1}, basis_refs=BASIS)
+        binding = bind_assembly_template(
+            indexed, template_ref="t", project_id="demo", run_id="run", components=self.components,
+            role_bindings=self._bindings(portico=RoleBinding("portico", component_ids=("building",), indices=("south",))),
+            datum_bindings=(("column-top", "d"),), parameters=(one,),
+        )
+        self.assertEqual(binding.role_bindings[1].indices, ("south",))
+        with self.assertRaises(AssemblyTemplateError):
+            bind_assembly_template(
+                indexed, template_ref="t", project_id="demo", run_id="run", components=self.components,
+                role_bindings=self._bindings(portico=RoleBinding("portico", component_ids=("building",), indices=("up",))),
+                datum_bindings=(("column-top", "d"),), parameters=(one,),
+            )
+
 
 class HarvestAndLibraryTests(unittest.TestCase):
     def setUp(self) -> None:
