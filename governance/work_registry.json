@@ -14525,6 +14525,82 @@
       "evidence": [
         "Production wiring: produce_geometry_program_proposal and compile_semantic_geometry_lifecycle accept and forward interface_datums/datum_bindings to compile_geometry_program (a bound parameter derives on the compiled program, never restated by the authored proposal); the producer accepts catalog_confrontation_ref (CatalogConfrontationReceipt@1) and narrows the model's admissible template set to the confrontation's selections - a declined family cannot be re-selected, a foreign record fails typed. resolve_mathematics_ref resolves capability:<archflow module> to an importable solver with a solve_*/compile_* entry point and harvest fails closed otherwise; verify_template_datums resolves obligation datum_role against published datums. Read-path repair found by the full suite: CompiledGeometryProgram now declares RETAINED_SCHEMAS/ACCEPTED_SCHEMAS once, consumed by CanonicalProgramRecord and the proposal loader's key set (retained @2 records in the relocated probes wrap again). Tests: test_production_wiring (4), MathematicsRefTests (3), DatumRoleResolutionTests, RetainedProgramGenerationTests (3); full suite 1667 OK (6 external skips); ARCHITECTURE PASS (294 files)."
       ]
+    },
+    {
+      "id": "P094",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Produce the CAADRIA 2027 full paper from the submitted abstract and frozen records: Chinese working draft first, then the English manuscript in the official template; every number resolves to a retained record, every abstract promise is marked delivered / to-record / to-run / to-decide, and the contract and outline are re-based on the submitted abstract.",
+      "depends_on": [
+        "P062",
+        "P063",
+        "P090",
+        "P093"
+      ],
+      "write_scope": [
+        "docs/paper/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Chinese draft v0 exists and marks every abstract promise as delivered, to-record, to-run, or to-decide.",
+        "PAPER_CONTRACT.md and OUTLINE.md are re-based on the submitted abstract; repair locality becomes a secondary question.",
+        "Decision records exist for the three-regime comparison and for the two preliminary-result episodes.",
+        "Every manuscript number resolves to a retained record; a numbers-to-records table accompanies the draft.",
+        "Figures 1-5 and Tables 1-2 carry source manifests; anonymisation, AI-use statement, and manual citation verification complete before submission."
+      ],
+      "tests": [
+        "Draft and manifests exist in the paper workspace",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-c",
+          "import pathlib; p = pathlib.Path('docs/paper/caadria-2027'); assert (p / 'DRAFT_zh_v0_2026-09-01.md').exists(); print('draft present')"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P094-caadria-2027-manuscript.md",
+      "on_complete": {},
+      "actor": "claude",
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P094",
+        "actor": "claude",
+        "verified_at": "2026-09-02T00:05:08.853593+00:00",
+        "contract_sha256": "2a785da1c626f4012d177bc112ef3c5341b5e747206b3a50a81164984085539f",
+        "scope_sha256": "87930f56117ba7857d9fdbc2738ec9a348443965eea670c312edf55bf938ff2c",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-c",
+              "import pathlib; p = pathlib.Path('docs/paper/caadria-2027'); assert (p / 'DRAFT_zh_v0_2026-09-01.md').exists(); print('draft present')"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "0365f60bfa813a30e08b4a7f3a8744a1088f5b89049f6c283cba51f1c1b197dc",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "draft present\n",
+            "stderr_tail": ""
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "1dfaec9955454226bf75da335ce8da6cda4564b81808214188b34629d85b69e5",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (294 files, 1.795s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      }
     }
   ]
 }
