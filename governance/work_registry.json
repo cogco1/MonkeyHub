@@ -14774,6 +14774,91 @@
       "evidence": [
         "lift_to_base_level (cad_program) and _lift_to_base_level (sandbox) apply one optional datum-bindable parameter base_level to extrusion and loft profiles: the lowest point is lifted onto the level, shape kept, absent parameter leaves every op unchanged, non-finite or non-numeric fails typed. End to end: a LEVEL datum bound to base_level through the real producer moves the object in the sandbox realization, the analytic bounds replay, and the emitted Rhino script while the authored profile stays at Y = 0. Live proof: villa run-017 west portico through three seats (P095) realized in Rhino via the COM export with readback verified - 49 objects, every derived level (landing 3.570, column top 9.798, abacus top 9.980, entablature soffit/top 9.980/11.335, course seats, wall and opening levels) lands within 1 mm of its datum; 5 tests in test_base_level_datum; full suite 1683 with only the known viewer socket flake (passes alone); ARCHITECTURE PASS (295 files)."
       ]
+    },
+    {
+      "id": "P096",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Typology layer: BuildingAssemblyTemplate@1 library records (roles, parents, cardinality rules, functions, relations with the datum each carries, phase, required datums and checks, component-template refs; no absolute coordinates), AssemblyTemplateBinding@1 project records (roles to components, datum roles to datums, project-derived cardinalities with evidence), and a programmatic harvester that turns the villa's retained design state plus run-017 seat datums into the candidate centralized-palladian-villa under the two-vote rule with an OPEN second-case obligation.",
+      "depends_on": [
+        "P091",
+        "P093",
+        "P095",
+        "M096"
+      ],
+      "write_scope": [
+        "archflow/state/assembly_template.py",
+        "archflow/capabilities/assembly_library.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Template schema refuses absolute coordinates, unknown parent or relation roles, unknown predicates, untyped datums, and project-derived cardinality without a parameter basis.",
+        "Roles form a tree; relations name the datum role they carry; every required datum names its publishing role.",
+        "Binding fails typed on an unbound and undeclined role, an unmet cardinality, or an unbound datum role.",
+        "Villa harvest yields a one-vote candidate with zero numeric coordinates, roles for the whole retained tree, relations from run-017 seat datums and the relation ledger, and an OPEN second-case obligation in the library.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "Schema invariants and coordinate refusal",
+        "Binding completeness and cardinality",
+        "Harvest determinism",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_assembly_template"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P096-building-assembly-template.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P096",
+        "actor": "claude",
+        "verified_at": "2026-09-02T01:46:22.077224+00:00",
+        "contract_sha256": "294535ea9cb911729d6031cc72c29f4773b031d8bf4d807be097f58c0312f012",
+        "scope_sha256": "2e6205c16b33c2838db5a9272e7040c6df7b639427d3bfe631283126e3e18ab8",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_assembly_template"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "4c2a001857bbfdd5b324563c4a5278a3efb6bdc2376d7d84b159737ddd4a394b",
+            "stdout_tail": "",
+            "stderr_tail": "........\n----------------------------------------------------------------------\nRan 8 tests in 0.266s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "d95c7766f65061f76b10b6d6c97baa48259d1d58d5fff8a498ad52c4d9ec0df2",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (297 files, 1.762s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-01",
+      "evidence": [
+        "BuildingAssemblyTemplate@1 (state/assembly_template.py): roles with parent, function, fixed or project-derived cardinality (COUNT band with basis), first phase, indexing, component-template family and required datum roles; relations over ArchitecturalRelationKind naming the datum role each carries; typed required datums with publishing role; required checks; case votes; open boundaries; the schema refuses floats and numeric vectors outside module-ratio bands, unknown parents, unknown roles, undeclared datum roles, and project-derived counts without a COUNT parameter. AssemblyTemplateBinding@1 + bind_assembly_template fail typed on unbound-undeclined roles, unmet counts, and unbound datum roles whose publisher is bound. assembly_library: roles_from_design_state, relations_from_datum_bindings (SUPPORT relations a project's datum bindings already prove), harvest, candidate with OPEN second-case obligation, promotion under two votes or waiver, binding record. Villa harvest (run-017): candidate centralized-palladian-villa d08f9545 with 42 roles (41 retained + indexed portico-side), 37 relations (11 derived from run-017 bindings, 26 declared with evidence), 18 datum roles, 31 checks, 3 COUNT parameters, one vote, 5 open boundaries, zero floats; library candidate 8b3f22ba, second-case obligation b2ed230d OPEN, villa binding d62762d3. 8 tests; full suite 1691 with the two known Windows flakes only (both pass alone; hook test passes on a committed tree); authority-literal ratchet held; ARCHITECTURE PASS (297 files)."
+      ]
     }
   ]
 }
