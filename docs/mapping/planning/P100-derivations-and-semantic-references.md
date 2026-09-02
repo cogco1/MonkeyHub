@@ -86,6 +86,13 @@ coordinate:
   readings published as grid axes). `element-pack.json` is *derived* by `lower_element_references` and the
   receipt `element-pack.lowering.json` proves it equals the pack it replaced: 71 numbers, max delta 1.8e-15.
   The runner keeps consuming the derived pack until it reads references itself (codex's `project_runner.py`).
+- **Retired: inline arithmetic and authored coordinates in the Rocca runner packs.** `rocca-pisana/make_packs.py`
+  now holds one `DerivationTable@1` (37 named quantities, each `round((piedi expr) * piede, 6)` so the old `ft()`
+  rounding is reproduced) over 17 plate/elevation readings; walls run between the face lines S/N/W/E and the
+  loggia jamb lines LW/LE, the colonnade sits on the facade line, prisms/ring/dome take dimensions by name; the
+  only shape functions left are the octagon and the square's eight-point outline, fed by table values.
+  `element-pack.json` is derived and proven equal to the pack it replaced: 154 numbers, max delta 0.0
+  (`element-pack.lowering.json`, `derivations.json`).
 - **Retired: the resolver's own grid scan** — `ReferenceContext.axis` asks `ProjectGrids.axis` and only adds the
   id lookup.
 - **Retired: the record's free-string relation vocabulary** — `StateRecord.Relation.kind` must be a kernel
