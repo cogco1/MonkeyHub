@@ -1,29 +1,33 @@
-"""Record-driven project runner (P089, first cut).
+"""Record-driven project runner (P089 / P102).
 
-A project enters as three record packs and two datum records:
+A project enters as one ``StateRecord@1`` plus the discipline seats:
 
-* ``SchematicPack@1`` — the selected schematic as data: levels, massing
-  volumes, zones, connections and the semantic component tree with its
-  evidence. It becomes a real ``SpatialOptionProposal`` / ``SchematicOption``
-  / ``SelectedSchematicInput`` / ``DevelopedDesignState`` through the state
+* the record's ``Component@1`` tree with its ``MassingLevel@1`` / ``Volume@1``
+  / ``Space@1`` / ``Connection@1`` entities and its declared ``option``
+  become a real ``SpatialOptionProposal`` / ``SchematicOption`` /
+  ``SelectedSchematicInput`` / ``DevelopedDesignState`` through the state
   dataclasses' own validation; no test fixture, no building literal.
-* ``ElementPack@1`` — what each seat authors, as element specs bound to
-  project levels by role: walls with hosted openings, prisms, ring walls,
-  lofts, column arrays, dome caps. A producer turns a spec into neutral
-  geometry operations; heights are differences of project levels or the
-  element's own dimensions, never a restated elevation.
-* ``SeatPack@1`` — the discipline seats (P095) and the provider identity.
-* ``ProjectLevels@1`` / ``ProjectGrids@1`` (P098).
+* its ``Level@1`` / ``GridAxis@1`` entities are the published project datums
+  (P098), and its ``Element@1`` entities are the rows the canonical
+  reference-reading producers take (``element_producers``): walls with hosted
+  openings, prisms, ring walls, lofts, column arrays, dome caps, capitals,
+  beams, pediments, and typed declinations. Heights are differences of
+  project levels or the element's own dimensions, never a restated
+  elevation; a plan position is a grid, axis or host reference.
+* ``SeatPack@1`` — the discipline seats (P095) and the provider identity —
+  stays a separate input: seats are people, not state.
 
 The runner owns orchestration only: seat rounds from ``schedule_seats``,
-producers, one proposal per seat through the real producer, coverage and
-datum gates, handovers to consuming seats (published datums and realized
-bounds as exclusions), optional CAD export with read-back, and receipts
-with per-seat wall time.  It will not run without a retained
-``ProjectStageWorkflow@1`` and exact ``StageRunEnvelope@1``.  A successful
-seat proposal is never reported as stage acceptance: the stage close
-obligation remains OPEN until the independent stage-artifact/check/closure
-path satisfies it.  Every record written here remains authority-free.
+producers in reference order, one proposal per seat through the real
+producer, coverage and datum gates, relation checks against the compiled
+bounds, handovers to consuming seats (published datums and realized bounds
+as exclusions), optional CAD export that reuses, restamps, patches or
+rebuilds (P103), and receipts with per-seat wall time.  It will not run
+without a retained ``ProjectStageWorkflow@1`` and exact
+``StageRunEnvelope@1``.  A successful seat proposal is never reported as
+stage acceptance: the stage close obligation remains OPEN until the
+independent stage-artifact/check/closure path satisfies it.  Every record
+written here remains authority-free.
 """
 from __future__ import annotations
 
