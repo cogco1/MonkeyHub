@@ -26,7 +26,8 @@ from archflow.state.operational_state import DependencyEdge, DependencyEffect, D
 from archflow.relations.contracts import ArchitecturalRelationKind
 
 _RELATION_KINDS = frozenset(kind.value for kind in ArchitecturalRelationKind)   # one vocabulary: the kernel's
-_ENTITY_SCHEMAS = frozenset({"Level@1", "GridAxis@1", "Type@1", "Element@1", "Assembly@1", "Space@1", "Reading@1", "Component@1"})
+_ENTITY_SCHEMAS = frozenset({"Level@1", "GridAxis@1", "Type@1", "Element@1", "Assembly@1", "Space@1", "Reading@1", "Component@1",
+                             "MassingLevel@1", "Volume@1", "Connection@1"})   # Space@1 = a zone of the spatial option
 _EPISTEMIC = frozenset({"observed", "declared", "derived", "hypothesis", "disputed", "unknown"})
 _MAX_ITEMS = 50_000
 
@@ -251,6 +252,7 @@ class StateRecord:
     stage: StageBinding = field(default_factory=StageBinding)
     decision_ref: str | None = None
     invalidated_refs: tuple[str, ...] = ()
+    option: Mapping[str, Any] = field(default_factory=dict)     # the declared selection: option_id, label, typology, rationale, footprint_cells, assumption_refs
 
     SCHEMA = "StateRecord@1"
 
@@ -285,6 +287,19 @@ class StateRecord:
                 if end not in known:
                     raise StateRecordError(f"relation {r.relation_id}: unknown entity {end!r}")
         _refs(self.evidence_refs, "evidence_refs"); _refs(self.basis_refs, "basis_refs"); _refs(self.invalidated_refs, "invalidated_refs")
+        if not isinstance(self.option, Mapping):
+            raise StateRecordError("option must be a mapping")
+        object.__setattr__(self, "option", dict(self.option))
+        if self.option and not isinstance(self.option.get("option_id"), str):
+            raise StateRecordError("option needs an option_id")
+        for zone in self.entities_of("Space@1"):
+            for volume_id in zone.fields.get("volume_ids", ()):
+                if volume_id not in known:
+                    raise StateRecordError(f"zone {zone.entity_id}: unknown volume {volume_id!r}")
+        for connection in self.entities_of("Connection@1"):
+            for end in ("source_zone_id", "target_zone_id"):
+                if connection.fields.get(end) not in known:
+                    raise StateRecordError(f"connection {connection.entity_id}: unknown zone {connection.fields.get(end)!r}")
 
     # ---- views
     def entity(self, entity_id: str) -> Entity:
@@ -342,7 +357,8 @@ class StateRecord:
         return {"schema": self.SCHEMA, "project_id": self.project_id, "run_id": self.run_id, "entities": [e.to_dict() for e in self.entities],
                 "parameters": [p.to_dict() for p in self.parameters], "relations": [r.to_dict() for r in self.relations],
                 "obligations": [o.to_dict() for o in self.obligations], "evidence_refs": list(self.evidence_refs), "basis_refs": list(self.basis_refs),
-                "predecessor_ref": self.predecessor_ref, "stage": self.stage.to_dict(), "decision_ref": self.decision_ref, "invalidated_refs": list(self.invalidated_refs)}
+                "predecessor_ref": self.predecessor_ref, "stage": self.stage.to_dict(), "decision_ref": self.decision_ref, "invalidated_refs": list(self.invalidated_refs),
+                "option": dict(self.option)}
 
     @classmethod
     def from_dict(cls, value: object) -> "StateRecord":
@@ -351,23 +367,50 @@ class StateRecord:
         return cls(value["project_id"], value["run_id"], tuple(Entity.from_dict(e) for e in value["entities"]),
                    tuple(Parameter.from_dict(p) for p in value.get("parameters", ())), tuple(Relation.from_dict(r) for r in value.get("relations", ())),
                    tuple(DesignObligation.from_dict(o) for o in value.get("obligations", ())), tuple(value.get("evidence_refs", ())), tuple(value.get("basis_refs", ())),
-                   value.get("predecessor_ref"), StageBinding.from_dict(value.get("stage")), value.get("decision_ref"), tuple(value.get("invalidated_refs", ())))
+                   value.get("predecessor_ref"), StageBinding.from_dict(value.get("stage")), value.get("decision_ref"), tuple(value.get("invalidated_refs", ())),
+                   dict(value.get("option", {})))
 
     @property
     def digest(self) -> str:
         return _digest(self.to_dict())
 
 
-# ---------------------------------------------------------------- adapter to the legacy model (scheduled for retirement)
-def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str, evidence_ref: str, portfolio_id: str = "declared-state-record",
-                          branch_id: str = "state-record", selection_decision_ref: str = "decision:state-record-declared"):
-    """Forward a State Record to the legacy ``DevelopedDesignState`` the producer still takes.
+# ---------------------------------------------------------------- typed views of the record
+def project_levels_of(record: StateRecord, *, published_by: str = "seat-coordination"):
+    """The record's Level@1 entities as the published project levels (P098)."""
 
-    Component entities become the semantic tree; the building entity owns
-    one massing volume spanning the record's levels. This view exists only
-    until ``produce_geometry_program_proposal``, the seats and the
-    handovers read the record directly; each call is a lineage event, not
-    a second source of truth.
+    from archflow.state.geometry_program import ProjectLevel, ProjectLevels
+
+    levels = tuple(sorted((ProjectLevel(e.entity_id, str(e.fields["role"]), float(e.fields["elevation"]), tuple(e.basis_refs)) for e in record.entities_of("Level@1")),
+                          key=lambda l: l.level_id))
+    if not levels:
+        raise StateRecordError("the record carries no Level@1 entity")
+    return ProjectLevels(project_id=record.project_id, published_by=published_by, levels=levels)
+
+
+def project_grids_of(record: StateRecord, *, published_by: str = "seat-coordination"):
+    """The record's GridAxis@1 entities as the published project grids (P098); None when there are none."""
+
+    from archflow.state.geometry_program import ProjectGridAxis, ProjectGrids
+
+    axes = tuple(sorted((ProjectGridAxis(e.entity_id, str(e.fields["role"]), tuple(float(v) for v in e.fields["origin"]), tuple(float(v) for v in e.fields["direction"]), tuple(e.basis_refs))
+                         for e in record.entities_of("GridAxis@1")), key=lambda a: a.axis_id))
+    if not axes:
+        return None
+    return ProjectGrids(project_id=record.project_id, published_by=published_by, axes=axes)
+
+
+# ---------------------------------------------------------------- adapter to the legacy model (scheduled for retirement)
+def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | None = None, evidence_ref: str | None = None, portfolio_id: str = "declared-state-record",
+                          branch_id: str = "state-record", selection_decision_ref: str = "decision:state-record-declared"):
+    """Forward a State Record to the legacy ``DevelopedDesignState`` the compiler still takes.
+
+    With massing entities (MassingLevel@1, Volume@1, Space@1 zones,
+    Connection@1) and a declared ``option``, the spatial option is rebuilt
+    exactly from the record; without them the building entity owns one
+    block spanning the record's levels. This view exists only until the
+    compiler, the seats and the handovers read the record directly; each
+    call is a lineage event, not a second source of truth.
     """
 
     from archflow.runtime.project_runner import SchematicPack, bootstrap_developed_state
@@ -376,6 +419,29 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str, e
     components = record.entities_of("Component@1")
     if not components:
         raise StateRecordError("a developed-design view needs Component@1 entities")
+    evidence = tuple(sorted(set(record.evidence_refs) | ({evidence_ref} if evidence_ref else set())))
+    if not evidence:
+        raise StateRecordError("a developed-design view needs at least one evidence ref")
+    option = dict(record.option)
+    option_id = option_id or option.get("option_id")
+    if option_id is None:
+        raise StateRecordError("a developed-design view needs an option id (record.option or the caller)")
+    volumes, zones, massing_levels, connections = (record.entities_of(s) for s in ("Volume@1", "Space@1", "MassingLevel@1", "Connection@1"))
+    if volumes and zones and massing_levels:
+        design_components = tuple(DesignComponent.from_dict({**e.fields, "component_id": e.entity_id, "parent_component_id": e.parent_id}) for e in components)
+        pack = SchematicPack(
+            project_id=record.project_id, option_id=option_id, label=str(option.get("label", option_id)), typology=str(option.get("typology", "declared")),
+            rationale=str(option.get("rationale", "declared from the state record")), evidence_refs=evidence,
+            levels=tuple({"level_id": e.entity_id, "base_y": e.fields["base_y"], "height": e.fields["height"]} for e in massing_levels),
+            volumes=tuple({"volume_id": e.entity_id, "min": list(e.fields["min"]), "max": list(e.fields["max"]), "level_ids": list(e.fields["level_ids"])} for e in volumes),
+            zones=tuple({"zone_id": e.entity_id, "program_node_refs": list(e.fields["program_node_refs"]), "level_ids": list(e.fields["level_ids"]), "volume_ids": list(e.fields["volume_ids"])} for e in zones),
+            connections=tuple({"connection_id": e.entity_id, "source_zone_id": e.fields["source_zone_id"], "target_zone_id": e.fields["target_zone_id"],
+                               "relationship_refs": list(e.fields["relationship_refs"]), "directed": bool(e.fields.get("directed", False))} for e in connections),
+            components=design_components, footprint_cells=tuple((int(x), int(z)) for x, z in option.get("footprint_cells", ((0, 0),))),
+            assumption_refs=tuple(option.get("assumption_refs", ())),
+        )
+        return bootstrap_developed_state(pack, run=run, portfolio_id=portfolio_id, branch_id=branch_id, selection_decision_ref=selection_decision_ref)
+    evidence_ref = evidence[0]
     levels = record.entities_of("Level@1")
     elevations = sorted(float(l.fields.get("elevation", 0.0)) for l in levels) or [0.0, 1.0]
     top = max(elevations[-1], elevations[0] + 1.0)

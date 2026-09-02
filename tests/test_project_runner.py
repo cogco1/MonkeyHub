@@ -1,9 +1,11 @@
-"""P089 (first cut): the record-driven project runner.
+"""P089 / P102: the record-driven project runner.
 
-A schematic pack becomes a real developed-design state; an element pack
-is produced per seat through the real producer; handovers carry the
-realized bounds of earlier seats as exclusions; receipts report wall
-time; gaps fail typed.
+One State Record (components + massing, levels + grid axes, element rows
+with references) becomes the real developed-design state through the
+retirement-bound view; rows are produced per seat by the canonical
+reference-reading producers; handovers carry the realized bounds of
+earlier seats as exclusions; relations the producers built are checked
+against the compiled bounds; receipts report wall time; gaps fail typed.
 """
 from __future__ import annotations
 
@@ -25,17 +27,14 @@ from archflow.project import (
     PersistenceDestination,
 )
 from archflow.runtime.project_runner import (
-    ElementPack,
     ProjectRunnerError,
     RunOptions,
-    SchematicPack,
     StageExecutionGuard,
-    bootstrap_developed_state,
     run_project,
 )
 from archflow.state.design_maturity import DesignPhase
 from archflow.state.developed_design import DevelopmentDiscipline
-from archflow.state.geometry_program import ProjectLevel, ProjectLevels
+from archflow.state.state_record import Entity, StateRecord, StateRecordError, developed_design_view
 from archflow.state.operational_state import DesignObligation
 from archflow.state.stage_workflow import (
     ProjectStage,
@@ -54,44 +53,39 @@ def _component(cid, parent, kind, intent, volumes=()):
             "maturity": "schematic", "revision": 1, "volume_ids": list(volumes), "unresolved_child_roles": [], "source_refs": [EVIDENCE]}
 
 
-def _schematic(extra_components=()) -> SchematicPack:
-    from archflow.state.spatial import DesignComponent
+def _record(opening_along: float = 6.0, extra_components=(), elements=("portico-columns", "wall-south")) -> StateRecord:
+    """The demo block as one State Record: components + massing, three levels, four grid lines, two element rows."""
 
-    probe = DesignComponent.from_dict(_component("building", None, "whole-building", "one block", ("block",)))
-    fields = probe.to_dict()
-    def comp(cid, parent, kind, intent, volumes=()):
-        payload = dict(fields); payload.update({"component_id": cid, "parent_component_id": parent, "semantic_kind": kind, "intent": intent, "volume_ids": list(volumes)})
-        return payload
     components = [
-        comp("building", None, "whole-building", "one block", ("block",)),
-        comp("main-block", "building", "enclosure-and-load-distribution", "the block"),
-        comp("exterior-walls", "main-block", "weather-enclosure-and-opening-host", "walls"),
-        comp("portico", "building", "arrival-and-buttress", "front portico"),
-        comp("portico-columns", "portico", "vertical-support", "columns"),
+        _component("building", None, "whole-building", "one block", ("block",)),
+        _component("main-block", "building", "enclosure-and-load-distribution", "the block"),
+        _component("exterior-walls", "main-block", "weather-enclosure-and-opening-host", "walls"),
+        _component("portico", "building", "arrival-and-buttress", "front portico"),
+        _component("portico-columns", "portico", "vertical-support", "columns"),
         *extra_components,
     ]
-    return SchematicPack.from_dict({
-        "schema": "SchematicPack@1", "project_id": "demo", "option_id": "declared-option", "label": "demo declared schematic", "typology": "test block with a portico",
-        "rationale": "declared from the survey record", "evidence_refs": [EVIDENCE],
-        "levels": [{"level_id": "ground", "base_y": 0, "height": 12}], "volumes": [{"volume_id": "block", "min": [0, 0, 0], "max": [12, 12, 12], "level_ids": ["ground"]}],
-        "zones": [{"zone_id": "hall", "program_node_refs": ["program-node:hall"], "level_ids": ["ground"], "volume_ids": ["block"]}],
-        "connections": [], "components": components, "footprint_cells": [[0, 0], [1, 0], [0, 1], [1, 1]], "assumption_refs": ["assumption:declared-schematic"],
-    })
-
-
-def _levels() -> ProjectLevels:
-    return ProjectLevels(project_id="demo", published_by="seat-coordination", levels=(
-        ProjectLevel("level-cornice", "main-cornice", 12.0, BASIS), ProjectLevel("level-ground", "terrain-grade", 0.0, BASIS), ProjectLevel("level-piano-nobile", "piano-nobile", 3.5, BASIS)))
-
-
-def _elements(opening_along=6.0) -> ElementPack:
-    return ElementPack.from_dict({"schema": "ElementPack@1", "elements": [
-        {"element_id": "portico-columns", "component_id": "portico-columns", "producer": "column-array", "base_level": "level-piano-nobile",
-         "params": {"origin": [6.0, -0.2], "direction": [1, 0], "count": 4, "spacing": 2.5, "radius": 0.4, "height": 6.0, "basis_refs": [EVIDENCE]}},
-        {"element_id": "wall-south", "component_id": "exterior-walls", "producer": "wall", "base_level": "level-ground",
-         "params": {"origin": [12.0, 0.0], "direction": [-1, 0], "length": 12.0, "thickness": 0.6, "top_level": "level-cornice",
-                    "openings": [{"opening_id": "door", "kind": "door", "along": opening_along, "width": 1.4, "sill": 3.5, "head": 8.0}]}},
-    ]})
+    entities = [Entity(c["component_id"], "Component@1", {k: v for k, v in c.items() if k not in ("component_id", "parent_component_id")}, parent_id=c["parent_component_id"]) for c in components]
+    entities += [Entity("ground", "MassingLevel@1", {"base_y": 0, "height": 12}), Entity("block", "Volume@1", {"min": [0, 0, 0], "max": [12, 12, 12], "level_ids": ["ground"]}),
+                 Entity("hall", "Space@1", {"program_node_refs": ["program-node:hall"], "level_ids": ["ground"], "volume_ids": ["block"]})]
+    entities += [Entity("level-cornice", "Level@1", {"role": "main-cornice", "elevation": 12.0}, basis_refs=BASIS), Entity("level-ground", "Level@1", {"role": "terrain-grade", "elevation": 0.0}, basis_refs=BASIS),
+                 Entity("level-piano-nobile", "Level@1", {"role": "piano-nobile", "elevation": 3.5}, basis_refs=BASIS)]
+    entities += [Entity("axis-front", "GridAxis@1", {"role": "F", "origin": [0.0, 0.0, -0.2], "direction": [1.0, 0.0, 0.0]}, basis_refs=BASIS),      # the colonnade line
+                 Entity("axis-s", "GridAxis@1", {"role": "S", "origin": [0.0, 0.0, 0.0], "direction": [1.0, 0.0, 0.0]}, basis_refs=BASIS),           # south face
+                 Entity("axis-w", "GridAxis@1", {"role": "W", "origin": [0.0, 0.0, 0.0], "direction": [0.0, 0.0, 1.0]}, basis_refs=BASIS),
+                 Entity("axis-e", "GridAxis@1", {"role": "E", "origin": [12.0, 0.0, 0.0], "direction": [0.0, 0.0, 1.0]}, basis_refs=BASIS)]
+    rows = {
+        "portico-columns": Entity("columns-front", "Element@1", {"component_id": "portico-columns", "producer": "column-array",
+                                  "references": {"at": {"axis_point": {"axis": "F", "along": 6.0}}, "direction": "F", "base": {"level": "level-piano-nobile"}},
+                                  "params": {"count": 4, "spacing": 2.5, "radius": 0.4, "height": 6.0}}, parent_id="portico-columns", basis_refs=BASIS),
+        "wall-south": Entity("wall-south", "Element@1", {"component_id": "exterior-walls", "producer": "wall",
+                             "references": {"line": {"from": {"grid": ["E", "S"]}, "to": {"grid": ["W", "S"]}, "face": "exterior", "inward": [0, 1]}, "base": {"level": "level-ground"}, "top": {"level": "level-cornice"}},
+                             "params": {"thickness": 0.6, "openings": [{"opening_id": "door", "kind": "door", "at": {"host": {"element": "wall-south", "along": opening_along}}, "width": 1.4, "sill": 3.5, "head": 8.0}]}},
+                             parent_id="exterior-walls", basis_refs=BASIS),
+    }
+    entities += [rows[name] for name in elements]
+    return StateRecord("demo", "run-1", tuple(entities), evidence_refs=(EVIDENCE,), decision_ref="decision:declared-option",
+                       option={"option_id": "declared-option", "label": "demo declared schematic", "typology": "test block with a portico", "rationale": "declared from the survey record",
+                               "footprint_cells": [[0, 0], [1, 0], [0, 1], [1, 1]], "assumption_refs": ["assumption:declared-schematic"]})
 
 
 def _seats(phase: DesignPhase):
@@ -109,14 +103,12 @@ def _options(**overrides) -> RunOptions:
     return RunOptions(**fields)
 
 
-def _stage_guard(repository, run, pack, options) -> StageExecutionGuard:
-    state = bootstrap_developed_state(
-        pack,
-        run=run,
-        portfolio_id=options.portfolio_id,
-        branch_id=options.branch_id,
-        selection_decision_ref=options.selection_decision_ref,
-    )
+def _state(record, run, options):
+    return developed_design_view(record, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+
+
+def _stage_guard(repository, run, record, options) -> StageExecutionGuard:
+    state = _state(record, run, options)
     workflow = ProjectStageWorkflow(
         project_id=run.project_id,
         workflow_id="runner-test-workflow",
@@ -176,43 +168,44 @@ def _stage_guard(repository, run, pack, options) -> StageExecutionGuard:
 
 
 class BootstrapTests(unittest.TestCase):
-    def test_pack_becomes_a_real_developed_state(self) -> None:
+    def test_record_becomes_a_real_developed_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
-            state = bootstrap_developed_state(_schematic(), run=run, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared")
+            state = developed_design_view(_record(), run=run, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared")
             self.assertEqual(state.active_phase, DesignPhase.DESIGN_DEVELOPMENT)
             self.assertEqual(len(state.state_digest), 64)
             self.assertEqual([c.component_id for c in state.selected_schematic.option.proposal.components][:2], ["building", "exterior-walls"])
             other = repository.create_run("run-2")
-            self.assertNotEqual(state.state_digest, bootstrap_developed_state(_schematic(), run=other, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared").selected_schematic.run_id)
+            self.assertNotEqual(state.state_digest, developed_design_view(_record(), run=other, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared").selected_schematic.run_id)
 
-    def test_malformed_packs_fail_typed(self) -> None:
-        with self.assertRaises(ProjectRunnerError):
-            SchematicPack.from_dict({"schema": "Other@1"})
-        with self.assertRaises(ProjectRunnerError):
-            ElementPack.from_dict({"schema": "ElementPack@1", "elements": [{"element_id": "a", "component_id": "c", "producer": "prism"}, {"element_id": "a", "component_id": "c", "producer": "prism"}]})
+    def test_malformed_records_fail_typed(self) -> None:
+        with self.assertRaises(StateRecordError):
+            StateRecord.from_dict({"schema": "Other@1"})
+        with self.assertRaises(StateRecordError):
+            StateRecord("demo", "run-1", (Entity("a", "Element@1", {"producer": "prism"}), Entity("a", "Element@1", {"producer": "prism"})))
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "other", project_id="other", initial_state={"schema": "TestState@1"})
             with self.assertRaises(ProjectRunnerError):
-                bootstrap_developed_state(_schematic(), run=repository.create_run("run-1"), portfolio_id="declared", branch_id="b", selection_decision_ref="decision:x")
+                developed_design_view(_record(), run=repository.create_run("run-1"), portfolio_id="declared", branch_id="b", selection_decision_ref="decision:x")
 
 
 class RunTests(unittest.TestCase):
-    def _run(self, elements: ElementPack, **overrides):
+    def _run(self, record: StateRecord, **overrides):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         repository = FilesystemProjectRepository.initialize(Path(self.temporary.name) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
         run = repository.create_run("run-1")
-        pack = _schematic()
         options = _options(**overrides)
-        state = bootstrap_developed_state(pack, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
-        guard = _stage_guard(repository, run, pack, options)
-        return repository, run_project(repository, run=run, stage_guard=guard, schematic=pack, elements=elements, seats=_seats(state.active_phase), levels=_levels(), grids=None, options=options)
+        state = _state(record, run, options)
+        guard = _stage_guard(repository, run, record, options)
+        return repository, run_project(repository, run=run, stage_guard=guard, record=record, seats=_seats(state.active_phase), options=options)
 
     def test_two_seats_run_through_the_producer_with_receipts(self) -> None:
-        repository, receipt = self._run(_elements())
+        repository, receipt = self._run(_record())
         self.assertTrue(receipt["seat_execution_complete"], receipt["seat_results"])
+        self.assertEqual(receipt["schema"], "RunnerRunReceipt@3")
+        self.assertIn("state_record_ref", receipt)
         self.assertNotIn("accepted", receipt)
         self.assertEqual(receipt["stage"]["status"], "OPEN")
         self.assertFalse(receipt["stage_acceptance_authority"])
@@ -226,24 +219,26 @@ class RunTests(unittest.TestCase):
         self.assertIn("receipt_ref", receipt)
         program = repository.load_json(_ref(seats["seat-envelope"]["program_ref"]))
         datum_ids = {d["datum_id"] for d in program["interface_datums"]}
-        self.assertIn("portico-columns-top", datum_ids)                                        # handed over from the structure seat
+        self.assertIn("columns-front-top", datum_ids)                                          # handed over from the structure seat
         self.assertIn("level-cornice", datum_ids)
         record_names = [path.name for path in repository.layout.run("run-1").records.glob("*.json")]
         self.assertTrue(any(name.startswith("seat-round-receipt-") for name in record_names))
         self.assertFalse(any(name.startswith("runner-stage-receipt-") for name in record_names))
+        self.assertFalse(any(name.startswith("runner-element-pack-") or name.startswith("runner-schematic-pack-") for name in record_names))
+        checks = repository.load_json(_ref(seats["seat-structure"]["relation_check_ref"]))
+        self.assertTrue(checks["held"])                                                        # columns stand on the piano nobile by construction
+        self.assertEqual(checks["counts"]["violated"], 0)
 
     def test_realized_bounds_of_an_earlier_seat_exclude_a_later_opening(self) -> None:
         with self.assertRaises(ProjectRunnerError) as caught:
-            self._run(_elements(opening_along=4.75))       # the door would open where a column stands
+            self._run(_record(opening_along=4.75))         # the door would open where a column stands
         self.assertIn("intersects exclusion", str(caught.exception))
 
     def test_owned_leaf_without_element_fails_typed_unless_relaxed(self) -> None:
-        elements = ElementPack.from_dict({"schema": "ElementPack@1", "elements": [
-            {"element_id": "wall-south", "component_id": "exterior-walls", "producer": "wall", "base_level": "level-ground",
-             "params": {"origin": [12.0, 0.0], "direction": [-1, 0], "length": 12.0, "thickness": 0.6, "top_level": "level-cornice"}}]})
+        record = _record(elements=("wall-south",))
         with self.assertRaises(ProjectRunnerError):
-            self._run(elements)
-        repository, receipt = self._run(elements, strict_coverage=False)
+            self._run(record)
+        repository, receipt = self._run(record, strict_coverage=False)
         seats = {s["seat_id"]: s for s in receipt["seat_results"]}
         self.assertEqual(seats["seat-structure"]["status"], "empty")
         self.assertEqual(seats["seat-structure"]["undeclared_components"], ["portico-columns"])
@@ -255,13 +250,13 @@ class RunTests(unittest.TestCase):
             run = repository.create_run("run-1")
             other = repository.create_run("run-2")
             options = _options()
-            pack = _schematic()
-            guard = _stage_guard(repository, other, pack, options)
-            state = bootstrap_developed_state(pack, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+            record = _record()
+            guard = _stage_guard(repository, other, record, options)
+            state = _state(record, run, options)
             with self.assertRaisesRegex(ProjectRunnerError, "another project or run"):
-                run_project(repository, run=run, stage_guard=guard, schematic=pack, elements=_elements(), seats=_seats(state.active_phase), levels=_levels(), grids=None, options=options)
+                run_project(repository, run=run, stage_guard=guard, record=record, seats=_seats(state.active_phase), options=options)
             record_names = [path.name for path in repository.layout.run("run-1").records.glob("*.json")]
-            self.assertFalse(any(name.startswith("runner-schematic-pack-") for name in record_names))
+            self.assertFalse(any(name.startswith("state-record-") for name in record_names))
 
     def test_cross_run_successor_requires_retained_satisfied_predecessor_close(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -269,8 +264,8 @@ class RunTests(unittest.TestCase):
             predecessor_run = repository.create_run("run-0")
             run = repository.create_run("run-1")
             options = _options()
-            pack = _schematic()
-            state = bootstrap_developed_state(pack, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+            record = _record()
+            state = _state(record, run, options)
             workflow = ProjectStageWorkflow(
                 project_id="demo",
                 workflow_id="cross-run-test",
@@ -373,10 +368,42 @@ class RunTests(unittest.TestCase):
                 closure_ref,
             )
 
-            receipt = run_project(repository, run=run, stage_guard=guard, schematic=pack, elements=_elements(), seats=_seats(state.active_phase), levels=_levels(), grids=None, options=options)
+            receipt = run_project(repository, run=run, stage_guard=guard, record=record, seats=_seats(state.active_phase), options=options)
             self.assertTrue(receipt["seat_execution_complete"])
             self.assertEqual(receipt["stage"]["stage_index"], 1)
             self.assertEqual(receipt["stage"]["status"], "OPEN")
+
+
+class PriorExportTests(unittest.TestCase):
+    def test_latest_succeeded_export_of_the_stage_with_a_present_model_is_the_patch_base(self) -> None:
+        import json
+        import time
+        from archflow.runtime.project_runner import _prior_export
+
+        with tempfile.TemporaryDirectory() as tmp:
+            records, workspace = Path(tmp) / "records", Path(tmp) / "cad-stage"
+            records.mkdir(); workspace.mkdir()
+
+            def receipt(name, *, stage, digest, artifact, status="succeeded", present=True):
+                payload = {"status": status, "artifact_relative_path": artifact, "identity": {"binding": {"stage_id": stage, "program_digest": digest, "program_ref": {"uri": f"project://demo/runs/run-1/branches/b/records/{stage}-geometry-program-{'0' * 64}.json"}}}}
+                (records / f"seat-rhino-execution-{name}.json").write_text(json.dumps(payload), encoding="utf-8")
+                if present:
+                    (workspace / artifact).write_bytes(b"3dm")
+                time.sleep(0.01)
+
+            receipt("a" * 64, stage="stage-x", digest="d1", artifact="stage-x@d1.3dm")
+            receipt("b" * 64, stage="stage-y", digest="d9", artifact="stage-y@d9.3dm")                       # another stage
+            receipt("c" * 64, stage="stage-x", digest="d2", artifact="stage-x@d2.3dm", status="failed")      # failed: skipped
+            receipt("d" * 64, stage="stage-x", digest="d3", artifact="stage-x@d3.3dm", present=False)         # model gone: skipped
+            found = _prior_export(records, workspace, "stage-x", "d4")
+            self.assertIsNotNone(found)
+            payload, model = found
+            self.assertEqual(payload["identity"]["binding"]["program_digest"], "d1")
+            self.assertEqual(model.name, "stage-x@d1.3dm")
+            self.assertNotIn("_reused_path", payload)
+            same = _prior_export(records, workspace, "stage-x", "d1")
+            self.assertIn("_reused_path", same[0])                                                        # identical program: reuse
+            self.assertIsNone(_prior_export(records, workspace, "stage-z", "d1"))
 
 
 def _ref(uri: str):

@@ -78,7 +78,10 @@ def check_support_contact(relation: Relation, *, record: StateRecord, bounds: Ma
     measured: dict[str, float] = {}
     problems: list[str] = []
     engagement = float(relation.parameters.get("engagement_depth", 0.0) or 0.0)
+    rise = float(relation.parameters.get("rise", 0.0) or 0.0)
     measured["engagement_depth"] = engagement
+    if rise:
+        measured["rise"] = rise
     subject_entity, object_entity = record.entity(relation.subject), record.entity(relation.object)
     level = next((e for e in (subject_entity, object_entity) if e.schema == "Level@1"), None)
     if level is not None:
@@ -88,16 +91,16 @@ def check_support_contact(relation: Relation, *, record: StateRecord, bounds: Ma
         elevation = float(level.fields["elevation"])
         measured["element_bottom"] = element_bottom
         measured["level_elevation"] = elevation
-        gap = element_bottom - elevation
+        gap = element_bottom - (elevation - engagement + rise)
         measured["gap"] = gap
         if abs(gap) > tolerance:
-            problems.append(f"element bottom {element_bottom:.4f} is {gap:+.4f} from level {level.entity_id} at {elevation:.4f}")
+            problems.append(f"element bottom {element_bottom:.4f} is {gap:+.4f} from level {level.entity_id} at {elevation:.4f} (declared engagement {engagement:.4f}, rise {rise:.4f})")
     else:
         _, subject_top = _extent(objects_by_element.get(relation.subject, ()), bounds, f"{relation.relation_id} subject {relation.subject}")
         measured["subject_top"] = subject_top
         object_bottom, _ = _extent(objects_by_element.get(relation.object, ()), bounds, f"{relation.relation_id} object {relation.object}")
         measured["object_bottom"] = object_bottom
-        gap = (object_bottom + engagement) - subject_top
+        gap = (object_bottom + engagement - rise) - subject_top
         measured["gap"] = gap
         if abs(gap) > tolerance:
             problems.append(f"object bottom {object_bottom:.4f} + engagement {engagement:.4f} is {gap:+.4f} from subject top {subject_top:.4f}")

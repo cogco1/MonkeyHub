@@ -11,10 +11,9 @@ Elements are placed by reference, not by coordinate:
   record (P090 / M096 / P098). One resolver for plan, one for elevation;
   no producer computes either on its own.
 
-``lower_element_references`` turns a reference pack into the coordinate
-form the runner consumes today. It is an adapter on the way to producers
-that read references directly, and it is scheduled for retirement with
-them; a lowered pack is never the authoritative record.
+The runner's producers read references directly (P089 / P102); no coordinate
+pack exists any more — the lowering adapter was retired on 2026-09-02 once
+both projects' records reproduced their runner-002 programs exactly.
 """
 from __future__ import annotations
 
@@ -37,7 +36,6 @@ def _finite(value: object, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise ReferenceError(f"{label} must be a finite number")
     return float(value)
-
 
 # ---------------------------------------------------------------- reference types
 @dataclass(frozen=True, slots=True)
@@ -220,97 +218,3 @@ def resolve_elevation(reference: ElevationReference, context: ReferenceContext) 
 
 
 # ---------------------------------------------------------------- lowering (adapter, to be retired with reference-reading producers)
-def lower_element_references(pack: Mapping[str, Any], *, grids: ProjectGrids | None, levels: ProjectLevels | None, derived: EvaluatedDerivations | None = None) -> dict[str, Any]:
-    """Turn a reference pack into the coordinate form the runner consumes today.
-
-    Recognised reference fields on an element: ``line: {from, to}`` (walls:
-    origin, direction, length), ``at`` (a plan point: column arrays,
-    prisms), ``base`` / ``top`` (levels: ``base_level`` / ``top_level`` /
-    ``base_offset``), ``openings[*].at`` (``along`` on the host line),
-    ``openings[*].sill`` / ``head`` as ``OffsetFrom`` the element's base
-    level. ``@name`` strings resolve through the derivation table. Walls
-    register their reference line so later elements can use ``HostAlong``.
-    """
-
-    if pack.get("schema") != "ElementPack@1":
-        raise ReferenceError("reference pack must carry schema ElementPack@1")
-    context = ReferenceContext(grids=grids, levels=levels)
-    out_elements: list[dict[str, Any]] = []
-    for raw in pack["elements"]:
-        element = dict(substitute(raw, derived) if derived is not None else raw)
-        params = dict(element.get("params", {}))
-        refs = dict(element.pop("references", {}))
-        base = refs.get("base")
-        if base is not None:
-            level_id, offset = resolve_elevation(parse_reference(base), context)
-            element["base_level"] = level_id
-            if offset:
-                params["base_offset"] = offset
-        top = refs.get("top")
-        if top is not None:
-            level_id, offset = resolve_elevation(parse_reference(top), context)
-            if offset:
-                raise ReferenceError(f"{element['element_id']}: a top reference cannot carry an offset (heights are level differences or own dimensions)")
-            params["top_level"] = level_id
-        line = refs.get("line")
-        if line is not None:
-            start = resolve_plan(parse_reference(line["from"]), context)
-            end = resolve_plan(parse_reference(line["to"]), context)
-            dx, dz = end[0] - start[0], end[1] - start[1]
-            length = math.hypot(dx, dz)
-            if length <= 0.0:
-                raise ReferenceError(f"{element['element_id']}: zero-length line")
-            direction = (round(dx / length, 12), round(dz / length, 12))
-            origin = start
-            if line.get("face") == "exterior" and "inward" in line:
-                # the reference line is the exterior face; the wall's normal must point inward
-                nx, nz = direction[1], -direction[0]
-                ix, iz = float(line["inward"][0]), float(line["inward"][1])
-                if nx * ix + nz * iz < 0:
-                    origin, direction = end, (-direction[0], -direction[1])
-            params.update({"origin": [round(origin[0], 9), round(origin[1], 9)], "direction": [direction[0], direction[1]], "length": round(length, 9)})
-            context.hosts[element["element_id"]] = HostLine(origin, direction)
-        at = refs.get("at")
-        if at is not None:
-            x, z = resolve_plan(parse_reference(at), context)
-            params["origin"] = [x, z]
-            if "direction" in refs:
-                (o, d) = _line_of(context.axis(refs["direction"]))
-                params["direction"] = [d[0], d[1]]
-        openings = []
-        for opening in params.get("openings", ()):
-            row = dict(opening)
-            if "at" in row:
-                ref = parse_reference(row.pop("at"))
-                if isinstance(ref, HostAlong):
-                    row["along"] = ref.along
-                else:
-                    x, z = resolve_plan(ref, context)
-                    host = context.hosts.get(element["element_id"])
-                    if host is None:
-                        raise ReferenceError(f"{element['element_id']}: openings need the wall's line before a plan reference")
-                    dx, dz = host.direction
-                    row["along"] = round((x - host.origin[0]) * dx + (z - host.origin[1]) * dz, 9)
-            for key in ("sill", "head"):
-                value = row.get(key)
-                if isinstance(value, Mapping):
-                    level_id, offset = resolve_elevation(parse_reference(value), context)
-                    if level_id != element.get("base_level"):
-                        base_value, level_value = _level_value(levels, element["base_level"]), _level_value(levels, level_id)
-                        offset = round(level_value - base_value + offset, 9)
-                    row[key] = offset
-            openings.append(row)
-        if openings:
-            params["openings"] = openings
-        element["params"] = params
-        out_elements.append(element)
-    return {"schema": "ElementPack@1", "elements": out_elements}
-
-
-def _level_value(levels: ProjectLevels | None, level_id: str) -> float:
-    if levels is None:
-        raise ReferenceError("levels are needed to relate a sill to another level")
-    for item in levels.levels:
-        if item.level_id == level_id:
-            return item.elevation
-    raise ReferenceError(f"unknown level {level_id!r}")

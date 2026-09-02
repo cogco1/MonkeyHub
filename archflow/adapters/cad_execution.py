@@ -655,8 +655,8 @@ def prepare_rhino_three_dm_export(
             selection = select_patch_operations(program, patch.prior_program)
         except CadPatchError as exc:
             raise CadExecutionError(f"patch not expressible: {exc}") from exc
-        if selection.empty:
-            raise CadExecutionError("nothing to patch: the program realizes the prior document already")
+        # an empty selection means the geometry is already in the prior document; the patch then only
+        # carries every object over and re-stamps its semantics (bindings, evidence, commitments) — a "restamp"
         patch_prelude = build_patch_prelude(
             selection,
             prior_model_path=prior_model,
@@ -664,6 +664,7 @@ def prepare_rhino_three_dm_export(
         )
         patch_record = {
             **selection.to_dict(),
+            "mode": "restamp" if selection.empty else "patch",
             "prior_model_path": str(prior_model),
             "prior_model_sha256": _sha256_bytes(prior_model.read_bytes()),
         }

@@ -105,6 +105,37 @@ class StateRecordTests(unittest.TestCase):
             with self.assertRaises(GeometryProposalProductionError):
                 _as_developed_state(bare, run=run)                                          # no evidence: typed refusal
 
+    def test_massing_entities_rebuild_the_spatial_option_exactly(self) -> None:
+        from archflow.runtime.project_runner import SchematicPack, bootstrap_developed_state
+        from tests.test_project_runner import EVIDENCE, _component
+        pack = SchematicPack.from_dict({
+            "schema": "SchematicPack@1", "project_id": "demo", "option_id": "declared-option", "label": "demo declared schematic", "typology": "test block with a portico",
+            "rationale": "declared from the survey record", "evidence_refs": [EVIDENCE],
+            "levels": [{"level_id": "ground", "base_y": 0, "height": 12}], "volumes": [{"volume_id": "block", "min": [0, 0, 0], "max": [12, 12, 12], "level_ids": ["ground"]}],
+            "zones": [{"zone_id": "hall", "program_node_refs": ["program-node:hall"], "level_ids": ["ground"], "volume_ids": ["block"]}], "connections": [],
+            "components": [_component("building", None, "whole-building", "one block", ("block",)), _component("portico", "building", "arrival-and-buttress", "front portico")],
+            "footprint_cells": [[0, 0], [1, 0], [0, 1], [1, 1]], "assumption_refs": ["assumption:declared-schematic"]})
+        entities = [Entity(c.component_id, "Component@1", {k: v for k, v in c.to_dict().items() if k not in ("component_id", "parent_component_id")}, parent_id=c.parent_component_id)
+                    for c in pack.components]
+        entities += [Entity(l["level_id"], "MassingLevel@1", {"base_y": l["base_y"], "height": l["height"]}) for l in pack.levels]
+        entities += [Entity(v["volume_id"], "Volume@1", {"min": v["min"], "max": v["max"], "level_ids": v["level_ids"]}) for v in pack.volumes]
+        entities += [Entity(z["zone_id"], "Space@1", {"program_node_refs": z["program_node_refs"], "level_ids": z["level_ids"], "volume_ids": z["volume_ids"]}) for z in pack.zones]
+        entities += [Entity(c["connection_id"], "Connection@1", {k: v for k, v in c.items() if k != "connection_id"}) for c in pack.connections]
+        record = StateRecord(pack.project_id, "run-1", tuple(entities), evidence_refs=pack.evidence_refs,
+                             option={"option_id": pack.option_id, "label": pack.label, "typology": pack.typology, "rationale": pack.rationale,
+                                     "footprint_cells": [list(c) for c in pack.footprint_cells], "assumption_refs": list(pack.assumption_refs)})
+        self.assertEqual(StateRecord.from_dict(record.to_dict()).digest, record.digest)
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / pack.project_id, project_id=pack.project_id, initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            via_record = developed_design_view(record, run=run, branch_id="runner-v1", portfolio_id="declared", selection_decision_ref="decision:declared")
+            via_pack = bootstrap_developed_state(pack, run=run, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared")
+            self.assertEqual(via_record.state_digest, via_pack.state_digest)                    # one state, whichever door it came through
+        with self.assertRaises(StateRecordError):
+            StateRecord(pack.project_id, "run-1", tuple(entities), option={"label": "no id"})
+        with self.assertRaises(StateRecordError):
+            StateRecord(pack.project_id, "run-1", tuple(entities) + (Entity("z2", "Space@1", {"program_node_refs": [], "level_ids": [], "volume_ids": ["nowhere"]}),))
+
     def test_developed_design_view_forwards_to_the_legacy_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})

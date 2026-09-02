@@ -110,3 +110,22 @@ current close obligation remains OPEN. Legacy `CaseVote@1` records migrate to
 organisation-only evidence and cannot promote templates. Villa Rotonda's
 project-owned Stage 0-5 workflow is frozen in P036 run `workflow-001`; all
 older runs remain `LEGACY_UNQUALIFIED_BASIS`, with canonical HEAD at version 0.
+
+## The runner reads the State Record (2026-09-02 night, Claude)
+
+`run_project(repository, run=, stage_guard=, record: StateRecord, seats=, options=)`. One input: the
+record's Component/MassingLevel/Volume/Space/Connection entities are the spatial option, its Level/GridAxis
+entities the published datums, its Element@1 entities the rows the canonical producers read
+(`element_producers.produce_rows` in `production_order`). Retired here: `SchematicPack`/`ElementPack` as runner
+inputs, `ElementSpec`, `ProducerInputs`, the runner's private `PRODUCERS`/`produce_elements`, the `runner-schematic-pack`/
+`runner-element-pack` records (`RunnerRunReceipt@3` carries `state_record_ref`). `SchematicPack` +
+`bootstrap_developed_state` remain only as the bridge inside `developed_design_view` until the compiler reads the record.
+Relations the producers build are checked against the compiled bounds per seat (`seat-relation-check`); a violated
+relation is a typed failure. Export: artifact per program digest in the stage workspace; reuse / restamp / patch /
+rebuild by receipt evidence (P103), `--patch-oracle` rebuilds beside every patch and compares.
+
+Equivalence receipts (`tools/verify_state_record.py`, an equivalence-harness workflow frozen in the run, no stage
+authority): villa `project://villa-rotonda-reconstruction/runs/equivalence-001/records/state-record-equivalence-6bcb52152c6766ba969b1f44c986066b39ff7a1ee9e5fbfa4715c124108f68de.json` (state digest identical to runner-002; 51 objects, worst 0.0 m); Rocca `project://rocca-pisana/runs/equivalence-002/records/state-record-equivalence-1cb2d33473614addcdd80254eb6ff8aa0ed8dbf1d1f12ebbc2db38683e6a5eda.json`
+(27 objects, worst 0.0 m; state digest differs only because the massing levels had to be renamed — "piano-nobile",
+"drum", "dome" were both component ids and massing/element ids in the old pack, and an entity id is one thing).
+

@@ -111,9 +111,13 @@ class PatchSelectionTests(unittest.TestCase):
             self.assertIn("obj-columns-west-0", script.split("_patch_semantics = json.loads(")[1].split("\n")[0])
             self.assertEqual(plan.to_dict()["patch"]["prior_model_sha256"], plan.patch["prior_model_sha256"])
             (workspace / "same").mkdir()
-            with self.assertRaises(CadExecutionError):                              # nothing to patch: same program
-                prepare_rhino_three_dm_export(a, binding=_binding(a), speculative_workspace=workspace / "same", artifact_name="same.3dm",
-                                              readback_tolerance=0.003, patch=RhinoPatchBase(prior_model_path=prior, prior_program=a))
+            restamp = prepare_rhino_three_dm_export(a, binding=_binding(a), speculative_workspace=workspace / "same", artifact_name="same.3dm",
+                                                    readback_tolerance=0.003, patch=RhinoPatchBase(prior_model_path=prior, prior_program=a))
+            self.assertEqual(restamp.patch["mode"], "restamp")                       # same geometry: carry everything, re-stamp semantics
+            self.assertEqual(restamp.patch["rebuilt_op_ids"], [])
+            self.assertEqual(len(restamp.patch["kept_object_ids"]), 14)
+            self.assertNotIn("_register('obj-", restamp.script_path.read_text(encoding="utf-8"))
+            self.assertEqual(plan.patch["mode"], "patch")
 
 
 if __name__ == "__main__":

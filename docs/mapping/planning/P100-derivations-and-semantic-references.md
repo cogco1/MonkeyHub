@@ -97,6 +97,14 @@ coordinate:
   id lookup.
 - **Retired: the record's free-string relation vocabulary** — `StateRecord.Relation.kind` must be a kernel
   `ArchitecturalRelationKind` value (P102).
-- **Pending (blocked on codex's runner):** `project_runner.PRODUCERS` beside `element_producers.PRODUCERS`; the
-  runner's full-rebuild-only `_export` beside the patch path; `DevelopedDesignState` as the compiler's input
-  (the production entry now accepts `StateRecord@1` and forwards it once, inside `_as_developed_state`).
+- **Retired: the lowering adapter and every coordinate pack.** The runner reads references directly through the
+  canonical producers (`element_producers` now also carries prism, ring, loft, dome cap, declined, wall types and
+  exclusions); `lower_element_references` and `element-pack.json` are gone. Villa and Rocca generators emit one
+  `state-record.json`; the runner-002 programs are reproduced object by object (villa 51, Rocca 27, worst 0.0 m):
+  `project://villa-rotonda-reconstruction/runs/equivalence-001/records/state-record-equivalence-6bcb52152c6766ba969b1f44c986066b39ff7a1ee9e5fbfa4715c124108f68de.json`, `project://rocca-pisana/runs/equivalence-002/records/state-record-equivalence-1cb2d33473614addcdd80254eb6ff8aa0ed8dbf1d1f12ebbc2db38683e6a5eda.json`.
+- **Retired: inline arithmetic in Rocca** — one `DerivationTable@1` of 37 quantities over 17 readings, recorded as
+  record parameters with expr/inputs; `--override reading=value` is a declared what-if, never a silent edit.
+- **Done (was pending on codex's runner):** `project_runner.PRODUCERS` beside `element_producers.PRODUCERS`; the
+  runner's full-rebuild-only `_export` beside the patch path — both retired on 2026-09-02 night (the runner reads the
+  record, exports by digest, patches or restamps on a prior export). Still open: `DevelopedDesignState` as the
+  *compiler's* input; the production entry and the runner accept `StateRecord@1` and forward it once.

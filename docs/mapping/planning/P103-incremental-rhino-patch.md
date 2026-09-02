@@ -37,10 +37,16 @@ villa run is several programs. A column-height change that moves four objects sh
       14-object program the Rhino COM start + save (~30 s) is the whole cost, so the "< 10 s" target is not
       reachable through this executor regardless of the patch; the win scales with the number of kept objects
       and must be measured on a full villa/Rocca program (next).
-- [ ] Runner uses the patch path when a prior export for the same project/branch exists, else rebuilds
-      (blocked on codex's `project_runner.py` edit; the plan already records `patch` for the receipt).
+- [x] Runner: artifact per program digest (`<stage>@<digest12>.3dm`); the latest succeeded export of the stage with a
+      present model is the base — same digest → reused; empty selection → **restamp** (carry every object, re-stamp
+      semantics: bindings, evidence, commitments); else patch; not expressible → rebuild; `RunOptions.patch_oracle`
+      rebuilds beside every patch and compares readbacks (a mismatch is a typed failure). Rocca equivalence-002 through
+      the runner: hall-wall what-if (2.5 → 3.0 piedi) patched 8 of 18 objects, kept 10, oracle equal; reverting it
+      restamped the structure seat (0 rebuilt, 9 kept) and patched the envelope back (8/10), oracle equal — all
+      readbacks verified. Wall clock 37.2–37.8 s per path either way: the COM start and save are the cost.
 - [ ] Prior programs with block-instance arrays (P099 typed instances) fail typed to a rebuild; carrying
       instance definitions by name is the next mechanism.
+- [ ] The fixed Rhino cost: a resident Rhino (one process across seats/runs) is the only way below ~30 s; out of scope here.
 
 ## Known parallel abstraction (retirement condition)
 

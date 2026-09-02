@@ -1,12 +1,12 @@
-"""Run a project from its record packs (P089 first cut).
+"""Run a project from its State Record (P089 / P102).
 
     python tools/run_project.py --project <repo root> --run <run id> \
       --workflow-ref project://... --stage-envelope-ref project://... \
       --packs <dir> [--export] [--workspace <dir>]
 
-``<dir>`` holds ``schematic-pack.json``, ``element-pack.json``, ``seats.json``,
-``levels.json`` and optionally ``grids.json``. Seats carry the provider
-identity and the commitment ref. The run's records are the receipt; this
+``<dir>`` holds ``state-record.json`` (``StateRecord@1``: components and
+massing, levels and grid axes, element rows with references) and
+``seats.json``. Seats carry the provider identity and the commitment ref. The run's records are the receipt; this
 tool prints a summary only.  The run must already exist and the exact workflow
 and envelope must already be retained in P036; this CLI never turns a raw run
 or a copied pack into a stage by side effect.
@@ -31,15 +31,13 @@ from archflow.control.stage_closure import CompositeStageClosureReceipt  # noqa:
 from archflow.project import FilesystemProjectRepository  # noqa: E402
 from archflow.project.refs import ProjectRecordRef  # noqa: E402
 from archflow.runtime.project_runner import (  # noqa: E402
-    ElementPack,
     RunOptions,
-    SchematicPack,
     StageExecutionGuard,
     run_project,
 )
 from archflow.state.design_maturity import DesignPhase  # noqa: E402
 from archflow.state.developed_design import DevelopmentDiscipline  # noqa: E402
-from archflow.state.geometry_program import ProjectGrids, ProjectLevels  # noqa: E402
+from archflow.state.state_record import StateRecord  # noqa: E402
 from archflow.state.stage_workflow import (  # noqa: E402
     ProjectStageWorkflow,
     StageExitBinding,
@@ -129,15 +127,13 @@ def main() -> int:
     parser.add_argument("--workspace")
     parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
     parser.add_argument("--relaxed-coverage", action="store_true")
+    parser.add_argument("--patch-oracle", action="store_true", help="when an export is patched, also rebuild in full and compare the two readbacks")
     args = parser.parse_args()
     packs = Path(args.packs)
     load = lambda name: json.loads((packs / name).read_text(encoding="utf-8"))
-    schematic = SchematicPack.from_dict(load("schematic-pack.json"))
-    elements = ElementPack.from_dict(load("element-pack.json"))
+    record = StateRecord.from_dict(load("state-record.json"))
     seats_payload = load("seats.json")
     seats = tuple(_seat(s) for s in seats_payload["seats"])
-    levels = ProjectLevels.from_dict(load("levels.json"))
-    grids = ProjectGrids.from_dict(load("grids.json")) if (packs / "grids.json").exists() else None
     identity = GeometryProposalProviderIdentity(**seats_payload["provider_identity"])
     project_root = Path(args.project).resolve()
     repository = FilesystemProjectRepository.open(project_root)
@@ -156,12 +152,12 @@ def main() -> int:
     )
     options = RunOptions(commitment_ref=seats_payload["commitment_ref"], provider_identity=identity, strict_coverage=not args.relaxed_coverage, export=args.export,
                          workspace_root=Path(args.workspace).resolve() if args.workspace else project_root / "runs" / args.run / "workspaces", powershell=Path(args.powershell),
-                         branch_id=stage_guard.envelope.branch_id, branch_epoch=stage_guard.envelope.branch_epoch)
+                         branch_id=stage_guard.envelope.branch_id, branch_epoch=stage_guard.envelope.branch_epoch, patch_oracle=args.patch_oracle)
     if options.export:
         for seat in seats:
             if not seat.reviewer:
                 (options.workspace_root / f"cad-{stage_guard.envelope.stage_id}-{seat.seat_id}").mkdir(parents=True, exist_ok=True)
-    receipt = run_project(repository, run=run, stage_guard=stage_guard, schematic=schematic, elements=elements, seats=seats, levels=levels, grids=grids, options=options)
+    receipt = run_project(repository, run=run, stage_guard=stage_guard, record=record, seats=seats, options=options)
     for seat_result in receipt["seat_results"]:
         cad = seat_result.get("cad") or {}
         print(f"[{seat_result['seat_id']}] round {seat_result['round']} {seat_result['status']} objects={seat_result['objects']} covered={len(seat_result['covered_components'])} "

@@ -17,7 +17,6 @@ from archflow.capabilities.reference_resolver import (
     OffsetFrom,
     ReferenceContext,
     ReferenceError,
-    lower_element_references,
     parse_reference,
     resolve_elevation,
     resolve_plan,
@@ -124,45 +123,6 @@ class ResolverTests(unittest.TestCase):
             resolve_elevation(LevelRef("level-attic"), self.context)
         self.assertEqual(parse_reference({"grid": ["A", "1"]}), GridIntersection("A", "1"))
         self.assertEqual(parse_reference({"offset_from": {"level": "level-ground", "offset": 0.45}}), OffsetFrom("level-ground", 0.45))
-
-    def test_lowering_a_reference_pack_yields_the_coordinate_pack(self) -> None:
-        derived = evaluate(_table(), {"service_top": 3.57, "risers": 23})
-        pack = {"schema": "ElementPack@1", "elements": [
-            {"element_id": "wall-west", "component_id": "exterior-walls", "producer": "wall",
-             "references": {"line": {"from": {"grid": ["1", "A"]}, "to": {"grid": ["1", "F"]}, "face": "exterior", "inward": [1, 0]},
-                            "base": {"level": "level-ground"}, "top": {"level": "level-eaves"}},
-             "params": {"thickness": 0.42, "openings": [
-                 {"opening_id": "window-left", "kind": "window", "at": {"host": {"element": "wall-west", "along": 3.16}}, "width": 1.32,
-                  "sill": {"offset_from": {"level": "level-piano-nobile", "offset": 1.53}}, "head": {"offset_from": {"level": "level-piano-nobile", "offset": 4.58}}}]}},
-            {"element_id": "portico-columns", "component_id": "portico-columns", "producer": "column-array",
-             "references": {"at": {"grid": ["1", "A"]}, "direction": "A", "base": {"level": "level-piano-nobile"}},
-             "params": {"count": 6, "spacing": "@axis_spacing", "radius": 0.357, "height": "@column_height"}},
-        ]}
-        lowered = lower_element_references(pack, grids=_grids(), levels=_levels(), derived=derived)
-        wall, columns = lowered["elements"]
-        self.assertEqual(wall["base_level"], "level-ground")
-        self.assertEqual(wall["params"]["top_level"], "level-eaves")
-        self.assertEqual(wall["params"]["origin"], [-10.71, -10.71])
-        self.assertEqual(wall["params"]["direction"], [0.0, 1.0])
-        self.assertAlmostEqual(wall["params"]["length"], 21.42)
-        opening = wall["params"]["openings"][0]
-        self.assertAlmostEqual(opening["along"], 3.16)
-        self.assertAlmostEqual(opening["sill"], 3.57 + 1.53)                 # relative to the wall's own base level
-        self.assertAlmostEqual(opening["head"], 3.57 + 4.58)
-        self.assertEqual(columns["base_level"], "level-piano-nobile")
-        self.assertEqual(columns["params"]["origin"], [-10.71, -10.71])
-        self.assertEqual(columns["params"]["direction"], [1.0, 0.0])
-        self.assertAlmostEqual(columns["params"]["spacing"], 1.6065)
-        self.assertAlmostEqual(columns["params"]["height"], 6.426)
-        self.assertNotIn("references", wall)
-
-    def test_lowering_refuses_a_top_offset_and_unknown_axes(self) -> None:
-        bad = {"schema": "ElementPack@1", "elements": [{"element_id": "w", "component_id": "c", "producer": "wall",
-               "references": {"line": {"from": {"grid": ["1", "A"]}, "to": {"grid": ["1", "F"]}}, "base": {"level": "level-ground"}, "top": {"offset_from": {"level": "level-eaves", "offset": 0.1}}}, "params": {"thickness": 0.4}}]}
-        with self.assertRaises(ReferenceError):
-            lower_element_references(bad, grids=_grids(), levels=_levels())
-        with self.assertRaises(ReferenceError):
-            lower_element_references({"schema": "ElementPack@1", "elements": [{"element_id": "c", "component_id": "c", "producer": "prism", "references": {"at": {"grid": ["9", "A"]}}, "params": {}}]}, grids=_grids(), levels=_levels())
 
 
 if __name__ == "__main__":

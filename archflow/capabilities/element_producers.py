@@ -16,8 +16,10 @@ capital binds it and publishes ``<id>-top``; the entablature binds the
 capital top; the pediment binds the entablature top. Change the column
 height and the whole chain recompiles from the datums; nothing is patched.
 
-These producers are the canonical set; the runner's private producers are
-the parallel abstraction they retire once the runner reads references.
+These producers are the canonical set. The runner's private producers
+(prism, ring, loft, dome cap, declined, coordinate walls) were retired into
+this module on 2026-09-02; the runner reads Element@1 rows and calls
+``produce_rows`` in ``production_order``.
 """
 from __future__ import annotations
 
@@ -33,7 +35,8 @@ from archflow.capabilities.reference_resolver import (
     resolve_elevation,
     resolve_plan,
 )
-from archflow.capabilities.wall_solver import OpeningKind, OpeningRequest, WallElement, solve_wall
+from archflow.capabilities.opening_solver import DoorType, WindowType, solve_openings
+from archflow.capabilities.wall_solver import OpeningKind, OpeningRequest, WallElement, WallSolverError, solve_wall
 from archflow.project.refs import require_identifier
 from archflow.state.geometry_program import (
     DatumBinding,
@@ -41,6 +44,7 @@ from archflow.state.geometry_program import (
     GeometryOperationKind,
     GeometryParameter,
     GeometryParameterKind,
+    HostedAssembly,
     InterfaceDatum,
     InterfaceDatumKind,
     LengthUnit,
@@ -112,6 +116,7 @@ class ProducedElement:
     datums: tuple[InterfaceDatum, ...] = ()
     relations: tuple[ProducedRelation, ...] = ()
     host_line: HostLine | None = None
+    assemblies: tuple[HostedAssembly, ...] = ()
 
 
 @dataclass
@@ -121,6 +126,7 @@ class ProductionContext:
     references: ReferenceContext
     published: dict[str, InterfaceDatum]
     frame_id: str = FRAME_ID
+    exclusions: tuple[tuple[tuple[float, float, float], tuple[float, float, float]], ...] = ()
 
     def datum_value(self, datum_id: str) -> float:
         item = self.published.get(datum_id)
@@ -241,7 +247,7 @@ def produce_column_array(row: ElementRow, context: ProductionContext) -> Produce
     top_value = context.datum_value(base_datum) + base_offset + height
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}-0", top_value, row.basis_refs)
     context.published[top.datum_id] = top
-    return ProducedElement(tuple(ops), tuple(bindings), (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum),), None)
+    return ProducedElement(tuple(ops), tuple(bindings), (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
 
 
 def produce_capitals(row: ElementRow, context: ProductionContext) -> ProducedElement:
@@ -359,11 +365,26 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
             along = (x - origin[0]) * direction[0] + (z - origin[1]) * direction[1]
         sill = o["sill"] if not isinstance(o["sill"], Mapping) else _rel(o["sill"], base_datum, context)
         head = o["head"] if not isinstance(o["head"], Mapping) else _rel(o["head"], base_datum, context)
-        openings.append(OpeningRequest(o["opening_id"], OpeningKind(o["kind"]), round(along, 9), o["width"], round(sill, 9), round(head, 9), f"binding-{o.get('component_id', row.component_id)}",
-                                       int(o.get("count", 1)), float(o.get("step", 0.0))))
-    solution = solve_wall(wall, tuple(openings))
+        openings.append(OpeningRequest(o["opening_id"], OpeningKind(o["kind"]), round(_finite(along, f"{o['opening_id']} along"), 9), _finite(o["width"], f"{o['opening_id']} width"),
+                                       round(_finite(sill, f"{o['opening_id']} sill"), 9), round(_finite(head, f"{o['opening_id']} head"), 9), f"binding-{o.get('component_id', row.component_id)}",
+                                       int(o.get("count", 1)), _finite(o.get("step", 0.0), f"{o['opening_id']} step")))
+    exclusions = context.exclusions if p.get("respect_exclusions", True) else ()
+    solution = solve_wall(wall, tuple(openings), exclusions=exclusions, base_elevation=context.datum_value(base_datum) if exclusions else None)
+    ops, bindings, assemblies = list(solution.operations), list(solution.datum_bindings), []
+    types: dict[str, Any] = {}
+    for t in p.get("types", ()):
+        fields = {k: v for k, v in t.items() if k not in ("schema", "kind")}
+        types[t["type_id"]] = WindowType(**fields) if "glazing_thickness" in fields else DoorType(**fields)
+    by_id = {o["opening_id"]: o for o in p.get("openings", ())}
+    filled = tuple(v for v in solution.voids if by_id.get(v.opening_id, {}).get("type_id"))
+    if filled:
+        fills = solve_openings(filled, {v.opening_id: types[by_id[v.opening_id]["type_id"]] for v in filled},
+                               binding_ids={v.opening_id: f"binding-{by_id[v.opening_id].get('component_id', row.component_id)}" for v in filled},
+                               interface_refs={v.opening_id: by_id[v.opening_id]["interface_ref"] for v in filled if by_id[v.opening_id].get("interface_ref")})
+        for fill in fills:
+            ops.extend(fill.operations); bindings.extend(fill.datum_bindings); assemblies.append(fill.assembly)
     relations = tuple(ProducedRelation(f"{row.element_id}-hosts-{v.opening_id}", "hosts_void", row.element_id, v.opening_id, None) for v in solution.voids)
-    return ProducedElement(solution.operations, solution.datum_bindings, (), relations, HostLine(origin, direction))
+    return ProducedElement(tuple(ops), tuple(bindings), (), relations, HostLine(origin, direction), tuple(assemblies))
 
 
 def _rel(reference: Mapping[str, Any], base_datum: str, context: ProductionContext) -> float:
@@ -371,9 +392,163 @@ def _rel(reference: Mapping[str, Any], base_datum: str, context: ProductionConte
     return context.datum_value(level_id) - context.datum_value(base_datum) + offset
 
 
+def element_rows_of(record) -> tuple[ElementRow, ...]:
+    """The record's Element@1 entities as producer rows, in production order."""
+
+    rows = []
+    for e in record.entities_of("Element@1"):
+        fields = dict(e.fields)
+        component_id = fields.get("component_id") or e.parent_id
+        if not component_id:
+            raise ElementProducerError(f"element {e.entity_id}: no component (field component_id or parent)")
+        rows.append(ElementRow(e.entity_id, str(component_id), str(fields["producer"]), dict(fields.get("references", {})), dict(fields.get("params", {})), tuple(e.basis_refs)))
+    return production_order(tuple(rows))
+
+
+def _seat_parameters(base_offset: float) -> dict[str, float]:
+    """What a base offset declares on the support relation: an embed (negative) or a rise (positive)."""
+
+    if base_offset < 0.0:
+        return {"engagement_depth": round(-base_offset, 9)}
+    if base_offset > 0.0:
+        return {"rise": round(base_offset, 9)}
+    return {}
+
+
+def _plan_point(row: ElementRow, context: ProductionContext, key: str = "at") -> tuple[float, float]:
+    reference = row.references.get(key)
+    if reference is None:
+        raise ElementProducerError(f"{row.element_id}: plan reference {key!r} required")
+    return resolve_plan(parse_reference(reference), context.references)
+
+
+def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """A straight extrusion of a declared profile, standing on a datum (an offset only as the base reference says)."""
+
+    p = row.params
+    base_datum, base_offset = _base(row, context)
+    profile = [(_finite(x, f"{row.element_id} profile x"), 0.0, _finite(z, f"{row.element_id} profile z")) for x, z in p["profile"]]
+    height = _height(row, context, base_datum)
+    op = _extrusion(row.element_id, profile, height, row.binding_id, context.frame_id, base_offset)
+    return ProducedElement((op,), (_bind(row.element_id, base_datum),), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
+
+
+def produce_ring(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """An annulus in ``pieces`` sectors around a plan reference (a round hall wall)."""
+
+    p = row.params
+    base_datum, base_offset = _base(row, context)
+    cx, cz = _plan_point(row, context)
+    r_in, r_out = _positive(p["inner_radius"], f"{row.element_id} inner_radius"), _positive(p["outer_radius"], f"{row.element_id} outer_radius")
+    pieces = int(p.get("pieces", 8))
+    if r_out <= r_in:
+        raise ElementProducerError(f"{row.element_id}: outer radius must exceed inner radius")
+    height = _height(row, context, base_datum)
+    ops, bindings = [], []
+    for k in range(pieces):
+        a0, a1 = 2 * math.pi * k / pieces, 2 * math.pi * (k + 1) / pieces
+        arc = [a0 + (a1 - a0) * i / 6 for i in range(7)]
+        outer = [(cx + r_out * math.cos(a), 0.0, cz + r_out * math.sin(a)) for a in arc]
+        inner = [(cx + r_in * math.cos(a), 0.0, cz + r_in * math.sin(a)) for a in reversed(arc)]
+        op_id = f"{row.element_id}-{k}"
+        ops.append(_extrusion(op_id, outer + inner, height, row.binding_id, context.frame_id, base_offset))
+        bindings.append(_bind(op_id, base_datum))
+    return ProducedElement(tuple(ops), tuple(bindings), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
+
+
+def _loft(row: ElementRow, context: ProductionContext, profiles, size: int, base_datum: str) -> ProducedElement:
+    op = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.LOFT, output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id, parameters=(
+        GeometryParameter.create(name="cap_ends", kind=GeometryParameterKind.BOOLEAN, value=True),
+        GeometryParameter.create(name="loft_type", kind=GeometryParameterKind.TEXT, value=str(row.params.get("loft_type", "straight"))),
+        GeometryParameter.create(name="profile_basis", kind=GeometryParameterKind.TEXT, value="polyline"),
+        GeometryParameter.create(name="profile_size", kind=GeometryParameterKind.INTEGER, value=size),
+        _points("profiles", profiles),
+    ), semantic_binding_ids=(row.binding_id,))
+    return ProducedElement((op,), (_bind(row.element_id, base_datum),), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum),), None)
+
+
+def produce_loft(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """A loft through declared section profiles (each point relative to the base datum)."""
+
+    p = row.params
+    base_datum, base_offset = _base(row, context)
+    if base_offset:
+        raise ElementProducerError(f"{row.element_id}: a loft's sections carry their own heights; no base offset")
+    profiles = [[_finite(c, f"{row.element_id} profile coordinate") for c in pt] for section in p["profiles"] for pt in section]
+    return _loft(row, context, profiles, int(p["profile_size"]), base_datum)
+
+
+def produce_dome_cap(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """A spherical cap lofted through rings, from a plan reference and a base radius up to a level."""
+
+    p = row.params
+    base_datum, base_offset = _base(row, context)
+    if base_offset:
+        raise ElementProducerError(f"{row.element_id}: a dome stands on its drum's top datum; no base offset")
+    cx, cz = _plan_point(row, context)
+    a, h = _positive(p["base_radius"], f"{row.element_id} base_radius"), _height(row, context, base_datum)
+    rings, top_fraction, n = int(p.get("rings", 5)), _finite(p.get("top_fraction", 0.95), f"{row.element_id} top_fraction"), int(p.get("segments", 24))
+    sphere = (a * a + h * h) / (2 * h)
+    profiles = []
+    for i in range(rings):
+        y = h * (i / (rings - 1)) * top_fraction if i < rings - 1 else h * top_fraction
+        rr = math.sqrt(max(sphere * sphere - (sphere - h + y) ** 2, 0.0))
+        profiles.append([(cx + rr * math.cos(2 * math.pi * j / n), y, cz + rr * math.sin(2 * math.pi * j / n)) for j in range(n)])
+    return _loft(row, context, [pt for section in profiles for pt in section], n, base_datum)
+
+
+def produce_declined(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """A typed declination: the component is owned, looked at, and left without geometry for a stated reason."""
+
+    reason = row.params.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ElementProducerError(f"{row.element_id}: a declination needs a reason")
+    return ProducedElement((), ())
+
+
 PRODUCERS: dict[str, Callable[[ElementRow, ProductionContext], ProducedElement]] = {
     "column-array": produce_column_array, "capitals": produce_capitals, "beam": produce_beam, "pediment": produce_pediment, "wall": produce_wall,
+    "prism": produce_prism, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap, "declined": produce_declined,
 }
+
+
+def _mentions(value: Any, names: Mapping[str, str]) -> set[str]:
+    """Element ids a reference value names, directly or through a published ``<id>-top`` datum."""
+
+    found: set[str] = set()
+    if isinstance(value, str):
+        if value in names:
+            found.add(names[value])
+    elif isinstance(value, Mapping):
+        for item in value.values():
+            found |= _mentions(item, names)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            found |= _mentions(item, names)
+    return found
+
+
+def production_order(rows: tuple[ElementRow, ...]) -> tuple[ElementRow, ...]:
+    """Supports before supported: an element that names another (or its published top) comes after it; ties keep the given order."""
+
+    names = {r.element_id: r.element_id for r in rows}
+    names.update({f"{r.element_id}-top": r.element_id for r in rows})
+    deps = {r.element_id: _mentions(r.references, names) - {r.element_id} for r in rows}
+    for r in rows:
+        for opening in r.params.get("openings", ()) if isinstance(r.params.get("openings"), (list, tuple)) else ():
+            deps[r.element_id] |= _mentions(opening.get("at"), names) - {r.element_id} if isinstance(opening, Mapping) else set()
+    ordered: list[ElementRow] = []
+    placed: set[str] = set()
+    remaining = list(rows)
+    while remaining:
+        ready = [r for r in remaining if deps[r.element_id] <= placed]
+        if not ready:
+            cycle = sorted(r.element_id for r in remaining)
+            raise ElementProducerError(f"element references form a cycle or name a missing element: {cycle}")
+        for r in ready:
+            ordered.append(r); placed.add(r.element_id)
+        remaining = [r for r in remaining if r.element_id not in placed]
+    return tuple(ordered)
 
 
 def produce_rows(rows: tuple[ElementRow, ...], context: ProductionContext) -> tuple[ProducedElement, ...]:
@@ -386,6 +561,6 @@ def produce_rows(rows: tuple[ElementRow, ...], context: ProductionContext) -> tu
             raise ElementProducerError(f"{row.element_id}: unknown producer {row.producer!r}")
         try:
             out.append(producer(row, context))
-        except ReferenceError as exc:
+        except (ReferenceError, WallSolverError) as exc:
             raise ElementProducerError(f"{row.element_id}: {exc}") from exc
     return tuple(out)

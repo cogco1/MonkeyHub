@@ -1653,7 +1653,7 @@ def _as_developed_state(design_state, *, run: RunRef):
     if isinstance(design_state, StateRecord):
         if not design_state.evidence_refs:
             raise GeometryProposalProductionError("a StateRecord at the production entry must carry at least one evidence ref")
-        option_id = (design_state.decision_ref or "decision:state-record").split(":", 1)[-1]
+        option_id = design_state.option.get("option_id") or (design_state.decision_ref or "decision:state-record").split(":", 1)[-1]
         return developed_design_view(design_state, run=run, option_id=option_id, evidence_ref=design_state.evidence_refs[0])
     return design_state
 

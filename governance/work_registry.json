@@ -573,7 +573,10 @@
         "P090",
         "P091",
         "P092",
-        "P093"
+        "P093",
+        "P100",
+        "P102",
+        "P103"
       ],
       "purpose": "Freeze new capability surface and consolidate: discipline moves from scribes to machinery, one record-driven runner replaces per-building monoliths, contact becomes correct by construction through shared interface datums, and converged project components harvest into provenance-bound template records that future projects cite instead of rebuilding."
     }
@@ -15247,6 +15250,153 @@
       "evidence": [
         "tests/test_type_instance_propagation.py (9); villa run-017 typed-instances-receipt-1e49f9ab: two window pairs placed by ARRAY (10 block definitions x2, Rhino read back), 7 window instances + wall recorded, edition-2 propagation reopens the 7 windows and the program, wall retained"
       ]
+    },
+    {
+      "id": "P100",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "completed",
+      "goal": "Numbers get names and bases (DerivationTable@1, safe evaluator) and elements are placed by semantic reference (grid/axis/host/level references resolved by one resolver; elevation references stay symbolic for the compiler); the portico vertical slice column-capital-entablature-pediment shares published datums with no unexplained epsilon. Retires authored coordinates and inline arithmetic in the villa and Rocca runner inputs and the lowering adapter itself.",
+      "depends_on": [
+        "P098",
+        "P092",
+        "P099"
+      ],
+      "write_scope": [
+        "archflow/state/",
+        "archflow/capabilities/",
+        "archflow/adapters/",
+        "archflow/runtime/",
+        "tools/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "DerivationTable@1 evaluates in dependency order; cycles, unknowns, division by zero and reading shadowing fail typed.",
+        "Plan references resolve through one resolver; elevation references never become numbers before the compiler.",
+        "The portico slice carries base offsets only as declared engagements; villa reference-001 reads back within 0.25 mm of run-016.",
+        "Villa and Rocca runner inputs are authored as references and a derivation table; their derived programs equal the coordinate-era runs (villa 71 numbers, Rocca 154 numbers) and the lowering adapter is retired once the runner reads references.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "tests.test_derivations_and_references",
+        "tests.test_element_producers"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_derivations_and_references",
+          "tests.test_element_producers"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P100-derivations-and-semantic-references.md",
+      "on_complete": {},
+      "actor": "claude"
+    },
+    {
+      "id": "P102",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "completed",
+      "goal": "One canonical StateRecord@1 (entities by schema, parameters with lineage, relations with datum roles, propagation and validator bindings, kernel obligations kept apart, stage binding) ends the two-government state; the production entry and the project runner read the record; DevelopedDesignState survives only as a retirement-bound view; relation validators run from the record against realized bounds.",
+      "depends_on": [
+        "P100",
+        "P089"
+      ],
+      "write_scope": [
+        "archflow/state/",
+        "archflow/capabilities/",
+        "archflow/adapters/",
+        "archflow/runtime/",
+        "tools/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "StateRecord@1 round-trips, digests, lowers relations and parameter inputs to kernel dependency edges, and refuses unknown schemas, self-relations, non-kernel relation kinds and dangling endpoints.",
+        "produce_geometry_program_proposal and run_project accept the record; the runner's SchematicPack/ElementPack inputs and private producers are retired.",
+        "Villa and Rocca State Records reproduce their runner-002 programs object by object (0.0 m); the villa state digest is identical.",
+        "RelationCheck@1 receipts are written per seat and a violated relation is a typed failure, never healed.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "tests.test_state_record",
+        "tests.test_relation_checks",
+        "tests.test_project_runner"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_state_record",
+          "tests.test_relation_checks",
+          "tests.test_project_runner"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P102-canonical-state-record.md",
+      "on_complete": {},
+      "actor": "claude"
+    },
+    {
+      "id": "P103",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "completed",
+      "goal": "Incremental Rhino patch: a changed program rebuilds only the operations its structural digests and analytic bounds mark, closed under input edges; kept objects are carried by name from the prior document and re-stamped; an identity-only change is a restamp; the readback denominator stays the whole document; the runner exports by program digest and patches on a prior export with an optional full-rebuild oracle.",
+      "depends_on": [
+        "P099",
+        "P089"
+      ],
+      "write_scope": [
+        "archflow/state/",
+        "archflow/capabilities/",
+        "archflow/adapters/",
+        "archflow/runtime/",
+        "tools/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "select_patch_operations: no-op, partial rebuild, chain move by bounds, retirement/addition, identity-only changes select nothing.",
+        "Patch and restamp read back identical to a full rebuild (villa reference-001, Rocca equivalence-002 with the oracle).",
+        "The runner reuses, restamps, patches or rebuilds by receipt evidence and says which path it took.",
+        "The Rhino COM start and save (~30-40 s) bound the wall-clock gain on small programs; measured and recorded, not claimed.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "tests.test_cad_patch",
+        "tests.test_project_runner"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_cad_patch",
+          "tests.test_project_runner"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P103-incremental-rhino-patch.md",
+      "on_complete": {},
+      "actor": "claude"
     }
   ]
 }

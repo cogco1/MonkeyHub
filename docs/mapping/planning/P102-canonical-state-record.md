@@ -43,14 +43,18 @@ input or relation endpoint that does not exist.
       entities; 19 parameters with expr/inputs; 4 support relations with datum roles and `support_contact`
       validators) and fed through `developed_design_view` into the real producer loop; Rhino readback equals
       run-016 within 0.25 mm on all 14 objects (villa run reference-001, report record
-      `portico-by-reference-report-7d6c705b…`). Rocca: pending.
+      `portico-by-reference-report-7d6c705b…`). Rocca: the whole record (84 entities, 52 parameters) runs through the
+      hardened runner and reproduces runner-002 (27 objects, 0.0 m): `project://rocca-pisana/runs/equivalence-002/records/state-record-equivalence-1cb2d33473614addcdd80254eb6ff8aa0ed8dbf1d1f12ebbc2db38683e6a5eda.json`. Villa west band likewise (51 objects,
+      0.0 m, state digest identical): `project://villa-rotonda-reconstruction/runs/equivalence-001/records/state-record-equivalence-6bcb52152c6766ba969b1f44c986066b39ff7a1ee9e5fbfa4715c124108f68de.json`.
 - [x] Relation validators run from the record: `archflow/capabilities/relation_checks.py` measures every
       relation with a validator binding against realized bounds (analytic or Rhino readback) and writes
       `RelationCheck@1` / `RelationCheckReport@1`; `support_contact` implemented (level in either orientation,
       declared engagement measured, datum must hold the face), other kinds report `unchecked`, nothing is healed.
       Villa reference-001 readback: 4/4 held, gaps 0.00000 (record `relation-check-report-a-56e12e9d…`);
       `tests/test_relation_checks.py` 4/4 (a moved column violates and is not healed).
-- [ ] `developed_design_view` marked `lineage.retired_at` once the loop reads the record directly.
+- [ ] `developed_design_view` marked `lineage.retired_at` once the *compiler* reads the record directly (the production
+      entry and the runner already take the record; the view is called from exactly two places: `_as_developed_state`
+      and `run_project`).
 
 ## Do-not-do
 
@@ -62,3 +66,6 @@ engagement depths.
 
 - 2026-09-02 villa reference-001: `project://villa-rotonda-reconstruction/runs/reference-001/records/portico-by-reference-report-7d6c705bc857db4ebf7e88ba49e4788dca9344a5af01106df1757ccc01b53cf1.json` (records `state-record-a/b1/b2`, `derivations-*`, `portico-geometry-program-*`).
 - `tests/test_state_record.py` 5/5; `tests/test_relation_checks.py` 4/4; villa `check_reference_relations.py` → `relation-check-report-a`.
+- 2026-09-02 night: runner input = `StateRecord@1` (`SchematicPack`/`ElementPack` retired as inputs); relation checks per seat
+  (`seat-relation-check`); the villa abutment's 48 mm base offset surfaced as a violated `stands-on` relation until it was declared
+  on the relation as an engagement — the checker made a silent reading offset explicit.
