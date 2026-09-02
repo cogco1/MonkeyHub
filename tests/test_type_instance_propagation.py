@@ -39,7 +39,7 @@ from archflow.state.geometry_program import (
     LengthUnit,
 )
 from archflow.state.operational_state import DependencyEdge, DependencyEffect
-from tests.test_component_templates import _template
+from tests.test_component_templates import _stair_template as _template
 from tests.test_geometry_compiler import COMMITMENT, _proposal, _state
 from tests.test_wall_window_families import BASE, BINDING, LEVEL, WINDOW_TYPE, _only, _wall
 
@@ -110,7 +110,7 @@ class PropagationTests(unittest.TestCase):
         self.assertIn("program:west-structure", propagation.closure)
         self.assertIn("receipt:stage-5", propagation.closure)
         self.assertNotIn("note:east-photo", propagation.closure)
-        self.assertEqual(revalidation_closure(("a",), (DependencyEdge("a", "b", "r", TEMPLATE_REF, DependencyEffect.BLOCKS),)), ("a",))
+        self.assertEqual(revalidation_closure(("node:a",), (DependencyEdge("node:a", "node:b", "r", TEMPLATE_REF, DependencyEffect.SUPPORTS_ONLY),)), ("node:a",))
 
     def test_same_edition_reopens_nothing_and_backward_edition_fails_typed(self) -> None:
         propagation = propagate_template_edition(self.instances, self.stair_v1, promoted_ref=TEMPLATE_REF)
@@ -126,7 +126,7 @@ class PropagationTests(unittest.TestCase):
     def test_propagation_is_recorded_without_touching_programs(self) -> None:
         propagation = propagate_template_edition(self.instances, self.stair_v2, promoted_ref=TEMPLATE_REF)
         with tempfile.TemporaryDirectory() as tmp:
-            repository = FilesystemProjectRepository.initialize(Path(tmp), project_id="demo")
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run")
             destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id="run")
             ref = record_edition_propagation(repository, run=run, destination=destination, propagation=propagation)
@@ -150,15 +150,20 @@ class ArrayedInstanceTests(unittest.TestCase):
 
     def test_eight_placements_are_one_definition_and_one_array_per_member(self) -> None:
         kinds = [op.kind for op in self.wall.operations]
-        self.assertEqual(kinds.count(GeometryOperationKind.EXTRUSION), 2)          # wall + one tool definition
-        self.assertEqual(kinds.count(GeometryOperationKind.ARRAY), 1)
-        array = next(op for op in self.wall.operations if op.kind is GeometryOperationKind.ARRAY)
-        params = {p.name: json.loads(p.value_json) for p in array.parameters}
+        # the wall repeats its void per placement (booleans consume solids, not block instances)
+        self.assertEqual(kinds.count(GeometryOperationKind.EXTRUSION), 9)          # wall + eight tools
+        self.assertEqual(kinds.count(GeometryOperationKind.BOOLEAN_INTERSECTION), 8)
+        self.assertEqual(kinds.count(GeometryOperationKind.ARRAY), 0)
+        self.assertEqual(self.wall.voids[0].tool_object_id, "obj-wall-west-void-attic-0")
+        self.assertEqual(len(self.wall.voids[0].aperture_object_ids), 8)
+        self.assertEqual(self.window.assembly.objects_for(AssemblyRole.HOST_CUT), self.wall.voids[0].aperture_object_ids)
+        # the window type is authored once and placed eight times
+        self.assertEqual(len([op for op in self.window.operations if op.kind is GeometryOperationKind.EXTRUSION]), 5)
+        arrays = [op for op in self.window.operations if op.kind is GeometryOperationKind.ARRAY]
+        self.assertEqual(len(arrays), 5)
+        params = {p.name: json.loads(p.value_json) for p in arrays[0].parameters}
         self.assertEqual(params["count"], 8)
         self.assertEqual(params["step"], [0.0, 0.0, 2.4])
-        self.assertEqual(self.wall.voids[0].tool_object_id, "obj-wall-west-void-attic-array")
-        self.assertEqual(len([op for op in self.window.operations if op.kind is GeometryOperationKind.EXTRUSION]), 5)
-        self.assertEqual(len([op for op in self.window.operations if op.kind is GeometryOperationKind.ARRAY]), 5)
         self.assertEqual(self.window.assembly.objects_for(AssemblyRole.GLAZING), ("obj-glazing-attic-array",))
         self.assertEqual(len(self.window.datum_bindings), 5)                         # definitions bind the datum; arrays do not
         self.assertEqual(self.request.instances()[-1], (2.0 - 0.39 + 7 * 2.4, 2.0 + 0.39 + 7 * 2.4))
@@ -171,7 +176,7 @@ class ArrayedInstanceTests(unittest.TestCase):
         abutment = ((-10.754, 11.287, -6.69), (-10.19, 13.16, 6.69))
         with self.assertRaises(WallSolverError) as caught:
             solve_wall(_wall(), (self.request,), exclusions=(abutment,), base_elevation=BASE)
-        self.assertIn("placement 2 intersects exclusion 0", str(caught.exception))
+        self.assertIn("placement 1 intersects exclusion 0", str(caught.exception))
 
     def test_compiles_with_family_bounds_and_one_block_definition_per_member(self) -> None:
         state = _state()
@@ -194,7 +199,8 @@ class ArrayedInstanceTests(unittest.TestCase):
         blocks = semantics["blocks"]
         self.assertEqual(blocks["archflow-family-glazing-attic-array"], 8)
         self.assertEqual(sum(1 for name in blocks if name.startswith("archflow-family-frame-attic-")), 4)
-        self.assertEqual(blocks["archflow-family-wall-west-void-attic-array"], 8)
+        self.assertEqual(len(blocks), 5)                                             # one block per repeated member, none for voids
+        self.assertEqual(len(bounds["obj-wall-west-aperture-attic-3"]["bbox_min"]), 3)
 
 
 if __name__ == "__main__":

@@ -254,6 +254,11 @@ class HostedVoid:
     head: float
     count: int = 1
     step: float = 0.0
+    aperture_object_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.aperture_object_ids:
+            object.__setattr__(self, "aperture_object_ids", (self.aperture_object_id,))
 
     @property
     def width(self) -> float:
@@ -279,6 +284,7 @@ class HostedVoid:
             "cut_object_id": self.cut_object_id,
             "tool_object_id": self.tool_object_id,
             "aperture_object_id": self.aperture_object_id,
+            "aperture_object_ids": list(self.aperture_object_ids),
             "along0": self.along0,
             "along1": self.along1,
             "sill": self.sill,
@@ -402,77 +408,66 @@ def solve_wall(
     cut_object = f"obj-{cut_id}" if cut_id else None
     tool_objects = []
     for opening in ordered:
-        op_id = f"{wall.wall_id}-void-{opening.opening_id}"
-        tool = f"obj-{op_id}"
-        tool_objects.append(tool)
-        operations.append(
-            GeometryOperation(
-                op_id=op_id,
-                kind=GeometryOperationKind.EXTRUSION,
-                output_object_ids=(tool,),
-                input_object_ids=(),
-                frame_id=wall.frame_id,
-                parameters=(
-                    # a tool that would share the wall's bottom or top face
-                    # overshoots it by the margin: booleans never see coplanar faces
-                    _number("base_offset", opening.sill if opening.sill > 0.0 else -margin),
-                    _points("profile", wall.plan_rectangle(opening.along0, opening.along1, -margin, wall.thickness + margin)),
-                    _vector((0.0, (opening.head - opening.sill) + (margin if opening.sill <= 0.0 else 0.0) + (margin if opening.head >= wall.height else 0.0), 0.0)),
-                ),
-                semantic_binding_ids=(opening.binding_id,),
-            )
-        )
-        bindings.append(
-            DatumBinding(
-                binding_id=f"bind-{op_id}",
-                datum_id=wall.base_level_datum_id,
-                op_id=op_id,
-                parameter_name="base_level",
-            )
-        )
-        if opening.count > 1:
-            # P099: one tool definition, N placements — the array object is
-            # what the aperture and the cut consume (a family of solids)
-            seed, tool = tool, f"obj-{op_id}-array"
-            tool_objects[-1] = tool
-            dx, dz = wall.direction
+        # P099: one tool and one aperture per placement. Booleans consume
+        # solids, never block instances, so the void geometry is repeated
+        # here; the visible members of the opening are what get arrayed.
+        placements = opening.instances()
+        apertures = []
+        first_tool = None
+        for index, (a0, a1) in enumerate(placements):
+            suffix = "" if opening.count == 1 else f"-{index}"
+            op_id = f"{wall.wall_id}-void-{opening.opening_id}{suffix}"
+            tool = f"obj-{op_id}"
+            first_tool = first_tool or tool
+            tool_objects.append(tool)
             operations.append(
                 GeometryOperation(
-                    op_id=f"{op_id}-array",
-                    kind=GeometryOperationKind.ARRAY,
+                    op_id=op_id,
+                    kind=GeometryOperationKind.EXTRUSION,
                     output_object_ids=(tool,),
-                    input_object_ids=(seed,),
+                    input_object_ids=(),
                     frame_id=wall.frame_id,
                     parameters=(
-                        GeometryParameter.create(name="count", kind=GeometryParameterKind.INTEGER, value=opening.count),
-                        GeometryParameter.create(name="step", kind=GeometryParameterKind.VECTOR3,
-                                                 value=[round(dx * opening.step, 9), 0.0, round(dz * opening.step, 9)], unit=_M),
+                        # a tool that would share the wall's bottom or top face
+                        # overshoots it by the margin: booleans never see coplanar faces
+                        _number("base_offset", opening.sill if opening.sill > 0.0 else -margin),
+                        _points("profile", wall.plan_rectangle(a0, a1, -margin, wall.thickness + margin)),
+                        _vector((0.0, (opening.head - opening.sill) + (margin if opening.sill <= 0.0 else 0.0) + (margin if opening.head >= wall.height else 0.0), 0.0)),
                     ),
                     semantic_binding_ids=(opening.binding_id,),
                 )
             )
-        aperture_id = f"{wall.wall_id}-aperture-{opening.opening_id}"
-        aperture = f"obj-{aperture_id}"
-        operations.append(
-            GeometryOperation(
-                op_id=aperture_id,
-                kind=GeometryOperationKind.BOOLEAN_INTERSECTION,
-                output_object_ids=(aperture,),
-                input_object_ids=(host, tool),
-                frame_id=wall.frame_id,
-                parameters=(
-                    GeometryParameter.create(
-                        name="hidden_for_inspection", kind=GeometryParameterKind.BOOLEAN, value=True,
-                    ),
-                ),
-                semantic_binding_ids=(opening.binding_id,),
+            bindings.append(
+                DatumBinding(
+                    binding_id=f"bind-{op_id}",
+                    datum_id=wall.base_level_datum_id,
+                    op_id=op_id,
+                    parameter_name="base_level",
+                )
             )
-        )
+            aperture_id = f"{wall.wall_id}-aperture-{opening.opening_id}{suffix}"
+            aperture = f"obj-{aperture_id}"
+            apertures.append(aperture)
+            operations.append(
+                GeometryOperation(
+                    op_id=aperture_id,
+                    kind=GeometryOperationKind.BOOLEAN_INTERSECTION,
+                    output_object_ids=(aperture,),
+                    input_object_ids=(host, tool),
+                    frame_id=wall.frame_id,
+                    parameters=(
+                        GeometryParameter.create(
+                            name="hidden_for_inspection", kind=GeometryParameterKind.BOOLEAN, value=True,
+                        ),
+                    ),
+                    semantic_binding_ids=(opening.binding_id,),
+                )
+            )
         voids.append(
             HostedVoid(
                 opening_id=opening.opening_id, kind=opening.kind, wall=wall,
-                host_object_id=host, cut_object_id=cut_object or host, tool_object_id=tool,
-                aperture_object_id=aperture,
+                host_object_id=host, cut_object_id=cut_object or host, tool_object_id=first_tool,
+                aperture_object_id=apertures[0], aperture_object_ids=tuple(apertures),
                 along0=opening.along0, along1=opening.along1, sill=opening.sill, head=opening.head,
                 count=opening.count, step=opening.step,
             )

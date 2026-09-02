@@ -15158,8 +15158,8 @@
     {
       "id": "P099",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Type-to-instance propagation: an instance's binding to a template edition is a dependency edge, so a new edition reopens exactly its instances' closure (P063 lifted to the type level); repeated instances of one type compile to ARRAY/ASSET_INSTANCE operations and one CAD block definition instead of per-instance coordinates.",
       "depends_on": [
         "P063",
@@ -15196,9 +15196,46 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P099-type-to-instance-propagation.md",
+      "card": "docs/mapping/archive/P099-type-to-instance-propagation.md",
       "on_complete": {},
-      "actor": "claude"
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P099",
+        "actor": "claude",
+        "verified_at": "2026-09-02T11:26:02.870382+00:00",
+        "contract_sha256": "234280c60ffacf3ce55e7d6e5e98ecc3e17d5dccbda823f111ffb2d7958688a4",
+        "scope_sha256": "e5f050386db77ed2bd4fbd3a9c24f7ef2dd329050cca5d53a0dd1fcb069faa6e",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_type_instance_propagation"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "41172332a6a054098776dac95cfbdc1ecf2e6d1ce017aa5b3739302ba4386b6c",
+            "stdout_tail": "",
+            "stderr_tail": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.075s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e33021cb0c8c71bb281c03eaf85b5630bc37d0d25df6a539d76d59870127ab25",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (299 files, 1.983s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-02",
+      "evidence": [
+        "tests/test_type_instance_propagation.py (9); villa run-017 typed-instances-receipt-1e49f9ab: two window pairs placed by ARRAY (10 block definitions x2, Rhino read back), 7 window instances + wall recorded, edition-2 propagation reopens the 7 windows and the program, wall retained"
+      ]
     }
   ]
 }

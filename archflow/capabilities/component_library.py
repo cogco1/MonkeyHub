@@ -285,7 +285,7 @@ class EditionPropagation:
             "retained_instances": [{"instance_id": i, "digest": d} for i, d in self.retained],
             "closure": list(self.closure),
             "effect": DependencyEffect.REQUIRES_REVALIDATION.value,
-            **no_authority(_RECORD_AUTHORITY),
+            **no_authority(_RECEIPT_AUTHORITY),
         }
 
 

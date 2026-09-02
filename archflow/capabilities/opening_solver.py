@@ -196,7 +196,7 @@ def _bind(op: GeometryOperation, datum_id: str) -> DatumBinding:
 
 
 def _assembly(void: HostedVoid, kind: AssemblyKind, members: dict[AssemblyRole, tuple[str, ...]], binding_id: str, interface_ref: str) -> HostedAssembly:
-    members[AssemblyRole.HOST_CUT] = (void.aperture_object_id,)
+    members[AssemblyRole.HOST_CUT] = tuple(void.aperture_object_ids)
     return HostedAssembly(
         assembly_id=f"{void.opening_id}-assembly",
         kind=kind,
