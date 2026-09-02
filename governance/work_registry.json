@@ -14601,6 +14601,95 @@
           }
         ]
       }
+    },
+    {
+      "id": "P095",
+      "origin_stream": "planning",
+      "stream": "archive",
+      "status": "done",
+      "goal": "Discipline seats modelled on design-office division of labour: SeatSpec (owned subtrees, phases, quadrants, consumed handovers), deterministic handover compiler (published datums, exclusion bounds, open obligations from another seat's committed state), seat context projection (owned subtree + ancestors + inherited principles + handovers), typed write-scope refusal in the producer, and a topological seat scheduler with parallel rounds; reviewer seats stay authority-free.",
+      "depends_on": [
+        "P090",
+        "P091",
+        "P093",
+        "M090"
+      ],
+      "write_scope": [
+        "archflow/capabilities/discipline_seats.py",
+        "archflow/capabilities/geometry_proposal.py",
+        "archflow/capabilities/__init__.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Handover compiled twice from the same committed state is byte-identical and carries datums, exclusion bounds, and obligations with basis refs and no authority flags.",
+        "Seat context contains exactly the owned subtree, its ancestors, inherited principles, and consumed handovers; sibling subtrees do not leak.",
+        "Producer refuses out-of-scope bindings with a typed issue; an in-scope proposal binding a handover datum compiles with the derived value.",
+        "Schedule is a deterministic topological order with parallel rounds; cycles fail typed.",
+        "Scripted three-seat demonstration (structure -> envelope -> detail) runs through the real producer.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "Handover determinism",
+        "Projection isolation",
+        "Producer scope refusal and datum derivation",
+        "Schedule order and cycle refusal",
+        "Three-seat demonstration",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_discipline_seats"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/archive/P095-discipline-seats.md",
+      "on_complete": {},
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P095",
+        "actor": "claude",
+        "verified_at": "2026-09-02T00:54:01.371728+00:00",
+        "contract_sha256": "217e3acb503128c7c2a5c36524a42214846c0764394a90f55b850c4ac0107d9d",
+        "scope_sha256": "d86fea57285648b67c67e6daf1c42679b2cd6a1adbd177746ec525c564d2c86e",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_discipline_seats"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "374bd417e20a75da117ca3d008a6054c92e1d92f8a35aae221b97a7721040082",
+            "stdout_tail": "",
+            "stderr_tail": "...........\n----------------------------------------------------------------------\nRan 11 tests in 0.328s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "62ad3ef66cfd8461c617d9b19e359385f9b820b18530c384d71c68dbee7285ff",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (295 files, 1.681s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-01",
+      "evidence": [
+        "SeatSpec@1 (owned subtrees, disciplines, phases, quadrants, consumed handovers, reviewer flag), owned_subtree/ancestors over the component tree, compile_handover -> SeatHandover@1 (published datums by owned components/objects, exclusion bounds for owned realized objects, OPEN obligations of the receiving disciplines; byte-identical on repeat; no authority flags), project_seat_context -> SeatAuthoringContext@1 (owned subtree + ancestors + inherited commitment refs + consumed handovers; wrong phase, foreign or stale handover fail typed), schedule_seats (topological parallel rounds, reviewers last, cycles and unknown seats fail typed). Producer gains seat_scope and refuses out-of-scope semantic bindings with the typed issue seat_scope_violation. Three-seat demonstration through the real producer: structure seat publishes bearing-level on its own object, handover carries exactly that datum plus its exclusion bounds, envelope seat derives sill_level=3.57 from it without restating, detail seat is refused when binding the envelope subtree. 11 tests; ARCHITECTURE PASS (295 files); full suite 1678 with two pre-existing Windows flakes (viewer HTTP socket abort, context-recovery hook against an uncommitted worktree) that pass in isolation."
+      ]
     }
   ]
 }

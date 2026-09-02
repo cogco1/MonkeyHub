@@ -1442,8 +1442,13 @@ async def produce_geometry_program_proposal(
     interface_datums: tuple[InterfaceDatum, ...] = (),
     datum_bindings: tuple[DatumBinding, ...] = (),
     catalog_confrontation_ref: ProjectRecordRef | None = None,
+    seat_scope: tuple[str, ...] | None = None,
 ) -> GeometryProposalProductionResult:
     """Author, compile, and persist bounded proposal rounds without fallback.
+
+    ``seat_scope`` (P095) names the component ids one discipline seat may
+    bind — its owned subtree, already expanded. A proposal that binds any
+    other component is refused as a typed round issue.
 
     ``interface_datums``/``datum_bindings`` reach the compiler so bound
     parameters derive from published datums (P090 on the write path).
@@ -1462,6 +1467,13 @@ async def produce_geometry_program_proposal(
         not isinstance(item, DatumBinding) for item in datum_bindings
     ):
         raise TypeError("datum_bindings contains an invalid item")
+    if seat_scope is not None:
+        if not isinstance(seat_scope, tuple) or not seat_scope or any(
+            not isinstance(item, str) or not item for item in seat_scope
+        ):
+            raise TypeError("seat_scope must be a non-empty tuple of component ids")
+        if tuple(sorted(set(seat_scope))) != seat_scope:
+            raise TypeError("seat_scope must be sorted and unique")
     _validate_inputs(
         run,
         destination,
@@ -1671,6 +1683,7 @@ async def produce_geometry_program_proposal(
                     required_geometry_component_ids,
                     prior_program,
                     issues=collected,
+                    seat_scope=seat_scope,
                 )
             if proposal is not None and not collected:
                 try:
@@ -2259,6 +2272,7 @@ def _validate_semantic_coverage(
     prior_program: CompiledGeometryProgram | None,
     *,
     issues: list[GeometryProposalIssue],
+    seat_scope: tuple[str, ...] | None = None,
 ) -> None:
     """Append every independent coverage failure for the bounded round."""
 
@@ -2272,6 +2286,16 @@ def _validate_semantic_coverage(
     bound_component_ids = tuple(
         binding.component_id for binding in proposal.semantic_bindings
     )
+    if seat_scope is not None:
+        out_of_scope = sorted(set(bound_component_ids) - set(seat_scope))
+        if out_of_scope:
+            issues.append(
+                GeometryProposalIssue(
+                    "seat_scope_violation",
+                    "semantic bindings reach outside the seat's owned subtree; "
+                    f"out_of_scope={out_of_scope}",
+                )
+            )
     extra = sorted(set(bound_component_ids) - component_ids)
     if extra:
         report(
