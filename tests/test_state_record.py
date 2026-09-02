@@ -84,12 +84,26 @@ class StateRecordTests(unittest.TestCase):
         with self.assertRaises(StateRecordError):
             Relation("r", "support", "a", "a")
         with self.assertRaises(StateRecordError):
+            Relation("r", "sits_on", "a", "b")                                    # not in the kernel vocabulary
+        with self.assertRaises(StateRecordError):
             ValidatorBinding("magic")
         record = _record()
         with self.assertRaises(StateRecordError):
             StateRecord("demo", "run-1", record.entities, (Parameter("h", 1.0, "m", inputs=("missing",)),))
         with self.assertRaises(StateRecordError):
             StateRecord("demo", "run-1", record.entities, relations=(Relation("r", "support", "columns-west", "nowhere"),))
+
+    def test_production_entry_accepts_the_record(self) -> None:
+        from archflow.capabilities.geometry_proposal import GeometryProposalProductionError, _as_developed_state
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            state = _as_developed_state(_record(), run=run)
+            self.assertEqual(state.selected_schematic.option.option_id, "declared")
+            self.assertIs(_as_developed_state(state, run=run), state)                      # legacy input passes through untouched
+            bare = StateRecord("demo", "run-1", _record().entities, decision_ref="decision:declared")
+            with self.assertRaises(GeometryProposalProductionError):
+                _as_developed_state(bare, run=run)                                          # no evidence: typed refusal
 
     def test_developed_design_view_forwards_to_the_legacy_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1639,6 +1639,25 @@ class GeometryProposalRepository(RecordSink, Protocol):
     def load_json(self, ref: ProjectRecordRef) -> dict[str, Any]: ...
 
 
+def _as_developed_state(design_state, *, run: RunRef):
+    """Accept the canonical ``StateRecord@1`` at the production entry (P102).
+
+    Callers no longer author a ``DevelopedDesignState``; a record is
+    forwarded through ``developed_design_view`` here, once, with lineage.
+    A ``DevelopedDesignState`` is still accepted while the compiler reads
+    the legacy shape.
+    """
+
+    from archflow.state.state_record import StateRecord, developed_design_view
+
+    if isinstance(design_state, StateRecord):
+        if not design_state.evidence_refs:
+            raise GeometryProposalProductionError("a StateRecord at the production entry must carry at least one evidence ref")
+        option_id = (design_state.decision_ref or "decision:state-record").split(":", 1)[-1]
+        return developed_design_view(design_state, run=run, option_id=option_id, evidence_ref=design_state.evidence_refs[0])
+    return design_state
+
+
 async def produce_geometry_program_proposal(
     repository: GeometryProposalRepository,
     provider: AsyncModelProvider,
@@ -1692,6 +1711,7 @@ async def produce_geometry_program_proposal(
             raise TypeError("seat_scope must be a non-empty tuple of component ids")
         if tuple(sorted(set(seat_scope))) != seat_scope:
             raise TypeError("seat_scope must be sorted and unique")
+    design_state = _as_developed_state(design_state, run=run)
     _validate_inputs(
         run,
         destination,

@@ -23,7 +23,9 @@ from typing import Any, Mapping
 from archflow.contracts.canonical import canonical_json
 from archflow.project.refs import RunRef, require_identifier
 from archflow.state.operational_state import DependencyEdge, DependencyEffect, DesignObligation
+from archflow.relations.contracts import ArchitecturalRelationKind
 
+_RELATION_KINDS = frozenset(kind.value for kind in ArchitecturalRelationKind)   # one vocabulary: the kernel's
 _ENTITY_SCHEMAS = frozenset({"Level@1", "GridAxis@1", "Type@1", "Element@1", "Assembly@1", "Space@1", "Reading@1", "Component@1"})
 _EPISTEMIC = frozenset({"observed", "declared", "derived", "hypothesis", "disputed", "unknown"})
 _MAX_ITEMS = 50_000
@@ -182,6 +184,8 @@ class Relation:
     def __post_init__(self) -> None:
         require_identifier(self.relation_id, "relation_id")
         require_identifier(self.kind, "relation kind")
+        if self.kind not in _RELATION_KINDS:
+            raise StateRecordError(f"relation {self.relation_id}: kind {self.kind!r} is not in the kernel relation vocabulary")
         require_identifier(self.subject, "relation subject")
         require_identifier(self.object, "relation object")
         if self.subject == self.object:

@@ -58,7 +58,7 @@ class RelationCheckTests(unittest.TestCase):
         record, bounds, objects, datums = _record_and_bounds()
         with self.assertRaises(RelationCheckError):
             check_relations(record, bounds={}, objects_by_element=objects, datum_values=datums)
-        other = StateRecord("demo", "run-1", record.entities, (), (Relation("r", "meets", "columns-west", "capitals-west", validator=ValidatorBinding("alignment")),
+        other = StateRecord("demo", "run-1", record.entities, (), (Relation("r", "adjacent", "columns-west", "capitals-west", validator=ValidatorBinding("alignment")),
                                                                     Relation("s", "support", "capitals-west", "entablature-west")))
         report = check_relations(other, bounds=bounds, objects_by_element=objects)
         self.assertEqual([c.status for c in report.checks], ["unchecked", "unchecked"])

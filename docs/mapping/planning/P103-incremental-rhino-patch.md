@@ -42,6 +42,15 @@ villa run is several programs. A column-height change that moves four objects sh
 - [ ] Prior programs with block-instance arrays (P099 typed instances) fail typed to a rebuild; carrying
       instance definitions by name is the next mechanism.
 
+## Known parallel abstraction (retirement condition)
+
+`cad_patch.structural_digests` is a second per-object identity beside the compiler's `object_digest`. It
+exists because the compiler's digest folds in the semantic binding's whole object list and evidence refs, so
+re-recording identical geometry marks every object changed. Retire it when the compiler's object digest is
+split into geometry identity and binding identity (a `CompiledGeometryProgram` schema bump: frozen digests
+in `test_geometry_compiler`, handover `object_digests`, the three `__all__`s); until then the patch selector
+is the only consumer and the plan records which identity decided the rebuild.
+
 ## Do-not-do
 
 No in-place editing of Rhino object geometry (always delete and re-emit by name); no patch without a

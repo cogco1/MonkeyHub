@@ -77,3 +77,19 @@ coordinate:
   Rhino 0.0. The first run landed 20 mm high on abaci and entablature because the abacus reading took the total
   extent (0.18) as its height above the column; the convention slip was visible in one number and fixed in the
   reading, not with an offset.
+
+## Retirement ledger (2026-09-02 night)
+
+- **Retired: authored coordinates in the villa runner packs.** `run-017 authoring/make_runner_packs.py` now
+  authors `element-references.json` (wall on the exterior-face grid line WF between the body-edge lines SE/NE,
+  openings `along` their host, sills/heads as offsets from the wall's base level; the three lines are run-016
+  readings published as grid axes). `element-pack.json` is *derived* by `lower_element_references` and the
+  receipt `element-pack.lowering.json` proves it equals the pack it replaced: 71 numbers, max delta 1.8e-15.
+  The runner keeps consuming the derived pack until it reads references itself (codex's `project_runner.py`).
+- **Retired: the resolver's own grid scan** — `ReferenceContext.axis` asks `ProjectGrids.axis` and only adds the
+  id lookup.
+- **Retired: the record's free-string relation vocabulary** — `StateRecord.Relation.kind` must be a kernel
+  `ArchitecturalRelationKind` value (P102).
+- **Pending (blocked on codex's runner):** `project_runner.PRODUCERS` beside `element_producers.PRODUCERS`; the
+  runner's full-rebuild-only `_export` beside the patch path; `DevelopedDesignState` as the compiler's input
+  (the production entry now accepts `StateRecord@1` and forwards it once, inside `_as_developed_state`).

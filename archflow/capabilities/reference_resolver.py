@@ -24,7 +24,7 @@ from typing import Any, Mapping
 
 from archflow.project.refs import require_identifier
 from archflow.state.derivation import EvaluatedDerivations, substitute
-from archflow.state.geometry_program import ProjectGridAxis, ProjectGrids, ProjectLevels
+from archflow.state.geometry_program import GeometryProgramError, ProjectGridAxis, ProjectGrids, ProjectLevels
 
 Plan = tuple[float, float]
 
@@ -156,12 +156,17 @@ class ReferenceContext:
         self.hosts = dict(hosts or {})
 
     def axis(self, axis_id: str) -> ProjectGridAxis:
+        """An axis by role (the project's own lookup) or by id."""
+
         if self.grids is None:
             raise ReferenceError(f"no project grids: cannot resolve axis {axis_id!r}")
-        for item in self.grids.axes:
-            if item.axis_id == axis_id or item.role == axis_id:
-                return item
-        raise ReferenceError(f"unknown grid axis {axis_id!r}")
+        try:
+            return self.grids.axis(axis_id)
+        except GeometryProgramError:
+            by_id = {item.axis_id: item for item in self.grids.axes}
+            if axis_id in by_id:
+                return by_id[axis_id]
+            raise ReferenceError(f"unknown grid axis {axis_id!r}") from None
 
     def level_ids(self) -> tuple[str, ...]:
         return self.levels.datum_ids if self.levels is not None else ()
