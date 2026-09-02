@@ -14312,7 +14312,7 @@
       "origin_stream": "planning",
       "stream": "planning",
       "status": "ready",
-      "goal": "Harvest the wall-with-openings and window/door-array families from the villa run-012 monolith into solver-plus-bridge capability pairs on the stair pattern, typology lifted into P091 template records and contact through P090 datums; replay villa as reconstruction-016 through the P089 runner with object equivalence against the repaired run-014 model as the acceptance instrument and reuse metrics as paper evidence.",
+      "goal": "Harvest the wall-with-openings and window/door-array families from the villa run-012 monolith into solver-plus-bridge capability pairs on the stair pattern, typology lifted into P091 template records and contact through P090 datums; replay villa as reconstruction-016 through the P089 runner with object equivalence against the repaired run-014 model as the acceptance instrument and reuse metrics as paper evidence. (Scope note 2026-09-02: harvest as element families — wall by location line, base/top level and thickness with openings hosted and cut by the compiler; window/door as hosted types with sill/head level roles — not as operation copies; the four seat programs of run-017 are the basis.)",
       "depends_on": [
         "P089",
         "P090",
@@ -15029,6 +15029,96 @@
       "evidence": [
         "GeometryProposalPolicy gains four opt-in production flags (defaults = experiment policy, bit-for-bit on the existing producer tests): complete_bookkeeping fills missing revision preconditions (prior object digest) and unacknowledged binding/input/frame changes from records, recompiles without a model call and records geometry-proposal-completion-NN; progress_budget continues past the bounded budget only while the issue set strictly shrinks (hard cap 32) and stops on stall; partial_acceptance compiles the reduced proposal when every remaining compiler issue is object-scoped and deferrable (prior objects restored, new objects and dependents removed) and records geometry-proposal-deferral; escalate_on_stall records geometry-proposal-escalation with the issue list and last proposal; resume_geometry_program_proposal continues from the escalation's last round through rejected_round_ref without re-authoring the spatial option. Hard validators, single-writer promotion and no-silent-fallback untouched; production_compiler passes the policy through unchanged. 9 tests in test_production_policy; full suite green apart from the known Windows flakes; ARCHITECTURE PASS (297 files)."
       ]
+    },
+    {
+      "id": "P098",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Project-level Level and Grid records published once per run by the coordination seat; seat datums and assembly-template required datums resolve to level/grid roles instead of per-object, per-side values; storey becomes a container role so spaces and egress read the realized building.",
+      "depends_on": [
+        "P090",
+        "P095",
+        "P096"
+      ],
+      "write_scope": [
+        "archflow/state/geometry_program.py",
+        "archflow/state/assembly_template.py",
+        "archflow/capabilities/discipline_seats.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "One ProjectLevels/ProjectGrids record per run; LEVEL datums naming a level role derive from it; conflicting seat levels fail typed.",
+        "Villa: four porticos and the wall band bind to one piano-nobile level; per-side level datums drop to zero.",
+        "Assembly-template LEVEL/PLANE datums resolve to level and grid roles; missing required level fails the binding typed.",
+        "Full suite and firewall pass."
+      ],
+      "tests": [
+        "Level/grid records and derivation",
+        "Conflict refusal",
+        "Assembly binding to levels",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_project_levels"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P098-project-levels-and-grids.md",
+      "on_complete": {}
+    },
+    {
+      "id": "P099",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Type-to-instance propagation: an instance's binding to a template edition is a dependency edge, so a new edition reopens exactly its instances' closure (P063 lifted to the type level); repeated instances of one type compile to ARRAY/ASSET_INSTANCE operations and one CAD block definition instead of per-instance coordinates.",
+      "depends_on": [
+        "P063",
+        "P091",
+        "P092"
+      ],
+      "write_scope": [
+        "archflow/capabilities/component_library.py",
+        "archflow/compilers/geometry.py",
+        "archflow/state/component_template.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Instance records name template id and edition; promoting edition N+1 marks instances of edition N requires_revalidation through the closure; unaffected instances retained by digest.",
+        "A window type placed eight times compiles to one definition and eight placements with one CAD block definition.",
+        "Full suite and firewall pass."
+      ],
+      "tests": [
+        "Edition propagation closure",
+        "Array/instance compilation",
+        "Architecture firewall"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_type_instance_propagation"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P099-type-to-instance-propagation.md",
+      "on_complete": {}
     }
   ]
 }
