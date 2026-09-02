@@ -71,3 +71,29 @@ Reviewer seats stay authority-free and write nothing.
 
 - Completed: 2026-09-01
 - Evidence: SeatSpec@1 (owned subtrees, disciplines, phases, quadrants, consumed handovers, reviewer flag), owned_subtree/ancestors over the component tree, compile_handover -> SeatHandover@1 (published datums by owned components/objects, exclusion bounds for owned realized objects, OPEN obligations of the receiving disciplines; byte-identical on repeat; no authority flags), project_seat_context -> SeatAuthoringContext@1 (owned subtree + ancestors + inherited commitment refs + consumed handovers; wrong phase, foreign or stale handover fail typed), schedule_seats (topological parallel rounds, reviewers last, cycles and unknown seats fail typed). Producer gains seat_scope and refuses out-of-scope semantic bindings with the typed issue seat_scope_violation. Three-seat demonstration through the real producer: structure seat publishes bearing-level on its own object, handover carries exactly that datum plus its exclusion bounds, envelope seat derives sill_level=3.57 from it without restating, detail seat is refused when binding the envelope subtree. 11 tests; ARCHITECTURE PASS (295 files); full suite 1678 with two pre-existing Windows flakes (viewer HTTP socket abort, context-recovery hook against an uncommitted worktree) that pass in isolation.
+
+## Live evidence (recorded 2026-09-01, after completion)
+
+Villa Rotonda run-017, west portico, three seats through the real
+producer and the Rhino COM export (records under
+`runs/reconstruction-017/records/`: discipline-seat x4, seat-schedule,
+seat-handover x2, seat-authoring-context x2, seat-geometry-program x3,
+seat-rhino-execution x3, seat-3dm-inspection x3,
+west-portico-seat-run-receipt 9b43b49d…, west-portico-seat-run-verification
+cf33f22e…). Reference model: run-016 canonical (user ruling).
+
+- Structure -> {envelope, detail} in the scheduler's rounds; the detail
+  seat's overreach into `exterior-walls` refused on the record with
+  `seat_scope_violation`; each handover carried 8 datums and 27
+  constraints; sibling subtrees absent from the projected contexts.
+- 49 objects realized, readback verified at 3 mm; 20/20 level and
+  contact checks within 1 mm (RhinoCommon accurate boxes): every
+  cross-seat interface derives from a datum (M096 `base_level`).
+- Derived stack (alternative A, for the author's ruling): entablature
+  top 11.335 fixed as the main-block interface; soffit 9.980; abacus
+  9.798–9.980; shaft 3.570–9.798 (198 mm shorter than run-016).
+- Residuals, all family-internal or already present in run-016: the
+  entablature mouldings enter the entablature block (12 pairs; the
+  handover carried the structure seat's exclusion bounds but nothing
+  enforces them yet — next card), entablature front/returns overlap at
+  the corners (2), door/window frame corner joinery (10).
