@@ -15304,7 +15304,7 @@
       "id": "P102",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "completed",
+      "status": "active",
       "goal": "One canonical StateRecord@1 (entities by schema, parameters with lineage, relations with datum roles, propagation and validator bindings, kernel obligations kept apart, stage binding) ends the two-government state; the production entry and the project runner read the record; DevelopedDesignState survives only as a retirement-bound view; relation validators run from the record against realized bounds.",
       "depends_on": [
         "P100",
@@ -15354,7 +15354,7 @@
       "id": "P103",
       "origin_stream": "planning",
       "stream": "planning",
-      "status": "completed",
+      "status": "active",
       "goal": "Incremental Rhino patch: a changed program rebuilds only the operations its structural digests and analytic bounds mark, closed under input edges; kept objects are carried by name from the prior document and re-stamped; an identity-only change is a restamp; the readback denominator stays the whole document; the runner exports by program digest and patches on a prior export with an optional full-rebuild oracle.",
       "depends_on": [
         "P099",

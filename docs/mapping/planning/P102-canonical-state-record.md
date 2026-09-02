@@ -1,6 +1,6 @@
 # P102 — Canonical StateRecord (one government)
 
-**Status:** active (registry registration deferred until codex's P089 registry edit lands)
+**Status:** active — registered 2026-09-02; one acceptance item open (the compiler still reads `DevelopedDesignState`)
 **Lane:** productization and componentization (P088–P093, P100)
 **Retires:** `DevelopedDesignState` as an *authoring input*. It stays only as a forwarded view
 (`developed_design_view`) with lineage, until the producer loop reads `StateRecord@1` directly.

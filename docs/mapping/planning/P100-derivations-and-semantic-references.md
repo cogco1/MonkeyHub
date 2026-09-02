@@ -1,7 +1,7 @@
 # P100 — Derivation table and semantic references (construction by relation)
 
 - Origin: Planning (from the 2026-09-02 architecture review and semantic reference audit)
-- Status: Active (Claude, 2026-09-02); registry entry deferred until codex's stage-envelope edits land
+- Status: Completed (Claude, 2026-09-02); registered in the work registry the same night, every acceptance item met
 - Depends on: P089 (first cut), P092, P098
 - Retires: the villa monolith's 29 dimension constants and inline coordinate arithmetic (as data, in migration steps); `make_packs.py`-style coordinate computation in project pack generators (replaced by references lowered through one resolver); per-side `rotated(profile, angle)` placement
 

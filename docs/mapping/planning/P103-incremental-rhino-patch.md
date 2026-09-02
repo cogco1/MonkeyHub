@@ -1,6 +1,6 @@
 # P103 — Incremental Rhino patch
 
-**Status:** active (registry registration deferred until codex's P089 registry edit lands)
+**Status:** active — registered 2026-09-02; two acceptance items open (block-instance arrays, the fixed Rhino cost)
 **Lane:** productization and componentization
 **Retires:** delete-all-and-rebuild as the *only* export path. The full rebuild stays as the
 equivalence oracle (a patch must read back identical to a rebuild of the same program).
