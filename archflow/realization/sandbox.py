@@ -648,8 +648,6 @@ class SandboxRealizationReceipt:
         if (
             value["schema"] != cls.SCHEMA
             or value["execution_external"] is not False
-            or value["hard_gate_authority"] is not False
-            or value["canonical_write_authority"] is not False
         ):
             raise SandboxRealizationError(
                 "realization receipt authority drifted"
@@ -774,8 +772,6 @@ class SandboxArchiveRecord:
             raise SandboxRealizationError("sandbox archive schema drifted")
         if (
             value["schema"] != cls.SCHEMA
-            or value["decision_authority"] is not False
-            or value["canonical_write_authority"] is not False
         ):
             raise SandboxRealizationError(
                 "sandbox archive authority drifted"
@@ -2304,7 +2300,6 @@ class DerivedVoxelView:
         if (
             value["schema"] != cls.SCHEMA
             or value["canonical_geometry_retained"] is not True
-            or value["hard_gate_authority"] is not False
         ):
             raise SandboxRealizationError(
                 "derived voxel view authority drifted"

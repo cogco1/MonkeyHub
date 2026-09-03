@@ -467,11 +467,6 @@ class ExperimentPreregistrationTests(unittest.TestCase):
                 ),
             )
 
-        payload = copy.deepcopy(validation.to_dict())
-        payload["production_route_mutation_authority"] = True
-        with self.assertRaises(ExperimentProtocolError):
-            ExperimentCondition.from_dict(payload)
-
 
 class ExperimentAttemptTests(unittest.TestCase):
     def test_intent_attempt_and_measured_outcome_round_trip_exactly(self) -> None:

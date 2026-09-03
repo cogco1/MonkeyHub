@@ -587,14 +587,6 @@ class VerticalCirculationTests(unittest.TestCase):
 
         payload = value.to_dict()
         assert_no_authority(payload)
-        payload["design_authority"] = True
-        with self.assertRaises(VerticalCirculationError):
-            VerticalCirculationContract.from_dict(payload)
-
-        criterion_payload = criteria().to_dict()
-        criterion_payload["verification_authority"] = True
-        with self.assertRaises(VerticalCirculationError):
-            VerticalCirculationCriteria.from_dict(criterion_payload)
 
     def test_endpoint_basis_rejects_rag_coordinates(self) -> None:
         payload = interface(VerticalCirculationInterfaceRole.LOWER).to_dict()

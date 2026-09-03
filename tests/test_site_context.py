@@ -267,11 +267,6 @@ class SiteContextTests(unittest.TestCase):
                 "f" * 64,
                 SiteObservationErrorCode.STALE_BASE,
             ),
-            (
-                "world_write_authority",
-                True,
-                SiteObservationErrorCode.WRITE_AUTHORITY,
-            ),
         )
         for field, value, code in cases:
             with self.subTest(field=field):

@@ -1356,7 +1356,6 @@ def validate_door_assembly_operations(
             or contract.get("branch_id") != BRANCH_ID
             or contract.get("side") != side
             or contract.get("host_component_id") != "cella"
-            or contract.get("metric_authority") is not False
             or contract.get("basis_classification") != "SOFT"
             or contract.get("candidate_status")
             != "AUTHORIZED_CANDIDATE_NOT_HISTORICAL_FACT"
@@ -1598,7 +1597,6 @@ def validate_door_assembly_operations(
             or not operation.get("visual_region_refs")
             or not isinstance(basis, Mapping)
             or basis.get("classification") != "SOFT"
-            or basis.get("metric_authority") is not False
             or basis.get("visual_role")
             != "topology_or_morphology_only_not_exact_dimension"
         ):

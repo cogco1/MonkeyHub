@@ -101,13 +101,6 @@ _OPEN_ROLES = frozenset(
 _CLOSED_ROLES = frozenset(VaultedPassageMorphologyRole)
 
 
-def _require_no_authority(payload: dict[str, object]) -> None:
-    if any(payload.get(key) is not value for key, value in _AUTHORITY_FIELDS.items()):
-        raise VaultedPassageCurrentStateError(
-            "vaulted-passage authority flags changed"
-        )
-
-
 def _optional_logical_ref(value: object, field: str) -> str | None:
     if value is None:
         return None
@@ -198,7 +191,6 @@ class VaultedPassageRoleBinding:
             },
             "vaulted-passage role binding",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VaultedPassageCurrentStateError(
                 "unsupported vaulted-passage role-binding schema"
@@ -268,7 +260,6 @@ class VaultedPassagePathBinding:
             },
             "vaulted-passage path binding",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VaultedPassageCurrentStateError(
                 "unsupported vaulted-passage path-binding schema"
@@ -415,7 +406,6 @@ class VaultedPassageFacadeRecord:
             },
             "vaulted-passage facade record",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VaultedPassageCurrentStateError(
                 "unsupported vaulted-passage facade schema"
@@ -553,7 +543,6 @@ class VaultedPassageMorphologyCriteria:
             },
             "vaulted-passage morphology criteria",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VaultedPassageCurrentStateError(
                 "unsupported vaulted-passage criteria schema"
@@ -741,7 +730,6 @@ class VaultedPassageCurrentStateContract:
             },
             "vaulted-passage current-state contract",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VaultedPassageCurrentStateError(
                 "unsupported vaulted-passage current-state schema"

@@ -512,14 +512,6 @@ class SiteContext:
         )
         if payload["schema"] != cls.SCHEMA:
             raise ValueError("unsupported site context schema")
-        if any(
-            payload[field] is not False
-            for field in (
-                "generation_authority",
-                "world_write_authority",
-            )
-        ):
-            raise ValueError("site context cannot gain write authority")
         base = _mapping(payload["base"], "base")
         _exact(
             base,

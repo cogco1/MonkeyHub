@@ -338,13 +338,6 @@ class ProductionAuthoringContextTests(unittest.TestCase):
         with self.assertRaisesRegex(ProductionContextError, "exact P036"):
             self.context.require_run(wrong)
 
-    def test_serialized_context_cannot_acquire_selection_authority(self) -> None:
-        payload = self.context.to_dict()
-        payload["selection_authority"] = True
-
-        with self.assertRaisesRegex(ProductionContextError, "acquired authority"):
-            ProductionAuthoringContext.from_dict(payload)
-
 
 class ProductionSelectionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:

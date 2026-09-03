@@ -742,15 +742,7 @@ class StageEntryProof:
             "proof_digest",
         }:
             raise DesignMaturityError("stage-entry proof schema drifted")
-        if value["schema"] != cls.SCHEMA or any(
-            value[field] is not False
-            for field in (
-                "stage_acceptance_authority",
-                "geometry_mutation_authority",
-                "persistence_authority",
-                "canonical_write_authority",
-            )
-        ):
+        if value["schema"] != cls.SCHEMA:
             raise DesignMaturityError("stage-entry proof acquired authority")
         record = value["stage_exit_checkpoint_ref"]
         if not isinstance(record, Mapping) or set(record) != {

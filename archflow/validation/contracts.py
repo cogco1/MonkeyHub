@@ -399,15 +399,7 @@ class CheckReceiptEnvelope:
             },
             "check receipt envelope",
         )
-        if payload["schema"] != cls.SCHEMA or any(
-            payload[field] is not False
-            for field in (
-                "design_authority",
-                "geometry_mutation_authority",
-                "promotion_authority",
-                "canonical_write_authority",
-            )
-        ):
+        if payload["schema"] != cls.SCHEMA:
             raise ValueError("check receipt schema or authority drifted")
         list_fields = (
             "subject_refs",

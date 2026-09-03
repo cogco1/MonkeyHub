@@ -195,16 +195,6 @@ def allowed_relation_roles(
     )
 
 
-def _require_false_authority(payload: dict[str, object]) -> None:
-    if any(
-        payload.get(field) is not expected
-        for field, expected in _AUTHORITY_FIELDS.items()
-    ):
-        raise ArchitecturalRelationContractError(
-            "architectural relation authority flags changed"
-        )
-
-
 def _optional_ref(value: object, field: str) -> str | None:
     if value is None:
         return None
@@ -285,7 +275,6 @@ class ArchitecturalNode:
             raise ArchitecturalRelationContractError(
                 "unsupported architectural node schema"
             )
-        _require_false_authority(payload)
         if not isinstance(payload["source_refs"], list):
             raise TypeError("architectural node source_refs must be a list")
         result = cls(
@@ -366,7 +355,6 @@ class RelationParticipant:
             raise ArchitecturalRelationContractError(
                 "unsupported relation participant schema"
             )
-        _require_false_authority(payload)
         result = cls(
             role=payload["role"],
             node_ref=payload["node_ref"],
@@ -434,7 +422,6 @@ class RelationPropagationRule:
             raise ArchitecturalRelationContractError(
                 "unsupported relation propagation rule schema"
             )
-        _require_false_authority(payload)
         result = cls(
             trigger_role=payload["trigger_role"],
             affected_role=payload["affected_role"],
@@ -631,7 +618,6 @@ class ArchitecturalRelation:
             raise ArchitecturalRelationContractError(
                 "unsupported architectural relation schema"
             )
-        _require_false_authority(payload)
         for field in (
             "participants",
             "source_refs",
@@ -813,7 +799,6 @@ class ArchitecturalRelationGraph:
             raise ArchitecturalRelationContractError(
                 "unsupported architectural relation graph schema"
             )
-        _require_false_authority(payload)
         if not isinstance(payload["nodes"], list) or not isinstance(
             payload["relations"], list
         ):

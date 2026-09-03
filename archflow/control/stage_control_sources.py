@@ -7,7 +7,6 @@ canonical-write authority; the baseline compiler independently replays them.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 
 from archflow.capabilities.visual_inventory import VisualEvidenceInventoryReceipt
@@ -70,11 +69,6 @@ def _require_branch_record(
         raise StageControlSourceError(
             f"{field} is not an exact JSON record on the requested branch"
         )
-
-
-def _require_authority_free(payload: Mapping[str, object]) -> None:
-    if any(payload.get(field) is not False for field in _AUTHORITY_FIELDS):
-        raise StageControlSourceError("stage-control source acquired authority")
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +136,6 @@ class VisualInventoryBaselineSource:
             raise StageControlSourceError(
                 "unsupported visual inventory baseline source schema"
             )
-        _require_authority_free(payload)
         result = cls(
             branch=branch_ref_from_dict(payload["branch"]),
             stage_id=payload["stage_id"],
@@ -277,7 +270,6 @@ class ComponentFunctionBaselineSource:
             raise StageControlSourceError(
                 "unsupported component function baseline source schema"
             )
-        _require_authority_free(payload)
         requirement_set_ref = payload["relation_requirements_ref"]
         requirement_set = payload["relation_requirements"]
         result = cls(

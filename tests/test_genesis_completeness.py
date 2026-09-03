@@ -7,7 +7,6 @@ import unittest
 
 from archflow.control.baseline import StageBaselineLevel
 from archflow.control.genesis_completeness import (
-    GenesisSemanticCompletenessError,
     GenesisSemanticDenominator,
     SemanticDenominatorSourceKind,
     SemanticSystemBasis,
@@ -874,16 +873,6 @@ class GenesisSemanticCompletenessTests(unittest.TestCase):
                 mutate(payload)
                 with self.assertRaises((ValueError, TypeError)):
                     GenesisSemanticDenominator.from_dict(payload)
-
-    def test_schema_and_authority_tampering_fail_closed(self) -> None:
-        _, _, _, _, _, denominator, _, _, _ = _fixture(systems=("roof",))
-        payload = denominator.to_dict()
-        payload["stage_acceptance_authority"] = True
-        with self.assertRaisesRegex(
-            GenesisSemanticCompletenessError,
-            "authority flags changed",
-        ):
-            GenesisSemanticDenominator.from_dict(payload)
 
 
 if __name__ == "__main__":

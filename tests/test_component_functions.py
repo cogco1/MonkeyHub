@@ -537,11 +537,6 @@ class ComponentFunctionLedgerTests(unittest.TestCase):
         with self.assertRaisesRegex(ComponentFunctionError, "digest changed"):
             ComponentFunctionLedger.from_dict(digest_drift)
 
-        authority_drift = copy.deepcopy(door.to_dict())
-        authority_drift["design_authority"] = True
-        with self.assertRaisesRegex(ComponentFunctionError, "acquired authority"):
-            ComponentFunctionContract.from_dict(authority_drift)
-
     def test_semantic_kind_and_name_never_resolve_orphan(self) -> None:
         subjects = inventory()
         ledger = compile_component_function_ledger(

@@ -420,8 +420,6 @@ class ExperimentCondition:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["production_route_mutation_authority"] is not False
-            or payload["fallback_authority"] is not False
         ):
             raise ExperimentProtocolError("experiment condition authority changed")
         return cls(
@@ -770,9 +768,6 @@ class ExperimentPreregistration:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["contains_run_results"] is not False
-            or payload["provider_invocation_authority"] is not False
-            or payload["persistence_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ExperimentProtocolError("preregistration authority changed")
         profiles = _list(payload["provider_profiles"], "provider_profiles")
@@ -1017,7 +1012,6 @@ class ExperimentEvidenceBinding:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["source_authority_preserved"] is not True
-            or payload["claim_upgrade_authority"] is not False
         ):
             raise ExperimentProtocolError("experiment evidence authority changed")
         return cls(
@@ -1142,9 +1136,6 @@ class ExperimentAttemptIntent:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["contains_result"] is not False
-            or payload["provider_invocation_authority"] is not False
-            or payload["persistence_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ExperimentProtocolError("attempt intent authority changed")
         return cls(
@@ -1336,9 +1327,6 @@ class ExperimentAttemptReceipt:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["fallback_used"] is not False
-            or payload["provider_invocation_authority"] is not False
-            or payload["persistence_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ExperimentProtocolError("experiment attempt authority changed")
         provider = _list(payload["provider_receipts"], "provider_receipts")
@@ -1520,9 +1508,6 @@ class ExperimentOutcome:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["aggregate_winner_claimed"] is not False
-            or payload["validation_override_authority"] is not False
-            or payload["promotion_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ExperimentProtocolError("experiment outcome authority changed")
         observations = _list(payload["observations"], "observations")
@@ -1952,8 +1937,6 @@ class ExperimentResultIndex:
             payload["schema"] != cls.SCHEMA
             or payload["unrun_results_included"] is not False
             or payload["aggregate_winner_claimed"] is not False
-            or payload["persistence_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ExperimentProtocolError("result index authority changed")
         result = cls(

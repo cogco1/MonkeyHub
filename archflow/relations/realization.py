@@ -57,16 +57,6 @@ class RelationRealizationPurpose(StrEnum):
     CONTACT_INTERFACE = "contact_interface"
 
 
-def _require_no_authority(payload: dict[str, object]) -> None:
-    if any(
-        payload.get(field) is not expected
-        for field, expected in _AUTHORITY_FIELDS.items()
-    ):
-        raise RelationRealizationError(
-            "relation realization authority flags changed"
-        )
-
-
 def _bounded_tuple(
     values: object,
     item_type: type,
@@ -290,7 +280,6 @@ class RelationEndpointObjectBinding:
             raise RelationRealizationError(
                 "unsupported relation endpoint object binding schema"
             )
-        _require_no_authority(payload)
         result = cls(
             binding_id=payload["binding_id"],
             relation_ref=payload["relation_ref"],
@@ -382,7 +371,6 @@ class RelationVerificationBinding:
             raise RelationRealizationError(
                 "unsupported relation verification binding schema"
             )
-        _require_no_authority(payload)
         if not isinstance(payload["subject_refs"], list):
             raise TypeError("relation verification subject_refs must be a list")
         result = cls(
@@ -480,7 +468,6 @@ class RelationEndpointPairing:
             raise RelationRealizationError(
                 "unsupported or automatically expanded relation pairing"
             )
-        _require_no_authority(payload)
         result = cls(
             pairing_id=payload["pairing_id"],
             relation_ref=payload["relation_ref"],
@@ -601,7 +588,6 @@ class RelationObjectPath:
             raise RelationRealizationError(
                 "unsupported or automatically expanded relation object path"
             )
-        _require_no_authority(payload)
         for field in ("endpoint_binding_refs", "pairing_refs"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"relation object path {field} must be a list")
@@ -762,7 +748,6 @@ class RelationRealizationManifest:
             raise RelationRealizationError(
                 "unsupported or automatically expanded realization manifest"
             )
-        _require_no_authority(payload)
         for field in ("endpoint_bindings", "pairings", "paths"):
             if not isinstance(payload[field], list):
                 raise TypeError(

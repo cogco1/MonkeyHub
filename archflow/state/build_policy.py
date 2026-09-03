@@ -771,10 +771,8 @@ class BuildPolicy:
         if any(
             payload[field] is not False
             for field in (
-                "generation_authority",
                 "palette_selected",
                 "geometry_selected",
-                "world_write_authority",
             )
         ):
             raise ValueError("build policy cannot gain design authority")

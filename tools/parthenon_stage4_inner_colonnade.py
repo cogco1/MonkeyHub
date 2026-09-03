@@ -1030,8 +1030,6 @@ def validate_inner_colonnade_operations(
         if (
             not isinstance(basis, Mapping)
             or basis.get("classification") != "SOFT"
-            or basis.get("metric_authority") is not False
-            or operation.get("metric_authority") is not False
             or not isinstance(source_refs, Sequence)
             or isinstance(source_refs, (str, bytes))
             or not source_refs

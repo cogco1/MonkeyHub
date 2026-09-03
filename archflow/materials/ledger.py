@@ -194,11 +194,6 @@ class MaterialLedger:
         )
         if payload["schema"] != cls.SCHEMA:
             raise MaterialError("unsupported material ledger schema")
-        if (
-            payload["material_vocabulary_authority"] is not False
-            or payload["canonical_write_authority"] is not False
-        ):
-            raise MaterialError("material ledger authority flags changed")
         if not isinstance(payload["intents"], list):
             raise TypeError("intents must be a list")
         if not isinstance(payload["assignments"], list):

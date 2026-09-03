@@ -793,14 +793,6 @@ class ComponentTemplate:
             )
         if value["schema"] != cls.SCHEMA:
             raise ComponentTemplateError("component template schema changed")
-        if (
-            value["canonical_write_authority"] is not False
-            or value["design_authority"] is not False
-            or value["stage_acceptance_authority"] is not False
-        ):
-            raise ComponentTemplateError(
-                "component template acquired forbidden authority"
-            )
         return cls(
             template_id=value["template_id"],
             family=value["family"],

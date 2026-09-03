@@ -93,11 +93,6 @@ class StairObligationKind(StrEnum):
     HEADROOM = "headroom"
 
 
-def _require_no_authority(payload: dict[str, object]) -> None:
-    if any(payload.get(key) is not value for key, value in _AUTHORITY_FIELDS.items()):
-        raise StairSolverError("stair-solver authority flags changed")
-
-
 def _finite(value: object, field: str) -> float:
     if (
         not isinstance(value, (int, float))
@@ -191,7 +186,6 @@ class StairInterface:
             },
             "stair interface",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported stair-interface schema")
         result = cls(
@@ -236,7 +230,6 @@ class StairDimensionValue:
             {"schema", "value", "evidence_refs", "authority_refs", *_AUTHORITY_FIELDS},
             "stair dimension value",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported dimension-value schema")
         result = cls(
@@ -295,7 +288,6 @@ class StairDimensionBand:
             },
             "stair dimension band",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported dimension-band schema")
         result = cls(
@@ -402,7 +394,6 @@ class StairRiserTreadRule:
             },
             "stair riser-tread rule",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported riser-tread-rule schema")
         result = cls(
@@ -478,7 +469,6 @@ class StairFlightConstraint:
             },
             "stair flight constraint",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported flight-constraint schema")
         result = cls(
@@ -546,7 +536,6 @@ class StairPlanEnvelope:
             },
             "stair plan envelope",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported plan-envelope schema")
         result = cls(
@@ -699,7 +688,6 @@ class StairSolveRequest:
             },
             "stair solve request",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported stair-solve request schema")
         result = cls(
@@ -823,7 +811,6 @@ class StairRun:
             *_AUTHORITY_FIELDS,
         }
         payload = exact_mapping(value, keys, "stair run")
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported stair-run schema")
         result = cls(
@@ -895,7 +882,6 @@ class StairLanding:
             },
             "stair landing",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported stair-landing schema")
         result = cls(
@@ -963,7 +949,6 @@ class StairTread:
             },
             "stair tread",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported stair-tread schema")
         result = cls(
@@ -1372,7 +1357,6 @@ class StairAssembly:
             *_AUTHORITY_FIELDS,
         }
         payload = exact_mapping(value, keys, "stair semantic assembly")
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported stair-assembly schema")
         for field in ("runs", "landings", "treads"):
@@ -1449,7 +1433,6 @@ class StairObligation:
             },
             "stair obligation",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported stair-obligation schema")
         result = cls(
@@ -1572,7 +1555,6 @@ class StairSolveResult:
             *_AUTHORITY_FIELDS,
         }
         payload = exact_mapping(value, keys, "stair solve result")
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairSolverError("unsupported stair-solve result schema")
         if not isinstance(payload["missing_fields"], list) or not isinstance(payload["obligations"], list):

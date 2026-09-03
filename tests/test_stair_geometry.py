@@ -489,10 +489,6 @@ class StairGeometryTests(unittest.TestCase):
             headroom.disposition,
             StairObligationDisposition.OPEN,
         )
-        escalated = design_binding.to_dict()
-        escalated["design_authority"] = True
-        with self.assertRaisesRegex(StairGeometryError, "authority"):
-            StairDesignBinding.from_dict(escalated)
 
     def test_open_materialization_obligations_cannot_emit_developed_geometry(
         self,

@@ -133,9 +133,10 @@ class RelationPromotionBinding:
             },
             "relation promotion binding",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise RelationPromotionError("unsupported promotion binding schema")
+        if payload["agent_authored"] is not False:
+            raise RelationPromotionError("relation promotion binding is agent-authored")
         for field in ("question_refs", "verification_receipt_refs"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"{field} must be a list")
@@ -349,9 +350,9 @@ class RelationPromotionReceipt:
             },
             "relation promotion receipt",
         )
-        _require_no_authority(payload)
         if (
             payload["schema"] != cls.SCHEMA
+            or payload["agent_authored"] is not False
             or payload["verified_checks_required"] is not True
             or payload["promotion_compiler"]
             != "relation-verification-promotion@1"
@@ -515,9 +516,10 @@ class RelationPromotionResult:
             },
             "relation promotion result",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise RelationPromotionError("unsupported promotion result schema")
+        if payload["agent_authored"] is not False:
+            raise RelationPromotionError("relation promotion result is agent-authored")
         if not isinstance(payload["verification_receipts"], list):
             raise TypeError("verification_receipts must be a list")
         result = cls(
@@ -701,11 +703,6 @@ def promote_verified_relation_graph(
         graph=promoted_graph,
         verification_receipts=verification_receipts,
     )
-
-
-def _require_no_authority(payload: dict[str, object]) -> None:
-    if any(payload[field] is not expected for field, expected in _AUTHORITY_FIELDS.items()):
-        raise RelationPromotionError("relation promotion acquired authority")
 
 
 __all__ = [

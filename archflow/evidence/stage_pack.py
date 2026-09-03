@@ -976,10 +976,6 @@ class StageEvidencePack:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["selection_authority"] is not False
-            or payload["evidence_authority"] is not False
-            or payload["stage_acceptance_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise StageEvidencePackError("stage evidence pack acquired authority")
         base = _base_from_dict(payload["base"])

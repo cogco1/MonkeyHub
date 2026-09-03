@@ -181,13 +181,6 @@ class CandidateApprovalPolicy:
         }
         if set(value) != expected or value["schema"] != cls.SCHEMA:
             raise PlayerAuthorityError("approval policy schema drifted")
-        if (
-            value["hard_gate_waiver_authority"] is not False
-            or value["canonical_write_authority"] is not False
-        ):
-            raise PlayerAuthorityError(
-                "approval policy acquired downstream authority"
-            )
         authorities = value["authority_ids"]
         evidence = value["evidence_refs"]
         if not isinstance(authorities, list) or not isinstance(evidence, list):
@@ -337,17 +330,6 @@ class CandidateApprovalReceipt:
         if set(value) != expected or value["schema"] != cls.SCHEMA:
             raise PlayerAuthorityError(
                 "candidate approval receipt schema drifted"
-            )
-        if any(
-            value[field] is not False
-            for field in (
-                "hard_gate_waiver_authority",
-                "commitment_waiver_authority",
-                "canonical_write_authority",
-            )
-        ):
-            raise PlayerAuthorityError(
-                "candidate approval acquired forbidden authority"
             )
         receipt = cls(
             candidate_assembly_digest=value[

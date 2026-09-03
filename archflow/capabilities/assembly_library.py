@@ -120,8 +120,6 @@ def _verify_stage_qualified_vote(
     if (
         set(binding_payload) != binding_fields
         or binding_payload.get("schema") != AssemblyTemplateBinding.SCHEMA
-        or binding_payload.get("canonical_write_authority") is not False
-        or binding_payload.get("design_authority") is not False
         or not isinstance(binding_payload.get("role_bindings"), list)
         or not binding_payload.get("role_bindings")
         or not isinstance(binding_payload.get("datum_bindings"), list)

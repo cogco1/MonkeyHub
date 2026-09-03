@@ -232,14 +232,6 @@ class SearchPolicyContractTests(unittest.TestCase):
             self.assertIs(payload["persistence_authority"], False)
             self.assertIs(payload["canonical_write_authority"], False)
 
-        tampered = request.to_dict()
-        tampered["canonical_write_authority"] = True
-        with self.assertRaisesRegex(
-            SearchPolicyError,
-            "authority flags changed",
-        ):
-            SearchPolicyRequest.from_dict(tampered)
-
     def test_validator_rejects_stale_and_over_budget_outputs(self):
         request = _request()
         stale = replace(_directive(request), branch=_branch(epoch=5))

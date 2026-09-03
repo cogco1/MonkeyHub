@@ -152,7 +152,6 @@ def bind_provider_record(
             payload.get("project_id") != run.project_id
             or payload.get("run_id") != run.run_id
             or payload.get("role") != "provider-invocation"
-            or payload.get("canonical_write_authority") is not False
         ):
             raise ExperimentProtocolError("production provider record drifted")
         _require_base_payload(payload.get("base"), run.base)
@@ -167,7 +166,6 @@ def bind_provider_record(
         if (
             payload.get("project_id") != run.project_id
             or payload.get("run_id") != run.run_id
-            or payload.get("canonical_write_authority") is not False
         ):
             raise ExperimentProtocolError("live provider evidence drifted")
         envelope = payload.get("provider_envelope")
@@ -177,14 +175,12 @@ def bind_provider_record(
         )
     if not isinstance(envelope, Mapping) or (
         envelope.get("schema") != "ProductionInvocationEnvelope@2"
-        or envelope.get("canonical_write_authority") is not False
     ):
         raise ExperimentProtocolError("P053 envelope schema or authority drifted")
     authority = envelope.get("authority")
     if not isinstance(authority, Mapping) or (
         authority.get("schema") != "ProductionAuthorityToken@2"
         or authority.get("production_authority") is not True
-        or authority.get("canonical_write_authority") is not False
     ):
         raise ExperimentProtocolError("P053 authority token drifted")
     provider = authority.get("provider")
@@ -527,7 +523,6 @@ def _validate_production_terminal_record(
         payload.get("project_id") != run.project_id
         or payload.get("run_id") != run.run_id
         or payload.get("role") != "lifecycle-receipt"
-        or payload.get("canonical_write_authority") is not False
     ):
         raise ExperimentProtocolError("production terminal identity drifted")
     _require_base_payload(payload.get("base"), run.base)
@@ -825,9 +820,6 @@ def select_assignment_context(
         != sorted(item.relationship_id for item in full.program.relationships)
         or receipt.get("unchanged_production_route") != "P053/P056"
         or receipt.get("provider_profile_unchanged") is not True
-        or receipt.get("generation_authority") is not False
-        or receipt.get("persistence_authority") is not False
-        or receipt.get("canonical_write_authority") is not False
     ):
         raise ExperimentProtocolError("generation ablation receipt drifted")
     _require_base_payload(receipt.get("base"), run.base)

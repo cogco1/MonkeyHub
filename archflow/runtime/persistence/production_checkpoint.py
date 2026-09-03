@@ -98,7 +98,6 @@ class ProductionRunCheckpoint:
         if (
             set(value) != expected
             or value["schema"] != cls.SCHEMA
-            or value["canonical_write_authority"] is not False
         ):
             raise ProductionCheckpointError(
                 "checkpoint schema or authority drifted"

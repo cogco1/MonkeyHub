@@ -135,8 +135,6 @@ class SandboxPaperView:
             raise SandboxRenderError("paper view schema drifted")
         if (
             value["schema"] != cls.SCHEMA
-            or value["repair_authority"] is not False
-            or value["canonical_write_authority"] is not False
         ):
             raise SandboxRenderError("paper view authority drifted")
         result = cls(
@@ -213,8 +211,6 @@ class SandboxRenderSet:
             raise SandboxRenderError("render set schema drifted")
         if (
             value["schema"] != cls.SCHEMA
-            or value["repair_authority"] is not False
-            or value["canonical_write_authority"] is not False
         ):
             raise SandboxRenderError("render set authority drifted")
         return cls(

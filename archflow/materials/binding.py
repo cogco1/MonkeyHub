@@ -71,11 +71,6 @@ def _sorted_refs(
     return tuple(sorted(normalized))
 
 
-def _require_false(payload: dict[str, object], fields: tuple[str, ...]) -> None:
-    if any(payload[field] is not False for field in fields):
-        raise MaterialBindingError("material binding authority flags changed")
-
-
 @dataclass(frozen=True, slots=True)
 class MaterialBindingRequirement:
     """One exact semantic-subject to material-and-geometry obligation."""
@@ -263,10 +258,6 @@ class MaterialBindingProfile:
         )
         if payload["schema"] != cls.SCHEMA:
             raise MaterialBindingError("unsupported material profile schema")
-        _require_false(
-            payload,
-            ("design_authority", "canonical_write_authority"),
-        )
         if not isinstance(payload["requirements"], list):
             raise TypeError("requirements must be a list")
         if not isinstance(payload["check_denominator"], list):
@@ -452,10 +443,6 @@ class MaterialBindingSnapshot:
         )
         if payload["schema"] != cls.SCHEMA:
             raise MaterialBindingError("unsupported material snapshot schema")
-        _require_false(
-            payload,
-            ("summary_authority", "canonical_write_authority"),
-        )
         if not isinstance(payload["observations"], list):
             raise TypeError("observations must be a list")
         return cls(

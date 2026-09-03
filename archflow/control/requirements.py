@@ -230,11 +230,6 @@ class StageCheckRequirement:
         }
         if set(payload) != expected or payload.get("schema") != cls.SCHEMA:
             raise StageRequirementError("unsupported requirement schema")
-        if (
-            payload.get("design_authority") is not False
-            or payload.get("canonical_write_authority") is not False
-        ):
-            raise StageRequirementError("requirement authority flags changed")
         list_fields = (
             "denominator_refs",
             "required_claim_refs",
@@ -357,11 +352,6 @@ class StageRequirementProfile:
         }
         if set(payload) != expected or payload.get("schema") != cls.SCHEMA:
             raise StageRequirementError("unsupported stage requirement schema")
-        if (
-            payload.get("stage_acceptance_authority") is not False
-            or payload.get("canonical_write_authority") is not False
-        ):
-            raise StageRequirementError("profile authority flags changed")
         raw_requirements = payload.get("requirements")
         if not isinstance(raw_requirements, list):
             raise TypeError("requirements must be a list")

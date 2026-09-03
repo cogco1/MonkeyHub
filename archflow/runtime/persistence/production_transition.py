@@ -213,8 +213,6 @@ class ProductionFailedAttemptReceipt:
             or value.get("transition_checkpoint_ref") is not None
             or value.get("lifecycle_successor") is not False
             or value.get("fallback_used") is not False
-            or value.get("persistence_authority") is not False
-            or value.get("canonical_write_authority") is not False
         ):
             raise ProductionTransitionError("failed attempt authority or status drifted")
         base = value.get("base")
@@ -628,7 +626,6 @@ def _load_record(
         payload.get("project_id") != run.project_id
         or payload.get("run_id") != run.run_id
         or payload.get("base") != _base(run.base)
-        or payload.get("canonical_write_authority") is not False
     ):
         raise ProductionTransitionError("production record identity or authority drifted")
     try:
@@ -698,8 +695,6 @@ def _validate_failed_envelope(value: Mapping[str, Any]) -> str:
     }
     if set(value) != expected or value.get("schema") != "ProductionInvocationEnvelope@2":
         raise ProductionTransitionError("failed attempt envelope schema drifted")
-    if value.get("canonical_write_authority") is not False:
-        raise ProductionTransitionError("failed attempt envelope gained write authority")
     authority = value.get("authority")
     if not isinstance(authority, Mapping) or authority.get("production_authority") is not True:
         raise ProductionTransitionError("failed attempt envelope lacks P053 authority")

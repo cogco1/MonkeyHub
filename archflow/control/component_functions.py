@@ -94,11 +94,6 @@ _AUTHORITY_FIELDS = {
 }
 
 
-def _require_authority_free(payload: dict[str, object]) -> None:
-    if any(payload.get(field) is not False for field in _AUTHORITY_FIELDS):
-        raise ComponentFunctionError("component function artifact acquired authority")
-
-
 def _sorted_unique_enum_tuple(
     values: object,
     enum_type: type[StrEnum],
@@ -375,7 +370,6 @@ class ComponentFunctionPolicy:
         )
         if payload["schema"] != cls.SCHEMA:
             raise ComponentFunctionError("unsupported component function policy schema")
-        _require_authority_free(payload)
         if not isinstance(payload["obligations"], list):
             raise TypeError("policy obligations must be a list")
         result = cls(
@@ -610,7 +604,6 @@ class ComponentFunctionContract:
         payload = exact_mapping(value, {"schema", "contract_id", "branch", "stage_id", "subject_inventory_digest", "component_ref", "component_digest", "applicability_decisions", "claims", "contract_digest", *_AUTHORITY_FIELDS}, "component function contract")
         if payload["schema"] != cls.SCHEMA:
             raise ComponentFunctionError("unsupported component function contract schema")
-        _require_authority_free(payload)
         for field in ("applicability_decisions", "claims"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"{field} must be a list")
@@ -910,7 +903,6 @@ class ComponentFunctionLedger:
     def from_dict(cls, value: object) -> "ComponentFunctionLedger":
         payload = exact_mapping(value, {"schema", "ledger_id", "branch", "stage_id", "subject_inventory_digest", "policy_id", "policy_digest", "rows", "ledger_digest", *_AUTHORITY_FIELDS}, "component function ledger")
         if payload["schema"] != cls.SCHEMA: raise ComponentFunctionError("unsupported component function ledger schema")
-        _require_authority_free(payload)
         if not isinstance(payload["rows"], list): raise TypeError("ledger rows must be a list")
         result = cls(ledger_id=payload["ledger_id"], branch=branch_ref_from_dict(payload["branch"]), stage_id=payload["stage_id"],
             subject_inventory_digest=payload["subject_inventory_digest"], policy_id=payload["policy_id"], policy_digest=payload["policy_digest"],

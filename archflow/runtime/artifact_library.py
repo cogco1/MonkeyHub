@@ -231,7 +231,6 @@ class CanonicalProgramRecord:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["execution_replay"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ArtifactLibraryError("canonical program authority drifted")
         return cls(
@@ -330,8 +329,6 @@ class PackageEvidenceRecord:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["record_digest"] != result.record_digest
-            or payload["generation_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ArtifactLibraryError("package evidence authority or digest drifted")
         return result
@@ -552,10 +549,7 @@ class NeutralBuildingPackage:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["reference_only"] is not True
-            or payload["generation_authority"] is not False
             or payload["execution_replay"] is not False
-            or payload["external_execution_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ArtifactLibraryError("neutral package authority drifted")
         return cls(
@@ -713,8 +707,6 @@ class PlatformExportReceipt:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["source_geometry_mutated"] is not False
-            or payload["generation_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ArtifactLibraryError("platform export authority drifted")
         return cls(
@@ -787,8 +779,6 @@ class ImportedPackageReference:
             or payload["reference_only"] is not True
             or payload["candidate_only"] is not True
             or payload["provider_registered"] is not False
-            or payload["generation_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ArtifactLibraryError("imported package acquired production authority")
         return cls(

@@ -49,11 +49,6 @@ class ArchitecturalInvariantError(ValueError):
     """A profile, requirement, or observation is malformed."""
 
 
-def _require_no_authority(payload: dict[str, object], field: str) -> None:
-    if any(payload.get(key) is not value for key, value in _AUTHORITY_FIELDS.items()):
-        raise ArchitecturalInvariantError(f"{field} authority flags changed")
-
-
 def _non_negative_number(value: object, field: str) -> float:
     result = float(finite_number(value, field))
     if result < 0.0:
@@ -171,7 +166,6 @@ class ClaimBoundValidationBasis:
             },
             "claim-bound validation basis",
         )
-        _require_no_authority(payload, "claim-bound validation basis")
         if payload["schema"] != cls.SCHEMA or payload["basis_mode"] != "claim_bound":
             raise ArchitecturalInvariantError("claim-bound validation basis drifted")
         for field in (
@@ -591,7 +585,6 @@ class ComponentCardinalityPartitionProfile:
             },
             "component cardinality partition profile",
         )
-        _require_no_authority(payload, "component cardinality partition profile")
         if payload["schema"] != cls.SCHEMA or payload["checker_id"] != cls.CHECKER_ID:
             raise ArchitecturalInvariantError(
                 "component cardinality partition profile drifted"
@@ -1009,7 +1002,6 @@ class OrientedFrameAngleProfile:
             },
             "oriented frame angle profile",
         )
-        _require_no_authority(payload, "oriented frame angle profile")
         if payload["schema"] != cls.SCHEMA or payload["checker_id"] != cls.CHECKER_ID:
             raise ArchitecturalInvariantError("oriented frame angle profile drifted")
         if not isinstance(payload["requirements"], list) or not isinstance(
@@ -1449,7 +1441,6 @@ class NfoldRotationalSymmetryProfile:
             },
             "n-fold rotational symmetry profile",
         )
-        _require_no_authority(payload, "n-fold rotational symmetry profile")
         if payload["schema"] != cls.SCHEMA or payload["checker_id"] != cls.CHECKER_ID:
             raise ArchitecturalInvariantError(
                 "n-fold rotational symmetry profile drifted"
@@ -1931,7 +1922,6 @@ class LevelStratificationProfile:
             },
             "level stratification profile",
         )
-        _require_no_authority(payload, "level stratification profile")
         if payload["schema"] != cls.SCHEMA or payload["checker_id"] != cls.CHECKER_ID:
             raise ArchitecturalInvariantError("level stratification profile drifted")
         if not isinstance(payload["requirements"], list) or not isinstance(

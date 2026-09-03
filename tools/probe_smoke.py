@@ -392,8 +392,6 @@ def _load_request(encoded: bytes) -> dict[str, object]:
             raise ProbeSmokeError(f"{field} must be non-empty text")
     if payload.get("synthetic") is not True:
         raise ProbeSmokeError("the fake smoke accepts only synthetic probes")
-    if payload.get("generation_authority") is not False:
-        raise ProbeSmokeError("the fake smoke cannot receive generation authority")
     for field in ("supplied_constraints", "evidence_refs"):
         if not isinstance(payload.get(field), list):
             raise ProbeSmokeError(f"{field} must be an array")

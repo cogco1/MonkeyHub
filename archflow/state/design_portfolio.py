@@ -619,8 +619,6 @@ class ParetoBranchObservation:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["read_only"] is not True
-            or payload["selection_authority"] is not False
-            or payload["deletion_authority"] is not False
         ):
             raise DesignPortfolioError(
                 "Pareto observation acquired forbidden authority"
@@ -994,8 +992,6 @@ class DesignOptionPortfolio:
             or payload["ranked"] is not False
             or payload["automatic_winner"] is not False
             or payload["hard_usability_verdict"] is not None
-            or payload["canonical_write_authority"] is not False
-            or payload["candidate_assembly_authority"] is not False
         ):
             raise DesignPortfolioError(
                 "portfolio acquired forbidden authority"

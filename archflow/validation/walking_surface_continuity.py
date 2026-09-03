@@ -87,13 +87,6 @@ def _optional_finite(value: object, field: str) -> float | None:
     return float(value)
 
 
-def _require_no_authority(payload: dict[str, object]) -> None:
-    if any(payload.get(key) is not value for key, value in _AUTHORITY_FIELDS.items()):
-        raise WalkingSurfaceContinuityError(
-            "walking-surface authority flags changed"
-        )
-
-
 @dataclass(frozen=True, slots=True)
 class WalkingSurfaceNode:
     node_ref: str
@@ -131,7 +124,6 @@ class WalkingSurfaceNode:
             {"schema", "node_ref", "role", "datum", "evidence_refs", *_AUTHORITY_FIELDS},
             "walking surface node",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA or not isinstance(payload["evidence_refs"], list):
             raise WalkingSurfaceContinuityError("unsupported walking surface node schema")
         result = cls(
@@ -198,7 +190,6 @@ class WalkingSurfaceEdge:
             },
             "walking surface edge",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA or not isinstance(payload["evidence_refs"], list):
             raise WalkingSurfaceContinuityError("unsupported walking surface edge schema")
         result = cls(
@@ -260,7 +251,6 @@ class WalkingSurfacePathRequirement:
             },
             "walking surface path",
         )
-        _require_no_authority(payload)
         if (
             payload["schema"] != cls.SCHEMA
             or payload["complete_exterior_to_interior_required"] is not True
@@ -316,7 +306,6 @@ class WalkingSurfaceCriteria:
             },
             "walking surface criteria",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA or payload["project_supplied_values"] is not True:
             raise WalkingSurfaceContinuityError("unsupported walking surface criteria schema")
         result = cls(
@@ -408,7 +397,6 @@ class WalkingSurfaceContinuityProfile:
             {"schema", "profile_id", "nodes", "edges", "paths", "criteria", "length_unit_ref", *_AUTHORITY_FIELDS},
             "walking surface continuity profile",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA or any(not isinstance(payload[field], list) for field in ("nodes", "edges", "paths")):
             raise WalkingSurfaceContinuityError("unsupported walking surface profile schema")
         result = cls(

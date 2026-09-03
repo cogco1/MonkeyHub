@@ -106,11 +106,6 @@ _REQUIRED_INTERFACE_SUPPORT_ROLES = frozenset(
 )
 
 
-def _require_no_authority(payload: dict[str, object]) -> None:
-    if any(payload.get(key) is not value for key, value in _AUTHORITY_FIELDS.items()):
-        raise VaultedUnderpassError("vaulted-underpass authority flags changed")
-
-
 def _receipt_ref(receipt: CheckReceiptEnvelope) -> str:
     return f"check-receipt:{receipt.receipt_id}"
 
@@ -187,7 +182,6 @@ class VaultedUnderpassRoleBinding:
             },
             "vaulted-underpass role binding",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VaultedUnderpassError("unsupported role-binding schema")
         result = cls(
@@ -375,7 +369,6 @@ class VaultedUnderpassInspectionBinding:
             },
             "vaulted-underpass inspection binding",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VaultedUnderpassError("unsupported inspection-binding schema")
         result = cls(
@@ -554,7 +547,6 @@ class VaultedUnderpassInterfaceBinding:
             },
             "vaulted-underpass interface binding",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VaultedUnderpassError("unsupported interface-binding schema")
         for field in (
@@ -851,7 +843,6 @@ class VaultedUnderpassAssemblyContract:
             },
             "vaulted-underpass assembly contract",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VaultedUnderpassError("unsupported assembly-contract schema")
         for field in (

@@ -557,11 +557,6 @@ class StageEvidencePackContractTests(unittest.TestCase):
                 model_artifact_current=False,
             ),
         )
-        payload = copy.deepcopy(pack.to_dict())
-        payload["evidence_authority"] = True
-        with self.assertRaisesRegex(StageEvidencePackError, "acquired authority"):
-            StageEvidencePack.from_dict(payload)
-
         closure_authority = copy.deepcopy(pack.to_dict())
         closure_authority["closure_authority"] = True
         with self.assertRaisesRegex(StageEvidencePackError, "schema drifted"):

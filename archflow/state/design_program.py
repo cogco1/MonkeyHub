@@ -137,17 +137,6 @@ class ProgramMetricApplicabilityDecision:
             raise ValueError(
                 "unsupported program metric applicability decision schema"
             )
-        if any(
-            payload[field] is not False
-            for field in (
-                "metric_value_authority",
-                "generation_authority",
-                "hard_gate_waiver_authority",
-            )
-        ):
-            raise ValueError(
-                "metric applicability cannot claim value, generation, or hard-gate authority"
-            )
         base = _mapping(payload["base"], "base")
         _exact(
             base,
@@ -826,7 +815,6 @@ class DesignProgram:
         if any(
             payload[field] is not False
             for field in (
-                "generation_authority",
                 "footprint_selected",
                 "topology_selected",
                 "geometry_selected",

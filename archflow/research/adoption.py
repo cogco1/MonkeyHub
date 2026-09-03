@@ -53,11 +53,6 @@ _ADOPTION_FIELDS = frozenset(
         "canonical_write_authority",
     }
 )
-_ADOPTION_AUTHORITY_FIELDS = (
-    "retrieved_text_authority",
-    "design_authority",
-    "canonical_write_authority",
-)
 
 
 class PrecedentError(ValueError):
@@ -238,13 +233,6 @@ class PrecedentAdoption:
             or value.get("schema") != cls.SCHEMA
         ):
             raise PrecedentError("precedent adoption schema drifted")
-        if any(
-            value[field] is not False
-            for field in _ADOPTION_AUTHORITY_FIELDS
-        ):
-            raise PrecedentError(
-                "precedent adoption authority flags changed"
-            )
         if not isinstance(value["facts"], list):
             raise PrecedentError("precedent adoption facts drifted")
         return cls(

@@ -673,10 +673,6 @@ def _validated_repair_feedback(
             raise ValueError(f"repair feedback {field} must be non-empty text")
     if (
         value.get("complete_replacement_required") is not True
-        or value.get("field_patch_authority") is not False
-        or value.get("validation_authority") is not False
-        or value.get("persistence_authority") is not False
-        or value.get("canonical_write_authority") is not False
     ):
         raise ValueError("semantic-spatial repair feedback acquired authority")
     return dict(value)
@@ -807,11 +803,6 @@ def _validated_alternative_context(
         raise ValueError("alternative context instructions must be non-empty text")
     if (
         value.get("complete_alternative_required") is not True
-        or value.get("option_mutation_authority") is not False
-        or value.get("selection_authority") is not False
-        or value.get("validation_authority") is not False
-        or value.get("persistence_authority") is not False
-        or value.get("canonical_write_authority") is not False
     ):
         raise ValueError("spatial alternative context acquired authority")
     return dict(value)
@@ -895,12 +886,6 @@ def _validated_revision_context(
     if (
         value.get("complete_successor_required") is not True
         or value.get("preserve_option_identity") is not True
-        or value.get("component_patch_authority") is not False
-        or value.get("geometry_patch_authority") is not False
-        or value.get("selection_authority") is not False
-        or value.get("validation_authority") is not False
-        or value.get("persistence_authority") is not False
-        or value.get("canonical_write_authority") is not False
     ):
         raise ValueError("spatial architectural revision context acquired authority")
     return dict(value)

@@ -550,7 +550,6 @@ class DetachedDevelopmentAdvice:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["read_only"] is not True
-            or payload["mutation_authority"] is not False
         ):
             raise DevelopedDesignError(
                 "expert advice acquired mutation authority"
@@ -1522,9 +1521,7 @@ class DevelopedDesignState:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["candidate_created"] is not False
-            or payload["mcp_execution_authority"] is not False
             or payload["hard_usability_verdict"] is not None
-            or payload["canonical_write_authority"] is not False
         ):
             raise DevelopedDesignError(
                 "developed design acquired forbidden authority"

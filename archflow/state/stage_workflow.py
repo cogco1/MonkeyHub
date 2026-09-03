@@ -17,7 +17,6 @@ from typing import Mapping
 from archflow.contracts.authority import (
     DEFAULT_AUTHORITY_FIELDS,
     no_authority,
-    require_no_authority,
 )
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.project.refs import require_identifier
@@ -244,11 +243,6 @@ class ProjectStageWorkflow:
         _exact(payload, cls.RECORD_KEYS, "project stage workflow")
         if payload["schema"] != cls.SCHEMA:
             raise StageWorkflowError("project stage workflow schema changed")
-        require_no_authority(
-            payload,
-            _AUTHORITY_FIELDS,
-            label="project stage workflow",
-        )
         stages = payload["stages"]
         if not isinstance(stages, list):
             raise TypeError("stages must be a list")
@@ -422,11 +416,6 @@ class StageExitBinding:
         _exact(payload, cls.RECORD_KEYS, "stage exit binding")
         if payload["schema"] != cls.SCHEMA:
             raise StageWorkflowError("stage exit binding schema changed")
-        require_no_authority(
-            payload,
-            _AUTHORITY_FIELDS,
-            label="stage exit binding",
-        )
         base = _mapping(payload["base"], "exit base")
         _exact(
             base,
@@ -868,11 +857,6 @@ class StageRunEnvelope:
         _exact(payload, cls.RECORD_KEYS, "stage run envelope")
         if payload["schema"] != cls.SCHEMA:
             raise StageWorkflowError("stage run envelope schema changed")
-        require_no_authority(
-            payload,
-            _AUTHORITY_FIELDS,
-            label="stage run envelope",
-        )
         stage = _mapping(payload["stage"], "stage")
         _exact(stage, cls.STAGE_KEYS, "stage")
         base = _mapping(payload["base"], "base")

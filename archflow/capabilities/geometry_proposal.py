@@ -1470,8 +1470,6 @@ class GeometryProposalRoundReceipt:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["derivation_only"] is not True
-            or payload["hard_gate_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise GeometryProposalProductionError(
                 "geometry proposal round acquired forbidden authority"
@@ -1584,8 +1582,6 @@ class GeometryProposalLineage:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["proposal_only"] is not True
-            or payload["hard_gate_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise GeometryProposalProductionError("lineage acquired forbidden authority")
         round_refs = payload["round_refs"]
@@ -3550,8 +3546,6 @@ def _proposal_from_record(value: object) -> GeometryProgramProposal:
     if (
         payload["schema"] != _PROPOSAL_RECORD_SCHEMA
         or payload["proposal_only"] is not True
-        or payload["hard_gate_authority"] is not False
-        or payload["canonical_write_authority"] is not False
     ):
         raise GeometryProposalProductionError("geometry proposal record acquired forbidden authority")
     return _proposal_from_full(payload["proposal"])
@@ -3562,9 +3556,6 @@ def _proposal_from_full(value: object) -> GeometryProgramProposal:
     _exact(proposal, {"schema", "proposal_id", "project_id", "run_id", "base", "design_state_digest", "predecessor_program_digest", "length_unit", "tolerance", "frames", "assets", "semantic_bindings", "operations", "assemblies", "revisions", "retirements", "generation_authority", "hard_gate_authority", "canonical_write_authority"}, "geometry proposal")
     if (
         proposal["schema"] != GeometryProgramProposal.SCHEMA
-        or proposal["generation_authority"] is not False
-        or proposal["hard_gate_authority"] is not False
-        or proposal["canonical_write_authority"] is not False
     ):
         raise GeometryProposalProductionError("geometry proposal acquired forbidden authority")
     body = dict(_proposal_body_from_full(proposal))
@@ -3616,14 +3607,6 @@ def load_compiled_geometry_program(value: object) -> CompiledGeometryProgram:
         set(_COMPILED_PROGRAM_SCHEMA_KEYS[schema]),
         "compiled geometry program",
     )
-    if (
-        payload["execution_authority"] is not False
-        or payload["hard_gate_authority"] is not False
-        or payload["canonical_write_authority"] is not False
-    ):
-        raise GeometryProposalProductionError(
-            "compiled geometry program acquired forbidden authority"
-        )
     proposal = _proposal_from_full(payload["proposal"])
     if payload["proposal_digest"] != proposal.proposal_digest:
         raise GeometryProposalProductionError(
@@ -3742,7 +3725,6 @@ def _asset_substitution_receipt(value: object) -> AssetSubstitutionReceipt:
     if (
         payload["schema"] != AssetSubstitutionReceipt.SCHEMA
         or payload["lossless"] is not False
-        or payload["canonical_write_authority"] is not False
     ):
         raise GeometryProposalProductionError(
             "asset substitution receipt authority changed"

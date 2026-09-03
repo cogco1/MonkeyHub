@@ -381,8 +381,6 @@ class ComponentFamilyInstance:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["owns_component_hierarchy"] is not False
-            or payload["geometry_generation_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ComponentFamilyError("component family authority changed")
         parameters = _list(payload["parameter_refs"], "parameter_refs")
@@ -525,9 +523,6 @@ class ComponentFamilySet:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["component_tree_authority"] is not False
-            or payload["persistence_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ComponentFamilyError("component family set authority changed")
         instances = _list(payload["instances"], "instances")

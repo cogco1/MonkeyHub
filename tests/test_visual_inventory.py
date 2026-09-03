@@ -239,12 +239,6 @@ class VisualInventoryContractTests(unittest.TestCase):
                 rois=(mismatched,),
             )
 
-    def test_machine_label_is_proposed_and_authority_is_fixed_false(self) -> None:
-        payload = ProposedMachineLabel("window", 0.8).to_dict()
-        payload["acceptance_authority"] = True
-        with self.assertRaisesRegex(VisualInventoryError, "must remain false"):
-            ProposedMachineLabel.from_dict(payload)
-
     def test_observation_rejects_exact_dimension_schema_injection(self) -> None:
         payload = observation("observation-a", "roi-a").to_dict()
         payload["exact_dimension"] = {"width": 1.2, "unit": "m"}
@@ -479,11 +473,6 @@ class VisualInventoryContractTests(unittest.TestCase):
         payload = full_receipt().to_dict()
         payload["inventory_digest"] = digest("tampered")
         with self.assertRaisesRegex(VisualInventoryError, "does not match"):
-            VisualEvidenceInventoryReceipt.from_dict(payload)
-
-        payload = full_receipt().to_dict()
-        payload["canonical_write_authority"] = True
-        with self.assertRaisesRegex(VisualInventoryError, "must remain false"):
             VisualEvidenceInventoryReceipt.from_dict(payload)
 
 

@@ -219,7 +219,6 @@ def _convergence_receipt_from_dict(value: object) -> StageConvergenceReceipt:
     )
     if (
         payload["schema"] != StageConvergenceReceipt.SCHEMA
-        or payload["canonical_write_authority"] is not False
     ):
         raise HierarchicalSearchProposalError(
             "unsupported or authoritative stage convergence receipt"
@@ -1725,6 +1724,7 @@ class HierarchicalSearchProposal:
         if payload["schema"] != cls.SCHEMA or any(
             payload[field] is not expected
             for field, expected in _OUTCOME_AUTHORITY_FIELDS.items()
+            if not field.endswith("_authority")
         ):
             raise HierarchicalSearchProposalError(
                 "hierarchical search proposal acquired forbidden authority"

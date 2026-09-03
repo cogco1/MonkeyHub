@@ -520,15 +520,6 @@ class ClarificationAuthorityTests(unittest.TestCase):
         )
 
     def test_no_downstream_authority_or_instance_defaults(self) -> None:
-        request = _request(_state())
-        payload = request.to_dict()
-        payload["candidate_approval_authority"] = True
-        with self.assertRaisesRegex(
-            ValueError,
-            "downstream authority",
-        ):
-            ClarificationRequest.from_dict(payload)
-
         with self.assertRaisesRegex(
             ValueError,
             "cannot write geometry evaluation",

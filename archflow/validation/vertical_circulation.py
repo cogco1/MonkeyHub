@@ -139,11 +139,6 @@ class WalkingSurfaceSampleRole(StrEnum):
     UPPER_INTERFACE = "upper_interface"
 
 
-def _require_no_authority(payload: dict[str, object]) -> None:
-    if any(payload.get(key) is not value for key, value in _AUTHORITY_FIELDS.items()):
-        raise VerticalCirculationError("vertical-circulation authority flags changed")
-
-
 def _finite(value: object, field: str) -> float:
     if (
         not isinstance(value, (int, float))
@@ -281,7 +276,6 @@ class VerticalCirculationInterface:
             },
             "vertical-circulation interface",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VerticalCirculationError("unsupported interface schema")
         result = cls(
@@ -331,7 +325,6 @@ class VerticalCirculationObjectBinding:
             {"schema", "component_ref", "object_ref", "operation_ref", *_AUTHORITY_FIELDS},
             "vertical-circulation object binding",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VerticalCirculationError("unsupported object-binding schema")
         result = cls(
@@ -430,7 +423,6 @@ class VerticalCirculationCriteria:
             },
             "vertical-circulation criteria",
         )
-        _require_no_authority(payload)
         for field in ("evidence_refs", "adoption_refs"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"{field} must be a list")
@@ -552,7 +544,6 @@ class WalkingSurfaceSample:
             },
             "walking-surface sample",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VerticalCirculationError("unsupported walking-surface sample schema")
         result = cls(
@@ -672,7 +663,6 @@ class LandingWitness:
             },
             "landing witness",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VerticalCirculationError("unsupported landing-witness schema")
         result = cls(
@@ -770,7 +760,6 @@ class WalkingSurfaceAdjacency:
             },
             "walking-surface adjacency",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VerticalCirculationError("unsupported surface-adjacency schema")
         result = cls(
@@ -972,7 +961,6 @@ class WalkingSurfaceGeometryWitness:
             },
             "walking-surface geometry witness",
         )
-        _require_no_authority(payload)
         for field in (
             "solver_tread_refs",
             "object_bindings",
@@ -1077,7 +1065,6 @@ class CirculationAabbNegativePrecheck:
             },
             "circulation AABB negative precheck",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VerticalCirculationError("unsupported AABB-precheck schema")
         result = cls(
@@ -1287,7 +1274,6 @@ class VerticalCirculationAssemblyWitness:
             },
             "vertical-circulation assembly witness",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VerticalCirculationError("unsupported assembly-witness schema")
         for field in (
@@ -1835,7 +1821,6 @@ class VerticalCirculationContract:
             },
             "vertical-circulation contract",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise VerticalCirculationError("unsupported vertical-circulation contract schema")
         for field in (

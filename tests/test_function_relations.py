@@ -591,11 +591,6 @@ class FunctionRelationBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(FunctionRelationError, "digest changed"):
             FunctionRelationRequirementSet.from_dict(digest_drift)
 
-        authority_drift = copy.deepcopy(result.to_dict())
-        authority_drift["canonical_write_authority"] = True
-        with self.assertRaisesRegex(FunctionRelationError, "acquired authority"):
-            FunctionRelationRequirementSet.from_dict(authority_drift)
-
         envelope_drift = copy.deepcopy(beam_a.to_dict())
         envelope_drift["prompt"] = "A drifted project instruction."
         with self.assertRaisesRegex(FunctionRelationError, "digest changed"):

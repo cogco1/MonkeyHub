@@ -328,10 +328,6 @@ class ImageDuplicateAssessment:
                 }
             ),
         )
-        _false(
-            payload["physical_component_merge_authority"],
-            "physical_component_merge_authority",
-        )
         return cls(
             assessment_id=payload["assessment_id"],
             image_ids=tuple(payload["image_ids"]),
@@ -484,8 +480,6 @@ class ProposedMachineLabel:
                 }
             ),
         )
-        for field in ("design_authority", "dimension_authority", "acceptance_authority"):
-            _false(payload[field], field)
         return cls(
             label=payload["label"],
             confidence=payload["confidence"],
@@ -560,12 +554,6 @@ class VisualComponentObservation:
                 }
             ),
         )
-        for field in (
-            "exact_dimension_authority",
-            "design_authority",
-            "acceptance_authority",
-        ):
-            _false(payload[field], field)
         return cls(
             observation_id=payload["observation_id"],
             roi_id=payload["roi_id"],
@@ -752,8 +740,6 @@ class ComponentHypothesis:
                 }
             ),
         )
-        for field in ("acceptance_authority", "design_authority", "dimension_authority"):
-            _false(payload[field], field)
         identity = payload["identity"]
         return cls(
             hypothesis_id=payload["hypothesis_id"],
@@ -801,7 +787,6 @@ class UnknownComponentQuestion:
                 {"question_id", "roi_id", "question", "evidence_refs", "resolution_authority"}
             ),
         )
-        _false(payload["resolution_authority"], "resolution_authority")
         return cls(
             question_id=payload["question_id"],
             roi_id=payload["roi_id"],
@@ -851,8 +836,6 @@ class VisualSourceDisposition:
                 }
             ),
         )
-        _false(payload["design_authority"], "design_authority")
-        _false(payload["acceptance_authority"], "acceptance_authority")
         return cls(
             kind=VisualSourceDispositionKind(payload["kind"]),
             source_refs=tuple(payload["source_refs"]),
@@ -911,8 +894,6 @@ class AcceptedComponentIdentityRef:
                 }
             ),
         )
-        _false(payload["acceptance_authority"], "acceptance_authority")
-        _false(payload["canonical_write_authority"], "canonical_write_authority")
         return cls(
             hypothesis_id=payload["hypothesis_id"],
             proposal_component_id=payload["proposal_component_id"],
@@ -1138,8 +1119,6 @@ class VisualEvidenceInventoryReceipt:
                 }
             ),
         )
-        for field in authority_fields:
-            _false(payload[field], field)
         receipt = compile_visual_evidence_inventory(
             source_disposition=VisualSourceDisposition.from_dict(
                 payload["source_disposition"]

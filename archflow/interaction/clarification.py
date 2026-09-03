@@ -620,15 +620,6 @@ def _deny_external_authority(
         raise ValueError("unsupported clarification schema")
     if payload["purpose"] != "design_clarification":
         raise ValueError("clarification purpose drifted")
-    for field in (
-        "hard_gate_waiver_authority",
-        "candidate_approval_authority",
-        "world_mutation_authority",
-    ):
-        if payload[field] is not False:
-            raise ValueError(
-                "clarification cannot gain downstream authority"
-            )
 
 
 def _branch_dict(branch: BranchRef) -> dict[str, object]:

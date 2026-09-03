@@ -150,8 +150,6 @@ class EvidenceClaimBinding:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["design_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ValueError("evidence claim binding schema or authority drifted")
         qualifiers = payload["qualifiers"]

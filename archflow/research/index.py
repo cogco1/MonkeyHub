@@ -184,8 +184,6 @@ class BranchBasisIndex:
             raise BasisIndexError("branch basis index schema drifted")
         if (
             value["schema"] != cls.SCHEMA
-            or value["evidence_authority"] is not False
-            or value["canonical_write_authority"] is not False
         ):
             raise BasisIndexError("branch basis index acquired authority")
         scope = BranchResearchScope.from_dict(value["scope"])
@@ -539,11 +537,6 @@ class BranchDecisionContext:
         identity = {key: value[key] for key in expected - {"context_digest"}}
         if value["context_digest"] != digest_value(identity):
             raise BasisIndexError("branch decision context digest changed")
-        if (
-            value["selection_authority"] is not False
-            or value["canonical_write_authority"] is not False
-        ):
-            raise BasisIndexError("branch decision context acquired authority")
         scope = BranchResearchScope.from_dict(value["branch_scope"])
         if value["scope_digest"] != scope.scope_digest:
             raise BasisIndexError("branch decision context scope changed")

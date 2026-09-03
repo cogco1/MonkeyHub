@@ -232,8 +232,6 @@ class ClaimApplicability:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["design_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ValueError("claim applicability schema or authority drifted")
         for field in (

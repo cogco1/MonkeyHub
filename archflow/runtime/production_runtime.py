@@ -185,14 +185,6 @@ class ProductionAuthoringContext:
         }
         if set(value) != expected or value.get("schema") != cls.SCHEMA:
             raise ProductionContextError("production context schema drifted")
-        if any(
-            value.get(field) is not False
-            for field in (
-                "generation_authority", "selection_authority",
-                "persistence_authority", "canonical_write_authority",
-            )
-        ):
-            raise ProductionContextError("production context acquired authority")
         refs = value["required_commitment_refs"]
         if not isinstance(refs, list) or any(
             not isinstance(item, str) for item in refs

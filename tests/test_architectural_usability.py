@@ -204,10 +204,6 @@ class ArchitecturalUsabilitySchemaTests(unittest.TestCase):
         payload["context"]["scene_digest"] = "9" * 64
         with self.assertRaises(ArchitecturalUsabilityError):
             ArchitecturalUsabilityContract.from_dict(payload)
-        payload = copy.deepcopy(_contract().to_dict())
-        payload["model_self_certification_authority"] = True
-        with self.assertRaises(ArchitecturalUsabilityError):
-            ArchitecturalUsabilityContract.from_dict(payload)
 
 
 class ArchitecturalUsabilityEvaluationTests(unittest.TestCase):

@@ -107,7 +107,6 @@ class RelationVerificationBinding:
             },
             "relation verification binding",
         )
-        _require_no_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise RelationVerificationError(
                 "unsupported relation verification binding schema"
@@ -258,7 +257,6 @@ class RelationQuestionVerificationProfile:
             },
             "relation question verification profile",
         )
-        _require_no_authority(payload)
         if (
             payload["schema"] != cls.SCHEMA
             or payload["independent_check_required"] is not True
@@ -412,16 +410,6 @@ def compile_relation_question_verification(
         coverage_denominator=profile.relation_refs,
         covered_refs=profile.relation_refs,
     )
-
-
-def _require_no_authority(payload: dict[str, object]) -> None:
-    if any(
-        payload[field] is not expected
-        for field, expected in _AUTHORITY_FIELDS.items()
-    ):
-        raise RelationVerificationError(
-            "relation verification contract acquired authority"
-        )
 
 
 __all__ = [

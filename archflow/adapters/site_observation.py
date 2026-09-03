@@ -282,12 +282,6 @@ def authorize_site_observation(
             "read_only",
             "site observation must be explicitly read-only",
         )
-    if payload["world_write_authority"] is not False:
-        _raise(
-            SiteObservationErrorCode.WRITE_AUTHORITY,
-            "world_write_authority",
-            "site observation cannot carry mutation authority",
-        )
     if payload["project_id"] != authorization.project_id:
         _raise(
             SiteObservationErrorCode.CROSS_PROJECT,

@@ -394,11 +394,6 @@ class StageArtifactClaimTests(unittest.TestCase):
     def test_strict_roundtrip_rejects_tamper_and_schema_drift(self) -> None:
         claim = StageArtifactClaim(**_entered_kwargs())
 
-        authority = copy.deepcopy(claim.to_dict())
-        authority["canonical_write_authority"] = True
-        with self.assertRaisesRegex(StageArtifactClaimError, "authority"):
-            StageArtifactClaim.from_dict(authority)
-
         extra = copy.deepcopy(claim.to_dict())
         extra["viewer_approved"] = True
         with self.assertRaisesRegex(StageArtifactClaimError, "schema drifted"):

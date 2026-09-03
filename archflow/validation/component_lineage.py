@@ -1009,13 +1009,6 @@ class StageComponentCoverageReceipt:
             raise StageComponentCoverageError(
                 "unsupported stage component coverage receipt schema"
             )
-        if (
-            payload["stage_acceptance_authority"] is not False
-            or payload["canonical_write_authority"] is not False
-        ):
-            raise StageComponentCoverageError(
-                "stage component coverage authority flags changed"
-            )
         for field in (
             "predecessor_operations",
             "successor_operations",

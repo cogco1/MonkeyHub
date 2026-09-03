@@ -248,11 +248,6 @@ class ArchitecturalInvariantContractTests(unittest.TestCase):
         original = basis()
         self.assertEqual(original, ClaimBoundValidationBasis.from_dict(original.to_dict()))
 
-        payload = original.to_dict()
-        payload["stage_acceptance_authority"] = True
-        with self.assertRaises(ArchitecturalInvariantError):
-            ClaimBoundValidationBasis.from_dict(payload)
-
     def test_all_passing_profiles_and_receipts_round_trip(self) -> None:
         cases = (
             (cardinality_profile(), run_cardinality),

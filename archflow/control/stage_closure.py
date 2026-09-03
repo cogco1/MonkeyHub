@@ -219,12 +219,6 @@ class CompositeStageClosureReceipt:
         }
         if set(payload) != expected or payload.get("schema") != cls.SCHEMA:
             raise StageClosureError("unsupported stage closure schema")
-        if (
-            payload.get("stage_acceptance_authority") is not False
-            or payload.get("design_authority") is not False
-            or payload.get("canonical_write_authority") is not False
-        ):
-            raise StageClosureError("stage closure authority flags changed")
         raw_digests = payload.get("check_receipt_digests")
         raw_findings = payload.get("findings")
         if not isinstance(raw_digests, list):

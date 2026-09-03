@@ -4,7 +4,6 @@ from archflow.contracts.authority import (
     DEFAULT_AUTHORITY_FIELDS,
     AuthorityContractError,
     no_authority,
-    require_no_authority,
 )
 from archflow.contracts.branch import (
     branch_ref_from_dict,
@@ -33,7 +32,6 @@ __all__ = [
     "no_authority",
     "read_key_diagnostics",
     "require_exact_branch",
-    "require_no_authority",
     "require_same_branch",
     "require_sha256",
 ]

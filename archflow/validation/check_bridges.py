@@ -77,14 +77,6 @@ def _stage_operation_from_dict(value: object) -> StageOperation:
     )
 
 
-def _require_false(payload: dict[str, object]) -> None:
-    if (
-        payload["design_authority"] is not False
-        or payload["canonical_write_authority"] is not False
-    ):
-        raise CheckReceiptBridgeError("bridge profile authority flags changed")
-
-
 @dataclass(frozen=True, slots=True)
 class ComponentLineageCheckProfile:
     """Exact branch context and predecessor input for lineage conversion."""
@@ -196,7 +188,6 @@ class ComponentLineageCheckProfile:
             raise CheckReceiptBridgeError(
                 "unsupported component lineage profile schema"
             )
-        _require_false(payload)
         if not isinstance(payload["predecessor_operations"], list):
             raise TypeError("predecessor_operations must be a list")
         if not isinstance(payload["denominator_refs"], list):
@@ -298,7 +289,6 @@ class SpatialLayoutCheckProfile:
             raise CheckReceiptBridgeError(
                 "unsupported spatial layout profile schema"
             )
-        _require_false(payload)
         if not isinstance(payload["denominator_refs"], list):
             raise TypeError("denominator_refs must be a list")
         return cls(

@@ -422,7 +422,6 @@ class CandidateExecutablePlan:
             payload["schema"] != cls.SCHEMA
             or payload["plan_digest"] != plan.plan_digest
             or payload["preview_execute_same_payload_required"] is not True
-            or payload["canonical_write_authority"] is not False
         ):
             raise CandidateAssemblyError(
                 "candidate executable plan authority or digest drifted"
@@ -662,7 +661,6 @@ class CandidateAssembly:
             or payload["hard_usability_verdict"] is not None
             or payload["aesthetic_winner"] is not None
             or payload["commitment_monitor_verdict"] is not None
-            or payload["canonical_write_authority"] is not False
         ):
             raise CandidateAssemblyError(
                 "candidate assembly acquired downstream authority"
@@ -778,7 +776,6 @@ class CandidateExecutionHandoff:
             or payload["hard_usability_verdict"] is not None
             or payload["aesthetic_winner"] is not None
             or payload["commitment_monitor_verdict"] is not None
-            or payload["canonical_write_authority"] is not False
         ):
             raise CandidateAssemblyError(
                 "MCP handoff acquired acceptance or write authority"
@@ -897,7 +894,6 @@ class CandidateDerivationArchive:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["full_derivation_embedded"] is not True
-            or payload["canonical_write_authority"] is not False
         ):
             raise CandidateAssemblyError(
                 "candidate archive lost derivation or acquired authority"

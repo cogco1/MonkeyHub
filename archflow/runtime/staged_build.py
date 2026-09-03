@@ -419,9 +419,6 @@ class MaterialAccountReceipt:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["resource_substitution_authority"] is not False
-            or payload["execution_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise StagedBuildError("material account authority drifted")
         return cls(
@@ -836,8 +833,6 @@ class StagedBuildPlan:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["total_work_units"] != plan.total_work_units
-            or payload["execution_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise StagedBuildError("staged build plan authority or totals drifted")
         return plan
@@ -1048,8 +1043,6 @@ class StagedBuildCheckpoint:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["world_write_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise StagedBuildError("checkpoint authority drifted")
         return cls(

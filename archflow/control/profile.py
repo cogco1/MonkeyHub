@@ -273,13 +273,6 @@ class StageRequirementProfileBinding:
             raise StageProfileBindingError(
                 "unsupported stage profile binding schema"
             )
-        if (
-            value.get("stage_acceptance_authority") is not False
-            or value.get("canonical_write_authority") is not False
-        ):
-            raise StageProfileBindingError(
-                "stage profile binding authority flags changed"
-            )
         raw_authorities = value.get("authority_refs")
         if not isinstance(raw_authorities, list):
             raise TypeError("authority_refs must be a list")

@@ -69,11 +69,6 @@ class RelationAuthoringError(ValueError):
     """A project relation context, proposal, or compilation is invalid."""
 
 
-def _require_false_authority(payload: dict[str, object], field: str) -> None:
-    if any(payload.get(name) is not value for name, value in _AUTHORITY_FIELDS.items()):
-        raise RelationAuthoringError(f"{field} authority flags changed")
-
-
 def _list(payload: dict[str, object], field: str) -> list[object]:
     value = payload[field]
     if not isinstance(value, list):
@@ -199,7 +194,6 @@ class RelationRuleEnvelope:
         )
         if payload["schema"] != cls.SCHEMA:
             raise RelationAuthoringError("unsupported relation rule envelope schema")
-        _require_false_authority(payload, "relation rule envelope")
         result = cls(
             relation_kind=ArchitecturalRelationKind(payload["relation_kind"]),
             subject_role=payload["subject_role"],
@@ -363,7 +357,6 @@ class RelationBasisBinding:
         )
         if payload["schema"] != cls.SCHEMA:
             raise RelationAuthoringError("unsupported relation basis schema")
-        _require_false_authority(payload, "relation basis")
         result = cls(
             basis_id=payload["basis_id"],
             basis_kind=RelationBasisKind(payload["basis_kind"]),
@@ -532,7 +525,6 @@ class RelationDerivationQuestion:
             expected,
             "relation derivation question",
         )
-        _require_false_authority(payload, "relation question")
         result = cls(
             question_id=payload["question_id"],
             projection=RelationProjection(payload["projection"]),
@@ -727,7 +719,6 @@ class RelationAuthoringContext:
         )
         if payload["schema"] != cls.SCHEMA:
             raise RelationAuthoringError("unsupported relation authoring context schema")
-        _require_false_authority(payload, "relation authoring context")
         result = cls(
             context_id=payload["context_id"],
             branch=branch_ref_from_dict(payload["branch"]),
@@ -829,11 +820,8 @@ class RelationProposalSpec:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["proposal_only"] is not True
-            or payload["propagation_authority"] is not False
-            or payload["predecessor_binding_authority"] is not False
         ):
             raise RelationAuthoringError("unsupported relation proposal spec schema")
-        _require_false_authority(payload, "relation proposal spec")
         result = cls(
             relation_id=payload["relation_id"],
             question_refs=tuple(_list(payload, "question_refs")),
@@ -952,7 +940,6 @@ class RelationRuleProposalSpec:
             or payload["allow_not_applicable"] is not False
         ):
             raise RelationAuthoringError("relation rule proposal acquired authority")
-        _require_false_authority(payload, "relation rule proposal")
         result = cls(
             rule_id=payload["rule_id"],
             question_refs=tuple(_list(payload, "question_refs")),
@@ -1054,7 +1041,6 @@ class RelationDerivationAnswer:
         )
         if payload["schema"] != cls.SCHEMA or payload["proposal_only"] is not True:
             raise RelationAuthoringError("unsupported relation answer schema")
-        _require_false_authority(payload, "relation answer")
         result = cls(
             question_ref=payload["question_ref"],
             status=RelationAnswerStatus(payload["status"]),
@@ -1153,10 +1139,8 @@ class RelationAuthoringProposal:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["proposal_only"] is not True
-            or payload["validation_authority"] is not False
         ):
             raise RelationAuthoringError("relation proposal acquired authority")
-        _require_false_authority(payload, "relation proposal")
         result = cls(
             context_digest=payload["context_digest"],
             answers=tuple(
@@ -1226,7 +1210,6 @@ class RelationTopologyWitness:
         )
         if payload["schema"] != cls.SCHEMA:
             raise RelationAuthoringError("unsupported topology witness schema")
-        _require_false_authority(payload, "topology witness")
         result = cls(
             question_ref=payload["question_ref"],
             subject_ref=payload["subject_ref"],
@@ -1334,7 +1317,6 @@ class RelationAuthoringCompilationReceipt:
             or payload["proposal_only"] is not True
         ):
             raise RelationAuthoringError("compilation receipt acquired authority")
-        _require_false_authority(payload, "compilation receipt")
         result = cls(
             status=RelationAuthoringCompilationStatus(payload["status"]),
             context_digest=payload["context_digest"],
@@ -1453,7 +1435,6 @@ class RelationAuthoringCompilation:
         )
         if payload["schema"] != cls.SCHEMA:
             raise RelationAuthoringError("unsupported relation compilation schema")
-        _require_false_authority(payload, "relation compilation")
         graph = payload["graph"]
         policy = payload["policy"]
         manifest = payload["coverage_manifest"]

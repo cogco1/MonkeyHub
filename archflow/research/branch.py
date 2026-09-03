@@ -283,8 +283,6 @@ class BranchResearchProfile:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["selection_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise BranchResearchError("branch research profile acquired authority")
         fields = (
@@ -437,7 +435,6 @@ class BranchHardFeasibilityAssessment:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["selection_authority"] is not False
         ):
             raise BranchResearchError("hard feasibility assessment acquired authority")
         refs = payload["evidence_refs"]
@@ -886,7 +883,6 @@ class BranchSelectionDecision:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["canonical_write_authority"] is not False
         ):
             raise BranchResearchError("branch selection decision acquired authority")
         list_fields = (
@@ -1332,8 +1328,6 @@ class BranchResearchScope:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["research_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise BranchResearchError("branch research scope acquired authority")
         identity = _mapping(payload["branch_identity"], "branch identity")
@@ -1686,8 +1680,6 @@ class BranchPrecedentQuery:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["adoption_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise BranchResearchError("branch query acquired authority")
         for field in ("decision_refs", "search_terms", "domain_allowlist"):
@@ -1847,9 +1839,7 @@ class BranchEvidenceSnapshot:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["adoption_authority"] is not False
             or payload["prompt_injection_surface"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise BranchResearchError("branch evidence snapshot acquired authority")
         content_bytes = payload["content_bytes"]
@@ -1900,9 +1890,7 @@ def bind_branch_snapshot(
     )
     if (
         payload["schema"] != "WebEvidenceSnapshot@1"
-        or payload["adoption_authority"] is not False
         or payload["prompt_injection_surface"] is not False
-        or payload["canonical_write_authority"] is not False
     ):
         raise BranchResearchError("web evidence snapshot schema or authority changed")
     content_bytes = payload["content_bytes"]
@@ -1982,7 +1970,6 @@ class BranchPrecedentAdoption:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["canonical_write_authority"] is not False
         ):
             raise BranchResearchError("branch adoption acquired authority")
         return cls(

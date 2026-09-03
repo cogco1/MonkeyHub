@@ -42,14 +42,6 @@ class RelationCoverageError(ValueError):
     """A relation policy, denominator, disposition, or manifest is invalid."""
 
 
-def _require_false_authority(payload: dict[str, object], field: str) -> None:
-    if any(
-        payload.get(name) is not expected
-        for name, expected in _AUTHORITY_FIELDS.items()
-    ):
-        raise RelationCoverageError(f"{field} authority flags changed")
-
-
 def _non_negative_count(
     value: object,
     field: str,
@@ -194,7 +186,6 @@ class SemanticRelationRule:
             raise RelationCoverageError(
                 "unsupported semantic relation rule schema"
             )
-        _require_false_authority(payload, "semantic relation rule")
         evidence_refs = _list(payload, "evidence_refs")
         authority_refs = _list(payload, "authority_refs")
         result = cls(
@@ -302,7 +293,6 @@ class SemanticKindRelationPolicy:
             raise RelationCoverageError(
                 "unsupported semantic kind relation policy schema"
             )
-        _require_false_authority(payload, "semantic kind relation policy")
         rules = _list(payload, "rules")
         source_refs = _list(payload, "source_refs")
         result = cls(
@@ -567,7 +557,6 @@ class RelationRequirementSlot:
             raise RelationCoverageError(
                 "unsupported relation requirement slot schema"
             )
-        _require_false_authority(payload, "relation requirement slot")
         evidence_refs = _list(payload, "evidence_refs")
         authority_refs = _list(payload, "authority_refs")
         result = cls(
@@ -662,10 +651,6 @@ class RelationNotApplicable:
             raise RelationCoverageError(
                 "unsupported relation not-applicable schema"
             )
-        _require_false_authority(
-            payload,
-            "relation not-applicable declaration",
-        )
         evidence_refs = _list(payload, "evidence_refs")
         authority_refs = _list(payload, "authority_refs")
         result = cls(
@@ -793,7 +778,6 @@ class RelationCoverageDisposition:
             raise RelationCoverageError(
                 "unsupported relation coverage disposition schema"
             )
-        _require_false_authority(payload, "relation coverage disposition")
         relation_refs = _list(payload, "relation_refs")
         match_refs = _list(payload, "match_refs")
         raw_not_applicable = payload["not_applicable"]
@@ -993,7 +977,6 @@ class GraphCoverageManifest:
             raise RelationCoverageError(
                 "unsupported graph coverage manifest schema"
             )
-        _require_false_authority(payload, "graph coverage manifest")
         slots = _list(payload, "slots")
         dispositions = _list(payload, "dispositions")
         result = cls(

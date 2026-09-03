@@ -140,7 +140,6 @@ class AcceptedRelationTopologyIdentity:
             raise StageRelationInheritanceError(
                 "unsupported accepted relation topology identity schema"
             )
-        _require_no_authority(payload)
         result = cls(
             topology_source_digest=payload["topology_source_digest"],
             graph_digest=payload["graph_digest"],
@@ -349,7 +348,6 @@ class AcceptedStageRelationPredecessor:
             raise StageRelationInheritanceError(
                 "unsupported accepted stage relation predecessor schema"
             )
-        _require_no_authority(payload)
         if not isinstance(payload["accepted_topologies"], list):
             raise TypeError("accepted_topologies must be a list")
         result = cls(
@@ -387,16 +385,6 @@ class AcceptedStageRelationPredecessor:
                 "accepted stage relation predecessor identity changed"
             )
         return result
-
-
-def _require_no_authority(payload: dict[str, object]) -> None:
-    if any(
-        payload.get(field) is not expected
-        for field, expected in _AUTHORITY_FIELDS.items()
-    ):
-        raise StageRelationInheritanceError(
-            "stage relation inheritance authority flags changed"
-        )
 
 
 def _typed_tuple(
@@ -521,7 +509,6 @@ class StageRelationInheritanceCoverage:
             raise StageRelationInheritanceError(
                 "unsupported stage relation inheritance coverage schema"
             )
-        _require_no_authority(payload)
         for field in ("current_relation_refs", "current_relation_digests"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"{field} must be a list")
@@ -755,7 +742,6 @@ class StageRelationInheritanceReceipt:
             raise StageRelationInheritanceError(
                 "unsupported stage relation inheritance receipt schema"
             )
-        _require_no_authority(payload)
         for field in (
             "coverage",
             "predecessor_relation_refs",

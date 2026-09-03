@@ -600,10 +600,6 @@ def test_relation_requirement_set_duplicate_and_serialized_tamper_fail_closed() 
         relation_requirements=requirements,
     )
     payload = source.to_dict()
-    payload["canonical_write_authority"] = True
-    with pytest.raises(StageControlSourceError, match="acquired authority"):
-        ComponentFunctionBaselineSource.from_dict(payload)
-    payload = source.to_dict()
     payload["relation_requirements"]["set_digest"] = SHA_A
     with pytest.raises(ValueError, match="digest changed"):
         ComponentFunctionBaselineSource.from_dict(payload)

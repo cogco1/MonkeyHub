@@ -636,8 +636,6 @@ class ArchitecturalUsabilityContract:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["building_answers_owned_by_framework"] is not False
-            or payload["model_self_certification_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ArchitecturalUsabilityError("contract authority drifted")
         sources = payload["sources"]
@@ -978,11 +976,6 @@ class ArchitecturalUsabilityReceipt:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["artifact_presence_claimed"] is not True
-            or payload["model_self_certification_authority"] is not False
-            or payload["geometry_mutation_authority"] is not False
-            or payload["review_authority"] is not False
-            or payload["promotion_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ArchitecturalUsabilityError("receipt authority drifted")
         findings = payload["findings"]

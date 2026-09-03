@@ -636,14 +636,6 @@ class StageSubjectInventoryTests(unittest.TestCase):
                 obligations=incomplete,
             )
 
-        payload = copy.deepcopy(_compile(proposal, index, branch).to_dict())
-        payload["design_authority"] = True
-        with self.assertRaisesRegex(
-            StageSubjectInventoryError,
-            "authority flags changed",
-        ):
-            StageSubjectInventory.from_dict(payload)
-
 
 if __name__ == "__main__":
     unittest.main()

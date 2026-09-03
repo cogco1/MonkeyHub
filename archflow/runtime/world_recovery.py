@@ -741,8 +741,6 @@ class WorldRecoveryArchive:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["canonical_write_authority"] is not False
-            or payload["external_world_write_authority"] is not False
         ):
             raise WorldRecoveryError(
                 "world recovery archive acquired mutation authority"

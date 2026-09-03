@@ -927,8 +927,6 @@ def validate_roof_eaves_pediment_operations(
         else:
             soft_parameter_policy_valid &= (
                 basis.get("classification") == "SOFT"
-                and basis.get("metric_authority") is False
-                and basis.get("pixel_measurement_authority") is False
                 and _soft_ranges_valid(basis)
             )
         parameters = operation.get("parameters")

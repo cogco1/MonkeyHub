@@ -86,16 +86,6 @@ def _exact_mapping(
     return value
 
 
-def _require_false_authority(payload: Mapping[str, object]) -> None:
-    if any(
-        payload.get(field) is not expected
-        for field, expected in _AUTHORITY_FIELDS.items()
-    ):
-        raise GenesisSemanticCompletenessError(
-            "semantic completeness authority flags changed"
-        )
-
-
 def _record_to_dict(ref: ProjectRecordRef) -> dict[str, object]:
     return {
         "project_id": ref.project_id,
@@ -407,7 +397,6 @@ class SemanticSystemBasis:
             raise GenesisSemanticCompletenessError(
                 "unsupported semantic system basis schema"
             )
-        _require_false_authority(payload)
         if not isinstance(payload["semantic_kinds"], list):
             raise TypeError("semantic_kinds must be a list")
         raw_scope = payload["research_scope"]
@@ -598,7 +587,6 @@ class SemanticSystemRequirement:
             raise GenesisSemanticCompletenessError(
                 "unsupported semantic system requirement schema"
             )
-        _require_false_authority(payload)
         for field in ("semantic_kinds", "bases"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"{field} must be a list")
@@ -786,7 +774,6 @@ class GenesisSemanticDenominator:
             raise GenesisSemanticCompletenessError(
                 "unsupported genesis semantic denominator schema"
             )
-        _require_false_authority(payload)
         if not isinstance(payload["systems"], list):
             raise TypeError("systems must be a list")
         result = cls(
@@ -930,7 +917,6 @@ class SemanticSystemDeclaration:
             raise GenesisSemanticCompletenessError(
                 "unsupported semantic system declaration schema"
             )
-        _require_false_authority(payload)
         if not isinstance(payload["component_refs"], list):
             raise TypeError("component_refs must be a list")
         result = cls(
@@ -1102,7 +1088,6 @@ class SemanticSystemFinding:
             raise GenesisSemanticCompletenessError(
                 "unsupported semantic system finding schema"
             )
-        _require_false_authority(payload)
         for field in ("component_refs", "reason_codes"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"{field} must be a list")

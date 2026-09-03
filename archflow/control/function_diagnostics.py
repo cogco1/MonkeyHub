@@ -63,13 +63,6 @@ _AUTHORITY_FIELDS = {
 }
 
 
-def _require_authority_free(payload: dict[str, object]) -> None:
-    if any(payload.get(field) is not False for field in _AUTHORITY_FIELDS):
-        raise FunctionDiagnosticError(
-            "functional diagnostic projection acquired authority"
-        )
-
-
 def _expected_color(status: FunctionStatus) -> str | None:
     color = FUNCTION_DIAGNOSTIC_PALETTE[status]
     return None if color is None else color.value
@@ -270,7 +263,10 @@ class FunctionDiagnosticProjection:
             raise FunctionDiagnosticError(
                 "functional diagnostic projection is not presentation-only"
             )
-        _require_authority_free(payload)
+        if payload["material_override"] is not False:
+            raise FunctionDiagnosticError(
+                "functional diagnostic projection overrode material"
+            )
         entries = payload["entries"]
         if not isinstance(entries, list):
             raise TypeError("functional diagnostic entries must be a list")

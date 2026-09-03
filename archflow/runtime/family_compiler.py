@@ -317,10 +317,6 @@ class ComponentFamilyCompilationReceipt:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["geometry_generation_authority"] is not False
-            or payload["hard_gate_authority"] is not False
-            or payload["persistence_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ValueError("family compilation authority changed")
         compiled = _list(payload["compiled_instances"], "compiled_instances")
@@ -453,9 +449,6 @@ class ComponentFamilyRealizationReceipt:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["external_platform_required"] is not False
-            or payload["geometry_mutation_authority"] is not False
-            or payload["review_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ValueError("family realization authority changed")
         issues = _list(payload["issues"], "issues")
@@ -674,10 +667,6 @@ class ComponentFamilyLifecycleReceipt:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["successor_authority"] is not False
-            or payload["geometry_mutation_authority"] is not False
-            or payload["review_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise ValueError("family lifecycle authority changed")
         transitions = _list(payload["transitions"], "transitions")

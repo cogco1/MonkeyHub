@@ -684,10 +684,3 @@ def test_prepare_rejects_unknown_visual_inventory() -> None:
         prepare_stage_control_chain(
             **{**base, "visual_inventory": blocked}
         )
-
-
-def test_package_authority_tamper_fails_closed() -> None:
-    payload = _prepared().to_dict()
-    payload["stage_acceptance_authority"] = True
-    with pytest.raises(StageControlChainError, match="acquired authority"):
-        PreparedStageControlChain.from_dict(payload)

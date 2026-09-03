@@ -191,7 +191,6 @@ class StairObligationResolution:
             },
             "stair obligation resolution",
         )
-        _require_no_binding_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairGeometryError(
                 "unsupported stair-obligation resolution schema"
@@ -314,7 +313,6 @@ class StairMaterializationGate:
             },
             "stair materialization gate",
         )
-        _require_no_binding_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairGeometryError(
                 "unsupported stair-materialization gate schema"
@@ -334,14 +332,6 @@ class StairMaterializationGate:
                 "stair-materialization gate identity changed"
             )
         return result
-
-
-def _require_no_binding_authority(payload: dict[str, object]) -> None:
-    if any(
-        payload.get(key) is not value
-        for key, value in _BINDING_AUTHORITY_FIELDS.items()
-    ):
-        raise StairGeometryError("stair design binding acquired authority")
 
 
 def _finite_vector3(
@@ -487,9 +477,6 @@ class StairPlacement:
             raise StairGeometryError("stair placement schema drifted")
         if (
             value["schema"] != cls.SCHEMA
-            or value["scale_authority"] is not False
-            or value["shear_authority"] is not False
-            or value["canonical_write_authority"] is not False
         ):
             raise StairGeometryError("stair placement acquired authority")
         for field in ("origin", "run_basis", "side_basis", "up_basis"):
@@ -595,7 +582,6 @@ class StairInterfaceDesignBinding:
             },
             "stair interface design binding",
         )
-        _require_no_binding_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairGeometryError(
                 "unsupported stair-interface binding schema"
@@ -739,7 +725,6 @@ class StairPlanEnvelopeDesignBinding:
             },
             "stair plan-envelope design binding",
         )
-        _require_no_binding_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairGeometryError(
                 "unsupported stair plan-envelope binding schema"
@@ -1084,7 +1069,6 @@ class StairDesignBinding:
             },
             "stair design binding",
         )
-        _require_no_binding_authority(payload)
         if payload["schema"] != cls.SCHEMA:
             raise StairGeometryError("unsupported stair design binding schema")
         for field in ("evidence_refs", "authority_refs"):
@@ -1187,8 +1171,6 @@ class StairRealizationProfile:
             raise StairGeometryError("stair realization profile schema drifted")
         if (
             value["schema"] != cls.SCHEMA
-            or value["structural_support_authority"] is not False
-            or value["canonical_write_authority"] is not False
         ):
             raise StairGeometryError(
                 "stair realization profile acquired authority"

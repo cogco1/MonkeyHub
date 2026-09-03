@@ -570,8 +570,6 @@ class DesignBrief:
         _exact(payload, expected, "design brief")
         if payload["schema"] != cls.SCHEMA:
             raise ValueError("unsupported design brief schema")
-        if payload["generation_authority"] is not False:
-            raise ValueError("design brief cannot gain generation authority")
         if payload["geometry_selected"] is not False:
             raise ValueError("design brief cannot select geometry")
         base_payload = _mapping(payload["base"], "base")

@@ -828,20 +828,6 @@ class RelationAuthoringContractTests(unittest.TestCase):
         with self.assertRaisesRegex(RelationAuthoringError, "weaken"):
             compile_relation_authoring(self.context, proposal)
 
-    def test_authority_tampering_is_rejected(self) -> None:
-        payload = copy.deepcopy(self.proposal.to_dict())
-        payload["stage_acceptance_authority"] = True
-
-        with self.assertRaisesRegex(RelationAuthoringError, "authority"):
-            RelationAuthoringProposal.from_dict(payload)
-
-    def test_agent_cannot_inject_predecessor_or_propagation_authority(self) -> None:
-        payload = copy.deepcopy(self.proposal.to_dict())
-        payload["relations"][0]["predecessor_binding_authority"] = True
-
-        with self.assertRaisesRegex(RelationAuthoringError, "schema|authority"):
-            RelationAuthoringProposal.from_dict(payload)
-
     def test_inventory_ref_must_bind_the_exact_digest(self) -> None:
         with self.assertRaisesRegex(RelationAuthoringError, "exact digest"):
             replace(

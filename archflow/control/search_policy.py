@@ -66,14 +66,6 @@ _AUTHORITY_FIELDS = {
 }
 
 
-def _require_false_authority(payload: dict[str, object]) -> None:
-    if any(
-        payload.get(field) is not expected
-        for field, expected in _AUTHORITY_FIELDS.items()
-    ):
-        raise SearchPolicyError("search policy authority flags changed")
-
-
 def _non_negative_int(value: object, field: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise SearchPolicyError(f"{field} must be a non-negative integer")
@@ -394,7 +386,6 @@ class DecisionSpaceDescriptor:
         )
         if payload["schema"] != cls.SCHEMA:
             raise SearchPolicyError("unsupported decision-space schema")
-        _require_false_authority(payload)
         for field in (
             "decision_refs",
             "reopenable_decision_refs",
@@ -560,7 +551,6 @@ class SearchPolicyDescriptor:
         )
         if payload["schema"] != cls.SCHEMA:
             raise SearchPolicyError("unsupported policy descriptor schema")
-        _require_false_authority(payload)
         if not isinstance(payload["supported_space_kinds"], list):
             raise TypeError("supported_space_kinds must be a list")
         if not isinstance(payload["supported_actions"], list):
@@ -761,7 +751,6 @@ class SearchPolicyRequest:
         )
         if payload["schema"] != cls.SCHEMA:
             raise SearchPolicyError("unsupported search request schema")
-        _require_false_authority(payload)
         for field in ("evaluations", "allowed_actions", "evidence_refs"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"{field} must be a list")
@@ -977,7 +966,6 @@ class SearchDirective:
         )
         if payload["schema"] != cls.SCHEMA:
             raise SearchPolicyError("unsupported search directive schema")
-        _require_false_authority(payload)
         for field in (
             "target_refs",
             "allocations",

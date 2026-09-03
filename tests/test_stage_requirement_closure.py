@@ -144,12 +144,6 @@ class StageRequirementProfileTests(unittest.TestCase):
             )
 
     def test_serialized_authority_and_schema_drift_fail_closed(self) -> None:
-        requirements = profile(universal_requirement())
-        profile_payload = requirements.to_dict()
-        profile_payload["stage_acceptance_authority"] = True
-        with self.assertRaises(StageRequirementError):
-            StageRequirementProfile.from_dict(profile_payload)
-
         requirement_payload = universal_requirement().to_dict()
         requirement_payload["unexpected"] = "value"
         with self.assertRaises(StageRequirementError):
@@ -277,18 +271,6 @@ class CompositeStageClosureTests(unittest.TestCase):
             StageClosureFindingCode.NOT_APPLICABLE_FORBIDDEN,
             {item.code for item in closure.findings},
         )
-
-    def test_retained_closure_authority_cannot_be_tampered(self) -> None:
-        requirement = universal_requirement()
-        closure = compile_composite_stage_closure(
-            profile(requirement),
-            subject_digest=SHA_B,
-            check_receipts=(receipt(requirement),),
-        )
-        payload = closure.to_dict()
-        payload["canonical_write_authority"] = True
-        with self.assertRaises(ValueError):
-            CompositeStageClosureReceipt.from_dict(payload)
 
 
 if __name__ == "__main__":

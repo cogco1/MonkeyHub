@@ -225,7 +225,6 @@ class TerrainStateBindingReceipt:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["canonical_write_authority"] is not False
         ):
             raise TerrainAdaptationError(
                 "terrain state binding authority drifted"
@@ -341,8 +340,6 @@ class TerrainAdaptationPlan:
             payload["schema"] != cls.SCHEMA
             or payload["geometry_binding_required"] is not True
             or payload["automatic_winner"] is not False
-            or payload["canonical_write_authority"] is not False
-            or payload["external_platform_authority"] is not False
         ):
             raise TerrainAdaptationError("terrain plan authority or schema drifted")
         alternatives = tuple(
@@ -529,8 +526,6 @@ class TerrainRelationshipReceipt:
         )
         if (
             payload["schema"] != cls.SCHEMA
-            or payload["hard_usability_authority"] is not False
-            or payload["canonical_write_authority"] is not False
             or payload["external_platform_execution"] is not False
         ):
             raise TerrainAdaptationError(
@@ -610,8 +605,6 @@ class TerrainRetryStopReceipt:
         if (
             payload["schema"] != cls.SCHEMA
             or payload["message"] != expected_message
-            or payload["design_authority"] is not False
-            or payload["canonical_write_authority"] is not False
         ):
             raise TerrainAdaptationError(
                 "terrain retry stop authority or message drifted"

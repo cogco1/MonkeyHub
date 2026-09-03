@@ -375,15 +375,6 @@ class ComponentIndex:
             payload["schema"] != cls.SCHEMA
             or payload["derived"] is not True
             or payload["regenerable"] is not True
-            or any(
-                payload[field] is not False
-                for field in (
-                    "composition_tree_authority",
-                    "control_tree_authority",
-                    "persistence_authority",
-                    "canonical_write_authority",
-                )
-            )
         ):
             raise ComponentIndexError("component index authority flags changed")
         entries = payload["entries"]

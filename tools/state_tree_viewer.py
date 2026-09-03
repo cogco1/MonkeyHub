@@ -367,15 +367,6 @@ def _fallback_validate_stage_pack(payload: object) -> dict[str, object]:
         label="StageEvidencePack",
     )
     _exact_keys(pack, _STAGE_PACK_KEYS, "StageEvidencePack@1")
-    for field in (
-        "selection_authority",
-        "evidence_authority",
-        "stage_acceptance_authority",
-        "canonical_write_authority",
-    ):
-        if pack[field] is not False:
-            raise StagePanelError("StageEvidencePack acquired authority")
-
     project_id = _required_text(pack["project_id"], "project_id")
     run_id = _required_text(pack["run_id"], "run_id")
     base = _strict_mapping(pack["base"], "base")
@@ -858,12 +849,6 @@ def adapt_pantheon_stage_snapshot(payload: object) -> dict[str, object]:
         _PANTHEON_SNAPSHOT_KEYS,
         "PantheonStageProgressSnapshot@1",
     )
-    if (
-        snapshot["view_authority"] is not False
-        or snapshot["stage_acceptance_authority"] is not False
-        or snapshot["canonical_write_authority"] is not False
-    ):
-        raise StagePanelError("Pantheon stage snapshot acquired authority")
     project_id = _required_text(snapshot["project_id"], "project_id")
     run_id = _required_text(
         snapshot["current_stage_run_id"], "current_stage_run_id"
@@ -918,11 +903,6 @@ def adapt_pantheon_stage_snapshot(payload: object) -> dict[str, object]:
     alignment = _strict_mapping(snapshot["model_alignment"], "model_alignment")
     if alignment.get("schema") != "StageModelAlignment@1":
         raise StagePanelError("model alignment schema changed")
-    if (
-        alignment.get("stage_acceptance_authority") is not False
-        or alignment.get("canonical_write_authority") is not False
-    ):
-        raise StagePanelError("model alignment acquired authority")
     model = _strict_mapping(snapshot["model"], "model")
     inspection = model.get("inspection")
     normalized_inspection = (
@@ -1216,14 +1196,6 @@ def adapt_panel_input(payload: object) -> dict[str, object]:
     _exact_keys(snapshot, _PANEL_SNAPSHOT_KEYS, "StageEvidencePanelSnapshot@1")
     if snapshot["read_only"] is not True:
         raise StagePanelError("Stage panel snapshot must declare read_only=true")
-    for field in (
-        "selection_authority",
-        "evidence_authority",
-        "stage_acceptance_authority",
-        "canonical_write_authority",
-    ):
-        if snapshot[field] is not False:
-            raise StagePanelError("Stage panel snapshot acquired authority")
     raw_pack = _strict_mapping(snapshot["stage_pack"], "stage_pack")
     pack = adapt_stage_evidence_pack(raw_pack)
     declared_digest = _required_sha256(
@@ -2471,7 +2443,6 @@ def _expand_pantheon_stage_reviews(
             or review.get("project_id") != project_id
             or review.get("run_id") != run_id
             or review.get("stage") != stage_index
-            or review.get("canonical_write_authority") is not False
         ):
             panel.setdefault("diagnostics", []).append(
                 {
@@ -2834,7 +2805,6 @@ def _expand_pantheon_detail_plan(
     if (
         plan.get("project_id") != identity.get("project_id")
         or plan.get("run_id") != identity.get("run_id")
-        or plan.get("canonical_write_authority") is not False
     ):
         panel.setdefault("diagnostics", []).append(
             {
@@ -3025,7 +2995,6 @@ def _expand_pantheon_execution_receipt(
         receipt.get("schema") != "P069CandidateCadExecutionReceipt@1"
         or receipt.get("project_id") != identity.get("project_id")
         or receipt.get("run_id") != identity.get("run_id")
-        or receipt.get("canonical_write_authority") is not False
     ):
         panel.setdefault("diagnostics", []).append(
             {
@@ -3050,8 +3019,6 @@ def _expand_pantheon_execution_receipt(
     if isinstance(embedded, dict):
         if (
             embedded.get("schema") != "P069CadExecutionVerificationSummary@1"
-            or embedded.get("stage_acceptance_authority") is not False
-            or embedded.get("canonical_write_authority") is not False
         ):
             panel.setdefault("diagnostics", []).append(
                 {

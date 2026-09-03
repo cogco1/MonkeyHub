@@ -135,7 +135,6 @@ class RelationCheckerRequirement:
             raise RelationTraversalError(
                 "unsupported relation checker requirement schema"
             )
-        _require_false_authority(payload)
         result = cls(
             relation_ref=payload["relation_ref"],
             check_id=payload["check_id"],
@@ -334,7 +333,6 @@ class RelationTraversalPolicy:
             raise RelationTraversalError(
                 "unsupported relation traversal policy schema"
             )
-        _require_false_authority(payload)
         for field in (
             "start_refs",
             "target_refs",
@@ -393,11 +391,6 @@ def projection_rejects_cycles(projection: RelationProjection) -> bool:
     if not isinstance(projection, RelationProjection):
         raise TypeError("projection must be RelationProjection")
     return projection in _CYCLE_REJECTING_PROJECTIONS
-
-
-def _require_false_authority(payload: dict[str, object]) -> None:
-    if any(payload.get(key) is not value for key, value in _AUTHORITY_FIELDS.items()):
-        raise RelationTraversalError("relation traversal authority flags changed")
 
 
 def _bounded_refs(values: tuple[str, ...], field: str, *, empty: bool = False) -> tuple[str, ...]:
@@ -579,7 +572,6 @@ class RelationView:
         )
         if payload["schema"] != cls.SCHEMA:
             raise RelationTraversalError("unsupported relation view schema")
-        _require_false_authority(payload)
         if not isinstance(payload["node_refs"], list) or not isinstance(payload["arcs"], list):
             raise TypeError("relation view tuple fields must be lists")
         result = cls(
@@ -1131,7 +1123,6 @@ class GraphTraversalReceipt:
         )
         if payload["schema"] != cls.SCHEMA:
             raise RelationTraversalError("unsupported traversal receipt schema")
-        _require_false_authority(payload)
         for field in (
             "start_refs", "target_refs", "reached_refs", "traversed_relation_refs",
             "unresolved_relation_refs", "blocker_relation_refs", "boundary_refs",

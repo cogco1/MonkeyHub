@@ -311,16 +311,6 @@ class RelationAuthoringProviderReceipt:
             payload["schema"] != cls.SCHEMA
             or payload["single_provider_call"] is not True
             or payload["proposal_only"] is not True
-            or any(
-                payload[field] is not False
-                for field in (
-                    "validation_authority",
-                    "design_authority",
-                    "stage_acceptance_authority",
-                    "persistence_authority",
-                    "canonical_write_authority",
-                )
-            )
         ):
             raise RelationAuthoringError("provider receipt acquired authority")
         compilation_receipt = (

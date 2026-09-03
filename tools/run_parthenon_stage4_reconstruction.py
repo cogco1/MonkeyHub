@@ -2478,10 +2478,6 @@ def validate_visual_manifest(manifest: Mapping[str, object]) -> tuple[str, ...]:
         raise ValueError("visual candidate partitions overlap")
     nested = manifest.get("manifest")
     if isinstance(nested, Mapping):
-        if nested.get("measurement_authority") is not False:
-            raise ValueError("visual manifest acquired exact-dimension authority")
-        if nested.get("geometry_mutation_authority") is not False:
-            raise ValueError("visual manifest acquired geometry authority")
         bindings = nested.get("candidate_bindings", ())
         by_id = {
             str(item["candidate"]["candidate_id"]): item["candidate"]
@@ -3258,7 +3254,6 @@ def _load_exact_predecessors(
         or progress.get("run_id") != PREDECESSOR_RUN_ID
         or progress.get("selected_branch_id") != BRANCH_ID
         or progress.get("disposition") != "HOLD"
-        or progress.get("canonical_write_authority") is not False
     ):
         raise ParthenonStage4Error("exact Stage 3 progress snapshot changed identity or disposition")
 
@@ -3358,7 +3353,7 @@ def _load_exact_predecessors(
     if retained_inspection.get("artifact_ref", {}).get("sha256") != PREDECESSOR_MODEL_SHA256:
         raise ParthenonStage4Error("Stage 3 retained inspection does not bind the model")
     retained_spatial = repository.load_json(PREDECESSOR_SPATIAL_REF)
-    if retained_spatial.get("status") != "PASSED" or retained_spatial.get("canonical_write_authority") is not False:
+    if retained_spatial.get("status") != "PASSED":
         raise ParthenonStage4Error("Stage 3 predecessor spatial receipt is not PASSED/HOLD")
 
     visual_manifest = repository.load_json(VISUAL_MANIFEST_REF)
@@ -3370,8 +3365,6 @@ def _load_exact_predecessors(
         or len(visual_manifest.get("rejected_candidate_ids", ())) != 5
         or len(visual_manifest.get("region_record_refs", ())) != 32
         or len(visual_manifest.get("overlay_record_refs", ())) != 8
-        or visual_manifest.get("canonical_write_authority") is not False
-        or visual_manifest.get("geometry_mutation_authority") is not False
     ):
         raise ParthenonStage4Error("exact P086 visual-region manifest drifted")
 

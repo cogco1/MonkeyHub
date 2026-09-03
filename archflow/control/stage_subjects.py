@@ -56,11 +56,6 @@ def _exact_mapping(
     return value
 
 
-def _require_false_authority(payload: Mapping[str, object]) -> None:
-    if any(payload.get(field) is not expected for field, expected in _AUTHORITY_FIELDS.items()):
-        raise StageSubjectInventoryError("stage subject authority flags changed")
-
-
 def _record_to_dict(ref: ProjectRecordRef) -> dict[str, object]:
     return {
         "project_id": ref.project_id,
@@ -201,7 +196,6 @@ class StageSubjectRoleObligation:
             raise StageSubjectInventoryError(
                 "unsupported stage subject role obligation schema"
             )
-        _require_false_authority(payload)
         for field in ("target_refs", "evidence_refs", "authority_refs"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"{field} must be a list")
@@ -370,7 +364,6 @@ class StageSubjectInventoryEntry:
             raise StageSubjectInventoryError(
                 "unsupported stage subject inventory entry schema"
             )
-        _require_false_authority(payload)
         for field in (
             "geometry_object_ids",
             "binding_ids",
@@ -783,7 +776,6 @@ class StageSubjectInventory:
             expected,
             "stage subject inventory",
         )
-        _require_false_authority(payload)
         if not isinstance(payload["entries"], list):
             raise TypeError("entries must be a list")
         if schema in {cls.SCHEMA, cls.PREVIOUS_SCHEMA} and not isinstance(

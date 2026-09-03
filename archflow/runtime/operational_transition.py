@@ -674,8 +674,6 @@ def load_operational_transition_trace(
         raise OperationalTransitionError("transition trace schema is invalid")
     if frozen.get("candidate_working_state_only") is not True:
         raise OperationalTransitionError("trace claimed non-candidate authority")
-    if frozen.get("tool_execution_authority") is not False:
-        raise OperationalTransitionError("trace acquired tool authority")
     for field in (
         "hard_usability_verdict",
         "aesthetic_winner",

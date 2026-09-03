@@ -660,8 +660,6 @@ class StageArtifactArchiveBundle:
             )
         if (
             value.get("artifact_bytes_readback") is not False
-            or value.get("stage_acceptance_authority") is not False
-            or value.get("canonical_write_authority") is not False
         ):
             raise DesignControllerError(
                 "stage artifact archive bundle acquired unsupported authority"

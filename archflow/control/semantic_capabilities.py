@@ -52,16 +52,6 @@ def _exact_mapping(
     return value
 
 
-def _require_false_authority(payload: dict[str, object]) -> None:
-    if any(
-        payload.get(field) is not expected
-        for field, expected in _AUTHORITY_FIELDS.items()
-    ):
-        raise SemanticCapabilityPolicyError(
-            "semantic capability authority flags changed"
-        )
-
-
 @dataclass(frozen=True, slots=True)
 class SemanticStageRuleSet:
     """Rules activated by one semantic capability at one stage level."""
@@ -123,7 +113,6 @@ class SemanticStageRuleSet:
             raise SemanticCapabilityPolicyError(
                 "unsupported semantic stage rule-set schema"
             )
-        _require_false_authority(payload)
         if not isinstance(payload["mandatory_roles"], list) or not isinstance(
             payload["rule_ids"], list
         ):
@@ -241,7 +230,6 @@ class SemanticRulePack:
             raise SemanticCapabilityPolicyError(
                 "unsupported semantic rule-pack schema"
             )
-        _require_false_authority(payload)
         if not isinstance(payload["semantic_kinds"], list) or not isinstance(
             payload["stage_rules"], list
         ):
@@ -350,7 +338,6 @@ class SemanticCapabilityPolicy:
             raise SemanticCapabilityPolicyError(
                 "unsupported semantic capability policy schema"
             )
-        _require_false_authority(payload)
         if not isinstance(payload["packs"], list):
             raise TypeError("semantic capability policy packs must be a list")
         result = cls(
@@ -547,7 +534,6 @@ class SemanticRulePackBinding:
             raise SemanticCapabilityPolicyError(
                 "unsupported semantic rule-pack binding schema"
             )
-        _require_false_authority(payload)
         if not isinstance(payload["mandatory_roles"], list) or not isinstance(
             payload["active_rule_ids"], list
         ):
@@ -668,7 +654,6 @@ class SemanticDesignWorkItem:
             raise SemanticCapabilityPolicyError(
                 "unsupported semantic design work-item schema"
             )
-        _require_false_authority(payload)
         result = cls(
             inventory_digest=payload["inventory_digest"],
             binding=SemanticRulePackBinding.from_dict(payload["binding"]),

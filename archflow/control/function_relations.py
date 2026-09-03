@@ -78,11 +78,6 @@ class FunctionRelationConsumer(StrEnum):
 _CONSUMERS = tuple(sorted(FunctionRelationConsumer, key=lambda item: item.value))
 
 
-def _require_authority_free(payload: dict[str, object], field: str) -> None:
-    if any(payload.get(name) is not expected for name, expected in _AUTHORITY_FIELDS.items()):
-        raise FunctionRelationError(f"{field} acquired authority")
-
-
 def _list(payload: dict[str, object], field: str) -> list[object]:
     value = payload[field]
     if not isinstance(value, list):
@@ -492,7 +487,6 @@ class FunctionRelationEvidenceEnvelope:
         )
         if payload["schema"] != cls.SCHEMA:
             raise FunctionRelationError("unsupported function relation envelope schema")
-        _require_authority_free(payload, "function relation envelope")
         result = cls(
             envelope_id=payload["envelope_id"],
             branch=branch_ref_from_dict(payload["branch"]),
@@ -685,7 +679,6 @@ class FunctionRelationRequirement:
         )
         if payload["schema"] != cls.SCHEMA:
             raise FunctionRelationError("unsupported function relation requirement schema")
-        _require_authority_free(payload, "function relation requirement")
         result = cls(
             source_envelope_ref=payload["source_envelope_ref"],
             source_envelope_digest=payload["source_envelope_digest"],
@@ -829,7 +822,6 @@ class FunctionRelationRequirementSet:
         )
         if payload["schema"] != cls.SCHEMA:
             raise FunctionRelationError("unsupported function relation set schema")
-        _require_authority_free(payload, "function relation requirement set")
         result = cls(
             set_id=payload["set_id"],
             branch=branch_ref_from_dict(payload["branch"]),

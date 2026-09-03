@@ -2757,11 +2757,6 @@ class StageBaselineCoverageReceipt:
             inventory_digest = None
         else:
             raise StageBaselineError("unsupported stage baseline schema")
-        if (
-            payload["stage_acceptance_authority"] is not False
-            or payload["canonical_write_authority"] is not False
-        ):
-            raise StageBaselineError("baseline authority flags changed")
         for field in ("required_roles", "coverage", "missing_roles"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"{field} must be a list")

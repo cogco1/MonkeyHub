@@ -108,11 +108,6 @@ def _optional_text(value: object, field: str) -> str | None:
     return text(value, field, maximum=100)
 
 
-def _require_false(payload: dict[str, object], fields: tuple[str, ...]) -> None:
-    if any(payload[field] is not False for field in fields):
-        raise CadReadbackError("CAD contract authority flags changed")
-
-
 @dataclass(frozen=True, slots=True)
 class CadBoundingBox:
     """Finite axis-aligned bounding box in an explicitly selected frame."""
@@ -467,10 +462,6 @@ class CadReadbackProfile:
         )
         if payload["schema"] != cls.SCHEMA:
             raise CadReadbackError("unsupported CAD readback profile schema")
-        _require_false(
-            payload,
-            ("stage_acceptance_authority", "canonical_write_authority"),
-        )
         if not isinstance(payload["required_layer_refs"], list):
             raise TypeError("required_layer_refs must be a list")
         if not isinstance(payload["object_requirements"], list):
@@ -710,10 +701,6 @@ class CadReadbackSnapshot:
         )
         if payload["schema"] != cls.SCHEMA:
             raise CadReadbackError("unsupported CAD readback snapshot schema")
-        _require_false(
-            payload,
-            ("summary_authority", "canonical_write_authority"),
-        )
         for field in ("declared_layer_refs", "operation_refs", "objects"):
             if not isinstance(payload[field], list):
                 raise TypeError(f"{field} must be a list")
@@ -815,14 +802,6 @@ class CadPreviewProjection:
             or payload["read_only_projection"] is not True
         ):
             raise CadReadbackError("unsupported CAD preview projection schema")
-        _require_false(
-            payload,
-            (
-                "readback_authority",
-                "closure_authority",
-                "canonical_write_authority",
-            ),
-        )
         if not isinstance(payload["projected_object_refs"], list):
             raise TypeError("projected_object_refs must be a list")
         return cls(

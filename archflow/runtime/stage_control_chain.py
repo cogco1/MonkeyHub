@@ -77,11 +77,6 @@ _AUTHORITY_FIELDS = {
 }
 
 
-def _require_authority_free(payload: Mapping[str, object], field: str) -> None:
-    if any(payload.get(name) is not False for name in _AUTHORITY_FIELDS):
-        raise StageControlChainError(f"{field} acquired authority")
-
-
 @dataclass(frozen=True, slots=True)
 class PreparedStageControlChain:
     """Typed, authority-free values ready for one relation Agent call."""
@@ -196,7 +191,6 @@ class PreparedStageControlChain:
             raise StageControlChainError(
                 "unsupported prepared stage control chain schema"
             )
-        _require_authority_free(payload, "prepared stage control chain")
         result = cls(
             inventory=StageSubjectInventory.from_dict(payload["inventory"]),
             function_ledger=ComponentFunctionLedger.from_dict(
@@ -301,7 +295,6 @@ class FinalizedStageControlChain:
             raise StageControlChainError(
                 "unsupported finalized stage control chain schema"
             )
-        _require_authority_free(payload, "finalized stage control chain")
         result = cls(
             prepared=PreparedStageControlChain.from_dict(payload["prepared"]),
             compilation=RelationAuthoringCompilation.from_dict(

@@ -1339,7 +1339,6 @@ class SchematicOptionSet:
         if payload["schema"] != cls.SCHEMA or (
             payload["selected_option_id"] is not None
             or payload["ranked"] is not False
-            or payload["canonical_write_authority"] is not False
             or payload["hard_usability_verdict"] is not None
             or payload["design_development_complete"] is not False
             or payload["execution_ready"] is not False

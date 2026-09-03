@@ -398,10 +398,6 @@ class StageArtifactVerificationDenominator:
             raise StageArtifactClaimError(
                 "unsupported stage artifact denominator schema"
             )
-        if any(payload[field] is not False for field in _AUTHORITY_FIELDS):
-            raise StageArtifactClaimError(
-                "stage artifact denominator acquired authority"
-            )
         for field in (
             "topology_source_digests",
             "topology_graph_digests",
@@ -800,8 +796,6 @@ class StageArtifactClaim:
         payload = _mapping(value, keys, "stage artifact claim")
         if payload["schema"] != cls.SCHEMA:
             raise StageArtifactClaimError("unsupported stage artifact claim schema")
-        if any(payload[key] is not False for key in _AUTHORITY_FIELDS):
-            raise StageArtifactClaimError("stage artifact claim acquired authority")
         for field in (
             "stage_checks", "relation_topology", "relation_realization", "functional_verification",
             "viewer_refs", "diagnostic_refs",

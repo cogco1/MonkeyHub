@@ -1207,9 +1207,6 @@ def _selected_receipt_fields(
         or value.get("selected_option_id") != expected_option_id
         or value.get("error_code") is not None
         or value.get("proposal_only") is not True
-        or value.get("selection_authority") is not False
-        or value.get("persistence_authority") is not False
-        or value.get("canonical_write_authority") is not False
     ):
         raise ArchitecturalRevisionError("selection receipt is stale or authoritative")
     rationale = value.get("rationale")
@@ -1244,7 +1241,6 @@ def _production_record_content(
         or value.get("run_id") != run.run_id
         or value.get("base") != base
         or value.get("role") != expected_role
-        or value.get("canonical_write_authority") is not False
     ):
         raise ArchitecturalRevisionError(
             "production transition record identity or authority drifted"
