@@ -579,7 +579,9 @@
         "P103",
         "P104",
         "P105",
-        "P106"
+        "P106",
+        "P107",
+        "P108"
       ],
       "purpose": "Freeze new capability surface and consolidate: discipline moves from scribes to machinery, one record-driven runner replaces per-building monoliths, contact becomes correct by construction through shared interface datums, and converged project components harvest into provenance-bound template records that future projects cite instead of rebuilding."
     }
@@ -15703,6 +15705,91 @@
         ]
       ],
       "card": "docs/mapping/planning/P106-monument-replay-and-monolith-retirement.md",
+      "on_complete": {},
+      "actor": "claude"
+    },
+    {
+      "id": "P107",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "An in-process OCCT executor interprets the same CompiledGeometryProgram the Rhino path runs, tessellates preview meshes, measures bounds against the analytic predictor, exports STEP always and mesh .3dm via rhino3dm, and drives incremental re-execution from the patch selector. Receipts carry an evidence tier (self-measured cold-read vs independent instrument). Retires Rhino as the only execution path; the Rhino executor becomes the stage-gate certifier.",
+      "depends_on": [
+        "P102",
+        "P103"
+      ],
+      "write_scope": [
+        "archflow/adapters/",
+        "archflow/runtime/",
+        "tools/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Villa and Rocca records execute in-process within 3 mm of analytic bounds; full-rebuild and one-object wall clocks reported as measurements.",
+        "First certification compares both lanes object by object on both projects.",
+        "Receipts carry evidence tier and tessellator identity; STEP opens in Rhino with identity preserved.",
+        "Coplanar boolean edge cases have a tuning receipt.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "tests.test_cad_patch",
+        "tests.test_state_record"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_cad_patch",
+          "tests.test_state_record"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P107-occt-in-process-executor.md",
+      "on_complete": {},
+      "actor": "claude"
+    },
+    {
+      "id": "P108",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "The vibe modeling client/server frontend in apps/archflow-studio, executed by a separate session under Kaiwen's direction: mutation engine with protected sets and leakage metric, planner/scheduler over the record's closure, intent parser at the reserved IntentProvider seam, review UX. Bound by four fences: the machine-enforced backend import firewall, the DO-NOT-REBUILD inventory, the three named seams, and the AGENTS.md one-in-one-out rule. The client never computes geometry.",
+      "depends_on": [
+        "P102",
+        "P103"
+      ],
+      "write_scope": [
+        "apps/archflow-studio/"
+      ],
+      "acceptance": [
+        "Spec demo 1 (4 to 6 columns, protected pediment, axis and width, leakage 0) runs on the villa record with a diff and a new immutable version.",
+        "Spec demo 2 (cornice depth plus 20 percent, columns and pediment untouched) likewise.",
+        "Exported objects carry the existing archflow user-string identity; no second key set.",
+        "archcheck stays green; no module duplicates an inventory entry.",
+        "Mutation-leakage metric defined and reported per mutation."
+      ],
+      "tests": [
+        "tests.test_archcheck"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_archcheck"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P108-vibe-modeling-frontend.md",
       "on_complete": {},
       "actor": "claude"
     }

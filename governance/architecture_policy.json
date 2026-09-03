@@ -3,7 +3,8 @@
   "source_root": "archflow",
   "checked_source_roots": [
     "archflow",
-    "tools"
+    "tools",
+    "apps/archflow-studio/backend"
   ],
   "probe_root": "probes",
   "forbidden_instance_literals": [
@@ -298,6 +299,23 @@
         "archflow.project.repository"
       ],
       "reason": "Detached experts and capabilities cannot acquire persistence or promotion authority."
+    },
+    {
+      "source": "apps/archflow-studio/backend",
+      "targets": [
+        "rhino3dm",
+        "numpy",
+        "networkx",
+        "OCP",
+        "build123d",
+        "shapely",
+        "trimesh",
+        "scipy",
+        "tests",
+        "tools",
+        "probes"
+      ],
+      "reason": "The Studio backend orchestrates and delegates: geometry mathematics, dependency graphs, and state schemas live in archflow and are imported, never reimplemented beside it (P108 fence)."
     }
   ],
   "authority_symbol_patterns": [

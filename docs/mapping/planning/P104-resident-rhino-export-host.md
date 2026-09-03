@@ -1,6 +1,6 @@
 # P104 — Resident Rhino export host
 
-**Status:** ready (not started)
+**Status:** ready, annotated 2026-09-02 night: the native OCCT lane (P107) was decided; if it lands with its measured wall clocks, this card's value shrinks to one 37-second certification per stage gate and it will likely be retired unbuilt. Nobody starts this before P107's measurements exist.
 **Lane:** productization and componentization
 **Depends on:** P103 (the patch path and its oracle), P089 (the runner's export step)
 **Retires:** one COM process per export. The per-export bridge stays as the fallback and as the equivalence oracle.
