@@ -106,6 +106,11 @@ class ValidationDto(BaseModel):
         "runner.seat_execution_complete, relations.held, "
         "relations.fully_checked",
     )
+    honesty: list[str] = Field(
+        description="what the submission could not carry — a seat whose "
+        "program record the studio could not name is said here rather than "
+        "dropped quietly; empty is a real answer, not a missing one",
+    )
 
 
 def to_dto(validation: CandidateValidation) -> ValidationDto:
@@ -122,6 +127,7 @@ def to_dto(validation: CandidateValidation) -> ValidationDto:
         seat_execution_complete=validation.seat_execution_complete,
         advance=validation.advance,
         blocked_by=list(validation.blocked_by),
+        honesty=list(validation.honesty),
     )
 
 

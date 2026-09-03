@@ -23,6 +23,7 @@ from . import routes
 from .application.events import StudioEvents
 from .application.jobs import JobRegistry
 from .application.proposals import ProposalStore
+from .application.validation import ValidationStore
 from .settings import PROJECT_DIR_ENV, StudioSettings
 from .transport.errors import StudioError
 
@@ -100,6 +101,10 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # and therefore loses on restart, is stated at the top of the application.
     app.state.events = StudioEvents()
     app.state.jobs = JobRegistry(app.state.events)
+    # One validation per candidate, remembered so that reading a verdict twice
+    # is one verdict and one event rather than two of each. In memory, like
+    # everything above it, and lost on restart for the same reason.
+    app.state.validations = ValidationStore()
     app.add_exception_handler(StudioError, _handle_studio_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)

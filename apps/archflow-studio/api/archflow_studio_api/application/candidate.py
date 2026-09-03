@@ -36,7 +36,7 @@ from ..adapters.seats import load_seat_pack, seats_of
 from ..settings import StudioSettings
 from ..transport.errors import StudioError
 from .artifacts import ArtifactRecord, list_artifacts
-from .binding import ProjectBinding, record_kind
+from .binding import RUNNER_RECEIPT_KIND, ProjectBinding, record_kind
 from .jobs import QUEUED, RUNNING
 from .projection import (
     BRANCH_ID,
@@ -53,7 +53,6 @@ from .projection import (
 )
 from .proposals import Proposal
 
-RUNNER_RECEIPT_KIND = "runner-run-receipt"
 RELATION_CHECK_KIND = "seat-relation-check"
 
 
@@ -219,8 +218,7 @@ class CandidateRun:
     state_digest: str | None
     record_digest: str | None
     changed_vs_projection: bool | None
-    # The record this readout was made from; a candidate that could not name
-    # one is a 404, so this is never absent.
+    # The retained record this readout was made from; never absent.
     receipt_ref: str
     seat_execution_complete: bool
     seat_results: tuple[SeatOutcome, ...]
@@ -280,10 +278,6 @@ def describe(
             if record_digest is None
             else record_digest != projection.record_digest
         ),
-        # The runner writes ``receipt_ref`` into the mapping it returns and
-        # not into the record it retains, so a run read back off disk names
-        # nothing. The retained record's own ref is that same URI, and naming
-        # it is the difference between evidence and a null.
         receipt_ref=_text(receipt.get("receipt_ref")) or retained.uri,
         seat_execution_complete=bool(receipt.get("seat_execution_complete")),
         seat_results=tuple(
@@ -347,19 +341,11 @@ def _receipt(
 ) -> tuple[ProjectRecordRef, Mapping[str, Any]]:
     """The run's newest ``runner-run-receipt``, or a 404 that says why not.
 
-    The ref travels with the payload because the receipt does not name itself
-    on disk, and a candidate has to be able to say which record it was read
-    from.
+    Which receipt that is, is the binding's answer: a second reader here could
+    start preferring a different one than the projection reads.
     """
 
-    newest: tuple[float, ProjectRecordRef, Mapping[str, Any]] | None = None
-    for ref in binding.record_refs(run_id):
-        if record_kind(ref) != RUNNER_RECEIPT_KIND:
-            continue
-        mtime = binding.repository.layout.resolve_record(ref).stat().st_mtime
-        payload = binding.repository.load_json(ref)
-        if newest is None or mtime > newest[0]:
-            newest = (mtime, ref, payload)
+    newest = binding.newest_runner_receipt(run_id)
     if newest is None:
         raise StudioError(
             404,
@@ -368,7 +354,7 @@ def _receipt(
             f"{RUNNER_RECEIPT_KIND}, so there is no candidate to read. A run "
             "that failed leaves its reason on its job, not a candidate.",
         )
-    return newest[1], newest[2]
+    return newest
 
 
 def _relation_totals(

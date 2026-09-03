@@ -50,16 +50,23 @@ def read_validation(request: Request, candidate_id: str) -> ValidationDto:
     proposal = state.proposals.get(job.proposal_id)
     binding = bound_project(state)
     return validation_dto(
-        validate_candidate(
-            binding,
-            describe(
+        # Computed on the first request for this candidate and remembered:
+        # a finished run's records do not change, so a client polling the
+        # readout must not appear on the event stream as a server deciding
+        # again.
+        state.validations.remembered(
+            candidate_id,
+            lambda: validate_candidate(
                 binding,
+                describe(
+                    binding,
+                    proposal,
+                    candidate_id=candidate_id,
+                    job_id=job.job_id,
+                    status=job.status,
+                ),
                 proposal,
-                candidate_id=candidate_id,
-                job_id=job.job_id,
-                status=job.status,
+                events=state.events,
             ),
-            proposal,
-            events=state.events,
         )
     )

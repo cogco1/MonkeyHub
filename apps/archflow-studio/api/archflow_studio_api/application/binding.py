@@ -160,6 +160,28 @@ class ProjectBinding:
 
         return self._survey()[0]
 
+    def newest_runner_receipt(
+        self, run_id: str
+    ) -> tuple[ProjectRecordRef, Mapping[str, Any]] | None:
+        """One run's newest ``runner-run-receipt``, with the record it is in.
+
+        The ref travels beside the payload because the receipt does not name
+        itself on disk: the runner writes its own ``receipt_ref`` into the
+        mapping it returns and not into the record it retains, so this ref is
+        the only thing a caller can name the evidence with.
+
+        This is the one place a run's receipt is chosen. Everything that asks
+        "which receipt does this run answer with" asks here, so a second reader
+        cannot start preferring a different one.
+        """
+
+        newest: tuple[float, ProjectRecordRef, Mapping[str, Any]] | None = None
+        for ref, payload in self._receipts_of(run_id):
+            mtime = self.repository.layout.resolve_record(ref).stat().st_mtime
+            if newest is None or mtime > newest[0]:
+                newest = (mtime, ref, payload)
+        return None if newest is None else (newest[1], newest[2])
+
     def _survey(
         self,
     ) -> tuple[
@@ -255,11 +277,7 @@ class ProjectBinding:
         )
 
     def _newest_receipt_of(self, run_id: str) -> Mapping[str, Any] | None:
-        newest: tuple[float, Mapping[str, Any]] | None = None
-        for ref, payload in self._receipts_of(run_id):
-            mtime = self.repository.layout.resolve_record(ref).stat().st_mtime
-            if newest is None or mtime > newest[0]:
-                newest = (mtime, payload)
+        newest = self.newest_runner_receipt(run_id)
         return None if newest is None else newest[1]
 
     def _load_workflow(

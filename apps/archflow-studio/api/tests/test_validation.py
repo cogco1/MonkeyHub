@@ -132,6 +132,9 @@ class ValidationReceiptTests(ValidationTestCase):
         self.assertNotIn("required-claims", validation["validators"])
         self.assertIs(validation["advance"], True)
         self.assertEqual(validation["blockedBy"], [])
+        # Every seat's program reached the submission, so there is nothing to
+        # confess. Empty is the answer, not a missing field.
+        self.assertEqual(validation["honesty"], [])
 
     def test_the_receipt_names_the_submission_it_checked(self) -> None:
         accepted, _ = self.finished_candidate()
@@ -219,6 +222,73 @@ class ValidationReceiptTests(ValidationTestCase):
         self.assertEqual(claim.value, candidate.candidate_id)
         self.assertEqual(claim.evidence_refs, (candidate.receipt_ref,))
         self.assertIn(candidate.receipt_ref, submission.evidence_refs)
+
+    def test_a_seat_whose_program_cannot_be_named_is_confessed(self) -> None:
+        """A dropped artifact is said out loud, and never quietly greened.
+
+        The studio will not invent a digest for a record whose name the P036
+        rule does not recognize. What it does instead is submit one artifact
+        fewer, say which seat that was, and let the kernel answer — which it
+        does, with ``artifact.missing``.
+        """
+
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+        seat = candidate.seat_results[0]
+
+        mangled = self.validated(
+            replace(
+                candidate,
+                seat_results=(
+                    replace(
+                        seat,
+                        program_ref=(
+                            f"project://{PROJECT_ID}/runs/"
+                            f"{candidate.candidate_id}/records/"
+                            "seat-geometry-program.json"
+                        ),
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(
+            mangled.honesty,
+            (
+                f"seat {seat.seat_id}: program record name could not be "
+                "parsed; its program was not submitted for validation",
+            ),
+        )
+        # The drop is not a pass. With no artifact left the kernel refuses,
+        # and the verdict names the clause that refused.
+        self.assertIs(mangled.receipt.passed, False)
+        self.assertEqual(
+            [finding.code for finding in mangled.receipt.findings],
+            ["artifact.missing"],
+        )
+        self.assertEqual(mangled.blocked_by, ("validation.receipt",))
+
+    def test_a_seat_that_compiled_nothing_is_not_a_confession(self) -> None:
+        """An empty seat named no program; there is nothing to have dropped."""
+
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+        seat = candidate.seat_results[0]
+
+        empty = self.validated(
+            replace(
+                candidate,
+                seat_results=(
+                    replace(seat, program_ref=None, program_digest=None),
+                ),
+            )
+        )
+
+        self.assertEqual(empty.honesty, ())
+        self.assertEqual(
+            [finding.code for finding in empty.receipt.findings],
+            ["artifact.missing"],
+        )
 
     def test_the_candidates_receipt_record_is_named_not_null(self) -> None:
         """The evidence the claim stands on is a record the project still has.
@@ -375,6 +445,57 @@ class ValidationEventTests(ValidationTestCase):
         self.assertIn("event: validation.computed", response.text)
         self.assertIn('"advance":true', response.text)
         self.assertIn('"blockedBy":[]', response.text)
+
+    def test_one_validation_is_computed_and_published_per_candidate(
+        self,
+    ) -> None:
+        """Reading a verdict twice is one verdict, not two events.
+
+        A candidate's records do not change after the run, so the second read
+        is the same answer as the first. Publishing it again would let a
+        client's polling look like the server deciding repeatedly.
+        """
+
+        accepted, _ = self.finished_candidate()
+
+        first = self.validation_of(accepted["candidateId"])
+        second = self.validation_of(accepted["candidateId"])
+
+        self.assertEqual(first, second)
+        published = [
+            event
+            for event in self.app.state.events.replay()
+            if event["type"] == "validation.computed"
+        ]
+        self.assertEqual(len(published), 1, published)
+        stream = self.client.get("/api/events", params={"limit": 50}).text
+        self.assertEqual(stream.count("event: validation.computed"), 1)
+
+    def test_two_candidates_are_two_verdicts(self) -> None:
+        """The memo is per candidate; it must not answer for another run."""
+
+        first, _ = self.finished_candidate()
+        second, _ = self.finished_candidate("set height to 3.3")
+
+        first_validation = self.validation_of(first["candidateId"])
+        second_validation = self.validation_of(second["candidateId"])
+
+        self.assertNotEqual(
+            first_validation["candidateId"], second_validation["candidateId"]
+        )
+        self.assertNotEqual(
+            first_validation["receipt"]["submissionDigest"],
+            second_validation["receipt"]["submissionDigest"],
+        )
+        published = [
+            event
+            for event in self.app.state.events.replay()
+            if event["type"] == "validation.computed"
+        ]
+        self.assertEqual(
+            [event["candidate_id"] for event in published],
+            [first["candidateId"], second["candidateId"]],
+        )
 
 
 class ValidationRefusalTests(ValidationTestCase):
@@ -537,7 +658,8 @@ class VillaValidationTests(unittest.TestCase):
             f"  relations={validation['relationChecks']} "
             f"seats={validation['seatExecutionComplete']}\n"
             f"  advance={validation['advance']} "
-            f"blockedBy={validation['blockedBy']}\n"
+            f"blockedBy={validation['blockedBy']} "
+            f"honesty={validation['honesty']}\n"
             f"  canonicalFacts={validation['canonicalFacts']}\n"
             f"  validatorNote={validation['validatorNote']}"
         )
@@ -547,6 +669,8 @@ class VillaValidationTests(unittest.TestCase):
         self.assertEqual(validation["effectiveChecks"], ["artifact-present"])
         self.assertIs(validation["advance"], True)
         self.assertEqual(validation["blockedBy"], [])
+        # Both of the villa's seats compiled a program the studio could name.
+        self.assertEqual(validation["honesty"], [])
         self.assertIn("P110", validation["canonicalFacts"])
         self.assertIn("P110", validation["validatorNote"])
 
