@@ -174,7 +174,7 @@ pediment" → ghost in under 1 s → "yes" → Apply.
 - [ ] **T4.1** queue policy in `jobs.py` (conflict = closure intersection; `waitingFor`); **T4.2** cards.
 
 ### Phase 5
-- [ ] **T5.1 overlay + gesture capture** (stage overlay canvas, raycast per sample, `GestureDto` on the
+- [x] **T5.1 overlay + gesture capture** (stage overlay canvas, raycast per sample, `GestureDto` on the
   client); **T5.2 server side** (`IntentRequestDto.gestures`, resolution, sheet facts, deterministic keep /
   selection); **T5.3 agent prompt** additions and tests on real records with scripted compilers.
 
