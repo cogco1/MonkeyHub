@@ -17,8 +17,15 @@ import time
 from fastapi import APIRouter
 from starlette.requests import Request
 
+from dataclasses import replace
+
 from ..application.binding import bound_project
-from ..application.intent import DeterministicIntentProvider, parse_utterance
+from ..application.gestures import read_gestures
+from ..application.intent import (
+    DeterministicIntentProvider,
+    merge_keep,
+    parse_utterance,
+)
 from ..application.intent_agent import (
     DeterministicCompiler,
     IntentCompiler,
@@ -34,6 +41,7 @@ from ..transport.intent import (
     IntentRequestDto,
     IntentTimingsDto,
     agent_dto,
+    gesture_from,
 )
 from ..transport.proposal import to_dto
 from .proposals import _require_bound_project
@@ -70,9 +78,21 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         if parse_utterance(body.utterance) is not None
         else request.app.state.intent_compiler
     )
+    # What was drawn, read into the record's names before anyone reads the
+    # words: a circle with no pick is the selection; a keep mark is a keep
+    # clause. Both are the server's, and both are printed back as facts.
+    reading = read_gestures(projection, [gesture_from(dto) for dto in body.gestures])
     selection = Selection(
-        component_id=body.target_component_id, element_id=body.element_id
+        component_id=body.target_component_id,
+        element_id=body.element_id,
+        gestures=reading.facts,
     )
+    if selection.component_id is None and reading.target is not None:
+        selection = replace(
+            selection,
+            component_id=reading.target.component_id,
+            element_id=reading.target.element_id,
+        )
     compiled_at = time.perf_counter()
     compilation = compiler.compile(
         message=body.utterance, selection=selection, projection=projection
@@ -80,6 +100,11 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     compile_ms = int((time.perf_counter() - compiled_at) * 1000)
     require_grammatical(compilation)
     assert compilation.utterance is not None
+    if reading.keep_refs:
+        compilation = replace(
+            compilation,
+            utterance=merge_keep(compilation.utterance, reading.keep_refs),
+        )
     typed_at = time.perf_counter()
     proposal = proposal_from(
         DeterministicIntentProvider(projection).propose(
@@ -94,4 +119,5 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         agent=agent_dto(compilation),
         proposal=to_dto(proposal),
         timings=IntentTimingsDto(compile_ms=compile_ms, type_ms=type_ms),
+        gestures=list(reading.facts),
     )

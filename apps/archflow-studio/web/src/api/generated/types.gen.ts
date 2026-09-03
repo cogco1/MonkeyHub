@@ -69,6 +69,42 @@ export type ArtifactListDto = {
 };
 
 /**
+ * CameraDto
+ *
+ * Where the architect stood when they drew: the viewpoint is part of the intent.
+ */
+export type CameraDto = {
+    /**
+     * Position
+     */
+    position: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Target
+     */
+    target: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Up
+     */
+    up: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Fov
+     */
+    fov: number;
+};
+
+/**
  * CandidateAcceptedDto
  *
  * The wire form of ``POST /api/proposals/{id}/candidate``: 202, not a run.
@@ -371,6 +407,93 @@ export type ExportTimingDto = {
 };
 
 /**
+ * GestureDto
+ *
+ * One stroke on the model: circle / arrow / keep / remove.
+ *
+ * ``screen`` is the stroke in canvas pixels, ``camera`` the view it was
+ * drawn in, ``hits`` the objects under its samples. For an arrow the world
+ * start/end/direction and its length in model units are the client's
+ * geometry of the stroke on the model; the server names what it points at.
+ */
+export type GestureDto = {
+    /**
+     * Kind
+     */
+    kind: 'circle' | 'arrow' | 'keep' | 'remove';
+    /**
+     * Screen
+     */
+    screen: Array<[
+        number,
+        number
+    ]>;
+    camera: CameraDto;
+    /**
+     * Hits
+     */
+    hits?: Array<GestureHitDto>;
+    /**
+     * Worldstart
+     */
+    worldStart?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Worldend
+     */
+    worldEnd?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Worlddirection
+     */
+    worldDirection?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Lengthmodelunits
+     */
+    lengthModelUnits?: number | null;
+};
+
+/**
+ * GestureHitDto
+ *
+ * One object a stroke sample fell on, exactly as the viewer read it.
+ *
+ * The client derives nothing: the user strings and the object name are the
+ * file's, the world point is where the ray met the mesh. The server resolves
+ * them through the same pick resolver a click goes through.
+ */
+export type GestureHitDto = {
+    /**
+     * Objectname
+     */
+    objectName?: string | null;
+    /**
+     * Userstrings
+     */
+    userStrings?: {
+        [key: string]: string;
+    };
+    /**
+     * World
+     */
+    world: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -458,6 +581,12 @@ export type IntentDto = {
     agent: AgentReadingDto;
     proposal: ProposalDto;
     timings: IntentTimingsDto;
+    /**
+     * Gestures
+     *
+     * the server's own reading of each gesture, in the record's names, as it was put on the sheet; empty when nothing was drawn
+     */
+    gestures?: Array<string>;
 };
 
 /**
@@ -496,6 +625,12 @@ export type IntentRequestDto = {
      * the project the client believes it is proposing against; a different one is refused as PROJECT_MISMATCH
      */
     projectId?: string | null;
+    /**
+     * Gestures
+     *
+     * what the architect drew on the model with the words: circles, arrows, keep and remove marks, with the objects under them; the server resolves them and reads them beside the sentence
+     */
+    gestures?: Array<GestureDto>;
 };
 
 /**

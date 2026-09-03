@@ -10,10 +10,78 @@ something the record answered.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..application.gestures import Gesture, GestureHit
 from ..application.intent_agent import Compilation
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
+
+Vector3 = tuple[float, float, float]
+
+
+class GestureHitDto(BaseModel):
+    """One object a stroke sample fell on, exactly as the viewer read it.
+
+    The client derives nothing: the user strings and the object name are the
+    file's, the world point is where the ray met the mesh. The server resolves
+    them through the same pick resolver a click goes through.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    object_name: str | None = Field(alias="objectName", default=None)
+    user_strings: dict[str, str] = Field(alias="userStrings", default_factory=dict)
+    world: Vector3
+
+
+class CameraDto(BaseModel):
+    """Where the architect stood when they drew: the viewpoint is part of the intent."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    position: Vector3
+    target: Vector3
+    up: Vector3
+    fov: float
+
+
+class GestureDto(BaseModel):
+    """One stroke on the model: circle / arrow / keep / remove.
+
+    ``screen`` is the stroke in canvas pixels, ``camera`` the view it was
+    drawn in, ``hits`` the objects under its samples. For an arrow the world
+    start/end/direction and its length in model units are the client's
+    geometry of the stroke on the model; the server names what it points at.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    kind: Literal["circle", "arrow", "keep", "remove"]
+    screen: list[tuple[float, float]] = Field(min_length=1)
+    camera: CameraDto
+    hits: list[GestureHitDto] = Field(default_factory=list)
+    world_start: Vector3 | None = Field(alias="worldStart", default=None)
+    world_end: Vector3 | None = Field(alias="worldEnd", default=None)
+    world_direction: Vector3 | None = Field(alias="worldDirection", default=None)
+    length_model_units: float | None = Field(alias="lengthModelUnits", default=None)
+
+
+def gesture_from(dto: GestureDto) -> Gesture:
+    return Gesture(
+        kind=dto.kind,
+        hits=tuple(
+            GestureHit(
+                object_name=hit.object_name,
+                user_strings=dict(hit.user_strings),
+                world=hit.world,
+            )
+            for hit in dto.hits
+        ),
+        world_direction=dto.world_direction,
+        length_model_units=dto.length_model_units,
+    )
 
 
 class IntentRequestDto(BaseModel):
@@ -51,6 +119,12 @@ class IntentRequestDto(BaseModel):
         min_length=1,
         description="the project the client believes it is proposing against; "
         "a different one is refused as PROJECT_MISMATCH",
+    )
+    gestures: list[GestureDto] = Field(
+        default_factory=list,
+        description="what the architect drew on the model with the words: "
+        "circles, arrows, keep and remove marks, with the objects under them; "
+        "the server resolves them and reads them beside the sentence",
     )
 
 
@@ -100,6 +174,11 @@ class IntentDto(BaseModel):
     agent: AgentReadingDto
     proposal: ProposalDto
     timings: IntentTimingsDto
+    gestures: list[str] = Field(
+        default_factory=list,
+        description="the server's own reading of each gesture, in the record's "
+        "names, as it was put on the sheet; empty when nothing was drawn",
+    )
 
 
 def agent_dto(compilation: Compilation) -> AgentReadingDto:

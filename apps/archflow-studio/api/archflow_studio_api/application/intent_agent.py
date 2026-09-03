@@ -72,13 +72,23 @@ Rules:
 - Prefer a relative form (increase/decrease by %) when the request is qualitative ("a little taller"), and say the assumption in `why` (e.g. "a little = +10 %").
 - If the request names something the sheet does not have, or needs a decision only the architect can make, answer status "question" with a concrete question naming what is on the sheet.
 - If a selection is given, stay on it unless the request clearly names another element on the sheet.
+- The sheet's "gestures" are what the architect drew on the model, already resolved to the record's names by the server: "arrow on <element> · world direction +Z (up)" means the architect pointed that element upward (Z is up), "circle covering <component> (...)" names the area they meant, "keep mark on ..." names what must not change (the server adds those keep refs itself; you need not repeat them). Read a gesture as part of the request: an arrow up on an element with a height field and the words "a little" is "increase height by 10 %" on that element. A remove mark has no form in the grammar: answer with a question.
 - Answer with the JSON object only. No prose outside it."""
 
 
 @dataclass(frozen=True, slots=True)
 class Selection:
+    """What the request was made against: the pick, and what was drawn.
+
+    ``gestures`` are the server's own sentences about the strokes the client
+    sent (see ``application/gestures.py``) - resolved through the record,
+    never the client's reading. They travel with the selection because they
+    are the same kind of thing: context the words were said in.
+    """
+
     component_id: str | None
     element_id: str | None
+    gestures: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +165,7 @@ def record_sheet(projection: StateProjection, selection: Selection) -> dict[str,
             "componentId": selection.component_id,
             "elementId": selection.element_id,
         },
+        "gestures": list(selection.gestures),
         "components": components,
         "elements": elements,
         "parameters": parameters,

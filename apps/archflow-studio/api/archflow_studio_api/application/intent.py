@@ -173,6 +173,26 @@ def _split_keep(utterance: str) -> tuple[str, tuple[str, ...] | None]:
     return parts[0], refs
 
 
+def merge_keep(utterance: str, refs: Sequence[str]) -> str:
+    """The utterance with these refs added to its keep clause.
+
+    A sentence without a keep clause gains one; a sentence with one keeps its
+    refs and gains the missing ones, in order. A malformed keep clause is
+    returned untouched: the grammar will refuse it with the right question.
+    """
+
+    if not refs:
+        return utterance
+    head, existing = _split_keep(utterance.strip())
+    if existing is None:
+        return utterance
+    merged = list(existing)
+    for ref in refs:
+        if ref not in merged:
+            merged.append(ref)
+    return f"{head} keep {', '.join(merged)}"
+
+
 def _number(text: str) -> int | float:
     """The number as it was written: ``3`` is an integer, ``3.0`` is not."""
 
