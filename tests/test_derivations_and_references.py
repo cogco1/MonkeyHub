@@ -105,16 +105,22 @@ class ResolverTests(unittest.TestCase):
         self.context = ReferenceContext(grids=_grids(), levels=_levels(), hosts={"wall-west": HostLine((-10.71, -10.71), (0.0, 1.0))})
 
     def test_plan_references_resolve_from_the_grids_and_hosts(self) -> None:
-        self.assertEqual(resolve_plan(GridIntersection("axis-1", "axis-a"), self.context), (-10.71, -10.71))
+        self.assertEqual(resolve_plan(GridIntersection("1", "A"), self.context), (-10.71, -10.71))
         self.assertEqual(resolve_plan(GridIntersection("F", "6"), self.context), (10.71, 10.71))
-        self.assertEqual(resolve_plan(AxisPoint("axis-1", 5.0), self.context), (-10.71, 5.0))
-        self.assertEqual(resolve_plan(GridRef("axis-a"), self.context), (0.0, -10.71))
+        self.assertEqual(resolve_plan(AxisPoint("1", 5.0), self.context), (-10.71, 5.0))
+        self.assertEqual(resolve_plan(GridRef("A"), self.context), (0.0, -10.71))
         self.assertEqual(resolve_plan(HostAlong("wall-west", 3.16), self.context), (-10.71, -7.55))
         self.assertEqual(resolve_plan(HostAlong("wall-west", 3.16, across=0.42), self.context), (-10.29, -7.55))
         with self.assertRaises(ReferenceError):
-            resolve_plan(GridIntersection("axis-1", "axis-6"), self.context)     # parallel
+            resolve_plan(GridIntersection("1", "6"), self.context)               # parallel
         with self.assertRaises(ReferenceError):
             resolve_plan(HostAlong("wall-north", 1.0), self.context)
+
+    def test_a_reference_names_a_grid_role_exactly(self) -> None:
+        with self.assertRaises(ReferenceError) as raised:
+            resolve_plan(GridRef("axis-1"), self.context)                        # the axis id is not a role: no fallback
+        self.assertIn("axis-1", str(raised.exception))
+        self.assertIn("1, 6, A, F", str(raised.exception))                       # the roles that do exist
 
     def test_elevation_references_stay_symbolic(self) -> None:
         self.assertEqual(resolve_elevation(LevelRef("level-piano-nobile"), self.context), ("level-piano-nobile", 0.0))

@@ -15,6 +15,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.operational_state import DependencyEffect, DesignObligation, ObligationStatus
 from archflow.project.refs import RunRef
 from archflow.state.state_record import (
+    CHECK_KINDS,
     Entity,
     Lineage,
     Parameter,
@@ -93,6 +94,25 @@ class StateRecordTests(unittest.TestCase):
             StateRecord("demo", "run-1", record.entities, (Parameter("h", 1.0, "m", inputs=("missing",)),))
         with self.assertRaises(StateRecordError):
             StateRecord("demo", "run-1", record.entities, relations=(Relation("r", "support", "columns-west", "nowhere"),))
+
+    def test_a_validator_names_a_check_the_spine_can_measure(self) -> None:
+        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "support_contact"])
+        for kind in ("alignment", "meets", "engagement_interval", "separation_interval", "magic"):
+            with self.assertRaises(StateRecordError) as raised:                       # a kind nothing measures is refused here, not reported unchecked forever
+                ValidatorBinding(kind)
+            for registered in CHECK_KINDS:
+                self.assertIn(registered, str(raised.exception))
+
+    def test_a_validator_carries_the_field_its_check_measures(self) -> None:
+        self.assertEqual(ValidatorBinding("clearance_interval", interval_m=(0.9, 1.5)).interval_m, (0.9, 1.5))
+        self.assertEqual(ValidatorBinding("aperture_exists", tolerance=0.01).tolerance, 0.01)
+        for wrong in (lambda: ValidatorBinding("clearance_interval", tolerance=0.01),                # an interval check takes no tolerance
+                      lambda: ValidatorBinding("clearance_interval"),                                # and needs its interval
+                      lambda: ValidatorBinding("clearance_interval", interval_m=(1.5, 0.9)),         # low above high
+                      lambda: ValidatorBinding("support_contact", interval_m=(0.0, 1.0)),            # a tolerance check takes no interval
+                      lambda: ValidatorBinding("aperture_exists", tolerance=-0.01)):
+            with self.assertRaises(StateRecordError):
+                wrong()
 
     def test_production_entry_accepts_the_record(self) -> None:
         from archflow.capabilities.geometry_proposal import GeometryProposalProductionError, _as_developed_state

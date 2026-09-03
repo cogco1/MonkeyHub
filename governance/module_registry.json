@@ -778,6 +778,7 @@
       ],
       "invariants": [
         "resolve_elevation never returns a number - the compiler is the only thing that turns a datum id into one",
+        "a grid role matches exactly; there is no id fallback, and a miss fails ReferenceError naming the role and the roles that exist",
         "an unknown axis, level or host fails ReferenceError rather than defaulting",
         "a resolver reads only grids, levels and host lines; it cannot see components or geometry"
       ],
@@ -793,10 +794,12 @@
       "owner_path": "archflow/capabilities/relation_checks.py",
       "purpose": "Measure a State Record's relations against realized geometry and record held / violated / unchecked as a RelationCheckReport@1.",
       "owns": [
-        "the checker table keyed by a relation's validator check_kind (today only support_contact)",
+        "the checker table CHECKERS keyed by check_kind; measuring declared relations",
         "the support-contact measurement: subject top against object bottom plus declared engagement or rise, and against a named datum",
         "the element-standing-on-a-level orientation of the same check",
-        "reporting a relation with no validator or no checker as `unchecked` rather than as passing",
+        "the clearance measurement: the largest per-axis separation between two elements' realized extents against the declared interval_m",
+        "the aperture measurement: the opening has finite geometry and lies inside its host in plan and vertically within tolerance",
+        "reporting a relation with no validator, or one whose elements have no realized geometry, as `unchecked` rather than as passing",
         "the report's three-state counts, held / fully_checked flags and its digest"
       ],
       "does_not_own": [
@@ -817,7 +820,12 @@
         "RelationCheckReport (RelationCheckReport@1, retained as `seat-relation-check`)"
       ],
       "public_api": [
+        "CHECKERS",
+        "Checker",
         "check_relations",
+        "check_support_contact",
+        "check_clearance_interval",
+        "check_aperture_exists",
         "RelationCheckReport",
         "RelationCheck",
         "RelationCheckError"
@@ -828,19 +836,22 @@
         "state.record"
       ],
       "used_by": [
-        "archflow/runtime/project_runner.py"
+        "archflow/runtime/project_runner.py",
+        "tests/test_relation_checks.py"
       ],
       "invariants": [
         "nothing is healed: a check only measures and reports",
+        "CHECKERS and state.record CHECK_KINDS name the same ids; the module refuses to import otherwise, so a declared check is always measured",
         "`held` alone is not a green light - an unchecked relation does not count against it, so held must be shown with fully_checked",
-        "a relation whose objects have no realized bounds fails RelationCheckError instead of being scored",
+        "support_contact fails RelationCheckError when its objects have no realized bounds; clearance and aperture report `unchecked` naming the element instead",
         "the report carries the record digest it was measured against"
       ],
       "status": "canonical",
       "tests": [
+        "tests/test_relation_checks.py",
         "tests/test_project_runner.py"
       ],
-      "notes": "One checker per kind the record can declare; adding a kind means adding a checker here, not a check elsewhere."
+      "notes": "One checker per kind the record can declare; adding a kind means adding a checker here and an id to CHECK_KINDS in the same change."
     },
     {
       "module_id": "capabilities.wall_solver",
@@ -2741,6 +2752,7 @@
         "the record's dependency edges and the downstream closure over them (dependency_edges, closure)",
         "binding an authored portable record to one run and canonical base (bound_to, run_ref)",
         "the record's own relation shape with datum role, propagation and validator binding (Relation, ValidatorBinding)",
+        "CHECK_KINDS: the check_kind vocabulary a validator may name, one line of meaning each, and the field each kind takes",
         "the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of)",
         "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)",
         "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1"
@@ -2769,6 +2781,7 @@
         "DependencyEdge tuple"
       ],
       "public_api": [
+        "CHECK_KINDS",
         "Entity",
         "Lineage",
         "Parameter",
@@ -2813,6 +2826,7 @@
         "digest excludes run_id and base, so the same design content authored in two runs digests identically",
         "a record without a base cannot name its own run; bound_to is the only sanctioned way to attach one",
         "a relation kind outside the kernel vocabulary is refused",
+        "a ValidatorBinding names a check the spine can measure: CHECK_KINDS is the whole vocabulary and each id carries its own field shape",
         "geometry programs, validation results, receipts and indexes are derived from the record and never authoritative",
         "developed_design_view is an adapter, not a second source of truth; design_components_of is the single component-tree builder"
       ],

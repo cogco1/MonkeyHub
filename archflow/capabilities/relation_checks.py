@@ -8,17 +8,28 @@ healing: a violated relation is reported, never repaired here.
 
 Bounds are in program coordinates (x, y-up, z-plan), per object id;
 ``objects_by_element`` maps an Element@1 entity to the object ids its
-producer emitted.
+producer emitted. Plan therefore means the x and z axes and vertical means y.
+
+``CHECKERS`` is the accepted vocabulary made measurable: it is keyed by the
+ids of ``state_record.CHECK_KINDS`` and the two sets must agree, so a record
+cannot declare a check that nothing here measures.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from types import MappingProxyType
+from typing import Any, Mapping, Protocol, Sequence
 
 from archflow.contracts.canonical import canonical_digest
-from archflow.state.state_record import Relation, StateRecord
+from archflow.state.state_record import CHECK_KINDS, Relation, StateRecord
 
 Bounds = tuple[Sequence[float], Sequence[float]]
+Box = tuple[tuple[float, float, float], tuple[float, float, float]]
+
+_PLAN_AXES = ((0, "x"), (2, "z"))       # y is up in program coordinates
+_VERTICAL_AXIS = 1
+_DEFAULT_TOLERANCE = 0.001
 
 
 class RelationCheckError(ValueError):
@@ -78,11 +89,34 @@ def _extent(objects: Sequence[str], bounds: Mapping[str, Bounds], label: str) ->
     return min(float(bounds[o][0][1]) for o in objects), max(float(bounds[o][1][1]) for o in objects)
 
 
+def _union(objects: Sequence[str], bounds: Mapping[str, Bounds]) -> Box | None:
+    """The axis-aligned union of the objects' finite bounds; None when there is nothing to measure."""
+
+    boxes: list[tuple[list[float], list[float]]] = []
+    for object_id in objects:
+        box = bounds.get(object_id)
+        if box is None:
+            continue
+        low, high = [float(v) for v in box[0]], [float(v) for v in box[1]]
+        if len(low) != 3 or len(high) != 3 or not all(math.isfinite(v) for v in low + high):
+            continue
+        boxes.append((low, high))
+    if not boxes:
+        return None
+    return (tuple(min(b[0][i] for b in boxes) for i in range(3)), tuple(max(b[1][i] for b in boxes) for i in range(3)))
+
+
+def _axis_gap(a: Box, b: Box) -> float:
+    """The largest per-axis separation between two boxes; 0 when they overlap on every axis."""
+
+    return max(0.0, max(max(a[0][i] - b[1][i], b[0][i] - a[1][i]) for i in range(3)))
+
+
 def check_support_contact(relation: Relation, *, record: StateRecord, bounds: Mapping[str, Bounds], objects_by_element: Mapping[str, Sequence[str]],
                           datum_values: Mapping[str, float]) -> RelationCheck:
     """subject top == object bottom + declared engagement (and == the datum, when one is named)."""
 
-    tolerance = relation.validator.tolerance if relation.validator and relation.validator.tolerance is not None else 0.001
+    tolerance = relation.validator.tolerance if relation.validator and relation.validator.tolerance is not None else _DEFAULT_TOLERANCE
     measured: dict[str, float] = {}
     problems: list[str] = []
     engagement = float(relation.parameters.get("engagement_depth", 0.0) or 0.0)
@@ -122,15 +156,86 @@ def check_support_contact(relation: Relation, *, record: StateRecord, bounds: Ma
     return RelationCheck(relation.relation_id, relation.kind, "support_contact", status, tolerance, measured, "; ".join(problems) or "contact by construction holds")
 
 
-_CHECKERS = {"support_contact": check_support_contact}
+def check_clearance_interval(relation: Relation, *, record: StateRecord, bounds: Mapping[str, Bounds], objects_by_element: Mapping[str, Sequence[str]],
+                             datum_values: Mapping[str, float]) -> RelationCheck:
+    """The axis-aligned gap between subject and object lies in the declared interval_m."""
+
+    interval = relation.validator.interval_m if relation.validator else None
+    if interval is None:
+        raise RelationCheckError(f"{relation.relation_id}: clearance_interval needs an interval_m")
+    low, high = float(interval[0]), float(interval[1])
+    measured: dict[str, float] = {"interval_low": low, "interval_high": high}
+    subject_box = _union(objects_by_element.get(relation.subject, ()), bounds)
+    object_box = _union(objects_by_element.get(relation.object, ()), bounds)
+    unrealized = [element for element, box in ((relation.subject, subject_box), (relation.object, object_box)) if box is None]
+    if unrealized:
+        return RelationCheck(relation.relation_id, relation.kind, "clearance_interval", "unchecked", 0.0, measured,
+                             f"no realized bounds for element {' and '.join(unrealized)}")
+    gap = _axis_gap(subject_box, object_box)
+    measured["gap"] = gap
+    inside = low <= gap <= high
+    detail = (f"gap {gap:.4f} m lies in [{low:.4f}, {high:.4f}] m" if inside
+              else f"gap {gap:.4f} m is outside [{low:.4f}, {high:.4f}] m")
+    return RelationCheck(relation.relation_id, relation.kind, "clearance_interval", "held" if inside else "violated", 0.0, measured, detail)
+
+
+def check_aperture_exists(relation: Relation, *, record: StateRecord, bounds: Mapping[str, Bounds], objects_by_element: Mapping[str, Sequence[str]],
+                          datum_values: Mapping[str, float]) -> RelationCheck:
+    """The object opening has geometry and lies inside the subject host: in plan within tolerance, vertically not beyond it."""
+
+    tolerance = relation.validator.tolerance if relation.validator and relation.validator.tolerance is not None else _DEFAULT_TOLERANCE
+    host_box = _union(objects_by_element.get(relation.subject, ()), bounds)
+    if host_box is None:
+        return RelationCheck(relation.relation_id, relation.kind, "aperture_exists", "unchecked", tolerance, {},
+                             f"no realized bounds for host element {relation.subject}")
+    opening_box = _union(objects_by_element.get(relation.object, ()), bounds)
+    if opening_box is None:
+        return RelationCheck(relation.relation_id, relation.kind, "aperture_exists", "violated", tolerance, {},
+                             f"opening {relation.object} has no object with finite bounds: the aperture does not exist")
+    measured: dict[str, float] = {}
+    problems: list[str] = []
+    for axis, name in (*_PLAN_AXES, (_VERTICAL_AXIS, "y")):
+        below = host_box[0][axis] - opening_box[0][axis]
+        above = opening_box[1][axis] - host_box[1][axis]
+        measured[f"{name}_low_overrun"], measured[f"{name}_high_overrun"] = below, above
+        where = "in plan" if axis != _VERTICAL_AXIS else "vertically"
+        if below > tolerance:
+            problems.append(f"opening starts {below:.4f} m below the host on {name} ({where})")
+        if above > tolerance:
+            problems.append(f"opening reaches {above:.4f} m beyond the host on {name} ({where})")
+    status = "violated" if problems else "held"
+    return RelationCheck(relation.relation_id, relation.kind, "aperture_exists", status, tolerance, measured,
+                         "; ".join(problems) or f"opening {relation.object} lies within host {relation.subject}")
+
+
+class Checker(Protocol):
+    """One measurement of one declared check kind against realized bounds."""
+
+    def __call__(self, relation: Relation, *, record: StateRecord, bounds: Mapping[str, Bounds],
+                 objects_by_element: Mapping[str, Sequence[str]], datum_values: Mapping[str, float]) -> RelationCheck:
+        ...
+
+
+CHECKERS: Mapping[str, Checker] = MappingProxyType({
+    "support_contact": check_support_contact,
+    "clearance_interval": check_clearance_interval,
+    "aperture_exists": check_aperture_exists,
+})
+
+if set(CHECKERS) != set(CHECK_KINDS):                                   # the accepted vocabulary IS the checker table
+    raise RelationCheckError(f"CHECKERS {sorted(CHECKERS)} does not match CHECK_KINDS {sorted(CHECK_KINDS)}")
 
 
 def check_relations(record: StateRecord, *, bounds: Mapping[str, Bounds], objects_by_element: Mapping[str, Sequence[str]],
                     datum_values: Mapping[str, float] | None = None, relations: Sequence[Relation] | None = None) -> RelationCheckReport:
-    """Measure every relation that binds a validator; others are reported as unchecked.
+    """Measure every relation that binds a validator; a relation without one is reported as unchecked.
 
     ``relations`` defaults to the record's own; a caller that materialised more (the runner's
     producers) passes the full set, and the report still cites the record that was retained.
+
+    Every kind a ``ValidatorBinding`` can name is in ``CHECKERS``, so a bound
+    relation is always measured: ``unchecked`` now means no validator, or no
+    realized geometry to measure — never a check nobody implemented.
     """
 
     checks: list[RelationCheck] = []
@@ -138,10 +243,6 @@ def check_relations(record: StateRecord, *, bounds: Mapping[str, Bounds], object
         if relation.validator is None:
             checks.append(RelationCheck(relation.relation_id, relation.kind, "none", "unchecked", 0.0, {}, "no validator bound"))
             continue
-        checker = _CHECKERS.get(relation.validator.check_kind)
-        if checker is None:
-            checks.append(RelationCheck(relation.relation_id, relation.kind, relation.validator.check_kind, "unchecked",
-                                        relation.validator.tolerance or 0.0, {}, f"no checker for {relation.validator.check_kind} yet"))
-            continue
+        checker = CHECKERS[relation.validator.check_kind]
         checks.append(checker(relation, record=record, bounds=bounds, objects_by_element=objects_by_element, datum_values=datum_values or {}))
     return RelationCheckReport(record.digest, tuple(checks))

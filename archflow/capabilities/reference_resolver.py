@@ -160,18 +160,16 @@ class ReferenceContext:
         self.levels = levels
         self.hosts = dict(hosts or {})
 
-    def axis(self, axis_id: str) -> ProjectGridAxis:
-        """An axis by role (the project's own lookup) or by id."""
+    def axis(self, role: str) -> ProjectGridAxis:
+        """An axis by role, matched exactly. A reference names a role; there is no axis-id fallback."""
 
         if self.grids is None:
-            raise ReferenceError(f"no project grids: cannot resolve axis {axis_id!r}")
+            raise ReferenceError(f"no project grids: cannot resolve axis role {role!r}")
         try:
-            return self.grids.axis(axis_id)
+            return self.grids.axis(role)
         except GeometryProgramError:
-            by_id = {item.axis_id: item for item in self.grids.axes}
-            if axis_id in by_id:
-                return by_id[axis_id]
-            raise ReferenceError(f"unknown grid axis {axis_id!r}") from None
+            roles = ", ".join(sorted(item.role for item in self.grids.axes))
+            raise ReferenceError(f"unknown grid axis role {role!r}; the project publishes {roles}") from None
 
     def level_ids(self) -> tuple[str, ...]:
         return self.levels.datum_ids if self.levels is not None else ()

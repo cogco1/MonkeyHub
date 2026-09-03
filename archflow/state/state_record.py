@@ -18,7 +18,9 @@ an adapter with a lineage note, scheduled for retirement with them.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from archflow.contracts.canonical import canonical_digest, canonical_json
@@ -55,6 +57,21 @@ _ENTITY_SCHEMAS = frozenset({"Level@1", "GridAxis@1", "Type@1", "Element@1", "As
                              "MassingLevel@1", "Volume@1", "Connection@1"})   # Space@1 = a zone of the spatial option
 _EPISTEMIC = frozenset({"observed", "declared", "derived", "hypothesis", "disputed", "unknown"})
 _MAX_ITEMS = 50_000
+
+CHECK_KINDS: Mapping[str, str] = MappingProxyType({
+    "support_contact": "the subject supports the object: contact within tolerance",
+    "clearance_interval": "the gap between subject and object lies in interval_m",
+    "aperture_exists": "the object opening lies within the subject host's extent and has geometry",
+})
+"""The checks the spine can measure: check_kind id -> one line of meaning.
+
+A ``ValidatorBinding`` names one of these and nothing else. A kind the record
+accepts but no checker measures reports ``unchecked`` forever, which reads as
+verification and is not; ``capabilities.relation_checks.CHECKERS`` is keyed by
+exactly these ids and says so at import.
+"""
+
+_INTERVAL_KINDS = frozenset({"clearance_interval"})   # these take interval_m; every other kind takes a tolerance
 
 
 class StateRecordError(ValueError):
@@ -172,8 +189,26 @@ class ValidatorBinding:
     interval_m: tuple[float, float] | None = None
 
     def __post_init__(self) -> None:
-        if self.check_kind not in {"support_contact", "meets", "aperture_exists", "clearance_interval", "alignment", "engagement_interval", "separation_interval"}:
-            raise StateRecordError(f"unknown check kind {self.check_kind!r}")
+        if self.check_kind not in CHECK_KINDS:
+            raise StateRecordError(f"unknown check kind {self.check_kind!r}: the spine measures {', '.join(sorted(CHECK_KINDS))}")
+        if self.check_kind in _INTERVAL_KINDS:
+            if self.tolerance is not None:
+                raise StateRecordError(f"check {self.check_kind} takes interval_m, not a tolerance")
+            if (not isinstance(self.interval_m, tuple) or len(self.interval_m) != 2
+                    or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in self.interval_m)):
+                raise StateRecordError(f"check {self.check_kind} needs an interval_m of two finite numbers in metres")
+            low, high = (float(v) for v in self.interval_m)
+            if low > high:
+                raise StateRecordError(f"check {self.check_kind}: interval_m low {low} is above high {high}")
+            object.__setattr__(self, "interval_m", (low, high))
+            return
+        if self.interval_m is not None:
+            raise StateRecordError(f"check {self.check_kind} takes a tolerance, not an interval_m")
+        if self.tolerance is None:
+            return
+        if isinstance(self.tolerance, bool) or not isinstance(self.tolerance, (int, float)) or not math.isfinite(self.tolerance) or self.tolerance < 0.0:
+            raise StateRecordError(f"check {self.check_kind}: tolerance must be a non-negative number of metres")
+        object.__setattr__(self, "tolerance", float(self.tolerance))
 
     def to_dict(self) -> dict[str, object]:
         return {"check_kind": self.check_kind, "tolerance": self.tolerance, "interval_m": list(self.interval_m) if self.interval_m else None}
