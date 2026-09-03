@@ -108,12 +108,14 @@ uvicorn, httpx (tests). React 19, three.js 0.185, rhino3dm 8.32.2 (wasm), Vite 8
   **content identity** — a canonical digest of `to_dict()` minus `run_id`/`base` (`archflow/contracts/
   canonical.py`), invariant under `bound_to`. `StateRecord.state_digest` is the **binding identity** —
   run/base-scoped, the number runner receipts carry. "Did this edit change anything" compares content
-  identities; "is this the state that run executed" compares binding identities **under the same projection
-  scheme** — ruling (b), 2026-09-03: a DTO-shape change in the kernel changes `state_digest` (it digests the
-  projection's serialized form), old receipts are provenance not an oracle, the studio computes the
-  reference baseline live and shows the honesty line "reference receipt was written under an earlier
-  projection scheme; its digest is not recomputable" when the recomputed value differs;
-  `matchesReferenceReceipt` is removed (Task 2b). Digests of JSON payloads come only from
+  identities; "is this the state that run executed" compares binding identities. A same-day episode
+  (2026-09-03): the main session's uncommitted removal of constant-false `*_authority` fields changed
+  `state_digest` (it digests the projection's serialized form) and would have made every historical receipt
+  unmatchable; ruling (b) ("receipts are provenance, compute the baseline live") was issued, implemented as
+  Task 2b, then **withdrawn in full** once the main session found retained records binding other records'
+  digests whose inputs include those keys — retained data must stay readable. The serialized
+  `*_authority: false` literals stay, digests are unchanged, Task 2b was discarded unmerged, and
+  `matchesReferenceReceipt` stands with its original semantics. Digests of JSON payloads come only from
   `archflow.contracts.canonical.canonical_digest`.
 - `ProjectArtifactRef(project_id, artifact_id, relative_path, sha256, media_type)` exists; artifacts are
   enumerated from `seat-rhino-execution` receipts, never by `rglob`.
@@ -222,9 +224,8 @@ Deleted by this plan: `backend/` (all), `run_server.py`, `launch.py`, `src/App.t
   candidates can never become the reference. The DTO reports `referenceRunSource` (`query` | `config` |
   `rule` | `none`). A run-less project (nothing eligible, nothing given) still projects: the record binds to
   `RunRef(project_id, "studio-projection", head)` — a value object that need not exist on disk — with
-  `referenceReceipt: null` and the honesty line "no eligible reference run: projection bound to the studio
-  run id; its digests are not comparable to any receipt" (there is no `matchesReferenceReceipt` field —
-  ruling (b), Task 2b).
+  `referenceReceipt: null`, `matchesReferenceReceipt: null` and the honesty line "no eligible reference run:
+  projection bound to the studio run id; its digests are not comparable to any receipt".
 - `projection(binding, run_id=None) -> StateProjection` (frozen dataclass, application layer):
   loads `input/runner/state-record.json` via `layout.resolve_relative`, `StateRecord.from_dict`,
   `run = RunRef(project_id, reference_run_id, repository.read_head())`, `record = record.bound_to(run)`,
