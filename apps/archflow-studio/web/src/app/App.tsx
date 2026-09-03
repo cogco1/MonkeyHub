@@ -277,9 +277,15 @@ export default function App() {
     [append, loadedArtifact, projection, recoverFromStaleBase, stateDigest],
   );
 
+  // One proposal in flight at a time. The busy flag renders the button; this
+  // ref is what stops a second send that arrives before React has re-rendered
+  // with it — Enter and the form's own submission can both fire for one key.
+  const proposingRef = useRef(false);
   const propose = useCallback(
     async (utterance: string) => {
       if (stateDigest === null || selection === null || project === null) return;
+      if (proposingRef.current) return;
+      proposingRef.current = true;
       append({ kind: "you", text: utterance });
       setProposalBusy(true);
       try {
@@ -301,6 +307,7 @@ export default function App() {
           append({ kind: "refusal", error, what: "POST /api/proposals" });
         }
       } finally {
+        proposingRef.current = false;
         setProposalBusy(false);
       }
     },
