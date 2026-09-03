@@ -458,8 +458,17 @@ runnerComplete, advance, blockedBy[]}`. Route `GET /api/candidates/{id}/validati
 the villa-copy candidate; a stale-base submission (head moved) yields `state.base_mismatch`; unchecked
 relations alone flip `advance` to false with `blockedBy=["relations.fully_checked"]`.
 
-- [ ] Steps: tests → fail → implement → pass → archcheck → commit
-  `P108 refoundation: validation is the kernel's receipt plus a server verdict that never greens the unchecked`.
+- [x] Done (main, 2026-09-03; three worker commits). Ratified after two review rounds: the receipt reader
+  lives once in `ProjectBinding.newest_runner_receipt`; `Validation` DTO carries `honesty[]` (a seat whose
+  program record name cannot be parsed, or that carries no program digest, is confessed and its absence
+  makes the kernel refuse — never green); the verdict is memoised per `(candidate, HEAD version, HEAD sha)`
+  with per-key locks (one `validation.computed` event per decision, a moved HEAD is a new decision — proven
+  by a test that promotes through P036's own `prepare_transition`/`compare_and_swap`). Found and fixed on
+  the way: `runner-run-receipt` records never carry their own `receipt_ref` (the runner sets it after
+  retaining) — the studio uses the retained record's own ref; kernel-card candidate relayed. Verified on a
+  villa-input copy: candidate → receipt `passed`, validators exactly the three, `effectiveChecks
+  ["artifact-present"]`, `advance true`, `blockedBy []`, P110 wording present. **The round-1 API chain is
+  complete.**
 
 ---
 
