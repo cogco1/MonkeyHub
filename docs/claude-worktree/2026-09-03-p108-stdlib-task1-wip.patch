@@ -1,0 +1,366 @@
+﻿diff --git a/apps/archflow-studio/backend/contracts.py b/apps/archflow-studio/backend/contracts.py
+index 06bf388..7bad8ec 100644
+--- a/apps/archflow-studio/backend/contracts.py
++++ b/apps/archflow-studio/backend/contracts.py
+@@ -73,7 +73,35 @@ class StudioSessionSnapshot:
+             "stage": self.stage,
+             "projectBound": self.project_id is not None,
+             "canonicalWriteAuthority": False,
+-            "message": "No project is bound in the first read-only slice.",
++            "message": (
++                "No project is bound."
++                if self.project_id is None
++                else "Read-only project binding; canonical write stays disabled."
++            ),
++        }
++
++
++@dataclass(frozen=True, slots=True)
++class StudioProjectBinding:
++    bound: bool
++    project_id: str | None = None
++    head_version: int | None = None
++    state_sha256: str | None = None
++    project_dir: str | None = None
++    detail: str = ""
++
++    SCHEMA = "StudioProjectBinding@1"
++
++    def to_dict(self) -> dict[str, Any]:
++        return {
++            "schema": self.SCHEMA,
++            "bound": self.bound,
++            "projectId": self.project_id,
++            "headVersion": self.head_version,
++            "stateSha256": self.state_sha256,
++            "projectDir": self.project_dir,
++            "detail": self.detail,
++            "canonicalWriteAuthority": False,
+         }
+ 
+ 
+diff --git a/apps/archflow-studio/backend/kernel.py b/apps/archflow-studio/backend/kernel.py
+index 56f717e..bf72a1a 100644
+--- a/apps/archflow-studio/backend/kernel.py
++++ b/apps/archflow-studio/backend/kernel.py
+@@ -1,16 +1,24 @@
+-"""Narrow, read-only facade over the current ArchFlow checkout."""
++"""Read-only orchestration facade: binds one configured P036 project."""
+ 
+ from __future__ import annotations
+ 
++import sys
+ from importlib.util import find_spec
++from pathlib import Path
+ 
+ from backend.contracts import (
+     CapabilityAvailability,
+     CapabilityDescriptor,
+     StudioHealthSnapshot,
++    StudioProjectBinding,
+     StudioSessionSnapshot,
+ )
+ 
++_APP_ROOT = Path(__file__).resolve().parents[1]
++_REPO_ROOT = _APP_ROOT.parents[1]
++if str(_REPO_ROOT) not in sys.path:
++    sys.path.insert(0, str(_REPO_ROOT))
++
+ 
+ def _module_available(module_name: str) -> bool:
+     try:
+@@ -20,7 +28,51 @@ def _module_available(module_name: str) -> bool:
+ 
+ 
+ class ArchFlowKernelFacade:
+-    """Expose kernel presence without creating a second mutation authority."""
++    """Read-only/proposal facade; never a second mutation authority."""
++
++    def __init__(self, project_dir: Path | None = None) -> None:
++        self._project_dir = Path(project_dir) if project_dir else None
++        self._repository = None
++        self._bind_error: str | None = None
++
++    def _bound_repository(self):
++        if self._repository is not None:
++            return self._repository
++        if self._project_dir is None:
++            self._bind_error = "no project directory is configured"
++            return None
++        try:
++            from archflow.project.location import open_located_project
++
++            _, repository = open_located_project(
++                self._project_dir.name,
++                local_projects_root=self._project_dir.parent,
++            )
++        except Exception as exc:  # visible failure, never a guess
++            self._bind_error = f"{self._project_dir}: {exc}"
++            return None
++        self._repository = repository
++        return repository
++
++    def project_binding(self) -> StudioProjectBinding:
++        repository = self._bound_repository()
++        if repository is None:
++            return StudioProjectBinding(
++                bound=False,
++                project_dir=(
++                    str(self._project_dir) if self._project_dir else None
++                ),
++                detail=self._bind_error or "no project directory is configured",
++            )
++        head = repository.read_head()
++        return StudioProjectBinding(
++            bound=True,
++            project_id=head.project_id,
++            head_version=head.version,
++            state_sha256=head.state_sha256,
++            project_dir=str(self._project_dir),
++            detail="read-only binding; canonical write stays disabled",
++        )
+ 
+     _CORE_MODULES = (
+         "archflow.state.decision_operator",
+@@ -39,7 +91,10 @@ class ArchFlowKernelFacade:
+         )
+ 
+     def session(self) -> StudioSessionSnapshot:
+-        return StudioSessionSnapshot()
++        binding = self.project_binding()
++        return StudioSessionSnapshot(
++            project_id=binding.project_id if binding.bound else None
++        )
+ 
+     def capabilities(self) -> tuple[CapabilityDescriptor, ...]:
+         checked = (
+diff --git a/apps/archflow-studio/backend/server.py b/apps/archflow-studio/backend/server.py
+index 20f2158..c3c57ee 100644
+--- a/apps/archflow-studio/backend/server.py
++++ b/apps/archflow-studio/backend/server.py
+@@ -44,6 +44,9 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
+         if path == "/api/session":
+             self._send_json(200, self._kernel.session().to_dict())
+             return
++        if path == "/api/project":
++            self._send_json(200, self._kernel.project_binding().to_dict())
++            return
+         if path.startswith("/api/"):
+             self._send_json(
+                 404,
+@@ -109,8 +112,9 @@ def create_server(
+     port: int,
+     static_dir: Path,
+     kernel: ArchFlowKernelFacade | None = None,
++    project_dir: Path | None = None,
+ ) -> ThreadingHTTPServer:
+-    active_kernel = kernel or ArchFlowKernelFacade()
++    active_kernel = kernel or ArchFlowKernelFacade(project_dir=project_dir)
+     handler = partial(
+         StudioRequestHandler,
+         kernel=active_kernel,
+@@ -119,10 +123,20 @@ def create_server(
+     return ThreadingHTTPServer((host, port), handler)
+ 
+ 
+-def run(*, host: str, port: int, static_dir: Path) -> None:
+-    server = create_server(host=host, port=port, static_dir=static_dir)
++def run(
++    *,
++    host: str,
++    port: int,
++    static_dir: Path,
++    project_dir: Path | None = None,
++) -> None:
++    server = create_server(
++        host=host, port=port, static_dir=static_dir, project_dir=project_dir
++    )
+     print(f"ArchFlow Studio gateway: http://{host}:{server.server_port}")
+     print("Mode: read-only preview; canonical write authority: false")
++    if project_dir is not None:
++        print(f"Project binding: {project_dir}")
+     try:
+         server.serve_forever()
+     except KeyboardInterrupt:
+diff --git a/apps/archflow-studio/backend/tests/support.py b/apps/archflow-studio/backend/tests/support.py
+new file mode 100644
+index 0000000..7a05731
+--- /dev/null
++++ b/apps/archflow-studio/backend/tests/support.py
+@@ -0,0 +1,95 @@
++"""Builds a real, minimal P036 project for studio backend tests (no mocks)."""
++
++from __future__ import annotations
++
++import json
++import sys
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[3]
++if str(REPO_ROOT) not in sys.path:
++    sys.path.insert(0, str(REPO_ROOT))
++
++from archflow.project.ports import PersistenceArea, PersistenceDestination  # noqa: E402
++from archflow.project.repository import FilesystemProjectRepository  # noqa: E402
++
++PROJECT_ID = "demo-project"
++RUN_ID = "run-001"
++
++STATE_RECORD = {
++    "schema": "StateRecord@1",
++    "project_id": PROJECT_ID,
++    "run_id": RUN_ID,
++    "entities": [
++        {
++            "entity_id": "building",
++            "schema": "Component@1",
++            "fields": {
++                "semantic_kind": "building",
++                "intent": "demo building",
++                "source_refs": ["evidence:demo"],
++            },
++            "parent_id": None,
++        },
++        {
++            "entity_id": "portico",
++            "schema": "Component@1",
++            "fields": {
++                "semantic_kind": "portico",
++                "intent": "front portico",
++                "source_refs": ["evidence:demo"],
++            },
++            "parent_id": "building",
++        },
++        {
++            "entity_id": "ground",
++            "schema": "Level@1",
++            "fields": {"role": "ground", "elevation": 0.0},
++            "parent_id": None,
++        },
++        {
++            "entity_id": "portico-columns",
++            "schema": "Element@1",
++            "fields": {
++                "producer": "produce_column_array",
++                "component": "portico",
++                "level": "ground",
++                "height_m": 5.4,
++            },
++            "parent_id": "portico",
++        },
++    ],
++    "parameters": [],
++    "relations": [],
++    "obligations": [],
++}
++
++
++def make_project(root: Path) -> tuple[FilesystemProjectRepository, str, str]:
++    """Initialize a project with one run, one retained record, one input record.
++
++    Returns (repository, record_relative_path, record_sha256). The runner-style
++    input record lands at input/runner/state-record.json exactly like the villa.
++    """
++
++    repository = FilesystemProjectRepository.initialize(
++        root / PROJECT_ID,
++        project_id=PROJECT_ID,
++        initial_state={"project_id": PROJECT_ID, "version": 0},
++    )
++    run = repository.create_run(RUN_ID)
++    ref = repository.put_json(
++        run=run,
++        destination=PersistenceDestination(
++            PersistenceArea.RUN_RECORD, run_id=RUN_ID
++        ),
++        record_kind="state-record",
++        payload=STATE_RECORD,
++    )
++    runner_dir = repository.layout.inputs / "runner"
++    runner_dir.mkdir(parents=True, exist_ok=True)
++    (runner_dir / "state-record.json").write_text(
++        json.dumps(STATE_RECORD, ensure_ascii=False, indent=1),
++        encoding="utf-8",
++    )
++    return repository, ref.relative_path, ref.sha256
+diff --git a/apps/archflow-studio/backend/tests/test_project_binding.py b/apps/archflow-studio/backend/tests/test_project_binding.py
+new file mode 100644
+index 0000000..0395c55
+--- /dev/null
++++ b/apps/archflow-studio/backend/tests/test_project_binding.py
+@@ -0,0 +1,39 @@
++from __future__ import annotations
++
++import tempfile
++import unittest
++from pathlib import Path
++
++from backend.tests.support import PROJECT_ID, make_project
++from backend.kernel import ArchFlowKernelFacade
++
++
++class ProjectBindingTests(unittest.TestCase):
++    def setUp(self) -> None:
++        self._tmp = tempfile.TemporaryDirectory()
++        self.addCleanup(self._tmp.cleanup)
++        self.root = Path(self._tmp.name)
++        make_project(self.root)
++
++    def test_unbound_facade_reports_unbound(self) -> None:
++        binding = ArchFlowKernelFacade().project_binding()
++        self.assertFalse(binding.bound)
++        self.assertIsNone(binding.project_id)
++
++    def test_bound_facade_reports_exact_head(self) -> None:
++        facade = ArchFlowKernelFacade(project_dir=self.root / PROJECT_ID)
++        binding = facade.project_binding()
++        self.assertTrue(binding.bound)
++        self.assertEqual(binding.project_id, PROJECT_ID)
++        self.assertEqual(binding.head_version, 0)
++        self.assertEqual(len(binding.state_sha256), 64)
++
++    def test_missing_project_dir_is_a_visible_error_not_a_guess(self) -> None:
++        facade = ArchFlowKernelFacade(project_dir=self.root / "absent")
++        binding = facade.project_binding()
++        self.assertFalse(binding.bound)
++        self.assertIn("absent", binding.detail)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/apps/archflow-studio/run_server.py b/apps/archflow-studio/run_server.py
+index ff60c5d..0e9302e 100644
+--- a/apps/archflow-studio/run_server.py
++++ b/apps/archflow-studio/run_server.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import argparse
++import os
+ import sys
+ from pathlib import Path
+ 
+@@ -20,8 +21,22 @@ def main() -> None:
+     parser = argparse.ArgumentParser(description="Run ArchFlow Studio locally")
+     parser.add_argument("--host", default="127.0.0.1")
+     parser.add_argument("--port", type=int, default=8765)
++    parser.add_argument(
++        "--project-dir",
++        default=os.environ.get("ARCHFLOW_STUDIO_PROJECT_DIR"),
++        help=(
++            "P036 project directory to bind read-only "
++            "(env ARCHFLOW_STUDIO_PROJECT_DIR)"
++        ),
++    )
+     args = parser.parse_args()
+-    run(host=args.host, port=args.port, static_dir=APP_ROOT / "dist")
++    project_dir = Path(args.project_dir) if args.project_dir else None
++    run(
++        host=args.host,
++        port=args.port,
++        static_dir=APP_ROOT / "dist",
++        project_dir=project_dir,
++    )
+ 
+ 
+ if __name__ == "__main__":

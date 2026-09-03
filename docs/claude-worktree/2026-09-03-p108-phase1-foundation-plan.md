@@ -1,3 +1,7 @@
+> **SUPERSEDED (2026-09-03, same day).** This plan implemented the /client /server /shared + FastAPI decision
+> that commit 83c6856 reversed. Nothing in it was executed. Codex's review of this file (2026-09-03) drove the
+> refoundation; the standing plan is `2026-09-03-p108-refoundation-plan.md`.
+
 # P108 Phase 1 — /client /server /shared Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
