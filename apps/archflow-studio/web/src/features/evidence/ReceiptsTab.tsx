@@ -48,6 +48,26 @@ export function ReceiptsTab({
         </dl>
       </div>
       <div className="ev">
+        <p className="label">Timings</p>
+        <dl>
+          <dt>run</dt>
+          <dd>{candidate.timings.runS === null ? "—" : `${candidate.timings.runS} s`}</dd>
+          {candidate.timings.seats.map((seat) => (
+            <SeatTiming key={seat.seatId} seatId={seat.seatId} wallTimeS={seat.wallTimeS} />
+          ))}
+          {candidate.timings.exports.length === 0 ? (
+            <>
+              <dt>exports</dt>
+              <dd>none — this run exported nothing</dd>
+            </>
+          ) : (
+            candidate.timings.exports.map((item) => (
+              <ExportTiming key={item.seatId} item={item} />
+            ))
+          )}
+        </dl>
+      </div>
+      <div className="ev">
         <p className="label">Seat rows ({candidate.seatResults.length})</p>
         {candidate.seatResults.length === 0 ? (
           <p className="ev__none">the receipt names no seats</p>
@@ -132,6 +152,29 @@ export function ReceiptsTab({
           </>
         )}
       </div>
+    </>
+  );
+}
+
+function SeatTiming({ seatId, wallTimeS }: { seatId: string; wallTimeS: number | null }) {
+  return (
+    <>
+      <dt>{seatId}</dt>
+      <dd>{wallTimeS === null ? "no wall time recorded" : `${wallTimeS} s`}</dd>
+    </>
+  );
+}
+
+function ExportTiming({ item }: { item: CandidateDto["timings"]["exports"][number] }) {
+  return (
+    <>
+      <dt>export · {item.seatId}</dt>
+      <dd>
+        {item.path ?? "path unknown"} · {item.seconds === null ? "no seconds recorded" : `${item.seconds} s`}{" "}
+        · {item.status ?? "no status"}
+        {item.rebuildRatio !== null &&
+          ` · rebuilt ${item.rebuiltObjects} of ${(item.rebuiltObjects ?? 0) + (item.keptObjects ?? 0)} (ratio ${item.rebuildRatio.toFixed(3)})`}
+      </dd>
     </>
   );
 }

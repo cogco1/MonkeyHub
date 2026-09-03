@@ -173,6 +173,26 @@ function CandidateReadout({
         {!candidate.seatExecutionComplete && (
           <p className="quiet">seat execution is not complete</p>
         )}
+        {/* Where the seconds went, as the receipt times them: the run, then
+            each export with the runner's own word for its path. A run that
+            exported nothing says so with no export figures at all. */}
+        <p className="quiet mono">
+          {candidate.timings.runS === null
+            ? "run time not recorded"
+            : `run ${candidate.timings.runS.toFixed(1)} s`}
+          {candidate.timings.exports.length > 0 &&
+            " · export " +
+              candidate.timings.exports
+                .map(
+                  (item) =>
+                    `${item.seconds === null ? "?" : item.seconds.toFixed(1)} s (${item.path ?? "path unknown"}` +
+                    (item.rebuildRatio !== null
+                      ? `, rebuilt ${item.rebuiltObjects} of ${(item.rebuiltObjects ?? 0) + (item.keptObjects ?? 0)}`
+                      : "") +
+                    ")",
+                )
+                .join(" + ")}
+        </p>
       </div>
       <div className="card__row">
         {candidate.artifacts.length === 0 ? (
