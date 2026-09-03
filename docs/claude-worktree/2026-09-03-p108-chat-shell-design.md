@@ -120,17 +120,27 @@ unless the user has scrolled up.
   landed in the final fix wave).
 - `ErrorBoundary`s stay: one around the shell, one around the viewport.
 
-## 10. Visual system
+## 10. Visual system (Kaiwen 2026-09-03: "参考 Unreal，稍微行业化一点")
 
-Tokens replace the current `:root` set (light and dark, three-state theme handling):
-ground `#edefeb` / `#1c1f1d`, panel `#ffffff` / `#242826`, ink `#1b1d1b` / `#eceeea`, muted `#6b7069` /
-`#9aa097`, line `#d6d9d3` / `#3a3f3b`, accent (ArchFlow rust) `#9a4a2f` / `#d08a6b`, held `#2e6b4f` /
-`#6fbf95`, violated `#a63a2e` / `#e07b6f`, unchecked `#9a6a12` / `#d9a94a`.
-Type: Instrument Sans (conversation, UI) and IBM Plex Mono (ids, digests, numbers), loaded from Google Fonts
-in `index.html` with system fallbacks. The accent is used only for the primary action and the selection;
-the three relation colours are semantic and never decorative. Shell copy is English; the viewer's existing
-Chinese strings are switched to English in the same pass (the one exception to "viewer unchanged" — strings
-only, no behaviour).
+Dark-first, in the register of the Unreal Editor: charcoal panels separated by 1 px hairlines, 3 px radii,
+flat controls, a slim top toolbar across the full width, one cool accent for selection and the primary
+action, and numbers in a monospace. Light theme provided from the same tokens (three-state theme handling).
+
+Tokens (dark / light): ground `#1b1b1b` / `#e9e9e9`, panel `#242424` / `#f5f5f5`, panel-2 `#2c2c2c` /
+`#ececec`, ink `#e4e4e4` / `#1e1e1e`, ink-2 `#c8c8c8` / `#3a3a3a`, muted `#9b9b9b` / `#5f5f5f`, faint
+`#6f6f6f` / `#8a8a8a`, line `#3a3a3a` / `#cfcfcf`, line-2 `#2f2f2f` / `#dedede`, accent `#2f80ed` /
+`#1f6fd1` (accent-ink `#ffffff`), held `#58b368` / `#2e7d32`, violated `#e5534b` / `#c62828`, unchecked
+`#e0a03a` / `#b26a00`, viewport `#202020` / `#e4e4e4`, grid major `#3d3d3d` / `#c9c9c9`, grid minor
+`#2e2e2e` / `#d9d9d9`.
+Type: Roboto (UI) and Roboto Mono (ids, digests, numbers, seat rows), from Google Fonts with system
+fallbacks; 13 px body, 11 px uppercase labels with 0.06 em tracking. The accent is used only for the primary
+action, the selection and the active tab; the three relation colours are semantic and never decorative.
+Top toolbar (36 px, full width): wordmark, project id, `HEAD vN`, the `proposal-only` pill, and the
+evidence toggle at the right; the conversation column and the stage sit under it.
+Shell copy is English; the viewer's existing Chinese strings are switched to English in the same pass.
+The viewer's two exceptions to "unchanged": (1) strings only; (2) the three.js scene background and grid
+colours are read from the CSS tokens `--viewport`, `--grid-major`, `--grid-minor` at mount and on theme
+change, so the canvas belongs to the theme — colours only, no behaviour.
 
 ## 11. What is removed
 
