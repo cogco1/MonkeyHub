@@ -151,7 +151,7 @@ def main() -> int:
         envelope_uri=args.stage_envelope_ref,
     )
     options = RunOptions(commitment_ref=seats_payload["commitment_ref"], provider_identity=identity, strict_coverage=not args.relaxed_coverage, export=args.export,
-                         workspace_root=Path(args.workspace).resolve() if args.workspace else project_root / "runs" / args.run / "workspaces", powershell=Path(args.powershell),
+                         workspace_root=Path(args.workspace).resolve() if args.workspace else repository.layout.run(args.run).root / "workspaces", powershell=Path(args.powershell),
                          branch_id=stage_guard.envelope.branch_id, branch_epoch=stage_guard.envelope.branch_epoch, patch_oracle=args.patch_oracle)
     if options.export:
         for seat in seats:

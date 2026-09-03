@@ -57,12 +57,19 @@
         "CadExecutionError"
       ],
       "depends_on": [
+        "adapters.cad_patch",
+        "adapters.cad_program",
+        "adapters.three_dm_inspector",
         "archflow.adapters.cad_patch",
         "archflow.adapters.cad_program",
         "archflow.adapters.three_dm_inspector",
         "archflow.project.refs",
         "archflow.runtime.geometry_compiler",
-        "archflow.state.geometry_program"
+        "archflow.state.geometry_program",
+        "compilers.geometry",
+        "contracts.canonical",
+        "project.refs",
+        "state.geometry_program"
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",
@@ -118,6 +125,7 @@
         "CadPatchError"
       ],
       "depends_on": [
+        "adapters.cad_program",
         "archflow.adapters.cad_program"
       ],
       "used_by": [
@@ -234,7 +242,10 @@
       "depends_on": [
         "archflow.contracts.canonical",
         "archflow.ports.model",
-        "archflow.project.refs"
+        "archflow.project.refs",
+        "contracts.canonical",
+        "ports.model",
+        "project.refs"
       ],
       "used_by": [
         "archflow/production/provider_runtime.py",
@@ -285,7 +296,9 @@
         "REQUIRED_INSPECTION_KEYS",
         "SUPPORTED_INSPECTION_SCHEMAS"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "contracts.canonical"
+      ],
       "used_by": [
         "archflow/adapters/cad_execution.py",
         "archflow/runtime/project_runner.py",
@@ -348,7 +361,9 @@
       ],
       "depends_on": [
         "archflow.state.commitments",
-        "archflow.state.geometry_program"
+        "archflow.state.geometry_program",
+        "contracts.canonical",
+        "state.commitments"
       ],
       "used_by": [
         "archflow/capabilities/discipline_seats.py",
@@ -427,7 +442,15 @@
         "archflow.state.design_maturity",
         "archflow.state.developed_design",
         "archflow.state.geometry_program",
-        "archflow.state.spatial"
+        "archflow.state.spatial",
+        "capabilities.declaration",
+        "contracts.authority",
+        "contracts.canonical",
+        "project.refs",
+        "state.developed_design",
+        "state.geometry_program",
+        "state.spatial",
+        "state.stage_workflow"
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",
@@ -496,11 +519,17 @@
         "produce_rows"
       ],
       "depends_on": [
+        "archflow.capabilities.opening_solver",
         "archflow.capabilities.reference_resolver",
         "archflow.capabilities.wall_solver",
-        "archflow.capabilities.opening_solver",
         "archflow.project.refs",
-        "archflow.state.geometry_program"
+        "archflow.state.geometry_program",
+        "capabilities.opening_solver",
+        "capabilities.reference_resolver",
+        "capabilities.wall_solver",
+        "contracts.fields",
+        "project.refs",
+        "state.geometry_program"
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",
@@ -579,7 +608,19 @@
         "archflow.state.geometry_program",
         "archflow.state.operational_state",
         "archflow.state.spatial",
-        "archflow.state.state_record"
+        "archflow.state.state_record",
+        "compilers.geometry",
+        "contracts.authority",
+        "contracts.canonical",
+        "contracts.fields",
+        "ports.model",
+        "project.ports",
+        "project.refs",
+        "state.developed_design",
+        "state.geometry_program",
+        "state.operational_state",
+        "state.record",
+        "state.spatial"
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",
@@ -651,7 +692,11 @@
       "depends_on": [
         "archflow.capabilities.wall_solver",
         "archflow.project.refs",
-        "archflow.state.geometry_program"
+        "archflow.state.geometry_program",
+        "capabilities.wall_solver",
+        "contracts.fields",
+        "project.refs",
+        "state.geometry_program"
       ],
       "used_by": [
         "archflow/capabilities/element_producers.py",
@@ -718,7 +763,11 @@
       "depends_on": [
         "archflow.project.refs",
         "archflow.state.derivation",
-        "archflow.state.geometry_program"
+        "archflow.state.geometry_program",
+        "contracts.fields",
+        "project.refs",
+        "state.derivation",
+        "state.geometry_program"
       ],
       "used_by": [
         "archflow/capabilities/element_producers.py",
@@ -774,7 +823,9 @@
         "RelationCheckError"
       ],
       "depends_on": [
-        "archflow.state.state_record"
+        "archflow.state.state_record",
+        "contracts.canonical",
+        "state.record"
       ],
       "used_by": [
         "archflow/runtime/project_runner.py"
@@ -832,7 +883,10 @@
       ],
       "depends_on": [
         "archflow.project.refs",
-        "archflow.state.geometry_program"
+        "archflow.state.geometry_program",
+        "contracts.fields",
+        "project.refs",
+        "state.geometry_program"
       ],
       "used_by": [
         "archflow/capabilities/element_producers.py",
@@ -906,7 +960,13 @@
         "archflow.state.developed_design",
         "archflow.state.geometry_program",
         "archflow.state.operational_state",
-        "archflow.state.state_record"
+        "archflow.state.state_record",
+        "contracts.canonical",
+        "project.refs",
+        "state.developed_design",
+        "state.geometry_program",
+        "state.operational_state",
+        "state.record"
       ],
       "used_by": [
         "archflow/capabilities/geometry_proposal.py",
@@ -1101,7 +1161,8 @@
       ],
       "status": "canonical",
       "tests": [],
-      "notes": "Canonical, but all four of its consumers are themselves fold targets and no test imports it directly; finite_number is never imported."
+      "notes": "Canonical, but all four of its consumers are themselves fold targets and no test imports it directly; finite_number is never imported.",
+      "untested_reason": "field primitives with no behaviour of their own; every StateRecord/GeometryProgram round-trip test exercises them"
     },
     {
       "module_id": "ports.model",
@@ -1135,7 +1196,9 @@
       ],
       "depends_on": [
         "archflow.contracts.canonical",
-        "archflow.project.refs"
+        "archflow.project.refs",
+        "contracts.canonical",
+        "project.refs"
       ],
       "used_by": [
         "archflow/adapters/model_provider.py",
@@ -1197,9 +1260,12 @@
         "InvocationEvidenceCollector"
       ],
       "depends_on": [
+        "adapters.model_provider",
         "archflow.adapters.model_provider",
         "archflow.ports.model",
-        "archflow.production.responsibility"
+        "archflow.production.responsibility",
+        "ports.model",
+        "production.responsibility"
       ],
       "used_by": [
         "tests/test_production_responsibility.py",
@@ -1276,7 +1342,8 @@
         "ProviderInvocationFailed"
       ],
       "depends_on": [
-        "archflow.contracts.canonical"
+        "archflow.contracts.canonical",
+        "contracts.canonical"
       ],
       "used_by": [
         "archflow/production/provider_runtime.py",
@@ -1377,7 +1444,8 @@
       ],
       "status": "canonical",
       "tests": [],
-      "notes": "Sole importer is project/repository.py and no test imports it directly; it is covered only through tests/test_project_repository.py. RunLayout is returned by ProjectLayout.run but never imported by name."
+      "notes": "Sole importer is project/repository.py and no test imports it directly; it is covered only through tests/test_project_repository.py. RunLayout is returned by ProjectLayout.run but never imported by name.",
+      "untested_reason": "a path table; every FilesystemProjectRepository test walks it"
     },
     {
       "module_id": "project.location",
@@ -1410,8 +1478,8 @@
         "ProjectLocationKind"
       ],
       "depends_on": [
-        "project.refs",
         "project.manifest",
+        "project.refs",
         "project.repository"
       ],
       "used_by": [
@@ -1503,8 +1571,8 @@
         "PersistenceDestinationRequired"
       ],
       "depends_on": [
-        "project.refs",
-        "project.manifest"
+        "project.manifest",
+        "project.refs"
       ],
       "used_by": [
         "archflow/project/repository.py",
@@ -1648,11 +1716,11 @@
         "ProjectHeadLocked"
       ],
       "depends_on": [
-        "project.refs",
+        "project.digests",
         "project.layout",
         "project.manifest",
         "project.ports",
-        "project.digests"
+        "project.refs"
       ],
       "used_by": [
         "archflow/project/location.py",
@@ -1791,6 +1859,9 @@
         "SeatResult"
       ],
       "depends_on": [
+        "adapters.cad_execution",
+        "adapters.cad_program",
+        "adapters.three_dm_inspector",
         "archflow.adapters.cad_execution",
         "archflow.adapters.cad_program",
         "archflow.adapters.three_dm_inspector",
@@ -1813,7 +1884,24 @@
         "archflow.state.site_context",
         "archflow.state.spatial",
         "archflow.state.stage_workflow",
-        "archflow.state.state_record"
+        "archflow.state.state_record",
+        "capabilities.discipline_seats",
+        "capabilities.element_producers",
+        "capabilities.geometry_proposal",
+        "capabilities.reference_resolver",
+        "capabilities.relation_checks",
+        "contracts.authority",
+        "contracts.canonical",
+        "ports.model",
+        "project.ports",
+        "project.refs",
+        "project.repository",
+        "state.design_portfolio",
+        "state.developed_design",
+        "state.geometry_program",
+        "state.record",
+        "state.spatial",
+        "state.stage_workflow"
       ],
       "used_by": [
         "tools/run_project.py",
@@ -1902,8 +1990,8 @@
         "COMPOUND_PHRASES"
       ],
       "depends_on": [
-        "semantics.roles",
-        "semantics.conditions"
+        "semantics.conditions",
+        "semantics.roles"
       ],
       "used_by": [
         "archflow/state/state_record.py",
@@ -1990,7 +2078,9 @@
         "CommitmentAuthorityError",
         "CommitmentTransitionError"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "contracts.fields"
+      ],
       "used_by": [
         "archflow/state/model.py",
         "archflow/state/operational_state.py",
@@ -2048,6 +2138,7 @@
       ],
       "depends_on": [
         "contracts.canonical",
+        "contracts.fields",
         "project.refs",
         "state.commitments",
         "state.operational_state"
@@ -2108,6 +2199,7 @@
       ],
       "depends_on": [
         "contracts.canonical",
+        "contracts.fields",
         "project.refs"
       ],
       "used_by": [
@@ -2178,6 +2270,7 @@
       ],
       "depends_on": [
         "contracts.canonical",
+        "contracts.fields",
         "project.refs",
         "state.operational_state",
         "state.spatial"
@@ -2239,11 +2332,13 @@
       ],
       "depends_on": [
         "contracts.canonical",
+        "contracts.fields",
         "project.refs",
-        "state.spatial",
-        "state.operational_state",
         "state.design_maturity",
-        "state.design_portfolio"
+        "state.design_portfolio",
+        "state.operational_state",
+        "state.spatial",
+        "state.stage_workflow"
       ],
       "used_by": [
         "archflow/capabilities/discipline_seats.py",
@@ -2339,6 +2434,7 @@
       ],
       "depends_on": [
         "contracts.canonical",
+        "contracts.fields",
         "project.refs",
         "state.operational_state"
       ],
@@ -2407,6 +2503,7 @@
         "initialize_canonical_project"
       ],
       "depends_on": [
+        "contracts.fields",
         "project.refs",
         "state.commitments",
         "state.program"
@@ -2487,6 +2584,7 @@
       ],
       "depends_on": [
         "contracts.canonical",
+        "contracts.fields",
         "project.refs",
         "state.commitments"
       ],
@@ -2622,10 +2720,15 @@
         "contracts.canonical",
         "project.refs",
         "relations.contracts",
+        "semantics.conditions",
         "semantics.registry",
+        "semantics.roles",
+        "state.design_portfolio",
+        "state.developed_design",
         "state.geometry_program",
         "state.operational_state",
-        "state.spatial"
+        "state.spatial",
+        "state.stage_workflow"
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",
@@ -2705,10 +2808,12 @@
       ],
       "depends_on": [
         "contracts.canonical",
+        "contracts.fields",
         "project.refs",
-        "state.operational_state",
         "state.design_maturity",
-        "state.site_context"
+        "state.operational_state",
+        "state.site_context",
+        "state.stage_workflow"
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",
@@ -2786,9 +2891,10 @@
       "depends_on": [
         "contracts.authority",
         "contracts.canonical",
+        "contracts.fields",
         "project.refs",
-        "state.operational_state",
-        "state.design_maturity"
+        "state.design_maturity",
+        "state.operational_state"
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",
@@ -2848,7 +2954,9 @@
       ],
       "depends_on": [
         "archflow.project.refs",
-        "archflow.project.repository"
+        "archflow.project.repository",
+        "project.refs",
+        "project.repository"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -2923,7 +3031,15 @@
         "archflow.state.developed_design",
         "archflow.state.operational_state",
         "archflow.state.spatial",
-        "archflow.state.state_record"
+        "archflow.state.state_record",
+        "project.location",
+        "project.ports",
+        "project.refs",
+        "project.repository",
+        "state.developed_design",
+        "state.operational_state",
+        "state.record",
+        "state.spatial"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -3024,7 +3140,18 @@
         "archflow.state.developed_design",
         "archflow.state.operational_state",
         "archflow.state.stage_workflow",
-        "archflow.state.state_record"
+        "archflow.state.state_record",
+        "capabilities.declaration",
+        "capabilities.discipline_seats",
+        "capabilities.geometry_proposal",
+        "project.ports",
+        "project.refs",
+        "project.repository",
+        "runtime.project_runner",
+        "state.developed_design",
+        "state.operational_state",
+        "state.record",
+        "state.stage_workflow"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
@@ -3125,7 +3252,11 @@
         "archflow.contracts.canonical",
         "archflow.state.decision_operator",
         "archflow.state.operational_state",
-        "archflow.state.state_record"
+        "archflow.state.state_record",
+        "contracts.canonical",
+        "state.decision_operator",
+        "state.operational_state",
+        "state.record"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -3301,7 +3432,12 @@
         "archflow.state.model",
         "archflow.submission.model",
         "archflow.validation.engine",
-        "archflow.validation.model"
+        "archflow.validation.model",
+        "project.refs",
+        "state.model",
+        "submission.model",
+        "validation.engine",
+        "validation.model"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/routes/validation.py",
@@ -3365,8 +3501,8 @@
         "Claim"
       ],
       "depends_on": [
-        "state.model",
-        "state.commitments"
+        "state.commitments",
+        "state.model"
       ],
       "used_by": [
         "archflow/validation/engine.py",
@@ -3428,7 +3564,8 @@
       ],
       "status": "canonical",
       "tests": [],
-      "notes": "No test on main (only stale bytecode in tests/__pycache__ and copies in .claude worktrees); the CANONICAL_SPINE 4 registry rules land here."
+      "notes": "No test on main (only stale bytecode in tests/__pycache__ and copies in .claude worktrees); the CANONICAL_SPINE 4 registry rules land here.",
+      "untested_reason": "governance CLI; the gate itself runs on every commit and fails loudly"
     },
     {
       "module_id": "tools.devctl",
@@ -3458,7 +3595,11 @@
         "render",
         "main"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "semantics.conditions",
+        "semantics.registry",
+        "semantics.roles"
+      ],
       "used_by": [],
       "invariants": [
         "the registry holds only unfinished work; a finished card is deleted along with its entry",
@@ -3466,7 +3607,8 @@
       ],
       "status": "canonical",
       "tests": [],
-      "notes": "No test on main (only stale bytecode in tests/__pycache__); pure governance tooling with no archflow imports."
+      "notes": "No test on main (only stale bytecode in tests/__pycache__); pure governance tooling with no archflow imports.",
+      "untested_reason": "governance CLI that renders docs from the registries; run by hand, output is committed and diffed"
     },
     {
       "module_id": "tools.freeze_project_stage_workflow",
@@ -3498,7 +3640,11 @@
         "archflow.contracts.authority",
         "archflow.project.ports",
         "archflow.project.repository",
-        "archflow.state.stage_workflow"
+        "archflow.state.stage_workflow",
+        "contracts.authority",
+        "project.ports",
+        "project.repository",
+        "state.stage_workflow"
       ],
       "used_by": [
         "tests/test_freeze_project_stage_workflow.py"
@@ -3555,7 +3701,16 @@
         "archflow.state.design_maturity",
         "archflow.state.developed_design",
         "archflow.state.stage_workflow",
-        "archflow.state.state_record"
+        "archflow.state.state_record",
+        "capabilities.declaration",
+        "capabilities.discipline_seats",
+        "capabilities.geometry_proposal",
+        "project.refs",
+        "project.repository",
+        "runtime.project_runner",
+        "state.developed_design",
+        "state.record",
+        "state.stage_workflow"
       ],
       "used_by": [
         "tools/verify_state_record.py"
@@ -3566,7 +3721,8 @@
       ],
       "status": "canonical",
       "tests": [],
-      "notes": "Named as a spine entry point in CANONICAL_SPINE 1; no dedicated test, exercised through tests/test_project_runner.py's use of the same guard."
+      "notes": "Named as a spine entry point in CANONICAL_SPINE 1; no dedicated test, exercised through tests/test_project_runner.py's use of the same guard.",
+      "untested_reason": "CLI over runtime.project_runner; the runner tests cover the library path, the CLI is run by hand on villa and pantheon-zero"
     },
     {
       "module_id": "tools.verify_state_record",
@@ -3596,6 +3752,7 @@
         "main"
       ],
       "depends_on": [
+        "adapters.cad_program",
         "archflow.adapters.cad_program",
         "archflow.capabilities.geometry_proposal",
         "archflow.contracts.authority",
@@ -3607,6 +3764,15 @@
         "archflow.state.operational_state",
         "archflow.state.stage_workflow",
         "archflow.state.state_record",
+        "capabilities.geometry_proposal",
+        "contracts.authority",
+        "project.ports",
+        "project.refs",
+        "project.repository",
+        "runtime.project_runner",
+        "state.operational_state",
+        "state.record",
+        "state.stage_workflow",
         "tools.run_project"
       ],
       "used_by": [],
@@ -3616,7 +3782,8 @@
       ],
       "status": "canonical",
       "tests": [],
-      "notes": "The P102 migration receipt tool; the paper's replay comparison runs through it."
+      "notes": "The P102 migration receipt tool; the paper's replay comparison runs through it.",
+      "untested_reason": "CLI over runtime.project_runner and cad_program; run by hand on the workspace projects"
     },
     {
       "module_id": "validation.engine",

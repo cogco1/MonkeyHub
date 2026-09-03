@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -45,7 +46,8 @@ _AUTH = ("canonical_write_authority", "design_authority", "stage_acceptance_auth
 
 
 def _latest(records_dir: Path, prefix: str) -> Path:
-    paths = sorted(records_dir.glob(f"{prefix}-*.json"), key=lambda p: p.stat().st_mtime)
+    shape = re.compile(rf"^{re.escape(prefix)}-[0-9a-f]{{64}}\.json$")  # exact kind, never a prefix match
+    paths = sorted((p for p in records_dir.glob(f"{prefix}-*.json") if shape.match(p.name)), key=lambda p: p.stat().st_mtime)
     if not paths:
         raise SystemExit(f"no {prefix} record in {records_dir}")
     return paths[-1]

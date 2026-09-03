@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+
+from archflow.contracts.canonical import canonical_digest
 import math
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -654,14 +656,7 @@ def _encoded_geometry_sha256(geometry: Any) -> str:
     encoded = geometry.Encode()
     if not isinstance(encoded, dict):
         raise TypeError("encoded 3dm geometry must be a mapping")
-    canonical = json.dumps(
-        encoded,
-        allow_nan=False,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    return canonical_digest(encoded)
 
 
 def _surface_planarity_counts(

@@ -53,46 +53,6 @@
       "reason": "The durable project repository is the sole project-document filesystem writer."
     },
     {
-      "path": "archflow/project/runtime.py",
-      "function": "initialize_runtime",
-      "operations": [
-        "mkdir"
-      ],
-      "kind": "external_runtime_root",
-      "owner": "P052",
-      "reason": "Creates only explicitly configured external workspace, cache, and temp roots; project documents still flow through P036."
-    },
-    {
-      "path": "archflow/workspace/manager.py",
-      "function": "__init__",
-      "operations": [
-        "mkdir"
-      ],
-      "kind": "speculative_workspace",
-      "owner": "P001",
-      "reason": "Creates only the explicitly supplied speculative workspace root."
-    },
-    {
-      "path": "archflow/workspace/manager.py",
-      "function": "fork",
-      "operations": [
-        "mkdir"
-      ],
-      "kind": "speculative_workspace",
-      "owner": "P001",
-      "reason": "Creates one branch-local directory under the supplied workspace root."
-    },
-    {
-      "path": "archflow/adapters/fake_voxel.py",
-      "function": "build",
-      "operations": [
-        "write_bytes"
-      ],
-      "kind": "adapter_workspace",
-      "owner": "P001",
-      "reason": "Writes a synthetic candidate only inside the supplied speculative workspace."
-    },
-    {
       "path": "archflow/adapters/cad_execution.py",
       "function": "prepare_rhino_three_dm_export",
       "operations": [
@@ -103,85 +63,54 @@
       "reason": "Exclusively creates a deterministic Rhino script inside the explicitly supplied non-symlink speculative workspace; saved 3DM output remains non-canonical."
     },
     {
-      "path": "archflow/adapters/minecraft_mcp.py",
-      "function": "_write_artifact",
+      "path": "tools/devctl.py",
+      "function": "main",
       "operations": [
-        "write_bytes"
-      ],
-      "kind": "adapter_workspace",
-      "owner": "P002",
-      "reason": "Writes an MCP candidate artifact into the explicit adapter workspace."
-    },
-    {
-      "path": "archflow/adapters/minecraft_mcp.py",
-      "function": "_fail",
-      "operations": [
-        "write_bytes"
-      ],
-      "kind": "adapter_workspace",
-      "owner": "P002",
-      "reason": "Writes a bounded failure receipt into the explicit adapter workspace."
-    },
-    {
-      "path": "archflow/adapters/minecraft_mcp.py",
-      "function": "_extract_png",
-      "operations": [
-        "write_bytes"
-      ],
-      "kind": "adapter_workspace",
-      "owner": "P002",
-      "reason": "Writes returned visual evidence into the explicit adapter workspace."
-    },
-    {
-      "path": "archflow/runtime/environment_feedback.py",
-      "function": "_write_json",
-      "operations": [
-        "mkdir",
         "write_text"
       ],
-      "kind": "legacy_explicit_destination",
-      "owner": "M003",
-      "reason": "Existing explicit-path environment receipt helper pending durable world-reconciliation routing."
+      "kind": "rendered_docs",
+      "owner": "tools.devctl",
+      "reason": "Renders DYNAMIC_MAP, the planning index, SYSTEM_MAP and SEMANTIC_REGISTRY from the registries; the files are committed."
     },
     {
-      "path": "archflow/runtime/environment_feedback.py",
-      "function": "write_tool_invocation_intent",
+      "path": "tools/run_project.py",
+      "function": "main",
       "operations": [
-        "helper:_write_json"
+        "mkdir"
       ],
-      "kind": "legacy_explicit_destination",
-      "owner": "M003",
-      "reason": "Existing bounded invocation receipt call site."
+      "kind": "cli_workspace",
+      "owner": "tools.run_project",
+      "reason": "Creates the run's speculative workspace directory under the layout's run root before handing it to the runner."
     },
     {
-      "path": "archflow/runtime/environment_feedback.py",
-      "function": "write_tool_environment_observation",
+      "path": "tools/verify_state_record.py",
+      "function": "main",
       "operations": [
-        "helper:_write_json"
+        "mkdir"
       ],
-      "kind": "legacy_explicit_destination",
-      "owner": "M003",
-      "reason": "Existing bounded environment observation call site."
+      "kind": "cli_workspace",
+      "owner": "tools.verify_state_record",
+      "reason": "Creates the output directory the verification writes its receipts into."
     },
     {
-      "path": "archflow/runtime/environment_feedback.py",
-      "function": "write_tool_failure_link",
+      "path": "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+      "function": "execute_candidate",
       "operations": [
-        "helper:_write_json"
+        "mkdir"
       ],
-      "kind": "legacy_explicit_destination",
-      "owner": "M003",
-      "reason": "Existing bounded failure-link call site."
+      "kind": "cli_workspace",
+      "owner": "studio.candidate",
+      "reason": "Creates the per-seat export workspace under the layout's run root, the same way tools/run_project.py does."
     },
     {
-      "path": "archflow/runtime/environment_feedback.py",
-      "function": "write_environment_feedback_trace",
+      "path": "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
+      "function": "compile",
       "operations": [
-        "helper:_write_json"
+        "write_text"
       ],
-      "kind": "legacy_explicit_destination",
-      "owner": "M003",
-      "reason": "Existing bounded feedback-trace call site."
+      "kind": "provider_tempdir",
+      "owner": "studio.intent",
+      "reason": "Writes the response schema into a TemporaryDirectory handed to codex exec; nothing under the project is touched."
     }
   ],
   "forbidden_layer_imports": [
@@ -331,29 +260,9 @@
   ],
   "allowed_authority_symbols": [
     {
-      "path": "archflow/commit/committer.py",
-      "symbol": "Committer",
-      "owner": "P001"
-    },
-    {
-      "path": "archflow/commit/store.py",
-      "symbol": "InMemoryStateStore",
-      "owner": "P001"
-    },
-    {
       "path": "archflow/project/repository.py",
       "symbol": "FilesystemProjectRepository",
       "owner": "P036"
-    },
-    {
-      "path": "archflow/runtime/event_log.py",
-      "symbol": "EventRecordStore",
-      "owner": "P018"
-    },
-    {
-      "path": "archflow/runtime/event_log.py",
-      "symbol": "AppendOnlyEventLog",
-      "owner": "P018"
     }
   ],
   "forbidden_commit_symbols": [

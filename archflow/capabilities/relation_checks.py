@@ -12,11 +12,10 @@ producer emitted.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.state_record import Relation, StateRecord
 
 Bounds = tuple[Sequence[float], Sequence[float]]
@@ -69,7 +68,7 @@ class RelationCheckReport:
 
     @property
     def digest(self) -> str:
-        return hashlib.sha256(json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        return canonical_digest(self.to_dict())
 
 
 def _extent(objects: Sequence[str], bounds: Mapping[str, Bounds], label: str) -> tuple[float, float]:

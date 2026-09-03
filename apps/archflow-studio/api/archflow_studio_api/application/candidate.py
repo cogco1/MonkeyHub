@@ -96,6 +96,11 @@ def successor_record(record: StateRecord, proposal: Proposal) -> StateRecord:
             for entity in record.entities
         )
         return replace(record, entities=entities)
+    for parameter in record.parameters:
+        if parameter.key == proposal.key and parameter.lock_authority:
+            # The lock is the record's own statement that this value is not the studio's to change.
+            raise StudioError(409, "PARAMETER_LOCKED",
+                              f"parameter {proposal.key} is locked by {parameter.lock_authority}; the authored record has to unlock it first")
     parameters = tuple(
         parameter
         if parameter.key != proposal.key

@@ -77,9 +77,14 @@ def _require_string_list(policy: dict[str, Any], field: str) -> list[str]:
     return value
 
 
-def validate_policy(policy: dict[str, Any]) -> None:
+def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
     if policy.get("schema") != POLICY_SCHEMA:
         raise ArchitecturePolicyError("unsupported architecture policy schema")
+    if root is not None:
+        for entry in list(policy.get("allowed_write_sites", ())) + list(policy.get("allowed_authority_symbols", ())):
+            path = entry.get("path") if isinstance(entry, dict) else None
+            if path and not (root / path).is_file():
+                raise ArchitecturePolicyError(f"policy names a file that does not exist: {path}")
     for field in (
         "source_root",
         "probe_root",
@@ -535,6 +540,31 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
         for symbol in entry.get("public_api", ()):
             if symbol.isidentifier() and symbol not in defined:
                 yield PolicyFinding(rel_registry, 1, "REGISTRY_SYMBOL_MISSING", f"{module_id}: public_api symbol {symbol} is not defined in {entry['owner_path']} or its files")
+        # depends_on must be what the owner imports from archflow (module ids or dotted module paths)
+        owner_by_module = {e2["owner_path"][:-3].replace("/", "."): e2["module_id"] for e2 in entries if e2.get("owner_path", "").endswith(".py")}
+        actual: set[str] = set()
+        for path in span:
+            if path.suffix != ".py" or not path.is_file():
+                continue
+            try:
+                tree2 = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree2):
+                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("archflow."):
+                    actual.add(owner_by_module.get(node.module, node.module))
+                elif isinstance(node, ast.Import):
+                    actual.update(owner_by_module.get(a.name, a.name) for a in node.names if a.name.startswith("archflow."))
+        declared = set()
+        for dep in entry.get("depends_on", ()):
+            declared.add(owner_by_module.get(dep, dep))
+            declared.add(dep)
+        actual.discard(module_id)
+        undeclared = sorted(a for a in actual if a not in declared and not any(a.endswith("." + d.split(".")[-1]) for d in declared))
+        if undeclared:
+            yield PolicyFinding(rel_registry, 1, "REGISTRY_DEPENDS_ON_DRIFT", f"{module_id} imports {', '.join(undeclared)} but depends_on does not say so")
+        if not entry.get("tests") and not entry.get("untested_reason"):
+            yield PolicyFinding(rel_registry, 1, "REGISTRY_UNTESTED_OWNER", f"{module_id} lists no test and gives no untested_reason")
     owner_paths = {root / f for e in entries for f in (e.get("files") or [e.get("owner_path", "")])}
     for path in _checked_python_files(root, policy):
         if path in owner_paths or "/tests/" in path.as_posix() or path.name == "__init__.py":
@@ -552,7 +582,7 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
 
 
 def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
-    validate_policy(policy)
+    validate_policy(policy, root)
     findings: list[PolicyFinding] = list(check_probe_boundary(root, policy))
     findings.extend(check_registry(root, policy))
     for path in _checked_python_files(root, policy):
@@ -566,7 +596,8 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
         checks: list[Iterable[PolicyFinding]] = [
             check_imports(relative, index, policy)
         ]
-        if _source_matches(relative, policy["source_root"]):
+        in_tests = "/tests/" in relative or relative.startswith("tests/")
+        if not in_tests and any(_source_matches(relative, root_prefix) for root_prefix in policy["checked_source_roots"]):
             checks.extend(
                 (
                     check_instance_answers(relative, index, policy),
