@@ -12,6 +12,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import type { StudioApiError } from "../../api/client";
 import type {
   CandidateDto,
+  GestureDto,
   ProjectArtifactDto,
   StateProjectionDto,
   ValidationDto,
@@ -54,6 +55,8 @@ export function Conversation({
   loadingSha,
   ghostProposalId,
   refiningEntryId,
+  gestures,
+  onRemoveGesture,
   draft,
   onDraft,
   onSubmit,
@@ -72,6 +75,9 @@ export function Conversation({
   ghostProposalId: string | null;
   /** The proposal entry whose refinement is on the wire, if any. */
   refiningEntryId: string | null;
+  /** Marks drawn on the model, to go with the next sentence. */
+  gestures: readonly GestureDto[];
+  onRemoveGesture(index: number): void;
   draft: string;
   onDraft(text: string): void;
   onSubmit(utterance: string): void;
@@ -125,6 +131,8 @@ export function Conversation({
         projection={projection}
         disabledReason={disabledReason}
         busy={busy}
+        gestures={gestures}
+        onRemoveGesture={onRemoveGesture}
         draft={draft}
         onDraft={onDraft}
         onSubmit={onSubmit}

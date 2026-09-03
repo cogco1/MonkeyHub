@@ -18,6 +18,7 @@ import {
   MeshStandardMaterial,
   Object3D,
   PerspectiveCamera,
+  Plane,
   Raycaster,
   Scene,
   SRGBColorSpace,
@@ -83,8 +84,39 @@ export interface GhostSpec {
   affected: readonly GhostTarget[];
 }
 
+export type Vec3 = [number, number, number];
+
+/** One object under a point of a stroke, read the way a click is read. */
+export interface SampleHit {
+  objectName: string | null;
+  userStrings: UserStrings;
+  world: Vec3;
+}
+
+/** Where the camera stands: the viewpoint a gesture was drawn in. */
+export interface CameraState {
+  position: Vec3;
+  target: Vec3;
+  up: Vec3;
+  fov: number;
+}
+
 export interface ViewportController {
   openFile(file: File, sourceLabel?: string): Promise<void>;
+  /**
+   * The object under a client-space point, with the file's strings and the
+   * world point where the ray met it; null off the model. Nothing is
+   * interpreted here - the server names what it is.
+   */
+  sampleAt(clientX: number, clientY: number): SampleHit | null;
+  /** The camera as it stands, or null before the renderer exists. */
+  camera(): CameraState | null;
+  /**
+   * A client-space point carried into the world on the plane facing the
+   * camera through ``through`` (or through the orbit target when null): how
+   * a stroke's length and direction become model units.
+   */
+  unprojectOnPlane(clientX: number, clientY: number, through: Vec3 | null): Vec3 | null;
   /**
    * Draw a ghost of a proposal over the loaded model, or remove it with null.
    * Returns how many meshes the ghost copied for the target: zero means the
@@ -534,11 +566,11 @@ export const ThreeDmViewport = forwardRef<
    * attributes on, and the strings go out untouched — identity is resolved by
    * the server against the State Record, never here.
    */
-  const pickAt = useCallback((clientX: number, clientY: number) => {
+  const rayAt = useCallback((clientX: number, clientY: number): Raycaster | null => {
     const runtime = runtimeRef.current;
-    if (!runtime?.model) return;
+    if (!runtime) return null;
     const rect = runtime.renderer.domElement.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    if (rect.width <= 0 || rect.height <= 0) return null;
     const raycaster = new Raycaster();
     raycaster.setFromCamera(
       new Vector2(
@@ -547,26 +579,97 @@ export const ThreeDmViewport = forwardRef<
       ),
       runtime.camera,
     );
-    const hit = raycaster
-      .intersectObject(runtime.model, true)
-      .find((intersection) => intersection.object.visible);
-    if (!hit) return;
-    const carrier = userStringCarrier(hit.object);
-    const attributes = carrier?.userData.attributes as
-      | { userStrings?: unknown }
-      | undefined;
-    callbacksRef.current.onPick({
-      userStrings: toUserStrings(attributes?.userStrings),
-      documentUserStrings: documentUserStrings(runtime.model),
-      objectName: (carrier ?? hit.object).name || null,
-    });
+    return raycaster;
   }, []);
+
+  const hitAt = useCallback(
+    (clientX: number, clientY: number) => {
+      const runtime = runtimeRef.current;
+      if (!runtime?.model) return null;
+      const raycaster = rayAt(clientX, clientY);
+      if (!raycaster) return null;
+      const hit = raycaster
+        .intersectObject(runtime.model, true)
+        .find((intersection) => intersection.object.visible);
+      if (!hit) return null;
+      const carrier = userStringCarrier(hit.object) ?? hit.object;
+      const attributes = carrier.userData.attributes as
+        | { userStrings?: unknown }
+        | undefined;
+      return {
+        objectName: carrier.name || null,
+        userStrings: toUserStrings(attributes?.userStrings),
+        point: hit.point,
+      };
+    },
+    [rayAt],
+  );
+
+  const pickAt = useCallback(
+    (clientX: number, clientY: number) => {
+      const runtime = runtimeRef.current;
+      if (!runtime?.model) return;
+      const hit = hitAt(clientX, clientY);
+      if (!hit) return;
+      callbacksRef.current.onPick({
+        userStrings: hit.userStrings,
+        documentUserStrings: documentUserStrings(runtime.model),
+        objectName: hit.objectName,
+      });
+    },
+    [hitAt],
+  );
+
+  const sampleAt = useCallback(
+    (clientX: number, clientY: number): SampleHit | null => {
+      const hit = hitAt(clientX, clientY);
+      if (!hit) return null;
+      return {
+        objectName: hit.objectName,
+        userStrings: hit.userStrings,
+        world: [hit.point.x, hit.point.y, hit.point.z],
+      };
+    },
+    [hitAt],
+  );
+
+  const cameraState = useCallback((): CameraState | null => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return null;
+    const { camera, controls } = runtime;
+    return {
+      position: [camera.position.x, camera.position.y, camera.position.z],
+      target: [controls.target.x, controls.target.y, controls.target.z],
+      up: [camera.up.x, camera.up.y, camera.up.z],
+      fov: camera.fov,
+    };
+  }, []);
+
+  const unprojectOnPlane = useCallback(
+    (clientX: number, clientY: number, through: Vec3 | null): Vec3 | null => {
+      const runtime = runtimeRef.current;
+      if (!runtime) return null;
+      const raycaster = rayAt(clientX, clientY);
+      if (!raycaster) return null;
+      const normal = runtime.camera.getWorldDirection(new Vector3());
+      const anchor = through
+        ? new Vector3(through[0], through[1], through[2])
+        : runtime.controls.target.clone();
+      const plane = new Plane().setFromNormalAndCoplanarPoint(normal, anchor);
+      const point = raycaster.ray.intersectPlane(plane, new Vector3());
+      return point ? [point.x, point.y, point.z] : null;
+    },
+    [rayAt],
+  );
 
   useImperativeHandle(
     forwardedRef,
     () => ({
       openFile,
       ghost,
+      sampleAt,
+      camera: cameraState,
+      unprojectOnPlane,
       fitView: () => {
         const runtime = runtimeRef.current;
         if (runtime) fitRuntime(runtime);
@@ -587,7 +690,7 @@ export const ThreeDmViewport = forwardRef<
       },
       clear,
     }),
-    [clear, ghost, openFile],
+    [cameraState, clear, ghost, openFile, sampleAt, unprojectOnPlane],
   );
 
   useEffect(() => {

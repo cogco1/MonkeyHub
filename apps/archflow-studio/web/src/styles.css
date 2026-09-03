@@ -1444,3 +1444,78 @@ button.chip:hover {
 .refine__origin {
   color: var(--muted);
 }
+
+/* ---------------------------------------------------------------------------
+   Annotations: select + draw + say
+   ------------------------------------------------------------------------ */
+
+.annotate {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.annotate[data-armed="true"] {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.viewtools__sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 0 4px;
+  background: var(--line);
+}
+
+.viewtools button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.marks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 4px 1px 8px;
+  border: 1px dashed var(--accent);
+  border-radius: 2px;
+  color: var(--accent);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.mark--keep {
+  border-color: var(--held);
+  color: var(--held);
+}
+
+.mark--remove {
+  border-color: var(--violated);
+  color: var(--violated);
+}
+
+.mark__x {
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.mark__x:hover {
+  text-decoration: underline;
+}

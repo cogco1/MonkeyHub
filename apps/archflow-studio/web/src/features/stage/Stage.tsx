@@ -10,7 +10,7 @@
 import type { ReactNode, RefObject } from "react";
 
 import type { StudioApiError } from "../../api/client";
-import type { ProjectArtifactDto } from "../../api/generated";
+import type { GestureDto, ProjectArtifactDto } from "../../api/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import type { EvidenceTab } from "../../app/evidence";
@@ -21,6 +21,7 @@ import {
   type ViewportPick,
   type ViewportStatus,
 } from "../../viewer/ThreeDmViewport";
+import { Annotate, GESTURE_TOOLS, type GestureTool } from "./Annotate";
 import { SourceChip, type ViewState } from "./SourceChip";
 import { VersionsStrip, type VersionCard } from "./VersionsStrip";
 
@@ -61,6 +62,10 @@ export function Stage({
   evidenceCounts,
   review,
   drawer,
+  tool,
+  gestures,
+  onTool,
+  onGesture,
   onInspection,
   onStatus,
   onRequestFile,
@@ -85,6 +90,12 @@ export function Stage({
   review: ReviewSummary;
   /** The drawer, when it overlays the stage rather than standing beside it. */
   drawer: ReactNode;
+  /** The armed drawing tool; null is the orbit. */
+  tool: GestureTool | null;
+  /** The marks made on this picture, not yet sent with a sentence. */
+  gestures: readonly GestureDto[];
+  onTool(tool: GestureTool | null): void;
+  onGesture(gesture: GestureDto): void;
   onInspection(inspection: SceneInspection | null): void;
   onStatus(status: ViewportStatus, message: string): void;
   onRequestFile(): void;
@@ -107,6 +118,12 @@ export function Stage({
           onPick={onPick}
         />
       </ErrorBoundary>
+      <Annotate
+        viewportRef={viewportRef}
+        tool={tool}
+        gestures={gestures}
+        onGesture={onGesture}
+      />
 
       <div className="hud">
         <div className="hud__left">
@@ -141,6 +158,18 @@ export function Stage({
           )}
         </div>
         <div className="viewtools">
+          {GESTURE_TOOLS.map((item) => (
+            <button
+              key={item.kind}
+              type="button"
+              title={item.title}
+              aria-pressed={tool === item.kind}
+              onClick={() => onTool(tool === item.kind ? null : item.kind)}
+            >
+              {item.glyph} {item.kind}
+            </button>
+          ))}
+          <span className="viewtools__sep" aria-hidden="true" />
           <button type="button" onClick={() => viewportRef.current?.fitView()}>
             fit
           </button>

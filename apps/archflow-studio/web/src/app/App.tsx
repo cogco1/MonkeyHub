@@ -25,11 +25,13 @@ import { asStudioApiError, studio, type StudioApiError } from "../api/client";
 import type {
   ArtifactListDto,
   CandidateDto,
+  GestureDto,
   ProjectArtifactDto,
   ProposalDto,
   StateProjectionDto,
   ValidationDto,
 } from "../api/generated";
+import type { GestureTool } from "../features/stage/Annotate";
 import {
   canonicalSourceLabel,
   candidateSourceLabel,
@@ -158,6 +160,10 @@ export default function App() {
   // Refinements on the wire, one per proposal entry. A move while one is in
   // flight is kept as the value to send next; only the last one is sent.
   const [refiningEntryId, setRefiningEntryId] = useState<string | null>(null);
+  // Select + draw + say: the armed tool and the marks made on this picture,
+  // sent with the next sentence and cleared when a proposal answers it.
+  const [tool, setTool] = useState<GestureTool | null>(null);
+  const [gestures, setGestures] = useState<readonly GestureDto[]>([]);
   const refineInFlight = useRef<string | null>(null);
   const refinePending = useRef<Map<string, number>>(new Map());
   const [candidates, setCandidates] = useState<Record<string, CandidateDto>>({});
@@ -264,8 +270,11 @@ export default function App() {
     );
     pendingArtifact.current = null;
     setPicked(null);
-    // A new picture, or none: whatever ghost was drawn belonged to the old one.
+    // A new picture, or none: whatever ghost was drawn belonged to the old one,
+    // and so did the marks.
     setGhostProposalId(null);
+    setGestures([]);
+    setTool(null);
   }, []);
 
   const resolvePick = useCallback(
@@ -334,7 +343,13 @@ export default function App() {
       if (stateDigest === null || project === null) return;
       if (proposingRef.current) return;
       proposingRef.current = true;
-      append({ kind: "you", text: utterance });
+      append({
+        kind: "you",
+        text:
+          gestures.length === 0
+            ? utterance
+            : `${utterance} · with ${gestures.length} ${gestures.length === 1 ? "mark" : "marks"} on the model`,
+      });
       setProposalBusy(true);
       try {
         // The sentence goes to the intent compiler: the process's agent reads
@@ -348,7 +363,13 @@ export default function App() {
           elementId: selection?.elementId ?? null,
           utterance,
           projectId: project.projectId,
+          gestures: [...gestures],
         });
+        // What the server read off the marks, in the record's names — printed
+        // before the proposal so the reader sees what the sentence was said with.
+        for (const fact of answer.gestures ?? []) {
+          append({ kind: "system", text: `read from the model: ${fact}` });
+        }
         append({
           kind: "proposal",
           proposal: answer.proposal,
@@ -389,6 +410,10 @@ export default function App() {
           });
         }
         setDraft("");
+        // The marks were said; a new sentence starts clean. A question keeps
+        // them, so the reply is made with the same marks.
+        setGestures([]);
+        setTool(null);
       } catch (cause) {
         const error = asStudioApiError(cause);
         if (error.code === BLOCKED) {
@@ -402,7 +427,16 @@ export default function App() {
         setProposalBusy(false);
       }
     },
-    [append, project, projection, recoverFromStaleBase, selection, sourceLabel, stateDigest],
+    [
+      append,
+      gestures,
+      project,
+      projection,
+      recoverFromStaleBase,
+      selection,
+      sourceLabel,
+      stateDigest,
+    ],
   );
 
   /**
@@ -747,6 +781,10 @@ export default function App() {
             loadingSha={artifactLoadingSha}
             ghostProposalId={ghostProposalId}
             refiningEntryId={refiningEntryId}
+            gestures={gestures}
+            onRemoveGesture={(index) =>
+              setGestures((current) => current.filter((_, i) => i !== index))
+            }
             draft={draft}
             onDraft={setDraft}
             onSubmit={(utterance) => void propose(utterance)}
@@ -780,6 +818,10 @@ export default function App() {
             inspection={inspection}
             artifactError={artifactError}
             view={view}
+            tool={tool}
+            gestures={gestures}
+            onTool={setTool}
+            onGesture={(gesture) => setGestures((current) => [...current, gesture])}
             picked={picked}
             versions={versions}
             loadingSha={artifactLoadingSha}

@@ -7,8 +7,24 @@
 
 import { useState, type FormEvent } from "react";
 
-import type { StateProjectionDto } from "../../api/generated";
+import type { GestureDto, StateProjectionDto } from "../../api/generated";
 import { SelectionPicker } from "./SelectionPicker";
+
+const MARK_GLYPH: Record<GestureDto["kind"], string> = {
+  circle: "◯",
+  arrow: "↗",
+  keep: "✓",
+  remove: "✗",
+};
+
+/** One mark as a chip: its kind and how many of the file's objects it touched. */
+function markLabel(gesture: GestureDto): string {
+  const hits = gesture.hits ?? [];
+  if (gesture.kind === "keep" || gesture.kind === "remove") {
+    return gesture.kind + " · " + (hits[0]?.objectName ?? "nothing under the mark");
+  }
+  return gesture.kind + " · " + String(hits.length) + (hits.length === 1 ? " object" : " objects");
+}
 
 export interface Selection {
   readonly componentId: string;
@@ -28,6 +44,8 @@ export function Composer({
   projection,
   disabledReason,
   busy,
+  gestures,
+  onRemoveGesture,
   draft,
   onDraft,
   onSubmit,
@@ -38,6 +56,9 @@ export function Composer({
   /** Why nothing can be proposed right now, in words; null when it can. */
   disabledReason: string | null;
   busy: boolean;
+  /** Marks drawn on the model, sent with the sentence; the server reads them. */
+  gestures: readonly GestureDto[];
+  onRemoveGesture(index: number): void;
   draft: string;
   onDraft(text: string): void;
   onSubmit(utterance: string): void;
@@ -86,6 +107,24 @@ export function Composer({
           }}
           onClose={() => setPickerOpen(false)}
         />
+      )}
+      {gestures.length > 0 && (
+        <div className="marks" aria-label="marks on the model">
+          <span className="quiet">with</span>
+          {gestures.map((gesture, index) => (
+            <span key={index} className={"mark mark--" + gesture.kind}>
+              {MARK_GLYPH[gesture.kind]} {markLabel(gesture)}
+              <button
+                type="button"
+                className="mark__x"
+                aria-label={"remove this " + gesture.kind + " mark"}
+                onClick={() => onRemoveGesture(index)}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
       )}
       <div className="composer__box">
         <input
