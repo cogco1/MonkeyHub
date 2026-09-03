@@ -9,9 +9,36 @@
  * the compiled sentence back in the composer.
  */
 
+import { useEffect, useRef, useState } from "react";
+
 import type { AgentReadingDto, ProposalDto } from "../../../api/generated";
 import type { EvidenceTab } from "../../../app/evidence";
 import { Verbatim } from "./Verbatim";
+
+/** A release is sent this long after the last move, so a drag is one request. */
+const REFINE_DEBOUNCE_MS = 250;
+
+/**
+ * The hand's range around the record's number: half to one-and-a-half of the
+ * old value, never below zero, in steps of one percent of it, widened to hold
+ * the proposal's own number when the sentence went further than that. The
+ * domain is the record's own units, whatever they are; the grammar rounds.
+ */
+function refineDomain(
+  old: number,
+  current: number,
+): { min: number; max: number; step: number } {
+  const step = Math.abs(old) / 100;
+  return {
+    min: Math.min(Math.max(old * 0.5, step), current),
+    max: Math.max(old * 1.5, current),
+    step,
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
 
 const HARNESS_SENTENCE =
   "a harness run beside the project; no stage advances, nothing is written to HEAD";
@@ -26,18 +53,26 @@ export function ProposalCard({
   proposal,
   agent,
   ghostShown,
+  refinements,
+  refining,
   busy,
   onRun,
   onAdjust,
+  onRefine,
   onEvidence,
 }: {
   proposal: ProposalDto;
   agent: AgentReadingDto | null;
   /** Whether this proposal is the one drawn as a ghost in the model right now. */
   ghostShown: boolean;
+  /** How many times the hand has refined this entry's number. */
+  refinements: number;
+  /** Whether a refinement of this entry is on the wire. */
+  refining: boolean;
   busy: boolean;
   onRun(): void;
   onAdjust(utterance: string): void;
+  onRefine(value: number): void;
   onEvidence(tab: EvidenceTab): void;
 }) {
   const { target, change, impact } = proposal;
@@ -131,6 +166,18 @@ export function ProposalCard({
           </p>
         </div>
       )}
+      {typeof change.old === "number" &&
+        typeof change.new === "number" &&
+        change.old > 0 && (
+          <Refine
+            fieldKey={target.key}
+            old={change.old}
+            current={change.new}
+            refinements={refinements}
+            refining={refining}
+            onRefine={onRefine}
+          />
+        )}
       {ghostShown && (
         <div className="card__row">
           <p className="quiet">
@@ -158,5 +205,114 @@ export function ProposalCard({
         <span className="quiet">{HARNESS_SENTENCE}</span>
       </div>
     </article>
+  );
+}
+
+/**
+ * The agent found the variable; the hand moves it. A slider from half to
+ * one-and-a-half of the record's number with one-percent steps, a minus and a
+ * plus, and the number it will send. Every release goes to the server as the
+ * exact sentence ``set <key> to <n>``, which the grammar answers without an
+ * agent, and the card is replaced by the proposal that comes back: the card
+ * never shows a number the record did not type.
+ */
+function Refine({
+  fieldKey,
+  old,
+  current,
+  refinements,
+  refining,
+  onRefine,
+}: {
+  fieldKey: string;
+  old: number;
+  current: number;
+  refinements: number;
+  refining: boolean;
+  onRefine(value: number): void;
+}) {
+  const { min, max, step } = refineDomain(old, current);
+  const [value, setValue] = useState(current);
+  const timer = useRef<number | null>(null);
+
+  // The server's number wins whenever it changes: a refinement came back, or
+  // the entry was replaced. The slider follows it.
+  useEffect(() => {
+    setValue(current);
+  }, [current]);
+
+  useEffect(
+    () => () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  const send = (next: number) => {
+    const bounded = clamp(next, min, max);
+    setValue(bounded);
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      if (bounded !== current) onRefine(bounded);
+    }, REFINE_DEBOUNCE_MS);
+  };
+
+  const percent = ((value - old) / old) * 100;
+  const sign = percent > 0 ? "+" : "";
+  const status = refining
+    ? "typing…"
+    : refinements > 0
+      ? "refined ×" + String(refinements)
+      : "by hand";
+  return (
+    <div className="card__row refine" aria-label={"refine " + fieldKey}>
+      <div className="refine__head">
+        <span className="label">Refine</span>
+        <span className="mono refine__readout">
+          {fieldKey} {Number(value.toFixed(6))}
+          <span className="quiet">
+            {" "}
+            · {sign}
+            {percent.toFixed(1)} %
+          </span>
+        </span>
+        <span className="quiet refine__meta">{status}</span>
+      </div>
+      <div className="refine__row">
+        <button
+          type="button"
+          className="btn btn--small"
+          aria-label="one percent less"
+          onClick={() => send(value - step)}
+        >
+          −
+        </button>
+        <input
+          type="range"
+          className="refine__slider"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(event) => send(Number(event.currentTarget.value))}
+        />
+        <button
+          type="button"
+          className="btn btn--small"
+          aria-label="one percent more"
+          onClick={() => send(value + step)}
+        >
+          +
+        </button>
+      </div>
+      <div className="refine__scale mono">
+        <span>{Number(min.toFixed(6))}</span>
+        <span className="refine__origin" title="the record's number">
+          {Number(old.toFixed(6))}
+        </span>
+        <span>{Number(max.toFixed(6))}</span>
+      </div>
+    </div>
   );
 }

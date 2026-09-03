@@ -34,6 +34,8 @@ export interface ConversationCallbacks {
   onReply(text: string): void;
   /** Put a proposal's compiled sentence back in the composer to edit it. */
   onAdjust(utterance: string): void;
+  /** Move a proposal's number by hand; the entry is refined in place. */
+  onRefine(entryId: string, value: number): void;
   onJobStatus(candidateId: string, status: string): void;
   onCandidate(candidate: CandidateDto): void;
   onPreview(artifact: ProjectArtifactDto, sourceLabel: string): void;
@@ -51,6 +53,7 @@ export function Conversation({
   runBusy,
   loadingSha,
   ghostProposalId,
+  refiningEntryId,
   draft,
   onDraft,
   onSubmit,
@@ -67,6 +70,8 @@ export function Conversation({
   loadingSha: string | null;
   /** The proposal currently drawn as a ghost, if any. */
   ghostProposalId: string | null;
+  /** The proposal entry whose refinement is on the wire, if any. */
+  refiningEntryId: string | null;
   draft: string;
   onDraft(text: string): void;
   onSubmit(utterance: string): void;
@@ -105,7 +110,13 @@ export function Conversation({
         )}
         {entries.map((entry) => (
           <div key={entry.id} className={`msg msg--${entry.kind}`}>
-            {renderEntry(entry, { runBusy, loadingSha, ghostProposalId, callbacks })}
+            {renderEntry(entry, {
+              runBusy,
+              loadingSha,
+              ghostProposalId,
+              refiningEntryId,
+              callbacks,
+            })}
           </div>
         ))}
       </div>
@@ -129,11 +140,13 @@ function renderEntry(
     runBusy,
     loadingSha,
     ghostProposalId,
+    refiningEntryId,
     callbacks,
   }: {
     runBusy: boolean;
     loadingSha: string | null;
     ghostProposalId: string | null;
+    refiningEntryId: string | null;
     callbacks: ConversationCallbacks;
   },
 ): ReactNode {
@@ -150,9 +163,12 @@ function renderEntry(
             proposal={entry.proposal}
             agent={entry.agent}
             ghostShown={entry.proposal.proposalId === ghostProposalId}
+            refinements={entry.refinements}
+            refining={entry.id === refiningEntryId}
             busy={runBusy}
             onRun={() => callbacks.onRun(entry.proposal.proposalId)}
             onAdjust={callbacks.onAdjust}
+            onRefine={(value) => callbacks.onRefine(entry.id, value)}
             onEvidence={callbacks.onEvidence}
           />
         </>

@@ -1393,3 +1393,54 @@ button.chip:hover {
   border-radius: 2px;
   color: var(--accent);
 }
+
+/* ---------------------------------------------------------------------------
+   Refinement: the agent found the variable, the hand moves it
+   ------------------------------------------------------------------------ */
+
+.refine {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.refine__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.refine__readout {
+  color: var(--ink);
+}
+
+.refine__meta {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+.refine__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.refine__slider {
+  flex: 1;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.refine__scale {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 34px;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.refine__origin {
+  color: var(--muted);
+}

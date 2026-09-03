@@ -25,6 +25,12 @@ export type Entry =
       proposal: ProposalDto;
       /** Who read the sentence and what it compiled; the agent's words, kept apart. */
       agent: AgentReadingDto | null;
+      /**
+       * How many times the hand refined this proposal after the sentence: each
+       * refinement is a new proposal in the server's store that replaced this
+       * entry's, so the transcript stays one card per intent.
+       */
+      refinements: number;
     }
   | { kind: "question"; id: string; error: StudioApiError; utterance: string }
   | { kind: "refusal"; id: string; error: StudioApiError; what: string }
@@ -55,6 +61,11 @@ export interface Transcript {
   append(draft: EntryDraft): string;
   /** Update the candidate entry's job status in place, when it changed. */
   noteJobStatus(candidateId: string, status: string): void;
+  /**
+   * Replace a proposal entry's proposal with a refinement of it, counting the
+   * refinement. An entry that is not a proposal is left alone.
+   */
+  replaceProposal(entryId: string, proposal: ProposalDto, agent: AgentReadingDto | null): void;
   hasVerdictFor(candidateId: string): boolean;
 }
 
@@ -81,6 +92,19 @@ export function useTranscript(): Transcript {
     );
   }, []);
 
+  const replaceProposal = useCallback(
+    (entryId: string, proposal: ProposalDto, agent: AgentReadingDto | null) => {
+      setEntries((current) =>
+        current.map((entry) =>
+          entry.kind === "proposal" && entry.id === entryId
+            ? { ...entry, proposal, agent, refinements: entry.refinements + 1 }
+            : entry,
+        ),
+      );
+    },
+    [],
+  );
+
   const hasVerdictFor = useCallback(
     (candidateId: string) =>
       entries.some(
@@ -89,5 +113,5 @@ export function useTranscript(): Transcript {
     [entries],
   );
 
-  return { entries, append, noteJobStatus, hasVerdictFor };
+  return { entries, append, noteJobStatus, replaceProposal, hasVerdictFor };
 }

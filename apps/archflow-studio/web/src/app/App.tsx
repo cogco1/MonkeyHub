@@ -155,6 +155,11 @@ export default function App() {
   // drops the drawing itself whenever a model loads or is cleared; this is the
   // shell's record of which proposal the drawing was of.
   const [ghostProposalId, setGhostProposalId] = useState<string | null>(null);
+  // Refinements on the wire, one per proposal entry. A move while one is in
+  // flight is kept as the value to send next; only the last one is sent.
+  const [refiningEntryId, setRefiningEntryId] = useState<string | null>(null);
+  const refineInFlight = useRef<string | null>(null);
+  const refinePending = useRef<Map<string, number>>(new Map());
   const [candidates, setCandidates] = useState<Record<string, CandidateDto>>({});
   const [validations, setValidations] = useState<
     Record<string, ValidationDto>
@@ -344,7 +349,12 @@ export default function App() {
           utterance,
           projectId: project.projectId,
         });
-        append({ kind: "proposal", proposal: answer.proposal, agent: answer.agent });
+        append({
+          kind: "proposal",
+          proposal: answer.proposal,
+          agent: answer.agent,
+          refinements: 0,
+        });
         // The fast stage's picture: a ghost of this proposal over the loaded
         // model, drawn the moment the typed change exists. With no model on
         // screen there is nothing to draw over, and nothing is claimed.
@@ -393,6 +403,71 @@ export default function App() {
       }
     },
     [append, project, projection, recoverFromStaleBase, selection, sourceLabel, stateDigest],
+  );
+
+  /**
+   * The hand moves a proposal's number. The sentence is the grammar's own —
+   * ``set <key> to <n>`` with the proposal's keep clause carried — so the
+   * server answers without an agent, and the answer replaces the entry's
+   * proposal in place. The ghost is redrawn from the proposal that came back,
+   * never from the slider: the picture is always the server's number.
+   */
+  const refine = useCallback(
+    async (entryId: string, value: number) => {
+      const entry = transcript.entries.find((row) => row.id === entryId);
+      if (!entry || entry.kind !== "proposal") return;
+      if (stateDigest === null || project === null) return;
+      if (refineInFlight.current !== null) {
+        refinePending.current.set(entryId, value);
+        return;
+      }
+      const { proposal } = entry;
+      const keep =
+        proposal.protected.length > 0 ? ` keep ${proposal.protected.join(", ")}` : "";
+      const utterance = `set ${proposal.target.key} to ${Number(value.toFixed(6))}${keep}`;
+      refineInFlight.current = entryId;
+      setRefiningEntryId(entryId);
+      try {
+        const answer = await studio.compileIntent({
+          stateDigest,
+          targetComponentId: proposal.target.componentId,
+          elementId: proposal.target.elementId,
+          utterance,
+          projectId: project.projectId,
+        });
+        transcript.replaceProposal(entryId, answer.proposal, answer.agent);
+        if (ghostProposalId === proposal.proposalId) {
+          const spec = projection ? ghostSpecFor(projection, answer.proposal) : null;
+          const copied = spec ? (viewportRef.current?.ghost(spec) ?? 0) : 0;
+          setGhostProposalId(copied > 0 ? answer.proposal.proposalId : null);
+        }
+      } catch (cause) {
+        const error = asStudioApiError(cause);
+        if (error.code === BLOCKED) {
+          append({ kind: "question", error, utterance });
+        } else {
+          recoverFromStaleBase(error);
+          append({ kind: "refusal", error, what: "POST /api/intents" });
+        }
+      } finally {
+        refineInFlight.current = null;
+        setRefiningEntryId(null);
+      }
+      const next = refinePending.current.get(entryId);
+      if (next !== undefined) {
+        refinePending.current.delete(entryId);
+        void refine(entryId, next);
+      }
+    },
+    [
+      append,
+      ghostProposalId,
+      project,
+      projection,
+      recoverFromStaleBase,
+      stateDigest,
+      transcript,
+    ],
   );
 
   const runCandidate = useCallback(
@@ -671,6 +746,7 @@ export default function App() {
             runBusy={candidateBusy}
             loadingSha={artifactLoadingSha}
             ghostProposalId={ghostProposalId}
+            refiningEntryId={refiningEntryId}
             draft={draft}
             onDraft={setDraft}
             onSubmit={(utterance) => void propose(utterance)}
@@ -685,6 +761,7 @@ export default function App() {
               onRun: (proposalId) => void runCandidate(proposalId),
               onReply: setDraft,
               onAdjust: setDraft,
+              onRefine: refine,
               onJobStatus: noteJobStatus,
               onCandidate: noteCandidate,
               onPreview: (artifact, label) =>
