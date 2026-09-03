@@ -90,7 +90,7 @@ from archflow.state.geometry_program import (
     SemanticBinding,
 )
 from archflow.state.site_context import SiteBounds
-from archflow.state.state_record import Relation, StateRecord, ValidatorBinding, developed_design_view, project_grids_of, project_levels_of
+from archflow.state.state_record import Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, developed_design_view, project_grids_of, project_levels_of
 from archflow.state.stage_workflow import (
     ProjectStageWorkflow,
     StageExitBinding,
@@ -118,90 +118,6 @@ class ProjectRunnerError(ValueError):
     """Typed failure of the runner's contracts."""
 
 
-# ---------------------------------------------------------------- schematic pack -> real state
-@dataclass(frozen=True, slots=True)
-class SchematicPack:
-    project_id: str
-    option_id: str
-    label: str
-    typology: str
-    rationale: str
-    evidence_refs: tuple[str, ...]
-    levels: tuple[dict, ...]
-    volumes: tuple[dict, ...]
-    zones: tuple[dict, ...]
-    connections: tuple[dict, ...]
-    components: tuple[DesignComponent, ...]
-    footprint_cells: tuple[tuple[int, int], ...]
-    assumption_refs: tuple[str, ...] = ()
-
-    SCHEMA = "SchematicPack@1"
-
-    @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "SchematicPack":
-        if not isinstance(value, Mapping) or value.get("schema") != cls.SCHEMA:
-            raise ProjectRunnerError("schematic pack payload malformed")
-        return cls(
-            project_id=value["project_id"], option_id=value["option_id"], label=value["label"], typology=value["typology"],
-            rationale=value["rationale"], evidence_refs=tuple(sorted(set(value["evidence_refs"]))),
-            levels=tuple(value["levels"]), volumes=tuple(value["volumes"]), zones=tuple(value["zones"]), connections=tuple(value["connections"]),
-            components=tuple(DesignComponent.from_dict(c) for c in value["components"]),
-            footprint_cells=tuple((int(x), int(z)) for x, z in value["footprint_cells"]),
-            assumption_refs=tuple(value.get("assumption_refs", ())),
-        )
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "schema": self.SCHEMA, "project_id": self.project_id, "option_id": self.option_id, "label": self.label, "typology": self.typology,
-            "rationale": self.rationale, "evidence_refs": list(self.evidence_refs), "levels": list(self.levels), "volumes": list(self.volumes),
-            "zones": list(self.zones), "connections": list(self.connections), "components": [c.to_dict() for c in self.components],
-            "footprint_cells": [list(c) for c in self.footprint_cells], "assumption_refs": list(self.assumption_refs),
-        }
-
-
-def schematic_proposal(pack: SchematicPack) -> SpatialOptionProposal:
-    """The pack as a validated spatial option; the dataclasses reject gaps."""
-
-    ev = pack.evidence_refs
-    levels = tuple(SpatialLevel(l["level_id"], int(l["base_y"]), int(l["height"]), ev) for l in pack.levels)
-    volumes = tuple(MassingVolume(v["volume_id"], SiteBounds(tuple(int(c) for c in v["min"]), tuple(int(c) for c in v["max"])), tuple(v["level_ids"]), ev) for v in pack.volumes)
-    zones = tuple(SpatialZone(zone_id=z["zone_id"], program_node_refs=tuple(z["program_node_refs"]), level_ids=tuple(z["level_ids"]), volume_ids=tuple(z["volume_ids"]), source_refs=ev) for z in pack.zones)
-    connections = tuple(SpatialConnection(connection_id=c["connection_id"], source_zone_id=c["source_zone_id"], target_zone_id=c["target_zone_id"],
-                                          relationship_refs=tuple(c["relationship_refs"]), directed=bool(c.get("directed", False)), source_refs=ev) for c in pack.connections)
-    return SpatialOptionProposal(
-        option_id=pack.option_id, label=pack.label, program_scenario_ref=None, footprint_range_ref=None,
-        grid_basis=SpatialGridBasis(horizontal_area_per_cell=1.0, area_unit="square_metres", source_refs=ev),
-        footprint_cells=pack.footprint_cells, levels=levels, volumes=volumes, zones=zones,
-        components=tuple(sorted(pack.components, key=lambda c: c.component_id)),
-        connections=tuple(sorted(connections, key=lambda c: c.connection_id)), constraint_responses=(),
-        typology_hypothesis=pack.typology, palette_refs=(), rationale=pack.rationale, responds_to_refs=ev, expert_advice_refs=(), evidence_refs=ev,
-    )
-
-
-def bootstrap_developed_state(pack: SchematicPack, *, run: RunRef, portfolio_id: str, branch_id: str, selection_decision_ref: str) -> DevelopedDesignState:
-    """A developed-design state whose selected schematic is the pack.
-
-    The portfolio ceremony (branches, votes, handoff) is replaced by one
-    declared selection: the pack *is* the selected option, and the record
-    that carries it says so. Everything downstream is the real state.
-    """
-
-    if run.project_id != pack.project_id:
-        raise ProjectRunnerError("schematic pack belongs to another project")
-    proposal = schematic_proposal(pack)
-    option = SchematicOption(proposal=proposal, footprint_area=float(len(proposal.footprint_cells)),
-                             topology_signature=canonical_digest({"components": [c.to_dict() for c in proposal.components], "option_id": proposal.option_id}))
-    revision_digest = canonical_digest({"branch_id": branch_id, "option_digest": option.option_digest})
-    selected = SelectedSchematicInput(
-        portfolio_id=portfolio_id, portfolio_digest=canonical_digest({"portfolio_id": portfolio_id, "option_digest": option.option_digest}),
-        project_id=run.project_id, run_id=run.run_id, base=run.base, branch_id=branch_id,
-        revision=BranchRevisionRef(branch_id=branch_id, revision_id="revision-declared-selection", revision_digest=revision_digest),
-        option=option, selection_transition_id="select-by-declared-record", selection_decision_ref=selection_decision_ref,
-    )
-    return DevelopedDesignState(
-        selected_schematic=selected, active_phase=DesignPhase.DESIGN_DEVELOPMENT, coordination_status=DevelopmentCoordinationStatus.IN_PROGRESS,
-        obligations=(), components=(), dependencies=(), advice=(), decisions=(), transitions=(), assumption_refs=tuple(sorted(set(pack.assumption_refs))),
-    )
 
 
 # ---------------------------------------------------------------- producers: the canonical reference-reading set

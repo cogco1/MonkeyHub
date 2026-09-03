@@ -1971,8 +1971,7 @@
         "component coverage: what counts as covered, what is declined, what is undeclared and when that is fatal",
         "filtering the record's relations to the `support` kind and binding the support_contact validator before checking",
         "the export decision: reuse an identical prior export, patch a different one, or rebuild",
-        "the retained record kinds (state-record, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, RunnerRunReceipt@3)",
-        "SchematicPack and bootstrap_developed_state: fabricating a spatial option and developed state from an authored pack"
+        "the retained record kinds (state-record, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, RunnerRunReceipt@3)"
       ],
       "does_not_own": [
         "producing geometry - capabilities.element_producers",
@@ -1981,7 +1980,8 @@
         "seat scope, handover compilation rules and scheduling - capabilities.discipline_seats",
         "CAD translation, execution and inspection - archflow.adapters",
         "persistence and HEAD compare-and-swap - archflow.project.repository",
-        "advancing a stage: it opens no stage and holds explicit no_authority for canonical write, design and stage acceptance"
+        "advancing a stage: it opens no stage and holds explicit no_authority for canonical write, design and stage acceptance",
+        "building the developed-design projection from a pack - state.record"
       ],
       "inputs": [
         "FilesystemProjectRepository",
@@ -2002,8 +2002,6 @@
         "RunOptions",
         "StageExecutionGuard",
         "ProjectRunnerError",
-        "SchematicPack",
-        "bootstrap_developed_state",
         "RecordedProposalProvider",
         "SeatResult"
       ],
@@ -2756,7 +2754,7 @@
         "binding an authored portable record to one run and canonical base (bound_to, run_ref)",
         "the record's own relation shape with datum role, propagation and validator binding (Relation, ValidatorBinding)",
         "the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of)",
-        "the adapter forwarding a record to the legacy developed-design model (developed_design_view)"
+        "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)"
       ],
       "does_not_own": [
         "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
@@ -2782,18 +2780,21 @@
         "DependencyEdge tuple"
       ],
       "public_api": [
-        "StateRecord",
-        "StateRecordError",
         "Entity",
+        "Lineage",
         "Parameter",
         "Relation",
-        "ValidatorBinding",
+        "SchematicPack",
         "StageBinding",
-        "Lineage",
+        "StateRecord",
+        "StateRecordError",
+        "ValidatorBinding",
+        "bootstrap_developed_state",
         "design_components_of",
-        "project_levels_of",
+        "developed_design_view",
         "project_grids_of",
-        "developed_design_view"
+        "project_levels_of",
+        "schematic_proposal"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -2828,7 +2829,7 @@
         "tests/test_project_runner.py",
         "apps/archflow-studio/api/tests/test_projection.py"
       ],
-      "notes": "developed_design_view imports SchematicPack/bootstrap_developed_state from archflow.runtime.project_runner: the state -> runtime import inversion §2.2 names for removal."
+      "notes": "The projection is built here; state no longer imports runtime."
     },
     {
       "module_id": "state.site_context",
