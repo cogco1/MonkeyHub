@@ -1030,13 +1030,36 @@ button.chip:hover {
 
 .versions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: stretch;
   gap: 8px;
   max-width: 70%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.versions__more {
+  flex: none;
+  align-self: center;
+  padding: 7px 11px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--overlay);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.versions__more:hover {
+  border-color: var(--accent);
+  color: var(--ink);
 }
 
 .vcard {
   display: grid;
+  flex: none;
   gap: 4px;
   min-width: 150px;
   max-width: 260px;
@@ -1047,14 +1070,26 @@ button.chip:hover {
   text-align: left;
 }
 
-.vcard__open {
+.vcard__head {
   display: grid;
   gap: 2px;
-  padding: 7px 11px;
-  border: 0;
-  border-radius: var(--radius);
-  background: none;
-  text-align: left;
+  padding: 7px 11px 4px;
+}
+
+.vcard__exports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 8px 7px;
+}
+
+.vcard__export[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.vcard__export--unavailable {
+  color: var(--unchecked);
 }
 
 .vcard:hover {
@@ -1067,8 +1102,7 @@ button.chip:hover {
 }
 
 .vcard__compare {
-  margin: 0 8px 7px;
-  justify-self: start;
+  margin-left: auto;
 }
 
 .vcard .label {
@@ -1561,4 +1595,29 @@ button.chip:hover {
 
 .compare__objects .reflist {
   margin-top: 6px;
+}
+
+/* Before / after cross-fade on the stage ----------------------------------- */
+
+.blend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 560px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--overlay);
+  box-shadow: var(--shadow);
+}
+
+.blend__slider {
+  flex: 1;
+  min-width: 140px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.blend__meta {
+  font-size: 11px;
 }

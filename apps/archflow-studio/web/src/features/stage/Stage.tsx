@@ -23,7 +23,7 @@ import {
 } from "../../viewer/ThreeDmViewport";
 import { Annotate, GESTURE_TOOLS, type GestureTool } from "./Annotate";
 import { SourceChip, type ViewState } from "./SourceChip";
-import { VersionsStrip, type VersionCard } from "./VersionsStrip";
+import { VersionsStrip, type VersionGroup } from "./VersionsStrip";
 
 export interface PickedFacts {
   readonly componentId: string | null;
@@ -74,6 +74,9 @@ export function Stage({
   onOpenVersion,
   loadedRunId,
   onCompareVersion,
+  blend,
+  onBlend,
+  onEndBlend,
   onEvidence,
 }: {
   viewportRef: RefObject<ViewportController | null>;
@@ -85,7 +88,7 @@ export function Stage({
   /** CURRENT / GHOST PREVIEW / VALIDATED, with the server's word as detail. */
   view: ViewState | null;
   picked: PickedFacts | null;
-  versions: readonly VersionCard[];
+  versions: readonly VersionGroup[];
   loadingSha: string | null;
   loadedSha: string | null;
   evidenceCounts: EvidenceCounts;
@@ -107,6 +110,10 @@ export function Stage({
   /** The run whose export is on screen, for the strip's comparisons. */
   loadedRunId: string | null;
   onCompareVersion(artifact: ProjectArtifactDto): void;
+  /** A cross-fade in progress: before is the loaded run, after the candidate. */
+  blend: { candidateId: string; against: string; t: number; meshes: number } | null;
+  onBlend(t: number): void;
+  onEndBlend(): void;
   onEvidence(tab: EvidenceTab): void;
 }) {
   return (
@@ -139,6 +146,28 @@ export function Stage({
             message={message}
             view={view}
           />
+          {blend && (
+            <div className="blend" aria-label="before / after cross-fade">
+              <span className="label">before</span>
+              <input
+                type="range"
+                className="blend__slider"
+                min={0}
+                max={1}
+                step={0.01}
+                value={blend.t}
+                aria-label="cross-fade between before and after"
+                onChange={(event) => onBlend(Number(event.currentTarget.value))}
+              />
+              <span className="label">after</span>
+              <span className="quiet mono blend__meta">
+                {blend.candidateId} · {blend.meshes} meshes · after is tinted
+              </span>
+              <button type="button" className="btn btn--small" onClick={onEndBlend}>
+                done
+              </button>
+            </div>
+          )}
           {picked && (
             <div className="picked" title={`${picked.status} · source ${picked.sourceState}`}>
               <span className="label">picked</span>
@@ -192,7 +221,7 @@ export function Stage({
 
       <div className="stage__foot">
         <VersionsStrip
-          versions={versions}
+          groups={versions}
           loadingSha={loadingSha}
           loadedSha={loadedSha}
           loadedRunId={loadedRunId}

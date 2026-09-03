@@ -1,34 +1,55 @@
 /**
- * The models this project can show, one card each, along the bottom of the
- * stage: the reference run's exports, the candidates this tab launched, and
- * any other run's. A card is a receipt's claim beside disk's answer — an
- * unavailable export is a card that says why, never a missing one.
+ * The models this project can show, one card per run, in one row along the
+ * bottom of the stage: the reference run first, then the candidates this tab
+ * launched, and every other run folded behind a count until asked for. A
+ * run's exports are the buttons on its card — one per seat — so a version is
+ * one card and not two. A card is a receipt's claim beside disk's answer: an
+ * unavailable export is a button that says why, never a missing one.
  *
  * With a model on screen, every other run's card offers a comparison against
  * it: Before / After / Why from the inspection records, by run, not by file.
  */
 
-import type { ProjectArtifactDto } from "../../api/generated";
+import { useState } from "react";
 
-export interface VersionCard {
+import type { ProjectArtifactDto } from "../../api/generated";
+import { sha8 } from "../../app/format";
+
+export interface VersionExport {
   readonly artifact: ProjectArtifactDto;
-  readonly label: "Reference" | "Candidate" | "Run";
-  readonly title: string;
-  readonly meta: string;
-  /** The verdict word when a verdict was read for the run; null otherwise. */
-  readonly verdict: string | null;
+  /** The seat this export came from, as the stage id names it. */
+  readonly seat: string;
   readonly sourceLabel: string;
 }
 
+export interface VersionGroup {
+  readonly runId: string;
+  readonly label: "Reference" | "Candidate" | "Run";
+  /** In the architect's words: the head version, the sentence, or the run. */
+  readonly title: string;
+  /** The verdict word, or what this tab knows about the run; null when nothing. */
+  readonly detail: string | null;
+  readonly exports: readonly VersionExport[];
+}
+
+/** The seat name an export's stage id ends with, or the file when it has none. */
+export function seatOf(artifact: ProjectArtifactDto): string {
+  const stage = artifact.stageId;
+  if (stage === null) return artifact.fileName;
+  const marker = "seat-";
+  const at = stage.lastIndexOf(marker);
+  return at === -1 ? stage : stage.slice(at + marker.length);
+}
+
 export function VersionsStrip({
-  versions,
+  groups,
   loadingSha,
   loadedSha,
   loadedRunId,
   onOpen,
   onCompare,
 }: {
-  versions: readonly VersionCard[];
+  groups: readonly VersionGroup[];
   loadingSha: string | null;
   loadedSha: string | null;
   /** The run whose export is on screen; the 'before' of a comparison. */
@@ -37,56 +58,90 @@ export function VersionsStrip({
   /** Compare this card's run against the loaded run's exports. */
   onCompare(artifact: ProjectArtifactDto): void;
 }) {
-  if (versions.length === 0) return null;
+  const [showEarlier, setShowEarlier] = useState(false);
+  if (groups.length === 0) return null;
+  // Reference and this tab's candidates always show; other runs fold. A run
+  // whose export is on screen stays visible whatever it is, so the card the
+  // source chip points at is never the one that was folded away.
+  const earlier = groups.filter(
+    (group) => group.label === "Run" && group.runId !== loadedRunId,
+  );
+  const shown = showEarlier
+    ? groups
+    : groups.filter((group) => !earlier.includes(group));
   return (
     <div className="versions" role="list">
-      {versions.map((version) => {
-        const { artifact } = version;
-        const loaded = artifact.sha256 !== null && artifact.sha256 === loadedSha;
-        const loadingThis =
-          loadingSha !== null && artifact.sha256 === loadingSha;
+      {shown.map((group) => {
+        const loaded = group.runId === loadedRunId;
         const comparable =
-          loadedRunId !== null && artifact.runId !== loadedRunId && artifact.available;
+          loadedRunId !== null &&
+          !loaded &&
+          group.exports.some((item) => item.artifact.available);
+        const firstAvailable = group.exports.find((item) => item.artifact.available);
         return (
           <div
-            key={artifact.artifactId}
+            key={group.runId}
             role="listitem"
-            className={`vcard${artifact.available ? "" : " vcard--unavailable"}${loaded ? " vcard--loaded" : ""}`}
+            className={`vcard${loaded ? " vcard--loaded" : ""}`}
+            title={group.runId}
           >
-            <button
-              type="button"
-              className="vcard__open"
-              aria-pressed={loaded}
-              disabled={!artifact.available || loadingSha !== null}
-              onClick={() => onOpen(artifact, version.sourceLabel)}
-            >
-              <span className="label">{version.label}</span>
-              <span className="vcard__title">{version.title}</span>
-              <span className="vcard__meta mono">
-                {loadingThis
-                  ? "loading bytes…"
-                  : artifact.available
-                    ? version.meta
-                    : (artifact.unavailableReason ??
-                      "unavailable, and the server gave no reason")}
-              </span>
-              {version.verdict && (
-                <span className="vcard__meta">{version.verdict}</span>
+            <div className="vcard__head">
+              <span className="label">{group.label}</span>
+              <span className="vcard__title">{group.title}</span>
+              {group.detail && <span className="vcard__meta">{group.detail}</span>}
+            </div>
+            <div className="vcard__exports">
+              {group.exports.map(({ artifact, seat, sourceLabel }) => {
+                const isLoaded =
+                  artifact.sha256 !== null && artifact.sha256 === loadedSha;
+                const loadingThis =
+                  loadingSha !== null && artifact.sha256 === loadingSha;
+                return (
+                  <button
+                    key={artifact.artifactId}
+                    type="button"
+                    className={`btn btn--small vcard__export${artifact.available ? "" : " vcard__export--unavailable"}`}
+                    aria-pressed={isLoaded}
+                    disabled={!artifact.available || loadingSha !== null}
+                    title={
+                      artifact.available
+                        ? `${artifact.fileName} · ${sha8(artifact.sha256)}`
+                        : (artifact.unavailableReason ??
+                          "unavailable, and the server gave no reason")
+                    }
+                    onClick={() => onOpen(artifact, sourceLabel)}
+                  >
+                    {loadingThis ? "loading…" : seat}
+                    {!artifact.available && " · unavailable"}
+                  </button>
+                );
+              })}
+              {comparable && firstAvailable && (
+                <button
+                  type="button"
+                  className="btn btn--small vcard__compare"
+                  title="Before / after against the run on screen"
+                  onClick={() => onCompare(firstAvailable.artifact)}
+                >
+                  compare
+                </button>
               )}
-            </button>
-            {comparable && (
-              <button
-                type="button"
-                className="btn btn--small vcard__compare"
-                title="Before / after against the run on screen"
-                onClick={() => onCompare(artifact)}
-              >
-                compare with what is on screen
-              </button>
-            )}
+            </div>
           </div>
         );
       })}
+      {earlier.length > 0 && (
+        <button
+          type="button"
+          className="versions__more"
+          aria-expanded={showEarlier}
+          onClick={() => setShowEarlier((open) => !open)}
+        >
+          {showEarlier
+            ? "fold earlier runs"
+            : `earlier runs · ${earlier.length}`}
+        </button>
+      )}
     </div>
   );
 }

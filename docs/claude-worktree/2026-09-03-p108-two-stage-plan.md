@@ -238,7 +238,7 @@ ask for that the plan does not yet carry. The working tree's Phase 1 files were 
   version card gains **Compare**: the viewer loads both exports and cross-fades them (a second additive
   controller method, `compare(a, b, t)`), and the card reads `WEST PORTICO · changed because "<utterance>" ·
   affected 4 · unchanged 27`. Ships before Phase 4; it is the sentence ArchFlow sells.
-- [ ] **T7 versions strip per run.** Group `VersionsStrip` cards by `runId` (reference first, then candidates
+- [x] **T7 versions strip per run.** Group `VersionsStrip` cards by `runId` (reference first, then candidates
   newest first, older folded behind a count) — six cards after two candidates is already noise.
 - [ ] **Global Constraints, viewer line.** Phases 5 and 6 need two more additive controller methods
   (`raycast(screenPoints)` for gesture samples, `compare(a, b, t)`); amend "only by one additive controller

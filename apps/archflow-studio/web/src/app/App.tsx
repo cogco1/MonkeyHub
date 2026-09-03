@@ -25,6 +25,7 @@ import { asStudioApiError, studio, type StudioApiError } from "../api/client";
 import type {
   ArtifactListDto,
   CandidateDto,
+  CompareDto,
   GestureDto,
   ProjectArtifactDto,
   ProposalDto,
@@ -43,7 +44,11 @@ import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import type { ViewState } from "../features/stage/SourceChip";
 import { Stage, type PickedFacts } from "../features/stage/Stage";
-import type { VersionCard } from "../features/stage/VersionsStrip";
+import {
+  seatOf,
+  type VersionExport,
+  type VersionGroup,
+} from "../features/stage/VersionsStrip";
 import type { SceneInspection } from "../viewer/sceneInspection";
 import {
   LOCAL_SOURCE_LABEL,
@@ -55,7 +60,6 @@ import {
 } from "../viewer/ThreeDmViewport";
 import { AppShell } from "./AppShell";
 import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
-import { sha8 } from "./format";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { useSession } from "./useSession";
 import { useTranscript } from "./transcript";
@@ -164,6 +168,14 @@ export default function App() {
   // sent with the next sentence and cleared when a proposal answers it.
   const [tool, setTool] = useState<GestureTool | null>(null);
   const [gestures, setGestures] = useState<readonly GestureDto[]>([]);
+  // A cross-fade in the viewer: the loaded export as 'before', a candidate's
+  // export of the same seat as 'after', and where the slider stands.
+  const [blendState, setBlendState] = useState<{
+    candidateId: string;
+    against: string;
+    t: number;
+    meshes: number;
+  } | null>(null);
   const refineInFlight = useRef<string | null>(null);
   const refinePending = useRef<Map<string, number>>(new Map());
   const [candidates, setCandidates] = useState<Record<string, CandidateDto>>({});
@@ -271,10 +283,11 @@ export default function App() {
     pendingArtifact.current = null;
     setPicked(null);
     // A new picture, or none: whatever ghost was drawn belonged to the old one,
-    // and so did the marks.
+    // and so did the marks and the cross-fade.
     setGhostProposalId(null);
     setGestures([]);
     setTool(null);
+    setBlendState(null);
   }, []);
 
   const resolvePick = useCallback(
@@ -530,6 +543,56 @@ export default function App() {
     [append, loadedArtifact],
   );
 
+  /**
+   * Compare in the model: the candidate's export of the seat on screen is
+   * loaded beside the loaded one and cross-faded. When the candidate left no
+   * export of that seat, the conversation says so rather than showing another.
+   */
+  const compareInModel = useCallback(
+    async (comparison: CompareDto) => {
+      const shown = loadedArtifact;
+      if (shown === null || shown.runId !== comparison.against) {
+        append({
+          kind: "system",
+          text: `to cross-fade, load an export of ${comparison.against} first; the comparison was counted against it`,
+        });
+        return;
+      }
+      const rows = artifacts.status === "ready" ? artifacts.value.artifacts : [];
+      const twin = rows.find(
+        (row) =>
+          row.runId === comparison.candidateId &&
+          row.stageId === shown.stageId &&
+          row.available &&
+          row.sha256 !== null,
+      );
+      if (!twin || !twin.sha256) {
+        append({
+          kind: "system",
+          text: `${comparison.candidateId} left no servable export of ${shown.stageId ?? "this seat"}; nothing to cross-fade`,
+        });
+        return;
+      }
+      try {
+        const file = await studio.artifactFile(twin.sha256, twin.fileName);
+        const meshes = (await viewportRef.current?.loadSecondary(file)) ?? 0;
+        setBlendState({
+          candidateId: comparison.candidateId,
+          against: comparison.against,
+          t: 0.5,
+          meshes,
+        });
+      } catch (cause) {
+        append({
+          kind: "refusal",
+          error: asStudioApiError(cause),
+          what: `GET /api/artifacts/${twin.sha256}/bytes`,
+        });
+      }
+    },
+    [append, artifacts, loadedArtifact],
+  );
+
   const runCandidate = useCallback(
     async (proposalId: string) => {
       setCandidateBusy(true);
@@ -620,49 +683,71 @@ export default function App() {
     return byProposal;
   }, [transcript.entries]);
 
-  const versions = useMemo<VersionCard[]>(() => {
+  // One card per run. The reference run first, then this tab's candidates
+  // newest first, then every other run newest first (the run id carries its
+  // stamp). Each card's exports are its seats' files; nothing here decides a
+  // verdict — the word on a candidate is the one the server gave.
+  const versions = useMemo<VersionGroup[]>(() => {
     if (artifacts.status !== "ready" || projection === null) return [];
     const launched = new Map(
       candidateEntries.map((entry) => [entry.candidateId, entry.proposalId]),
     );
-    const cards = artifacts.value.artifacts.map((artifact): VersionCard => {
-      if (artifact.runId === projection.referenceRun.runId) {
-        return {
+    const byRun = new Map<string, ProjectArtifactDto[]>();
+    for (const artifact of artifacts.value.artifacts) {
+      byRun.set(artifact.runId, [...(byRun.get(artifact.runId) ?? []), artifact]);
+    }
+    const groups = [...byRun.entries()].map(([runId, rows]): VersionGroup => {
+      const exports = rows.map(
+        (artifact): VersionExport => ({
           artifact,
+          seat: seatOf(artifact),
+          sourceLabel:
+            launched.has(runId)
+              ? candidateSourceLabel(runId)
+              : canonicalSourceLabel(artifact),
+        }),
+      );
+      if (runId === projection.referenceRun.runId) {
+        return {
+          runId,
           label: "Reference",
-          title: `HEAD v${projection.referenceRun.baseVersion} · ${artifact.fileName}`,
-          meta: `${artifact.runId} · ${sha8(artifact.sha256)}`,
-          verdict: null,
-          sourceLabel: canonicalSourceLabel(artifact),
+          title: `HEAD v${projection.referenceRun.baseVersion}`,
+          detail: null,
+          exports,
         };
       }
-      const proposalId = launched.get(artifact.runId);
+      const proposalId = launched.get(runId);
       if (proposalId !== undefined) {
-        const validation = validations[artifact.runId];
+        const validation = validations[runId];
         return {
-          artifact,
+          runId,
           label: "Candidate",
-          title: utteranceOf.get(proposalId) ?? artifact.fileName,
-          meta: `${artifact.fileName} · ${sha8(artifact.sha256)}`,
-          verdict: validation
+          title: utteranceOf.get(proposalId) ?? runId,
+          detail: validation
             ? validation.advance
               ? "may advance"
               : `blocked: ${validation.blockedBy.join(", ")}`
-            : null,
-          sourceLabel: candidateSourceLabel(artifact.runId),
+            : "verdict not read yet",
+          exports,
         };
       }
       return {
-        artifact,
+        runId,
         label: "Run",
-        title: artifact.runId,
-        meta: `${artifact.fileName} · ${sha8(artifact.sha256)}`,
-        verdict: null,
-        sourceLabel: canonicalSourceLabel(artifact),
+        title: runId.slice(-13),
+        detail: "not launched from this tab",
+        exports,
       };
     });
     const rank = { Reference: 0, Candidate: 1, Run: 2 } as const;
-    return cards.sort((a, b) => rank[a.label] - rank[b.label]);
+    const launchedOrder = candidateEntries.map((entry) => entry.candidateId);
+    return groups.sort((a, b) => {
+      if (rank[a.label] !== rank[b.label]) return rank[a.label] - rank[b.label];
+      if (a.label === "Candidate") {
+        return launchedOrder.indexOf(b.runId) - launchedOrder.indexOf(a.runId);
+      }
+      return b.runId.localeCompare(a.runId);
+    });
   }, [artifacts, candidateEntries, projection, utteranceOf, validations]);
 
   const disabledReason =
@@ -826,6 +911,7 @@ export default function App() {
               onReply: setDraft,
               onAdjust: setDraft,
               onRefine: refine,
+              onCompareInModel: (comparison) => void compareInModel(comparison),
               onJobStatus: noteJobStatus,
               onCandidate: noteCandidate,
               onPreview: (artifact, label) =>
@@ -868,6 +954,15 @@ export default function App() {
             }
             loadedRunId={loadedArtifact?.runId ?? null}
             onCompareVersion={(artifact) => void compareVersions(artifact)}
+            blend={blendState}
+            onBlend={(t) => {
+              viewportRef.current?.blend(t);
+              setBlendState((current) => (current ? { ...current, t } : current));
+            }}
+            onEndBlend={() => {
+              viewportRef.current?.clearSecondary();
+              setBlendState(null);
+            }}
             onEvidence={openEvidence}
           />
         }
