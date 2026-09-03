@@ -315,16 +315,7 @@ class CodexCompiler:
             command.append("-")  # the prompt arrives on stdin
             started = time.perf_counter()
             try:
-                completed = subprocess.run(
-                    command,
-                    input=prompt,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=self.timeout_s,
-                    shell=False,
-                )
+                completed = _run_bounded(command, prompt, self.timeout_s)
             except FileNotFoundError as exc:
                 raise StudioError(
                     502,
@@ -349,6 +340,69 @@ class CodexCompiler:
         return _parse_answer(
             raw, provider=CODEX, model=self.model, latency_ms=latency_ms, prompt_sha=prompt_sha
         )
+
+
+def _run_bounded(
+    command: Sequence[str], prompt: str, timeout_s: float
+) -> subprocess.CompletedProcess[str]:
+    """Run the agent process and, past the timeout, kill it *and its children*.
+
+    ``codex`` is a shim on this machine (``codex.cmd`` → ``cmd.exe`` →
+    ``node``), and ``subprocess.run(timeout=...)`` kills only the process it
+    started: the grandchild keeps the stdout pipe open and the follow-up read
+    blocks until it exits, so the route would sit far past the timeout it
+    promised. Here the process starts in its own group (session on POSIX) and
+    a timeout ends the whole tree — ``taskkill /T`` on Windows, ``killpg``
+    elsewhere — before the pipes are drained. The ``TimeoutExpired`` is
+    re-raised so the caller answers as before; nothing here reads the answer.
+    """
+
+    popen_kwargs: dict[str, Any] = {}
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        shell=False,
+        **popen_kwargs,
+    )
+    try:
+        stdout, stderr = process.communicate(input=prompt, timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        _kill_tree(process)
+        # The writers are dead, so this returns as soon as the pipes close; the
+        # bound is for a child the kill could not reach, and then the pipes
+        # are abandoned rather than waited on.
+        try:
+            process.communicate(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            pass
+        raise
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def _kill_tree(process: subprocess.Popen[str]) -> None:
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+            capture_output=True,
+            check=False,
+        )
+    else:
+        import signal
+
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.kill()
 
 
 class AnthropicCompiler:

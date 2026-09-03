@@ -171,7 +171,7 @@ pediment" → ghost in under 1 s → "yes" → Apply.
 - [ ] **T3.1** cards K-A / K-B / K-C to the main session; **T3.2** studio option + experiment once K-A lands.
 
 ### Phase 4
-- [ ] **T4.1** queue policy in `jobs.py` (conflict = closure intersection; `waitingFor`); **T4.2** cards.
+- [x] **T4.1** queue policy in `jobs.py` (conflict = closure intersection; `waitingFor`); **T4.2** cards.
 
 ### Phase 5
 - [x] **T5.1 overlay + gesture capture** (stage overlay canvas, raycast per sample, `GestureDto` on the
@@ -211,7 +211,7 @@ ask for that the plan does not yet carry. The working tree's Phase 1 files were 
 
 ### I.2 Added tasks
 
-- [ ] **T0.3 codex timeout must kill the tree (API).** `CodexCompiler.compile` uses `subprocess.run(timeout=)`
+- [x] **T0.3 codex timeout must kill the tree (API).** `CodexCompiler.compile` uses `subprocess.run(timeout=)`
   (`application/intent_agent.py:307-316`) on `codex.cmd`, a cmd shim that spawns `node codex.js`. On Windows
   a timeout kills `cmd.exe` only; `communicate()` then waits on pipes the orphaned `node` still holds, and the
   route hangs past the 120 s it promised. Fix: `Popen(..., creationflags=CREATE_NEW_PROCESS_GROUP)` and on
@@ -228,7 +228,7 @@ ask for that the plan does not yet carry. The working tree's Phase 1 files were 
   the patch and writes `cad.oracle.seconds` (`project_runner.py:519-526`); that pair *is* T_full vs
   T_incremental in one run. Add `ExportTimingDto.oracleSeconds` and `oracleEqual` (null when no oracle ran) so
   the research metric is read off the receipt, not the ledger.
-- [ ] **T4.0 concurrency proof before T4.1.** An api test that submits two kernel-only candidates against one
+- [x] **T4.0 concurrency proof before T4.1.** An api test that submits two kernel-only candidates against one
   temp project on two workers and asserts two run directories, two receipts, no shared record and HEAD
   unchanged. Only then raise `max_workers`.
 - [ ] **T6 Before / After / Why (Kaiwen's feedback item 4, missing from the plan).** Phase 6, after Phase 2:
