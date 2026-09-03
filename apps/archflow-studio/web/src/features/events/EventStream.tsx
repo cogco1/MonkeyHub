@@ -82,8 +82,18 @@ function summarise(event: StudioEventDto): string {
   return parts.join(" · ");
 }
 
-export function EventStream({ notices }: { notices: readonly string[] }) {
+export function EventStream({
+  notices,
+  onCount,
+}: {
+  notices: readonly string[];
+  /** How many lines the panel holds, for the tab that names it. */
+  onCount?(count: number): void;
+}) {
   const [lines, setLines] = useState<readonly StreamLine[]>([]);
+  useEffect(() => {
+    onCount?.(lines.length);
+  }, [lines.length, onCount]);
   const lastSeqRef = useRef<number | null>(null);
   // Every seq shown on the current connection. A reconnect can replay them, and
   // a replayed line must not appear twice. Cleared on every open, and capped at
