@@ -192,8 +192,12 @@ class SeatOutcome:
     # interpreted here. ``None`` is the runner saying this seat was not asked
     # to export at all; a mapping is it saying one was attempted, and it is
     # the only evidence anywhere that distinguishes the two. It stays off the
-    # wire: what a client needs from it is the verdict and the honesty line.
+    # wire as a block: what a client needs from it is the verdict, the honesty
+    # line, and — since the timings landed — how long the export took and
+    # whether it was a full rebuild or a patch.
     cad: Mapping[str, Any] | None = None
+    # The seat row's own wall time, as the runner wrote it.
+    wall_time_s: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,6 +314,7 @@ def describe(
                 objects=_whole(row.get("objects")),
                 relation_check_ref=_text(row.get("relation_check_ref")),
                 cad=_block(row.get("cad")),
+                wall_time_s=_number(row.get("wall_time_s")),
             )
             for row in seat_rows
         ),

@@ -164,6 +164,7 @@ export type CandidateDto = {
      * Walltimes
      */
     wallTimeS: number | null;
+    timings: TimingsDto;
     /**
      * Harness
      *
@@ -325,6 +326,51 @@ export type ElementDto = {
 };
 
 /**
+ * ExportTimingDto
+ *
+ * One seat's export, as its ``cad`` block times it.
+ *
+ * ``path`` is the runner's own word — ``rebuild`` (the whole seat rebuilt) or
+ * ``patch`` (kept objects carried, only the changed ones rebuilt) — and the
+ * two object counts are present only on a patch. ``rebuildRatio`` is the
+ * one derived number: rebuilt over rebuilt + kept, the share of the seat
+ * that was actually recomputed; null when the receipt does not carry the
+ * counts, never assumed to be 1.
+ */
+export type ExportTimingDto = {
+    /**
+     * Seatid
+     */
+    seatId: string;
+    /**
+     * Path
+     *
+     * rebuild | patch, as the runner wrote it
+     */
+    path: string | null;
+    /**
+     * Seconds
+     */
+    seconds: number | null;
+    /**
+     * Status
+     */
+    status: string | null;
+    /**
+     * Rebuiltobjects
+     */
+    rebuiltObjects: number | null;
+    /**
+     * Keptobjects
+     */
+    keptObjects: number | null;
+    /**
+     * Rebuildratio
+     */
+    rebuildRatio: number | null;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -411,6 +457,7 @@ export type ImpactLockDto = {
 export type IntentDto = {
     agent: AgentReadingDto;
     proposal: ProposalDto;
+    timings: IntentTimingsDto;
 };
 
 /**
@@ -449,6 +496,26 @@ export type IntentRequestDto = {
      * the project the client believes it is proposing against; a different one is refused as PROJECT_MISMATCH
      */
     projectId?: string | null;
+};
+
+/**
+ * IntentTimingsDto
+ *
+ * How long the two halves of an intent took, in this process.
+ *
+ * ``compileMs`` is the agent (zero for the deterministic pass-through);
+ * ``typeMs`` is the grammar, the record and the closure. The fast stage of
+ * a change is the second number; the first is what an agent costs.
+ */
+export type IntentTimingsDto = {
+    /**
+     * Compilems
+     */
+    compileMs: number;
+    /**
+     * Typems
+     */
+    typeMs: number;
 };
 
 /**
@@ -952,6 +1019,20 @@ export type RelationChecksDto = {
 };
 
 /**
+ * SeatTimingDto
+ */
+export type SeatTimingDto = {
+    /**
+     * Seatid
+     */
+    seatId: string;
+    /**
+     * Walltimes
+     */
+    wallTimeS: number | null;
+};
+
+/**
  * StageBindingDto
  *
  * Which stage the record is bound to; the nulls are the answer.
@@ -1120,6 +1201,32 @@ export type StudioHealth = {
      * Projectbound
      */
     projectBound: boolean;
+};
+
+/**
+ * TimingsDto
+ *
+ * Where the seconds of a candidate went, read off the run receipt.
+ *
+ * Slow because the run was validating is one thing; slow because it rebuilt
+ * what did not change is another, and this block is what tells them apart:
+ * ``runS`` is the whole harness run, ``seats`` the runner's per-seat wall
+ * times, ``exports`` each Rhino export with its path and seconds. A run that
+ * exported nothing has an empty ``exports`` — a real answer.
+ */
+export type TimingsDto = {
+    /**
+     * Runs
+     */
+    runS: number | null;
+    /**
+     * Seats
+     */
+    seats: Array<SeatTimingDto>;
+    /**
+     * Exports
+     */
+    exports: Array<ExportTimingDto>;
 };
 
 /**

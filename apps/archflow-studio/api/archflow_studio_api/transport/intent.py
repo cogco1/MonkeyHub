@@ -78,6 +78,20 @@ class AgentReadingDto(BaseModel):
     )
 
 
+class IntentTimingsDto(BaseModel):
+    """How long the two halves of an intent took, in this process.
+
+    ``compileMs`` is the agent (zero for the deterministic pass-through);
+    ``typeMs`` is the grammar, the record and the closure. The fast stage of
+    a change is the second number; the first is what an agent costs.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    compile_ms: int = Field(alias="compileMs")
+    type_ms: int = Field(alias="typeMs")
+
+
 class IntentDto(BaseModel):
     """The wire form of ``POST /api/intents``."""
 
@@ -85,6 +99,7 @@ class IntentDto(BaseModel):
 
     agent: AgentReadingDto
     proposal: ProposalDto
+    timings: IntentTimingsDto
 
 
 def agent_dto(compilation: Compilation) -> AgentReadingDto:

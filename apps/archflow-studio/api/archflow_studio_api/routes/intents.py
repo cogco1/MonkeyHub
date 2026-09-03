@@ -12,6 +12,8 @@ grammar and the record chose the number's meaning and the closure.
 
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter
 from starlette.requests import Request
 
@@ -27,7 +29,12 @@ from ..application.intent_agent import (
 from ..application.projection import project_state
 from ..application.proposals import proposal_from
 from ..transport.errors import StudioError
-from ..transport.intent import IntentDto, IntentRequestDto, agent_dto
+from ..transport.intent import (
+    IntentDto,
+    IntentRequestDto,
+    IntentTimingsDto,
+    agent_dto,
+)
 from ..transport.proposal import to_dto
 from .proposals import _require_bound_project
 
@@ -66,11 +73,14 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     selection = Selection(
         component_id=body.target_component_id, element_id=body.element_id
     )
+    compiled_at = time.perf_counter()
     compilation = compiler.compile(
         message=body.utterance, selection=selection, projection=projection
     )
+    compile_ms = int((time.perf_counter() - compiled_at) * 1000)
     require_grammatical(compilation)
     assert compilation.utterance is not None
+    typed_at = time.perf_counter()
     proposal = proposal_from(
         DeterministicIntentProvider(projection).propose(
             session_ref=f"project:{binding.project_id}",
@@ -79,4 +89,9 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         )
     )
     request.app.state.proposals.put(proposal)
-    return IntentDto(agent=agent_dto(compilation), proposal=to_dto(proposal))
+    type_ms = int((time.perf_counter() - typed_at) * 1000)
+    return IntentDto(
+        agent=agent_dto(compilation),
+        proposal=to_dto(proposal),
+        timings=IntentTimingsDto(compile_ms=compile_ms, type_ms=type_ms),
+    )

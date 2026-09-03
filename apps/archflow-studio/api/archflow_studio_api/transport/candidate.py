@@ -76,6 +76,52 @@ class CandidateSeatResultDto(BaseModel):
     relation_check_ref: str | None = Field(alias="relationCheckRef")
 
 
+class ExportTimingDto(BaseModel):
+    """One seat's export, as its ``cad`` block times it.
+
+    ``path`` is the runner's own word — ``rebuild`` (the whole seat rebuilt) or
+    ``patch`` (kept objects carried, only the changed ones rebuilt) — and the
+    two object counts are present only on a patch. ``rebuildRatio`` is the
+    one derived number: rebuilt over rebuilt + kept, the share of the seat
+    that was actually recomputed; null when the receipt does not carry the
+    counts, never assumed to be 1.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    seat_id: str = Field(alias="seatId")
+    path: str | None = Field(description="rebuild | patch, as the runner wrote it")
+    seconds: float | None
+    status: str | None
+    rebuilt_objects: int | None = Field(alias="rebuiltObjects")
+    kept_objects: int | None = Field(alias="keptObjects")
+    rebuild_ratio: float | None = Field(alias="rebuildRatio")
+
+
+class SeatTimingDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    seat_id: str = Field(alias="seatId")
+    wall_time_s: float | None = Field(alias="wallTimeS")
+
+
+class TimingsDto(BaseModel):
+    """Where the seconds of a candidate went, read off the run receipt.
+
+    Slow because the run was validating is one thing; slow because it rebuilt
+    what did not change is another, and this block is what tells them apart:
+    ``runS`` is the whole harness run, ``seats`` the runner's per-seat wall
+    times, ``exports`` each Rhino export with its path and seconds. A run that
+    exported nothing has an empty ``exports`` — a real answer.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    run_s: float | None = Field(alias="runS")
+    seats: list[SeatTimingDto]
+    exports: list[ExportTimingDto]
+
+
 class RelationChecksDto(BaseModel):
     """Three states, and the two flags that keep them from becoming one."""
 
@@ -133,6 +179,7 @@ class CandidateDto(BaseModel):
         "this candidate's exported models; normally empty, never hidden",
     )
     wall_time_s: float | None = Field(alias="wallTimeS")
+    timings: TimingsDto
     harness: str = Field(
         description="what kind of run produced this; a candidate is never a "
         "stage the project advanced through",
@@ -141,6 +188,53 @@ class CandidateDto(BaseModel):
         description="what this candidate cannot tell you, in lines the UI "
         "shows verbatim; empty is a real answer, not a missing one",
     )
+
+
+def timings_dto(candidate: CandidateRun) -> TimingsDto:
+    """The run's seconds, seat by seat, from the receipt's own numbers."""
+
+    exports: list[ExportTimingDto] = []
+    for seat in candidate.seat_results:
+        if seat.cad is None:
+            continue
+        rebuilt = _whole(seat.cad.get("rebuilt_objects"))
+        kept = _whole(seat.cad.get("kept_objects"))
+        ratio = (
+            rebuilt / (rebuilt + kept)
+            if rebuilt is not None and kept is not None and rebuilt + kept > 0
+            else None
+        )
+        exports.append(
+            ExportTimingDto(
+                seat_id=seat.seat_id,
+                path=_text(seat.cad.get("path")),
+                seconds=_float(seat.cad.get("seconds")),
+                status=_text(seat.cad.get("status")),
+                rebuilt_objects=rebuilt,
+                kept_objects=kept,
+                rebuild_ratio=ratio,
+            )
+        )
+    return TimingsDto(
+        run_s=candidate.wall_time_s,
+        seats=[
+            SeatTimingDto(seat_id=seat.seat_id, wall_time_s=seat.wall_time_s)
+            for seat in candidate.seat_results
+        ],
+        exports=exports,
+    )
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _float(value: object) -> float | None:
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _whole(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def accepted_dto(job: Job) -> CandidateAcceptedDto:
@@ -190,6 +284,7 @@ def to_dto(candidate: CandidateRun) -> CandidateDto:
         ],
         skipped_runs=list(candidate.skipped_runs),
         wall_time_s=candidate.wall_time_s,
+        timings=timings_dto(candidate),
         harness=HARNESS_STATEMENT,
         honesty=list(candidate.honesty),
     )
