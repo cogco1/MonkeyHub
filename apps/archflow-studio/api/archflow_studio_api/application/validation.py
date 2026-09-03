@@ -13,14 +13,14 @@ too many.
 The **verdict** is the server's, and it is a fixed conjunction of five named
 clauses: the receipt passed, the runner finished its seats, no relation was
 violated, every declared relation was actually checked, and every artifact the
-run was asked to export is available. ``blockedBy`` names each clause that
-failed, by the same name every time, because "cannot advance" without a reason
-is a red light nobody can act on. The fourth clause is the point of the other
-three: ``held`` is true whenever nothing was violated — including when nothing
-was checked — so a candidate whose relations nobody could check is never
-green. The fifth is vacuous for a candidate that never asked to export: an
-empty ``artifacts`` tuple holds it by construction, since there is nothing
-that could have failed to export.
+run was asked to export is available and its export succeeded. ``blockedBy``
+names each clause that failed, by the same name every time, because "cannot
+advance" without a reason is a red light nobody can act on. The fourth clause
+is the point of the other three: ``held`` is true whenever nothing was
+violated — including when nothing was checked — so a candidate whose
+relations nobody could check is never green. The fifth is vacuous for a
+candidate that never asked to export: an empty ``artifacts`` tuple holds it by
+construction, since there is nothing that could have failed to export.
 
 What the receipt could *not* prove is stated rather than implied. HEAD in a
 P036 project is a ref-based ``CanonicalProjectState@1``: it carries no facts,

@@ -1092,13 +1092,13 @@ export type ValidationDto = {
     /**
      * Advance
      *
-     * the server's verdict: every one of the four clauses holds. It is issued here and never derived by a client
+     * the server's verdict: every one of the five clauses holds. It is issued here and never derived by a client
      */
     advance: boolean;
     /**
      * Blockedby
      *
-     * each clause that refused, by name: validation.receipt, runner.seat_execution_complete, relations.held, relations.fully_checked
+     * each clause that refused, by name: validation.receipt, runner.seat_execution_complete, relations.held, relations.fully_checked, runner.exports_available
      */
     blockedBy: Array<string>;
     /**

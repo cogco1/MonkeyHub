@@ -514,6 +514,50 @@ class AdvanceVerdictTests(ValidationTestCase):
         self.assertNotIn(EXPORTS_CLAUSE, succeeded.blocked_by)
         self.assertEqual(succeeded.honesty, ())
 
+    def test_two_failed_exports_are_each_confessed_once(self) -> None:
+        """Every failing artifact gets its own line; the clause names once.
+
+        The honesty lines are one per artifact, not one per clause — two
+        failed exports must not collapse into a single confession, and the
+        clause that blocks the advance must not be repeated once per failure.
+        """
+
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+
+        failed = self.validated(
+            replace(
+                candidate,
+                artifacts=(
+                    _export_artifact(
+                        status="failed",
+                        available=False,
+                        unavailable_reason="no inspection digest",
+                        stage_id="cad-rhino-execution",
+                        file_name="model.3dm",
+                    ),
+                    _export_artifact(
+                        status="failed",
+                        available=False,
+                        unavailable_reason="file missing",
+                        stage_id="cad-rhino-review",
+                        file_name="review.3dm",
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(
+            failed.honesty,
+            (
+                "export of cad-rhino-execution (model.3dm) is not "
+                "available: status failed, reason no inspection digest",
+                "export of cad-rhino-review (review.3dm) is not available: "
+                "status failed, reason file missing",
+            ),
+        )
+        self.assertEqual(failed.blocked_by.count(EXPORTS_CLAUSE), 1)
+
     def test_every_failing_clause_is_named_together(self) -> None:
         """Four clauses, four names, in the order the verdict states them."""
 

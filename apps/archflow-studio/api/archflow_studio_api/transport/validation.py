@@ -97,14 +97,14 @@ class ValidationDto(BaseModel):
     )
     seat_execution_complete: bool = Field(alias="seatExecutionComplete")
     advance: bool = Field(
-        description="the server's verdict: every one of the four clauses "
+        description="the server's verdict: every one of the five clauses "
         "holds. It is issued here and never derived by a client",
     )
     blocked_by: list[str] = Field(
         alias="blockedBy",
         description="each clause that refused, by name: validation.receipt, "
         "runner.seat_execution_complete, relations.held, "
-        "relations.fully_checked",
+        "relations.fully_checked, runner.exports_available",
     )
     honesty: list[str] = Field(
         description="what the submission could not carry — a seat whose "
