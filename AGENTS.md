@@ -25,9 +25,12 @@ instructions.
   commit, a non-deterministic output, or an explicit acceptance decision. The
   receipt names what crossed and what it was bound to; nothing else.
 - Authority is expressed by capability, not by flags. An object that cannot
-  write has no writer; it does not carry `*_authority: false` fields to say so.
-  Explicit authority data appears only on objects that cross a trust boundary
-  (a grant, a token, a lock).
+  write has no writer. Explicit authority data appears only on objects that
+  cross a trust boundary (a grant, a token, a lock). Existing record kinds
+  still serialise their historical `*_authority: false` block because the
+  digests retained data binds were computed over it; that block is written by
+  `no_authority()` and never re-checked on read, and a new record kind does
+  not add one.
 - Two identities, never three: content identity (the design content itself)
   and binding identity (the run, base and project it is executed against).
   Binding a record to another run does not change its content identity.
