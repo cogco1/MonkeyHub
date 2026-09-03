@@ -8,8 +8,8 @@ P107; until P107 lands the frontend tolerates the 37-second Rhino path or works 
 `governance/`; the frontend session does not touch those. Kernel gaps are carded, never fixed in passing.
 **Retires:** Preview Slice 01 — the stdlib `ThreadingHTTPServer` gateway, the presence-probe `kernel.py`, the
 monolithic `App.tsx`, `StageRail`/`CapabilityPanel`, the old launcher, the POST-501 tests and the current page
-layout. Retained at tag `studio-preview-slice-01` and described in `docs/mapping/archive/studio-preview-slice-01.md`;
-it is not copied into a live `archive/` directory.
+layout. Retained at tag `studio-preview-slice-01`, whose annotation describes it; there is no archive card (finished
+work is Git history).
 
 ## Direction (third and final ruling, 2026-09-03; codex review verified by 新建会话, adopted by Kaiwen)
 
@@ -113,7 +113,7 @@ that established this: both models scored 29/29 on the same pinned slice; the on
 - [ ] The six protocols exist verbatim in `api/archflow_studio_api/ports.py`; viewer assets are moved, not copied.
 - [ ] `python tools/archcheck.py` stays green throughout; no Pydantic model mirrors an archflow schema.
 - [ ] Tests: contract, API, stale-base, cross-project rejection, UI state.
-- [ ] Tag `studio-preview-slice-01` exists at the last commit where the demo is intact.
+- [x] Tag `studio-preview-slice-01` exists at the last commit where the demo is intact (1ef336f).
 
 ## Revision history
 
