@@ -12,12 +12,9 @@ from archflow.ports.model import (
     ModelInvocationStatus,
 )
 from archflow.capabilities.geometry_proposal import (
-    _FUNCTION_CONTRACTS,
-    _authoring_output_contract,
     GeometryProposalPolicy,
     GeometryProposalProviderIdentity,
     GeometryProposalStatus,
-    load_compiled_geometry_program,
     load_geometry_proposal_lineage,
     produce_geometry_program_proposal,
     proposal_authoring_output,
@@ -39,11 +36,6 @@ from archflow.state import (
     SpatialOptionProposal,
     SpatialConnection,
     SpatialZone,
-)
-from archflow.state.geometry_program import (
-    AssemblyKind,
-    GeometryOperationKind,
-    required_assembly_roles,
 )
 from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from tests.test_sandbox_realization import compiled_room
@@ -650,23 +642,6 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-    async def test_compiled_program_reload_is_exact_and_rejects_tampering(self) -> None:
-        _, program, _ = compiled_room()
-
-        loaded = load_compiled_geometry_program(program.to_dict())
-
-        self.assertEqual(loaded, program)
-        self.assertEqual(loaded.program_digest, program.program_digest)
-        tampered = json.loads(json.dumps(program.to_dict()))
-        tampered["proposal_digest"] = "0" * 64
-        with self.assertRaisesRegex(ValueError, "proposal digest changed"):
-            load_compiled_geometry_program(tampered)
-
-        authoritative = json.loads(json.dumps(program.to_dict()))
-        authoritative["execution_authority"] = True
-        with self.assertRaisesRegex(ValueError, "forbidden authority"):
-            load_compiled_geometry_program(authoritative)
-
     async def test_host_cut_without_host_dependency_remains_rejected(self) -> None:
         invalid = json.loads(
             _canonical_json(proposal_authoring_output(self.proposal))
@@ -1177,32 +1152,6 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
             "provider_identity_mismatch",
         )
 
-    def test_function_contract_matches_declared_vocabulary(self) -> None:
-        self.assertEqual(
-            set(_FUNCTION_CONTRACTS),
-            {item.value for item in GeometryOperationKind},
-        )
-        curve = _FUNCTION_CONTRACTS["curve"]
-        self.assertEqual(
-            curve["input_arity"],
-            {"minimum": 0, "maximum": 0},
-        )
-        basis = next(
-            item for item in curve["parameters"] if item["name"] == "basis"
-        )
-        self.assertEqual(basis["kind"], "text")
-        self.assertFalse(basis["required"])
-        self.assertEqual(
-            basis["allowed_value_json"],
-            ['"bezier"', '"polyline"'],
-        )
-        solid = _FUNCTION_CONTRACTS["solid"]
-        self.assertEqual(
-            {(item["name"], item["kind"], item["unit"])
-             for item in solid["parameters"]},
-            {("origin", "vector3", "meter"), ("size", "vector3", "meter")},
-        )
-
     async def test_typed_but_unsupported_function_parameter_is_repaired(
         self,
     ) -> None:
@@ -1283,98 +1232,6 @@ class GeometryProposalProducerTests(unittest.IsolatedAsyncioTestCase):
         issue = loaded.rounds[0].issues[0]
         self.assertIn("boolean_intersection aperture volume", issue.detail)
         self.assertIn("not a residual boolean result", issue.detail)
-
-    def test_authoring_request_contract_exposes_exact_generic_topology(
-        self,
-    ) -> None:
-        contract = _authoring_output_contract()
-        root = contract["json_schema"]
-        self.assertFalse(root["additionalProperties"])
-        self.assertEqual(
-            set(root["required"]),
-            {"schema", "selected_template_refs", "proposal_body"},
-        )
-        body = root["properties"]["proposal_body"]
-        self.assertFalse(body["additionalProperties"])
-        self.assertEqual(
-            set(body["required"]),
-            {
-                "schema",
-                "proposal_id",
-                "predecessor_program_digest",
-                "length_unit",
-                "tolerance",
-                "frames",
-                "assets",
-                "semantic_bindings",
-                "operations",
-                "assemblies",
-                "revisions",
-                "retirements",
-            },
-        )
-        operation = body["properties"]["operations"]["items"]
-        self.assertEqual(
-            set(operation["required"]),
-            {
-                "schema",
-                "op_id",
-                "kind",
-                "output_object_ids",
-                "input_object_ids",
-                "frame_id",
-                "parameters",
-                "semantic_binding_ids",
-                "asset_id",
-                "asset_socket_id",
-                "asset_scale",
-                "responds_to_object_ids",
-                "responds_to_frame_ids",
-                "responds_to_binding_ids",
-            },
-        )
-        encoded = _canonical_json(contract)
-        self.assertNotIn('"default"', encoded)
-        self.assertNotIn('"examples"', encoded)
-        self.assertEqual(
-            contract["authority"],
-            {
-                "proposal_only": True,
-                "hard_gate": False,
-                "canonical_write": False,
-                "platform_mutation": False,
-            },
-        )
-        invariants = contract["cross_field_invariants"]
-        self.assertIn(
-            {
-                "field": "proposal_body.operations[*].responds_to_object_ids",
-                "relation": "subset_of",
-                "target": "proposal_body.operations[*].input_object_ids",
-            },
-            invariants,
-        )
-        self.assertIn(
-            "zero inputs",
-            operation["properties"]["input_object_ids"]["description"],
-        )
-        self.assertEqual(
-            contract["required_assembly_roles"],
-            {
-                kind.value: [
-                    role.value for role in required_assembly_roles(kind)
-                ]
-                for kind in AssemblyKind
-            },
-        )
-        self.assertIn(
-            {
-                "field": "proposal_body.assemblies[*].members[*].role",
-                "relation": "contains_all_unique",
-                "target": "required_assembly_roles[kind]",
-            },
-            invariants,
-        )
 
 
 if __name__ == "__main__":

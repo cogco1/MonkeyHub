@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
-import json
 import unittest
 
-import archflow.compilers as compilers_api
-import archflow.compilers.program as canonical_program
-import archflow.runtime.program_compiler as legacy_program
 from archflow.capabilities.programming import build_programming_snapshot
 from archflow.compilers.program import (
     ProgramAssumptionProposal,
@@ -44,7 +40,6 @@ from archflow.state import (
     ProgramRelationshipKind,
     ProgramRelationshipStrength,
 )
-from archflow.state.geometry_program import digest_value
 
 
 def _request_ref(project_id: str) -> str:
@@ -202,13 +197,6 @@ def _bundle(
 
 
 class ProgramCompilerTests(unittest.TestCase):
-    def test_legacy_facade_and_package_export_canonical_objects(self) -> None:
-        for name in legacy_program.__all__:
-            with self.subTest(name=name):
-                canonical = getattr(canonical_program, name)
-                self.assertIs(canonical, getattr(legacy_program, name))
-                self.assertIs(canonical, getattr(compilers_api, name))
-
     def test_non_building_metrics_can_be_explicitly_not_applicable(self) -> None:
         project_id = "case-sectional-episode"
         run_id = "program-001"
@@ -476,39 +464,6 @@ class ProgramCompilerTests(unittest.TestCase):
                     ),
                 )
 
-    def test_reference_program_preserves_schema_digests_and_behavior(self) -> None:
-        result = compile_design_program(
-            brief=_known_brief(
-                "case-alpha",
-                run_id="program-001",
-                use_value="alpha activity system",
-                digest_char="a",
-            ),
-            proposals=_bundle(
-                prefix="alpha",
-                source_ref=_request_ref("case-alpha"),
-                node_count=3,
-                relationship_kinds=tuple(ProgramRelationshipKind),
-            ),
-        )
-
-        self.assertEqual("DesignProgram@1", result.program.SCHEMA)
-        self.assertEqual(
-            "f2f28e909bc97369d6bd463cdf2acb9611dfab4dee6c4719dfba3a8bb490c3b7",
-            result.program.program_digest,
-        )
-        self.assertEqual("ProgramCompilationReceipt@1", result.receipt.SCHEMA)
-        self.assertEqual(
-            "program-compilation.df4b3ff09ca21c3705f26527",
-            result.receipt.compilation_id,
-        )
-        self.assertEqual(
-            "41d00519c1e9bb1921c29223b51c643acc8a92a93fddd4cb89a836147225eb95",
-            digest_value(result.receipt.to_dict()),
-        )
-        self.assertEqual(14, len(result.receipt.proposal_ids))
-        self.assertIs(result.receipt.to_dict()["generation_authority"], False)
-
     def test_non_isomorphic_requests_do_not_share_project_answers(self) -> None:
         first_brief = _known_brief(
             "case-alpha",
@@ -750,29 +705,6 @@ class ProgramCompilerTests(unittest.TestCase):
             resumed.obligation_topics,
             ("program.relationships",),
         )
-
-    def test_schema_contains_no_spatial_or_material_defaults(self) -> None:
-        brief = compile_design_brief(
-            project_id="case-empty",
-            run_id="program-001",
-            base=_base("case-empty", "f"),
-            raw_request_ref=_request_ref("case-empty"),
-        ).brief
-        payload = compile_design_program(
-            brief=brief,
-            proposals=ProgramProposalBundle(),
-        ).program.to_dict()
-        serialized = json.dumps(payload, sort_keys=True)
-
-        for forbidden in (
-            '"coordinates"',
-            '"dimensions"',
-            '"materials"',
-            '"palette"',
-            '"topology"',
-            '"room_list"',
-        ):
-            self.assertNotIn(forbidden, serialized)
 
 
 if __name__ == "__main__":

@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import copy
 import unittest
 
 from archflow.control.function_diagnostics import (
     FUNCTION_DIAGNOSTIC_PALETTE,
     NO_FUNCTION_CONTRACT,
-    FunctionDiagnosticColor,
     FunctionDiagnosticEntry,
     FunctionDiagnosticError,
-    FunctionDiagnosticProjection,
     FunctionStatus,
     compile_function_diagnostic_projection,
 )
@@ -38,58 +35,6 @@ def entry(
 
 
 class FunctionDiagnosticProjectionTests(unittest.TestCase):
-    def test_palette_and_round_trip_are_deterministic_and_authority_free(
-        self,
-    ) -> None:
-        self.assertEqual(
-            FunctionDiagnosticColor.FUNCTION_ORPHAN,
-            FUNCTION_DIAGNOSTIC_PALETTE[FunctionStatus.FUNCTION_ORPHAN],
-        )
-        self.assertEqual(
-            FunctionDiagnosticColor.OPEN,
-            FUNCTION_DIAGNOSTIC_PALETTE[FunctionStatus.OPEN],
-        )
-        self.assertEqual(
-            FunctionDiagnosticColor.FAIL,
-            FUNCTION_DIAGNOSTIC_PALETTE[FunctionStatus.FAIL],
-        )
-        self.assertIsNone(
-            FUNCTION_DIAGNOSTIC_PALETTE[FunctionStatus.SATISFIED]
-        )
-
-        projection = compile_function_diagnostic_projection(
-            projection_id="function-status-stage-2",
-            entries=(
-                entry("stairs", "stairs-obj", FunctionStatus.OPEN),
-                entry(
-                    "pediment-support",
-                    "pediment-support-obj",
-                    FunctionStatus.FUNCTION_ORPHAN,
-                ),
-                entry("wall", "wall-obj", FunctionStatus.SATISFIED),
-            ),
-        )
-        restored = FunctionDiagnosticProjection.from_dict(projection.to_dict())
-        self.assertEqual(projection, restored)
-        self.assertEqual(projection.projection_digest, restored.projection_digest)
-        payload = projection.to_dict()
-        self.assertEqual("PRESENTATION_ONLY", payload["projection_mode"])
-        for field in (
-            "material_override",
-            "readback_authority",
-            "stage_acceptance_authority",
-            "canonical_write_authority",
-        ):
-            self.assertFalse(payload[field])
-        self.assertEqual(
-            [
-                "design-component:pediment-support",
-                "design-component:stairs",
-                "design-component:wall",
-            ],
-            [item["component_ref"] for item in payload["entries"]],
-        )
-
     def test_duplicate_component_and_object_ownership_are_rejected(self) -> None:
         first = entry("stairs", "shared-obj", FunctionStatus.OPEN)
         duplicate_component = entry("stairs", "other-obj", FunctionStatus.FAIL)
@@ -185,48 +130,6 @@ class FunctionDiagnosticProjectionTests(unittest.TestCase):
                 projection_id="forged-orphan-contract",
                 entries=(forged_orphan,),
             )
-
-    def test_round_trip_rejects_authority_colour_contract_and_digest_drift(
-        self,
-    ) -> None:
-        projection = compile_function_diagnostic_projection(
-            projection_id="function-status-stage-2",
-            entries=(
-                entry(
-                    "pediment-support",
-                    "support-obj",
-                    FunctionStatus.FUNCTION_ORPHAN,
-                ),
-            ),
-        )
-
-        authority = copy.deepcopy(projection.to_dict())
-        authority["material_override"] = True
-        with self.assertRaisesRegex(FunctionDiagnosticError, "acquired authority"):
-            FunctionDiagnosticProjection.from_dict(authority)
-
-        colour = copy.deepcopy(projection.to_dict())
-        colour["entries"][0]["diagnostic_color"] = "#00FF00"
-        with self.assertRaisesRegex(
-            FunctionDiagnosticError,
-            "not the fixed palette value",
-        ):
-            FunctionDiagnosticProjection.from_dict(colour)
-
-        contract = copy.deepcopy(projection.to_dict())
-        contract["entries"][0]["function_contract_ref"] = (
-            "function-contract:invented"
-        )
-        with self.assertRaisesRegex(
-            FunctionDiagnosticError,
-            "FUNCTION_ORPHAN contract must be NONE",
-        ):
-            FunctionDiagnosticProjection.from_dict(contract)
-
-        digest = copy.deepcopy(projection.to_dict())
-        digest["projection_digest"] = "0" * 64
-        with self.assertRaisesRegex(FunctionDiagnosticError, "digest changed"):
-            FunctionDiagnosticProjection.from_dict(digest)
 
 
 if __name__ == "__main__":

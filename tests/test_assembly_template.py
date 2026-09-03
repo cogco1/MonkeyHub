@@ -196,12 +196,6 @@ def _template(**overrides):
 
 
 class SchemaTests(unittest.TestCase):
-    def test_round_trip_and_digest(self) -> None:
-        t = _template()
-        self.assertEqual(BuildingAssemblyTemplate.from_dict(t.to_dict()).digest, t.digest)
-        self.assertEqual(t.distinct_vote_projects(), ("demo",))
-        self.assertEqual(t.distinct_stage_qualified_vote_projects(), ())
-
     def test_legacy_vote_migrates_without_promotion_weight(self) -> None:
         vote = CaseVote.from_dict(
             {

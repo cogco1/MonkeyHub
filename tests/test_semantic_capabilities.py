@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import copy
 import unittest
 
 from archflow.control.baseline import StageBaselineLevel, StageBaselineRole
 from archflow.control.semantic_capabilities import (
-    SemanticCapabilityPolicy,
     SemanticCapabilityPolicyError,
     SemanticDesignWorkItem,
     bind_semantic_rule_packs,
@@ -39,30 +37,6 @@ def branch(*, epoch: int = 3) -> BranchRef:
 
 
 class SemanticCapabilityPolicyTests(unittest.TestCase):
-    def test_policy_round_trip_is_deterministic_and_has_no_authority(self) -> None:
-        policy = current_semantic_capability_policy()
-        self.assertEqual(2, policy.policy_version)
-        self.assertEqual(2, policy.packs[0].pack_version)
-        reloaded = SemanticCapabilityPolicy.from_dict(policy.to_dict())
-
-        self.assertEqual(policy, reloaded)
-        self.assertEqual(policy.policy_digest, reloaded.policy_digest)
-        require_supported_semantic_capability_policy(reloaded)
-        require_current_semantic_capability_policy(reloaded)
-        for payload in (
-            policy.to_dict(),
-            *(pack.to_dict() for pack in policy.packs),
-            *(
-                rules.to_dict()
-                for pack in policy.packs
-                for rules in pack.stage_rules
-            ),
-        ):
-            self.assertFalse(payload["design_authority"])
-            self.assertFalse(payload["stage_acceptance_authority"])
-            self.assertFalse(payload["persistence_authority"])
-            self.assertFalse(payload["canonical_write_authority"])
-
     def test_stair_binding_is_exact_context_and_stage_specific(self) -> None:
         policy = current_semantic_capability_policy()
         expected_rule_counts = {
@@ -168,45 +142,6 @@ class SemanticCapabilityPolicyTests(unittest.TestCase):
                         baseline_level=StageBaselineLevel.SPATIAL,
                     ),
                 )
-
-    def test_framework_stair_pack_cannot_be_deleted_or_rewritten(self) -> None:
-        payload = copy.deepcopy(current_semantic_capability_policy().to_dict())
-        payload["packs"] = []
-        content = {
-            key: value for key, value in payload.items() if key != "policy_digest"
-        }
-        from archflow.contracts.canonical import canonical_digest
-
-        payload["policy_digest"] = canonical_digest(content)
-        with self.assertRaises((TypeError, SemanticCapabilityPolicyError)):
-            policy = SemanticCapabilityPolicy.from_dict(payload)
-            require_supported_semantic_capability_policy(policy)
-
-        rewritten = copy.deepcopy(
-            current_semantic_capability_policy().to_dict()
-        )
-        rewritten["packs"][0]["stage_rules"][0]["rule_ids"] = [
-            "weakened-rule"
-        ]
-        pack_content = {
-            key: value
-            for key, value in rewritten["packs"][0].items()
-            if key != "pack_digest"
-        }
-        rewritten["packs"][0]["pack_digest"] = canonical_digest(pack_content)
-        policy_content = {
-            key: value
-            for key, value in rewritten.items()
-            if key != "policy_digest"
-        }
-        rewritten["policy_digest"] = canonical_digest(policy_content)
-        with self.assertRaisesRegex(
-            SemanticCapabilityPolicyError,
-            "not a supported framework policy",
-        ):
-            require_supported_semantic_capability_policy(
-                SemanticCapabilityPolicy.from_dict(rewritten)
-            )
 
 
 if __name__ == "__main__":

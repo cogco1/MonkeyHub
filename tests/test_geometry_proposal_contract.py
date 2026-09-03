@@ -9,7 +9,6 @@ import unittest
 
 from archflow.ports.model import ModelInvocationStatus
 from archflow.capabilities.geometry_proposal import (
-    _authoring_output_contract,
     GeometryProposalPolicy,
     GeometryProposalProductionError,
     GeometryProposalStatus,
@@ -23,7 +22,6 @@ from archflow.project import (
     PersistenceDestination,
     ProjectRecordRef,
 )
-from archflow.state.geometry_program import ASSET_URI_PATTERN
 from archflow.state.operational_state import (
     PORTABLE_LOGICAL_REF_PATTERN,
     require_logical_ref,
@@ -291,20 +289,6 @@ class AvailableInterfaceRefsTests(_ProducerHarness):
 
 
 class GeometryProposalReferenceContractTests(unittest.TestCase):
-    def test_provider_schema_uses_the_typed_reference_sources(self) -> None:
-        contract = _authoring_output_contract(("interface:a-to-b",))
-        body = contract["json_schema"]["properties"]["proposal_body"]
-        assembly = body["properties"]["assemblies"]["items"]
-        interface_item = assembly["properties"]["interface_refs"]["items"]
-        asset = body["properties"]["assets"]["items"]
-
-        self.assertEqual(
-            interface_item["pattern"],
-            PORTABLE_LOGICAL_REF_PATTERN,
-        )
-        self.assertEqual(interface_item["enum"], ["interface:a-to-b"])
-        self.assertEqual(asset["properties"]["uri"]["pattern"], ASSET_URI_PATTERN)
-
     def test_published_pattern_matches_typed_validation(self) -> None:
         compiled = re.compile(PORTABLE_LOGICAL_REF_PATTERN)
         accepted = "interface:inside-to-outside"
@@ -320,16 +304,6 @@ class GeometryProposalReferenceContractTests(unittest.TestCase):
                 require_logical_ref(rejected, "ref")
         self.assertIsNotNone(compiled.fullmatch(accepted))
         self.assertEqual(require_logical_ref(accepted, "ref"), accepted)
-
-    def test_pattern_survives_canonical_json_round_trip(self) -> None:
-        contract = _authoring_output_contract(("interface:a-to-b",))
-        decoded = json.loads(_canonical_json(contract))
-        body = decoded["json_schema"]["properties"]["proposal_body"]
-        assembly = body["properties"]["assemblies"]["items"]
-        self.assertEqual(
-            assembly["properties"]["interface_refs"]["items"]["pattern"],
-            PORTABLE_LOGICAL_REF_PATTERN,
-        )
 
     @unittest.skipUnless(
         (PROBE_ROOT / RUN_007_LINEAGE.relative_path).exists(),

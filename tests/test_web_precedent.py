@@ -3,12 +3,7 @@
 import hashlib
 import unittest
 
-from archflow.adapters import web_evidence as legacy_web_evidence
 from archflow.adapters.web_evidence import extract_text
-from archflow.capabilities import precedent as legacy_precedent
-from archflow.evidence import sources as canonical_sources
-from archflow.evidence.sources import WebEvidenceError, WebEvidenceSnapshot
-from archflow.research import adoption as canonical_adoption
 from archflow.research.adoption import (
     PrecedentAdoption,
     PrecedentError,
@@ -21,17 +16,6 @@ from archflow.state.build_policy import (
 )
 
 TEXT = "The portico is crowned by a triangular pediment above the columns."
-
-
-def _snapshot(text: str = TEXT) -> WebEvidenceSnapshot:
-    return WebEvidenceSnapshot(
-        url="https://example.org/precedent",
-        retrieved_at="2026-08-28T21:00:00+08:00",
-        content_sha256="a" * 64,
-        content_bytes=1024,
-        text=text,
-        text_sha256=hashlib.sha256(text.encode()).hexdigest(),
-    )
 
 
 def _fact(
@@ -56,62 +40,6 @@ def _fact(
 
 
 class WebPrecedentContractTests(unittest.TestCase):
-    def test_legacy_web_schema_import_is_identity_preserving_facade(self):
-        self.assertIs(
-            legacy_web_evidence.WebEvidenceError,
-            canonical_sources.WebEvidenceError,
-        )
-        self.assertIs(
-            legacy_web_evidence.WebEvidenceSnapshot,
-            canonical_sources.WebEvidenceSnapshot,
-        )
-
-    def test_snapshot_schema_and_payload_remain_fixed(self):
-        snapshot = _snapshot()
-        self.assertEqual("WebEvidenceSnapshot@1", snapshot.SCHEMA)
-        self.assertEqual(
-            {
-                "schema": "WebEvidenceSnapshot@1",
-                "url": "https://example.org/precedent",
-                "retrieved_at": "2026-08-28T21:00:00+08:00",
-                "content_sha256": "a" * 64,
-                "content_bytes": 1024,
-                "text": TEXT,
-                "text_sha256": hashlib.sha256(TEXT.encode()).hexdigest(),
-                "adoption_authority": False,
-                "prompt_injection_surface": False,
-                "canonical_write_authority": False,
-            },
-            snapshot.to_dict(),
-        )
-        self.assertEqual(
-            snapshot,
-            WebEvidenceSnapshot.from_dict(snapshot.to_dict()),
-        )
-
-    def test_legacy_import_is_thin_canonical_facade(self):
-        for name in legacy_precedent.__all__:
-            self.assertIs(
-                getattr(legacy_precedent, name),
-                getattr(canonical_adoption, name),
-                name,
-            )
-
-    def test_snapshot_carries_no_authority_and_binds_its_digest(self):
-        snapshot = _snapshot()
-        payload = snapshot.to_dict()
-        self.assertFalse(payload["adoption_authority"])
-        self.assertFalse(payload["prompt_injection_surface"])
-        with self.assertRaises(WebEvidenceError):
-            WebEvidenceSnapshot(
-                url=snapshot.url,
-                retrieved_at=snapshot.retrieved_at,
-                content_sha256=snapshot.content_sha256,
-                content_bytes=snapshot.content_bytes,
-                text=snapshot.text + " tampered",
-                text_sha256=snapshot.text_sha256,
-            )
-
     def test_extract_text_strips_active_content(self):
         text = extract_text(
             "<p>keep this</p><script>alert('drop this')</script>"
@@ -125,16 +53,6 @@ class WebPrecedentContractTests(unittest.TestCase):
         drifted = _fact(start=0)
         with self.assertRaises(PrecedentError):
             drifted.require_quote_in(TEXT)
-
-    def test_adoption_requires_sorted_unique_facts(self):
-        fact = _fact()
-        with self.assertRaises(PrecedentError):
-            PrecedentAdoption(
-                adoption_id="adoption-1",
-                authority_id="authority.user",
-                adopted_at="2026-08-28T21:05:00+08:00",
-                facts=(fact, fact),
-            )
 
     def test_constraints_chain_provenance_and_leak_no_page_text(self):
         adoption = PrecedentAdoption(

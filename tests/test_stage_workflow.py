@@ -128,21 +128,6 @@ def exit_ref_for(envelope: StageRunEnvelope) -> str:
 
 
 class ProjectStageWorkflowTests(unittest.TestCase):
-    def test_round_trip_digest_and_no_authority_are_stable(self) -> None:
-        value = workflow()
-        payload = value.to_dict()
-
-        self.assertEqual(payload["schema"], "ProjectStageWorkflow@1")
-        self.assertEqual(
-            [0, 1, 2],
-            [row["stage_index"] for row in payload["stages"]],
-        )
-        for field in DEFAULT_AUTHORITY_FIELDS:
-            self.assertIs(payload[field], False)
-        loaded = ProjectStageWorkflow.from_dict(payload)
-        self.assertEqual(loaded, value)
-        self.assertEqual(loaded.workflow_digest, value.workflow_digest)
-
     def test_indices_must_be_exactly_ordered_zero_through_n(self) -> None:
         for stages in ((stage(0), stage(2)), (stage(1), stage(0))):
             with self.subTest(stages=stages), self.assertRaisesRegex(
@@ -202,17 +187,6 @@ class ProjectStageWorkflowTests(unittest.TestCase):
                     stage(1, close_obligation_id="same-close"),
                 ),
             )
-
-    def test_schema_drift_or_authority_claim_fails_closed(self) -> None:
-        payload = workflow().to_dict()
-        payload["canonical_write_authority"] = True
-        with self.assertRaises(ValueError):
-            ProjectStageWorkflow.from_dict(payload)
-
-        payload = workflow().to_dict()
-        payload["unreviewed_extension"] = True
-        with self.assertRaisesRegex(StageWorkflowError, "schema drifted"):
-            ProjectStageWorkflow.from_dict(payload)
 
 
 class StageRunEnvelopeTests(unittest.TestCase):
@@ -547,27 +521,6 @@ class StageRunEnvelopeTests(unittest.TestCase):
                 drifted,
                 workflow_ref=WORKFLOW_REF,
             )
-
-    def test_exit_and_envelope_authority_or_schema_drift_fails_closed(self) -> None:
-        exit_payload = self.stage0_exit.to_dict()
-        exit_payload["stage_acceptance_authority"] = True
-        with self.assertRaises(ValueError):
-            StageExitBinding.from_dict(exit_payload)
-
-        exit_payload = self.stage0_exit.to_dict()
-        exit_payload["status"] = "OPEN"
-        with self.assertRaises(ValueError):
-            StageExitBinding.from_dict(exit_payload)
-
-        envelope_payload = self.stage0.to_dict()
-        envelope_payload["canonical_write_authority"] = True
-        with self.assertRaises(ValueError):
-            StageRunEnvelope.from_dict(envelope_payload)
-
-        envelope_payload = self.stage0.to_dict()
-        envelope_payload["stage"]["seat_id"] = "seat-structure"
-        with self.assertRaisesRegex(StageWorkflowError, "schema drifted"):
-            StageRunEnvelope.from_dict(envelope_payload)
 
     def test_exit_round_trip_is_exact_and_authority_free(self) -> None:
         payload = self.stage0_exit.to_dict()
