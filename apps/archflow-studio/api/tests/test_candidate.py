@@ -464,6 +464,35 @@ class CandidateFailureTests(CandidateTestCase):
         self.assertIn("SEATS_NOT_FOUND", job["error"])
         self.assertIn(RUNNER_SEATS_PATH, job["error"])
 
+    def test_a_candidate_whose_job_failed_early_is_named_by_its_job(
+        self,
+    ) -> None:
+        """A job that failed before ``create_run`` left no run to look in.
+
+        The seat pack, the base check and the authored record are all resolved
+        before the run directory is made, so a candidate that failed there has
+        no run at all — and the reason it failed is on the job. Reading it back
+        must say that, rather than answer about a run id nobody created.
+        """
+
+        self.repository.layout.resolve_relative(RUNNER_SEATS_PATH).unlink()
+        accepted, job = self.run_candidate(
+            "set height to 2.2", elementId="portico-base"
+        )
+        self.assertEqual(job["status"], "failed", job)
+        self.assertFalse(
+            (self.repository.layout.runs / accepted["candidateId"]).exists()
+        )
+
+        response = self.client.get(
+            f"/api/candidates/{accepted['candidateId']}"
+        )
+
+        self.assertEqual(response.status_code, 404, response.text)
+        body = response.json()
+        self.assertEqual(body["code"], "CANDIDATE_NOT_FOUND")
+        self.assertIn(f"GET /api/jobs/{job['jobId']}", body["detail"])
+
     def test_a_conflicting_proposal_is_not_runnable(self) -> None:
         proposal = self.propose(
             "set height to 2.2 keep entity:portico-base",

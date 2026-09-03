@@ -36,7 +36,11 @@ class UnboundProjectTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "PROJECT_NOT_BOUND")
         self.assertEqual(raised.exception.status, 503)
-        self.assertIn(str(self.settings.project_dir), raised.exception.detail)
+        # The kernel's reason, and the knob that names the project. Not the
+        # directory: a refusal never publishes the server's own layout.
+        self.assertIn("no local project", raised.exception.detail)
+        self.assertIn("ARCHFLOW_STUDIO_PROJECT_DIR", raised.exception.detail)
+        self.assertNotIn(str(self.root), raised.exception.detail)
 
     def test_project_route_answers_503_in_the_error_shape(self) -> None:
         with TestClient(create_app(self.settings)) as client:
@@ -45,7 +49,8 @@ class UnboundProjectTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         payload = response.json()
         self.assertEqual(payload["code"], "PROJECT_NOT_BOUND")
-        self.assertIn(str(self.settings.project_dir), payload["detail"])
+        self.assertIn("ARCHFLOW_STUDIO_PROJECT_DIR", payload["detail"])
+        self.assertNotIn(str(self.root), payload["detail"])
 
 
 class BoundProjectTests(unittest.TestCase):

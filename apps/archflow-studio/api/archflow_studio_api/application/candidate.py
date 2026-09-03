@@ -37,7 +37,7 @@ from ..settings import StudioSettings
 from ..transport.errors import StudioError
 from .artifacts import ArtifactRecord, list_artifacts
 from .binding import RUNNER_RECEIPT_KIND, ProjectBinding, record_kind
-from .jobs import QUEUED, RUNNING
+from .jobs import FAILED, QUEUED, RUNNING
 from .projection import (
     BRANCH_ID,
     PORTFOLIO_ID,
@@ -257,6 +257,20 @@ def describe(
             f"{status}; job {job_id} has not finished writing its records. "
             f"Poll GET /api/jobs/{job_id} and read the candidate when it "
             "reports succeeded.",
+        )
+    if status == FAILED:
+        # Before any run lookup, because a job that failed at the seat pack,
+        # the base check or the authored record never reached ``create_run``:
+        # there is no run directory, and asking for one would answer
+        # ``RUN_NOT_FOUND`` — a code about the project's runs for a question
+        # about this candidate, when the reason it failed is on the job.
+        raise StudioError(
+            404,
+            "CANDIDATE_NOT_FOUND",
+            f"{binding.project_id}: candidate {candidate_id} was not produced "
+            f"— job {job_id} failed. GET /api/jobs/{job_id} carries the "
+            "runner's own sentence; a failed run leaves its reason on its "
+            "job, not a candidate.",
         )
     retained, receipt = _receipt(binding, candidate_id)
     seat_rows = _rows(receipt.get("seat_results"))

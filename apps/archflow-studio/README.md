@@ -99,6 +99,12 @@ and unexpected bugs (500 `INTERNAL_ERROR`, with no traceback on the wire). No DT
 `schema` tag, and no DTO carries a constant-false flag such as `readOnly` or
 `canonicalWriteAuthority`.
 
+One policy about what a `detail` may say: **it never carries the server's project directory.**
+An error is read by whoever ran into it, and where this process keeps the project on disk is no
+part of an answer about a design — an `OSError` is named by its class and the system's own
+message rather than by the path it came with. `projectDir` on `GET /api/project` stays, because
+that is an operator asking the binding question and being answered.
+
 | method | path | response DTO | errors beyond the shared ones |
 | --- | --- | --- | --- |
 | GET | `/api/health` | `StudioHealth` | none — `projectBound` is a boolean, not a refusal |

@@ -27,7 +27,7 @@ from archflow.project.repository import (
 )
 
 from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
-from ..transport.errors import StudioError
+from ..transport.errors import StudioError, error_sentence
 
 # ``<kind>-<64 hex>.json``. The kind is compared by equality: a prefix test
 # would let ``runner-run-receipt-summary`` answer as a run receipt.
@@ -107,8 +107,10 @@ class ProjectBinding:
             raise StudioError(
                 503,
                 "PROJECT_NOT_BOUND",
-                f"{project_dir}: {exc}. The Studio API binds the project named "
-                f"by {PROJECT_DIR_ENV} or --project-dir; it never guesses one.",
+                "the configured project could not be opened: "
+                f"{error_sentence(exc)}. The Studio API binds the project "
+                f"named by {PROJECT_DIR_ENV} or --project-dir; it never "
+                "guesses one.",
             ) from exc
         return cls(
             repository,
@@ -131,7 +133,13 @@ class ProjectBinding:
         return tuple(sorted(item.name for item in runs.iterdir() if item.is_dir()))
 
     def load_run(self, run_id: str) -> RunRef:
-        """The named run, or a 404 that repeats the name it was given."""
+        """The named run, or a 404 that repeats the name it was given.
+
+        The detail names the project and the run and stops there. Where this
+        service keeps the project on disk is an operator's question, answered
+        by ``projectDir`` on ``GET /api/project``; it is no part of an answer
+        about a run, and a refusal is read by whoever ran into it.
+        """
 
         try:
             return self.repository.load_run(run_id)
@@ -139,8 +147,8 @@ class ProjectBinding:
             raise StudioError(
                 404,
                 "RUN_NOT_FOUND",
-                f"{self.project_id}: run {run_id!r} does not exist in "
-                f"{self.project_dir}: {exc}",
+                f"{self.project_id}: run {run_id!r} does not exist in the "
+                f"bound project: {error_sentence(exc)}",
             ) from exc
 
     def record_refs(self, run_id: str) -> tuple[ProjectRecordRef, ...]:
@@ -231,7 +239,7 @@ class ProjectBinding:
                     404,
                     "RUN_NOT_FOUND",
                     f"{REFERENCE_RUN_ENV} names run {configured!r}, which does "
-                    f"not exist in {self.project_dir}: {exc.detail}",
+                    f"not exist in the bound project: {exc.detail}",
                 ) from exc
             return self._chosen(run, "config", configured)
         chosen, skipped = self._survey()
