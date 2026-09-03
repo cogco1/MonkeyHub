@@ -44,6 +44,23 @@ into run areas of the bound project — which is what running a candidate is.
 
 ## 2. Run it
 
+**One click.** `OPEN_ARCHFLOW_STUDIO.bat` — or the Desktop shortcut `make-desktop-shortcut.ps1`
+writes — starts both halves and opens the browser at the web client. Its one input is
+`runtime.json` beside it, and the line you normally change is the first: `project_dir`, the P036
+project the API binds. The rest are `reference_run`, `rhino_export`, `powershell`,
+`intent_provider` and `codex` (the environment variables the sections below describe), `python`
+(the interpreter command, `py -3.12`), `api_port`, `web_port` and `open_browser`. **The paths in
+it are absolute and machine-specific**; it is not a file to copy between machines unchanged.
+The launcher validates all of it before it starts anything, so a `project_dir` with no
+`project.json` in it, a port already held, or a Python that cannot import FastAPI is a refusal
+naming the reason — never a half-started pair. **Closing the window, or Ctrl+C in it, stops the
+API and the web client together.** Each start writes `api-<stamp>.out.log`,
+`api-<stamp>.err.log` and the same pair for the web client into `apps/archflow-studio/.runtime/`
+(git-ignored); that is where a server which would not start says why, and the launcher quotes
+the tail of it on screen rather than making you go looking. `launch-studio.ps1` takes
+`-NoBrowser` and `-RuntimeConfig <path>`, so a second project can be launched without editing
+the one beside it. Windows PowerShell 5.1 is the floor: the script needs no `pwsh`.
+
 **Install** (from the repo root):
 
 ```powershell
