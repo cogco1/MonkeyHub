@@ -271,6 +271,24 @@ class RemoveAndUnresolvedTests(GestureTestCase):
             ],
         )
 
+    def test_many_unnamed_hits_are_one_sentence(self) -> None:
+        hits = [hit(f"obj-tower-{i}", component="tower") for i in range(6)]
+        status, payload = self.ask(
+            "set height to 0.8",
+            [gesture("circle", *hits)],
+            targetComponentId="portico",
+            elementId="portico-base",
+        )
+        self.assertEqual(status, 201, payload)
+        self.assertEqual(
+            payload["gestures"],
+            [
+                "circle over nothing the record names",
+                "circle: 6 hits did not resolve (unknown_component) · obj-tower-0, "
+                "obj-tower-1, obj-tower-2, +3 more",
+            ],
+        )
+
     def test_no_gestures_is_the_old_answer(self) -> None:
         status, payload = self.ask(
             "set height to 0.8", [], targetComponentId="portico", elementId="portico-base"

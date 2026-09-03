@@ -240,10 +240,31 @@ def _remove(resolved: Sequence[_Resolved]) -> str:
     )
 
 
+# How many unresolved object names one fact lists before it counts the rest:
+# a circle over a hundred untagged objects is one sentence, not a hundred.
+UNRESOLVED_NAMES_SHOWN = 3
+
+
 def _unresolved(kind: str, resolved: Sequence[_Resolved]) -> list[str]:
-    return [
-        f"{kind} hit on {row.object_name or 'an unnamed object'} did not "
-        f"resolve ({row.status})"
-        for row in resolved
-        if row.component_id is None
-    ]
+    """One fact per resolution status for the hits the record cannot name."""
+
+    misses = [row for row in resolved if row.component_id is None]
+    if not misses:
+        return []
+    by_status: dict[str, list[str]] = {}
+    for row in misses:
+        by_status.setdefault(row.status, []).append(
+            row.object_name or "an unnamed object"
+        )
+    facts: list[str] = []
+    for status, names in by_status.items():
+        if len(names) == 1:
+            facts.append(f"{kind} hit on {names[0]} did not resolve ({status})")
+            continue
+        shown = ", ".join(names[:UNRESOLVED_NAMES_SHOWN])
+        rest = len(names) - UNRESOLVED_NAMES_SHOWN
+        tail = f", +{rest} more" if rest > 0 else ""
+        facts.append(
+            f"{kind}: {len(names)} hits did not resolve ({status}) · {shown}{tail}"
+        )
+    return facts
