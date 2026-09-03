@@ -6,7 +6,8 @@
     "tools",
     "apps/archflow-studio/backend",
     "server",
-    "shared"
+    "shared",
+    "apps/archflow-studio/api"
   ],
   "probe_root": "probes",
   "forbidden_instance_literals": [
@@ -317,7 +318,7 @@
         "tools",
         "probes"
       ],
-      "reason": "The Studio backend orchestrates and delegates: geometry mathematics, dependency graphs, and state schemas live in archflow and are imported, never reimplemented beside it (P108 fence)."
+      "reason": "Preview Slice 01 backend, retired by P108 (tag studio-preview-slice-01); fenced until the directory is removed so nothing grows there in the meantime."
     },
     {
       "source": "server",
@@ -352,6 +353,23 @@
         "probes"
       ],
       "reason": "The top-level /client /server /shared layout was proposed and rejected on 2026-09-03: the Studio in apps/archflow-studio is the product shell (P108). This root stays checked as a tripwire — code appearing here is a layout violation to review, and geometry/graph/rhino3dm imports fail immediately."
+    },
+    {
+      "source": "apps/archflow-studio/api",
+      "targets": [
+        "rhino3dm",
+        "numpy",
+        "networkx",
+        "OCP",
+        "build123d",
+        "shapely",
+        "trimesh",
+        "scipy",
+        "tests",
+        "tools",
+        "probes"
+      ],
+      "reason": "The Studio API (P108, FastAPI BFF) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
     }
   ],
   "authority_symbol_patterns": [

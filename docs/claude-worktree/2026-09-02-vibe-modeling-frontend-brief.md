@@ -326,3 +326,39 @@ stack decisions, and Kaiwen adopted it:
    client-side "validation passed"; chat history is not version history; no writes to the project directory or
    canonical HEAD; the presence of a .3dm never implies task success.
 
+---
+
+## Addendum 3 (2026-09-03, final) — supersedes Addendum 2 items 1 and 2; everything else in Addendum 2 stands
+
+Kaiwen adopted the codex review verified by 新建会话. The strict-reuse table, the browser prohibitions, the
+three-state display rule and the round-one boundary from Addendum 2 remain in force; `SYMMETRIC_WITH` and
+`layer_by_component` remain in force.
+
+1. **Layout:** no top-level tree. The product is rebuilt inside `apps/archflow-studio` as `web/` (Vite + React,
+   `src/{app,features,viewer,api/generated}`) and `api/` (`archflow_studio_api/{main.py,routes,application,
+   adapters,transport}` + `tests/`).
+2. **Stack:** `api/` on FastAPI + Pydantic + uvicorn (fastapi 0.141.1, native `fastapi.sse.EventSourceResponse`).
+   Pydantic = transport DTOs only; TypeScript types and the client are generated from OpenAPI
+   (`@hey-api/openapi-ts`) — no hand-written second TS contract set. FastAPI is BFF only.
+3. **Retirement:** Preview Slice 01 (stdlib gateway, presence-probe `kernel.py`, monolithic `App.tsx`,
+   `StageRail`/`CapabilityPanel`, old launcher, POST-501 tests, current layout) is retained at tag
+   `studio-preview-slice-01` with `docs/mapping/archive/studio-preview-slice-01.md`; not copied anywhere live.
+   **Migrated by moving:** `ThreeDmViewport.tsx`, `sceneInspection.ts`, rhino3dm wasm sync/build, elevation /
+   Z-up / fit-camera, the boundary rules, and — verbatim — the six Protocols from `backend/ports.py` into
+   `api/archflow_studio_api/ports.py`.
+4. **Firewall re-pointed:** `apps/archflow-studio/api` is a checked root with the same forbidden list (probe-tested);
+   `backend/` stays fenced until removed; `server/` and `shared/` remain tripwires.
+5. **Round-one stopping line:** exact HEAD ↔ exact StateRecord ref/base ↔ projection ↔ intent on a selected
+   component ↔ typed proposal / `BLOCKED_NEEDS_HUMAN` ↔ impact closure ↔ detached candidate artifact + SHA ↔
+   validation receipt. No canonical commit; the read side is the front of this chain, not a separate stage.
+6. **The record-binding gap is closed kernel-side:** an authored `state-record.json` carries no `base`, so its
+   `state_digest` cannot be computed directly. `StateRecord.bound_to(run)` (archflow/state/state_record.py) is
+   the one sanctioned path — bind the authored record to `RunRef(project_id, run_id, repository.read_head())` for a
+   read-only projection, exactly as the runner binds before its first write. Never hand-build a base.
+7. **A data pitfall to design against:** run `workflow-001` holds two records whose names begin with
+   `project-stage-workflow-` (the workflow and its freeze receipt). Resolve by the exact shape
+   `project-stage-workflow-<64 hex>.json`; a prefix match plus "exactly one" fails on every real project.
+8. **Working method:** planning, review and judging by a Fable-class session; implementation of pinned plans by
+   Opus workers in isolated worktrees via the Agent tool's `model` parameter; dry-run the plan against real
+   project data before dispatch; accept only by an independent judge against kernel-computed truth.
+

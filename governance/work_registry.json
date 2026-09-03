@@ -15759,7 +15759,7 @@
       "origin_stream": "planning",
       "stream": "planning",
       "status": "ready",
-      "goal": "The phase-2 C/S vertical slice of the vibe modeling frontend, built in place on apps/archflow-studio's reserved seams (stdlib HTTP+SSE, typed DTO contracts mirrored TS/Python, kernel.py as the read-only/proposal facade), executed by a separate session under Kaiwen's direction. Round one: bind one configured external project, project StateRecord/tree/dependencies with exact HEAD, artifact by ref+SHA, pick-to-component resolution, intent to typed proposal or BLOCKED_NEEDS_HUMAN, impact and invalidated checks shown as held/violated/unchecked, stopping at candidate/validation with canonical write, live providers and login disabled. Strict reuse of the verified kernel authorities; no parallel state, graph, validator, version history or database. The client never computes geometry.",
+      "goal": "The vibe modeling frontend rebuilt inside the apps/archflow-studio namespace as web/ (Vite+React, OpenAPI-generated client) and api/ (FastAPI + Pydantic + uvicorn as BFF only: request validation, SSE, task lifecycle; state, dependencies, validation, geometry and commit are archflow calls), executed by a separate session under Kaiwen's direction. Retires Preview Slice 01 (stdlib gateway, presence-probe kernel, monolithic shell, old launcher) behind tag studio-preview-slice-01; migrates the viewer assets and the six reserved protocols by moving. Round one stops at the validation receipt with no canonical commit. Bound by the machine-enforced firewall on api/, the DO-NOT-REBUILD inventory, the migrated ports seam, and the AGENTS.md one-in-one-out rule.",
       "depends_on": [
         "P102",
         "P103"
@@ -15768,12 +15768,12 @@
         "apps/archflow-studio/"
       ],
       "acceptance": [
-        "The server binds one explicitly configured external project and returns exact HEAD, workflow, StateRecord projection, component tree and dependencies through typed DTOs that copy no domain model.",
-        "3DM artifacts are served by ref, SHA and bytes bound to the project; picking an object resolves to exactly one semantic component.",
-        "A natural-language intent returns a typed exact-base proposal or BLOCKED_NEEDS_HUMAN with a concrete question; nothing is silently invented.",
-        "Impact and invalidated checks are displayed with held, violated and unchecked as three distinct states; the server issues the advance verdict.",
-        "Round one stops at candidate/validation: no canonical write path exists; stale-base and cross-project requests are rejected with tests.",
-        "Contract, API, stale-base, cross-project-rejection and UI-state tests exist; archcheck stays green throughout."
+        "The round-one chain (exact HEAD, bound StateRecord, component and dependency projection, intent on a selected component, typed proposal or BLOCKED_NEEDS_HUMAN, impact closure, detached candidate artifact with SHA, validation receipt) runs end to end on one configured external project with no canonical commit.",
+        "The six reserved protocols exist verbatim in api/archflow_studio_api/ports.py; viewer assets are moved, not copied; nothing is copied into a live archive directory.",
+        "Every exported object carries the existing archflow user-string identity; no second key set; no Pydantic model mirrors an archflow schema.",
+        "Held, violated and unchecked relation checks are shown as three states; the server issues the advance verdict.",
+        "Tests: contract, API, stale-base, cross-project rejection, UI state; archcheck stays green throughout.",
+        "Tag studio-preview-slice-01 marks the last commit where the demo is intact."
       ],
       "tests": [
         "tests.test_archcheck"
