@@ -15,6 +15,8 @@ from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.transport.errors import BlockedNeedsHuman, NotBound
 
+BUG_MARKER = "a-bug-nobody-anticipated"
+
 
 class ErrorShapeTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -25,6 +27,10 @@ class ErrorShapeTests(unittest.TestCase):
         @self.app.get("/api/raises-not-bound")
         def raises_not_bound() -> None:
             raise NotBound("no project is bound to this process")
+
+        @self.app.get("/api/raises-a-bug")
+        def raises_a_bug() -> None:
+            raise RuntimeError(BUG_MARKER)
 
         @self.app.get("/api/raises-blocked")
         def raises_blocked() -> None:
@@ -79,6 +85,33 @@ class ErrorShapeTests(unittest.TestCase):
         self.assertEqual(payload["schema"], "StudioError@1")
         self.assertEqual(payload["code"], "REQUEST_INVALID")
         self.assertIn("count", payload["detail"])
+
+    def test_an_unhandled_bug_still_answers_in_the_one_shape(self) -> None:
+        response = self.client.get("/api/raises-a-bug")
+
+        self.assertEqual(response.status_code, 500)
+        payload = response.json()
+        self.assertEqual(payload["schema"], "StudioError@1")
+        self.assertEqual(payload["code"], "INTERNAL_ERROR")
+        self.assertNotIn(BUG_MARKER, payload["detail"])
+        self.assertNotIn("RuntimeError", payload["detail"])
+        self.assertNotIn("Traceback", payload["detail"])
+
+    def test_a_refusal_says_nothing_it_was_not_asked(self) -> None:
+        payload = self.client.get("/api/raises-not-bound").json()
+
+        self.assertNotIn("question", payload)
+        self.assertNotIn("acceptedForms", payload)
+
+    def test_method_not_allowed_keeps_the_header_that_helps(self) -> None:
+        response = self.client.post("/api/health")
+
+        self.assertEqual(response.status_code, 405)
+        self.assertIn("Allow", response.headers)
+        self.assertIn("GET", response.headers["Allow"])
+        payload = response.json()
+        self.assertEqual(payload["schema"], "StudioError@1")
+        self.assertEqual(payload["code"], "METHOD_NOT_ALLOWED")
 
 
 if __name__ == "__main__":

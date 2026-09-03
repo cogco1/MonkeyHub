@@ -2,5 +2,6 @@ fastapi>=0.141,<1
 uvicorn>=0.52
 pydantic>=2.13
 
-# Tests only, pulled in by fastapi.testclient:
-# httpx>=0.28
+# Tests only, for fastapi.testclient. starlette 1.6 deprecates httpx as the
+# TestClient transport, so the test environment installs httpx2:
+# httpx2>=2.12

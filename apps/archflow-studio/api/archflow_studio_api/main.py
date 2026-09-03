@@ -20,26 +20,49 @@ import uvicorn
 
 from . import routes
 from .settings import PROJECT_DIR_ENV, StudioSettings
-from .transport.errors import ERROR_SCHEMA, BlockedNeedsHuman, StudioError
+from .transport.errors import BlockedNeedsHuman, StudioError, StudioErrorDto
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 
 _HTTP_ERROR_CODES = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}
 
+UNEXPECTED_ERROR_DETAIL = (
+    "The API failed while handling this request. The traceback is in the "
+    "service log, not on the wire."
+)
 
-def _error_payload(code: str, detail: str) -> dict[str, object]:
-    return {"schema": ERROR_SCHEMA, "code": code, "detail": detail}
+
+def _error_payload(
+    code: str,
+    detail: str,
+    *,
+    question: str | None = None,
+    accepted_forms: list[str] | None = None,
+) -> dict[str, object]:
+    """Build the wire body through the declared shape, so the two cannot drift."""
+
+    return StudioErrorDto(
+        code=code,
+        detail=detail,
+        question=question,
+        accepted_forms=accepted_forms,
+    ).model_dump(by_alias=True, exclude_none=True)
 
 
 async def _handle_studio_error(
     request: Request,
     exc: StudioError,
 ) -> JSONResponse:
-    content = _error_payload(exc.code, exc.detail)
     if isinstance(exc, BlockedNeedsHuman):
-        content["question"] = exc.question
-        content["acceptedForms"] = list(exc.accepted_forms)
+        content = _error_payload(
+            exc.code,
+            exc.detail,
+            question=exc.question,
+            accepted_forms=list(exc.accepted_forms),
+        )
+    else:
+        content = _error_payload(exc.code, exc.detail)
     return JSONResponse(status_code=exc.status, content=content)
 
 
@@ -53,6 +76,21 @@ async def _handle_http_exception(
     return JSONResponse(
         status_code=exc.status_code,
         content=_error_payload(code, str(exc.detail)),
+        # A 405 carries Allow, a 401 carries WWW-Authenticate: the one error
+        # shape must not cost the client the header that says what to do next.
+        headers=getattr(exc, "headers", None),
+    )
+
+
+async def _handle_unexpected_error(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    """Even a bug answers in the one shape, and says nothing about itself."""
+
+    return JSONResponse(
+        status_code=500,
+        content=_error_payload("INTERNAL_ERROR", UNEXPECTED_ERROR_DETAIL),
     )
 
 
@@ -83,6 +121,7 @@ def create_app(settings: StudioSettings) -> FastAPI:
     app.add_exception_handler(StudioError, _handle_studio_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
+    app.add_exception_handler(Exception, _handle_unexpected_error)
     app.include_router(routes.router)
     return app
 
@@ -103,13 +142,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def settings_from_args(args: argparse.Namespace) -> StudioSettings:
+    """Resolve settings for one invocation: the flag beats the variable."""
+
+    if args.project_dir is not None:
+        # The remaining settings keep coming from the environment through the
+        # single reader in settings.py.
+        os.environ[PROJECT_DIR_ENV] = str(args.project_dir)
+    return StudioSettings.from_env()
+
+
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    if args.project_dir is not None:
-        # The flag overrides the variable; the remaining settings keep coming
-        # from the environment through the single reader in settings.py.
-        os.environ[PROJECT_DIR_ENV] = str(args.project_dir)
-    settings = StudioSettings.from_env()
+    settings = settings_from_args(args)
     uvicorn.run(create_app(settings), host=args.host, port=args.port)
 
 
