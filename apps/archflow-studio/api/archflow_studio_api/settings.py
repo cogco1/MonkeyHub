@@ -14,6 +14,7 @@ from pathlib import Path
 PROJECT_DIR_ENV = "ARCHFLOW_STUDIO_PROJECT_DIR"
 RHINO_EXPORT_ENV = "ARCHFLOW_STUDIO_RHINO_EXPORT"
 POWERSHELL_ENV = "ARCHFLOW_STUDIO_POWERSHELL"
+REFERENCE_RUN_ENV = "ARCHFLOW_STUDIO_REFERENCE_RUN"
 
 
 class SettingsError(ValueError):
@@ -27,6 +28,9 @@ class StudioSettings:
     project_dir: Path
     rhino_export: bool = False
     powershell: Path | None = None
+    # Which run the projection answers for. Unset means "let the rule choose";
+    # it is never a run id written into the code.
+    reference_run: str | None = None
 
     @classmethod
     def from_env(cls) -> StudioSettings:
@@ -40,8 +44,10 @@ class StudioSettings:
                 "never defaults one in code."
             )
         powershell = os.environ.get(POWERSHELL_ENV, "").strip()
+        reference_run = os.environ.get(REFERENCE_RUN_ENV, "").strip()
         return cls(
             project_dir=Path(project_dir),
             rhino_export=os.environ.get(RHINO_EXPORT_ENV) == "1",
             powershell=Path(powershell) if powershell else None,
+            reference_run=reference_run or None,
         )

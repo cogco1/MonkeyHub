@@ -24,6 +24,22 @@ class SettingsTests(unittest.TestCase):
         ):
             self.assertEqual(StudioSettings.from_env().project_dir, Path("some/project"))
 
+    def test_the_reference_run_is_configured_and_otherwise_unset(self) -> None:
+        with patch.dict(
+            os.environ, {"ARCHFLOW_STUDIO_PROJECT_DIR": "some/project"}, clear=False
+        ):
+            os.environ.pop("ARCHFLOW_STUDIO_REFERENCE_RUN", None)
+            self.assertIsNone(StudioSettings.from_env().reference_run)
+        with patch.dict(
+            os.environ,
+            {
+                "ARCHFLOW_STUDIO_PROJECT_DIR": "some/project",
+                "ARCHFLOW_STUDIO_REFERENCE_RUN": " run-002 ",
+            },
+            clear=False,
+        ):
+            self.assertEqual(StudioSettings.from_env().reference_run, "run-002")
+
 
 if __name__ == "__main__":
     unittest.main()

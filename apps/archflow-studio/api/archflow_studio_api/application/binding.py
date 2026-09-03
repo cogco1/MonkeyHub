@@ -1,0 +1,265 @@
+"""The one project this process answers for, and the run that answers for it.
+
+Binding is a kernel question: ``open_located_project`` finds the repository and
+``read_head`` states the exact canonical version. Choosing the *reference run*
+is the only judgement here, and it is made in the open: the request may name a
+run, the operator may configure one, and otherwise the newest run that actually
+finished design work wins. The choice and its source both travel on the wire so
+no client has to guess which run a number belongs to.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+import re
+from typing import Any, Mapping
+from urllib.parse import unquote, urlparse
+
+from starlette.datastructures import State
+
+from archflow.project.location import open_located_project
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
+from archflow.project.repository import FilesystemProjectRepository
+
+from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
+from ..transport.errors import NotBound, NotFound
+
+# ``<kind>-<64 hex>.json``. The kind is compared by equality: a prefix test
+# would let ``runner-run-receipt-summary`` answer as a run receipt.
+RECORD_NAME = re.compile(r"^(?P<kind>.+)-(?P<sha>[0-9a-f]{64})\.json$")
+
+RUNNER_RECEIPT_KIND = "runner-run-receipt"
+STAGE_WORKFLOW_SCHEMA = "ProjectStageWorkflow@1"
+RUNNER_RECEIPT_V3 = "RunnerRunReceipt@3"
+
+# Runs whose workflow says they exist to compare or to answer the Studio, not
+# to carry the design forward. They may be the newest complete runs in the
+# project and they must still never become its reference.
+HARNESS_WORKFLOW_IDS = frozenset(
+    {"equivalence-harness", "studio-candidate-harness"}
+)
+
+# The run id a projection is bound to when the project holds no run that can
+# answer for it. It names no run on disk, and the projection says so.
+STUDIO_RUN_ID = "studio-projection"
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceRun:
+    """The run a projection answers for, and how it came to be chosen."""
+
+    run: RunRef
+    source: str
+    receipt: Mapping[str, Any] | None
+
+
+def record_kind(ref: ProjectRecordRef) -> str | None:
+    """The record kind in a P036 record name, or None if it is not one."""
+
+    match = RECORD_NAME.match(ref.relative_path.rsplit("/", 1)[-1])
+    return None if match is None else match.group("kind")
+
+
+class ProjectBinding:
+    """One opened P036 project. Read-only: it never writes and never promotes."""
+
+    def __init__(
+        self,
+        repository: FilesystemProjectRepository,
+        *,
+        project_id: str,
+        project_dir: Path,
+        settings: StudioSettings,
+    ) -> None:
+        self.repository = repository
+        self.project_id = project_id
+        self.project_dir = project_dir
+        # Kept so ``reference_run`` can honour the configured run without the
+        # routes having to pass settings back in on every request.
+        self.settings = settings
+
+    @classmethod
+    def open(cls, settings: StudioSettings) -> ProjectBinding:
+        """Open the configured project, or refuse and say what went wrong."""
+
+        project_dir = Path(settings.project_dir)
+        try:
+            location, repository = open_located_project(
+                project_dir.name,
+                local_projects_root=project_dir.parent,
+            )
+        except Exception as exc:  # the reason belongs on the wire, not in a log
+            raise NotBound(
+                f"{project_dir}: {exc}. The Studio API binds the project named "
+                f"by {PROJECT_DIR_ENV} or --project-dir; it never guesses one."
+            ) from exc
+        return cls(
+            repository,
+            project_id=location.project_id,
+            project_dir=location.root,
+            settings=settings,
+        )
+
+    def head(self) -> ProjectVersionRef:
+        """The exact canonical version this project is at right now."""
+
+        return self.repository.read_head()
+
+    def run_ids(self) -> tuple[str, ...]:
+        """Every run directory in the project, in name order."""
+
+        runs = self.repository.layout.runs
+        if not runs.is_dir():
+            return ()
+        return tuple(sorted(item.name for item in runs.iterdir() if item.is_dir()))
+
+    def load_run(self, run_id: str) -> RunRef:
+        """The named run, or a 404 that repeats the name it was given."""
+
+        try:
+            return self.repository.load_run(run_id)
+        except Exception as exc:
+            raise NotFound(
+                "RUN_NOT_FOUND",
+                f"{self.project_id}: run {run_id!r} does not exist in "
+                f"{self.project_dir}: {exc}",
+            ) from exc
+
+    def record_refs(self, run_id: str) -> tuple[ProjectRecordRef, ...]:
+        """Every retained JSON record of one run, digest-verified by P036."""
+
+        return self.repository.list_json(
+            run=self.load_run(run_id),
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_RECORD, run_id=run_id
+            ),
+        )
+
+    def latest_runner_receipt(
+        self,
+    ) -> tuple[str, ProjectRecordRef, Mapping[str, Any]] | None:
+        """The newest complete, non-harness runner receipt in the project."""
+
+        newest: tuple[float, str, ProjectRecordRef, Mapping[str, Any]] | None = None
+        for run_id in self.run_ids():
+            for ref, payload in self._receipts_of(run_id):
+                if not _is_complete(payload):
+                    continue
+                if self._is_harness(payload):
+                    continue
+                mtime = self.repository.layout.resolve_record(ref).stat().st_mtime
+                if newest is None or mtime > newest[0]:
+                    newest = (mtime, run_id, ref, payload)
+        if newest is None:
+            return None
+        return newest[1], newest[2], newest[3]
+
+    def reference_run(self, run_id: str | None = None) -> ReferenceRun:
+        """Resolve which run answers: the request, the operator, then the rule."""
+
+        if run_id is not None:
+            run = self.load_run(run_id)
+            return ReferenceRun(run, "query", self._newest_receipt_of(run_id))
+        configured = self.settings.reference_run
+        if configured is not None:
+            try:
+                run = self.load_run(configured)
+            except NotFound as exc:
+                raise NotFound(
+                    "RUN_NOT_FOUND",
+                    f"{REFERENCE_RUN_ENV} names run {configured!r}, which does "
+                    f"not exist in {self.project_dir}: {exc.detail}",
+                ) from exc
+            return ReferenceRun(run, "config", self._newest_receipt_of(configured))
+        chosen = self.latest_runner_receipt()
+        if chosen is None:
+            # No run has finished design work here. Rather than refuse to
+            # describe the project, bind to a run id that claims nothing.
+            return ReferenceRun(
+                RunRef(self.project_id, STUDIO_RUN_ID, self.head()),
+                "none",
+                None,
+            )
+        return ReferenceRun(self.load_run(chosen[0]), "rule", chosen[2])
+
+    # ---- the rule's own reading of the run records
+
+    def _receipts_of(
+        self, run_id: str
+    ) -> tuple[tuple[ProjectRecordRef, Mapping[str, Any]], ...]:
+        return tuple(
+            (ref, self.repository.load_json(ref))
+            for ref in self.record_refs(run_id)
+            if record_kind(ref) == RUNNER_RECEIPT_KIND
+        )
+
+    def _newest_receipt_of(self, run_id: str) -> Mapping[str, Any] | None:
+        newest: tuple[float, Mapping[str, Any]] | None = None
+        for ref, payload in self._receipts_of(run_id):
+            mtime = self.repository.layout.resolve_record(ref).stat().st_mtime
+            if newest is None or mtime > newest[0]:
+                newest = (mtime, payload)
+        return None if newest is None else newest[1]
+
+    def _is_harness(self, receipt: Mapping[str, Any]) -> bool:
+        """Whether the receipt's workflow says this run is a harness.
+
+        A receipt that names no workflow (``RunnerRunReceipt@1``) is a project
+        run. A receipt that names one the project cannot produce is treated as
+        a harness: the rule may not promote a run it cannot account for.
+        """
+
+        workflow_ref = receipt.get("workflow_ref")
+        if workflow_ref is None:
+            return False
+        workflow = self._load_uri(workflow_ref)
+        if workflow is None or workflow.get("schema") != STAGE_WORKFLOW_SCHEMA:
+            return True
+        return workflow.get("workflow_id") in HARNESS_WORKFLOW_IDS
+
+    def _load_uri(self, uri: object) -> Mapping[str, Any] | None:
+        """Load a ``project://`` record reference, or None if it does not resolve."""
+
+        if not isinstance(uri, str):
+            return None
+        parsed = urlparse(uri)
+        if parsed.scheme != "project" or unquote(parsed.netloc) != self.project_id:
+            return None
+        relative = unquote(parsed.path).lstrip("/")
+        match = RECORD_NAME.match(relative.rsplit("/", 1)[-1])
+        if match is None:
+            return None
+        try:
+            return self.repository.load_json(
+                ProjectRecordRef(
+                    project_id=self.project_id,
+                    relative_path=relative,
+                    sha256=match.group("sha"),
+                )
+            )
+        except Exception:
+            return None
+
+
+def bound_project(state: State) -> ProjectBinding:
+    """The process's one binding, opened on first use and kept.
+
+    A failed open is not remembered: a project that appears after the service
+    started binds on the next request instead of needing a restart.
+    """
+
+    binding = getattr(state, "binding", None)
+    if binding is None:
+        binding = ProjectBinding.open(state.settings)
+        state.binding = binding
+    return binding
+
+
+def _is_complete(receipt: Mapping[str, Any]) -> bool:
+    """Whether the run this receipt describes actually finished its seats."""
+
+    if receipt.get("schema") == RUNNER_RECEIPT_V3:
+        return bool(receipt.get("seat_execution_complete"))
+    return bool(receipt.get("accepted"))
