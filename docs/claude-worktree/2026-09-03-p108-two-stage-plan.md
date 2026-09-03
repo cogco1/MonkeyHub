@@ -163,7 +163,7 @@ pediment" → ghost in under 1 s → "yes" → Apply.
   proposed-change card line `ghost shown · approximate`. Commit `P108: CURRENT → GHOST PREVIEW → VALIDATED`.
 
 ### Phase 2
-- [ ] **T2.1 refinement control** — `ProposalCard` slider + steps; `App.refine(entryId, value)` sends the
+- [x] **T2.1 refinement control** — `ProposalCard` slider + steps; `App.refine(entryId, value)` sends the
   deterministic sentence with the carried `keep` clause; entry updated in place with `refinements`.
   Commit `P108: after the agent finds the variable, the hand refines it`.
 
@@ -219,7 +219,7 @@ ask for that the plan does not yet carry. The working tree's Phase 1 files were 
   `node <…>/@openai/codex/bin/codex.js` and call it directly. Test with a scripted executable that sleeps past
   the timeout and holds stdout open; assert the route answers `502 INTENT_AGENT_FAILED` within timeout + 2 s.
   Commit `P108: a codex that does not answer is killed with its children`.
-- [ ] **T2.1 precision.** Slider domain for a unit-less element field: `[old × 0.5, old × 1.5]` clamped to
+- [x] **T2.1 precision.** Slider domain for a unit-less element field: `[old × 0.5, old × 1.5]` clamped to
   `> 0`, step `1 % of old`; the `set <key> to <n>` sentence carries `n` rounded to 6 decimals (the grammar's
   `ROUNDING`). A release while a refinement is in flight is coalesced (last value wins), the entry keeps
   `refinements: n`, and the ghost is redrawn from the *new* proposal's `change.new` — never from the slider
