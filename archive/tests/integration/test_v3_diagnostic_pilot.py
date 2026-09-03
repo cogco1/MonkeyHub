@@ -42,7 +42,7 @@ V3_PYTHON = V3_ROOT / (
 )
 PROVIDER = (
     ROOT
-    / "archive" / "archive" / "tests"
+    / "archive" / "tests"
     / "fixtures"
     / "v3_legacy"
     / "v3_load_path_provider.py"

@@ -454,6 +454,8 @@ Stays in place. The sixteen marked `fold` are on the spine only because somethin
 
 ## Delete
 
+At execution these five turned out to be referenced by the archived package inits, so they moved to `archive/` with their lanes instead of being deleted; they are deleted with the archive-side cleanup when nothing there names them.
+
 - `archflow/capabilities/basis_index.py`
 - `archflow/compilers/voxel_program.py`
 - `archflow/project/production_checkpoint.py`

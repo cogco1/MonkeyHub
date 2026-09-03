@@ -436,12 +436,12 @@ class DesignBriefTests(unittest.TestCase):
     def test_compiler_contains_no_instance_or_spatial_defaults(self) -> None:
         sources = (
             Path(__file__).parents[2]
-            / "archive" / "archive" / "archflow"
+            / "archive" / "archflow"
             / "state"
             / "design_brief.py"
         ).read_text(encoding="utf-8") + (
             Path(__file__).parents[2]
-            / "archive" / "archive" / "archflow"
+            / "archive" / "archflow"
             / "compilers"
             / "brief.py"
         ).read_text(encoding="utf-8")

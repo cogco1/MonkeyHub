@@ -17,7 +17,7 @@ from archflow.state.model import CanonicalState
 
 
 FIXTURE = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[1]
     / "fixtures"
     / "v3_legacy"
     / "fake_v3_cli.py"

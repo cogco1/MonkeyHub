@@ -96,7 +96,7 @@ class SkillSurfaceSmokeTests(unittest.TestCase):
             process = subprocess.run(
                 [
                     sys.executable,
-                    str(ROOT / "archive" / "archive" / "tools" / "skillctl.py"),
+                    str(ROOT / "archive" / "tools" / "skillctl.py"),
                     "export",
                     "--root",
                     str(PACKAGE_ROOT.resolve()),

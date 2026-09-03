@@ -82,7 +82,7 @@ class InverseDerivationContractTests(unittest.TestCase):
 
     def test_module_holds_the_quarantine_boundary(self):
         source = (
-            ROOT / "archive" / "archive" / "archflow" / "evaluation" / "inverse_derivation.py"
+            ROOT / "archive" / "archflow" / "evaluation" / "inverse_derivation.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("ARCHFLOW_V3", source)
         self.assertNotIn("import archflow_v3", source)
