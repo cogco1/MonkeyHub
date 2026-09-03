@@ -87,4 +87,3 @@
 | `stair-to-floor-interface` | role.load_transfer | condition.interface |
 | `landing-load-path-and-undercroft` | role.load_transfer, role.undercroft |  |
 | `roof-to-main-block-interface` | role.load_transfer | condition.interface |
-| `component` |  |  |
