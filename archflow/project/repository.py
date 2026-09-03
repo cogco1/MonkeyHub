@@ -291,14 +291,6 @@ def _replace_atomic(path: Path, data: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _version_dict(ref: ProjectVersionRef) -> dict[str, Any]:
-    return {
-        "project_id": ref.project_id,
-        "version": ref.version,
-        "state_sha256": ref.require_digest(),
-    }
-
-
 def _version_from_dict(value: object, *, field: str) -> ProjectVersionRef:
     if not isinstance(value, dict) or set(value) != {
         "project_id",
@@ -456,7 +448,7 @@ class FilesystemProjectRepository:
                     "run_id": None,
                     "from": None,
                     "from_snapshot": None,
-                    "to": _version_dict(head_ref),
+                    "to": head_ref.to_dict(),
                     "to_snapshot": _record_dict(snapshot),
                     "previous_event": None,
                     "decision_receipt": None,
@@ -525,7 +517,7 @@ class FilesystemProjectRepository:
             "schema": "ProjectRun@1",
             "project_id": run.project_id,
             "run_id": run.run_id,
-            "base": _version_dict(run.base),
+            "base": run.base.to_dict(),
         }
         with self._lock:
             _write_immutable(run_layout.manifest, _json_bytes(payload))
@@ -604,7 +596,7 @@ class FilesystemProjectRepository:
                         "schema": "ProjectRun@1",
                         "project_id": run.project_id,
                         "run_id": run.run_id,
-                        "base": _version_dict(run.base),
+                        "base": run.base.to_dict(),
                     }
                     _write_immutable(run_layout.manifest, _json_bytes(payload))
                     for directory in (
@@ -799,7 +791,7 @@ class FilesystemProjectRepository:
                     "schema": "CanonicalSnapshot@1",
                     "project_id": run.project_id,
                     "version": next_version,
-                    "parent": _version_dict(expected),
+                    "parent": expected.to_dict(),
                     "state": replacement_payload,
                 },
             )
@@ -814,8 +806,8 @@ class FilesystemProjectRepository:
                 "event_type": "candidate.promoted",
                 "decision": "accepted",
                 "run_id": run.run_id,
-                "from": _version_dict(expected),
-                "to": _version_dict(replacement),
+                "from": expected.to_dict(),
+                "to": replacement.to_dict(),
                 "previous_event": _record_dict(previous_event),
                 "decision_receipt": _record_dict(decision_receipt),
             }
@@ -838,7 +830,7 @@ class FilesystemProjectRepository:
                     "project_id": run.project_id,
                     "version": next_version,
                     "state_sha256": state_sha256,
-                    "parent": _version_dict(expected),
+                    "parent": expected.to_dict(),
                     "state": replacement_payload,
                 },
             )
@@ -853,9 +845,9 @@ class FilesystemProjectRepository:
                 "event_type": "candidate.promoted",
                 "decision": "accepted",
                 "run_id": run.run_id,
-                "from": _version_dict(expected),
+                "from": expected.to_dict(),
                 "from_snapshot": _record_dict(current_snapshot),
-                "to": _version_dict(replacement),
+                "to": replacement.to_dict(),
                 "to_snapshot": _record_dict(snapshot),
                 "previous_event": _record_dict(previous_event),
                 "decision_receipt": _record_dict(decision_receipt),
@@ -1147,7 +1139,7 @@ class FilesystemProjectRepository:
                 else "ProjectHead@2"
             ),
             "project_id": self._manifest.project_id,
-            "current": _version_dict(current),
+            "current": current.to_dict(),
             "snapshot": _record_dict(snapshot),
             "event": _record_dict(event),
         }
@@ -1305,7 +1297,7 @@ class FilesystemProjectRepository:
             "schema": "ProjectRun@1",
             "project_id": run.project_id,
             "run_id": run.run_id,
-            "base": _version_dict(run.base),
+            "base": run.base.to_dict(),
         }
         if payload != expected:
             raise ProjectIntegrityError("run manifest changed or base drifted")

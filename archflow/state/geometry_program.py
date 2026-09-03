@@ -18,7 +18,10 @@ from typing import Any, Mapping
 from archflow.project.refs import ProjectVersionRef
 from archflow.project.refs import require_identifier
 from archflow.state.operational_state import require_logical_ref
-from archflow.contracts.canonical import canonical_json
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
+from archflow.contracts.fields import (
+    number,
+)
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -32,6 +35,15 @@ _MAX_ITEMS = 16_384
 
 class GeometryProgramError(ValueError):
     """A neutral geometry contract is malformed or under-specified."""
+
+
+def _finite(value: object, field: str) -> float:
+    """The owned finite-number rule, typed for this module's callers."""
+
+    try:
+        return number(value, field)
+    except ValueError as exc:
+        raise GeometryProgramError(str(exc)) from exc
 
 
 class LengthUnit(StrEnum):
@@ -88,28 +100,6 @@ class DetailMaturity(StrEnum):
     FINE = "fine"
 
 
-def digest_value(value: object) -> str:
-    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
-
-
-def require_sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in _HEX for char in value.lower())
-    ):
-        raise GeometryProgramError(f"{field} must be a SHA-256 digest")
-    return value.lower()
-
-
-def _finite(value: object, field: str) -> float:
-    if (
-        not isinstance(value, (int, float))
-        or isinstance(value, bool)
-        or not math.isfinite(float(value))
-    ):
-        raise GeometryProgramError(f"{field} must be finite")
-    return float(value)
 
 
 def _ids(
@@ -148,14 +138,6 @@ def _refs(
             f"{field} requires unique deterministic references"
         )
     return values
-
-
-def _base_to_dict(base: ProjectVersionRef) -> dict[str, object]:
-    return {
-        "project_id": base.project_id,
-        "version": base.version,
-        "state_sha256": base.require_digest(),
-    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -1224,7 +1206,7 @@ class GeometryProgramProposal:
 
     @property
     def proposal_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1232,7 +1214,7 @@ class GeometryProgramProposal:
             "proposal_id": self.proposal_id,
             "project_id": self.project_id,
             "run_id": self.run_id,
-            "base": _base_to_dict(self.base),
+            "base": self.base.to_dict(),
             "design_state_digest": self.design_state_digest,
             "predecessor_program_digest": self.predecessor_program_digest,
             "length_unit": self.length_unit.value,

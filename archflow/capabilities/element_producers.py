@@ -49,6 +49,10 @@ from archflow.state.geometry_program import (
     InterfaceDatumKind,
     LengthUnit,
 )
+from archflow.contracts.fields import (
+    number,
+    positive,
+)
 
 _M = LengthUnit.METER
 FRAME_ID = "building-local"
@@ -58,17 +62,22 @@ class ElementProducerError(ValueError):
     """Typed failure of a reference-reading producer."""
 
 
-def _finite(value: object, label: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise ElementProducerError(f"{label} must be a finite number")
-    return float(value)
+def _finite(value: object, field: str) -> float:
+    """The owned finite-number rule, typed for this module's callers."""
+
+    try:
+        return number(value, field)
+    except ValueError as exc:
+        raise ElementProducerError(str(exc)) from exc
 
 
-def _positive(value: object, label: str) -> float:
-    number = _finite(value, label)
-    if number <= 0.0:
-        raise ElementProducerError(f"{label} must be positive")
-    return number
+def _positive(value: object, field: str) -> float:
+    """The owned positive-number rule, typed for this module's callers."""
+
+    try:
+        return positive(value, field)
+    except ValueError as exc:
+        raise ElementProducerError(str(exc)) from exc
 
 
 @dataclass(frozen=True, slots=True)

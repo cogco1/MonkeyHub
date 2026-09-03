@@ -13,7 +13,8 @@ import copy
 from typing import Mapping, Sequence
 
 from archflow.project.refs import require_identifier
-from archflow.state.geometry_program import digest_value, require_sha256
+from archflow.state.geometry_program import require_sha256
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.operational_state import require_logical_ref
 
 
@@ -339,7 +340,7 @@ def compute_correction_record_digest(record: Mapping[str, object]) -> str:
     if not isinstance(record, Mapping):
         raise TypeError("record must be a mapping")
     payload = {key: copy.deepcopy(value) for key, value in record.items() if key != "record_digest"}
-    return digest_value(payload)
+    return canonical_digest(payload)
 
 
 def _seal(payload: Mapping[str, object]) -> dict[str, object]:

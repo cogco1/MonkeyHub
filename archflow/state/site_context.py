@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping
 
 from archflow.project.refs import ProjectVersionRef, require_identifier
 from archflow.state.operational_state import (
@@ -13,6 +12,15 @@ from archflow.state.operational_state import (
     require_logical_ref,
 )
 from archflow.contracts.canonical import canonical_digest, require_sha256
+from archflow.contracts.fields import (
+    exact_mapping as _exact,
+    list_of as _list,
+    mapping as _mapping,
+    string_tuple,
+    text,
+    tuple_of,
+    unique,
+)
 
 
 Coordinate = tuple[int, int, int]
@@ -201,7 +209,7 @@ class GroundModel:
                 GroundSample.from_dict(item)
                 for item in _list(payload["samples"], "samples")
             ),
-            source_refs=_strings(
+            source_refs=string_tuple(
                 payload["source_refs"],
                 "source_refs",
             ),
@@ -267,7 +275,7 @@ class SiteApproach:
                 _coordinate_from_json(item, "approach cell")
                 for item in _list(payload["cells"], "cells")
             ),
-            source_refs=_strings(
+            source_refs=string_tuple(
                 payload["source_refs"],
                 "source_refs",
             ),
@@ -285,7 +293,7 @@ class SiteUnknown:
         require_local_id(self.unknown_id, "unknown_id")
         if not isinstance(self.topic, SiteUnknownTopic):
             raise TypeError("topic must be SiteUnknownTopic")
-        _text(self.statement, "statement")
+        text(self.statement, "statement")
         _refs(self.source_refs, "source_refs")
 
     def to_dict(self) -> dict[str, object]:
@@ -312,7 +320,7 @@ class SiteUnknown:
                 "topic",
             ),
             statement=payload["statement"],
-            source_refs=_strings(
+            source_refs=string_tuple(
                 payload["source_refs"],
                 "source_refs",
             ),
@@ -356,12 +364,12 @@ class SiteContext:
             raise ValueError("site context and base belong to different projects")
         self.base.require_digest()
         require_sha256(self.brief_digest, "brief_digest")
-        _text(self.compiler_id, "compiler_id")
-        _text(self.compiler_version, "compiler_version")
+        text(self.compiler_id, "compiler_id")
+        text(self.compiler_version, "compiler_version")
         require_identifier(self.world_id, "world_id")
         require_logical_ref(self.dimension_id, "dimension_id")
         require_logical_ref(self.authorization_ref, "authorization_ref")
-        _text(self.authority_id, "authority_id")
+        text(self.authority_id, "authority_id")
         if not isinstance(self.authorized_envelope, SiteBounds):
             raise TypeError("authorized_envelope must be SiteBounds")
         if not isinstance(self.observed_envelope, SiteBounds):
@@ -422,15 +430,15 @@ class SiteContext:
                 raise ValueError(
                     "observed site coordinate lies outside observed envelope"
                 )
-        _unique(
+        unique(
             tuple(item.approach_id for item in self.approaches),
             "approach ids",
         )
-        _unique(
+        unique(
             tuple(item.unknown_id for item in self.unknowns),
             "unknown ids",
         )
-        _unique(
+        unique(
             tuple(item.obligation_id for item in self.obligations),
             "obligation ids",
         )
@@ -554,7 +562,7 @@ class SiteContext:
                     "protected_cells",
                 )
             ),
-            protection_source_refs=_strings(
+            protection_source_refs=string_tuple(
                 payload["protection_source_refs"],
                 "protection_source_refs",
             ),
@@ -570,7 +578,7 @@ class SiteContext:
                     "obligations",
                 )
             ),
-            evidence_refs=_strings(
+            evidence_refs=string_tuple(
                 payload["evidence_refs"],
                 "evidence_refs",
             ),
@@ -602,34 +610,16 @@ def _coordinates(
     *,
     allow_empty: bool,
 ) -> None:
-    items = _tuple(value, field)
+    items = tuple_of(value, field)
     if not items and not allow_empty:
         raise ValueError(f"{field} cannot be empty")
     for item in items:
         _coordinate(item, field)
-    _unique(tuple(items), field)
-
-
-def _text(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or not value.strip()
-        or len(value) > _MAX_TEXT
-    ):
-        raise ValueError(f"{field} must be bounded non-empty text")
-    return value
-
-
-def _tuple(value: object, field: str) -> tuple[object, ...]:
-    if not isinstance(value, tuple):
-        raise TypeError(f"{field} must be a tuple")
-    if len(value) > _MAX_ITEMS:
-        raise ValueError(f"{field} exceeds bounded item count")
-    return value
+    unique(tuple(items), field)
 
 
 def _typed(value: object, item_type: type, field: str) -> None:
-    items = _tuple(value, field)
+    items = tuple_of(value, field)
     if any(not isinstance(item, item_type) for item in items):
         raise TypeError(f"{field} contains the wrong item type")
 
@@ -640,45 +630,12 @@ def _refs(
     *,
     allow_empty: bool = False,
 ) -> None:
-    items = _tuple(value, field)
+    items = tuple_of(value, field)
     if not items and not allow_empty:
         raise ValueError(f"{field} cannot be empty")
     for item in items:
         require_logical_ref(item, field)
-    _unique(tuple(items), field)
-
-
-def _unique(values: tuple[object, ...], field: str) -> None:
-    if len(values) != len(set(values)):
-        raise ValueError(f"{field} contains duplicates")
-
-
-def _mapping(value: object, field: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field} must be a mapping")
-    return value
-
-
-def _list(value: object, field: str) -> list[object]:
-    if not isinstance(value, list) or len(value) > _MAX_ITEMS:
-        raise TypeError(f"{field} must be a bounded list")
-    return value
-
-
-def _strings(value: object, field: str) -> tuple[str, ...]:
-    values = _list(value, field)
-    if any(not isinstance(item, str) for item in values):
-        raise TypeError(f"{field} must contain strings")
-    return tuple(values)
-
-
-def _exact(
-    payload: Mapping[str, object],
-    keys: set[str],
-    field: str,
-) -> None:
-    if set(payload) != keys:
-        raise ValueError(f"{field} schema drifted")
+    unique(tuple(items), field)
 
 
 def _enum(enum_type: type[StrEnum], value: object, field: str) -> StrEnum:

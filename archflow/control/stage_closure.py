@@ -8,13 +8,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from archflow.contracts.canonical import canonical_digest, require_sha256
+from archflow.contracts.fields import mapping
 from archflow.control.requirements import (
     RequirementBasisMode,
     StageCheckRequirement,
     StageRequirementProfile,
-    _branch_dict,
     _branch_from_dict,
-    _mapping,
     _text,
 )
 from archflow.project.refs import BranchRef
@@ -91,7 +90,7 @@ class StageClosureFinding:
 
     @classmethod
     def from_dict(cls, value: object) -> "StageClosureFinding":
-        payload = _mapping(value, "finding")
+        payload = mapping(value, "finding")
         if set(payload) != {"code", "requirement_id", "receipt_id", "refs"}:
             raise StageClosureError("stage closure finding schema drifted")
         raw_refs = payload.get("refs", [])
@@ -171,7 +170,7 @@ class CompositeStageClosureReceipt:
             "profile_id": self.profile_id,
             "profile_digest": self.profile_digest,
             "stage_id": self.stage_id,
-            "branch": _branch_dict(self.branch),
+            "branch": self.branch.to_dict(),
             "stage_subject_ref": self.stage_subject_ref,
             "subject_digest": self.subject_digest,
             "check_receipt_digests": list(self.check_receipt_digests),
@@ -199,7 +198,7 @@ class CompositeStageClosureReceipt:
 
     @classmethod
     def from_dict(cls, value: object) -> "CompositeStageClosureReceipt":
-        payload = _mapping(value, "stage closure receipt")
+        payload = mapping(value, "stage closure receipt")
         expected = {
             "schema",
             "profile_id",

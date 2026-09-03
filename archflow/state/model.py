@@ -11,9 +11,12 @@ from dataclasses import dataclass
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef
 from archflow.state.commitments import Commitment
 from archflow.state.program import BuildingProgram
+from archflow.contracts.fields import unique as _require_unique
 
 
 def _require_text(value: str, field_name: str) -> None:
+    """Unbounded non-empty text; fact and claim values carry documents."""
+
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be non-empty text")
 
@@ -21,11 +24,6 @@ def _require_text(value: str, field_name: str) -> None:
 def _require_tuple(value: object, field_name: str) -> None:
     if not isinstance(value, tuple):
         raise TypeError(f"{field_name} must be a tuple")
-
-
-def _require_unique(values: tuple[str, ...], field_name: str) -> None:
-    if len(values) != len(set(values)):
-        raise ValueError(f"{field_name} contains duplicates")
 
 
 # Compatibility import name.  The identity itself is now project-version

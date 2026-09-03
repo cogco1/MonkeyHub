@@ -38,7 +38,7 @@ from _probe_paths import WORKSPACE_PROJECTS, resolve_probe_root  # noqa: E402
 from archive.tools.projects.pantheon import monument_support as M  # noqa: E402
 
 from archive.archflow.research.index import BranchDecisionContext  # noqa: E402
-from archflow.contracts.branch import branch_ref_to_dict  # noqa: E402
+from archive.archflow.contracts.branch import branch_ref_to_dict  # noqa: E402
 from archflow.contracts.canonical import canonical_digest  # noqa: E402
 from archflow.capabilities.declaration import (  # noqa: E402
     DeclarationField,

@@ -35,7 +35,7 @@ from archive.archflow.runtime.semantic_geometry_lifecycle import (
     SemanticGeometryLifecycleStatus,
 )
 from archflow.state.developed_design import DevelopedDesignState
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.spatial import SpatialOptionProposal
 
 
@@ -457,7 +457,7 @@ def persist_compiled_production_transition(
         (
             ProductionRecordRole.PROVIDER_INVOCATION,
             envelope.to_dict(),
-            digest_value(envelope.to_dict()),
+            canonical_digest(envelope.to_dict()),
         )
         for envelope in invocation_envelopes
     )
@@ -639,7 +639,7 @@ def _load_record(
     _sha(semantic_digest, "semantic_digest")
     if canonical_digest(content) != payload["content_sha256"]:
         raise ProductionTransitionError("production record content digest drifted")
-    if digest_value(content) != semantic_digest:
+    if canonical_digest(content) != semantic_digest:
         raise ProductionTransitionError("production record semantic digest drifted")
     _validate_content(role, content, run)
     return ArchivedProductionRecord(role, ref, semantic_digest, dict(content))

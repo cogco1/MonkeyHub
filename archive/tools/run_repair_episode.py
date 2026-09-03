@@ -37,7 +37,7 @@ from archive.archflow.evaluation.repair_experiment import (  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archive.archflow.project.bootstrap import bootstrap_raw_request_project
-from archflow.state.geometry_program import digest_value  # noqa: E402
+from archflow.contracts.canonical import canonical_digest
 
 from run_assignment import (  # noqa: E402
     Assignment,
@@ -343,7 +343,7 @@ def cmd_freeze(now: str, run_id: str) -> int:
     episodes = []
     for case in CASES:
         _, graph, commitments, envelope = load_baseline(case)
-        baseline_digest = digest_value(
+        baseline_digest = canonical_digest(
             {
                 "program": graph.design_program,
                 "proposal": graph.proposal,
@@ -411,7 +411,7 @@ def cmd_freeze(now: str, run_id: str) -> int:
         "canonical_write_authority": False,
         "aggregate_winner_authority": False,
     }
-    prereg["preregistration_digest"] = digest_value(prereg)
+    prereg["preregistration_digest"] = canonical_digest(prereg)
     _put(repo, run, dest, "repair-preregistration", prereg)
     print(f"FROZEN: {len(episodes)} episodes")
     return 0

@@ -24,7 +24,7 @@ from archflow.adapters.cad_execution import (
 )
 from archflow.adapters.three_dm_inspector import ThreeDmInspection
 from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
-from archflow.runtime.geometry_compiler import (
+from archflow.compilers.geometry import (
     CompiledGeometryObject,
     CompiledGeometryProgram,
 )

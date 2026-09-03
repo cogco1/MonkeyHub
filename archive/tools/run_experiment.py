@@ -36,7 +36,7 @@ from archflow.contracts.canonical import canonical_digest  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
-from archflow.state.geometry_program import digest_value  # noqa: E402
+from archflow.contracts.canonical import canonical_digest
 from archive.archflow.realization.sandbox import SandboxRealizationReceipt
 from archive.archflow.runtime.family_compiler import (  # noqa: E402
     ComponentFamilyCompilationReceipt,
@@ -153,8 +153,8 @@ def bind_provider_record(
         envelope = payload.get("content")
         if (
             not isinstance(envelope, Mapping)
-            or payload.get("content_sha256") != digest_value(envelope)
-            or payload.get("semantic_digest") != digest_value(envelope)
+            or payload.get("content_sha256") != canonical_digest(envelope)
+            or payload.get("semantic_digest") != canonical_digest(envelope)
         ):
             raise ExperimentProtocolError("provider envelope content digest changed")
     elif schema == "ProviderLiveInvocationEvidence@1":
@@ -188,7 +188,7 @@ def bind_provider_record(
         receipt_payload = json.loads(receipt_json)
     except json.JSONDecodeError as exc:
         raise ExperimentProtocolError("P053 provider receipt is malformed") from exc
-    if envelope.get("provider_receipt_digest") != digest_value(receipt_payload):
+    if envelope.get("provider_receipt_digest") != canonical_digest(receipt_payload):
         raise ExperimentProtocolError("P053 provider receipt digest changed")
     receipt = ModelInvocationReceipt.from_dict(receipt_payload)
     if (
@@ -210,8 +210,8 @@ def bind_provider_record(
         source_schema=schema,
         record_ref=ref.uri,
         record_digest=ref.sha256,
-        request_digest=digest_value(receipt.request.to_dict()),
-        p053_envelope_digest=digest_value(envelope),
+        request_digest=canonical_digest(receipt.request.to_dict()),
+        p053_envelope_digest=canonical_digest(envelope),
         authority_binding_digest=binding_digest,
         provider_id=receipt.provider_id,
         model_id=receipt.model_id,
@@ -527,7 +527,7 @@ def _validate_production_terminal_record(
         "SemanticGeometryLifecycleReceipt@1",
     } or (
         payload.get("content_sha256") != canonical_digest(content)
-        or payload.get("semantic_digest") != digest_value(content)
+        or payload.get("semantic_digest") != canonical_digest(content)
     ):
         raise ExperimentProtocolError("production terminal content drifted")
     return "persisted"
@@ -555,7 +555,7 @@ def bind_study_record(
         source_schema=value.SCHEMA,
         record_ref=ref.uri,
         record_digest=ref.sha256,
-        content_digest=digest_value(payload),
+        content_digest=canonical_digest(payload),
     )
 
 

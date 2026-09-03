@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Mapping
 
 from archflow.project.refs import BranchRef
 from archflow.state.commitments import (
@@ -30,6 +30,14 @@ from archflow.state.operational_state import (
     require_logical_ref,
 )
 from archflow.contracts.canonical import canonical_json
+from archflow.contracts.fields import (
+    list_of as _list,
+    mapping,
+    string_tuple as _string_tuple,
+    text,
+    tuple_of,
+    unique as _unique,
+)
 
 
 _MAX_ITEMS = 4096
@@ -44,47 +52,6 @@ class ConditionComparator(StrEnum):
     ABSENT = "absent"
     EQUALS = "equals"
     NOT_EQUALS = "not_equals"
-
-
-def _text(value: object, field: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field} must be non-empty text")
-    return value
-
-
-def _tuple(value: object, field: str) -> tuple[Any, ...]:
-    if not isinstance(value, tuple):
-        raise TypeError(f"{field} must be a tuple")
-    if len(value) > _MAX_ITEMS:
-        raise ValueError(f"{field} exceeds bounded item count")
-    return value
-
-
-def _unique(values: tuple[str, ...], field: str) -> None:
-    if len(values) != len(set(values)):
-        raise ValueError(f"{field} contains duplicates")
-
-
-def _mapping(value: object, field: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field} must be an object")
-    return value
-
-
-def _list(value: object, field: str) -> list[Any]:
-    if not isinstance(value, list):
-        raise TypeError(f"{field} must be a list")
-    if len(value) > _MAX_ITEMS:
-        raise ValueError(f"{field} exceeds bounded item count")
-    return value
-
-
-def _string_tuple(value: object, field: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or any(
-        not isinstance(item, str) for item in value
-    ):
-        raise TypeError(f"{field} must be a string list")
-    return tuple(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,7 +91,7 @@ class StateCondition:
 
     @classmethod
     def from_dict(cls, value: object) -> StateCondition:
-        payload = _mapping(value, "state condition")
+        payload = mapping(value, "state condition")
         if set(payload) != {"ref", "comparator", "expected_value"}:
             raise ValueError("state condition schema drifted")
         try:
@@ -170,7 +137,7 @@ class DecisionOperator:
             (self.authority_id, "authority_id"),
             (self.intent, "intent"),
         ):
-            _text(value, field)
+            text(value, field)
         require_local_id(self.decision_id, "decision_id")
         if (
             not isinstance(self.base_state_digest, str)
@@ -196,7 +163,7 @@ class DecisionOperator:
             ("invalidates", self.invalidates),
             ("evidence_refs", self.evidence_refs),
         ):
-            _tuple(values, field)
+            tuple_of(values, field)
         for ref in (
             *self.delete_fact_refs,
             *self.release_lock_refs,
@@ -299,7 +266,7 @@ class DecisionOperator:
 
     @classmethod
     def from_dict(cls, value: object) -> DecisionOperator:
-        payload = _mapping(value, "decision operator")
+        payload = mapping(value, "decision operator")
         expected = {
             "schema",
             "decision_id",
@@ -411,8 +378,16 @@ class LegacyDecisionOperatorV1:
     SCHEMA = "DecisionOperator@1"
 
     def __post_init__(self) -> None:
-        _text(self.canonical_json, "legacy operator canonical_json")
-        payload = _mapping(
+        # A whole canonical document, not a bounded payload field: the owned
+        # `text` rule caps at 2 000 characters and would reject a real record.
+        if (
+            not isinstance(self.canonical_json, str)
+            or not self.canonical_json.strip()
+        ):
+            raise ValueError(
+                "legacy operator canonical_json must be non-empty text"
+            )
+        payload = mapping(
             json.loads(self.canonical_json),
             "legacy decision operator",
         )
@@ -434,7 +409,7 @@ class LegacyDecisionOperatorV1:
 def load_decision_operator_record(
     value: object,
 ) -> DecisionOperator | LegacyDecisionOperatorV1:
-    payload = _mapping(value, "decision operator record")
+    payload = mapping(value, "decision operator record")
     schema = payload.get("schema")
     if schema == DecisionOperator.SCHEMA:
         return DecisionOperator.from_dict(payload)

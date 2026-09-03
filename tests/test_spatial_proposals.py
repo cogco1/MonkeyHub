@@ -913,7 +913,7 @@ class SpatialProposalTests(unittest.TestCase):
         )
         renamed = replace(compact, option_id="renamed")
         with self.assertRaisesRegex(
-            SpatialProposalError,
+            ValueError,
             "spatial signatures",
         ):
             compile_spatial_options(

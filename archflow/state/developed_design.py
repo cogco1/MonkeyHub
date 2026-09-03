@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Mapping
 
 from archflow.project.refs import ProjectVersionRef
 from archflow.project.refs import require_identifier
@@ -17,6 +16,16 @@ from archflow.state.design_portfolio import (
 from archflow.state.operational_state import require_logical_ref
 from archflow.state.spatial import SchematicOption
 from archflow.contracts.canonical import canonical_digest, canonical_json
+from archflow.contracts.fields import (
+    mapping as _mapping,
+    string_tuple as _strings,
+)
+from archflow.contracts.fields import (
+    exact_mapping as _exact,
+    ids as _ids,
+    refs as _refs,
+    text as _text,
+)
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -65,14 +74,6 @@ class DevelopmentDependencyImpact(StrEnum):
     INVALIDATE = "invalidate"
 
 
-def _text(value: object, field: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise DevelopedDesignError(f"{field} must be non-empty text")
-    if len(value) > _MAX_TEXT:
-        raise DevelopedDesignError(f"{field} exceeds bounded text")
-    return value
-
-
 def _sha(value: object, field: str) -> str:
     if (
         not isinstance(value, str)
@@ -81,81 +82,6 @@ def _sha(value: object, field: str) -> str:
     ):
         raise DevelopedDesignError(f"{field} must be a SHA-256 digest")
     return value.lower()
-
-
-def _mapping(value: object, field: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field} must be an object")
-    return value
-
-
-def _exact(
-    value: Mapping[str, Any],
-    fields: set[str],
-    label: str,
-) -> None:
-    if set(value) != fields:
-        raise DevelopedDesignError(f"{label} schema drifted")
-
-
-def _strings(value: object, field: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or any(
-        not isinstance(item, str) for item in value
-    ):
-        raise TypeError(f"{field} must be a string list")
-    return tuple(value)
-
-
-def _refs(
-    values: object,
-    field: str,
-    *,
-    allow_empty: bool = False,
-) -> tuple[str, ...]:
-    if not isinstance(values, tuple):
-        raise TypeError(f"{field} must be a tuple")
-    if len(values) > _MAX_ITEMS or (not values and not allow_empty):
-        raise DevelopedDesignError(f"{field} has invalid item count")
-    for value in values:
-        require_logical_ref(value, field)
-    if len(values) != len(set(values)):
-        raise DevelopedDesignError(f"{field} contains duplicates")
-    return values
-
-
-def _ids(
-    values: object,
-    field: str,
-    *,
-    allow_empty: bool = False,
-) -> tuple[str, ...]:
-    if not isinstance(values, tuple):
-        raise TypeError(f"{field} must be a tuple")
-    if len(values) > _MAX_ITEMS or (not values and not allow_empty):
-        raise DevelopedDesignError(f"{field} has invalid item count")
-    for value in values:
-        require_identifier(value, field)
-    if len(values) != len(set(values)):
-        raise DevelopedDesignError(f"{field} contains duplicates")
-    return values
-
-
-def _base_to_dict(base: ProjectVersionRef) -> dict[str, object]:
-    return {
-        "project_id": base.project_id,
-        "version": base.version,
-        "state_sha256": base.require_digest(),
-    }
-
-
-def _base_from_dict(value: object) -> ProjectVersionRef:
-    payload = _mapping(value, "base")
-    _exact(payload, {"project_id", "version", "state_sha256"}, "base")
-    return ProjectVersionRef(
-        project_id=payload["project_id"],
-        version=payload["version"],
-        state_sha256=payload["state_sha256"],
-    )
 
 
 def _canonical_value(value: object, field: str) -> str:
@@ -251,7 +177,7 @@ class SelectedSchematicInput:
             "portfolio_digest": self.portfolio_digest,
             "project_id": self.project_id,
             "run_id": self.run_id,
-            "base": _base_to_dict(self.base),
+            "base": self.base.to_dict(),
             "branch_id": self.branch_id,
             "revision": self.revision.to_dict(),
             "option": self.option.to_dict(),
@@ -288,7 +214,7 @@ class SelectedSchematicInput:
             portfolio_digest=payload["portfolio_digest"],
             project_id=payload["project_id"],
             run_id=payload["run_id"],
-            base=_base_from_dict(payload["base"]),
+            base=ProjectVersionRef.from_dict(payload["base"]),
             branch_id=payload["branch_id"],
             revision=BranchRevisionRef.from_dict(payload["revision"]),
             option=SchematicOption.from_dict(payload["option"]),

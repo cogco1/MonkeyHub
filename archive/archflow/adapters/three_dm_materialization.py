@@ -25,7 +25,8 @@ from archflow.adapters.three_dm_inspector import (
     inspect_three_dm,
 )
 from archflow.project.refs import require_identifier
-from archflow.state.geometry_program import digest_value, require_sha256
+from archflow.state.geometry_program import require_sha256
+from archflow.contracts.canonical import canonical_digest
 
 
 NATIVE_MATERIAL_PREFIX = "archflow-material:"
@@ -191,7 +192,7 @@ class ThreeDmMaterializationPlan:
 
     @property
     def plan_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -854,7 +855,7 @@ def _validate_source_inspection(
 
 
 def _geometry_digest(inspection: ThreeDmInspection) -> str:
-    return digest_value(
+    return canonical_digest(
         [
             {
                 "object_id": row["object_id"],
@@ -866,7 +867,7 @@ def _geometry_digest(inspection: ThreeDmInspection) -> str:
 
 
 def _identity_digest(inspection: ThreeDmInspection) -> str:
-    return digest_value(
+    return canonical_digest(
         {
             "units": inspection.units,
             "layers": inspection.layers,
@@ -897,7 +898,7 @@ def _identity_digest(inspection: ThreeDmInspection) -> str:
 
 
 def _bounds_digest(inspection: ThreeDmInspection) -> str:
-    return digest_value(
+    return canonical_digest(
         {
             "aggregate_bbox": inspection.aggregate_bbox,
             "bbox_contributing_geometry_count": (
@@ -941,7 +942,7 @@ def _denominator_digest(
     parent_material_object_ids: tuple[str, ...],
     output_relative_path: str,
 ) -> str:
-    return digest_value(
+    return canonical_digest(
         {
             "schema": "ThreeDmMaterializationDenominator@1",
             "source_sha256": source_sha256,

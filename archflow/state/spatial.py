@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Mapping
 
 from archflow.project.refs import (
     BranchRef,
@@ -20,6 +18,18 @@ from archflow.state.operational_state import (
 )
 from archflow.state.site_context import SiteBounds
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
+from archflow.contracts.fields import (
+    mapping as _mapping,
+    string_tuple as _strings_from_json,
+    typed_tuple as _tuple,
+    unique as _unique,
+)
+from archflow.contracts.fields import (
+    exact_mapping as _exact,
+    number,
+    refs as _refs,
+    text as _text,
+)
 
 
 FootprintCell = tuple[int, int]
@@ -47,42 +57,6 @@ class ComponentMaturity(StrEnum):
     DETAILED = "detailed"
 
 
-def _text(value: object, field: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise SpatialProposalError(f"{field} must be non-empty text")
-    if len(value) > _MAX_TEXT:
-        raise SpatialProposalError(f"{field} exceeds bounded text")
-    return value
-
-
-def _tuple(value: object, item_type: type, field: str) -> tuple[Any, ...]:
-    if not isinstance(value, tuple):
-        raise TypeError(f"{field} must be a tuple")
-    if len(value) > _MAX_ITEMS:
-        raise SpatialProposalError(f"{field} exceeds bounded item count")
-    if any(not isinstance(item, item_type) for item in value):
-        raise TypeError(f"{field} contains an invalid item")
-    return value
-
-
-def _refs(
-    values: object,
-    field: str,
-    *,
-    allow_empty: bool = False,
-) -> tuple[str, ...]:
-    if not isinstance(values, tuple):
-        raise TypeError(f"{field} must be a tuple")
-    if len(values) > _MAX_ITEMS:
-        raise SpatialProposalError(f"{field} exceeds bounded item count")
-    if not values and not allow_empty:
-        raise SpatialProposalError(f"{field} must be non-empty")
-    for value in values:
-        require_logical_ref(value, field)
-    _unique(values, field)
-    return values
-
-
 def _ids(
     values: object,
     field: str,
@@ -99,44 +73,6 @@ def _ids(
         require_local_id(value, field)
     _unique(values, field)
     return values
-
-
-def _strings_from_json(value: object, field: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or any(
-        not isinstance(item, str) for item in value
-    ):
-        raise TypeError(f"{field} must be a string list")
-    return tuple(value)
-
-
-def _unique(values: tuple[str, ...], field: str) -> None:
-    if len(values) != len(set(values)):
-        raise SpatialProposalError(f"{field} contains duplicates")
-
-
-def _number(value: object, field: str) -> float:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(float(value))
-    ):
-        raise SpatialProposalError(f"{field} must be finite")
-    return float(value)
-
-
-def _mapping(value: object, field: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field} must be an object")
-    return value
-
-
-def _exact(
-    value: Mapping[str, Any],
-    fields: set[str],
-    label: str,
-) -> None:
-    if set(value) != fields:
-        raise SpatialProposalError(f"{label} schema drifted")
 
 
 def _branch_to_dict(branch: BranchRef) -> dict[str, object]:
@@ -203,7 +139,7 @@ class SpatialGridBasis:
     source_refs: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        area = _number(
+        area = number(
             self.horizontal_area_per_cell,
             "horizontal_area_per_cell",
         )
@@ -1121,7 +1057,7 @@ class SchematicOption:
     def __post_init__(self) -> None:
         if not isinstance(self.proposal, SpatialOptionProposal):
             raise TypeError("proposal must be SpatialOptionProposal")
-        area = _number(self.footprint_area, "footprint_area")
+        area = number(self.footprint_area, "footprint_area")
         if area <= 0:
             raise SpatialProposalError("footprint_area must be positive")
         object.__setattr__(self, "footprint_area", area)
@@ -1259,7 +1195,10 @@ class SchematicOptionSet:
         signatures = tuple(
             item.topology_signature for item in self.options
         )
-        _unique(option_ids, "option ids")
+        try:
+            _unique(option_ids, "option ids")
+        except ValueError as exc:  # the typed error production callers catch
+            raise SpatialProposalError(str(exc)) from exc
         _unique(option_digests, "option digests")
         _unique(signatures, "spatial signatures")
         if option_ids != tuple(sorted(option_ids)):

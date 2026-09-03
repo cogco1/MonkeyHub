@@ -34,7 +34,7 @@ from archive.archflow.evidence.sufficiency import (
     build_research_frontier,
 )
 from archflow.project.refs import ProjectRecordRef
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 
 
 class BasisIndexError(ValueError):
@@ -136,7 +136,7 @@ class BranchBasisIndex:
 
     @property
     def index_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def summary(self) -> dict[str, object]:
         return {
@@ -508,7 +508,7 @@ class BranchDecisionContext:
         }
         return {
             **identity,
-            "context_digest": digest_value(identity),
+            "context_digest": canonical_digest(identity),
         }
 
     @classmethod
@@ -535,7 +535,7 @@ class BranchDecisionContext:
         if set(value) != expected or value.get("schema") != cls.SCHEMA:
             raise BasisIndexError("branch decision context schema drifted")
         identity = {key: value[key] for key in expected - {"context_digest"}}
-        if value["context_digest"] != digest_value(identity):
+        if value["context_digest"] != canonical_digest(identity):
             raise BasisIndexError("branch decision context digest changed")
         scope = BranchResearchScope.from_dict(value["branch_scope"])
         if value["scope_digest"] != scope.scope_digest:
@@ -754,7 +754,7 @@ class BranchRAGProgress:
 
     @property
     def progress_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {

@@ -37,7 +37,7 @@ from archive.archflow.research.query import (  # noqa: E402
 from archflow.production.provider_runtime import InvocationEvidenceCollector, activate_codex_agent_cli_provider
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.state.geometry_program import digest_value  # noqa: E402
+from archflow.contracts.canonical import canonical_digest
 
 sys.path.insert(0, str(ROOT / "archive" / "tools"))
 from _probe_paths import resolve_probe_root  # noqa: E402
@@ -130,7 +130,7 @@ def main(argv=None) -> int:
             request_id=f"research-{source_tag}",
             phase=ModelPhase.RESEARCH,
             checkpoint_digest=snapshot.text_sha256,
-            context_digest=digest_value(prompt),
+            context_digest=canonical_digest(prompt),
             payload=prompt,
         )
         receipt = asyncio.run(provider.invoke(request))

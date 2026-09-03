@@ -27,7 +27,7 @@ import math
 from dataclasses import dataclass
 from typing import ClassVar
 
-from archflow.contracts.branch import branch_ref_to_dict
+from archive.archflow.contracts.branch import branch_ref_to_dict
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archive.archflow.control.baseline import (
     BASELINE_LEVEL_ROLES,
@@ -73,7 +73,7 @@ from archflow.relations.contracts import (
     RelationParticipant,
     RelationProjection,
 )
-from archflow.runtime.geometry_compiler import CompiledGeometryProgram
+from archflow.compilers.geometry import CompiledGeometryProgram
 from archflow.state.geometry_program import (
     GeometryOperation,
     GeometryOperationKind,

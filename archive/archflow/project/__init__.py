@@ -23,16 +23,8 @@ from archflow.project.manifest import (
     ProjectManifest,
     ProjectManifestError,
 )
-from archflow.project.ports import (
-    ArtifactSink,
-    CanonicalRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    PersistenceDestinationRequired,
-    ProjectLoader,
-    RecordSink,
-    require_destination,
-)
+from archflow.project.ports import PersistenceArea, PersistenceDestination, PersistenceDestinationRequired, RecordSink, require_destination
+from archive.archflow.project.ports import ArtifactSink, CanonicalRepository, ProjectLoader
 from archflow.project.refs import (
     BranchRef,
     ProjectArtifactRef,

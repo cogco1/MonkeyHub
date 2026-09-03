@@ -13,7 +13,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar
 
-from archflow.contracts.branch import (
+from archive.archflow.contracts.branch import (
     branch_ref_from_dict,
     branch_ref_to_dict,
     require_exact_branch,

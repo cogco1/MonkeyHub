@@ -16,7 +16,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any
 
 from archflow.ports.model import (
     AsyncModelProvider,
@@ -24,6 +24,9 @@ from archflow.ports.model import (
     ModelInvocationRequest,
     ModelInvocationStatus,
     ModelPhase,
+    _decode_object,
+    _mapping,
+    _text,
 )
 from archflow.project.refs import require_identifier
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
@@ -546,45 +549,6 @@ def _decode_codex_exec_jsonl(
 
 def _duration_ms(started: float) -> int:
     return max(0, int((time.monotonic() - started) * 1_000))
-
-
-def _decode_object(value: str, field: str) -> dict[str, object]:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    payload = json.loads(value)
-    if not isinstance(payload, dict):
-        raise TypeError(f"{field} must encode a JSON object")
-    return payload
-
-
-def _mapping(value: object, field: str) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field} must be a mapping")
-    if any(not isinstance(key, str) for key in value):
-        raise TypeError(f"{field} keys must be text")
-    return dict(value)
-
-
-def _nested_keys(value: object) -> set[str]:
-    keys: set[str] = set()
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            if isinstance(key, str):
-                keys.add(key)
-            keys.update(_nested_keys(item))
-    elif isinstance(value, (list, tuple)):
-        for item in value:
-            keys.update(_nested_keys(item))
-    return keys
-
-
-def _text(value: object, field: str, *, maximum: int) -> None:
-    if (
-        not isinstance(value, str)
-        or not value.strip()
-        or len(value) > maximum
-    ):
-        raise ValueError(f"{field} must be bounded non-empty text")
 
 
 __all__ = [

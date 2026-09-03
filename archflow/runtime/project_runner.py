@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import math
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -64,7 +63,7 @@ from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef
+from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef, record_ref_from_uri
 from archflow.control.stage_closure import (
     CompositeStageClosureReceipt,
     StageClosureStatus,
@@ -117,15 +116,6 @@ FRAME_ID = "building-local"
 
 class ProjectRunnerError(ValueError):
     """Typed failure of the runner's contracts."""
-
-
-def _finite(value: object, field_name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ProjectRunnerError(f"{field_name} must be a number")
-    number = float(value)
-    if not math.isfinite(number):
-        raise ProjectRunnerError(f"{field_name} must be finite")
-    return number
 
 
 # ---------------------------------------------------------------- schematic pack -> real state
@@ -507,7 +497,7 @@ def _export(repository, run, branch, branch_destination, program, stage_id: str,
         payload, model = prior
         prior_program_uri = (((payload.get("identity") or {}).get("binding") or {}).get("program_ref") or {}).get("uri")
         try:
-            prior_program = load_compiled_geometry_program(repository.load_json(_ref_from_uri(prior_program_uri, run.project_id))) if prior_program_uri else None
+            prior_program = load_compiled_geometry_program(repository.load_json(record_ref_from_uri(prior_program_uri, run.project_id))) if prior_program_uri else None
             if prior_program is not None:
                 cad = run_export(f"{stem}.patch.3dm", RhinoPatchBase(prior_model_path=model, prior_program=prior_program), "patch")
         except CadExecutionError as exc:
@@ -527,12 +517,6 @@ def _export(repository, run, branch, branch_destination, program, stage_id: str,
             raise ProjectRunnerError(f"patch oracle disagrees with the full rebuild for {stage_id}: {cad['oracle']}")
     cad.pop("_bboxes", None)
     return cad
-
-
-def _ref_from_uri(uri: str, project_id: str) -> ProjectRecordRef:
-    name = uri.rsplit("/", 1)[1]
-    relative = uri.split(f"project://{project_id}/", 1)[1]
-    return ProjectRecordRef(project_id=project_id, relative_path=relative, sha256=name.rsplit("-", 1)[1].split(".json")[0], media_type="application/json")
 
 
 def run_project(

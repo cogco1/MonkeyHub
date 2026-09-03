@@ -14,7 +14,8 @@ from enum import StrEnum
 from typing import Mapping
 
 from archflow.project.refs import ProjectVersionRef, require_identifier
-from archflow.state.geometry_program import digest_value, require_sha256
+from archflow.state.geometry_program import require_sha256
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.operational_state import require_logical_ref
 
 
@@ -123,7 +124,7 @@ class ExperimentProviderProfile:
 
     @property
     def profile_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -215,7 +216,7 @@ class ExperimentCase:
 
     @property
     def case_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -379,7 +380,7 @@ class ExperimentCondition:
 
     @property
     def condition_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -520,7 +521,7 @@ class ExperimentAssignment:
 
     @property
     def assignment_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -681,7 +682,7 @@ class ExperimentPreregistration:
 
     @property
     def preregistration_digest(self) -> str:
-        return digest_value(self._identity())
+        return canonical_digest(self._identity())
 
     def assignment(self, assignment_id: str) -> ExperimentAssignment:
         for item in self.assignments:
@@ -1080,7 +1081,7 @@ class ExperimentAttemptIntent:
 
     @property
     def intent_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1255,7 +1256,7 @@ class ExperimentAttemptReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1464,7 +1465,7 @@ class ExperimentOutcome:
 
     @property
     def outcome_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1888,7 +1889,7 @@ class ExperimentResultIndex:
 
     @property
     def index_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {

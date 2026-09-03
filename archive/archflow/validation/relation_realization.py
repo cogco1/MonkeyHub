@@ -26,7 +26,7 @@ from archive.archflow.relations.realization import (
     relation_endpoint_slot_ref,
     relation_realization_denominator,
 )
-from archflow.runtime.geometry_compiler import CompiledGeometryProgram
+from archflow.compilers.geometry import CompiledGeometryProgram
 from archive.archflow.validation.cad_readback import CadReadbackSnapshot
 from archflow.validation.contracts import (
     CheckFinding,

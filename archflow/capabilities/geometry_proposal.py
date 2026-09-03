@@ -60,6 +60,9 @@ from archflow.state.geometry_program import (
 )
 from archflow.state.operational_state import PORTABLE_LOGICAL_REF_PATTERN
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
+from archflow.contracts.fields import (
+    mapping as _mapping,
+)
 
 
 _AUTHORING_OUTPUT_SCHEMA = "GeometryProposalAuthoringOutput@1"
@@ -1432,7 +1435,7 @@ class GeometryProposalRoundReceipt:
             "round_id": self.round_id,
             "round_index": self.round_index,
             "status": self.status.value,
-            "spatial_option_ref": _record_dict(self.spatial_option_ref),
+            "spatial_option_ref": self.spatial_option_ref.to_dict(),
             "design_state_digest": self.design_state_digest,
             "request": self.request.to_dict(),
             "model_receipt": self.model_receipt.to_dict(),
@@ -1476,7 +1479,7 @@ class GeometryProposalRoundReceipt:
             round_id=payload["round_id"],
             round_index=payload["round_index"],
             status=GeometryProposalRoundStatus(payload["status"]),
-            spatial_option_ref=_record_from_dict(payload["spatial_option_ref"]),
+            spatial_option_ref=ProjectRecordRef.from_dict(payload["spatial_option_ref"]),
             design_state_digest=payload["design_state_digest"],
             request=ModelInvocationRequest.from_dict(payload["request"]),
             model_receipt=ModelInvocationReceipt.from_dict(payload["model_receipt"]),
@@ -1543,14 +1546,14 @@ class GeometryProposalLineage:
             "project_id": self.project_id,
             "run_id": self.run_id,
             "base": _base_dict(self.base),
-            "spatial_option_ref": _record_dict(self.spatial_option_ref),
+            "spatial_option_ref": self.spatial_option_ref.to_dict(),
             "spatial_option_digest": self.spatial_option_digest,
             "design_state_digest": self.design_state_digest,
             "required_commitment_refs": list(self.required_commitment_refs),
             "provider_identity": self.provider_identity.to_dict(),
-            "round_refs": [_record_dict(item) for item in self.round_refs],
+            "round_refs": [item.to_dict() for item in self.round_refs],
             "accepted_proposal_ref": (
-                None if self.accepted_proposal_ref is None else _record_dict(self.accepted_proposal_ref)
+                None if self.accepted_proposal_ref is None else self.accepted_proposal_ref.to_dict()
             ),
             "accepted_proposal_digest": self.accepted_proposal_digest,
             "proposal_only": True,
@@ -1587,8 +1590,8 @@ class GeometryProposalLineage:
             status=GeometryProposalStatus(payload["status"]),
             project_id=payload["project_id"],
             run_id=payload["run_id"],
-            base=_base_from_dict(payload["base"]),
-            spatial_option_ref=_record_from_dict(payload["spatial_option_ref"]),
+            base=ProjectVersionRef.from_dict(payload["base"], "project base"),
+            spatial_option_ref=ProjectRecordRef.from_dict(payload["spatial_option_ref"]),
             spatial_option_digest=payload["spatial_option_digest"],
             design_state_digest=payload["design_state_digest"],
             required_commitment_refs=_strings_from_json(
@@ -1597,9 +1600,9 @@ class GeometryProposalLineage:
             provider_identity=GeometryProposalProviderIdentity.from_dict(
                 payload["provider_identity"]
             ),
-            round_refs=tuple(_record_from_dict(item) for item in round_refs),
+            round_refs=tuple(ProjectRecordRef.from_dict(item) for item in round_refs),
             accepted_proposal_ref=(
-                None if accepted_ref is None else _record_from_dict(accepted_ref)
+                None if accepted_ref is None else ProjectRecordRef.from_dict(accepted_ref)
             ),
             accepted_proposal_digest=payload["accepted_proposal_digest"],
         )
@@ -1724,7 +1727,7 @@ async def produce_geometry_program_proposal(
             "developed design state does not select the supplied spatial option record"
         )
     template_payloads = tuple(
-        {"ref": _record_dict(ref), "payload": repository.load_json(ref)}
+        {"ref": ref.to_dict(), "payload": repository.load_json(ref)}
         for ref in template_refs
     )
     allowed_template_uris = frozenset(ref.uri for ref in template_refs)
@@ -2353,7 +2356,7 @@ def _request_payload(
     return {
         "schema": "GeometryProposalAuthoringRequest@1",
         "spatial_option_record": {
-            "ref": _record_dict(spatial_ref),
+            "ref": spatial_ref.to_dict(),
             "proposal_digest": spatial.proposal_digest,
             "proposal_path": (
                 "developed_design_state.selected_schematic.option.proposal"
@@ -2561,7 +2564,7 @@ def _validate_rejected_round_resume(
         raise GeometryProposalProductionError(
             "rejected round request contract is stale for this repair"
         )
-    if spatial_record.get("ref") != _record_dict(spatial_option_ref):
+    if spatial_record.get("ref") != spatial_option_ref.to_dict():
         raise GeometryProposalProductionError(
             "rejected round names another spatial option record"
         )
@@ -3523,11 +3526,11 @@ def _proposal_record(
     return {
         "schema": _PROPOSAL_RECORD_SCHEMA,
         "proposal": proposal.to_dict(),
-        "source_spatial_option_ref": _record_dict(spatial_ref),
+        "source_spatial_option_ref": spatial_ref.to_dict(),
         "required_commitment_refs": list(commitments),
         "selected_template_refs": list(selected_templates),
         "provider_identity": identity.to_dict(),
-        "accepted_round_ref": _record_dict(round_ref),
+        "accepted_round_ref": round_ref.to_dict(),
         "proposal_only": True,
         "hard_gate_authority": False,
         "canonical_write_authority": False,
@@ -3557,7 +3560,7 @@ def _proposal_from_full(value: object) -> GeometryProgramProposal:
         body,
         proposal["project_id"],
         proposal["run_id"],
-        _base_from_dict(proposal["base"]),
+        ProjectVersionRef.from_dict(proposal["base"], "project base"),
         proposal["design_state_digest"],
     )
 
@@ -3786,12 +3789,6 @@ def _persist_lineage(
     )
 
 
-def _mapping(value: object, field: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field} must be an object")
-    return value
-
-
 def _exact(value: Mapping[str, Any], fields: set[str], label: str) -> None:
     actual = set(value)
     if actual != fields:
@@ -3864,22 +3861,6 @@ def _decode_sorted_list(
 
 def _base_dict(base: ProjectVersionRef) -> dict[str, object]:
     return {"project_id": base.project_id, "version": base.version, "state_sha256": base.require_digest()}
-
-
-def _base_from_dict(value: object) -> ProjectVersionRef:
-    payload = _mapping(value, "project base")
-    _exact(payload, {"project_id", "version", "state_sha256"}, "project base")
-    return ProjectVersionRef(payload["project_id"], payload["version"], payload["state_sha256"])
-
-
-def _record_dict(ref: ProjectRecordRef) -> dict[str, object]:
-    return {"project_id": ref.project_id, "relative_path": ref.relative_path, "sha256": ref.sha256, "media_type": ref.media_type}
-
-
-def _record_from_dict(value: object) -> ProjectRecordRef:
-    payload = _mapping(value, "project record ref")
-    _exact(payload, {"project_id", "relative_path", "sha256", "media_type"}, "project record ref")
-    return ProjectRecordRef(payload["project_id"], payload["relative_path"], payload["sha256"], payload["media_type"])
 
 
 def proposal_authoring_output(

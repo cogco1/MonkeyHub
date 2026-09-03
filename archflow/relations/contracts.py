@@ -11,11 +11,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import ClassVar
 
-from archflow.contracts.branch import (
-    branch_ref_from_dict,
-    branch_ref_to_dict,
-    require_exact_branch,
-)
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import (
     deterministic_refs,
@@ -24,7 +19,10 @@ from archflow.contracts.fields import (
     identifier,
     logical_ref,
 )
-from archflow.project.refs import BranchRef
+from archflow.project.refs import (
+    BranchRef,
+    require_exact_branch,
+)
 
 
 _AUTHORITY_FIELDS = {
@@ -765,7 +763,7 @@ class ArchitecturalRelationGraph:
         return {
             "schema": self.SCHEMA,
             "graph_id": self.graph_id,
-            "branch": branch_ref_to_dict(self.branch),
+            "branch": self.branch.to_dict(),
             "stage_id": self.stage_id,
             "state_digest": self.state_digest,
             "scope_digest": self.scope_digest,
@@ -805,7 +803,7 @@ class ArchitecturalRelationGraph:
             raise TypeError("relation graph nodes and relations must be lists")
         result = cls(
             graph_id=payload["graph_id"],
-            branch=branch_ref_from_dict(payload["branch"]),
+            branch=BranchRef.from_dict(payload["branch"]),
             stage_id=payload["stage_id"],
             state_digest=payload["state_digest"],
             scope_digest=payload["scope_digest"],

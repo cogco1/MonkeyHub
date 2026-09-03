@@ -19,7 +19,8 @@ from archflow.compilers.geometry import (
     compile_geometry_program,
 )
 from archflow.state.developed_design import DevelopedDesignState
-from archflow.state.geometry_program import GeometryProgramProposal, digest_value
+from archflow.state.geometry_program import GeometryProgramProposal
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.geometry_program import DatumBinding, InterfaceDatum
 from archflow.state.operational_state import require_logical_ref
 from archflow.state.spatial import (
@@ -77,7 +78,7 @@ class InitialSemanticGeometryReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -227,7 +228,7 @@ class SemanticGeometryLifecycleReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {

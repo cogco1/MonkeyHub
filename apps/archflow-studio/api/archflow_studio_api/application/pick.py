@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from ..transport.errors import StudioError
+from .artifacts import _text
 from .projection import StateProjection
 
 # The identity namespace. Every key this module reads starts with it, and no key
@@ -245,7 +246,3 @@ def _source_state(documents: Mapping[str, str], state_digest: str) -> str:
     return SOURCE_CURRENT if claimed == state_digest else SOURCE_STALE
 
 
-def _text(value: object) -> str | None:
-    """A user string that is actually a string, and not an empty one."""
-
-    return value if isinstance(value, str) and value else None

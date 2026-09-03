@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Callable, Mapping
 
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 
 
 class RepairExperimentError(ValueError):
@@ -73,7 +73,7 @@ class FrozenRepairDelta:
 
     @property
     def delta_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "FrozenRepairDelta":
@@ -240,7 +240,7 @@ class BaselineGraph:
 
     def digests(self) -> dict[str, str]:
         return {
-            node_id: digest_value(payload)
+            node_id: canonical_digest(payload)
             for node_id, payload in self.nodes.items()
         }
 

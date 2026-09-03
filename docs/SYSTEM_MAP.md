@@ -116,13 +116,6 @@ The single source of the all-False authority-flag block that every retained reco
 - api: `no_authority`, `DEFAULT_AUTHORITY_FIELDS`
 - invariants: every returned flag is exactly False; field names are lowercase identifiers ending in _authority; output keys are sorted, so canonical serialization is independent of caller order
 
-### contracts.branch (fold) — `archflow/contracts/branch.py`
-Exact, persistence-neutral serialization of branch identity and the same-branch guard for records that carry it.
-- owns: requiring a branch whose run base carries a digest (require_exact_branch); the BranchRef dict shape and its exact key set (branch_ref_to_dict, branch_ref_from_dict); the cross-branch guard between two records (require_same_branch)
-- does not own: BranchRef itself (project.refs); branch lifecycle, forking and selection (state.design_portfolio); the branch epoch semantics (project.refs.BranchRef)
-- api: `require_exact_branch`, `require_same_branch`, `branch_ref_to_dict`, `branch_ref_from_dict`
-- invariants: a serialized branch always names a base carrying state_sha256; a payload whose key set drifts is refused, never coerced; branch and base must belong to the same project
-
 ### contracts.canonical — `archflow/contracts/canonical.py`
 Deterministic finite-JSON encoding and the sha-256 primitives every record digest on the spine is built from.
 - owns: canonical JSON text with sorted keys, no NaN/Infinity and no cycles (canonical_json); its UTF-8 bytes and lowercase sha-256 (canonical_json_bytes, canonical_digest); the 64-hex digest validator (require_sha256); typed rejection of values that cannot be canonical JSON (CanonicalValueError)
@@ -132,9 +125,9 @@ Deterministic finite-JSON encoding and the sha-256 primitives every record diges
 
 ### contracts.fields — `archflow/contracts/fields.py`
 Strict scalar and deterministic-tuple validators shared by the newer typed contracts.
-- owns: bounded, trimmed, non-empty text (text); scheme-qualified logical-ref syntax, rejecting file: and drive-letter paths (logical_ref); sorted-unique bounded tuples of refs and identifiers (deterministic_refs, deterministic_identifiers); enum-instance and finite-number checks (enum_value, finite_number); exact mapping key-set checks used to detect schema drift (exact_mapping)
+- owns: bounded, trimmed, non-empty text (text); enum-instance and finite-number checks (enum_value, finite_number); exact mapping key-set checks used to detect schema drift (exact_mapping); payload field primitives: mapping, list_of, tuple_of, typed_tuple, string_tuple, unique, number, positive, refs, ids; scheme-qualified logical-ref syntax, rejecting file: and drive-letter paths (logical_ref); sorted-unique bounded tuples of refs and identifiers (deterministic_refs, deterministic_identifiers)
 - does not own: identifier syntax itself, which it delegates to project.refs.require_identifier; the logical-ref validator used by the operational-state family (state.operational_state.require_logical_ref is a parallel); digesting or serializing the values it validates (contracts.canonical)
-- api: `text`, `identifier`, `logical_ref`, `deterministic_refs`, `deterministic_identifiers`, `enum_value`, `exact_mapping`
+- api: `deterministic_identifiers`, `deterministic_refs`, `enum_value`, `exact_mapping`, `finite_number`, `identifier`, `ids`, `list_of`, `logical_ref`, `mapping`, `number`, `positive`, `refs`, `string_tuple`, `text`, `tuple_of`, `typed_tuple`, `unique`
 - invariants: a tuple field must already be sorted and unique; the validator never sorts on the caller's behalf; collections are bounded at 4096 items; validation is total: an unexpected type raises rather than being coerced
 
 ## control
@@ -233,9 +226,9 @@ Persistence port protocols and the validated destination a producer must be hand
 
 ### project.refs — `archflow/project/refs.py`
 Defines the four stable identity types (project version, run, branch, record, artifact) and the portable identifier and path validators the whole spine reuses.
-- owns: portable identifier syntax (require_identifier); project-relative path syntax, normalization and escape refusal (require_project_relative_path); project version identity with its optional canonical state digest (ProjectVersionRef, require_digest); run identity bound to its base version (RunRef); branch identity as run + branch_id + epoch (BranchRef); content-addressed record and artifact references and their project:// uri (ProjectRecordRef, ProjectArtifactRef)
+- owns: branch equality checks (require_exact_branch, require_same_branch); branch identity as run + branch_id + epoch (BranchRef); content-addressed record and artifact references and their project:// uri (ProjectRecordRef, ProjectArtifactRef); portable identifier syntax (require_identifier); project version identity with its optional canonical state digest (ProjectVersionRef, require_digest); project-relative path syntax, normalization and escape refusal (require_project_relative_path); run identity bound to its base version (RunRef); serialising and parsing the four references (to_dict/from_dict, record_ref_from_uri)
 - does not own: serializing a BranchRef to and from a dict (contracts.branch); digesting content (contracts.canonical); mapping a ref onto a filesystem path (project.layout); reading or writing anything a ref names (project.repository); logical (scheme-qualified) refs, which are not project refs (contracts.fields.logical_ref, state.operational_state.require_logical_ref)
-- api: `require_identifier`, `require_project_relative_path`, `ProjectVersionRef`, `RunRef`, `BranchRef`, `ProjectRecordRef`, `ProjectArtifactRef`
+- api: `BranchRef`, `ProjectArtifactRef`, `ProjectRecordRef`, `ProjectVersionRef`, `RunRef`, `record_ref_from_uri`, `require_exact_branch`, `require_identifier`, `require_project_relative_path`, `require_same_branch`
 - invariants: never touches the filesystem; PurePosixPath only; every ref is frozen, slotted and fully validated at construction; a RunRef's base, and a record or artifact ref, belong to the same project_id as their owner; relative_path is already-normalized portable POSIX text with no '..' segment and no drive/backslash; state_sha256, when present, is lowercase 64-hex; require_digest() refuses a ref that lacks one
 
 ### project.repository — `archflow/project/repository.py`
@@ -255,12 +248,6 @@ Persistence-neutral typed contracts for the architectural relation graph, and th
 - invariants: owns no design, stage-acceptance, persistence or canonical-write authority; participant roles are closed per relation kind; an unknown role is refused; the graph is a deterministic projection over exact records, never a mutable store; never writes the filesystem
 
 ## runtime
-
-### runtime.geometry_compiler (fold) — `archflow/runtime/geometry_compiler.py`
-Re-export the canonical compiler's names so historical runtime-path callers keep object identity.
-- owns: nothing but the re-export list of compilers.geometry's public names
-- does not own: every compiler behaviour - compilers.geometry owns all of it
-- invariants: it defines no symbol of its own; every name here is the same object as in compilers.geometry
 
 ### runtime.project_runner — `archflow/runtime/project_runner.py`
 The one runtime loop: run admitted seat rounds from a single State Record, retaining every record the run produces and returning an authority-free stage-run receipt.
@@ -316,8 +303,8 @@ The design-development state the geometry producer and the discipline seats stil
 ### state.geometry_program — `archflow/state/geometry_program.py`
 The typed, platform-neutral geometry program (operations, frames, assemblies, assets, datums) and the published project levels and grids.
 - owns: the generic operation and parameter vocabularies (GeometryOperationKind, GeometryParameterKind, GeometryOperation, GeometryParameter); units, tolerance, affine transforms and coordinate frames (LengthUnit, GeometryTolerance, AffineTransform, CoordinateFrame); semantic bindings from geometry objects back to components, commitments and evidence (SemanticBinding); hosted assemblies and the protocol roles each kind requires (HostedAssembly, AssemblyKind, AssemblyRole, AssemblyMember, required_assembly_roles, DetailMaturity); external asset references and the asset uri pattern (AssetReference, ASSET_URI_PATTERN); revision preconditions and retirements over existing objects (ObjectRevisionPrecondition, ObjectRetirement); published interface datums, parameter-to-datum binding and direction checks (InterfaceDatum, InterfaceDatumKind, DatumBinding, verify_datum_directions); the program proposal record and its digest (GeometryProgramProposal); project levels and grid axes as published datums (ProjectLevel, ProjectLevels, ProjectGridAxis, ProjectGrids, verify_project_datums)
-- does not own: producing operations from design content (capabilities/element_producers.py, wall_solver, opening_solver); compiling a proposal into a cad program (compilers/geometry.py); executing or reading back geometry (adapters/cad_execution.py, three_dm_inspector); resolving a datum or grid reference for a producer (capabilities/reference_resolver.py); which levels a project has (state.record.project_levels_of publishes them)
-- api: `GeometryProgramProposal`, `GeometryOperation`, `GeometryOperationKind`, `GeometryParameter`, `GeometryParameterKind`, `GeometryTolerance`, `AffineTransform`, `CoordinateFrame`, `SemanticBinding`, `AssetReference`, `ASSET_URI_PATTERN`, `AssemblyKind`, `AssemblyRole`, `AssemblyMember`, `HostedAssembly`, `required_assembly_roles`, `DetailMaturity`, `ObjectRevisionPrecondition`, `ObjectRetirement`, `InterfaceDatum`, `InterfaceDatumKind`, `DatumBinding`, `verify_datum_directions`, `LengthUnit`, `ProjectLevel`, `ProjectLevels`, `ProjectGridAxis`, `ProjectGrids`, `verify_project_datums`, `GeometryProgramError`, `digest_value`, `require_sha256`
+- does not own: producing operations from design content (capabilities/element_producers.py, wall_solver, opening_solver); compiling a proposal into a cad program (compilers/geometry.py); executing or reading back geometry (adapters/cad_execution.py, three_dm_inspector); resolving a datum or grid reference for a producer (capabilities/reference_resolver.py); which levels a project has (state.record.project_levels_of publishes them); canonical json and digests - contracts.canonical
+- api: `GeometryProgramProposal`, `GeometryOperation`, `GeometryOperationKind`, `GeometryParameter`, `GeometryParameterKind`, `GeometryTolerance`, `AffineTransform`, `CoordinateFrame`, `SemanticBinding`, `AssetReference`, `ASSET_URI_PATTERN`, `AssemblyKind`, `AssemblyRole`, `AssemblyMember`, `HostedAssembly`, `required_assembly_roles`, `DetailMaturity`, `ObjectRevisionPrecondition`, `ObjectRetirement`, `InterfaceDatum`, `InterfaceDatumKind`, `DatumBinding`, `verify_datum_directions`, `LengthUnit`, `ProjectLevel`, `ProjectLevels`, `ProjectGridAxis`, `ProjectGrids`, `verify_project_datums`, `GeometryProgramError`
 - invariants: the operation vocabulary is generic: no project, style or external-tool routing authority; every numeric field is finite and every collection is bounded; a datum id namespace is unique across levels and grid axes (verify_project_datums); a proposal names the design-state digest it was produced from; never writes the filesystem
 
 ### state.model — `archflow/state/model.py`
@@ -428,7 +415,7 @@ The candidate submission: the only boundary from speculative work to formal revi
 Policy-as-code architecture boundary checks over the source roots, driven by governance/architecture_policy.json.
 - owns: loading and validating ArchFlowArchitecturePolicy@1; the checked-file set for the configured roots and the single AST index per file; the checks: forbidden imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, commit soft-gate leaks, probe-boundary executables; the Finding shape and the JSON/text report and exit code
 - does not own: the policy content - governance/architecture_policy.json; the work registry and its ledgers - tools.devctl; the module registry rules CANONICAL_SPINE 4 describes (owner-symbol, duplicate-body, archive-import) - not implemented here yet; running tests or type checks
-- api: `run_checks`, `load_policy`, `validate_policy`, `Finding`, `ArchitecturePolicyError`, `main`
+- api: `run_checks`, `load_policy`, `validate_policy`, `PolicyFinding`, `ArchitecturePolicyError`, `main`
 - invariants: no archflow import: the checker parses source and never executes it; a policy that cannot be interpreted deterministically fails ArchitecturePolicyError rather than passing vacuously; the file set is stable and de-duplicated, so findings are reproducible
 
 ### tools.devctl — `tools/devctl.py`

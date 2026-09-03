@@ -34,8 +34,9 @@ from archflow.adapters.three_dm_inspector import (
     inspect_three_dm,
 )
 from archflow.project.refs import BranchRef, ProjectRecordRef, require_identifier
-from archflow.runtime.geometry_compiler import CompiledGeometryProgram
-from archflow.state.geometry_program import digest_value, require_sha256
+from archflow.compilers.geometry import CompiledGeometryProgram
+from archflow.state.geometry_program import require_sha256
+from archflow.contracts.canonical import canonical_digest
 
 
 _MAX_PROCESS_TEXT = 2_000
@@ -398,7 +399,7 @@ class RhinoCadExportPlan:
 
     @property
     def plan_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         """Serialize without the machine-local workspace root."""
@@ -1833,7 +1834,7 @@ def _completion_token(
     translation_sha256: str,
     validation_denominator_sha256: str,
 ) -> str:
-    return digest_value(
+    return canonical_digest(
         {
             "schema": "RhinoCadCompletionToken@1",
             "identity": identity.to_dict(),
@@ -1856,7 +1857,7 @@ def _validation_denominator_digest(
     expected_object_counts: tuple[tuple[str, int], ...],
     readback_tolerance: float,
 ) -> str:
-    return digest_value(
+    return canonical_digest(
         {
             "schema": "RhinoCadValidationDenominator@1",
             "identity": identity.to_dict(),

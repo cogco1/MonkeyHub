@@ -31,6 +31,10 @@ from archflow.state.geometry_program import (
     GeometryParameterKind,
     LengthUnit,
 )
+from archflow.contracts.fields import (
+    number,
+    positive,
+)
 
 Bounds = tuple[tuple[float, float, float], tuple[float, float, float]]
 _M = LengthUnit.METER
@@ -41,19 +45,21 @@ class WallSolverError(ValueError):
 
 
 def _finite(value: object, field: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise WallSolverError(f"{field} must be a number")
-    number = float(value)
-    if not math.isfinite(number):
-        raise WallSolverError(f"{field} must be finite")
-    return number
+    """The owned finite-number rule, typed for this module's callers."""
+
+    try:
+        return number(value, field)
+    except ValueError as exc:
+        raise WallSolverError(str(exc)) from exc
 
 
 def _positive(value: object, field: str) -> float:
-    number = _finite(value, field)
-    if number <= 0.0:
-        raise WallSolverError(f"{field} must be positive")
-    return number
+    """The owned positive-number rule, typed for this module's callers."""
+
+    try:
+        return positive(value, field)
+    except ValueError as exc:
+        raise WallSolverError(str(exc)) from exc
 
 
 def _plan(value: object, field: str) -> tuple[float, float]:

@@ -10,12 +10,6 @@ import math
 from dataclasses import dataclass
 from enum import StrEnum
 
-from archflow.contracts.branch import (
-    branch_ref_from_dict,
-    branch_ref_to_dict,
-    require_exact_branch,
-    require_same_branch,
-)
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import (
     deterministic_refs,
@@ -25,7 +19,11 @@ from archflow.contracts.fields import (
     text,
 )
 from archflow.evidence.applicability import ClaimApplicability
-from archflow.project.refs import BranchRef
+from archflow.project.refs import (
+    BranchRef,
+    require_exact_branch,
+    require_same_branch,
+)
 
 
 class CheckStatus(StrEnum):
@@ -343,7 +341,7 @@ class CheckReceiptEnvelope:
             "check_id": self.check_id,
             "checker_id": self.checker_id,
             "checker_version": self.checker_version,
-            "branch": branch_ref_to_dict(self.branch),
+            "branch": self.branch.to_dict(),
             "scope_digest": self.scope_digest,
             "subject_refs": list(self.subject_refs),
             "subject_digest": self.subject_digest,
@@ -421,7 +419,7 @@ class CheckReceiptEnvelope:
             check_id=payload["check_id"],
             checker_id=payload["checker_id"],
             checker_version=payload["checker_version"],
-            branch=branch_ref_from_dict(payload["branch"]),
+            branch=BranchRef.from_dict(payload["branch"]),
             scope_digest=payload["scope_digest"],
             subject_refs=tuple(payload["subject_refs"]),
             subject_digest=payload["subject_digest"],

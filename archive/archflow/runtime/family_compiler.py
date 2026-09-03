@@ -23,11 +23,8 @@ from archive.archflow.state.component_family import (
     ComponentFamilySet,
 )
 from archflow.state.developed_design import DevelopedDesignState
-from archflow.state.geometry_program import (
-    GeometryOperationKind,
-    digest_value,
-    require_sha256,
-)
+from archflow.state.geometry_program import GeometryOperationKind, require_sha256
+from archflow.contracts.canonical import canonical_digest
 
 
 class FamilyCompileStatus(StrEnum):
@@ -268,7 +265,7 @@ class ComponentFamilyCompilationReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -393,7 +390,7 @@ class ComponentFamilyRealizationReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -618,7 +615,7 @@ class ComponentFamilyLifecycleReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1047,7 +1044,7 @@ def _compile_instance(
         )
         if (
             parameter is None
-            or digest_value(parameter.to_dict()) != reference.parameter_digest
+            or canonical_digest(parameter.to_dict()) != reference.parameter_digest
         ):
             issues.append(
                 _issue(

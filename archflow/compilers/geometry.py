@@ -8,19 +8,8 @@ from typing import Mapping
 
 from archflow.project.refs import require_identifier
 from archflow.state.developed_design import DevelopedDesignState
-from archflow.state.geometry_program import (
-    AssemblyRole,
-    AssetReference,
-    DatumBinding,
-    GeometryOperation,
-    GeometryOperationKind,
-    GeometryParameter,
-    GeometryProgramError,
-    GeometryProgramProposal,
-    InterfaceDatum,
-    digest_value,
-    require_sha256,
-)
+from archflow.state.geometry_program import AssemblyRole, AssetReference, DatumBinding, GeometryOperation, GeometryOperationKind, GeometryParameter, GeometryProgramError, GeometryProgramProposal, InterfaceDatum, require_sha256
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.operational_state import require_logical_ref
 
 
@@ -141,7 +130,7 @@ class AssetSubstitutionReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -266,7 +255,7 @@ class CompiledGeometryProgram:
 
     @property
     def program_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def object_digest(self, object_id: str) -> str:
         require_identifier(object_id, "object_id")
@@ -364,7 +353,7 @@ class GeometryCompilationReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -449,7 +438,7 @@ def _frame_digests(
             if parent_digest is None:
                 visiting.remove(frame_id)
                 return None
-        value = digest_value(
+        value = canonical_digest(
             {
                 "frame": frame.to_dict(),
                 "parent_digest": parent_digest,
@@ -473,7 +462,7 @@ def _semantic_digests(
     components = {item.component_id: item for item in identity.components}
     developments = {item.component_id: item for item in identity.developments}
     component_digests = {
-        component_id: digest_value(
+        component_id: canonical_digest(
             {
                 "component": component.to_dict(),
                 "development": (
@@ -511,7 +500,7 @@ def _semantic_digests(
                     binding.binding_id,
                     "semantic binding names a non-active commitment",
                 )
-        result[binding.binding_id] = digest_value(
+        result[binding.binding_id] = canonical_digest(
             {
                 "binding": binding.to_dict(),
                 "component_digest": component_digests.get(
@@ -783,9 +772,9 @@ def _operation_graph(
                 ],
                 "asset_resolution": asset_resolution,
             }
-            operation_digest = digest_value(basis)
+            operation_digest = canonical_digest(basis)
             for object_id in operation.output_object_ids:
-                object_digests[object_id] = digest_value(
+                object_digests[object_id] = canonical_digest(
                     {
                         "object_id": object_id,
                         "operation_digest": operation_digest,

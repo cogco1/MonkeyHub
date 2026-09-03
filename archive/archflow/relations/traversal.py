@@ -15,7 +15,7 @@ from enum import StrEnum
 from heapq import heapify, heappop, heappush
 from typing import Iterable
 
-from archflow.contracts.branch import (
+from archive.archflow.contracts.branch import (
     branch_ref_from_dict,
     branch_ref_to_dict,
     require_exact_branch,

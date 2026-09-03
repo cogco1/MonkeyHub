@@ -24,20 +24,8 @@ from archive.archflow.runtime.semantic_geometry_lifecycle import (
     compile_semantic_geometry_lifecycle,
 )
 from archive.archflow.state.component_family import ComponentFamilyError, ComponentFamilyInstance, ComponentFamilyKind, ComponentFamilySet, FamilyAnchorBinding, FamilyParameterRef, FamilySocket
-from archflow.state.geometry_program import (
-    AffineTransform,
-    AssetReference,
-    CoordinateFrame,
-    GeometryOperation,
-    GeometryOperationKind,
-    GeometryParameter,
-    GeometryParameterKind,
-    GeometryProgramProposal,
-    GeometryTolerance,
-    LengthUnit,
-    SemanticBinding,
-    digest_value,
-)
+from archflow.state.geometry_program import AffineTransform, AssetReference, CoordinateFrame, GeometryOperation, GeometryOperationKind, GeometryParameter, GeometryParameterKind, GeometryProgramProposal, GeometryTolerance, LengthUnit, SemanticBinding
+from archflow.contracts.canonical import canonical_digest
 from tests.test_geometry_compiler import COMMITMENT, EVIDENCE, _state
 from tests.test_sandbox_realization import _asset_payload, compiled_room
 from archive.tests.test_semantic_geometry_lifecycle import (
@@ -59,7 +47,7 @@ def _parameter_ref(program, op_id: str, name: str) -> FamilyParameterRef:
         parameter_id=f"{op_id}-{name}",
         operation_id=op_id,
         parameter_name=name,
-        parameter_digest=digest_value(parameter.to_dict()),
+        parameter_digest=canonical_digest(parameter.to_dict()),
         source_refs=(SOURCE,),
     )
 
@@ -449,7 +437,7 @@ class ComponentFamilyContractTests(unittest.TestCase):
 
         payload = copy.deepcopy(family_set.to_dict())
         payload["geometry_program_digest"] = "9" * 64
-        payload["family_set_digest"] = digest_value(
+        payload["family_set_digest"] = canonical_digest(
             {
                 key: value
                 for key, value in payload.items()

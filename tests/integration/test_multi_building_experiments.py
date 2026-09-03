@@ -47,7 +47,7 @@ from archive.archflow.runtime.production_runtime import ProductionAuthoringConte
 from archive.archflow.runtime.semantic_geometry_lifecycle import (
     InitialSemanticGeometryReceipt,
 )
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 from archive.archflow.validation.architectural import evaluate_architectural_usability
 from tests.integration.test_project_derived_architectural_usability import (
     _compile_declared_fact_contract,
@@ -306,11 +306,11 @@ def _provider_source(case_repository, case_run):
             "grant_signature": "a" * 64,
         },
         "provider_receipt_json": provider_receipt_json,
-        "provider_receipt_digest": digest_value(receipt.to_dict()),
+        "provider_receipt_digest": canonical_digest(receipt.to_dict()),
         "canonical_write_authority": False,
         "envelope_signature": "b" * 64,
     }
-    content_digest = digest_value(envelope)
+    content_digest = canonical_digest(envelope)
     payload = {
         "schema": "ProductionTransitionRecord@1",
         "project_id": case_run.project_id,
@@ -1756,7 +1756,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
                         "state_sha256": run.base.require_digest(),
                     },
                     "role": "lifecycle-receipt",
-                    "semantic_digest": digest_value(content),
+                    "semantic_digest": canonical_digest(content),
                     "content_sha256": canonical_digest(content),
                     "content": content,
                     "canonical_write_authority": False,

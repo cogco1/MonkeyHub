@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from archflow.contracts.branch import branch_ref_from_dict, branch_ref_to_dict
+from archive.archflow.contracts.branch import branch_ref_from_dict, branch_ref_to_dict
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import (
     deterministic_identifiers,

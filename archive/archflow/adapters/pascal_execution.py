@@ -30,17 +30,13 @@ from archive.archflow.adapters.mcp_stdio import (
     StdioMcpClient,
 )
 from archflow.project.refs import ProjectVersionRef
-from archflow.runtime.geometry_compiler import (
+from archflow.compilers.geometry import (
     CompiledGeometryProgram,
     GeometryCompilationReceipt,
     GeometryCompileStatus,
 )
-from archflow.state.geometry_program import (
-    GeometryOperation,
-    GeometryOperationKind,
-    LengthUnit,
-    digest_value,
-)
+from archflow.state.geometry_program import GeometryOperation, GeometryOperationKind, LengthUnit
+from archflow.contracts.canonical import canonical_digest
 
 
 STATUS_TOOL = "get_project_status"
@@ -115,7 +111,7 @@ class PascalMcpConfig:
 
     @property
     def transport_fingerprint(self) -> str:
-        return digest_value(
+        return canonical_digest(
             {
                 "command": list(self.command),
                 "framing": self.framing,
@@ -210,11 +206,11 @@ class PascalExecutionRequest:
 
     @property
     def compilation_receipt_digest(self) -> str:
-        return digest_value(self.compilation_receipt.to_dict())
+        return canonical_digest(self.compilation_receipt.to_dict())
 
     @property
     def request_digest(self) -> str:
-        return digest_value(
+        return canonical_digest(
             {
                 "schema": "PascalExecutionRequest@1",
                 "compiled_program_digest": self.program.program_digest,
@@ -241,7 +237,7 @@ class PascalPatchPlan:
 
     @property
     def patch_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -299,7 +295,7 @@ class PascalExecutionReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -599,7 +595,7 @@ class PascalMcpAdapter:
             patch_digest=plan.patch_digest if plan is not None else None,
             patch_count=len(plan.patches) if plan is not None else 0,
             readback_sha256=(
-                digest_value(readback) if readback is not None else None
+                canonical_digest(readback) if readback is not None else None
             ),
             validation_passed=(
                 validation.get("valid") is True

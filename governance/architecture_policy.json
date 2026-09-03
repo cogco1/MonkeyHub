@@ -341,11 +341,6 @@
       "owner": "P001"
     },
     {
-      "path": "archflow/project/ports.py",
-      "symbol": "CanonicalRepository",
-      "owner": "P035"
-    },
-    {
       "path": "archflow/project/repository.py",
       "symbol": "FilesystemProjectRepository",
       "owner": "P036"

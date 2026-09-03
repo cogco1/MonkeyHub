@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Mapping
 
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 
 _ID = re.compile(r"^[a-z0-9][a-z0-9\-]{0,80}$")
 
@@ -142,7 +142,7 @@ class StageDeclarationContract:
 
     @property
     def contract_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {

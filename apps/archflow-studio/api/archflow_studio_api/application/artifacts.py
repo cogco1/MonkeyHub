@@ -402,7 +402,9 @@ def _mapping(value: object) -> Mapping[str, Any]:
 
 
 def _text(value: object) -> str | None:
-    return value if isinstance(value, str) else None
+    """A receipt string that is actually a string, and not an empty one."""
+
+    return value if isinstance(value, str) and value else None
 
 
 def _whole(value: object) -> int | None:

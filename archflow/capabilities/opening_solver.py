@@ -11,7 +11,6 @@ the frame and the infill as one hosted assembly at ENVELOPE maturity.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from archflow.capabilities.wall_solver import HostedVoid, OpeningKind
@@ -29,6 +28,10 @@ from archflow.state.geometry_program import (
     HostedAssembly,
     LengthUnit,
 )
+from archflow.contracts.fields import (
+    number as _finite,
+    positive,
+)
 
 _M = LengthUnit.METER
 INTERFACE_INSIDE_OUTSIDE = "interface:inside-to-outside"
@@ -36,22 +39,6 @@ INTERFACE_INSIDE_OUTSIDE = "interface:inside-to-outside"
 
 class OpeningSolverError(ValueError):
     """Typed failure of the opening type contracts."""
-
-
-def _finite(value: object, field: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise OpeningSolverError(f"{field} must be a number")
-    number = float(value)
-    if not math.isfinite(number):
-        raise OpeningSolverError(f"{field} must be finite")
-    return number
-
-
-def _positive(value: object, field: str) -> float:
-    number = _finite(value, field)
-    if number <= 0.0:
-        raise OpeningSolverError(f"{field} must be positive")
-    return number
 
 
 def _non_negative(value: object, field: str) -> float:
@@ -77,7 +64,7 @@ class WindowType:
     def __post_init__(self) -> None:
         require_identifier(self.type_id, "window type_id")
         for field in ("frame_width", "frame_depth", "glazing_thickness"):
-            object.__setattr__(self, field, _positive(getattr(self, field), f"{self.type_id} {field}"))
+            object.__setattr__(self, field, positive(getattr(self, field), f"{self.type_id} {field}"))
         object.__setattr__(self, "frame_projection", _finite(self.frame_projection, f"{self.type_id} frame_projection"))
         object.__setattr__(self, "glazing_offset", _finite(self.glazing_offset, f"{self.type_id} glazing_offset"))
 
@@ -109,7 +96,7 @@ class DoorType:
     def __post_init__(self) -> None:
         require_identifier(self.type_id, "door type_id")
         for field in ("frame_width", "frame_depth", "leaf_thickness"):
-            object.__setattr__(self, field, _positive(getattr(self, field), f"{self.type_id} {field}"))
+            object.__setattr__(self, field, positive(getattr(self, field), f"{self.type_id} {field}"))
         for field in ("leaf_gap", "clearance_bottom", "clearance_top"):
             object.__setattr__(self, field, _non_negative(getattr(self, field), f"{self.type_id} {field}"))
         object.__setattr__(self, "frame_projection", _finite(self.frame_projection, f"{self.type_id} frame_projection"))

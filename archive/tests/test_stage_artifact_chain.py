@@ -44,7 +44,7 @@ from archive.archflow.relations.realization import (
     RelationRealizationPurpose,
     RelationVerificationBinding,
 )
-from archflow.runtime.geometry_compiler import (
+from archflow.compilers.geometry import (
     CompiledGeometryObject,
     CompiledGeometryProgram,
 )

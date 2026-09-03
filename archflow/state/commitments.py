@@ -12,6 +12,8 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any, ClassVar, Mapping
 
+from archflow.contracts.fields import text
+
 _MAX_TEXT = 1_000
 _MAX_REFS = 64
 _MAX_JSON_BYTES = 64_000
@@ -507,12 +509,9 @@ def _exact_keys(
 
 
 def _text(value: object, field: str) -> None:
-    if (
-        not isinstance(value, str)
-        or not value.strip()
-        or len(value) > _MAX_TEXT
-    ):
-        raise ValueError(f"{field} must be bounded non-empty text")
+    """The owned text rule at this module's own commitment-text bound."""
+
+    text(value, field, maximum=_MAX_TEXT)
 
 
 def _string(value: object, field: str) -> str:

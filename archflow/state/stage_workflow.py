@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping
 
 from archflow.contracts.authority import (
     DEFAULT_AUTHORITY_FIELDS,
@@ -26,6 +25,13 @@ from archflow.state.operational_state import (
     ObligationStatus,
     require_local_id,
     require_logical_ref,
+)
+from archflow.contracts.fields import (
+    mapping as _mapping,
+    string_tuple,
+)
+from archflow.contracts.fields import (
+    exact_mapping as _exact,
 )
 
 
@@ -43,21 +49,6 @@ class StageExitStatus(StrEnum):
     """Only a completed independent close may feed the next stage."""
 
     SATISFIED = "SATISFIED"
-
-
-def _mapping(value: object, field: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field} must be a mapping")
-    return value
-
-
-def _exact(
-    value: Mapping[str, object],
-    expected: frozenset[str] | set[str],
-    field: str,
-) -> None:
-    if set(value) != set(expected):
-        raise StageWorkflowError(f"{field} schema drifted")
 
 
 def _identifier_tuple(value: object, field: str) -> tuple[str, ...]:
@@ -82,14 +73,6 @@ def _logical_ref_tuple(value: object, field: str) -> tuple[str, ...]:
     if tuple(sorted(set(value))) != value:
         raise StageWorkflowError(f"{field} must be sorted and unique")
     return value
-
-
-def _string_list(value: object, field: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or any(
-        not isinstance(item, str) for item in value
-    ):
-        raise TypeError(f"{field} must be a string list")
-    return tuple(value)
 
 
 def _stage_index(value: object, field: str = "stage_index") -> int:
@@ -151,10 +134,10 @@ class ProjectStage:
             stage_id=payload["stage_id"],
             stage_index=payload["stage_index"],
             phase=DesignPhase(payload["phase"]),
-            required_roles=_string_list(
+            required_roles=string_tuple(
                 payload["required_roles"], "required_roles"
             ),
-            required_checks=_string_list(
+            required_checks=string_tuple(
                 payload["required_checks"], "required_checks"
             ),
             close_obligation_id=payload["close_obligation_id"],
@@ -250,7 +233,7 @@ class ProjectStageWorkflow:
             project_id=payload["project_id"],
             workflow_id=payload["workflow_id"],
             stages=tuple(ProjectStage.from_dict(item) for item in stages),
-            basis_refs=_string_list(payload["basis_refs"], "basis_refs"),
+            basis_refs=string_tuple(payload["basis_refs"], "basis_refs"),
         )
 
 
@@ -886,10 +869,10 @@ class StageRunEnvelope:
             stage_id=stage["stage_id"],
             stage_index=stage["stage_index"],
             phase=DesignPhase(stage["phase"]),
-            required_roles=_string_list(
+            required_roles=string_tuple(
                 payload["required_roles"], "required_roles"
             ),
-            required_checks=_string_list(
+            required_checks=string_tuple(
                 payload["required_checks"], "required_checks"
             ),
             close_obligation=DesignObligation.from_dict(

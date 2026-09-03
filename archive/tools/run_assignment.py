@@ -60,7 +60,7 @@ from archive.archflow.state.component_family import (  # noqa: E402
     FamilySocket,
 )
 from archflow.state.developed_design import DevelopedDesignState  # noqa: E402
-from archflow.state.geometry_program import digest_value  # noqa: E402
+from archflow.contracts.canonical import canonical_digest
 from archive.archflow.validation.architectural import (  # noqa: E402
     ArchitecturalCriterion,
     ArchitecturalObservation,
@@ -1006,7 +1006,7 @@ def _family_binding(
             parameter_id=f"{op_id}-{parameter.name}",
             operation_id=op_id,
             parameter_name=parameter.name,
-            parameter_digest=digest_value(parameter.to_dict()),
+            parameter_digest=canonical_digest(parameter.to_dict()),
             source_refs=(selection_ref.uri,),
         )
         for op_id in operation_ids

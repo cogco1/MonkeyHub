@@ -21,6 +21,13 @@ from archflow.project.refs import (
 )
 from archflow.state.commitments import Commitment
 from archflow.contracts.canonical import canonical_json
+from archflow.contracts.fields import (
+    list_of as _list,
+    mapping as _mapping,
+    string_tuple,
+    tuple_of,
+    unique as _unique,
+)
 
 
 _MAX_ITEMS = 4096
@@ -84,6 +91,8 @@ class OperationalStateMigrationRequired(ValueError):
 
 
 def _text(value: object, field: str) -> str:
+    """Unbounded non-empty text; logical refs and legacy documents use it."""
+
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be non-empty text")
     return value
@@ -98,46 +107,11 @@ def require_logical_ref(value: object, field: str) -> str:
     return text
 
 
-def _tuple(value: object, field: str) -> tuple[Any, ...]:
-    if not isinstance(value, tuple):
-        raise TypeError(f"{field} must be a tuple")
-    if len(value) > _MAX_ITEMS:
-        raise ValueError(f"{field} exceeds bounded item count")
-    return value
-
-
 def require_local_id(value: object, field: str) -> str:
     text = _text(value, field)
     if _LOCAL_ID.fullmatch(text) is None:
         raise ValueError(f"{field} must be a portable local id")
     return text
-
-
-def _unique(values: tuple[str, ...], field: str) -> None:
-    if len(values) != len(set(values)):
-        raise ValueError(f"{field} contains duplicates")
-
-
-def _mapping(value: object, field: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field} must be an object")
-    return value
-
-
-def _list(value: object, field: str) -> list[Any]:
-    if not isinstance(value, list):
-        raise TypeError(f"{field} must be a list")
-    if len(value) > _MAX_ITEMS:
-        raise ValueError(f"{field} exceeds bounded item count")
-    return value
-
-
-def _string_tuple(value: object, field: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or any(
-        not isinstance(item, str) for item in value
-    ):
-        raise TypeError(f"{field} must be a string list")
-    return tuple(value)
 
 
 def _enum(enum_type: type[StrEnum], value: object, field: str) -> Any:
@@ -383,7 +357,7 @@ class DesignObligation:
         require_logical_ref(self.source_ref, "obligation source_ref")
         if not isinstance(self.status, ObligationStatus):
             raise TypeError("obligation status must be an ObligationStatus")
-        _tuple(self.subject_refs, "obligation subject_refs")
+        tuple_of(self.subject_refs, "obligation subject_refs")
         for ref in self.subject_refs:
             require_logical_ref(ref, "obligation subject_ref")
         _unique(self.subject_refs, "obligation subject_refs")
@@ -396,7 +370,7 @@ class DesignObligation:
             raise TypeError(
                 "obligation condition must be an ObligationCondition"
             )
-        _tuple(self.blocked_by, "obligation blocked_by")
+        tuple_of(self.blocked_by, "obligation blocked_by")
         for ref in self.blocked_by:
             require_logical_ref(ref, "obligation blocker ref")
             if not ref.startswith("obligation:"):
@@ -454,7 +428,7 @@ class DesignObligation:
                 payload["status"],
                 "obligation status",
             ),
-            subject_refs=_string_tuple(
+            subject_refs=string_tuple(
                 payload["subject_refs"],
                 "obligation subject_refs",
             ),
@@ -464,7 +438,7 @@ class DesignObligation:
                 if condition is None
                 else ObligationCondition.from_dict(condition)
             ),
-            blocked_by=_string_tuple(
+            blocked_by=string_tuple(
                 payload["blocked_by"],
                 "obligation blocked_by",
             ),
@@ -603,7 +577,7 @@ class OperationalMarkovState:
             ("invalidated_refs", self.invalidated_refs),
             ("evidence_refs", self.evidence_refs),
         ):
-            _tuple(values, field)
+            tuple_of(values, field)
         if any(not isinstance(item, StateFact) for item in self.facts):
             raise TypeError("facts must contain StateFact values")
         if any(
@@ -868,11 +842,11 @@ class OperationalMarkovState:
                     "dependencies",
                 )
             ),
-            invalidated_refs=_string_tuple(
+            invalidated_refs=string_tuple(
                 payload["invalidated_refs"],
                 "invalidated_refs",
             ),
-            evidence_refs=_string_tuple(
+            evidence_refs=string_tuple(
                 payload["evidence_refs"],
                 "evidence_refs",
             ),

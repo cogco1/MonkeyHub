@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from urllib.parse import quote
@@ -44,6 +45,18 @@ def require_project_relative_path(value: str) -> str:
     if normalized != value:
         raise ValueError("relative_path must already be normalized")
     return normalized
+
+
+def _exact_dict(
+    value: object,
+    keys: set[str],
+    field: str,
+) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{field} must be a mapping")
+    if set(value) != keys:
+        raise ValueError(f"{field} schema drifted")
+    return value
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -105,6 +118,30 @@ class ProjectVersionRef:
             raise ValueError("durable project-version reference requires state_sha256")
         return self.state_sha256
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "project_id": self.project_id,
+            "version": self.version,
+            "state_sha256": self.require_digest(),
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        value: object,
+        field: str = "base",
+    ) -> "ProjectVersionRef":
+        payload = _exact_dict(
+            value,
+            {"project_id", "version", "state_sha256"},
+            field,
+        )
+        return cls(
+            project_id=payload["project_id"],
+            version=payload["version"],
+            state_sha256=payload["state_sha256"],
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class RunRef:
@@ -119,6 +156,26 @@ class RunRef:
             raise TypeError("base must be a ProjectVersionRef")
         if self.base.project_id != self.project_id:
             raise ValueError("run and base belong to different projects")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "base": self.base.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object, field: str = "run") -> "RunRef":
+        payload = _exact_dict(
+            value,
+            {"project_id", "run_id", "base"},
+            field,
+        )
+        return cls(
+            project_id=payload["project_id"],
+            run_id=payload["run_id"],
+            base=ProjectVersionRef.from_dict(payload["base"], f"{field} base"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +194,53 @@ class BranchRef:
             or self.epoch < 0
         ):
             raise ValueError("epoch must be a non-negative integer")
+
+    def to_dict(self) -> dict[str, object]:
+        """Exact, persistence-neutral serialization for branch identity."""
+
+        branch = require_exact_branch(self)
+        return {
+            "project_id": branch.run.project_id,
+            "run_id": branch.run.run_id,
+            "base": branch.run.base.to_dict(),
+            "branch_id": branch.branch_id,
+            "epoch": branch.epoch,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "BranchRef":
+        if not isinstance(value, Mapping) or set(value) != {
+            "project_id",
+            "run_id",
+            "base",
+            "branch_id",
+            "epoch",
+        }:
+            raise ValueError("branch schema drifted")
+        base = value["base"]
+        if not isinstance(base, Mapping) or set(base) != {
+            "project_id",
+            "version",
+            "state_sha256",
+        }:
+            raise ValueError("branch base schema drifted")
+        project_id = value["project_id"]
+        if base["project_id"] != project_id:
+            raise ValueError("branch and base belong to different projects")
+        result = cls(
+            run=RunRef(
+                project_id=project_id,
+                run_id=value["run_id"],
+                base=ProjectVersionRef(
+                    project_id=base["project_id"],
+                    version=base["version"],
+                    state_sha256=base["state_sha256"],
+                ),
+            ),
+            branch_id=value["branch_id"],
+            epoch=value["epoch"],
+        )
+        return require_exact_branch(result)
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +264,32 @@ class ProjectRecordRef:
         )
         if not isinstance(self.media_type, str) or not self.media_type.strip():
             raise ValueError("media_type must be non-empty text")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "project_id": self.project_id,
+            "relative_path": self.relative_path,
+            "sha256": self.sha256,
+            "media_type": self.media_type,
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        value: object,
+        field: str = "project record ref",
+    ) -> "ProjectRecordRef":
+        payload = _exact_dict(
+            value,
+            {"project_id", "relative_path", "sha256", "media_type"},
+            field,
+        )
+        return cls(
+            project_id=payload["project_id"],
+            relative_path=payload["relative_path"],
+            sha256=payload["sha256"],
+            media_type=payload["media_type"],
+        )
 
     @property
     def uri(self) -> str:
@@ -199,3 +329,37 @@ class ProjectArtifactRef:
             f"project://{quote(self.project_id, safe='')}/"
             f"{quote(self.relative_path, safe='/._-')}"
         )
+
+
+def require_exact_branch(branch: object, field: str = "branch") -> BranchRef:
+    """Require a branch whose run is bound to digested canonical base state."""
+
+    if not isinstance(branch, BranchRef):
+        raise TypeError(f"{field} must be a BranchRef")
+    branch.run.base.require_digest()
+    return branch
+
+
+def require_same_branch(
+    expected: BranchRef,
+    actual: BranchRef,
+    *,
+    field: str,
+) -> None:
+    expected = require_exact_branch(expected, "expected branch")
+    actual = require_exact_branch(actual, field)
+    if actual != expected:
+        raise ValueError(f"{field} crossed its exact branch")
+
+
+def record_ref_from_uri(uri: str, project_id: str) -> ProjectRecordRef:
+    """Read back the record reference a ``project://`` record URI names."""
+
+    name = uri.rsplit("/", 1)[1]
+    relative = uri.split(f"project://{project_id}/", 1)[1]
+    return ProjectRecordRef(
+        project_id=project_id,
+        relative_path=relative,
+        sha256=name.rsplit("-", 1)[1].split(".json")[0],
+        media_type="application/json",
+    )

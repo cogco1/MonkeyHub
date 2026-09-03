@@ -20,6 +20,9 @@ from typing import Mapping
 
 from archflow.contracts.canonical import canonical_json
 from archflow.project.refs import require_identifier
+from archflow.contracts.fields import (
+    number,
+)
 
 _TOKEN = re.compile(r"\s*(?:(\d+\.\d*|\d*\.\d+|\d+)|([A-Za-z_][A-Za-z0-9_]*)|(.))")
 _FUNCTIONS = {
@@ -34,12 +37,6 @@ _MAX_QUANTITIES = 10_000
 
 class DerivationError(ValueError):
     """Typed failure of the derivation table contracts."""
-
-
-def _finite(value: float, label: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise DerivationError(f"{label} must be a finite number")
-    return float(value)
 
 
 class _Parser:
@@ -140,7 +137,7 @@ class _Parser:
                 self._take("op", ")")
                 if len(args) != arity:
                     raise DerivationError(f"{self.label}: {text} takes {arity} argument(s)")
-                return _finite(function(*args), f"{self.label}: {text}")
+                return number(function(*args), f"{self.label}: {text}")
             self.names.append(text)
             return self.lookup(text)
         if token == ("op", "("):
@@ -290,7 +287,7 @@ def evaluate(table: DerivationTable, readings: Mapping[str, float] | None = None
     leaves: dict[str, float] = {}
     for key, value in (readings or {}).items():
         require_identifier(key, "reading key")
-        leaves[key] = _finite(value, f"reading {key}")
+        leaves[key] = number(value, f"reading {key}")
     by_name = {q.name: q for q in table.quantities}
     clash = sorted(set(by_name) & set(leaves))
     if clash:
@@ -323,7 +320,7 @@ def evaluate(table: DerivationTable, readings: Mapping[str, float] | None = None
     for name in order:
         quantity = by_name[name]
         parser = _Parser(quantity.expr, lambda item: values[item], f"quantity {name}")
-        value = _finite(parser.parse(), f"quantity {name}")
+        value = number(parser.parse(), f"quantity {name}")
         values[name] = value
         evaluated.append(EvaluatedQuantity(name=name, value=value, unit=quantity.unit, inputs=deps[name],
                                            basis_refs=quantity.basis_refs, epistemic_status=quantity.epistemic_status))

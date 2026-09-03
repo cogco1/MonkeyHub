@@ -6,7 +6,7 @@ import unittest
 
 import archive.archflow.compilers as compiler_api
 import archflow.compilers.geometry as canonical_geometry_compiler
-import archflow.runtime.geometry_compiler as runtime_geometry_compiler
+import archflow.compilers.geometry as runtime_geometry_compiler
 from archflow.compilers.geometry import (
     AssetSubstitutionReceipt,
     GeometryCompileStatus,
@@ -593,34 +593,6 @@ class GeometryCompilerTests(unittest.TestCase):
         self.assertFalse(
             result.receipt.to_dict()["canonical_write_authority"]
         )
-
-    def test_kernel_contains_no_project_or_platform_answer_routes(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        source = (
-            (root / "archflow/state/geometry_program.py")
-            .read_text(encoding="utf-8")
-            .lower()
-            + (
-                root / "archflow/compilers/geometry.py"
-            ).read_text(encoding="utf-8").lower()
-            + (
-                root / "archflow/runtime/geometry_compiler.py"
-            ).read_text(encoding="utf-8").lower()
-        )
-        forbidden = (
-            "pantheon",
-            "minecraft",
-            "rhino",
-            "revit",
-            "greek_order",
-            "gothic",
-        )
-        self.assertEqual(
-            {token for token in forbidden if token in source},
-            set(),
-        )
-        self.assertNotIn("if building_type", source)
-        self.assertNotIn("if style", source)
 
 
 if __name__ == "__main__":

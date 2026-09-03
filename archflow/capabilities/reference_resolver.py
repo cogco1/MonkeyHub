@@ -24,6 +24,9 @@ from typing import Any, Mapping
 from archflow.project.refs import require_identifier
 from archflow.state.derivation import EvaluatedDerivations, substitute
 from archflow.state.geometry_program import GeometryProgramError, ProjectGridAxis, ProjectGrids, ProjectLevels
+from archflow.contracts.fields import (
+    number,
+)
 
 Plan = tuple[float, float]
 
@@ -32,10 +35,14 @@ class ReferenceError(ValueError):
     """Typed failure of reference resolution."""
 
 
-def _finite(value: object, label: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise ReferenceError(f"{label} must be a finite number")
-    return float(value)
+def _finite(value: object, field: str) -> float:
+    """The owned finite-number rule, typed for this module's callers."""
+
+    try:
+        return number(value, field)
+    except ValueError as exc:
+        raise ReferenceError(str(exc)) from exc
+
 
 # ---------------------------------------------------------------- reference types
 @dataclass(frozen=True, slots=True)

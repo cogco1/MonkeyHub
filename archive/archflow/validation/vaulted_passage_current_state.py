@@ -21,7 +21,7 @@ from itertools import product
 from typing import ClassVar
 
 from archflow.adapters.three_dm_inspector import ThreeDmInspection
-from archflow.contracts.branch import (
+from archive.archflow.contracts.branch import (
     branch_ref_from_dict,
     branch_ref_to_dict,
     require_exact_branch,

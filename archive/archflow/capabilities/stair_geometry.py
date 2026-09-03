@@ -35,7 +35,7 @@ from archive.archflow.capabilities.stair_solver import (
     require_solved_stair_assembly,
     solve_stair,
 )
-from archflow.contracts.branch import (
+from archive.archflow.contracts.branch import (
     branch_ref_from_dict,
     branch_ref_to_dict,
     require_exact_branch,
@@ -53,20 +53,8 @@ from archflow.state.developed_design import (
     DevelopedDesignState,
     DevelopmentDiscipline,
 )
-from archflow.state.geometry_program import (
-    AffineTransform,
-    CoordinateFrame,
-    GeometryOperation,
-    GeometryOperationKind,
-    GeometryParameter,
-    GeometryParameterKind,
-    GeometryProgramProposal,
-    GeometryTolerance,
-    LengthUnit,
-    SemanticBinding,
-    canonical_json,
-    digest_value,
-)
+from archflow.state.geometry_program import AffineTransform, CoordinateFrame, GeometryOperation, GeometryOperationKind, GeometryParameter, GeometryParameterKind, GeometryProgramProposal, GeometryTolerance, LengthUnit, SemanticBinding, canonical_json
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.operational_state import require_logical_ref
 
 
@@ -1633,7 +1621,7 @@ def compile_stair_geometry_proposal(
         commitment_refs=commitment_refs,
         evidence_refs=source_refs,
     )
-    identity = digest_value(
+    identity = canonical_digest(
         {
             "state_digest": state.state_digest,
             "component_id": component_id,

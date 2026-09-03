@@ -29,7 +29,7 @@ from archive.archflow.runtime.terrain_adaptation import (
 from archflow.state.operational_state import OperationalMarkovState
 from archflow.state.design_maturity import DesignPhase
 from archflow.state.developed_design import DevelopedDesignState
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.site_context import SiteContext
 
 
@@ -180,7 +180,7 @@ class TerrainAdaptationAcceptanceTests(unittest.TestCase):
                 for item in geometry["proposal"]["semantic_bindings"]
             )
         )
-        self.assertEqual(digest_value(geometry), self.manifest["geometry_program_digest"])
+        self.assertEqual(canonical_digest(geometry), self.manifest["geometry_program_digest"])
         self.assertEqual(scene.scene_digest, self.manifest["scene_digest"])
         self.assertEqual(scene.geometry_program_digest, self.manifest["geometry_program_digest"])
 

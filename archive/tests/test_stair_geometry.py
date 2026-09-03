@@ -38,7 +38,7 @@ from archive.archflow.capabilities.stair_solver import (
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.refs import BranchRef, RunRef
 from archive.archflow.realization.sandbox import RealizationStatus, realize_geometry
-from archflow.runtime.geometry_compiler import (
+from archflow.compilers.geometry import (
     GeometryCompileStatus,
     compile_geometry_program,
 )

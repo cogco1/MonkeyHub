@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Mapping
 
 from archflow.project.refs import (
     BranchRef,
@@ -28,6 +28,10 @@ from archflow.state.operational_state import (
     require_logical_ref,
 )
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
+from archflow.contracts.fields import (
+    tuple_of as _tuple,
+    unique as _unique,
+)
 
 
 _MAX_ITEMS = 4096
@@ -120,25 +124,6 @@ class PhaseGateStatus(StrEnum):
 class RevisionImpact(StrEnum):
     INVALIDATED = "invalidated"
     REVALIDATION_REQUIRED = "revalidation_required"
-
-
-def _text(value: object, field: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field} must be non-empty text")
-    return value
-
-
-def _tuple(value: object, field: str) -> tuple[Any, ...]:
-    if not isinstance(value, tuple):
-        raise TypeError(f"{field} must be a tuple")
-    if len(value) > _MAX_ITEMS:
-        raise ValueError(f"{field} exceeds bounded item count")
-    return value
-
-
-def _unique(values: tuple[str, ...], field: str) -> None:
-    if len(values) != len(set(values)):
-        raise ValueError(f"{field} contains duplicates")
 
 
 def _branch_to_dict(branch: BranchRef) -> dict[str, object]:
@@ -702,14 +687,9 @@ class StageEntryProof:
         return {
             "schema": self.SCHEMA,
             "phase_gate": self.phase_gate.to_dict(),
-            "stage_exit_checkpoint_ref": {
-                "project_id": self.stage_exit_checkpoint_ref.project_id,
-                "relative_path": (
-                    self.stage_exit_checkpoint_ref.relative_path
-                ),
-                "sha256": self.stage_exit_checkpoint_ref.sha256,
-                "media_type": self.stage_exit_checkpoint_ref.media_type,
-            },
+            "stage_exit_checkpoint_ref": (
+                self.stage_exit_checkpoint_ref.to_dict()
+            ),
             "stage_exit_proof_digest": self.stage_exit_proof_digest,
             "predecessor_checkpoint_digest": (
                 self.predecessor_checkpoint_digest

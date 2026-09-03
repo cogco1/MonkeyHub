@@ -33,7 +33,7 @@ from archflow.capabilities.geometry_proposal import GeometryProposalProviderIden
 from archflow.contracts.authority import no_authority  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.refs import ProjectRecordRef  # noqa: E402
+from archflow.project.refs import record_ref_from_uri  # noqa: E402
 from archflow.runtime.project_runner import RunOptions, StageExecutionGuard, run_project  # noqa: E402
 from archflow.state.design_maturity import DesignPhase  # noqa: E402
 from archflow.state.operational_state import DesignObligation  # noqa: E402
@@ -42,12 +42,6 @@ from archflow.state.state_record import StateRecord, developed_design_view  # no
 from tools.run_project import _seat  # noqa: E402
 
 _AUTH = ("canonical_write_authority", "design_authority", "stage_acceptance_authority")
-
-
-def _record_ref(uri: str, project_id: str) -> ProjectRecordRef:
-    name = uri.rsplit("/", 1)[1]
-    relative = uri.split(f"project://{project_id}/", 1)[1]
-    return ProjectRecordRef(project_id=project_id, relative_path=relative, sha256=name.rsplit("-", 1)[1].split(".json")[0], media_type="application/json")
 
 
 def _latest(records_dir: Path, prefix: str) -> Path:
@@ -128,8 +122,8 @@ def main() -> int:
         if seat["status"] != "proposal_accepted" or not ref_seat or ref_seat.get("status") not in ("proposal_accepted", "accepted"):
             comparisons.append({"seat_id": seat["seat_id"], "status": seat["status"], "reference_status": (ref_seat or {}).get("status"), "compared": 0})
             continue
-        new_program = load_compiled_geometry_program(repository.load_json(_record_ref(seat["program_ref"], run.project_id)))
-        old_program = load_compiled_geometry_program(repository.load_json(_record_ref(ref_seat["program_ref"], run.project_id)))
+        new_program = load_compiled_geometry_program(repository.load_json(record_ref_from_uri(seat["program_ref"], run.project_id)))
+        old_program = load_compiled_geometry_program(repository.load_json(record_ref_from_uri(ref_seat["program_ref"], run.project_id)))
         new_bounds, old_bounds = expected_object_bounds(new_program), expected_object_bounds(old_program)
         mapped_old = {}
         for oid, row in old_bounds.items():

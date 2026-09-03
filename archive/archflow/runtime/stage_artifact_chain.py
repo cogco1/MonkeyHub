@@ -41,7 +41,7 @@ from archflow.control.requirements import StageRequirementProfile
 from archive.archflow.control.stage_subjects import StageSubjectInventory
 from archflow.project.refs import BranchRef
 from archive.archflow.relations.realization import RelationRealizationManifest
-from archflow.runtime.geometry_compiler import CompiledGeometryProgram
+from archflow.compilers.geometry import CompiledGeometryProgram
 from archflow.state.design_maturity import StageEntryProof, require_stage_entry_proof
 from archive.archflow.validation.cad_readback import CadReadbackSnapshot
 from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus

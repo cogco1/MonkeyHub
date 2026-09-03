@@ -36,7 +36,7 @@ from ..adapters.harness import STAGE_ID, harness_guard
 from ..adapters.seats import load_seat_pack, seats_of
 from ..settings import StudioSettings
 from ..transport.errors import StudioError
-from .artifacts import ArtifactRecord, list_artifacts
+from .artifacts import ArtifactRecord, _text, _whole, list_artifacts
 from .binding import RUNNER_RECEIPT_KIND, ProjectBinding, record_kind
 from .jobs import FAILED, QUEUED, RUNNING
 from .projection import (
@@ -427,14 +427,6 @@ def _block(value: object) -> Mapping[str, Any] | None:
     """
 
     return None if not isinstance(value, Mapping) else MappingProxyType(dict(value))
-
-
-def _text(value: object) -> str | None:
-    return value if isinstance(value, str) else None
-
-
-def _whole(value: object) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _number(value: object) -> float | None:

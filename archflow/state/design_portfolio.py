@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Any, Mapping
 
 from archflow.project.refs import (
     ProjectVersionRef,
@@ -19,6 +18,16 @@ from archflow.project.refs import (
 from archflow.state.operational_state import require_logical_ref
 from archflow.state.spatial import SchematicOption, SchematicOptionSet
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
+from archflow.contracts.fields import (
+    mapping as _mapping,
+    string_tuple as _strings,
+)
+from archflow.contracts.fields import (
+    exact_mapping as _exact,
+    ids,
+    refs as _refs,
+    text,
+)
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -61,92 +70,6 @@ class PortfolioTransitionKind(StrEnum):
     ATTACH_PARETO_OBSERVATION = "attach_pareto_observation"
 
 
-def _text(value: object, field: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise DesignPortfolioError(f"{field} must be non-empty text")
-    if len(value) > _MAX_TEXT:
-        raise DesignPortfolioError(f"{field} exceeds bounded text")
-    return value
-
-
-def _mapping(value: object, field: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field} must be an object")
-    return value
-
-
-def _exact(
-    value: Mapping[str, Any],
-    fields: set[str],
-    label: str,
-) -> None:
-    if set(value) != fields:
-        raise DesignPortfolioError(f"{label} schema drifted")
-
-
-def _strings(value: object, field: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or any(
-        not isinstance(item, str) for item in value
-    ):
-        raise TypeError(f"{field} must be a string list")
-    return tuple(value)
-
-
-def _ids(
-    values: object,
-    field: str,
-    *,
-    allow_empty: bool = False,
-    sorted_required: bool = False,
-) -> tuple[str, ...]:
-    if not isinstance(values, tuple):
-        raise TypeError(f"{field} must be a tuple")
-    if len(values) > _MAX_ITEMS or (not values and not allow_empty):
-        raise DesignPortfolioError(f"{field} has invalid item count")
-    for value in values:
-        require_identifier(value, field)
-    if len(values) != len(set(values)):
-        raise DesignPortfolioError(f"{field} contains duplicates")
-    if sorted_required and values != tuple(sorted(values)):
-        raise DesignPortfolioError(f"{field} must use stable id order")
-    return values
-
-
-def _refs(
-    values: object,
-    field: str,
-    *,
-    allow_empty: bool = False,
-) -> tuple[str, ...]:
-    if not isinstance(values, tuple):
-        raise TypeError(f"{field} must be a tuple")
-    if len(values) > _MAX_ITEMS or (not values and not allow_empty):
-        raise DesignPortfolioError(f"{field} has invalid item count")
-    for value in values:
-        require_logical_ref(value, field)
-    if len(values) != len(set(values)):
-        raise DesignPortfolioError(f"{field} contains duplicates")
-    return values
-
-
-def _base_to_dict(base: ProjectVersionRef) -> dict[str, object]:
-    return {
-        "project_id": base.project_id,
-        "version": base.version,
-        "state_sha256": base.require_digest(),
-    }
-
-
-def _base_from_dict(value: object) -> ProjectVersionRef:
-    payload = _mapping(value, "base")
-    _exact(payload, {"project_id", "version", "state_sha256"}, "base")
-    return ProjectVersionRef(
-        project_id=payload["project_id"],
-        version=payload["version"],
-        state_sha256=payload["state_sha256"],
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class SelectionPolicy:
     """Named authorities allowed to make or release a branch selection."""
@@ -157,7 +80,7 @@ class SelectionPolicy:
     SCHEMA = "SelectionPolicy@1"
 
     def __post_init__(self) -> None:
-        _ids(
+        ids(
             self.authority_ids,
             "selection authority_ids",
             sorted_required=True,
@@ -212,7 +135,7 @@ class ExpertAdviceResolution:
         require_identifier(self.expert_id, "expert_id")
         if not isinstance(self.disposition, AdviceDisposition):
             raise TypeError("disposition must be AdviceDisposition")
-        _text(self.rationale, "expert advice rationale")
+        text(self.rationale, "expert advice rationale")
         _refs(self.evidence_refs, "expert advice evidence_refs")
 
     def to_dict(self) -> dict[str, object]:
@@ -352,7 +275,7 @@ class BranchRevision:
             raise DesignPortfolioError(
                 "expert advice is resolved more than once"
             )
-        _text(self.tradeoff_rationale, "tradeoff_rationale")
+        text(self.tradeoff_rationale, "tradeoff_rationale")
         require_identifier(self.author_id, "author_id")
 
     @property
@@ -581,7 +504,7 @@ class ParetoBranchObservation:
         if len(self.objective_names) != len(set(self.objective_names)):
             raise DesignPortfolioError("objective_names contain duplicates")
         _refs(self.evidence_refs, "Pareto evidence_refs")
-        _text(self.summary, "Pareto summary")
+        text(self.summary, "Pareto summary")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -672,7 +595,7 @@ class PortfolioTransition:
             self.predecessor_portfolio_digest,
             "predecessor_portfolio_digest",
         )
-        _ids(
+        ids(
             self.affected_branch_ids,
             "affected_branch_ids",
             sorted_required=True,
@@ -686,7 +609,7 @@ class PortfolioTransition:
             )
         require_identifier(self.authority_id, "authority_id")
         require_logical_ref(self.decision_ref, "decision_ref")
-        _text(self.rationale, "transition rationale")
+        text(self.rationale, "transition rationale")
         _refs(self.evidence_refs, "transition evidence_refs")
 
     def to_dict(self) -> dict[str, object]:
@@ -803,7 +726,7 @@ class DesignOptionPortfolio:
                 "portfolio requires at least two branches"
             )
         branch_ids = tuple(item.branch_id for item in self.branches)
-        _ids(
+        ids(
             branch_ids,
             "portfolio branch ids",
             sorted_required=True,
@@ -944,7 +867,7 @@ class DesignOptionPortfolio:
             "portfolio_id": self.portfolio_id,
             "project_id": self.project_id,
             "run_id": self.run_id,
-            "base": _base_to_dict(self.base),
+            "base": self.base.to_dict(),
             "source_option_set_digest": self.source_option_set_digest,
             "operational_state_digest": self.operational_state_digest,
             "selection_policy": self.selection_policy.to_dict(),
@@ -1008,7 +931,7 @@ class DesignOptionPortfolio:
             portfolio_id=payload["portfolio_id"],
             project_id=payload["project_id"],
             run_id=payload["run_id"],
-            base=_base_from_dict(payload["base"]),
+            base=ProjectVersionRef.from_dict(payload["base"]),
             source_option_set_digest=payload[
                 "source_option_set_digest"
             ],
@@ -1082,7 +1005,7 @@ class SelectedBranchHandoff:
             "portfolio_digest": self.portfolio_digest,
             "project_id": self.project_id,
             "run_id": self.run_id,
-            "base": _base_to_dict(self.base),
+            "base": self.base.to_dict(),
             "branch_id": self.branch_id,
             "revision": self.revision.to_dict(),
             "option": self.option.to_dict(),
@@ -1119,7 +1042,7 @@ def _require_decision(
 ) -> None:
     require_identifier(authority_id, "authority_id")
     require_logical_ref(decision_ref, "decision_ref")
-    _text(rationale, "transition rationale")
+    text(rationale, "transition rationale")
     _refs(evidence_refs, "transition evidence_refs")
 
 
@@ -1395,7 +1318,7 @@ def combine_branches(
         rationale=rationale,
         evidence_refs=evidence_refs,
     )
-    _ids(
+    ids(
         parent_branch_ids,
         "parent_branch_ids",
         sorted_required=True,

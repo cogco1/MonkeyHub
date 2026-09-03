@@ -6,18 +6,15 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from archflow.state.model import ArtifactRef, Fact, Obligation, StateRef
+from archflow.state.model import (
+    ArtifactRef,
+    Fact,
+    Obligation,
+    StateRef,
+    _require_text,
+    _require_tuple,
+)
 from archflow.state.commitments import Commitment, CommitmentStatus
-
-
-def _require_text(value: str, field_name: str) -> None:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field_name} must be non-empty text")
-
-
-def _require_tuple(value: object, field_name: str) -> None:
-    if not isinstance(value, tuple):
-        raise TypeError(f"{field_name} must be a tuple")
 
 
 @dataclass(frozen=True, slots=True)

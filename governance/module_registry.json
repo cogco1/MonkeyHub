@@ -984,52 +984,6 @@
       "notes": "fold: marked '← fold' in the move list; the hand-inlined authority blocks it replaced are still counted at a recorded baseline by a static test scan."
     },
     {
-      "module_id": "contracts.branch",
-      "owner_path": "archflow/contracts/branch.py",
-      "purpose": "Exact, persistence-neutral serialization of branch identity and the same-branch guard for records that carry it.",
-      "owns": [
-        "requiring a branch whose run base carries a digest (require_exact_branch)",
-        "the BranchRef dict shape and its exact key set (branch_ref_to_dict, branch_ref_from_dict)",
-        "the cross-branch guard between two records (require_same_branch)"
-      ],
-      "does_not_own": [
-        "BranchRef itself (project.refs)",
-        "branch lifecycle, forking and selection (state.design_portfolio)",
-        "the branch epoch semantics (project.refs.BranchRef)"
-      ],
-      "inputs": [
-        "BranchRef",
-        "serialized branch mapping"
-      ],
-      "outputs": [
-        "BranchRef",
-        "dict"
-      ],
-      "public_api": [
-        "require_exact_branch",
-        "require_same_branch",
-        "branch_ref_to_dict",
-        "branch_ref_from_dict"
-      ],
-      "depends_on": [
-        "project.refs"
-      ],
-      "used_by": [
-        "archflow/relations/contracts.py",
-        "archflow/validation/contracts.py",
-        "archflow/evidence/claims.py",
-        "archflow/evidence/applicability.py"
-      ],
-      "invariants": [
-        "a serialized branch always names a base carrying state_sha256",
-        "a payload whose key set drifts is refused, never coerced",
-        "branch and base must belong to the same project"
-      ],
-      "status": "fold",
-      "tests": [],
-      "notes": "fold: §2.2 gives the four Ref types to_dict/from_dict once and deletes this serde; state/spatial.py and state/design_maturity.py already carry their own _branch_to_dict copies of the same thing."
-    },
-    {
       "module_id": "contracts.canonical",
       "owner_path": "archflow/contracts/canonical.py",
       "purpose": "Deterministic finite-JSON encoding and the sha-256 primitives every record digest on the spine is built from.",
@@ -1092,10 +1046,11 @@
       "purpose": "Strict scalar and deterministic-tuple validators shared by the newer typed contracts.",
       "owns": [
         "bounded, trimmed, non-empty text (text)",
-        "scheme-qualified logical-ref syntax, rejecting file: and drive-letter paths (logical_ref)",
-        "sorted-unique bounded tuples of refs and identifiers (deterministic_refs, deterministic_identifiers)",
         "enum-instance and finite-number checks (enum_value, finite_number)",
-        "exact mapping key-set checks used to detect schema drift (exact_mapping)"
+        "exact mapping key-set checks used to detect schema drift (exact_mapping)",
+        "payload field primitives: mapping, list_of, tuple_of, typed_tuple, string_tuple, unique, number, positive, refs, ids",
+        "scheme-qualified logical-ref syntax, rejecting file: and drive-letter paths (logical_ref)",
+        "sorted-unique bounded tuples of refs and identifiers (deterministic_refs, deterministic_identifiers)"
       ],
       "does_not_own": [
         "identifier syntax itself, which it delegates to project.refs.require_identifier",
@@ -1111,13 +1066,24 @@
         "checked dict"
       ],
       "public_api": [
-        "text",
-        "identifier",
-        "logical_ref",
-        "deterministic_refs",
         "deterministic_identifiers",
+        "deterministic_refs",
         "enum_value",
-        "exact_mapping"
+        "exact_mapping",
+        "finite_number",
+        "identifier",
+        "ids",
+        "list_of",
+        "logical_ref",
+        "mapping",
+        "number",
+        "positive",
+        "refs",
+        "string_tuple",
+        "text",
+        "tuple_of",
+        "typed_tuple",
+        "unique"
       ],
       "depends_on": [
         "project.refs"
@@ -1782,12 +1748,14 @@
       "owner_path": "archflow/project/refs.py",
       "purpose": "Defines the four stable identity types (project version, run, branch, record, artifact) and the portable identifier and path validators the whole spine reuses.",
       "owns": [
-        "portable identifier syntax (require_identifier)",
-        "project-relative path syntax, normalization and escape refusal (require_project_relative_path)",
-        "project version identity with its optional canonical state digest (ProjectVersionRef, require_digest)",
-        "run identity bound to its base version (RunRef)",
+        "branch equality checks (require_exact_branch, require_same_branch)",
         "branch identity as run + branch_id + epoch (BranchRef)",
-        "content-addressed record and artifact references and their project:// uri (ProjectRecordRef, ProjectArtifactRef)"
+        "content-addressed record and artifact references and their project:// uri (ProjectRecordRef, ProjectArtifactRef)",
+        "portable identifier syntax (require_identifier)",
+        "project version identity with its optional canonical state digest (ProjectVersionRef, require_digest)",
+        "project-relative path syntax, normalization and escape refusal (require_project_relative_path)",
+        "run identity bound to its base version (RunRef)",
+        "serialising and parsing the four references (to_dict/from_dict, record_ref_from_uri)"
       ],
       "does_not_own": [
         "serializing a BranchRef to and from a dict (contracts.branch)",
@@ -1810,13 +1778,16 @@
         "ProjectArtifactRef"
       ],
       "public_api": [
-        "require_identifier",
-        "require_project_relative_path",
+        "BranchRef",
+        "ProjectArtifactRef",
+        "ProjectRecordRef",
         "ProjectVersionRef",
         "RunRef",
-        "BranchRef",
-        "ProjectRecordRef",
-        "ProjectArtifactRef"
+        "record_ref_from_uri",
+        "require_exact_branch",
+        "require_identifier",
+        "require_project_relative_path",
+        "require_same_branch"
       ],
       "depends_on": [],
       "used_by": [
@@ -1987,37 +1958,6 @@
         "tests/test_stage_baseline.py"
       ],
       "notes": "On the spine only because state_record.py imports ArchitecturalRelationKind; the graph types have no spine consumer and §2.2 sends the ArchitecturalRelation graph to the monuments/controller lanes, so this module should shrink to the enum."
-    },
-    {
-      "module_id": "runtime.geometry_compiler",
-      "owner_path": "archflow/runtime/geometry_compiler.py",
-      "purpose": "Re-export the canonical compiler's names so historical runtime-path callers keep object identity.",
-      "owns": [
-        "nothing but the re-export list of compilers.geometry's public names"
-      ],
-      "does_not_own": [
-        "every compiler behaviour - compilers.geometry owns all of it"
-      ],
-      "inputs": [],
-      "outputs": [],
-      "public_api": [],
-      "depends_on": [
-        "archflow.compilers.geometry"
-      ],
-      "used_by": [
-        "archflow/adapters/cad_execution.py",
-        "tests/test_cad_execution.py",
-        "tests/test_geometry_compiler.py"
-      ],
-      "invariants": [
-        "it defines no symbol of its own; every name here is the same object as in compilers.geometry"
-      ],
-      "status": "fold",
-      "tests": [
-        "tests/test_geometry_compiler.py",
-        "tests/test_cad_execution.py"
-      ],
-      "notes": "CANONICAL_SPINE 2.2 'Program and compiler': the shim goes; two importers (cad_execution, two tests) repoint to archflow.compilers.geometry. Re-export shim with no definitions of its own; fold: delete and import compilers.geometry directly."
     },
     {
       "module_id": "runtime.project_runner",
@@ -2530,7 +2470,8 @@
         "compiling a proposal into a cad program (compilers/geometry.py)",
         "executing or reading back geometry (adapters/cad_execution.py, three_dm_inspector)",
         "resolving a datum or grid reference for a producer (capabilities/reference_resolver.py)",
-        "which levels a project has (state.record.project_levels_of publishes them)"
+        "which levels a project has (state.record.project_levels_of publishes them)",
+        "canonical json and digests - contracts.canonical"
       ],
       "inputs": [
         "operation and parameter declarations",
@@ -2576,9 +2517,7 @@
         "ProjectGridAxis",
         "ProjectGrids",
         "verify_project_datums",
-        "GeometryProgramError",
-        "digest_value",
-        "require_sha256"
+        "GeometryProgramError"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3693,7 +3632,7 @@
         "run_checks",
         "load_policy",
         "validate_policy",
-        "Finding",
+        "PolicyFinding",
         "ArchitecturePolicyError",
         "main"
       ],

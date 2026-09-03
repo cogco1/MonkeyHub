@@ -33,7 +33,7 @@ from archflow.state.developed_design import (
     DevelopmentDependency,
     DevelopmentObligation,
 )
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.operational_state import require_logical_ref
 from archflow.state.spatial import DesignComponent
 from archflow.contracts.canonical import canonical_digest
@@ -517,7 +517,7 @@ def build_component_index(
         item.component_id: item for item in current_state.components
     }
     expected_component_digests = {
-        component_id: digest_value(
+        component_id: canonical_digest(
             {
                 "component": component.to_dict(),
                 "development": (
@@ -532,7 +532,7 @@ def build_component_index(
     if dict(geometry_program.component_digests) != expected_component_digests:
         raise ComponentIndexError("compiled component digests contradict current state")
     expected_binding_digests = {
-        binding.binding_id: digest_value(
+        binding.binding_id: canonical_digest(
             {
                 "binding": binding.to_dict(),
                 "component_digest": expected_component_digests.get(

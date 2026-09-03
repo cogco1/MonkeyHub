@@ -11,7 +11,8 @@ from enum import StrEnum
 from typing import Mapping
 
 from archflow.project.refs import ProjectVersionRef, require_identifier
-from archflow.state.geometry_program import LengthUnit, digest_value, require_sha256
+from archflow.state.geometry_program import LengthUnit, require_sha256
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.operational_state import require_logical_ref
 
 
@@ -308,7 +309,7 @@ class ComponentFamilyInstance:
 
     @property
     def instance_digest(self) -> str:
-        return digest_value(self._identity())
+        return canonical_digest(self._identity())
 
     def _identity(self) -> dict[str, object]:
         return {
@@ -475,7 +476,7 @@ class ComponentFamilySet:
 
     @property
     def family_set_digest(self) -> str:
-        return digest_value(self._identity())
+        return canonical_digest(self._identity())
 
     def _identity(self) -> dict[str, object]:
         return {

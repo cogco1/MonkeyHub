@@ -5,12 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from archflow.contracts.branch import (
-    branch_ref_from_dict,
-    branch_ref_to_dict,
-    require_exact_branch,
-    require_same_branch,
-)
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import (
     deterministic_refs,
@@ -20,7 +14,11 @@ from archflow.contracts.fields import (
     text,
 )
 from archflow.evidence.claims import EvidenceClaimBinding
-from archflow.project.refs import BranchRef
+from archflow.project.refs import (
+    BranchRef,
+    require_exact_branch,
+    require_same_branch,
+)
 
 
 class ApplicabilityTargetKind(StrEnum):
@@ -155,7 +153,7 @@ class ClaimApplicability:
         return {
             "schema": self.SCHEMA,
             "applicability_id": self.applicability_id,
-            "branch": branch_ref_to_dict(self.branch),
+            "branch": self.branch.to_dict(),
             "scope_digest": self.scope_digest,
             "claim_binding_id": self.claim_binding_id,
             "claim_binding_digest": self.claim_binding_digest,
@@ -244,7 +242,7 @@ class ClaimApplicability:
                 raise TypeError(f"{field} must be a list")
         return cls(
             applicability_id=payload["applicability_id"],
-            branch=branch_ref_from_dict(payload["branch"]),
+            branch=BranchRef.from_dict(payload["branch"]),
             scope_digest=payload["scope_digest"],
             claim_binding_id=payload["claim_binding_id"],
             claim_binding_digest=payload["claim_binding_digest"],

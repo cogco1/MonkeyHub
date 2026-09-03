@@ -22,7 +22,8 @@ from typing import Iterable
 
 from archflow.contracts.fields import exact_mapping
 from archflow.project.refs import require_identifier
-from archflow.state.geometry_program import digest_value, require_sha256
+from archflow.state.geometry_program import require_sha256
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.operational_state import require_logical_ref
 
 
@@ -945,13 +946,13 @@ class StageComponentCoverageReceipt:
 
     @property
     def predecessor_denominator_digest(self) -> str:
-        return digest_value(
+        return canonical_digest(
             [item.to_dict() for item in self.predecessor_operations]
         )
 
     @property
     def receipt_digest(self) -> str:
-        return digest_value(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {

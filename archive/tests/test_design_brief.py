@@ -20,7 +20,7 @@ from archflow.project.refs import ProjectVersionRef
 from archive.archflow.state.design_brief import BriefClaimKind, BriefSlot, BriefSlotStatus, DesignBrief
 from archflow.state.commitments import CommitmentStatus
 from archflow.state.operational_state import FactEpistemicStatus
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 
 
 def _base(project_id: str = "case-a") -> ProjectVersionRef:
@@ -107,7 +107,7 @@ class DesignBriefTests(unittest.TestCase):
         )
         self.assertEqual(
             "c4de78fa3e8397aae050f8057ad448a3ac0d792f590e50d5fc05fa40cdb12a18",
-            digest_value(result.receipt.to_dict()),
+            canonical_digest(result.receipt.to_dict()),
         )
         self.assertIs(result.receipt.to_dict()["generation_authority"], False)
         self.assertEqual(1, len(result.brief.constraint_proposals))

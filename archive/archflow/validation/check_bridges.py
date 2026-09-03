@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from archflow.contracts.branch import (
+from archive.archflow.contracts.branch import (
     branch_ref_from_dict,
     branch_ref_to_dict,
     require_exact_branch,
@@ -19,7 +19,7 @@ from archflow.contracts.branch import (
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import exact_mapping, identifier, logical_ref
 from archflow.project.refs import BranchRef
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 from archive.archflow.validation.component_lineage import (
     StageComponentCoverageReceipt,
     StageOperation,
@@ -134,7 +134,7 @@ class ComponentLineageCheckProfile:
 
     @property
     def predecessor_denominator_digest(self) -> str:
-        return digest_value(
+        return canonical_digest(
             [item.to_dict() for item in self.predecessor_operations]
         )
 

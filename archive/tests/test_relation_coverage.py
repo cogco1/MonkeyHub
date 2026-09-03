@@ -10,7 +10,7 @@ from archive.archflow.evidence.relation_discovery import (
     enumerate_candidate_relations,
     relation_coverage_ledger,
 )
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 
 
 def obj(object_id, minimum, maximum, binding_id, physical=True):
@@ -135,7 +135,7 @@ class LedgerTest(unittest.TestCase):
         self.assertEqual("RelationCoverageLedger@1", ledger["schema"])
         self.assertEqual(
             "b9a65b2c03e1abd37da2193ff5f6698a713c32141cd93afb6c5ffaa337bb9e3d",
-            digest_value(ledger),
+            canonical_digest(ledger),
         )
         self.assertIs(ledger["authority"], False)
         self.assertNotIn("relationship_requirement_authority", ledger)

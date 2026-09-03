@@ -17,7 +17,7 @@ from archive.archflow.capabilities.stair_solver import (
     StairSolveResult,
     StairSolveStatus,
 )
-from archflow.contracts.branch import branch_ref_from_dict, branch_ref_to_dict
+from archive.archflow.contracts.branch import branch_ref_from_dict, branch_ref_to_dict
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import exact_mapping, identifier
 from archive.archflow.control.check_requirements import (

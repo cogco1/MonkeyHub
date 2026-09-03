@@ -66,7 +66,7 @@ from archflow.state.developed_design import (
     DevelopedDesignState,
     SelectedSchematicInput,
 )
-from archflow.state.geometry_program import digest_value
+from archflow.contracts.canonical import canonical_digest
 from archflow.state.spatial import (
     ComponentTransitionReceipt,
     SchematicOptionSet,
@@ -1243,7 +1243,7 @@ def _production_record_content(
         raise TypeError("production transition content must be an object")
     if (
         canonical_digest(content) != value.get("content_sha256")
-        or digest_value(content) != value.get("semantic_digest")
+        or canonical_digest(content) != value.get("semantic_digest")
     ):
         raise ArchitecturalRevisionError(
             "production transition record content digest drifted"

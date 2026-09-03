@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -14,6 +13,9 @@ from archflow.project.refs import (
     require_identifier,
 )
 from archflow.state.operational_state import require_logical_ref
+from archflow.contracts.fields import (
+    mapping,
+)
 
 
 class StageRequirementError(ValueError):
@@ -59,28 +61,8 @@ def _refs(values: object, field: str, *, required: bool = False) -> tuple[str, .
     return tuple(sorted(normalized))
 
 
-def _branch_dict(branch: BranchRef) -> dict[str, object]:
-    return {
-        "project_id": branch.run.project_id,
-        "run_id": branch.run.run_id,
-        "base": {
-            "project_id": branch.run.base.project_id,
-            "version": branch.run.base.version,
-            "state_sha256": branch.run.base.require_digest(),
-        },
-        "branch_id": branch.branch_id,
-        "epoch": branch.epoch,
-    }
-
-
-def _mapping(value: object, field: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field} must be a mapping")
-    return value
-
-
 def _branch_from_dict(value: object) -> BranchRef:
-    payload = _mapping(value, "branch")
+    payload = mapping(value, "branch")
     if set(payload) != {
         "project_id",
         "run_id",
@@ -89,7 +71,7 @@ def _branch_from_dict(value: object) -> BranchRef:
         "epoch",
     }:
         raise StageRequirementError("branch schema drifted")
-    base_payload = _mapping(payload.get("base"), "branch.base")
+    base_payload = mapping(payload.get("base"), "branch.base")
     if set(base_payload) != {"project_id", "version", "state_sha256"}:
         raise StageRequirementError("branch base schema drifted")
     base = ProjectVersionRef(
@@ -211,7 +193,7 @@ class StageCheckRequirement:
 
     @classmethod
     def from_dict(cls, value: object) -> "StageCheckRequirement":
-        payload = _mapping(value, "requirement")
+        payload = mapping(value, "requirement")
         expected = {
             "schema",
             "requirement_id",
@@ -325,7 +307,7 @@ class StageRequirementProfile:
             "profile_id": self.profile_id,
             "typology_id": self.typology_id,
             "stage_id": self.stage_id,
-            "branch": _branch_dict(self.branch),
+            "branch": self.branch.to_dict(),
             "predecessor_state_digest": self.predecessor_state_digest,
             "scope_digest": self.scope_digest,
             "stage_subject_ref": self.stage_subject_ref,
@@ -336,7 +318,7 @@ class StageRequirementProfile:
 
     @classmethod
     def from_dict(cls, value: object) -> "StageRequirementProfile":
-        payload = _mapping(value, "profile")
+        payload = mapping(value, "profile")
         expected = {
             "schema",
             "profile_id",

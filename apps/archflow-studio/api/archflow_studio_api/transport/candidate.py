@@ -15,6 +15,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..adapters.harness import HARNESS_STATEMENT
+from ..application.artifacts import _text, _whole
 from ..application.candidate import CandidateRun, RelationTotals, SeatOutcome
 from ..application.jobs import PERSISTENCE, Job
 from .artifacts import ProjectArtifactDto, artifact_dto
@@ -239,16 +240,8 @@ def timings_dto(candidate: CandidateRun) -> TimingsDto:
     )
 
 
-def _text(value: object) -> str | None:
-    return value if isinstance(value, str) and value else None
-
-
 def _float(value: object) -> float | None:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
-
-
-def _whole(value: object) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def accepted_dto(job: Job) -> CandidateAcceptedDto:

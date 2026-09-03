@@ -21,7 +21,7 @@ class ArchitecturePolicyError(ValueError):
 
 
 @dataclass(frozen=True, slots=True, order=True)
-class Finding:
+class PolicyFinding:
     path: str
     line: int
     code: str
@@ -212,13 +212,13 @@ def _checked_python_files(
     )
 
 
-def _parse(path: Path, root: Path) -> tuple[ast.Module | None, Finding | None]:
+def _parse(path: Path, root: Path) -> tuple[ast.Module | None, PolicyFinding | None]:
     relative = path.relative_to(root).as_posix()
     try:
         return ast.parse(path.read_text(encoding="utf-8")), None
     except (OSError, UnicodeDecodeError, SyntaxError) as exc:
         line = exc.lineno if isinstance(exc, SyntaxError) and exc.lineno else 1
-        return None, Finding(relative, line, "PARSE_ERROR", str(exc))
+        return None, PolicyFinding(relative, line, "PARSE_ERROR", str(exc))
 
 
 def _import_targets(nodes: Iterable[ast.AST]) -> Iterator[tuple[str, int]]:
@@ -245,13 +245,13 @@ def check_imports(
     relative: str,
     index: _SourceIndex,
     policy: dict[str, Any],
-) -> Iterator[Finding]:
+) -> Iterator[PolicyFinding]:
     for target, line in _import_targets(index.nodes):
         if _source_matches(
             relative,
             policy["source_root"],
         ) and _module_matches(target, "probes"):
-            yield Finding(
+            yield PolicyFinding(
                 relative,
                 line,
                 "PROBE_REVERSE_IMPORT",
@@ -262,7 +262,7 @@ def check_imports(
                 continue
             for forbidden in rule["targets"]:
                 if _module_matches(target, forbidden):
-                    yield Finding(
+                    yield PolicyFinding(
                         relative,
                         line,
                         "LAYER_AUTHORITY_VIOLATION",
@@ -274,7 +274,7 @@ def check_instance_answers(
     relative: str,
     index: _SourceIndex,
     policy: dict[str, Any],
-) -> Iterator[Finding]:
+) -> Iterator[PolicyFinding]:
     forbidden_literals = tuple(
         item.casefold() for item in policy["forbidden_instance_literals"]
     )
@@ -284,7 +284,7 @@ def check_instance_answers(
             folded = node.value.casefold()
             for forbidden in forbidden_literals:
                 if forbidden in folded:
-                    yield Finding(
+                    yield PolicyFinding(
                         relative,
                         node.lineno,
                         "INSTANCE_ANSWER_LITERAL",
@@ -294,7 +294,7 @@ def check_instance_answers(
         elif isinstance(node, (ast.Name, ast.Attribute)):
             name = node.id if isinstance(node, ast.Name) else node.attr
             if name in forbidden_identifiers:
-                yield Finding(
+                yield PolicyFinding(
                     relative,
                     node.lineno,
                     "FIXED_FRAMEWORK_ANSWER",
@@ -377,7 +377,7 @@ def check_filesystem_writes(
     relative: str,
     index: _SourceIndex,
     policy: dict[str, Any],
-) -> Iterator[Finding]:
+) -> Iterator[PolicyFinding]:
     for node in index.nodes:
         if not isinstance(node, ast.Call):
             continue
@@ -386,7 +386,7 @@ def check_filesystem_writes(
             continue
         function = _enclosing_function(node, index.parents)
         if not _allowed_write(relative, function, operation, policy):
-            yield Finding(
+            yield PolicyFinding(
                 relative,
                 node.lineno,
                 "UNOWNED_FILESYSTEM_WRITE",
@@ -398,7 +398,7 @@ def check_authority_symbols(
     relative: str,
     index: _SourceIndex,
     policy: dict[str, Any],
-) -> Iterator[Finding]:
+) -> Iterator[PolicyFinding]:
     patterns = tuple(re.compile(item) for item in policy["authority_symbol_patterns"])
     allowed = {
         (item["path"], item["symbol"])
@@ -410,7 +410,7 @@ def check_authority_symbols(
         if not any(pattern.fullmatch(node.name) for pattern in patterns):
             continue
         if (relative, node.name) not in allowed:
-            yield Finding(
+            yield PolicyFinding(
                 relative,
                 node.lineno,
                 "DUPLICATE_STATE_AUTHORITY",
@@ -422,7 +422,7 @@ def check_commit_soft_gate_leak(
     relative: str,
     index: _SourceIndex,
     policy: dict[str, Any],
-) -> Iterator[Finding]:
+) -> Iterator[PolicyFinding]:
     if not _source_matches(relative, "archflow/commit"):
         return
     forbidden = set(policy["forbidden_commit_symbols"])
@@ -434,7 +434,7 @@ def check_commit_soft_gate_leak(
         else:
             continue
         if name in forbidden:
-            yield Finding(
+            yield PolicyFinding(
                 relative,
                 node.lineno,
                 "SOFT_GATE_PROMOTION_LEAK",
@@ -442,10 +442,10 @@ def check_commit_soft_gate_leak(
             )
 
 
-def check_probe_boundary(root: Path, policy: dict[str, Any]) -> Iterator[Finding]:
+def check_probe_boundary(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
     probe_root = root / policy["probe_root"]
     if (probe_root / "__init__.py").exists():
-        yield Finding(
+        yield PolicyFinding(
             (probe_root / "__init__.py").relative_to(root).as_posix(),
             1,
             "PROBE_PACKAGE",
@@ -455,7 +455,7 @@ def check_probe_boundary(root: Path, policy: dict[str, Any]) -> Iterator[Finding
     if probe_root.is_dir():
         for path in sorted(probe_root.rglob("*")):
             if path.is_file() and path.suffix.casefold() in suffixes:
-                yield Finding(
+                yield PolicyFinding(
                     path.relative_to(root).as_posix(),
                     1,
                     "PROBE_EXECUTABLE",
@@ -463,7 +463,7 @@ def check_probe_boundary(root: Path, policy: dict[str, Any]) -> Iterator[Finding
                 )
     root_runs = root / ".runs"
     if root_runs.exists():
-        yield Finding(
+        yield PolicyFinding(
             ".runs",
             1,
             "ROOT_RUN_STORE",
@@ -479,7 +479,7 @@ def _normalized_body(src: str, node: ast.FunctionDef) -> str:
     return re.sub(r"def \w+", "def F", seg)
 
 
-def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[Finding]:
+def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
     """The module registry must tell the truth, and a capability has one owner.
 
     Owner paths exist; every public_api symbol is defined in its owner; listed
@@ -500,20 +500,20 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[Finding]:
     for entry in entries:
         module_id = entry.get("module_id", "?")
         if module_id in ids:
-            yield Finding(rel_registry, 1, "REGISTRY_DUPLICATE_MODULE", f"module_id {module_id} listed twice")
+            yield PolicyFinding(rel_registry, 1, "REGISTRY_DUPLICATE_MODULE", f"module_id {module_id} listed twice")
         ids.add(module_id)
         owner = root / entry.get("owner_path", "")
         if not owner.is_file():
-            yield Finding(rel_registry, 1, "REGISTRY_OWNER_MISSING", f"{module_id}: owner_path {entry.get('owner_path')} does not exist")
+            yield PolicyFinding(rel_registry, 1, "REGISTRY_OWNER_MISSING", f"{module_id}: owner_path {entry.get('owner_path')} does not exist")
             continue
         for capability in entry.get("owns", ()):
             key = capability.strip().lower()
             if key in owners and owners[key] != module_id:
-                yield Finding(rel_registry, 1, "REGISTRY_DUPLICATE_OWNER", f"capability {capability!r} owned by both {owners[key]} and {module_id}")
+                yield PolicyFinding(rel_registry, 1, "REGISTRY_DUPLICATE_OWNER", f"capability {capability!r} owned by both {owners[key]} and {module_id}")
             owners.setdefault(key, module_id)
         for test in entry.get("tests", ()):
             if not (root / test).is_file():
-                yield Finding(rel_registry, 1, "REGISTRY_TEST_MISSING", f"{module_id}: test {test} does not exist")
+                yield PolicyFinding(rel_registry, 1, "REGISTRY_TEST_MISSING", f"{module_id}: test {test} does not exist")
         span = [root / f for f in (entry.get("files") or [entry["owner_path"]])]
         defined: set[str] = set()
         for path in span:
@@ -534,7 +534,7 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[Finding]:
                         owner_bodies.setdefault(body, (module_id, node.name))
         for symbol in entry.get("public_api", ()):
             if symbol.isidentifier() and symbol not in defined:
-                yield Finding(rel_registry, 1, "REGISTRY_SYMBOL_MISSING", f"{module_id}: public_api symbol {symbol} is not defined in {entry['owner_path']} or its files")
+                yield PolicyFinding(rel_registry, 1, "REGISTRY_SYMBOL_MISSING", f"{module_id}: public_api symbol {symbol} is not defined in {entry['owner_path']} or its files")
     owner_paths = {root / f for e in entries for f in (e.get("files") or [e.get("owner_path", "")])}
     for path in _checked_python_files(root, policy):
         if path in owner_paths or "/tests/" in path.as_posix() or path.name == "__init__.py":
@@ -548,12 +548,12 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[Finding]:
             if isinstance(node, ast.FunctionDef) and not node.name.startswith("__"):
                 hit = owner_bodies.get(_normalized_body(src, node))
                 if hit:
-                    yield Finding(path.relative_to(root).as_posix(), node.lineno, "DUPLICATE_OWNED_FUNCTION", f"{node.name} duplicates {hit[0]}.{hit[1]}; import the owner")
+                    yield PolicyFinding(path.relative_to(root).as_posix(), node.lineno, "DUPLICATE_OWNED_FUNCTION", f"{node.name} duplicates {hit[0]}.{hit[1]}; import the owner")
 
 
-def run_checks(root: Path, policy: dict[str, Any]) -> tuple[Finding, ...]:
+def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     validate_policy(policy)
-    findings: list[Finding] = list(check_probe_boundary(root, policy))
+    findings: list[PolicyFinding] = list(check_probe_boundary(root, policy))
     findings.extend(check_registry(root, policy))
     for path in _checked_python_files(root, policy):
         relative = path.relative_to(root).as_posix()
@@ -563,7 +563,7 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[Finding, ...]:
             continue
         assert tree is not None
         index = _index_tree(tree)
-        checks: list[Iterable[Finding]] = [
+        checks: list[Iterable[PolicyFinding]] = [
             check_imports(relative, index, policy)
         ]
         if _source_matches(relative, policy["source_root"]):
