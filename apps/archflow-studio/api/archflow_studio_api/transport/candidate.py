@@ -124,10 +124,19 @@ class CandidateDto(BaseModel):
     seat_results: list[CandidateSeatResultDto] = Field(alias="seatResults")
     relation_checks: RelationChecksDto = Field(alias="relationChecks")
     artifacts: list[ProjectArtifactDto]
+    skipped_runs: list[str] = Field(
+        alias="skippedRuns",
+        description="runs whose records could not be listed while resolving "
+        "this candidate's exported models; normally empty, never hidden",
+    )
     wall_time_s: float | None = Field(alias="wallTimeS")
     harness: str = Field(
         description="what kind of run produced this; a candidate is never a "
         "stage the project advanced through",
+    )
+    honesty: list[str] = Field(
+        description="what this candidate cannot tell you, in lines the UI "
+        "shows verbatim; empty is a real answer, not a missing one",
     )
 
 
@@ -176,8 +185,10 @@ def to_dto(candidate: CandidateRun) -> CandidateDto:
         artifacts=[
             artifact_dto(record) for record in candidate.artifacts
         ],
+        skipped_runs=list(candidate.skipped_runs),
         wall_time_s=candidate.wall_time_s,
         harness=HARNESS_STATEMENT,
+        honesty=list(candidate.honesty),
     )
 
 

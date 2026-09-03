@@ -12,11 +12,15 @@ would hold the connection open long after the client had gone, and the run this
 stream is about would go on writing to a queue nobody was reading. FastAPI
 keeps the connection alive with its own ping between events.
 
-``limit`` is the other way to read this stream: send at most that many events
-and close. SSE is built to be resumed — that is what ``Last-Event-ID`` is for —
-so a client that cannot hold a connection open (a terminal, a poller, a proxy
-that closes long requests) asks for a bounded run of events and comes back for
-the next one. Without it the stream is unbounded, which is what a browser wants.
+``limit`` is the other way to read this stream: catch up on what is already
+there and close. It sends at most that many events — replay included — and
+stops as soon as there is nothing left to send, so a bounded read **always**
+terminates. That second half matters as much as the first: a limit that waited
+for its quota would hang forever on a quiet process, which is exactly the trap
+a client asking for a bounded read is trying to avoid. SSE is built to be
+resumed — that is what ``Last-Event-ID`` is for — so such a client reads what
+is there and comes back for the rest. Without ``limit`` the stream is unbounded
+and waits for live events, which is what a browser wants.
 """
 
 from __future__ import annotations
@@ -52,8 +56,10 @@ async def stream_events(
     limit: int | None = Query(
         default=None,
         ge=1,
-        description="close the stream after this many events; a client "
-        "resumes from the last one with Last-Event-ID",
+        description="catch-up read: send at most this many events, replay "
+        "included, and close as soon as there is nothing left to send. A "
+        "client resumes from the last one with Last-Event-ID. Omit it to "
+        "hold the connection open and wait for live events.",
     ),
 ) -> AsyncIterator[ServerSentEvent]:
     """Replay what this process remembers, then carry what happens next."""
@@ -70,6 +76,11 @@ async def stream_events(
             try:
                 event = inbox.get_nowait()
             except Empty:
+                if limit is not None:
+                    # A bounded read is a catch-up, not a wait: the backlog is
+                    # drained, so this connection is done even though it sent
+                    # fewer events than it was allowed to.
+                    return
                 await asyncio.sleep(POLL_SECONDS)
                 continue
             yield _frame(event)

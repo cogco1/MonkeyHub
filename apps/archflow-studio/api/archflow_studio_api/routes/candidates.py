@@ -16,6 +16,7 @@ it succeeded, and what failed was the design.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import secrets
 
 from fastapi import APIRouter
 from starlette.requests import Request
@@ -108,8 +109,11 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
     return candidate_dto(
         describe(
             bound_project(state),
+            # The proposal that was executed, for the honesty lines: what the
+            # change reached is a fact about the change, and the run records
+            # cannot answer it.
+            state.proposals.get(job.proposal_id),
             candidate_id=candidate_id,
-            proposal_id=job.proposal_id,
             job_id=job.job_id,
             status=job.status,
         )
@@ -141,7 +145,14 @@ def _require_current_base(
 
 
 def _run_id(proposal_id: str) -> str:
-    """The candidate's run id: when it was made, and what it came from."""
+    """The candidate's run id: when it was made, what from, and which one.
+
+    The timestamp and the proposal are what a person reads; the four random
+    hex characters are what keeps two candidates of the same proposal, made
+    inside one second, from naming the same run. Without them the second run
+    would collide with the first — and a run id that two candidates could
+    claim is a candidate id that answers for the wrong records.
+    """
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    return f"studio-cand-{stamp}-{proposal_id[-8:]}"
+    return f"studio-cand-{stamp}-{proposal_id[-8:]}-{secrets.token_hex(2)}"

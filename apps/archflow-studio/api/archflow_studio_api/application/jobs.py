@@ -78,7 +78,14 @@ class JobRegistry:
         proposal_id: str,
         work: Callable[[], Any],
     ) -> Job:
-        """Queue one candidate run and answer with the job that will do it."""
+        """Queue one candidate run and answer with the job that will do it.
+
+        A candidate id is claimed here, once. Rebinding one to a second job
+        would silently orphan the first: ``GET /api/candidates/{id}`` would
+        start answering for a different run, and the job that actually made
+        those records would become unreachable through the id it was given.
+        The second submission is refused instead, naming both jobs.
+        """
 
         job = Job(
             job_id=f"job-{uuid4().hex[:12]}",
@@ -88,8 +95,18 @@ class JobRegistry:
             created_at=_now(),
         )
         with self._lock:
-            self._jobs[job.job_id] = job
-            self._by_candidate[candidate_id] = job.job_id
+            claimed = self._by_candidate.get(candidate_id)
+            if claimed is None:
+                self._jobs[job.job_id] = job
+                self._by_candidate[candidate_id] = job.job_id
+        if claimed is not None:
+            raise StudioError(
+                409,
+                "CANDIDATE_ID_COLLISION",
+                f"candidate {candidate_id} is already claimed by job "
+                f"{claimed}. One candidate id names one run; it is never "
+                "rebound to a second job.",
+            )
         self._publish(job, "candidate.queued")
         self._workers.submit(self._run, job.job_id, work)
         return job
@@ -139,10 +156,13 @@ class JobRegistry:
         )
         try:
             work()
-        except BaseException as exc:  # noqa: BLE001 - the reason is the point
-            # Every failure is somebody's answer. The runner's own sentence
-            # goes on the job verbatim; an exception with no message would
-            # otherwise arrive as an empty string nobody could act on.
+        # Every *failure* is somebody's answer, but an interpreter that is
+        # shutting down is not a failed candidate: SystemExit and
+        # KeyboardInterrupt pass through rather than being recorded as one.
+        except Exception as exc:  # noqa: BLE001 - the reason is the point
+            # The runner's own sentence goes on the job verbatim; an exception
+            # with no message would otherwise arrive as an empty string nobody
+            # could act on.
             self._publish(
                 self._transition(
                     job_id,

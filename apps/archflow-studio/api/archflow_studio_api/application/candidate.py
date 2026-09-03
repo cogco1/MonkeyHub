@@ -37,10 +37,12 @@ from ..settings import StudioSettings
 from ..transport.errors import StudioError
 from .artifacts import ArtifactRecord, list_artifacts
 from .binding import ProjectBinding, record_kind
+from .jobs import QUEUED, RUNNING
 from .projection import (
     BRANCH_ID,
     PORTFOLIO_ID,
     SELECTION_DECISION_REF,
+    StateProjection,
     # Module-private, deliberately reused rather than re-implemented: a
     # candidate must start from the same authored record, read the same way
     # and refusing for the same reasons, as the projection the user was shown.
@@ -53,6 +55,17 @@ from .proposals import Proposal
 
 RUNNER_RECEIPT_KIND = "runner-run-receipt"
 RELATION_CHECK_KIND = "seat-relation-check"
+
+
+class StaleBaseError(ValueError):
+    """The authored record moved between the proposal and the run.
+
+    Deliberately not a ``StudioError``: this is raised on the worker thread,
+    where there is no request left to answer. The route makes the same check
+    at request time and refuses with 409; this one catches the interval the
+    route cannot see — between accepting the job and reading the record — and
+    the job reports it.
+    """
 
 
 def successor_record(record: StateRecord, proposal: Proposal) -> StateRecord:
@@ -102,13 +115,28 @@ def execute_candidate(
 
     Called on a worker thread: ``run_project`` calls ``asyncio.run`` internally
     and would refuse to start on the event loop. Every failure — a refused
-    value, an absent seat pack, a repository error — propagates to the caller,
-    which is the job registry, and becomes a visible failed job.
+    value, an absent seat pack, a stale base, a repository error — propagates
+    to the caller, which is the job registry, and becomes a visible failed job.
+
+    The order matters. The seat pack, the base check and the authored record
+    are all resolved *before* ``create_run``, so a candidate that cannot run
+    leaves no run directory behind for somebody to wonder about later.
     """
 
     repository = binding.repository
     seat_pack = load_seat_pack(repository)
     seats = seats_of(seat_pack)
+    # The base is checked here, where the record is actually read. The route
+    # checked it too, but that was before this job reached the front of the
+    # queue: in between, the authored record may have been rewritten, and
+    # running the change against a state nobody was shown is the one failure
+    # that would look like a success.
+    live = project_state(binding).state_digest
+    if live != proposal.base_state_digest:
+        raise StaleBaseError(
+            "STALE_BASE: the authored record changed after the proposal was "
+            f"made ({proposal.base_state_digest[:8]} -> {live[:8]})"
+        )
     successor = successor_record(_load_authored_record(binding), proposal)
     run = repository.create_run(run_id)
     # The one sanctioned binding: the record attaches itself to this run.
@@ -196,14 +224,19 @@ class CandidateRun:
     seat_results: tuple[SeatOutcome, ...]
     relation_checks: RelationTotals
     artifacts: tuple[ArtifactRecord, ...]
+    # Runs whose records could not be listed while looking for this
+    # candidate's exported models. Normally empty, never hidden.
+    skipped_runs: tuple[str, ...]
     wall_time_s: float | None
+    # What this candidate cannot tell you, in lines the UI shows verbatim.
+    honesty: tuple[str, ...]
 
 
 def describe(
     binding: ProjectBinding,
+    proposal: Proposal,
     *,
     candidate_id: str,
-    proposal_id: str,
     job_id: str,
     status: str,
 ) -> CandidateRun:
@@ -211,15 +244,30 @@ def describe(
 
     Nothing the job remembered is used for the run's own facts: the seats, the
     digests and the relation counts all come from the retained records, so a
-    candidate reported here is one the project can still account for.
+    candidate reported here is one the project can still account for. The
+    proposal is here for one thing only — the honesty lines, which are about
+    what the *change* did not do rather than about what the run produced.
     """
 
+    if status in (QUEUED, RUNNING):
+        raise StudioError(
+            404,
+            "CANDIDATE_NOT_FOUND",
+            f"{binding.project_id}: candidate {candidate_id} is still "
+            f"{status}; job {job_id} has not finished writing its records. "
+            f"Poll GET /api/jobs/{job_id} and read the candidate when it "
+            "reports succeeded.",
+        )
     receipt = _receipt(binding, candidate_id)
     seat_rows = _rows(receipt.get("seat_results"))
     record_digest = _text(receipt.get("state_record_digest"))
+    projection = project_state(binding)
+    # One listing answers both questions: which of this run's exports are
+    # servable, and which runs could not be read while finding out.
+    listing = list_artifacts(binding)
     return CandidateRun(
         candidate_id=candidate_id,
-        proposal_id=proposal_id,
+        proposal_id=proposal.proposal_id,
         job_id=job_id,
         status=status,
         base=binding.load_run(candidate_id).base,
@@ -228,7 +276,7 @@ def describe(
         changed_vs_projection=(
             None
             if record_digest is None
-            else record_digest != project_state(binding).record_digest
+            else record_digest != projection.record_digest
         ),
         receipt_ref=_text(receipt.get("receipt_ref")),
         seat_execution_complete=bool(receipt.get("seat_execution_complete")),
@@ -244,19 +292,48 @@ def describe(
             for row in seat_rows
         ),
         relation_checks=_relation_totals(binding, candidate_id),
-        # Only an exported run has anything to serve, and only that run's own
-        # receipts are read: a candidate never claims another run's model.
-        artifacts=(
-            tuple(
-                record
-                for record in list_artifacts(binding).artifacts
-                if record.run_id == candidate_id
-            )
-            if any(row.get("cad") for row in seat_rows)
-            else ()
+        # Only this run's own receipts are read: a candidate never claims
+        # another run's model. A run that did not export has none, so an
+        # unexported candidate answers with an empty list by construction.
+        artifacts=tuple(
+            record
+            for record in listing.artifacts
+            if record.run_id == candidate_id
         ),
+        skipped_runs=listing.skipped_runs,
         wall_time_s=_number(receipt.get("wall_time_s")),
+        honesty=_honesty(proposal, projection),
     )
+
+
+def _honesty(
+    proposal: Proposal, projection: StateProjection
+) -> tuple[str, ...]:
+    """What this candidate did not do, said out loud.
+
+    The studio replaces one authored value and runs; it does not recompute the
+    quantities that value feeds, because recomputation is the kernel's rule to
+    apply and the kernel has no successor operation yet (K1/P109). A candidate
+    whose geometry was built from a record where ``span`` still says what it
+    said before ``bay`` changed is not wrong — it is partial — and the
+    difference has to be on the wire, not in a design note somebody read once.
+    """
+
+    if proposal.impact.propagated:
+        return (
+            f"derived values downstream of {proposal.target_ref} were not "
+            "recomputed for this candidate (K1/P109): "
+            + ", ".join(proposal.impact.propagated),
+        )
+    if not projection.edges:
+        # Nothing propagated, and nothing could have: the record declares no
+        # dependencies at all. Reporting the first without the second would
+        # let "nothing downstream" read as "nothing is downstream".
+        return (
+            "0 dependency edges: nothing downstream could be recomputed or "
+            "checked",
+        )
+    return ()
 
 
 def _receipt(binding: ProjectBinding, run_id: str) -> Mapping[str, Any]:

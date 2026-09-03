@@ -23,25 +23,31 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import tempfile
+import threading
 import time
 import unittest
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application.binding import record_kind
+from archflow_studio_api.application.binding import bound_project, record_kind
+from archflow_studio_api.application.candidate import execute_candidate
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.repository import FilesystemProjectRepository
 
+from archflow_studio_api.transport.errors import StudioError
+
 from .support import (
     PROJECT_ID,
     REFERENCE_RUN_ID,
     RUNNER_RECORD_PATH,
     RUNNER_SEATS_PATH,
+    add_unreadable_run,
     make_project,
     runner_state_digest,
 )
@@ -54,6 +60,13 @@ VILLA_PROJECT_ID = "villa-rotonda-reconstruction"
 JOB_DEADLINE = 120.0
 
 TERMINAL = ("succeeded", "failed")
+
+# ``studio-cand-<utc stamp>-<last 8 of the proposal>-<4 random hex>``, and the
+# whole of it must be a P036 identifier.
+CANDIDATE_ID = re.compile(
+    r"^studio-cand-\d{8}-\d{6}-[0-9a-f]{8}-[0-9a-f]{4}$"
+)
+IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 
 
 class CandidateTestCase(unittest.TestCase):
@@ -128,12 +141,41 @@ class CandidateRunTests(CandidateTestCase):
 
         self.assertEqual(accepted["status"], "queued")
         self.assertTrue(accepted["jobId"])
-        # The candidate id is the run id, and it says what it is.
-        self.assertTrue(
-            accepted["candidateId"].startswith("studio-cand-"),
-            accepted["candidateId"],
-        )
+        # The candidate id is the run id: when it was made, which proposal it
+        # came from, and which of that proposal's candidates it is.
+        self.assertRegex(accepted["candidateId"], CANDIDATE_ID)
+        self.assertRegex(accepted["candidateId"], IDENTIFIER)
         self.finished(accepted["jobId"])
+
+    def test_two_candidates_of_one_proposal_never_share_a_run(self) -> None:
+        """Started in the same second, they are still two different runs."""
+
+        proposal_id = self.propose(
+            "set height to 2.2", elementId="portico-base"
+        )["proposalId"]
+
+        first = self.start(proposal_id)
+        second = self.start(proposal_id)
+
+        self.assertNotEqual(first["candidateId"], second["candidateId"])
+        self.assertNotEqual(first["jobId"], second["jobId"])
+        # Both ids carry the same proposal; only the last group differs.
+        self.assertEqual(
+            first["candidateId"].rsplit("-", 1)[0].rsplit("-", 1)[1],
+            second["candidateId"].rsplit("-", 1)[0].rsplit("-", 1)[1],
+        )
+        for accepted in (first, second):
+            with self.subTest(candidate=accepted["candidateId"]):
+                self.assertEqual(
+                    self.finished(accepted["jobId"])["status"], "succeeded"
+                )
+                response = self.client.get(
+                    f"/api/candidates/{accepted['candidateId']}"
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(
+                    response.json()["candidateId"], accepted["candidateId"]
+                )
 
     def test_candidate_run_is_a_real_runner_run(self) -> None:
         accepted, job = self.run_candidate(
@@ -174,6 +216,8 @@ class CandidateRunTests(CandidateTestCase):
         self.assertEqual(len(seat["programDigest"]), 64)
         self.assertTrue(seat["programRef"].startswith("project://"))
         self.assertTrue(seat["relationCheckRef"].startswith("project://"))
+        # Nothing was unreadable, and the list says so rather than being absent.
+        self.assertEqual(candidate["skippedRuns"], [])
 
     def test_candidate_differs_from_the_projection_it_started_from(
         self,
@@ -194,6 +238,91 @@ class CandidateRunTests(CandidateTestCase):
         self.assertNotEqual(
             candidate["recordDigest"], projected["recordDigest"]
         )
+
+    def test_a_candidate_that_changes_nothing_says_so(self) -> None:
+        """The value the record already holds is still a candidate, and it
+        reports that the content did not move."""
+
+        accepted, job = self.run_candidate(
+            "set height to 0.6", elementId="portico-base"
+        )
+        self.assertEqual(job["status"], "succeeded", job)
+
+        candidate = self.client.get(
+            f"/api/candidates/{accepted['candidateId']}"
+        ).json()
+        projected = self.client.get("/api/state").json()
+
+        self.assertIs(candidate["changedVsProjection"], False)
+        self.assertEqual(
+            candidate["recordDigest"], projected["recordDigest"]
+        )
+        # Content identity is invariant under binding; the binding identity is
+        # a different number, and this candidate is bound to its own run.
+        self.assertNotEqual(
+            candidate["stateDigest"], projected["stateDigest"]
+        )
+
+    def test_a_candidate_says_what_it_did_not_recompute(self) -> None:
+        """K1 on the wire: a partial change must not read as a whole one."""
+
+        accepted, job = self.run_candidate("set bay to 3")
+        self.assertEqual(job["status"], "succeeded", job)
+
+        honesty = self.client.get(
+            f"/api/candidates/{accepted['candidateId']}"
+        ).json()["honesty"]
+
+        self.assertEqual(
+            honesty,
+            [
+                "derived values downstream of parameter:bay were not "
+                "recomputed for this candidate (K1/P109): parameter:span"
+            ],
+        )
+
+    def test_unreadable_runs_are_named_on_the_candidate(self) -> None:
+        """One corrupt run must not cost the candidate its readout."""
+
+        broken = add_unreadable_run(self.repository)
+
+        accepted, job = self.run_candidate(
+            "set height to 2.2", elementId="portico-base"
+        )
+        self.assertEqual(job["status"], "succeeded", job)
+
+        candidate = self.client.get(
+            f"/api/candidates/{accepted['candidateId']}"
+        ).json()
+
+        self.assertEqual(candidate["skippedRuns"], [broken])
+        self.assertIs(candidate["seatExecutionComplete"], True)
+
+    def test_an_unfinished_candidate_says_it_is_unfinished(self) -> None:
+        """A 404 for work still in flight must not read as a failure."""
+
+        proposal_id = self.propose(
+            "set height to 2.2", elementId="portico-base"
+        )["proposalId"]
+        # The registry has one worker; holding it lets the candidate be asked
+        # for while it is provably not finished.
+        release = threading.Event()
+        self.addCleanup(release.set)
+        held = self.app.state.jobs.submit(
+            candidate_id="studio-cand-held",
+            proposal_id=proposal_id,
+            work=release.wait,
+        )
+
+        response = self.client.get("/api/candidates/studio-cand-held")
+
+        self.assertEqual(response.status_code, 404, response.text)
+        body = response.json()
+        self.assertEqual(body["code"], "CANDIDATE_NOT_FOUND")
+        self.assertRegex(body["detail"], r"still (queued|running)")
+        self.assertIn(held.job_id, body["detail"])
+        release.set()
+        self.assertEqual(self.finished(held.job_id)["status"], "succeeded")
 
     def test_the_run_retains_the_kernel_records_the_readout_reads(self) -> None:
         accepted, job = self.run_candidate(
@@ -369,6 +498,73 @@ class CandidateFailureTests(CandidateTestCase):
         self.assertEqual(response.status_code, 409, response.text)
         self.assertEqual(response.json()["code"], "STALE_BASE")
 
+    def test_a_candidate_id_is_never_rebound_to_a_second_job(self) -> None:
+        """Two jobs on one candidate id would orphan the first run's records."""
+
+        registry = self.app.state.jobs
+        first = registry.submit(
+            candidate_id="studio-cand-clash",
+            proposal_id="studio-first",
+            work=lambda: None,
+        )
+
+        with self.assertRaises(StudioError) as caught:
+            registry.submit(
+                candidate_id="studio-cand-clash",
+                proposal_id="studio-second",
+                work=lambda: None,
+            )
+
+        self.assertEqual(caught.exception.status, 409)
+        self.assertEqual(caught.exception.code, "CANDIDATE_ID_COLLISION")
+        self.assertIn("studio-cand-clash", caught.exception.detail)
+        self.assertIn(first.job_id, caught.exception.detail)
+        # The first job still owns the id, and its own record is untouched.
+        self.assertEqual(
+            registry.for_candidate("studio-cand-clash").job_id, first.job_id
+        )
+        self.assertEqual(registry.get(first.job_id).proposal_id, "studio-first")
+
+    def test_a_record_that_moved_after_the_proposal_fails_the_run(self) -> None:
+        """The base is checked again where the record is actually read.
+
+        The route checked it when the request arrived; this is the interval
+        the route cannot see — after the job was accepted, before the record
+        was read — and a candidate must not be built from a state nobody was
+        shown. No run directory is created for a run that cannot happen.
+        """
+
+        proposal = self.app.state.proposals.get(
+            self.propose("set height to 2.2", elementId="portico-base")[
+                "proposalId"
+            ]
+        )
+        path = self.repository.layout.resolve_relative(RUNNER_RECORD_PATH)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for entity in payload["entities"]:
+            if entity["entity_id"] == "portico-cornice":
+                entity["fields"]["params"]["height"] = 0.45
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        run_id = "studio-cand-stale-guard"
+        binding = bound_project(self.app.state)
+        job = self.app.state.jobs.submit(
+            candidate_id=run_id,
+            proposal_id=proposal.proposal_id,
+            work=lambda: execute_candidate(
+                binding, self.app.state.settings, proposal, run_id
+            ),
+        )
+        finished = self.finished(job.job_id)
+
+        self.assertEqual(finished["status"], "failed", finished)
+        self.assertIn(
+            "STALE_BASE: the authored record changed after the proposal was "
+            f"made ({proposal.base_state_digest[:8]} -> ",
+            finished["error"],
+        )
+        self.assertFalse((self.repository.layout.runs / run_id).exists())
+
     def test_unknown_ids_are_named_not_guessed(self) -> None:
         for path, code in (
             ("/api/proposals/studio-nope/candidate", "PROPOSAL_NOT_FOUND"),
@@ -498,10 +694,21 @@ class VillaCopyTests(unittest.TestCase):
         print(
             f"\n[villa candidate] wall={candidate['wallTimeS']}s "
             f"seats={[(s['seatId'], s['status'], s['objects']) for s in candidate['seatResults']]} "
-            f"relations={candidate['relationChecks']}"
+            f"relations={candidate['relationChecks']} "
+            f"honesty={candidate['honesty']}"
         )
         self.assertTrue(candidate["seatExecutionComplete"])
         self.assertTrue(candidate["changedVsProjection"])
+        # The villa's record declares no dependency edges at all, so nothing
+        # was propagated *and* nothing could have been. The candidate says the
+        # second, not just the first.
+        self.assertEqual(
+            candidate["honesty"],
+            [
+                "0 dependency edges: nothing downstream could be recomputed "
+                "or checked"
+            ],
+        )
         self.assertEqual(len(candidate["seatResults"]), 2)
         self.assertTrue(
             all(

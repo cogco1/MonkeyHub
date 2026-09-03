@@ -1,17 +1,17 @@
-"""``GET /api/events``: the replay, and then whatever happens next.
+"""``GET /api/events``: the catch-up read, and what it promises.
 
-The stream is read here as SSE frames rather than as a body, because the two
-halves of the promise are separate facts: what the process still remembered
-when the client connected, and what happened after it did. A test that asked
-for the buffer and called it a stream would pass against an endpoint that never
-carried a live event at all — so the live event here is published by another
-thread while the request is open, which is the only way it is really live.
+Every request here is bounded with ``limit``, the same form a poller or a
+terminal would use, because ``TestClient`` runs the whole ASGI app to
+completion before handing back a response — it reads a body, not a socket, and
+an unbounded stream would deadlock it. Live delivery over a held-open
+connection is therefore tested at the sink (``test_events.py``), where the
+queue hand-off actually lives; what is tested here is the transport: framing,
+ordering, resume, and termination.
 
-``Last-Event-ID`` is the other half: a client whose connection dropped names the
-last sequence it saw and gets what it missed, not the whole buffer again.
-
-Every request here is bounded with ``limit`` — the same bounded form a poller or
-a terminal would use — because the test client reads a response, not a socket.
+Termination is the promise worth stating. A bounded read must end whether or
+not the process is busy: a ``limit`` that waited for its quota would hang
+forever on a quiet server, which is the one thing a client asking for a
+bounded read is trying to avoid.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ import json
 from pathlib import Path
 import shutil
 import tempfile
-import threading
 from typing import Any, Iterator
 import unittest
 
@@ -81,30 +80,48 @@ class SseTestCase(unittest.TestCase):
             )
             return list(frames(response.read().decode("utf-8")))
 
-    def test_stream_replays_then_carries_a_live_event(self) -> None:
+    def test_the_replay_is_framed_with_its_type_and_resume_point(self) -> None:
         self.publish("candidate.queued", job_id="job-a", candidate_id="cand-a")
-        # Published while the request is open, from another thread: what comes
-        # back second is live, not something the buffer already held.
-        live = threading.Timer(
-            0.1,
-            lambda: self.publish(
-                "candidate.succeeded", job_id="job-a", wall_time_s=0.25
-            ),
-        )
-        live.start()
-        self.addCleanup(live.cancel)
+        self.publish("candidate.succeeded", job_id="job-a", wall_time_s=0.25)
 
-        replayed, carried = self.read(limit=2)
+        queued, succeeded = self.read(limit=2)
 
-        self.assertEqual(replayed["event"], "candidate.queued")
-        self.assertEqual(replayed["data"]["jobId"], "job-a")
-        self.assertEqual(replayed["data"]["seq"], 1)
-        self.assertEqual(replayed["id"], "1")
-        self.assertEqual(carried["event"], "candidate.succeeded")
-        self.assertEqual(carried["data"]["seq"], 2)
-        self.assertEqual(carried["data"]["wallTimeS"], 0.25)
+        self.assertEqual(queued["event"], "candidate.queued")
+        self.assertEqual(queued["data"]["jobId"], "job-a")
+        self.assertEqual(queued["data"]["candidateId"], "cand-a")
+        self.assertEqual(queued["data"]["seq"], 1)
+        # The id is the resume point, and it is the sequence.
+        self.assertEqual(queued["id"], "1")
+        self.assertEqual(succeeded["event"], "candidate.succeeded")
+        self.assertEqual(succeeded["data"]["seq"], 2)
+        self.assertEqual(succeeded["data"]["wallTimeS"], 0.25)
         # A field this event has nothing to say about is null, not missing.
-        self.assertIsNone(carried["data"]["error"])
+        self.assertIsNone(succeeded["data"]["error"])
+
+    def test_a_bounded_read_sends_no_more_than_its_limit(self) -> None:
+        for index in range(5):
+            self.publish("candidate.queued", job_id=f"job-{index}")
+
+        read = self.read(limit=3)
+
+        self.assertEqual([item["data"]["seq"] for item in read], [1, 2, 3])
+
+    def test_a_bounded_read_ends_when_the_backlog_runs_out(self) -> None:
+        """A limit is a ceiling, not a quota it will wait to fill.
+
+        Nothing is publishing here and the buffer holds one event. Asking for
+        fifty must return that one and close; an endpoint that waited for the
+        other forty-nine would hang the client forever on a quiet process.
+        """
+
+        self.publish("candidate.queued", job_id="job-a")
+
+        read = self.read(limit=50)
+
+        self.assertEqual([item["data"]["seq"] for item in read], [1])
+
+    def test_a_bounded_read_of_an_empty_buffer_ends_immediately(self) -> None:
+        self.assertEqual(self.read(limit=10), [])
 
     def test_last_event_id_resumes_after_the_sequence_it_names(self) -> None:
         self.publish("candidate.queued", job_id="job-a")
