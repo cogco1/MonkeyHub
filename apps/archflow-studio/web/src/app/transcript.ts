@@ -18,6 +18,14 @@ import type { AgentReadingDto, CompareDto, ProposalDto } from "../api/generated"
 
 export type Entry =
   | { kind: "system"; id: string; text: string }
+  | {
+      /** The waiting half of a proposal: an agent is reading the sentence. */
+      kind: "reading";
+      id: string;
+      subject: string;
+      recordSize: string;
+      startedAt: number;
+    }
   | { kind: "you"; id: string; text: string }
   | {
       kind: "proposal";
@@ -54,6 +62,7 @@ export type Entry =
 /** An entry before the transcript names it. */
 export type EntryDraft =
   | Omit<Extract<Entry, { kind: "system" }>, "id">
+  | Omit<Extract<Entry, { kind: "reading" }>, "id">
   | Omit<Extract<Entry, { kind: "you" }>, "id">
   | Omit<Extract<Entry, { kind: "proposal" }>, "id">
   | Omit<Extract<Entry, { kind: "question" }>, "id">
@@ -66,6 +75,8 @@ export interface Transcript {
   readonly entries: readonly Entry[];
   /** Append one entry; answers the id it was given. */
   append(draft: EntryDraft): string;
+  /** Drop one entry, for the waiting lines that an answer replaces. */
+  remove(entryId: string): void;
   /** Update the candidate entry's job status in place, when it changed. */
   noteJobStatus(candidateId: string, status: string): void;
   /**
@@ -85,6 +96,10 @@ export function useTranscript(): Transcript {
     const id = `e${counter.current}`;
     setEntries((current) => [...current, { ...draft, id } as Entry]);
     return id;
+  }, []);
+
+  const remove = useCallback((entryId: string) => {
+    setEntries((current) => current.filter((entry) => entry.id !== entryId));
   }, []);
 
   const noteJobStatus = useCallback((candidateId: string, status: string) => {
@@ -120,5 +135,5 @@ export function useTranscript(): Transcript {
     [entries],
   );
 
-  return { entries, append, noteJobStatus, replaceProposal, hasVerdictFor };
+  return { entries, append, remove, noteJobStatus, replaceProposal, hasVerdictFor };
 }

@@ -413,7 +413,7 @@ export const ThreeDmViewport = forwardRef<
   const callbacksRef = useRef({ onInspection, onStatus, onSource, onPick });
   const [dragActive, setDragActive] = useState(false);
   const [visualStatus, setVisualStatus] = useState<ViewportStatus>("idle");
-  const [visualMessage, setVisualMessage] = useState("Drop a .3dm here, or open one from this machine");
+  const [visualMessage, setVisualMessage] = useState("No model on screen · choose a version below, or drop a .3dm from this machine here");
 
   callbacksRef.current = { onInspection, onStatus, onSource, onPick };
 
@@ -440,7 +440,7 @@ export const ThreeDmViewport = forwardRef<
     }
     if (!runtime?.model) {
       callbacksRef.current.onInspection(null);
-      reportStatus("idle", "Drop a .3dm here, or open one from this machine");
+      reportStatus("idle", "No model on screen · choose a version below, or drop a .3dm from this machine here");
       return;
     }
     runtime.scene.remove(runtime.model);
@@ -448,7 +448,7 @@ export const ThreeDmViewport = forwardRef<
     runtime.model = null;
     runtime.render();
     callbacksRef.current.onInspection(null);
-    reportStatus("idle", "Drop a .3dm here, or open one from this machine");
+    reportStatus("idle", "No model on screen · choose a version below, or drop a .3dm from this machine here");
   }, [reportStatus]);
 
   const removeGhost = useCallback(() => {
@@ -991,8 +991,8 @@ export const ThreeDmViewport = forwardRef<
           {visualStatus === "loading" && <span className="spinner" aria-hidden="true" />}
           <p aria-live="polite">{visualMessage}</p>
           {(visualStatus === "idle" || visualStatus === "error") && (
-            <button className="button button--primary" type="button" onClick={onRequestFile}>
-              Open .3dm
+            <button className="button" type="button" onClick={onRequestFile}>
+              Open a local .3dm
             </button>
           )}
         </div>

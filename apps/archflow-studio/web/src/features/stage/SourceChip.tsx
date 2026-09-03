@@ -24,7 +24,7 @@ function tagOf(sourceLabel: string | null): { tag: string; rest: string } {
  * read). The detail is the server's word — never a colour alone.
  */
 export interface ViewState {
-  state: "current" | "ghost" | "validated";
+  state: "current" | "ghost" | "validated" | "blocked";
   label: string;
   detail: string | null;
 }

@@ -1429,6 +1429,12 @@ button.chip:hover {
   border: 1px solid var(--held);
 }
 
+.source__state--blocked {
+  background: var(--panel-2);
+  color: var(--violated);
+  border: 1px solid var(--violated);
+}
+
 .source__state-detail {
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -1620,4 +1626,21 @@ button.chip:hover {
 
 .blend__meta {
   font-size: 11px;
+}
+
+/* The agent is reading: the waiting half of a proposal, with a clock ------- */
+
+.reading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reading__clock {
+  color: var(--ink-2);
 }

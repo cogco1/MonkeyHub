@@ -117,7 +117,7 @@ function ghostSpecFor(
 
 export default function App() {
   const transcript = useTranscript();
-  const { append, noteJobStatus: noteTranscriptStatus } = transcript;
+  const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
   const pushNotice = useCallback(
     (line: string) => {
       append({ kind: "system", text: line });
@@ -272,6 +272,31 @@ export default function App() {
     [],
   );
 
+  // The first ten seconds: a bound project shows its own certified model
+  // without being asked - the reference run's export when it has one, else
+  // the newest export any run left, said so in the conversation. A file from
+  // this machine stays a secondary door; it is the one with no receipt.
+  const autoLoadedRef = useRef(false);
+  useEffect(() => {
+    if (autoLoadedRef.current) return;
+    if (artifacts.status !== "ready" || projection === null) return;
+    if (loadedArtifact !== null || pendingArtifact.current !== null) return;
+    const rows = artifacts.value.artifacts.filter(
+      (row) => row.available && row.sha256 !== null,
+    );
+    if (rows.length === 0) return;
+    const reference = rows.find((row) => row.runId === projection.referenceRun.runId);
+    const pick = reference ?? rows[rows.length - 1];
+    autoLoadedRef.current = true;
+    append({
+      kind: "system",
+      text: reference
+        ? `Showing the reference run's export · ${pick.fileName}`
+        : `The reference run ${projection.referenceRun.runId} left no export; showing ${pick.fileName} from run ${pick.runId}`,
+    });
+    void loadArtifactIntoViewer(pick, canonicalSourceLabel(pick));
+  }, [append, artifacts, loadArtifactIntoViewer, loadedArtifact, projection]);
+
   /** The viewer says which file it holds; that is when the shell writes it down. */
   const noteSource = useCallback((label: string | null) => {
     setSourceLabel(label);
@@ -364,6 +389,19 @@ export default function App() {
             : `${utterance} · with ${gestures.length} ${gestures.length === 1 ? "mark" : "marks"} on the model`,
       });
       setProposalBusy(true);
+      // The waiting half, on screen: who is reading what, and for how long.
+      // The answer - card, question or refusal - replaces this line.
+      const readingId = append({
+        kind: "reading",
+        subject:
+          selection?.elementId ??
+          selection?.componentId ??
+          (gestures.some((gesture) => gesture.kind === "circle")
+            ? "what you circled"
+            : "the record"),
+        recordSize: `${projection?.counts.components ?? "?"} components, ${projection?.elements.length ?? "?"} elements`,
+        startedAt: Date.now(),
+      });
       try {
         // The sentence goes to the intent compiler: the process's agent reads
         // it against the record sheet and compiles it into the grammar, or
@@ -436,6 +474,7 @@ export default function App() {
           append({ kind: "refusal", error, what: "POST /api/intents" });
         }
       } finally {
+        removeEntry(readingId);
         proposingRef.current = false;
         setProposalBusy(false);
       }
@@ -446,6 +485,7 @@ export default function App() {
       project,
       projection,
       recoverFromStaleBase,
+      removeEntry,
       selection,
       sourceLabel,
       stateDigest,
@@ -750,6 +790,11 @@ export default function App() {
     });
   }, [artifacts, candidateEntries, projection, utteranceOf, validations]);
 
+  // A sentence needs a subject: the pick, the picker, or a circle on the
+  // model (the server makes a circle the selection). With none of them the
+  // agent would choose the subject, which is the guessing the owner ruled out.
+  const hasSubject =
+    selection !== null || gestures.some((gesture) => gesture.kind === "circle");
   const disabledReason =
     session.status === "failed"
       ? `the binding refused: ${session.error.code}`
@@ -757,7 +802,9 @@ export default function App() {
         ? "reading the projection…"
         : projection.stateDigest === null
           ? "the kernel refused this record's bound view; fix the record before proposing"
-          : null;
+          : !hasSubject
+            ? "pick something in the model first, or choose a component"
+            : null;
 
   // CURRENT / GHOST PREVIEW / VALIDATED — what the picture is, with the
   // server's word as its detail. A candidate's export is VALIDATED only once
@@ -773,13 +820,15 @@ export default function App() {
         ? { state: "ghost", label: "Ghost preview", detail: "approximate" }
         : loadedArtifact && candidates[loadedArtifact.runId]
           ? loadedValidation
-            ? {
-                state: "validated",
-                label: "Validated",
-                detail: loadedValidation.advance
-                  ? "may advance"
-                  : `blocked: ${loadedValidation.blockedBy.join(", ")}`,
-              }
+            ? loadedValidation.advance
+              ? { state: "validated", label: "Validated", detail: "may advance" }
+              : {
+                  // The strongest word on the picture is the verdict's, in the
+                  // verdict's colour: a blocked candidate is checked, not validated.
+                  state: "blocked",
+                  label: "Checked",
+                  detail: `blocked: ${loadedValidation.blockedBy.join(", ")}`,
+                }
             : { state: "current", label: "Candidate export", detail: "verdict not read yet" }
           : { state: "current", label: "Current", detail: null };
 
@@ -847,11 +896,17 @@ export default function App() {
             <span className="toolbar__sep" />
             {project ? (
               <>
-                <span className="mono toolbar__item">{project.projectId}</span>
+                <span className="mono toolbar__item" title={project.projectDir}>
+                  {project.projectId}
+                </span>
                 <span className="mono toolbar__item">HEAD v{project.head.version}</span>
-                <span className="pill pill--plain">proposal-only</span>
+                <span
+                  className="pill pill--plain"
+                  title="proposal only · every run is a harness beside the project; nothing is written to HEAD"
+                >
+                  proposal only · nothing is written to the project
+                </span>
                 <span className="toolbar__spacer" />
-                <span className="mono toolbar__item">{project.projectDir}</span>
               </>
             ) : session.status === "failed" ? (
               <>

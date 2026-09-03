@@ -24,6 +24,7 @@ import { CandidateCard } from "./cards/CandidateCard";
 import { CompareCard } from "./cards/CompareCard";
 import { ProposalCard } from "./cards/ProposalCard";
 import { QuestionCard } from "./cards/QuestionCard";
+import { ReadingLine } from "./cards/ReadingLine";
 import { RefusalCard } from "./cards/RefusalCard";
 import { SystemLine } from "./cards/Verbatim";
 import { VerdictCard } from "./cards/VerdictCard";
@@ -165,6 +166,14 @@ function renderEntry(
   switch (entry.kind) {
     case "system":
       return <SystemLine text={entry.text} />;
+    case "reading":
+      return (
+        <ReadingLine
+          subject={entry.subject}
+          recordSize={entry.recordSize}
+          startedAt={entry.startedAt}
+        />
+      );
     case "you":
       return <p className="bubble">{entry.text}</p>;
     case "proposal":

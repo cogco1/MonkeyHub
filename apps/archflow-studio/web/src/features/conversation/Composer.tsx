@@ -155,11 +155,10 @@ export function Composer({
         <p className="composer__hint composer__hint--why">{disabledReason}</p>
       ) : (
         <p className="composer__hint">
-          Say what you want. Today the studio types four exact forms —{" "}
-          <code>set … to …</code>, <code>set … = …</code>,{" "}
-          <code>increase … by … %</code>, <code>decrease … by … %</code>, with an
-          optional <code>keep …</code> — and answers anything else with a
-          question naming the field and the number it needs.
+          Say it in your words, about the thing you picked. An agent reads it
+          against the record and proposes one exact change; if the record does
+          not carry what you asked for, it asks. Marks on the model go with the
+          sentence.
         </p>
       )}
     </form>
