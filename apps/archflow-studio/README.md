@@ -113,8 +113,8 @@ Three groups of refusal are **shared**, and the table below does not repeat them
 - the framework's four above (404 `NOT_FOUND`, 405 `METHOD_NOT_ALLOWED`, 422 `REQUEST_INVALID`,
   500 `INTERNAL_ERROR`);
 - **binding**: 503 `PROJECT_NOT_BOUND` from every route that opens the project — all of them
-  except `GET /api/health`, `GET /api/proposals/{id}` and `GET /api/jobs/{id}`, which answer
-  from this process's own memory;
+  except `GET /api/health`, `GET /api/proposals/{id}`, `GET /api/jobs/{id}` and
+  `GET /api/events`, which answer from this process's own memory and never open the project;
 - **projection**: 404 `RUN_NOT_FOUND`, 404 `STATE_RECORD_NOT_FOUND` and 422
   `STATE_RECORD_INVALID` from every route that reads the authored record — `/api/project`
   (`RUN_NOT_FOUND` only), `/api/state`, `/api/pick/resolve`, both `/api/proposals` POSTs and

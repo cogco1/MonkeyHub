@@ -128,10 +128,14 @@ def project_state(
     reference = binding.reference_run(run_id)
     head = binding.head()
     authored = _load_authored_record(binding)
-    # The one sanctioned binding: the record attaches itself to the run.
     run = RunRef(binding.project_id, reference.run.run_id, head)
-    record = authored.bound_to(run)
     try:
+        # The one sanctioned binding: the record attaches itself to the run.
+        # Inside the refusal like everything else it can refuse for — an
+        # authored record whose ``project_id`` names another project is a
+        # record somebody put in this project's ``input/``, and the kernel's
+        # sentence about it belongs on the wire rather than in a 500.
+        record = authored.bound_to(run)
         state, components, component_tree_error = _bound_view(
             record, run, require_view=require_view
         )

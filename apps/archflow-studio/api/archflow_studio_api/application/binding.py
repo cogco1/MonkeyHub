@@ -215,6 +215,7 @@ class ProjectBinding:
         newest: tuple[float, str, ProjectRecordRef, Mapping[str, Any]] | None = None
         skipped: list[str] = []
         for run_id in self.run_ids():
+            before = newest
             # The whole of one run's reading is inside the tolerance, not just
             # its listing: a record that vanishes between being listed and
             # being stat'ed is the same kind of accident as a run with no
@@ -229,6 +230,12 @@ class ProjectBinding:
                     if newest is None or mtime > newest[0]:
                         newest = (mtime, run_id, ref, payload)
             except (StudioError, ProjectRepositoryError, ValueError, OSError):
+                # Whatever this run offered came from a reading that did not
+                # finish, so it is rolled back before the run is named. A
+                # receipt chosen out of half a directory is not that run's
+                # newest, and the honesty line must not name a skipped run
+                # that the projection then went and bound itself to.
+                newest = before
                 skipped.append(run_id)
                 continue
         chosen = None if newest is None else (newest[1], newest[2], newest[3])

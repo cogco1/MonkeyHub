@@ -491,6 +491,23 @@ class MalformedRecordTests(unittest.TestCase):
         self.assertIn(RUNNER_RECORD_PATH, body["detail"])
         self.assertIn("component_id", body["detail"])
 
+    def test_a_record_authored_for_another_project_is_a_422(self) -> None:
+        """Binding is where that is found out, and it is still the record."""
+
+        payload = json.loads(json.dumps(RECORD_PAYLOAD))
+        payload["project_id"] = "some-other-project"
+        self._write(json.dumps(payload))
+
+        response = self.client.get("/api/state")
+
+        self.assertEqual(response.status_code, 422, response.text)
+        body = response.json()
+        self.assertEqual(body["code"], "STATE_RECORD_INVALID")
+        self.assertIn(RUNNER_RECORD_PATH, body["detail"])
+        self.assertIn(
+            "cannot bind a record to a run of another project", body["detail"]
+        )
+
     def test_a_record_written_in_another_encoding_is_a_422(self) -> None:
         """Undecodable bytes are a record fault, not an unhandled exception."""
 
