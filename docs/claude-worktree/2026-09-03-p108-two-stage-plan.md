@@ -248,3 +248,11 @@ ask for that the plan does not yet carry. The working tree's Phase 1 files were 
 
 0 (incl. T0.3) → 1 → 2 → 6 → 7 → 5 → 4 (with T4.0 first), and 3 whenever K-A lands. Phase 1 remains the
 one that changes how the product feels.
+
+## J. Design-review fixes (2026-09-03, after the fresh-eyes review)
+
+Report: `.superpowers/sdd/design-review-2026-09-03.md` (4 Critical · 11 Important · 8 Minor). Landed on main:
+b836068 (C1 C3 C4 I4 I5 M1, I3's pill), a33e88e + ee7c094 (C2 I2 I6 I7 I8 I10 I11 M2–M8, the armed-tool
+hint, ghost off on question/refusal), a199941 (candidate poll stable), c22efcd (I9, server). Open: I8's
+two-stage progress bar (needs stage progress on the job; the lane sentence and a client clock stand in);
+compare only against the run on screen (the conversation says so when it cannot).
