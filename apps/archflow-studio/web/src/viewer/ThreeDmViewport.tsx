@@ -13,6 +13,9 @@ import {
   Color,
   DirectionalLight,
   GridHelper,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
   Object3D,
   PerspectiveCamera,
   Raycaster,
@@ -54,8 +57,40 @@ export interface ViewportPick {
   objectName: string | null;
 }
 
+/**
+ * One element of the record, as the export names its objects: the element id
+ * is the producer op (``archflow:producer_op``) and the object name is
+ * ``obj-<elementId>``, optionally suffixed; the component is
+ * ``archflow:component``. The record's ``producer`` field is the geometry
+ * kind (``prism``), not an id, and is no use for matching.
+ */
+export interface GhostTarget {
+  elementId: string;
+  componentId: string;
+}
+
+/**
+ * A ghost of a proposal: a translucent copy of the target's objects, scaled
+ * along world Z by ``factor`` when the changed field is a height (about the
+ * copy's own bottom), unscaled otherwise; the affected elements drawn as a
+ * fainter cloud. It is a drawing of the proposal's numbers - approximate,
+ * never geometry the record certified - and the shell labels it so.
+ */
+export interface GhostSpec {
+  target: GhostTarget;
+  factor: number;
+  scaleAxis: "z" | null;
+  affected: readonly GhostTarget[];
+}
+
 export interface ViewportController {
   openFile(file: File, sourceLabel?: string): Promise<void>;
+  /**
+   * Draw a ghost of a proposal over the loaded model, or remove it with null.
+   * Returns how many meshes the ghost copied for the target: zero means the
+   * loaded file carries no objects of that element, and nothing was drawn.
+   */
+  ghost(spec: GhostSpec | null): number;
   fitView(): void;
   frontView(): void;
   setLayerVisibility(index: number, visible: boolean): void;
@@ -80,6 +115,7 @@ interface ViewportRuntime {
   renderer: WebGLRenderer;
   controls: OrbitControls;
   model: Object3D | null;
+  ghost: Group | null;
   render: () => void;
 }
 
@@ -131,6 +167,65 @@ function buildGrid(colours: ThemeColours): GridHelper {
 function disposeGrid(grid: GridHelper): void {
   grid.geometry.dispose();
   gridMaterialsOf(grid).forEach((material) => material.dispose());
+}
+
+function accentColour(): string {
+  return (
+    getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() ||
+    "#2f80ed"
+  );
+}
+
+/** Whether a loaded object is one of this element's, by the export's own tags. */
+function belongsTo(object: Object3D, target: GhostTarget): boolean {
+  const attributes = object.userData.attributes as { userStrings?: unknown } | undefined;
+  const strings = toUserStrings(attributes?.userStrings);
+  const component = strings["archflow:component"];
+  if (component !== undefined && component !== target.componentId) return false;
+  const producerOp = strings["archflow:producer_op"] ?? "";
+  const name = object.name ?? "";
+  const byElement = "obj-" + target.elementId;
+  return (
+    producerOp === target.elementId ||
+    producerOp.startsWith(target.elementId + "-") ||
+    name === byElement ||
+    name.startsWith(byElement + "-")
+  );
+}
+
+function carriersOf(model: Object3D, target: GhostTarget): Object3D[] {
+  const found: Object3D[] = [];
+  model.traverse((object) => {
+    const attributes = object.userData.attributes as { userStrings?: unknown } | undefined;
+    if (attributes?.userStrings !== undefined && belongsTo(object, target)) found.push(object);
+  });
+  return found;
+}
+
+/** A translucent copy of every mesh under these carriers, in world space. */
+function ghostCopy(carriers: readonly Object3D[], material: MeshStandardMaterial): Group {
+  const group = new Group();
+  for (const carrier of carriers) {
+    carrier.updateWorldMatrix(true, true);
+    carrier.traverse((object) => {
+      if (!(object instanceof Mesh)) return;
+      const copy = new Mesh(object.geometry, material);
+      copy.matrixAutoUpdate = false;
+      copy.matrix.copy(object.matrixWorld);
+      group.add(copy);
+    });
+  }
+  return group;
+}
+
+function disposeGhost(ghost: Group): void {
+  const materials = new Set<MeshStandardMaterial>();
+  ghost.traverse((object) => {
+    if (object instanceof Mesh && object.material instanceof MeshStandardMaterial) {
+      materials.add(object.material);
+    }
+  });
+  materials.forEach((material) => material.dispose());
 }
 
 function fitRuntime(runtime: ViewportRuntime): void {
@@ -240,6 +335,11 @@ export const ThreeDmViewport = forwardRef<
     const runtime = runtimeRef.current;
     loadGenerationRef.current += 1;
     callbacksRef.current.onSource(null);
+    if (runtime?.ghost) {
+      runtime.scene.remove(runtime.ghost);
+      disposeGhost(runtime.ghost);
+      runtime.ghost = null;
+    }
     if (!runtime?.model) {
       callbacksRef.current.onInspection(null);
       reportStatus("idle", "Drop a .3dm here, or open one from this machine");
@@ -252,6 +352,74 @@ export const ThreeDmViewport = forwardRef<
     callbacksRef.current.onInspection(null);
     reportStatus("idle", "Drop a .3dm here, or open one from this machine");
   }, [reportStatus]);
+
+  const removeGhost = useCallback(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime?.ghost) return;
+    runtime.scene.remove(runtime.ghost);
+    disposeGhost(runtime.ghost);
+    runtime.ghost = null;
+    runtime.render();
+  }, []);
+
+  const ghost = useCallback(
+    (spec: GhostSpec | null) => {
+      const runtime = runtimeRef.current;
+      if (!runtime) return 0;
+      removeGhost();
+      if (spec === null || !runtime.model) return 0;
+      const accent = new Color(accentColour());
+      const targetMaterial = new MeshStandardMaterial({
+        color: accent,
+        transparent: true,
+        opacity: 0.38,
+        depthWrite: false,
+      });
+      const cloudMaterial = new MeshStandardMaterial({
+        color: accent,
+        transparent: true,
+        opacity: 0.14,
+        depthWrite: false,
+      });
+      const group = new Group();
+      group.name = "archflow-ghost";
+      const targetCopy = ghostCopy(carriersOf(runtime.model, spec.target), targetMaterial);
+      const copied = targetCopy.children.length;
+      if (copied === 0) {
+        // Nothing of this element is in the loaded file: draw nothing rather
+        // than a cloud with no subject, and let the caller say so.
+        targetMaterial.dispose();
+        cloudMaterial.dispose();
+        return 0;
+      }
+      if (spec.scaleAxis === "z" && spec.factor > 0 && spec.factor !== 1) {
+        // Scale about the copy's own bottom: a taller thing grows upward from
+        // where it stands. Approximate by construction - a field called
+        // height is stretched, nothing else is inferred.
+        const box = new Box3().setFromObject(targetCopy);
+        if (!box.isEmpty()) {
+          const pivot = new Group();
+          pivot.position.set(0, 0, box.min.z);
+          targetCopy.position.z -= box.min.z;
+          pivot.scale.set(1, 1, spec.factor);
+          pivot.add(targetCopy);
+          group.add(pivot);
+        } else {
+          group.add(targetCopy);
+        }
+      } else {
+        group.add(targetCopy);
+      }
+      for (const affected of spec.affected) {
+        group.add(ghostCopy(carriersOf(runtime.model, affected), cloudMaterial));
+      }
+      runtime.ghost = group;
+      runtime.scene.add(group);
+      runtime.render();
+      return copied;
+    },
+    [removeGhost],
+  );
 
   const openFile = useCallback(
     async (file: File, sourceLabel: string = LOCAL_SOURCE_LABEL) => {
@@ -317,6 +485,13 @@ export const ThreeDmViewport = forwardRef<
             if (runtime.model) {
               runtime.scene.remove(runtime.model);
               disposeScene(runtime.model);
+            }
+            if (runtime.ghost) {
+              // A ghost belongs to the model it was drawn over; a new model
+              // starts without one.
+              runtime.scene.remove(runtime.ghost);
+              disposeGhost(runtime.ghost);
+              runtime.ghost = null;
             }
             runtime.model = model;
             runtime.scene.add(model);
@@ -391,6 +566,7 @@ export const ThreeDmViewport = forwardRef<
     forwardedRef,
     () => ({
       openFile,
+      ghost,
       fitView: () => {
         const runtime = runtimeRef.current;
         if (runtime) fitRuntime(runtime);
@@ -411,7 +587,7 @@ export const ThreeDmViewport = forwardRef<
       },
       clear,
     }),
-    [clear, openFile],
+    [clear, ghost, openFile],
   );
 
   useEffect(() => {
@@ -479,6 +655,7 @@ export const ThreeDmViewport = forwardRef<
       renderer,
       controls,
       model: null,
+      ghost: null,
       render,
     };
     runtimeRef.current = runtime;
@@ -502,6 +679,7 @@ export const ThreeDmViewport = forwardRef<
       controls.removeEventListener("change", render);
       controls.dispose();
       if (runtime.model) disposeScene(runtime.model);
+      if (runtime.ghost) disposeGhost(runtime.ghost);
       media.removeEventListener("change", applyTheme);
       themeObserver.disconnect();
       disposeGrid(grid);
