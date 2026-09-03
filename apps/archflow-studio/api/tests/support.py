@@ -8,6 +8,7 @@ kernel's own answers rather than a rehearsal of the API's.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,17 @@ REFERENCE_RUN_ID = "run-001"
 HARNESS_RUN_ID = "run-002"
 RUNNER_RECORD_PATH = "input/runner/state-record.json"
 EVIDENCE = "evidence:demo"
+
+# What a Rhino seat's receipt carries about the program it executed. These are
+# opaque identifiers on the wire: the tests assert they travel, not what they
+# mean.
+RHINO_RECEIPT_KIND = "seat-rhino-execution"
+RHINO_RECEIPT_SCHEMA = "RhinoCadExecutionReceipt@4"
+RHINO_BRANCH_ID = "runner-v1"
+RHINO_BRANCH_EPOCH = 1
+RHINO_PROGRAM_DIGEST = "b" * 64
+RHINO_DESIGN_STATE_DIGEST = "c" * 64
+PROGRAM_RECORD_SHA = "d" * 64
 
 # "compute the digest the way production does" — distinct from ``None``, which
 # is a receipt that deliberately claims no digest at all.
@@ -252,6 +264,89 @@ def retain_runner_receipt(
         run=run,
         destination=run_records(run.run_id),
         record_kind="runner-run-receipt",
+        payload=payload,
+    )
+
+
+def retain_rhino_receipt(
+    repository: FilesystemProjectRepository,
+    run: RunRef,
+    *,
+    stage_id: str,
+    file_name: str,
+    payload_bytes: bytes,
+    workspace_subdir: str | None = None,
+    status: str = "succeeded",
+    inspection: bool = True,
+) -> ProjectRecordRef:
+    """Write an exported file and retain the receipt that certifies it.
+
+    This is what a Rhino seat leaves behind: the bytes in the run's export
+    workspace and a ``seat-rhino-execution`` record naming their digest, the
+    run's base and the program that produced them. ``workspace_subdir`` puts the
+    file somewhere other than the ``cad-<stage_id>`` convention — older runs did
+    — and ``inspection=False`` writes the receipt a failed export leaves, which
+    claims no digest at all.
+    """
+
+    directory = repository.layout.run(run.run_id).workspaces / Path(
+        workspace_subdir or f"cad-{stage_id}"
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / file_name).write_bytes(payload_bytes)
+    program_path = (
+        f"runs/{run.run_id}/branches/{RHINO_BRANCH_ID}/records/"
+        f"{stage_id}-geometry-program-{PROGRAM_RECORD_SHA}.json"
+    )
+    payload: dict[str, object] = {
+        "schema": RHINO_RECEIPT_SCHEMA,
+        "status": status,
+        "readback_verified": status == "succeeded",
+        "artifact_relative_path": file_name,
+        "identity": {
+            "schema": "RhinoCadExportIdentity@2",
+            "length_unit": "meter",
+            "up_axis": "Z-up",
+            "binding": {
+                "schema": "RhinoCadProgramBinding@1",
+                "project_id": PROJECT_ID,
+                "run_id": run.run_id,
+                "stage_id": stage_id,
+                "branch_id": RHINO_BRANCH_ID,
+                "branch_epoch": RHINO_BRANCH_EPOCH,
+                "design_state_digest": RHINO_DESIGN_STATE_DIGEST,
+                "program_digest": RHINO_PROGRAM_DIGEST,
+                "program_ref": {
+                    "media_type": "application/json",
+                    "project_id": PROJECT_ID,
+                    "relative_path": program_path,
+                    "sha256": PROGRAM_RECORD_SHA,
+                    "uri": f"project://{PROJECT_ID}/{program_path}",
+                },
+                "base": {
+                    "project_id": PROJECT_ID,
+                    "version": run.base.version,
+                    "state_sha256": run.base.state_sha256,
+                },
+            },
+        },
+        "inspection": (
+            {
+                "schema": "RhinoCadInspection@2",
+                # File identity, computed over the bytes just written: the
+                # receipt claims a digest only when the export succeeded.
+                "file_sha256": hashlib.sha256(payload_bytes).hexdigest(),
+                "file_bytes": len(payload_bytes),
+                "object_count": 1,
+            }
+            if inspection
+            else None
+        ),
+    }
+    return repository.put_json(
+        run=run,
+        destination=run_records(run.run_id),
+        record_kind=RHINO_RECEIPT_KIND,
         payload=payload,
     )
 

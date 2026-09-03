@@ -88,6 +88,10 @@ class ProjectBinding:
         # Kept so ``reference_run`` can honour the configured run without the
         # routes having to pass settings back in on every request.
         self.settings = settings
+        # File identity, memoized per opened project. The key carries size and
+        # modification time, so a file that changed is hashed again rather than
+        # remembered wrongly.
+        self.file_sha256_cache: dict[tuple[str, int, int], str] = {}
 
     @classmethod
     def open(cls, settings: StudioSettings) -> ProjectBinding:
