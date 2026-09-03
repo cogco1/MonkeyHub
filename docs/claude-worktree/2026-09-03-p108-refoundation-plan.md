@@ -98,8 +98,17 @@ uvicorn, httpx (tests). React 19, three.js 0.185, rhino3dm 8.32.2 (wasm), Vite 8
   consumes, reviewer}` → `SeatSpec` via the six-line adapter in `tools/run_project.py::_seat` (tools is
   firewall-forbidden; the api carries the same six lines as `adapters/seats.py`).
 - `canonical_state_from_dict(repository.load_current_state())` **fails on the villa** ("canonical state schema
-  drifted": HEAD is a ref-based `CanonicalSnapshot@2`). `validate_submission(CanonicalState, CandidateSubmission,
-  validators)` therefore runs against `CanonicalState(ref=head)` with empty facts, labeled as such (K2).
+  drifted": `load_current_state()` returns a ref-based `CanonicalProjectState@1` —
+  `authoritative_record_refs` / `derived_record_refs` / `phase`; `CanonicalSnapshot@2` is the retained
+  snapshot record kind). `validate_submission(CanonicalState, CandidateSubmission, validators)` therefore runs
+  against `CanonicalState(ref=head)` with empty facts, labeled as such (K2 → card **P110**: on an empty fact
+  base the two production validators have nothing to check, so the receipt is effectively
+  `artifact-present` only — the Validation DTO says exactly that).
+- **Digest scope (main-session calibration):** the run id enters `state_digest`, the program digest and
+  **also `record.digest`** (`to_dict` carries `run_id` and `base`), so a bound record's digests change with
+  the run it is bound to. "Did this edit change anything" is answered by comparing the **authored** (unbound)
+  content — `authoredRecordDigest = StateRecord.from_dict(payload).digest` before `bound_to` — or two records
+  bound to the same run; never a candidate's bound digest against the projection's.
 - `ProjectArtifactRef(project_id, artifact_id, relative_path, sha256, media_type)` exists; artifacts are
   enumerated from `seat-rhino-execution` receipts, never by `rglob`.
 - Run/record identifiers: `^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`.
@@ -197,9 +206,13 @@ Deleted by this plan: `backend/` (all), `run_server.py`, `launch.py`, `src/App.t
 
 **Interfaces:**
 - `ProjectBinding.open(settings) -> ProjectBinding` holding `repository`, `location`, `project_id`;
-  `head() -> ProjectVersionRef`; `reference_run() -> RunRef` = the newest run whose latest
-  `runner-run-receipt` has `seat_execution_complete` (RunnerRunReceipt@3) or `accepted` (@1); configurable
-  via `?run=`.
+  `head() -> ProjectVersionRef`; `reference_run(run_id=None) -> RunRef` resolved in this order: `?run=`,
+  then `settings.reference_run` (env `ARCHFLOW_STUDIO_REFERENCE_RUN`), then the rule — the newest complete
+  `runner-run-receipt` (`seat_execution_complete` for @3, `accepted` for @1) among runs that are **not
+  harness runs** (a receipt whose `workflow_ref` names a workflow with `workflow_id` ∈ {`equivalence-harness`,
+  `studio-candidate-harness`} is excluded; receipts without `workflow_ref` are eligible). Verified on the
+  villa: the rule selects `runner-002` alone (the patch/equivalence runs are harness runs) and studio
+  candidates can never become the reference. The DTO reports `referenceRunSource`.
 - `projection(binding, run_id=None) -> StateProjection` (frozen dataclass, application layer):
   loads `input/runner/state-record.json` via `layout.resolve_relative`, `StateRecord.from_dict`,
   `run = RunRef(project_id, reference_run_id, repository.read_head())`, `record = record.bound_to(run)`,
