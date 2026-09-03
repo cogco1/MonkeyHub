@@ -16,6 +16,7 @@
 
 import { client } from "./generated/client.gen";
 import {
+  compileIntentApiIntentsPost,
   createProposalApiProposalsPost,
   readArtifactBytesApiArtifactsSha256BytesGet,
   readArtifactsApiArtifactsGet,
@@ -32,6 +33,8 @@ import type {
   ArtifactListDto,
   CandidateAcceptedDto,
   CandidateDto,
+  IntentDto,
+  IntentRequestDto,
   JobDto,
   PickRequestDto,
   PickResolutionDto,
@@ -232,6 +235,16 @@ export const studio = {
 
   createProposal(body: ProposalRequestDto): Promise<ProposalDto> {
     return call("POST /api/proposals", createProposalApiProposalsPost({ body }));
+  },
+
+  /**
+   * The architect's sentence, compiled by the process's intent agent and typed
+   * by the grammar. The answer carries the agent's reading beside the record's
+   * proposal, and a question comes back as the same BLOCKED_NEEDS_HUMAN a typed
+   * sentence would get.
+   */
+  compileIntent(body: IntentRequestDto): Promise<IntentDto> {
+    return call("POST /api/intents", compileIntentApiIntentsPost({ body }));
   },
 
   proposal(proposalId: string): Promise<ProposalDto> {

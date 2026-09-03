@@ -132,8 +132,8 @@ Three groups of refusal are **shared**, and the table below does not repeat them
   `GET /api/events`, which answer from this process's own memory and never open the project;
 - **projection**: 404 `RUN_NOT_FOUND`, 404 `STATE_RECORD_NOT_FOUND` and 422
   `STATE_RECORD_INVALID` from every route that reads the authored record — `/api/project`
-  (`RUN_NOT_FOUND` only), `/api/state`, `/api/pick/resolve`, both `/api/proposals` POSTs and
-  both `/api/candidates` reads;
+  (`RUN_NOT_FOUND` only), `/api/state`, `/api/pick/resolve`, `/api/intents`, both
+  `/api/proposals` POSTs and both `/api/candidates` reads;
 - **proposal**: 404 `PROPOSAL_NOT_FOUND` from every route that reads a proposal back —
   `GET /api/proposals/{id}`, starting a candidate, and reading a candidate or its validation.
 
@@ -145,6 +145,7 @@ Three groups of refusal are **shared**, and the table below does not repeat them
 | GET | `/api/artifacts` | `ArtifactListDto` | — (a run it cannot read is named in `skippedRuns`, never a refusal) |
 | GET | `/api/artifacts/{sha256}/bytes` | binary (`ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store`) | 404 `ARTIFACT_NOT_FOUND`, 409 `ARTIFACT_UNREADABLE`, 409 `ARTIFACT_DIGEST_MISMATCH` |
 | POST | `/api/pick/resolve` | `PickResolutionDto` (body `PickRequestDto`) | 409 `STALE_BASE` |
+| POST | `/api/intents` → 201 | `IntentDto` = `agent` (`AgentReadingDto`) + `proposal` (`ProposalDto`) (body `IntentRequestDto`) | 422 `BLOCKED_NEEDS_HUMAN` (the agent's question, or the grammar's with `acceptedForms`), 502 `INTENT_AGENT_FAILED`, 409 `STALE_BASE`, 403 `PROJECT_MISMATCH` |
 | POST | `/api/proposals` → 201 | `ProposalDto` (body `ProposalRequestDto`) | 422 `BLOCKED_NEEDS_HUMAN` (+ `question`, `acceptedForms`), 409 `STALE_BASE`, 403 `PROJECT_MISMATCH` |
 | GET | `/api/proposals/{id}` | `ProposalDto` | — |
 | POST | `/api/proposals/{id}/candidate` → 202 | `CandidateAcceptedDto` | 409 `PROPOSAL_NOT_RUNNABLE`, 409 `STALE_BASE`, 409 `CANDIDATE_ID_COLLISION` |

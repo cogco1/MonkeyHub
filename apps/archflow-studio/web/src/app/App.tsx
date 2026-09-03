@@ -283,20 +283,40 @@ export default function App() {
   const proposingRef = useRef(false);
   const propose = useCallback(
     async (utterance: string) => {
-      if (stateDigest === null || selection === null || project === null) return;
+      if (stateDigest === null || project === null) return;
       if (proposingRef.current) return;
       proposingRef.current = true;
       append({ kind: "you", text: utterance });
       setProposalBusy(true);
       try {
-        const proposal = await studio.createProposal({
+        // The sentence goes to the intent compiler: the process's agent reads
+        // it against the record sheet and compiles it into the grammar, or
+        // asks. With no agent configured the server takes the sentence as
+        // already typed. Either way the proposal that comes back is the
+        // record's, and the agent's reading travels beside it, kept apart.
+        const answer = await studio.compileIntent({
           stateDigest,
-          targetComponentId: selection.componentId,
-          elementId: selection.elementId,
+          targetComponentId: selection?.componentId ?? null,
+          elementId: selection?.elementId ?? null,
           utterance,
           projectId: project.projectId,
         });
-        append({ kind: "proposal", proposal });
+        append({ kind: "proposal", proposal: answer.proposal, agent: answer.agent });
+        const { target } = answer.proposal;
+        if (
+          selection === null ||
+          target.componentId !== selection.componentId ||
+          target.elementId !== selection.elementId
+        ) {
+          setSelection({
+            componentId: target.componentId,
+            elementId: target.elementId,
+          });
+          append({
+            kind: "system",
+            text: `Now talking about ${target.elementId ?? target.componentId} · the proposal's target`,
+          });
+        }
         setDraft("");
       } catch (cause) {
         const error = asStudioApiError(cause);
@@ -304,7 +324,7 @@ export default function App() {
           append({ kind: "question", error, utterance });
         } else {
           recoverFromStaleBase(error);
-          append({ kind: "refusal", error, what: "POST /api/proposals" });
+          append({ kind: "refusal", error, what: "POST /api/intents" });
         }
       } finally {
         proposingRef.current = false;
@@ -456,15 +476,34 @@ export default function App() {
         ? "reading the projection…"
         : projection.stateDigest === null
           ? "the kernel refused this record's bound view; fix the record before proposing"
-          : selection === null
-            ? "pick an object in the model, or choose a component, before proposing"
-            : null;
+          : null;
 
   const evidenceCounts = {
     honesty: honestyCount(projection, selectedCandidate, selectedValidation),
     receipts: candidateEntries.length,
     events: eventCount,
   };
+  // The review summary on the evidence tab, in the reviewer's words: every
+  // candidate this tab launched is a change; a change is checked once its
+  // verdict was read; it needs review when the verdict refused or the run
+  // failed. Nothing here is decided — each number is a count of server words.
+  const review = candidateEntries.reduce(
+    (sum, entry) => {
+      const verdict = validations[entry.candidateId];
+      if (verdict) {
+        return {
+          ...sum,
+          checked: sum.checked + 1,
+          needsReview: sum.needsReview + (verdict.advance ? 0 : 1),
+        };
+      }
+      return {
+        ...sum,
+        needsReview: sum.needsReview + (entry.status === "failed" ? 1 : 0),
+      };
+    },
+    { changes: candidateEntries.length, checked: 0, needsReview: 0 },
+  );
 
   const drawer = (
     <EvidenceDrawer
@@ -504,9 +543,7 @@ export default function App() {
             {project ? (
               <>
                 <span className="mono toolbar__item">{project.projectId}</span>
-                <span className="mono toolbar__item">
-                  HEAD v{project.head.version} · {sha8(project.head.stateSha256)}
-                </span>
+                <span className="mono toolbar__item">HEAD v{project.head.version}</span>
                 <span className="pill pill--plain">proposal-only</span>
                 <span className="toolbar__spacer" />
                 <span className="mono toolbar__item">{project.projectDir}</span>
@@ -561,6 +598,7 @@ export default function App() {
             callbacks={{
               onRun: (proposalId) => void runCandidate(proposalId),
               onReply: setDraft,
+              onAdjust: setDraft,
               onJobStatus: noteJobStatus,
               onCandidate: noteCandidate,
               onPreview: (artifact, label) =>
@@ -583,6 +621,7 @@ export default function App() {
             loadingSha={artifactLoadingSha}
             loadedSha={loadedArtifact?.sha256 ?? null}
             evidenceCounts={evidenceCounts}
+            review={review}
             drawer={evidencePinned ? null : drawer}
             onInspection={setInspection}
             onStatus={(status, message) => {

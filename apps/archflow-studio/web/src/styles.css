@@ -619,6 +619,65 @@ button.chip:hover {
   font-size: 12.5px;
 }
 
+/* Review language: the proposed-change and is-it-safe cards ---------------- */
+
+.card--proposal .label,
+.card--verdict .label {
+  margin-bottom: 2px;
+}
+
+.card__agent {
+  background: var(--panel);
+}
+
+.kv--review {
+  grid-template-columns: 92px minmax(0, 1fr);
+  row-gap: 8px;
+}
+
+.kv--review dt {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.reflist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reflist li::before {
+  content: "•";
+  margin-right: 5px;
+  color: var(--faint);
+}
+
+.mark {
+  display: inline-block;
+  width: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.mark--ok {
+  color: var(--held);
+}
+
+.mark--no {
+  color: var(--unchecked);
+}
+
+.review__clauses {
+  font-size: 10.5px;
+}
+
+.review__detail {
+  margin-top: 4px;
+}
+
 .verbatim {
   margin-top: 6px;
   padding-left: 10px;

@@ -39,6 +39,13 @@ export interface EvidenceCounts {
   readonly events: number;
 }
 
+/** The evidence tab's own sentence, in the reviewer's words. */
+export interface ReviewSummary {
+  readonly changes: number;
+  readonly checked: number;
+  readonly needsReview: number;
+}
+
 export function Stage({
   viewportRef,
   sourceLabel,
@@ -51,6 +58,7 @@ export function Stage({
   loadingSha,
   loadedSha,
   evidenceCounts,
+  review,
   drawer,
   onInspection,
   onStatus,
@@ -71,6 +79,7 @@ export function Stage({
   loadingSha: string | null;
   loadedSha: string | null;
   evidenceCounts: EvidenceCounts;
+  review: ReviewSummary;
   /** The drawer, when it overlays the stage rather than standing beside it. */
   drawer: ReactNode;
   onInspection(inspection: SceneInspection | null): void;
@@ -105,14 +114,14 @@ export function Stage({
             message={message}
           />
           {picked && (
-            <div className="picked">
+            <div className="picked" title={`${picked.status} · source ${picked.sourceState}`}>
               <span className="label">picked</span>
               <span className="mono">
                 {picked.elementId ?? picked.componentId ?? "nothing resolvable"}
               </span>
-              <span className="picked__meta">
-                {picked.status} · source {picked.sourceState}
-              </span>
+              {picked.status !== "resolved" && (
+                <span className="picked__meta">{picked.status}</span>
+              )}
               {picked.fields.map(([key, value]) => (
                 <span key={key} className="mono picked__field">
                   {key} {value}
@@ -157,9 +166,13 @@ export function Stage({
           onClick={() => onEvidence("honesty")}
         >
           Evidence
-          <span className="drawer-tab__count mono">
-            honesty {evidenceCounts.honesty} · receipts {evidenceCounts.receipts}{" "}
-            · events {evidenceCounts.events}
+          <span className="drawer-tab__count">
+            {review.changes} {review.changes === 1 ? "change" : "changes"} ·{" "}
+            {review.checked} checked · {review.needsReview}{" "}
+            {review.needsReview === 1 ? "needs" : "need"} review
+          </span>
+          <span className="drawer-tab__count mono" title="what the drawer holds">
+            honesty {evidenceCounts.honesty} · events {evidenceCounts.events}
           </span>
         </button>
       </div>

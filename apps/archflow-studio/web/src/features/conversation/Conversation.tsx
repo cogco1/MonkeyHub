@@ -32,6 +32,8 @@ const FOLLOW_SLOP_PX = 40;
 export interface ConversationCallbacks {
   onRun(proposalId: string): void;
   onReply(text: string): void;
+  /** Put a proposal's compiled sentence back in the composer to edit it. */
+  onAdjust(utterance: string): void;
   onJobStatus(candidateId: string, status: string): void;
   onCandidate(candidate: CandidateDto): void;
   onPreview(artifact: ProjectArtifactDto, sourceLabel: string): void;
@@ -138,11 +140,13 @@ function renderEntry(
     case "proposal":
       return (
         <>
-          <p className="msg__who">Studio · typed proposal</p>
+          <p className="msg__who">Studio · proposed change</p>
           <ProposalCard
             proposal={entry.proposal}
+            agent={entry.agent}
             busy={runBusy}
             onRun={() => callbacks.onRun(entry.proposal.proposalId)}
+            onAdjust={callbacks.onAdjust}
             onEvidence={callbacks.onEvidence}
           />
         </>

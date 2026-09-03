@@ -14,12 +14,18 @@
 import { useCallback, useRef, useState } from "react";
 
 import type { StudioApiError } from "../api/client";
-import type { ProposalDto } from "../api/generated";
+import type { AgentReadingDto, ProposalDto } from "../api/generated";
 
 export type Entry =
   | { kind: "system"; id: string; text: string }
   | { kind: "you"; id: string; text: string }
-  | { kind: "proposal"; id: string; proposal: ProposalDto }
+  | {
+      kind: "proposal";
+      id: string;
+      proposal: ProposalDto;
+      /** Who read the sentence and what it compiled; the agent's words, kept apart. */
+      agent: AgentReadingDto | null;
+    }
   | { kind: "question"; id: string; error: StudioApiError; utterance: string }
   | { kind: "refusal"; id: string; error: StudioApiError; what: string }
   | {
