@@ -34,23 +34,31 @@ export function CandidateRuns({
     );
   }
   return (
-    <ul className="rows">
-      {launched.map((run) => (
-        <li key={run.candidateId}>
-          <button
-            type="button"
-            className={`row${
-              run.candidateId === selectedCandidateId ? " is-selected" : ""
-            }`}
-            onClick={() => onSelect(run.candidateId)}
-          >
-            <span className="row__id mono">{run.candidateId}</span>
-            <span className="row__meta">{run.status}</span>
-            <span className="row__meta mono">{run.proposalId}</span>
-            <span className="row__meta mono">{run.startedAt}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <>
+      {/* The job behind a run is polled only while that run's panel is open
+          below, so this column is not a live status — it is the last word this
+          tab read for each run, and an unselected run keeps the word it had
+          when it was last looked at. Saying "status" flat would promise a
+          freshness this list does not have. */}
+      <p className="panel__note">status column: status at last read</p>
+      <ul className="rows">
+        {launched.map((run) => (
+          <li key={run.candidateId}>
+            <button
+              type="button"
+              className={`row${
+                run.candidateId === selectedCandidateId ? " is-selected" : ""
+              }`}
+              onClick={() => onSelect(run.candidateId)}
+            >
+              <span className="row__id mono">{run.candidateId}</span>
+              <span className="row__meta">{run.status}</span>
+              <span className="row__meta mono">{run.proposalId}</span>
+              <span className="row__meta mono">{run.startedAt}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

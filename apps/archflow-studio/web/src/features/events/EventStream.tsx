@@ -56,7 +56,7 @@ const KEEP = 200;
 const RECONNECTED =
   "the stream reconnected; a frame may repeat and the sequence may restart";
 
-export interface StreamLine {
+interface StreamLine {
   readonly key: string;
   readonly seq: number | null;
   readonly text: string;

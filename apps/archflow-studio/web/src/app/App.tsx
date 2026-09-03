@@ -57,7 +57,6 @@ import { SelectionPanel } from "../features/state/SelectionPanel";
 import { ValidationPanel } from "../features/validation/ValidationPanel";
 import { ErrorPanel } from "./ErrorPanel";
 import { Panel, Shell } from "./Shell";
-import { IN_FLIGHT } from "./jobs";
 import { failed, idle, loading, ready, valueOf, type Loadable } from "./loadable";
 import { useSession } from "./useSession";
 
@@ -503,11 +502,13 @@ export default function App() {
             </Panel>
 
             <Panel title="validation">
+              {/* The server's own word for the job, passed through. Which of
+                  the three things it means — still running, finished without a
+                  verdict, or a verdict to read — is the panel's to say, and
+                  this shell does not decide it on the way. */}
               <ValidationPanel
                 candidateId={selected?.candidateId ?? null}
-                jobFinished={
-                  selected !== undefined && !IN_FLIGHT.has(selected.status)
-                }
+                jobStatus={selected?.status ?? null}
               />
             </Panel>
           </>

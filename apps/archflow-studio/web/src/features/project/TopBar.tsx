@@ -34,6 +34,10 @@ export function TopBar({
   return (
     <div className="topbar">
       <span className="topbar__project">{project.projectId}</span>
+      {/* Which directory on disk this process is bound to. The operator is told
+          to bind a temporary copy rather than a project being worked on, and
+          this is the one line in the app that says whether they did. */}
+      <span className="topbar__item">dir {project.projectDir}</span>
       <span className="topbar__item">
         HEAD v{project.head.version} · {sha8(project.head.stateSha256)}
       </span>

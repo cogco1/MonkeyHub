@@ -14,7 +14,7 @@
 import type { RelationChecksDto } from "../api/generated";
 
 /** Whether the held count has earned green. Colour only; never a verdict. */
-export function heldIsGreen(checks: RelationChecksDto): boolean {
+function heldIsGreen(checks: RelationChecksDto): boolean {
   return checks.held > 0 && checks.violated === 0 && checks.unchecked === 0;
 }
 

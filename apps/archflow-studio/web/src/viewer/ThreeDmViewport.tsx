@@ -209,11 +209,18 @@ export const ThreeDmViewport = forwardRef<
     async (file: File, sourceLabel: string = LOCAL_SOURCE_LABEL) => {
       const runtime = runtimeRef.current;
       if (!runtime) throw new Error("3D 视口尚未初始化。请稍后重试。");
+      // A refused file leaves whatever was already loaded on screen, so the
+      // fact line under the canvas has to go: it names the *previous* file, and
+      // beside an error status it would read as that file having failed to
+      // load. Nothing was loaded and nothing failed — a file was declined
+      // before it was read, and the refusal below says which.
       if (!file.name.toLowerCase().endsWith(".3dm")) {
+        callbacksRef.current.onInspection(null);
         reportStatus("error", "仅支持 Rhino .3dm 文件。文件没有上传。");
         return;
       }
       if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
+        callbacksRef.current.onInspection(null);
         reportStatus("error", "文件为空或超过首版 512 MB 的本地解析上限。");
         return;
       }

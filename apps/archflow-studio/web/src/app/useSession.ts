@@ -18,10 +18,9 @@ import { StudioApiError, asStudioApiError, studio } from "../api/client";
 import type { ProjectBindingDto, StateProjectionDto } from "../api/generated";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 
-export const STALE_BASE = "STALE_BASE";
+const STALE_BASE = "STALE_BASE";
 
-export const RE_PROJECTED_NOTICE =
-  "the project moved under you — re-projected";
+const RE_PROJECTED_NOTICE = "the project moved under you — re-projected";
 
 export interface Session {
   readonly project: ProjectBindingDto;

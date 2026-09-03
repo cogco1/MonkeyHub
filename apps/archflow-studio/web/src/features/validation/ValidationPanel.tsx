@@ -14,6 +14,12 @@
  * And it never loses a state: the three-state chips are the candidate's own
  * block, copied through the validation DTO, so nothing unchecked is rounded up
  * to held on the way here.
+ *
+ * The verdict is asked for only when the server says the job `succeeded`. A job
+ * that finished by failing has no receipt to validate, and asking anyway put a
+ * second error beside the runner's own sentence — the panel demanding a verdict
+ * that cannot exist. Failed is a state of its own here, said in the server's own
+ * word for it, and it is not "still running".
  */
 
 import { useEffect, useState } from "react";
@@ -21,6 +27,7 @@ import { useEffect, useState } from "react";
 import { asStudioApiError, studio } from "../../api/client";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { RelationChips } from "../../app/RelationChips";
+import { IN_FLIGHT } from "../../app/jobs";
 import {
   failed,
   idle,
@@ -34,17 +41,23 @@ import { sha8 } from "../../app/format";
 
 const NOT_FINISHED = "CANDIDATE_NOT_FINISHED";
 
+/** The one status a verdict can be read after. */
+const SUCCEEDED = "succeeded";
+
 export function ValidationPanel({
   candidateId,
-  jobFinished,
+  jobStatus,
 }: {
   candidateId: string | null;
-  jobFinished: boolean;
+  /** The server's own word for the job behind this candidate. */
+  jobStatus: string | null;
 }) {
   const [validation, setValidation] = useState<Loadable<ValidationDto>>(idle);
+  const running = jobStatus !== null && IN_FLIGHT.has(jobStatus);
+  const succeeded = jobStatus === SUCCEEDED;
 
   useEffect(() => {
-    if (candidateId === null || !jobFinished) {
+    if (candidateId === null || !succeeded) {
       setValidation(idle);
       return undefined;
     }
@@ -61,7 +74,7 @@ export function ValidationPanel({
     return () => {
       cancelled = true;
     };
-  }, [candidateId, jobFinished]);
+  }, [candidateId, succeeded]);
 
   if (candidateId === null) {
     return (
@@ -71,11 +84,22 @@ export function ValidationPanel({
       </p>
     );
   }
-  if (!jobFinished) {
+  if (running) {
     return (
       <p className="panel__note">
         the candidate is still running. The verdict is read once the job is
         over.
+      </p>
+    );
+  }
+  if (!succeeded) {
+    return (
+      <p className="panel__note">
+        the job is {jobStatus ?? "in no state this tab has read"} — there is no
+        verdict to read. A run that did not succeed produced no receipt to ask
+        about, and the runner's own sentence about it is printed with the run
+        itself. Turning that sentence into a verdict here would be this browser
+        issuing one.
       </p>
     );
   }

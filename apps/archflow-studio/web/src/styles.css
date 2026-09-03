@@ -56,18 +56,6 @@ input:focus-visible {
   outline-offset: 2px;
 }
 
-.topbar {
-  z-index: 20;
-  grid-area: topbar;
-  display: grid;
-  grid-template-columns: minmax(230px, 1fr) auto auto;
-  align-items: center;
-  gap: 24px;
-  padding: 0 14px 0 18px;
-  border-bottom: 1px solid var(--line-strong);
-  background: rgb(251 250 247 / 96%);
-}
-
 .button {
   min-height: 44px;
   padding: 0 15px;
@@ -189,12 +177,6 @@ input:focus-visible {
 @media (max-width: 720px) {
   body {
     overflow: auto;
-  }
-
-  .topbar {
-    grid-template-columns: 1fr auto;
-    min-height: 64px;
-    padding: 8px 10px;
   }
 }
 
