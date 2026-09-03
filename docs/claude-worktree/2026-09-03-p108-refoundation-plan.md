@@ -563,6 +563,37 @@ the COM object).
 
 ---
 
+### Final whole-branch review and fix wave (2026-09-03)
+
+Two opus reviewers read the whole branch (1493ff8..e53ba72) by side — API (6.5k-line package + the tests) and
+web (4.7k) — with the ledgered Minors to triage. **No Critical on either side**; both "with fixes".
+
+API Importants → fixed in seven commits (`7ecae43`..`90ac67b`) plus a re-review round (`3e5ac24`):
+a malformed-but-parseable record (or one bound to another project) now refuses `422 STATE_RECORD_INVALID`
+with the kernel's sentence, and `componentTreeError` is reachable exactly as §4 promised (view fails → 200 with
+`componentTree: null`, entities served, honesty line; routes that need the view refuse 422; `stateDigest`/
+`activePhase` nullable on the wire, client regenerated); a candidate whose job failed before `create_run`
+answers `404 CANDIDATE_NOT_FOUND` naming the job, and no error detail carries the server's absolute path
+(`projectDir` stays on `/api/project`); a unit word on an element-param change is `BLOCKED_NEEDS_HUMAN` with
+the question (Task 5 pin "ignored for element params" withdrawn); the fifth clause reads the run receipt's
+`seat_results[].cad` blocks joined to artifact records by `execution_ref` → `receiptRef` (Task 11 pin
+"artifacts tuple is the only evidence" superseded); every survey skips-and-names (`_chosen`, `stat`, per-receipt
+load, correct plural); two consumer-less helpers deleted; event delivery under the same lock as numbering;
+route table no longer understates. 236 api tests OK, archcheck PASS.
+
+Web Importants → fixed in four commits (`3ef57e0`..`aae4172`, re-review Approved): an `ErrorBoundary`
+(`CLIENT_CRASH`, the thrown message verbatim, reload button) around the shell and around the viewport, so a
+WebGL-less machine loses the canvas, not the shell (the plan's Directory listed the boundary; Task 9 had dropped
+it); SSE dedupe scoped to the connection so a restarted API is not silence (T9-R2 closed with it); `dir` in the
+top bar; retired `.topbar` rules deleted; "status at last read"; refusals and read failures clear the fact line;
+a failed job no longer requests a verdict (`jobStatus` pass-through, three states by the server's word);
+`index.html` metadata; module-local exports dropped.
+
+Independent judges (tasks 2, 3, 4, 5/6, 7/8, 11) re-run on the fix branch and on the merged main: all
+FAILURES: 0. Cards (studio-side and kernel-side) are listed in the session relay to the main session.
+
+---
+
 ## Execution protocol (from the main session's benchmark, 2026-09-03)
 
 Fable 5.1 and Opus 5 scored 29/29 on the same pinned plan under independent judging; the differences were
