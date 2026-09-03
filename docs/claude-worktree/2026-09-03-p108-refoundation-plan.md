@@ -108,8 +108,13 @@ uvicorn, httpx (tests). React 19, three.js 0.185, rhino3dm 8.32.2 (wasm), Vite 8
   **content identity** — a canonical digest of `to_dict()` minus `run_id`/`base` (`archflow/contracts/
   canonical.py`), invariant under `bound_to`. `StateRecord.state_digest` is the **binding identity** —
   run/base-scoped, the number runner receipts carry. "Did this edit change anything" compares content
-  identities; "is this the state that run executed" compares binding identities. Digests of JSON payloads
-  come only from `archflow.contracts.canonical.canonical_digest`.
+  identities; "is this the state that run executed" compares binding identities **under the same projection
+  scheme** — ruling (b), 2026-09-03: a DTO-shape change in the kernel changes `state_digest` (it digests the
+  projection's serialized form), old receipts are provenance not an oracle, the studio computes the
+  reference baseline live and shows the honesty line "reference receipt was written under an earlier
+  projection scheme; its digest is not recomputable" when the recomputed value differs;
+  `matchesReferenceReceipt` is removed (Task 2b). Digests of JSON payloads come only from
+  `archflow.contracts.canonical.canonical_digest`.
 - `ProjectArtifactRef(project_id, artifact_id, relative_path, sha256, media_type)` exists; artifacts are
   enumerated from `seat-rhino-execution` receipts, never by `rglob`.
 - Run/record identifiers: `^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`.
