@@ -205,7 +205,7 @@ export function Stage({
           ))}
           {tool && (
             <span className="viewtools__hint quiet">
-              drawing a {tool} · press {tool} again to orbit
+              drawing: {tool} · press {tool} again to orbit
             </span>
           )}
           <span className="viewtools__sep" aria-hidden="true" />

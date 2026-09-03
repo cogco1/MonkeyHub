@@ -167,10 +167,10 @@ export function Composer({
           ) : (
             <>
               No agent is wired here: the studio types four exact forms —{" "}
-              <code>set … to …</code>, <code>increase … by … %</code>,{" "}
-              <code>decrease … by … %</code>, with an optional <code>keep …</code> — and
-              answers anything else with a question. Marks on the model go with the
-              sentence.
+              <code>set … to …</code>, <code>set … = …</code>,{" "}
+              <code>increase … by … %</code>, <code>decrease … by … %</code>, with an
+              optional <code>keep …</code> — and answers anything else with a question.
+              Marks on the model go with the sentence.
             </>
           )}
         </p>
