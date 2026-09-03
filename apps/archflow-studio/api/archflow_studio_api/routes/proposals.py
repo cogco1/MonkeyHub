@@ -15,7 +15,7 @@ from starlette.requests import Request
 from ..application.binding import ProjectBinding, bound_project
 from ..application.intent import DeterministicIntentProvider
 from ..application.projection import project_state
-from ..application.proposals import Proposal
+from ..application.proposals import proposal_from
 from ..transport.errors import StudioError
 from ..transport.proposal import ProposalDto, ProposalRequestDto, to_dto
 
@@ -36,8 +36,8 @@ def create_proposal(
     binding = bound_project(request.app.state)
     _require_bound_project(binding, body.project_id)
     projection = project_state(binding)
-    proposal = Proposal(
-        **DeterministicIntentProvider(projection).propose(
+    proposal = proposal_from(
+        DeterministicIntentProvider(projection).propose(
             # Round 1 has no session identity: the project the request is bound
             # to is what answers for it, and nothing about who asked changes
             # what the record says.

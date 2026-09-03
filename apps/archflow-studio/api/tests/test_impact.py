@@ -108,6 +108,42 @@ class ProtectionTests(ImpactTestCase):
         self.assertEqual(answer.protected, ("parameter:module",))
         self.assertEqual(answer.conflicts, ())
 
+    def test_protecting_the_target_itself_is_a_conflict_naming_the_target(
+        self,
+    ) -> None:
+        # The closure includes what changed, so a protection on the target
+        # collides as squarely as one downstream. One definition, not two.
+        answer = impact(
+            self.projection, "parameter:module", ("parameter:module",)
+        )
+
+        self.assertEqual(answer.conflicts, ("parameter:module",))
+
+    def test_a_target_with_nothing_downstream_still_conflicts_with_itself(
+        self,
+    ) -> None:
+        # ``portico-base`` propagates to nothing at all: if conflicts were read
+        # off the propagation alone, this protection would vanish silently.
+        answer = impact(
+            self.projection,
+            "entity:portico-base",
+            ("entity:portico-base",),
+        )
+
+        self.assertEqual(answer.propagated, ())
+        self.assertEqual(answer.conflicts, ("entity:portico-base",))
+
+    def test_the_target_and_something_downstream_are_both_named(self) -> None:
+        answer = impact(
+            self.projection,
+            "parameter:module",
+            ("parameter:module", "parameter:span"),
+        )
+
+        self.assertEqual(
+            answer.conflicts, ("parameter:module", "parameter:span")
+        )
+
 
 class LockTests(ImpactTestCase):
     def test_a_locked_parameter_in_the_closure_is_reported_with_its_authority(

@@ -15,7 +15,8 @@ it exists at all is that ``POST /api/proposals`` must be able to answer a later
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from typing import Any, Mapping
 
 from archflow.state.decision_operator import DecisionOperator
 
@@ -52,6 +53,29 @@ class Proposal:
     impact: Impact
     utterance: str
     created_at: str
+
+
+def proposal_from(parts: Mapping[str, Any]) -> Proposal:
+    """One proposal out of what the ``IntentProvider`` port returned.
+
+    The port answers with a ``Mapping`` — it is a seam another provider could
+    one day sit behind — so the mapping has to become a typed proposal
+    somewhere. That happens here rather than in the route: a provider whose
+    keys drift is an application-layer fault and it should raise where the
+    contract is, naming the keys, instead of arriving as an unexplained 500
+    from route code that only meant to call a function.
+    """
+
+    expected = {field.name for field in fields(Proposal)}
+    missing = sorted(expected - set(parts))
+    unexpected = sorted(set(parts) - expected)
+    if missing or unexpected:
+        raise TypeError(
+            "the intent provider's proposal does not match Proposal: "
+            f"missing {missing or 'nothing'}, unexpected "
+            f"{unexpected or 'nothing'}"
+        )
+    return Proposal(**parts)
 
 
 class ProposalStore:

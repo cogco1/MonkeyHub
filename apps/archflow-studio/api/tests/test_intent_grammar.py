@@ -252,7 +252,16 @@ class ProviderRefusalTests(unittest.TestCase):
     def test_only_an_unparseable_utterance_repeats_the_grammar(self) -> None:
         with self.assertRaises(BlockedNeedsHuman) as raised:
             self.propose("make it taller", "portico-base")
-        self.assertEqual(len(raised.exception.accepted_forms), 5)
+        # The four typeable forms, and no fifth entry that is not an utterance.
+        self.assertEqual(len(raised.exception.accepted_forms), 4)
+        self.assertTrue(
+            all(
+                form.startswith(("set ", "increase ", "decrease "))
+                for form in raised.exception.accepted_forms
+            )
+        )
+        # The optional suffix is not lost: it is said in the sentence.
+        self.assertIn("keep <ref>", raised.exception.question)
 
         with self.assertRaises(BlockedNeedsHuman) as raised:
             self.propose("set width to 3", "portico-base")

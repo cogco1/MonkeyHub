@@ -61,7 +61,10 @@ CONFLICT = "conflict"
 # below any dimension a building is drawn to and above float noise.
 ROUNDING = 6
 
-# The four forms, verbatim, as the question repeats them back.
+# The four forms, verbatim, as ``acceptedForms`` repeats them back. Each one is
+# a whole utterance somebody can type; the optional ``keep`` suffix is not, so
+# it is explained in the question sentence rather than listed here as a fifth
+# thing to try.
 ACCEPTED_FORMS: tuple[str, ...] = (
     "set <field> to <number>[ <unit>]",
     "set <field> = <number>[ <unit>]",
@@ -69,8 +72,11 @@ ACCEPTED_FORMS: tuple[str, ...] = (
     "decrease <field> by <number> %",
 )
 
-# ``keep <ref>[, <ref>...]`` may follow any of them.
-KEEP_FORM = "… keep <ref>[, <ref>…]"
+# How the question describes the suffix any of the four may carry.
+KEEP_SENTENCE = (
+    "Any of them may end with keep <ref>[, <ref>…] to name what the change "
+    "must not disturb."
+)
 
 # A decimal, and nothing cleverer: no expressions, no ranges, no words.
 _NUMBER = r"-?\d+(?:\.\d+)?"
@@ -174,9 +180,14 @@ def _number(text: str) -> int | float:
 
 
 def accepted_forms() -> tuple[str, ...]:
-    """What a refused utterance is told the grammar accepts."""
+    """The four forms a person can type, and nothing that is not one.
 
-    return (*ACCEPTED_FORMS, KEEP_FORM)
+    ``acceptedForms`` is a list of things to try, so every entry has to be a
+    complete utterance. The ``keep`` suffix is a modifier on all four rather
+    than a fifth form, and it travels in the question sentence instead.
+    """
+
+    return ACCEPTED_FORMS
 
 
 def _selection(context_refs: Sequence[str], prefix: str) -> str | None:
@@ -245,14 +256,13 @@ class DeterministicIntentProvider:
         proposal_id = f"studio-{uuid4().hex[:12]}"
         return {
             "proposal_id": proposal_id,
-            # Protecting anything the change reaches — the target included —
-            # is a conflict the user resolves; the server neither drops the
-            # change nor quietly overrides the protection.
-            "status": (
-                CONFLICT
-                if set(answer.closure) & set(protected)
-                else PROPOSED
-            ),
+            # The status is read off the impact rather than recomputed beside
+            # it: there is one definition of conflict, it lives in
+            # ``impact.conflicts``, and a proposal cannot disagree with the
+            # closure it is showing. A conflict is still a proposal — the user
+            # resolves it, and the server neither drops the change nor quietly
+            # overrides the protection.
+            "status": CONFLICT if answer.conflicts else PROPOSED,
             "base_state_digest": projection.state_digest,
             "record_digest": projection.record_digest,
             "component_id": component_id,
@@ -616,14 +626,20 @@ class DeterministicIntentProvider:
     def _ungrammatical(
         self, message: str, element: ProjectedElement | None
     ) -> BlockedNeedsHuman:
-        """The one refusal that is about the sentence rather than the record."""
+        """The one refusal that is about the sentence rather than the record.
+
+        ``acceptedForms`` lists the four typeable forms; the ``keep`` suffix is
+        described here, in the sentence, because it modifies all four rather
+        than standing as one of them.
+        """
 
         return BlockedNeedsHuman(
             "the utterance is not in the intent grammar",
             question=(
                 f"I read four forms and nothing else, and {message!r} is not "
-                f"one of them. {self._targets_sentence(element)} Which field, "
-                "and to what number?"
+                f"one of them. {KEEP_SENTENCE} "
+                f"{self._targets_sentence(element)} Which field, and to what "
+                "number?"
             ),
             accepted_forms=accepted_forms(),
         )

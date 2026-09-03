@@ -238,6 +238,29 @@ class ProtectionTests(ProposalTestCase):
 
         self.assertEqual(payload["status"], "conflict")
         self.assertEqual(payload["protected"], ["entity:portico-base"])
+        # The status is not a claim beside the impact: the conflicting ref is
+        # named in the row that describes the collision.
+        self.assertEqual(
+            payload["impact"]["conflicts"], ["entity:portico-base"]
+        )
+
+    def test_the_status_is_exactly_whether_the_impact_names_a_conflict(
+        self,
+    ) -> None:
+        for utterance, element_id in (
+            ("set bay to 3 keep parameter:span", None),
+            ("set height to 2.2 keep entity:portico-base", "portico-base"),
+            ("set bay to 3 keep entity:portico-base", None),
+            ("set height to 2.2", "portico-base"),
+        ):
+            with self.subTest(utterance=utterance):
+                body = {} if element_id is None else {"elementId": element_id}
+                payload = self.accepted(utterance, **body)
+
+                self.assertEqual(
+                    payload["status"] == "conflict",
+                    bool(payload["impact"]["conflicts"]),
+                )
 
     def test_keeping_something_out_of_reach_leaves_the_proposal_proposed(
         self,
@@ -279,6 +302,9 @@ class RefusalTests(ProposalTestCase):
             "make the portico a bit taller", elementId="portico-base"
         )
 
+        # Exactly the four forms a person can type. ``keep`` modifies all four
+        # rather than being a fifth thing to try, so it is explained in the
+        # sentence instead of listed as an utterance.
         self.assertEqual(
             payload["acceptedForms"],
             [
@@ -286,9 +312,9 @@ class RefusalTests(ProposalTestCase):
                 "set <field> = <number>[ <unit>]",
                 "increase <field> by <number> %",
                 "decrease <field> by <number> %",
-                "… keep <ref>[, <ref>…]",
             ],
         )
+        self.assertIn("keep <ref>", payload["question"])
         # The question is about this element, not about grammar in general.
         self.assertIn("height", payload["question"])
 
@@ -463,6 +489,35 @@ class ProposalStoreTests(ProposalTestCase):
         second = self.accepted("set bay to 4")
 
         self.assertNotEqual(first["proposalId"], second["proposalId"])
+
+
+class ProposalOnlyTests(ProposalTestCase):
+    """Proposal-only is a mechanical property, not a promise in a docstring."""
+
+    def _project_files(self) -> dict[str, int]:
+        """Every file under the bound project, by path and size."""
+
+        root = self.root / PROJECT_ID
+        return {
+            str(path.relative_to(root)): path.stat().st_size
+            for path in sorted(root.rglob("*"))
+            if path.is_file()
+        }
+
+    def test_proposing_writes_nothing_to_the_project(self) -> None:
+        before = self._project_files()
+
+        # One of each kind: an element field, a parameter, a conflict, and a
+        # refusal — no path through this route may touch the project.
+        self.accepted("set height to 2.2", elementId="portico-base")
+        self.accepted("set bay to 3 keep parameter:span")
+        self.blocked("set module to 1.5")
+        stored = self.accepted("set bay to 4")
+        self.client.get(f"/api/proposals/{stored['proposalId']}")
+
+        self.assertEqual(self._project_files(), before)
+        # Not vacuously true: the fixture project really has files to disturb.
+        self.assertGreater(len(before), 0)
 
 
 class RequestShapeTests(ProposalTestCase):

@@ -34,7 +34,15 @@ class ImpactLock:
 
 @dataclass(frozen=True, slots=True)
 class Impact:
-    """One change's reach: the kernel's closure, split by what it means."""
+    """One change's reach: the kernel's closure, split by what it means.
+
+    ``conflicts`` is the whole closure intersected with ``protected``, target
+    included. There is one definition of conflict here and everything else
+    derives from it: protecting the very thing you are changing is a conflict
+    in exactly the sense protecting something downstream is, and reporting the
+    second while staying silent about the first would make the emptier answer
+    the more alarming one.
+    """
 
     direct: tuple[str, ...]
     propagated: tuple[str, ...]
@@ -43,12 +51,6 @@ class Impact:
     locks: tuple[ImpactLock, ...]
     unknown_coverage: tuple[str, ...]
     honesty: tuple[str, ...]
-
-    @property
-    def closure(self) -> tuple[str, ...]:
-        """Everything the change reaches, the target included."""
-
-        return tuple(sorted({*self.direct, *self.propagated}))
 
 
 def impact(
@@ -73,7 +75,10 @@ def impact(
         direct=direct,
         propagated=propagated,
         protected=protected_refs,
-        conflicts=tuple(sorted(set(propagated) & set(protected_refs))),
+        # The whole closure, not just what it propagated to: a change collides
+        # with a protection on its own target as squarely as with one further
+        # down.
+        conflicts=tuple(sorted(set(closure) & set(protected_refs))),
         locks=tuple(
             ImpactLock(ref=parameter.ref, authority=parameter.lock_authority)
             for parameter in projection.parameters

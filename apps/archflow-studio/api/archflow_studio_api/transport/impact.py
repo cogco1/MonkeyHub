@@ -42,7 +42,8 @@ class ImpactDto(BaseModel):
     )
     protected: list[str]
     conflicts: list[str] = Field(
-        description="protected refs the change would propagate to",
+        description="protected refs the change would reach, the target "
+        "included; non-empty is exactly when the proposal's status is conflict",
     )
     locks: list[ImpactLockDto]
     unknown_coverage: UnknownCoverageDto = Field(alias="unknownCoverage")
