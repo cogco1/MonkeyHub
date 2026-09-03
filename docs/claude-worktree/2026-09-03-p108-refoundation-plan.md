@@ -187,10 +187,11 @@ Deleted by this plan: `backend/` (all), `run_server.py`, `launch.py`, `src/App.t
 - `api/openapi.json` = `create_app(StudioSettings(project_dir=Path("unbound"))).openapi()` dumped by
   `py -3.12 api/tools_openapi.py`; the snapshot test fails when the live schema differs (regenerate + commit).
 
-- [ ] Steps: write `test_health.py` (200, schema name, `canonicalWriteAuthority is False`) and
-  `test_openapi_snapshot.py` (live `app.openapi()` == file) → run (fail: package missing) → implement →
-  run (pass) → `archcheck` → commit
-  `P108 refoundation: api skeleton, ports moved, OpenAPI snapshot under test`.
+- [x] Done (main c0b08e7 + 58cd13a, 2026-09-03), then pruned by the main session at 5a6dc4a under Kaiwen's
+  lean-API ruling: one error body `{code, detail}` (+ `question`/`acceptedForms` on BLOCKED), no schema tags,
+  `StudioError(status, code, detail)` + `BlockedNeedsHuman` only, health = `{status, service, projectBound}`,
+  OpenAPI snapshot / package-path / ports / cli tests removed (the sys.path hook and `ports.py` stay). Task 9
+  generates its client from a running `app.openapi()`.
 
 ---
 
@@ -240,8 +241,11 @@ Deleted by this plan: `backend/` (all), `run_server.py`, `launch.py`, `src/App.t
   in the test with the same kwargs; villa-shaped fixture yields the component tree; missing runner record →
   404 `STATE_RECORD_NOT_FOUND` with the exact path in `detail`.
 
-- [ ] Steps: tests → fail → implement → pass → archcheck → commit
-  `P108 refoundation: exact HEAD and a base-attached StateRecord projection whose digest reproduces the runner's`.
+- [x] Done (main 30274a8 + 561202e + eb3fbe5, 2026-09-03; rebased onto the pruned API 5a6dc4a). Ratified
+  additions from the review: 422 `STATE_RECORD_INVALID` for a malformed authored record; the reference-run
+  survey skips unreadable run directories and says so in `honesty[]`; a reference whose workflow record
+  cannot be loaded stays eligible with an "unknown harness status" line; `referenceReceipt.receiptSchema`.
+  Independent judge on the real villa: 22/22.
 
 ---
 
