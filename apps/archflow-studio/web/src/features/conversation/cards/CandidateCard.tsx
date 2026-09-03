@@ -108,6 +108,25 @@ export function CandidateCard({
         </p>
         <p className="quiet mono">{candidateId}</p>
       </div>
+      {job.status === "ready" && job.value.status === "queued" && job.value.waitingReason && (
+        <div className="card__row">
+          <p className="quiet">
+            {job.value.waitingFor ? (
+              <>
+                waiting for <span className="mono">{job.value.waitingFor}</span> ·{" "}
+                {job.value.waitingReason}
+              </>
+            ) : (
+              <>waiting · {job.value.waitingReason}</>
+            )}
+          </p>
+        </div>
+      )}
+      {job.status === "ready" && job.value.status === "running" && job.value.lane === "exclusive" && (
+        <div className="card__row">
+          <p className="quiet">running in the export lane · one Rhino export at a time</p>
+        </div>
+      )}
       {job.status === "failed" && (
         <div className="card__row">
           <ErrorPanel error={job.error} what={`GET /api/jobs/${jobId}`} />

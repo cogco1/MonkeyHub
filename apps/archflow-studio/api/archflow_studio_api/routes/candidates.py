@@ -25,7 +25,7 @@ from ..application.binding import ProjectBinding, bound_project
 from ..application.candidate import describe, execute_candidate
 from ..application.jobs import Job, JobRegistry
 from ..application.projection import project_state
-from ..application.proposals import Proposal
+from ..application.proposals import closure_of, Proposal
 from ..settings import StudioSettings
 from ..transport.candidate import (
     CandidateAcceptedDto,
@@ -75,11 +75,15 @@ def start_candidate(
         registry.submit(
             candidate_id=run_id,
             proposal_id=proposal_id,
-            # The work runs on the registry's worker thread: ``run_project``
+            # The work runs on a registry worker thread: ``run_project``
             # calls ``asyncio.run`` and would refuse to start on the loop.
             work=lambda: execute_candidate(
                 binding, settings, proposal, run_id
             ),
+            # The queue's two facts about this run: what it touches, and
+            # whether it needs the one Rhino this machine can export with.
+            closure=closure_of(proposal),
+            exclusive=settings.rhino_export,
         )
     )
 

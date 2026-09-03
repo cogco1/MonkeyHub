@@ -700,6 +700,24 @@ export type JobDto = {
      */
     wallTimeS: number | null;
     /**
+     * Lane
+     *
+     * parallel, or exclusive when the run exports: one Rhino export at a time on this machine
+     */
+    lane: string;
+    /**
+     * Waitingfor
+     *
+     * while queued, the candidate this one waits for; null when nothing ahead of it conflicts
+     */
+    waitingFor: string | null;
+    /**
+     * Waitingreason
+     *
+     * why it waits, in the queue's words: the refs the two closures share, the export lane, or every worker busy
+     */
+    waitingReason: string | null;
+    /**
      * Persistence
      *
      * where this job lives; it is not version history

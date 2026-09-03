@@ -55,6 +55,21 @@ class Proposal:
     created_at: str
 
 
+
+def closure_of(proposal: "Proposal") -> frozenset[str]:
+    """Everything this change touches, as the record's refs: the target and
+    its component, the kernel's direct and propagated impact, and what the
+    sentence protected. Two proposals whose closures intersect are never run
+    at the same time."""
+
+    return frozenset(
+        {proposal.target_ref, f"component:{proposal.component_id}"}
+        | set(proposal.impact.direct)
+        | set(proposal.impact.propagated)
+        | set(proposal.protected)
+    )
+
+
 def proposal_from(parts: Mapping[str, Any]) -> Proposal:
     """One proposal out of what the ``IntentProvider`` port returned.
 

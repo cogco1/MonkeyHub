@@ -58,6 +58,20 @@ class JobDto(BaseModel):
         "summary of it and never hidden",
     )
     wall_time_s: float | None = Field(alias="wallTimeS")
+    lane: str = Field(
+        description="parallel, or exclusive when the run exports: one Rhino "
+        "export at a time on this machine",
+    )
+    waiting_for: str | None = Field(
+        alias="waitingFor",
+        description="while queued, the candidate this one waits for; null "
+        "when nothing ahead of it conflicts",
+    )
+    waiting_reason: str | None = Field(
+        alias="waitingReason",
+        description="why it waits, in the queue's words: the refs the two "
+        "closures share, the export lane, or every worker busy",
+    )
     persistence: str = Field(
         description="where this job lives; it is not version history",
     )
@@ -256,6 +270,9 @@ def job_dto(job: Job) -> JobDto:
         finished_at=job.finished_at,
         error=job.error,
         wall_time_s=job.wall_time_s,
+        lane=job.lane,
+        waiting_for=job.waiting_for,
+        waiting_reason=job.waiting_reason,
         persistence=PERSISTENCE,
     )
 
