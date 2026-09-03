@@ -104,11 +104,12 @@ uvicorn, httpx (tests). React 19, three.js 0.185, rhino3dm 8.32.2 (wasm), Vite 8
   against `CanonicalState(ref=head)` with empty facts, labeled as such (K2 → card **P110**: on an empty fact
   base the two production validators have nothing to check, so the receipt is effectively
   `artifact-present` only — the Validation DTO says exactly that).
-- **Digest scope (main-session calibration):** the run id enters `state_digest`, the program digest and
-  **also `record.digest`** (`to_dict` carries `run_id` and `base`), so a bound record's digests change with
-  the run it is bound to. "Did this edit change anything" is answered by comparing the **authored** (unbound)
-  content — `authoredRecordDigest = StateRecord.from_dict(payload).digest` before `bound_to` — or two records
-  bound to the same run; never a candidate's bound digest against the projection's.
+- **Identity (kernel ruling, 2026-09-03):** two identities and no third. `StateRecord.digest` is the
+  **content identity** — a canonical digest of `to_dict()` minus `run_id`/`base` (`archflow/contracts/
+  canonical.py`), invariant under `bound_to`. `StateRecord.state_digest` is the **binding identity** —
+  run/base-scoped, the number runner receipts carry. "Did this edit change anything" compares content
+  identities; "is this the state that run executed" compares binding identities. Digests of JSON payloads
+  come only from `archflow.contracts.canonical.canonical_digest`.
 - `ProjectArtifactRef(project_id, artifact_id, relative_path, sha256, media_type)` exists; artifacts are
   enumerated from `seat-rhino-execution` receipts, never by `rglob`.
 - Run/record identifiers: `^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`.
