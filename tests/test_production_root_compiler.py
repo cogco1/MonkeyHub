@@ -35,7 +35,7 @@ from archflow.project import (
     RuntimePaths,
     bootstrap_external_project,
 )
-from archflow.project.digests import canonical_json_sha256
+from archflow.contracts.canonical import canonical_digest
 from archflow.runtime.persistence.production_transition import (
     load_failed_production_attempts,
     load_production_transition,
@@ -103,7 +103,7 @@ class _MemoryRepository:
     def put_json(self, *, run, destination, record_kind, payload):  # type: ignore[no-untyped-def]
         del destination
         material = dict(payload)
-        digest = canonical_json_sha256(material)
+        digest = canonical_digest(material)
         ref = ProjectRecordRef(
             project_id=run.project_id,
             relative_path=f"runs/{run.run_id}/records/{record_kind}-{digest}.json",
