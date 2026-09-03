@@ -1,0 +1,9 @@
+# Everything under apps/archflow-studio/ that is built, fetched or generated at
+# runtime. Scoped here rather than under web/ so it also covers the api/ side
+# and any stale demo-era directory left behind at this level: the retired
+# Preview Slice 01 shell put a node_modules/, a dist/ and a .generated/ at the
+# studio root, and a working copy that still has them must not be able to
+# commit them back.
+node_modules/
+dist/
+.generated/
