@@ -299,8 +299,11 @@ Deleted by this plan: `backend/` (all), `run_server.py`, `launch.py`, `src/App.t
 `stateDigest` that differs from the current projection → `StaleBase`. Tests: resolved with element; unbound
 (no `archflow:` keys); unknown component named in detail; stale digest → 409.
 
-- [ ] Steps: tests → fail → implement → pass → archcheck → commit
-  `P108 refoundation: a picked object resolves server-side to one semantic component or says why not`.
+- [x] Done (main 8ae11df + 8c7df22, 2026-09-03). Verified on the real villa: a receipt object resolves to
+  `axial-entry-doors` with `elementId null`, `sourceState current`, `sourceRun runner-002`; `obj-<element>-n`
+  names resolve `elementId`. Follow-up bundled into Task 5: an element match must belong to the resolved
+  component; `status`/`sourceState` become enums; tie-break test. Open (ledger): the pick request has no
+  `run` override, so a client on `?run=` could loop on `STALE_BASE` — card with Task 9.
 
 ---
 
