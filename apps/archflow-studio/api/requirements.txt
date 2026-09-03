@@ -2,6 +2,10 @@ fastapi>=0.141,<1
 uvicorn>=0.52
 pydantic>=2.13
 
+# Optional: ARCHFLOW_STUDIO_INTENT_PROVIDER=anthropic (the key is the SDK's to
+# read from ANTHROPIC_API_KEY; the API never holds it). Imported only when chosen.
+# anthropic>=1.3
+
 # Tests only, for fastapi.testclient. starlette 1.6 deprecates httpx as the
 # TestClient transport, so the test environment installs httpx2:
 # httpx2>=2.12

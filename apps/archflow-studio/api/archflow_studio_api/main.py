@@ -21,6 +21,7 @@ import uvicorn
 
 from . import routes
 from .application.events import StudioEvents
+from .application.intent_agent import compiler_from_env
 from .application.jobs import JobRegistry
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
@@ -111,6 +112,11 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # is one verdict and one event rather than two of each. In memory, like
     # everything above it, and lost on restart for the same reason.
     app.state.validations = ValidationStore()
+    # Who compiles an architect's sentence into the grammar: nobody (the
+    # deterministic pass-through), a local codex process, or the Anthropic
+    # API — chosen by ARCHFLOW_STUDIO_INTENT_PROVIDER, held here so a test can
+    # put a scripted compiler in its place and the route stays one code path.
+    app.state.intent_compiler = compiler_from_env()
     app.add_exception_handler(StudioError, _handle_studio_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)

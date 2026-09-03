@@ -205,7 +205,28 @@ serving it, so the receipt's claim is a claim about the document on screen and n
 that used to be there. A durable server-side lookup by sha256 — so that a file opened from
 anywhere could be identified the same way — is carded, not built.
 
-**Intent.** An utterance is parsed, not interpreted, against four exact forms:
+**Intent, compiled.** `POST /api/intents` takes the architect's sentence in any words —
+"make the west portico a little taller" — and hands it to the process's **intent compiler**,
+chosen by `ARCHFLOW_STUDIO_INTENT_PROVIDER`: `deterministic` (the default: the sentence is
+taken as already in the grammar), `codex` (a local `codex exec` subprocess — ephemeral,
+read-only sandbox, schema-bound answer, the user's own login; `ARCHFLOW_STUDIO_CODEX` names
+the executable, `ARCHFLOW_STUDIO_INTENT_MODEL` a model) or `anthropic` (the Messages API;
+the key is the SDK's to read from `ANTHROPIC_API_KEY` and this process never holds it;
+`ARCHFLOW_STUDIO_INTENT_MODEL` defaults to `claude-sonnet-5`). `ARCHFLOW_STUDIO_INTENT_TIMEOUT_S`
+bounds either (120 s). The agent is shown one thing, the **record sheet** — the components,
+elements, numeric fields, parameters and honesty lines the projection already answers with,
+plus the grammar — and answers with one JSON object: a compiled sentence against one element
+the sheet names, or a question. It never sees the file system, runs nothing, and produces no
+coordinate. Its sentence then goes through the grammar below exactly as a typed one would, so
+the proposal that comes back is the record's; a sentence the grammar cannot type, or an agent
+that asked instead, is the same `422 BLOCKED_NEEDS_HUMAN`, with the agent's reading kept in
+`detail` so the reader knows who said what. The answer carries `agent` — provider, model, the
+compiled sentence, `why`, latency, the prompt's sha256 — beside `proposal`, so nothing the model
+said can be mistaken for something the record answered. An agent that fails is
+`502 INTENT_AGENT_FAILED` carrying its own last words.
+
+**Intent, typed.** A sentence in the grammar is parsed, not interpreted, against four exact
+forms:
 
 ```
 set <field> to <number>[ <unit>]

@@ -5,6 +5,48 @@ export type ClientOptions = {
 };
 
 /**
+ * AgentReadingDto
+ *
+ * What the agent said and how it was obtained — the agent's, not the record's.
+ */
+export type AgentReadingDto = {
+    /**
+     * Provider
+     *
+     * deterministic, codex or anthropic
+     */
+    provider: string;
+    /**
+     * Model
+     *
+     * the model the provider ran, when it names one
+     */
+    model: string | null;
+    /**
+     * Compiledutterance
+     *
+     * the sentence in the grammar the agent produced; for the deterministic provider it is the request itself
+     */
+    compiledUtterance: string;
+    /**
+     * Why
+     *
+     * the agent's own reading of the request, verbatim; empty for the deterministic provider
+     */
+    why: string;
+    /**
+     * Latencyms
+     */
+    latencyMs: number;
+    /**
+     * Promptsha256
+     *
+     * digest of the exact prompt the agent was shown; null for the deterministic provider
+     */
+    promptSha256: string | null;
+};
+
+/**
  * ArtifactListDto
  *
  * The wire form of ``GET /api/artifacts``.
@@ -359,6 +401,54 @@ export type ImpactLockDto = {
      * Authority
      */
     authority: string;
+};
+
+/**
+ * IntentDto
+ *
+ * The wire form of ``POST /api/intents``.
+ */
+export type IntentDto = {
+    agent: AgentReadingDto;
+    proposal: ProposalDto;
+};
+
+/**
+ * IntentRequestDto
+ *
+ * One request in the architect's words, against the current selection.
+ */
+export type IntentRequestDto = {
+    /**
+     * Statedigest
+     *
+     * the stateDigest /api/state answered with; a request against any other state is refused as STALE_BASE
+     */
+    stateDigest: string;
+    /**
+     * Utterance
+     *
+     * what the architect said, in any words; the agent compiles it into the grammar or asks
+     */
+    utterance: string;
+    /**
+     * Targetcomponentid
+     *
+     * the current selection's component, when there is one; the agent may keep it or name another the record declares
+     */
+    targetComponentId?: string | null;
+    /**
+     * Elementid
+     *
+     * the current selection's element, when one was picked
+     */
+    elementId?: string | null;
+    /**
+     * Projectid
+     *
+     * the project the client believes it is proposing against; a different one is refused as PROJECT_MISMATCH
+     */
+    projectId?: string | null;
 };
 
 /**
@@ -1384,6 +1474,31 @@ export type ReadProposalApiProposalsProposalIdGetResponses = {
 };
 
 export type ReadProposalApiProposalsProposalIdGetResponse = ReadProposalApiProposalsProposalIdGetResponses[keyof ReadProposalApiProposalsProposalIdGetResponses];
+
+export type CompileIntentApiIntentsPostData = {
+    body: IntentRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/intents';
+};
+
+export type CompileIntentApiIntentsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CompileIntentApiIntentsPostError = CompileIntentApiIntentsPostErrors[keyof CompileIntentApiIntentsPostErrors];
+
+export type CompileIntentApiIntentsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: IntentDto;
+};
+
+export type CompileIntentApiIntentsPostResponse = CompileIntentApiIntentsPostResponses[keyof CompileIntentApiIntentsPostResponses];
 
 export type StartCandidateApiProposalsProposalIdCandidatePostData = {
     body?: never;

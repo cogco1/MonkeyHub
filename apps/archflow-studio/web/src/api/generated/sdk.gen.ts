@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
+import type { CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -96,6 +96,20 @@ export const createProposalApiProposalsPost = <ThrowOnError extends boolean = fa
  * One proposal this process still holds, exactly as it was returned.
  */
 export const readProposalApiProposalsProposalIdGet = <ThrowOnError extends boolean = false>(options: Options<ReadProposalApiProposalsProposalIdGetData, ThrowOnError>): RequestResult<ReadProposalApiProposalsProposalIdGetResponses, ReadProposalApiProposalsProposalIdGetErrors, ThrowOnError> => (options.client ?? client).get<ReadProposalApiProposalsProposalIdGetResponses, ReadProposalApiProposalsProposalIdGetErrors, ThrowOnError>({ url: '/api/proposals/{proposal_id}', ...options });
+
+/**
+ * Compile Intent
+ *
+ * Compile one request against the current selection, then propose it.
+ */
+export const compileIntentApiIntentsPost = <ThrowOnError extends boolean = false>(options: Options<CompileIntentApiIntentsPostData, ThrowOnError>): RequestResult<CompileIntentApiIntentsPostResponses, CompileIntentApiIntentsPostErrors, ThrowOnError> => (options.client ?? client).post<CompileIntentApiIntentsPostResponses, CompileIntentApiIntentsPostErrors, ThrowOnError>({
+    url: '/api/intents',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Start Candidate
