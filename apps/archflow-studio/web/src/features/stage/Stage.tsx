@@ -203,6 +203,11 @@ export function Stage({
               {item.glyph} {item.kind}
             </button>
           ))}
+          {tool && (
+            <span className="viewtools__hint quiet">
+              drawing a {tool} · press {tool} again to orbit
+            </span>
+          )}
           <span className="viewtools__sep" aria-hidden="true" />
           <button type="button" onClick={() => viewportRef.current?.fitView()}>
             fit

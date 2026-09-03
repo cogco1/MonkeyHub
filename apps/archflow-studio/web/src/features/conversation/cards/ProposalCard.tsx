@@ -181,8 +181,9 @@ export function ProposalCard({
       {ghostShown && (
         <div className="card__row">
           <p className="quiet">
-            <span className="ghost-mark">ghost shown in the model</span> · approximate — Apply for
-            the exact geometry
+            <span className="ghost-mark">ghost shown in the model</span> · approximate
+            {target.key === "height" && " · drawn as a vertical stretch of the picked objects"} — Apply
+            for the exact geometry
           </p>
         </div>
       )}
@@ -236,10 +237,15 @@ function Refine({
   const timer = useRef<number | null>(null);
 
   // The server's number wins whenever it changes: a refinement came back, or
-  // the entry was replaced. The slider follows it.
+  // the entry was replaced. The slider follows it - and when a refinement
+  // ends with the number unchanged (a question, a refusal), the slider snaps
+  // back to it rather than keep showing a number the record never typed.
   useEffect(() => {
     setValue(current);
   }, [current]);
+  useEffect(() => {
+    if (!refining) setValue(current);
+  }, [refining, current]);
 
   useEffect(
     () => () => {
@@ -261,15 +267,16 @@ function Refine({
   const percent = ((value - old) / old) * 100;
   const sign = percent > 0 ? "+" : "";
   const status = refining
-    ? "typing…"
+    ? "asking the record…"
     : refinements > 0
       ? "refined ×" + String(refinements)
       : "by hand";
+  const originPercent = max > min ? ((old - min) / (max - min)) * 100 : 50;
   return (
     <div className="card__row refine" aria-label={"refine " + fieldKey}>
       <div className="refine__head">
         <span className="label">Refine</span>
-        <span className="mono refine__readout">
+        <span className={"mono refine__readout" + (refining ? " refine__readout--asking" : "")}>
           {fieldKey} {Number(value.toFixed(6))}
           <span className="quiet">
             {" "}
@@ -308,11 +315,18 @@ function Refine({
       </div>
       <div className="refine__scale mono">
         <span>{Number(min.toFixed(6))}</span>
-        <span className="refine__origin" title="the record's number">
+        <span
+          className="refine__origin"
+          title="the record's number"
+          style={{ left: originPercent + "%" }}
+        >
           {Number(old.toFixed(6))}
         </span>
         <span>{Number(max.toFixed(6))}</span>
       </div>
+      <p className="quiet refine__note">
+        each move asks the record again - the number in Change is always the record's
+      </p>
     </div>
   );
 }

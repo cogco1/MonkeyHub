@@ -41,6 +41,7 @@ export function CandidateCard({
   onCandidate,
   onPreview,
   onEvidence,
+  labelOf,
 }: {
   candidateId: string;
   jobId: string;
@@ -48,10 +49,25 @@ export function CandidateCard({
   onJobStatus(candidateId: string, status: string): void;
   onCandidate(candidate: CandidateDto): void;
   onPreview(artifact: ProjectArtifactDto, sourceLabel: string): void;
-  onEvidence(tab: EvidenceTab): void;
+  onEvidence(tab: EvidenceTab, candidateId?: string): void;
+  /** The sentence another candidate of this tab was made from, for naming a blocker. */
+  labelOf(candidateId: string): string | null;
 }) {
   const [job, setJob] = useState<Loadable<JobDto>>(idle);
   const [candidate, setCandidate] = useState<Loadable<CandidateDto>>(idle);
+  // A clock while the run is in flight: eighty seconds of one word was the
+  // review's complaint. The seconds are this browser's; the receipt's
+  // timings replace them when the run is over.
+  const [now, setNow] = useState(() => Date.now());
+  const inFlight = job.status === "ready" && IN_FLIGHT.has(job.value.status);
+  useEffect(() => {
+    if (!inFlight) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, [inFlight]);
+  const since =
+    job.status === "ready" ? (job.value.startedAt ?? job.value.createdAt) : null;
+  const elapsed = since ? Math.max(0, (now - Date.parse(since)) / 1000) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +121,9 @@ export function CandidateCard({
           {job.status === "ready" && job.value.wallTimeS !== null && (
             <span className="quiet"> {job.value.wallTimeS.toFixed(1)} s</span>
           )}
+          {inFlight && elapsed !== null && (
+            <span className="quiet mono"> {elapsed.toFixed(0)} s</span>
+          )}
         </p>
         <p className="quiet mono">{candidateId}</p>
       </div>
@@ -113,8 +132,16 @@ export function CandidateCard({
           <p className="quiet">
             {job.value.waitingFor ? (
               <>
-                waiting for <span className="mono">{job.value.waitingFor}</span> ·{" "}
-                {job.value.waitingReason}
+                waiting for{" "}
+                <span
+                  className={labelOf(job.value.waitingFor) ? "" : "mono"}
+                  title={job.value.waitingFor}
+                >
+                  {labelOf(job.value.waitingFor)
+                    ? `“${labelOf(job.value.waitingFor)}”`
+                    : job.value.waitingFor}
+                </span>{" "}
+                · {job.value.waitingReason}
               </>
             ) : (
               <>waiting · {job.value.waitingReason}</>
@@ -122,9 +149,13 @@ export function CandidateCard({
           </p>
         </div>
       )}
-      {job.status === "ready" && job.value.status === "running" && job.value.lane === "exclusive" && (
+      {job.status === "ready" && job.value.status === "running" && (
         <div className="card__row">
-          <p className="quiet">running in the export lane · one Rhino export at a time</p>
+          <p className="quiet">
+            {job.value.lane === "exclusive"
+              ? "running in the export lane · the kernel first, then one Rhino export per seat, one at a time on this machine"
+              : "running · the kernel only, no export"}
+          </p>
         </div>
       )}
       {job.status === "failed" && (
@@ -171,7 +202,7 @@ function CandidateReadout({
   candidate: CandidateDto;
   loadingSha: string | null;
   onPreview(artifact: ProjectArtifactDto, sourceLabel: string): void;
-  onEvidence(tab: EvidenceTab): void;
+  onEvidence(tab: EvidenceTab, candidateId?: string): void;
 }) {
   const seats = candidate.seatResults;
   return (
@@ -188,7 +219,9 @@ function CandidateReadout({
             )
             .join(" · ")}
         </p>
-        <p className="quiet">{candidate.harness}</p>
+        <p className="quiet" title={candidate.harness}>
+          a harness run beside the project; no stage advances, nothing is written to HEAD
+        </p>
         {!candidate.seatExecutionComplete && (
           <p className="quiet">seat execution is not complete</p>
         )}
@@ -239,6 +272,19 @@ function CandidateReadout({
                     ? "loading bytes…"
                     : `Preview ${artifact.fileName}`}
                 </button>
+              ) : null,
+            )}
+            {candidate.artifacts.map((artifact) =>
+              artifact.available && artifact.sha256 ? (
+                <a
+                  key={`save-${artifact.artifactId}`}
+                  className="btn btn--link"
+                  href={`/api/artifacts/${artifact.sha256}/bytes`}
+                  download={artifact.fileName}
+                  title="the certified bytes, as the receipt names them"
+                >
+                  Save {artifact.fileName}
+                </a>
               ) : (
                 <span key={artifact.artifactId} className="quiet">
                   {artifact.fileName}:{" "}
@@ -264,7 +310,7 @@ function CandidateReadout({
         <button
           type="button"
           className="btn btn--link"
-          onClick={() => onEvidence("receipts")}
+          onClick={() => onEvidence("receipts", candidate.candidateId)}
         >
           receipts
         </button>

@@ -116,6 +116,19 @@ export function VersionsStrip({
                   </button>
                 );
               })}
+              {group.exports
+                .filter(({ artifact }) => artifact.available && artifact.sha256)
+                .map(({ artifact, seat }) => (
+                  <a
+                    key={`save-${artifact.artifactId}`}
+                    className="vcard__save"
+                    href={`/api/artifacts/${artifact.sha256}/bytes`}
+                    download={artifact.fileName}
+                    title={`save ${artifact.fileName}`}
+                  >
+                    save {seat}
+                  </a>
+                ))}
               {comparable && firstAvailable && (
                 <button
                   type="button"

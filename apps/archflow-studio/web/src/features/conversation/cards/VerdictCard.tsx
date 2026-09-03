@@ -46,12 +46,15 @@ const REVIEW: ReadonlyArray<{ title: string; clauses: readonly string[] }> = [
 
 export function VerdictCard({
   candidateId,
+  protectedRefs,
   onValidation,
   onEvidence,
 }: {
   candidateId: string;
+  /** What the sentence asked to keep; the proposal's refs, verbatim. */
+  protectedRefs: readonly string[];
   onValidation(validation: ValidationDto): void;
-  onEvidence(tab: EvidenceTab): void;
+  onEvidence(tab: EvidenceTab, candidateId?: string): void;
 }) {
   const [validation, setValidation] = useState<Loadable<ValidationDto>>(idle);
 
@@ -143,6 +146,26 @@ export function VerdictCard({
               </ReviewLine>
             );
           })}
+          <dt>Protected</dt>
+          <dd>
+            {protectedRefs.length === 0 ? (
+              <span className="quiet">nothing was named to keep</span>
+            ) : (
+              <>
+                <ul className="reflist">
+                  {protectedRefs.map((ref) => (
+                    <li key={ref} className="mono" title={ref}>
+                      {ref.includes(":") ? ref.slice(ref.indexOf(":") + 1) : ref}
+                    </li>
+                  ))}
+                </ul>
+                <span className="quiet">
+                  kept out of the change: the proposal's closure never reached them, or
+                  it would not have run
+                </span>
+              </>
+            )}
+          </dd>
           <dt>Unresolved</dt>
           <dd>
             {value.blockedBy.length === 0 &&
@@ -180,7 +203,7 @@ export function VerdictCard({
         <button
           type="button"
           className="btn btn--link"
-          onClick={() => onEvidence("receipts")}
+          onClick={() => onEvidence("receipts", candidateId)}
         >
           Read the receipt
         </button>

@@ -31,6 +31,7 @@ export function EvidenceDrawer({
   projection,
   candidate,
   validation,
+  sentence,
   notices,
   onTab,
   onClose,
@@ -44,6 +45,8 @@ export function EvidenceDrawer({
   projection: StateProjectionDto | null;
   candidate: CandidateDto | null;
   validation: ValidationDto | null;
+  /** The sentence the shown candidate was made from, when this tab knows it. */
+  sentence: string | null;
   notices: readonly string[];
   onTab(tab: EvidenceTab): void;
   onClose(): void;
@@ -107,7 +110,7 @@ export function EvidenceDrawer({
           />
         </div>
         <div hidden={tab !== "receipts"}>
-          <ReceiptsTab candidate={candidate} validation={validation} />
+          <ReceiptsTab candidate={candidate} validation={validation} sentence={sentence} />
         </div>
         <div hidden={tab !== "events"}>
           <EventStream notices={notices} onCount={onEventCount} />

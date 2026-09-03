@@ -1644,3 +1644,46 @@ button.chip:hover {
 .reading__clock {
   color: var(--ink-2);
 }
+
+/* Review batch two --------------------------------------------------------- */
+
+.viewtools__hint {
+  align-self: center;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.refine__readout--asking {
+  color: var(--muted);
+}
+
+.refine__scale {
+  position: relative;
+}
+
+.refine__origin {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.refine__note {
+  font-size: 11px;
+}
+
+.ev__sentence {
+  margin: 0 0 6px;
+  color: var(--ink);
+  font-size: 12.5px;
+}
+
+.vcard__save {
+  align-self: center;
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.vcard__save:hover {
+  text-decoration: underline;
+}

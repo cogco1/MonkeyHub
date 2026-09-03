@@ -36,11 +36,14 @@ export function RelationChips({ checks }: { checks: RelationChecksDto }) {
       >
         unchecked {checks.unchecked}
       </span>
-      <span className="chip chip--flag">
-        heldFlag {String(checks.heldFlag)}
+      <span className="chip chip--flag" title={`heldFlag ${String(checks.heldFlag)}`}>
+        {checks.heldFlag ? "nothing violated" : "something violated"}
       </span>
-      <span className="chip chip--flag">
-        fullyChecked {String(checks.fullyChecked)}
+      <span
+        className="chip chip--flag"
+        title={`fullyChecked ${String(checks.fullyChecked)}`}
+      >
+        {checks.fullyChecked ? "every relation checked" : "not every relation was checked"}
       </span>
     </div>
   );

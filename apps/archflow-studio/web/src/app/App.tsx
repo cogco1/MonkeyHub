@@ -381,13 +381,14 @@ export default function App() {
       if (stateDigest === null || project === null) return;
       if (proposingRef.current) return;
       proposingRef.current = true;
-      append({
-        kind: "you",
-        text:
-          gestures.length === 0
-            ? utterance
-            : `${utterance} · with ${gestures.length} ${gestures.length === 1 ? "mark" : "marks"} on the model`,
-      });
+      // The architect's sentence, exactly as said; the marks on their own line.
+      append({ kind: "you", text: utterance });
+      if (gestures.length > 0) {
+        append({
+          kind: "system",
+          text: `with ${gestures.length} ${gestures.length === 1 ? "mark" : "marks"} on the model: ${gestures.map((gesture) => gesture.kind).join(", ")}`,
+        });
+      }
       setProposalBusy(true);
       // The waiting half, on screen: who is reading what, and for how long.
       // The answer - card, question or refusal - replaces this line.
@@ -459,6 +460,8 @@ export default function App() {
             kind: "system",
             text: `Now talking about ${target.elementId ?? target.componentId} · the proposal's target`,
           });
+          // The picked chip described the old subject; it must not outlive it.
+          setPicked(null);
         }
         setDraft("");
         // The marks were said; a new sentence starts clean. A question keeps
@@ -467,6 +470,10 @@ export default function App() {
         setTool(null);
       } catch (cause) {
         const error = asStudioApiError(cause);
+        // No proposal came back, so no card claims the ghost that may still
+        // stand from the last one: the picture goes back to the loaded model.
+        viewportRef.current?.ghost(null);
+        setGhostProposalId(null);
         if (error.code === BLOCKED) {
           append({ kind: "question", error, utterance });
         } else {
@@ -636,6 +643,10 @@ export default function App() {
   const runCandidate = useCallback(
     async (proposalId: string) => {
       setCandidateBusy(true);
+      // The approximation has done its work: from here the picture is the
+      // loaded model until the exact geometry arrives.
+      viewportRef.current?.ghost(null);
+      setGhostProposalId(null);
       try {
         const accepted = await studio.startCandidate(proposalId);
         append({
@@ -665,11 +676,31 @@ export default function App() {
       noteTranscriptStatus(candidateId, status);
       if (status === "succeeded" && !verdictsRef.current.has(candidateId)) {
         verdictsRef.current.add(candidateId);
-        append({ kind: "verdict", candidateId });
+        // The card's Protected line quotes what the sentence asked to keep;
+        // that is the proposal's, found through the candidate it became.
+        const candidateEntry = transcript.entries.find(
+          (entry) => entry.kind === "candidate" && entry.candidateId === candidateId,
+        );
+        const proposalEntry =
+          candidateEntry && candidateEntry.kind === "candidate"
+            ? transcript.entries.find(
+                (entry) =>
+                  entry.kind === "proposal" &&
+                  entry.proposal.proposalId === candidateEntry.proposalId,
+              )
+            : undefined;
+        append({
+          kind: "verdict",
+          candidateId,
+          protectedRefs:
+            proposalEntry && proposalEntry.kind === "proposal"
+              ? proposalEntry.proposal.protected
+              : [],
+        });
         void loadArtifacts();
       }
     },
-    [append, loadArtifacts, noteTranscriptStatus],
+    [append, loadArtifacts, noteTranscriptStatus, transcript.entries],
   );
 
   const noteCandidate = useCallback((candidate: CandidateDto) => {
@@ -679,14 +710,45 @@ export default function App() {
     }));
   }, []);
 
+  // A verdict answers "what happened"; the exact model is the rest of the
+  // answer. Once a candidate's verdict is read, its export of the seat on
+  // screen is loaded in place of the picture the change was drawn over.
+  const autoShowRef = useRef<string | null>(null);
   const noteValidation = useCallback((validation: ValidationDto) => {
     setValidations((current) => ({
       ...current,
       [validation.candidateId]: validation,
     }));
+    autoShowRef.current = validation.candidateId;
   }, []);
 
-  const openEvidence = useCallback((tab: EvidenceTab) => {
+  useEffect(() => {
+    const candidateId = autoShowRef.current;
+    if (candidateId === null || artifacts.status !== "ready") return;
+    const validation = validations[candidateId];
+    if (!validation) return;
+    const rows = artifacts.value.artifacts.filter(
+      (row) => row.runId === candidateId && row.available && row.sha256 !== null,
+    );
+    if (rows.length === 0) return;
+    const twin =
+      rows.find((row) => loadedArtifact !== null && row.stageId === loadedArtifact.stageId) ??
+      rows[0];
+    autoShowRef.current = null;
+    append({
+      kind: "system",
+      text: `the exact model is on screen · ${twin.fileName} · ${
+        validation.advance ? "may advance" : `blocked: ${validation.blockedBy.join(", ")}`
+      }`,
+    });
+    void loadArtifactIntoViewer(twin, candidateSourceLabel(candidateId));
+  }, [append, artifacts, loadArtifactIntoViewer, loadedArtifact, validations]);
+
+  // Which candidate the drawer shows: the one whose card was clicked, else
+  // the latest this tab launched. A card's "receipts" opens its own run.
+  const [evidenceCandidateId, setEvidenceCandidateId] = useState<string | null>(null);
+  const openEvidence = useCallback((tab: EvidenceTab, candidateId?: string) => {
+    if (candidateId !== undefined) setEvidenceCandidateId(candidateId);
     setEvidenceTab(tab);
     setEvidenceOpen(true);
   }, []);
@@ -703,9 +765,12 @@ export default function App() {
     (entry) => entry.kind === "candidate",
   );
   const selectedCandidateId =
-    candidateEntries.length > 0
-      ? candidateEntries[candidateEntries.length - 1].candidateId
-      : null;
+    evidenceCandidateId !== null &&
+    candidateEntries.some((entry) => entry.candidateId === evidenceCandidateId)
+      ? evidenceCandidateId
+      : candidateEntries.length > 0
+        ? candidateEntries[candidateEntries.length - 1].candidateId
+        : null;
   const selectedCandidate =
     selectedCandidateId === null ? null : (candidates[selectedCandidateId] ?? null);
   const selectedValidation =
@@ -832,6 +897,22 @@ export default function App() {
             : { state: "current", label: "Candidate export", detail: "verdict not read yet" }
           : { state: "current", label: "Current", detail: null };
 
+  // The sentence a candidate was made from, as this tab heard it: for the
+  // drawer's title and for naming a queued candidate's blocker by its words.
+  const sentenceOfCandidate = useCallback(
+    (candidateId: string | null): string | null => {
+      if (candidateId === null) return null;
+      const entry = candidateEntries.find(
+        (row) => row.kind === "candidate" && row.candidateId === candidateId,
+      );
+      return entry && entry.kind === "candidate"
+        ? (utteranceOf.get(entry.proposalId) ?? null)
+        : null;
+    },
+    [candidateEntries, utteranceOf],
+  );
+  const selectedSentence = sentenceOfCandidate(selectedCandidateId);
+
   const evidenceCounts = {
     honesty: honestyCount(projection, selectedCandidate, selectedValidation),
     receipts: candidateEntries.length,
@@ -868,6 +949,7 @@ export default function App() {
       projection={projection}
       candidate={selectedCandidate}
       validation={selectedValidation}
+      sentence={selectedSentence}
       notices={[]}
       onTab={setEvidenceTab}
       onClose={() => setEvidenceOpen(false)}
@@ -964,9 +1046,23 @@ export default function App() {
             callbacks={{
               onRun: (proposalId) => void runCandidate(proposalId),
               onReply: setDraft,
-              onAdjust: setDraft,
+              onAdjust: (sentence) => {
+                // Adjust puts the compiled sentence in the composer to edit.
+                // Text already there is not lost silently, and the ghost of
+                // the proposal being adjusted comes off the model.
+                if (draft.trim() !== "" && draft !== sentence) {
+                  append({
+                    kind: "system",
+                    text: `the unsent text "${draft}" was replaced by the proposal's sentence`,
+                  });
+                }
+                setDraft(sentence);
+                viewportRef.current?.ghost(null);
+                setGhostProposalId(null);
+              },
               onRefine: refine,
               onCompareInModel: (comparison) => void compareInModel(comparison),
+              labelOf: sentenceOfCandidate,
               onJobStatus: noteJobStatus,
               onCandidate: noteCandidate,
               onPreview: (artifact, label) =>

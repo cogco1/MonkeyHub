@@ -139,6 +139,32 @@ export function Annotate({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stroke, setStroke] = useState<Point[] | null>(null);
   const strokeRef = useRef<Point[] | null>(null);
+  // Marks are held in the view they were drawn in. When the camera leaves
+  // that view the ink no longer sits on what it meant, so it fades and the
+  // stage says why; the meaning - the hits and the camera - was kept at
+  // draw time and still travels with the sentence.
+  const [moved, setMoved] = useState(false);
+  useEffect(() => {
+    if (gestures.length === 0) {
+      setMoved(false);
+      return undefined;
+    }
+    const drawnIn = gestures[0].camera;
+    const same = (a: readonly number[], b: readonly number[]) =>
+      a.every((value, index) => Math.abs(value - b[index]) < 1e-6);
+    const check = () => {
+      const camera = viewportRef.current?.camera();
+      if (!camera) return;
+      setMoved(
+        !same(camera.position, drawnIn.position) ||
+          !same(camera.target, drawnIn.target) ||
+          Math.abs(camera.fov - drawnIn.fov) > 1e-6,
+      );
+    };
+    check();
+    const timer = window.setInterval(check, 300);
+    return () => window.clearInterval(timer);
+  }, [gestures, viewportRef]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -156,10 +182,12 @@ export function Annotate({
     context.setTransform(scale, 0, 0, scale, 0, 0);
     context.clearRect(0, 0, rect.width, rect.height);
     const palette = colours();
+    context.globalAlpha = moved ? 0.3 : 1;
     for (const gesture of gestures) drawGesture(context, gesture.kind, gesture.screen, palette);
+    context.globalAlpha = 1;
     const live = strokeRef.current;
     if (tool && live && live.length > 0) drawGesture(context, tool, live, palette, true);
-  }, [gestures, tool]);
+  }, [gestures, moved, tool]);
 
   useEffect(() => {
     draw();
@@ -235,6 +263,13 @@ export function Annotate({
   };
 
   return (
+    <>
+      {moved && gestures.length > 0 && (
+        <p className="annotate__note quiet">
+          marks are held in the view they were drawn in · what they touched still goes with
+          the sentence
+        </p>
+      )}
     <canvas
       ref={canvasRef}
       className="annotate"
@@ -270,6 +305,7 @@ export function Annotate({
         setStroke(null);
       }}
     />
+    </>
   );
 }
 

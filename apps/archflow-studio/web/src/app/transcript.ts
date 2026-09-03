@@ -51,7 +51,13 @@ export type Entry =
       /** The server's own word for the job: queued, running, succeeded, failed. */
       status: string;
     }
-  | { kind: "verdict"; id: string; candidateId: string }
+  | {
+      kind: "verdict";
+      id: string;
+      candidateId: string;
+      /** What the sentence asked to keep, for the card's Protected line. */
+      protectedRefs: readonly string[];
+    }
   | {
       kind: "compare";
       id: string;

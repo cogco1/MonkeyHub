@@ -9,9 +9,11 @@ import type { CandidateDto, ValidationDto } from "../../api/generated";
 export function ReceiptsTab({
   candidate,
   validation,
+  sentence,
 }: {
   candidate: CandidateDto | null;
   validation: ValidationDto | null;
+  sentence: string | null;
 }) {
   if (candidate === null) {
     return <p className="ev__none">no candidate has run in this tab</p>;
@@ -20,6 +22,12 @@ export function ReceiptsTab({
     <>
       <div className="ev">
         <p className="label">Candidate receipt</p>
+        {sentence && (
+          <p className="ev__sentence">
+            “{sentence}”
+            <span className="quiet"> · the candidate this drawer shows</span>
+          </p>
+        )}
         <dl>
           <dt>run</dt>
           <dd>{candidate.candidateId}</dd>

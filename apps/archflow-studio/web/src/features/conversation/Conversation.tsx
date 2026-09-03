@@ -44,9 +44,12 @@ export interface ConversationCallbacks {
   onCandidate(candidate: CandidateDto): void;
   onPreview(artifact: ProjectArtifactDto, sourceLabel: string): void;
   onValidation(validation: ValidationDto): void;
-  onEvidence(tab: EvidenceTab): void;
+  /** Open the drawer on a tab; a card names its own candidate so the drawer shows that run. */
+  onEvidence(tab: EvidenceTab, candidateId?: string): void;
   /** Cross-fade a comparison's two exports in the viewer. */
   onCompareInModel(comparison: CompareDto): void;
+  /** The sentence a candidate this tab launched was made from, or null. */
+  labelOf(candidateId: string): string | null;
 }
 
 export function Conversation({
@@ -220,6 +223,7 @@ function renderEntry(
             onCandidate={callbacks.onCandidate}
             onPreview={callbacks.onPreview}
             onEvidence={callbacks.onEvidence}
+            labelOf={callbacks.labelOf}
           />
         </>
       );
@@ -229,6 +233,7 @@ function renderEntry(
           <p className="msg__who">Studio · verdict</p>
           <VerdictCard
             candidateId={entry.candidateId}
+            protectedRefs={entry.protectedRefs}
             onValidation={callbacks.onValidation}
             onEvidence={callbacks.onEvidence}
           />
