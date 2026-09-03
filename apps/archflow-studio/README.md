@@ -108,19 +108,33 @@ part of an answer about a design — an `OSError` is named by its class and the 
 message rather than by the path it came with. `projectDir` on `GET /api/project` stays, because
 that is an operator asking the binding question and being answered.
 
+Three groups of refusal are **shared**, and the table below does not repeat them per row:
+
+- the framework's four above (404 `NOT_FOUND`, 405 `METHOD_NOT_ALLOWED`, 422 `REQUEST_INVALID`,
+  500 `INTERNAL_ERROR`);
+- **binding**: 503 `PROJECT_NOT_BOUND` from every route that opens the project — all of them
+  except `GET /api/health`, `GET /api/proposals/{id}` and `GET /api/jobs/{id}`, which answer
+  from this process's own memory;
+- **projection**: 404 `RUN_NOT_FOUND`, 404 `STATE_RECORD_NOT_FOUND` and 422
+  `STATE_RECORD_INVALID` from every route that reads the authored record — `/api/project`
+  (`RUN_NOT_FOUND` only), `/api/state`, `/api/pick/resolve`, both `/api/proposals` POSTs and
+  both `/api/candidates` reads;
+- **proposal**: 404 `PROPOSAL_NOT_FOUND` from every route that reads a proposal back —
+  `GET /api/proposals/{id}`, starting a candidate, and reading a candidate or its validation.
+
 | method | path | response DTO | errors beyond the shared ones |
 | --- | --- | --- | --- |
 | GET | `/api/health` | `StudioHealth` | none — `projectBound` is a boolean, not a refusal |
-| GET | `/api/project` | `ProjectBindingDto` | 503 `PROJECT_NOT_BOUND`, 404 `RUN_NOT_FOUND` |
-| GET | `/api/state?run=` | `StateProjectionDto` | 503 `PROJECT_NOT_BOUND`, 404 `RUN_NOT_FOUND`, 404 `STATE_RECORD_NOT_FOUND`, 422 `STATE_RECORD_INVALID` |
-| GET | `/api/artifacts` | `ArtifactListDto` | 503 `PROJECT_NOT_BOUND` |
+| GET | `/api/project` | `ProjectBindingDto` | — |
+| GET | `/api/state?run=` | `StateProjectionDto` | — |
+| GET | `/api/artifacts` | `ArtifactListDto` | — (a run it cannot read is named in `skippedRuns`, never a refusal) |
 | GET | `/api/artifacts/{sha256}/bytes` | binary (`ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store`) | 404 `ARTIFACT_NOT_FOUND`, 409 `ARTIFACT_UNREADABLE`, 409 `ARTIFACT_DIGEST_MISMATCH` |
 | POST | `/api/pick/resolve` | `PickResolutionDto` (body `PickRequestDto`) | 409 `STALE_BASE` |
 | POST | `/api/proposals` → 201 | `ProposalDto` (body `ProposalRequestDto`) | 422 `BLOCKED_NEEDS_HUMAN` (+ `question`, `acceptedForms`), 409 `STALE_BASE`, 403 `PROJECT_MISMATCH` |
-| GET | `/api/proposals/{id}` | `ProposalDto` | 404 `PROPOSAL_NOT_FOUND` |
-| POST | `/api/proposals/{id}/candidate` → 202 | `CandidateAcceptedDto` | 404 `PROPOSAL_NOT_FOUND`, 409 `PROPOSAL_NOT_RUNNABLE`, 409 `STALE_BASE`, 409 `CANDIDATE_ID_COLLISION` |
+| GET | `/api/proposals/{id}` | `ProposalDto` | — |
+| POST | `/api/proposals/{id}/candidate` → 202 | `CandidateAcceptedDto` | 409 `PROPOSAL_NOT_RUNNABLE`, 409 `STALE_BASE`, 409 `CANDIDATE_ID_COLLISION` |
 | GET | `/api/jobs/{id}` | `JobDto` | 404 `JOB_NOT_FOUND` |
-| GET | `/api/candidates/{id}` | `CandidateDto` | 404 `CANDIDATE_NOT_FOUND` (while the run is still queued or running, said so in the detail) |
+| GET | `/api/candidates/{id}` | `CandidateDto` | 404 `CANDIDATE_NOT_FOUND` — this process ran no such candidate, its run is still queued or running, or its job failed; the detail says which, and a failed job carries the reason |
 | GET | `/api/candidates/{id}/validation` | `ValidationDto` | 409 `CANDIDATE_NOT_FINISHED`, 404 `CANDIDATE_NOT_FOUND` |
 | GET | `/api/events?limit=N` | SSE of `StudioEventDto` | — |
 
@@ -169,7 +183,12 @@ record cannot honour). An element is only ever resolved *within the component th
 claims*: an object naming one component and matching an element of another is two claims that
 disagree, and the component answers alone. Separately and without enforcing anything, the
 answer reports `sourceState` — `current`, `stale` or `unknown` — because opening last week's
-export to look at it is legitimate; the base is enforced where a change is proposed.
+export to look at it is legitimate; the base is enforced where a change is proposed. For bytes
+this API served, the document-level strings sent with a pick come from the receipt that
+certified those bytes when the file itself carries none: the server re-hashes the file before
+serving it, so the receipt's claim is a claim about the document on screen and not about one
+that used to be there. A durable server-side lookup by sha256 — so that a file opened from
+anywhere could be identified the same way — is carded, not built.
 
 **Intent.** An utterance is parsed, not interpreted, against four exact forms:
 
@@ -207,7 +226,9 @@ else is affected".
 `/api/events`. It is **a harness run, not a project stage advance**: run ids are unique per
 candidate, the wire carries the harness statement verbatim, and the stale base is re-checked
 where the record is read. The runner's own refusals arrive as a *failed job carrying the
-runner's sentence*, printed verbatim rather than flattened into a status word.
+runner's sentence*, printed verbatim rather than flattened into a status word — and reading
+that candidate back is `404 CANDIDATE_NOT_FOUND` pointing at the job, because a candidate that
+failed at the seat pack or the base check never created a run at all.
 
 **Validation.** `GET /api/candidates/{id}/validation` calls the kernel's `validate_submission`
 over `CanonicalState(ref=head)` with three production validators — `artifact-present`,
@@ -249,7 +270,7 @@ passing them, and the payload says so (kernel card **P110**).
 
 | name | what it identifies | compare it for |
 | --- | --- | --- |
-| `stateDigest` | the authored record **bound to a run** — run- and base-scoped | "is this the state the client was just given?" Picks, proposals and candidates are all checked against it, and a mismatch is `409 STALE_BASE`. It is also the number a runner receipt cites, which is why `matchesReferenceReceipt` can compare the projection against the reference run's own `designStateDigest`. |
+| `stateDigest` | the authored record **bound to a run** — run- and base-scoped | "is this the state the client was just given?" Picks, proposals and candidates are all checked against it, and a mismatch is `409 STALE_BASE`. It is also the number a runner receipt cites, which is why `matchesReferenceReceipt` can compare the projection against the reference run's own `designStateDigest`. It is `null` when the kernel would not build the bound view (§4), and then there is nothing to compare. |
 | `recordDigest` | the record's **content**, invariant under binding | "is this the same authored record?" — the same content bound to two runs has two `stateDigest`s and one `recordDigest`. |
 | `head.stateSha256` | the project's canonical version | "has the project moved?" It is half of the validation memo key, with `head.version`. |
 
