@@ -83,6 +83,7 @@ class ArchitecturalRelationKind(StrEnum):
     REPLACES = "replaces"
     INTERFACE = "interface"
     ALIGNMENT = "alignment"
+    SYMMETRIC_WITH = "symmetric_with"
     BLOCKS = "blocks"
     EVIDENCES = "evidences"
 
@@ -163,6 +164,9 @@ _REQUIRED_RELATION_ROLES: dict[
     ),
     ArchitecturalRelationKind.INTERFACE: frozenset({"first", "second"}),
     ArchitecturalRelationKind.ALIGNMENT: frozenset({"first", "second"}),
+    ArchitecturalRelationKind.SYMMETRIC_WITH: frozenset(
+        {"first", "second", "axis"}
+    ),
     ArchitecturalRelationKind.BLOCKS: frozenset({"blocker", "blocked"}),
     ArchitecturalRelationKind.EVIDENCES: frozenset(
         {"assertion", "evidence"}

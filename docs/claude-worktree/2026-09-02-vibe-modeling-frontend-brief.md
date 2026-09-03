@@ -261,3 +261,30 @@ Workspace discipline: project artifacts (records, runs, receipts) land in the
 runtime workspace `D:\PROJECTS\01_ACTIVE_当前项目\ARCHFLOW CAADRIA 2027\V4_RUNTIME`,
 written through the P036 repository. Code lands in this repo. Nothing lands in
 scratch folders.
+
+---
+
+## Addendum 2026-09-03 — Kaiwen answered the section-7 questions; this supersedes section 7
+
+1. **FastAPI + Pydantic: adopted.** Pydantic models are transport shapes only. A model mirroring an archflow
+   schema is a duplicate-function module — the exact thing this lane must not produce. Convert at the boundary,
+   delegate inward.
+2. **Layout: top-level `/client` `/server` `/shared`** (spec section 3). `apps/archflow-studio` is demoted to a
+   retained read-only demo: harvest its viewer (rhino3dm-wasm + three.js) and launch pattern by MOVING code, do
+   not extend it, do not copy-and-diverge. The seams relocate accordingly: `server/ports.py` (the IntentProvider
+   protocol moves there from the demo), `shared/contracts/`, the client gateway. Tests live in `server/tests`;
+   repo-root `tests/` belongs to archflow.
+3. **`symmetric_with` exists now.** `ArchitecturalRelationKind.SYMMETRIC_WITH` is in the kernel
+   (`archflow/relations/contracts.py`), participant roles `first`/`second`/`axis` — the mirror axis is a
+   participant reference, not a number. `StateRecord` relations accept it immediately.
+4. **Numbered layer scheme: decided and mechanised.** `prepare_rhino_three_dm_export`,
+   `translate_to_rhino_python` and `expected_object_semantics` now accept `layer_by_component`; a mapped
+   component exports on `<category>::<component>` (e.g. `20_STRUCTURE::portico-columns`), an unmapped one stays
+   visibly on `archflow::<component>` — the kernel never guesses a category (neutrality rule). **You supply the
+   map** from the record's component tree using the spec section-15 categories.
+5. **Firewall extended ahead of you:** `server/` and `shared/` are pre-registered checked roots; importing
+   rhino3dm, numpy, networkx, OCP, build123d, shapely, trimesh or scipy there fails `python tools/archcheck.py`
+   (verified with a probe file before the trees existed). .3dm writing stays in archflow adapters and P107 —
+   spec section 14's "rhino3dm for headless writing" is satisfied by delegation, not by importing rhino3dm in
+   the server.
+

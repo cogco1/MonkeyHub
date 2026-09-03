@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
@@ -111,6 +112,44 @@ def _params(operation) -> dict[str, object]:
     return decoded
 
 
+_LAYER_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _\-.]{0,63}$")
+
+
+def _component_layer(
+    components: tuple[str, ...],
+    layer_by_component: Mapping[str, str] | None,
+) -> str:
+    """The layer an object's components put it on.
+
+    Without a scheme: the historical ``archflow::<components>`` path. With a
+    caller-supplied scheme (P108 numbered categories, e.g. ``20_STRUCTURE``):
+    ``<category>::<components>`` — the category is the parent layer, the
+    component keeps its own child layer, so identity survives the renumbering.
+    The kernel never invents a category: an unmapped component stays on the
+    historical path, visibly, rather than being guessed into a bucket.
+    """
+
+    if not components:
+        return _ROOT_LAYER
+    joined = "+".join(components)
+    if layer_by_component is not None:
+        categories = sorted(
+            {
+                layer_by_component[component]
+                for component in components
+                if component in layer_by_component
+            }
+        )
+        if len(categories) == 1:
+            category = categories[0]
+            if not _LAYER_SEGMENT.match(category):
+                raise ValueError(
+                    f"layer category {category!r} is not a valid layer name"
+                )
+            return f"{category}::{joined}"
+    return f"{_ROOT_LAYER}::{joined}"
+
+
 def _physical_ids(proposal) -> tuple[str, ...]:
     consumed: set[str] = set()
     for op in proposal.operations:
@@ -186,6 +225,7 @@ def expected_object_semantics(
     program,
     *,
     material_by_component: Mapping[str, str] | None = None,
+    layer_by_component: Mapping[str, str] | None = None,
 ) -> dict[str, dict]:
     """The semantics each physical object must carry in the CAD document.
 
@@ -232,11 +272,7 @@ def expected_object_semantics(
                     for ref in bindings[item].evidence_refs
                 }
             )
-            layer = (
-                f"{_ROOT_LAYER}::{'+'.join(components)}"
-                if components
-                else _ROOT_LAYER
-            )
+            layer = _component_layer(components, layer_by_component)
             user_text = {
                 "archflow:producer_op": operation.op_id,
                 "archflow:object_ref": f"cad-object:{object_id}",
@@ -289,6 +325,7 @@ def translate_to_rhino_python(
     material_by_component: Mapping[str, str] | None = None,
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
     operation_subset: Iterable[str] | None = None,
+    layer_by_component: Mapping[str, str] | None = None,
 ) -> CadTranslation:
     """Emit one deterministic, semantics-carrying rhinoscriptsyntax script.
 
@@ -314,7 +351,9 @@ def translate_to_rhino_python(
         emitted = {out for op_id in order for out in operations[op_id].output_object_ids}
         physical = tuple(object_id for object_id in physical if object_id in emitted)
     semantics = expected_object_semantics(
-        program, material_by_component=material_by_component
+        program,
+        material_by_component=material_by_component,
+        layer_by_component=layer_by_component,
     )
     losses: list[dict] = []
     lines: list[str] = [

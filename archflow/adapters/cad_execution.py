@@ -608,6 +608,7 @@ def prepare_rhino_three_dm_export(
     material_by_component: Mapping[str, str] | None = None,
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
     patch: RhinoPatchBase | None = None,
+    layer_by_component: Mapping[str, str] | None = None,
 ) -> RhinoCadExportPlan:
     """Prepare one immutable export plan in an existing explicit workspace.
 
@@ -660,7 +661,7 @@ def prepare_rhino_three_dm_export(
         patch_prelude = build_patch_prelude(
             selection,
             prior_model_path=prior_model,
-            semantics=expected_object_semantics(program, material_by_component=material_by_component)["objects"],
+            semantics=expected_object_semantics(program, material_by_component=material_by_component, layer_by_component=layer_by_component)["objects"],
         )
         patch_record = {
             **selection.to_dict(),
@@ -674,6 +675,7 @@ def prepare_rhino_three_dm_export(
         material_by_component=material_by_component,
         material_colors=material_colors,
         operation_subset=None if selection is None else selection.rebuilt_op_ids,
+        layer_by_component=layer_by_component,
     )
     if translation.losses:
         raise CadExecutionError(
@@ -684,6 +686,7 @@ def prepare_rhino_three_dm_export(
         expected_object_semantics(
             program,
             material_by_component=material_by_component,
+            layer_by_component=layer_by_component,
         )
     )
     raw_bounds = expected_object_bounds(program)

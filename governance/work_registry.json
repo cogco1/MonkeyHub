@@ -15759,20 +15759,25 @@
       "origin_stream": "planning",
       "stream": "planning",
       "status": "ready",
-      "goal": "The vibe modeling client/server frontend in apps/archflow-studio, executed by a separate session under Kaiwen's direction: mutation engine with protected sets and leakage metric, planner/scheduler over the record's closure, intent parser at the reserved IntentProvider seam, review UX. Bound by four fences: the machine-enforced backend import firewall, the DO-NOT-REBUILD inventory, the three named seams, and the AGENTS.md one-in-one-out rule. The client never computes geometry.",
+      "goal": "The formal vibe modeling client/server frontend in top-level client/ server/ shared/ (FastAPI + Pydantic as transport only), executed by a separate session under Kaiwen's direction: mutation engine with protected sets and leakage metric, planner/scheduler over the record's closure, intent parser at the IntentProvider seam (moved to server/ports.py), review UX, numbered layer scheme supplied to the kernel's layer_by_component parameter. Retires apps/archflow-studio as the product shell (demo retained read-only until harvested). Bound by the machine-enforced firewall on server/ and shared/, the DO-NOT-REBUILD inventory, the named seams, and the AGENTS.md one-in-one-out rule. The client never computes geometry.",
       "depends_on": [
         "P102",
         "P103"
       ],
       "write_scope": [
+        "client/",
+        "server/",
+        "shared/",
         "apps/archflow-studio/"
       ],
       "acceptance": [
+        "No Pydantic model mirrors an archflow schema; server/ and shared/ pass the firewall throughout.",
         "Spec demo 1 (4 to 6 columns, protected pediment, axis and width, leakage 0) runs on the villa record with a diff and a new immutable version.",
         "Spec demo 2 (cornice depth plus 20 percent, columns and pediment untouched) likewise.",
         "Exported objects carry the existing archflow user-string identity; no second key set.",
         "archcheck stays green; no module duplicates an inventory entry.",
-        "Mutation-leakage metric defined and reported per mutation."
+        "Mutation-leakage metric defined and reported per mutation.",
+        "apps/archflow-studio is marked as the retained demo and is not extended; harvested pieces are moved, not copied."
       ],
       "tests": [
         "tests.test_archcheck"

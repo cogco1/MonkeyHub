@@ -4,7 +4,9 @@
   "checked_source_roots": [
     "archflow",
     "tools",
-    "apps/archflow-studio/backend"
+    "apps/archflow-studio/backend",
+    "server",
+    "shared"
   ],
   "probe_root": "probes",
   "forbidden_instance_literals": [
@@ -316,6 +318,40 @@
         "probes"
       ],
       "reason": "The Studio backend orchestrates and delegates: geometry mathematics, dependency graphs, and state schemas live in archflow and are imported, never reimplemented beside it (P108 fence)."
+    },
+    {
+      "source": "server",
+      "targets": [
+        "rhino3dm",
+        "numpy",
+        "networkx",
+        "OCP",
+        "build123d",
+        "shapely",
+        "trimesh",
+        "scipy",
+        "tests",
+        "tools",
+        "probes"
+      ],
+      "reason": "The formal vibe-modeling server (P108) orchestrates and delegates: geometry mathematics, dependency graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
+    },
+    {
+      "source": "shared",
+      "targets": [
+        "rhino3dm",
+        "numpy",
+        "networkx",
+        "OCP",
+        "build123d",
+        "shapely",
+        "trimesh",
+        "scipy",
+        "tests",
+        "tools",
+        "probes"
+      ],
+      "reason": "Shared frontend/server contracts (P108) carry transport shapes only; geometry and state computation stay in archflow."
     }
   ],
   "authority_symbol_patterns": [
