@@ -41,7 +41,7 @@ from archflow.state.stage_workflow import DesignPhase
 from archive.archflow.state.design_maturity import DeliverableRole, DesignMaturityState, PhaseDeliverable, PhaseGateRequest, evaluate_forward_phase_gate
 from archflow.state.operational_state import FactEpistemicStatus, OperationalMarkovState
 from archive.archflow.state.design_program import ProgramMetricKind, ProgramNodeKind, ProgramRelationshipKind, ProgramRelationshipStrength
-from archflow.state.site_context import SiteBounds
+from archflow.state.spatial import SiteBounds
 
 
 _SITE_FIXTURE = (

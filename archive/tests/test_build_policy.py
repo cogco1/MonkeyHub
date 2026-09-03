@@ -30,7 +30,7 @@ from archive.archflow.compilers.site import compile_site_context
 from archflow.project.refs import ProjectVersionRef
 from archive.archflow.state.build_policy import BuildPolicy, BuildStagingMode, ProtectedBlockAction, ResourcePolicyMode
 from archflow.state.operational_state import FactEpistemicStatus
-from archflow.state.site_context import SiteBounds
+from archflow.state.spatial import SiteBounds
 
 
 _SITE_FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "site"

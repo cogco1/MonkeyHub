@@ -13,7 +13,7 @@ from typing import Mapping, Sequence
 from archflow.project.refs import BranchRef, ProjectVersionRef
 from archive.archflow.realization.sandbox import HybridScene
 from archflow.state.operational_state import FactEpistemicStatus, OperationalMarkovState, StateDomain, StateFact
-from archflow.state.site_context import GroundModelKind, SiteContext
+from archive.archflow.state.site_context import GroundModelKind, SiteContext
 from archflow.contracts.canonical import canonical_digest
 
 

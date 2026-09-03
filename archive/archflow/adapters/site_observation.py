@@ -8,15 +8,8 @@ from typing import Mapping
 
 from archflow.project.refs import ProjectVersionRef, require_identifier
 from archflow.state.operational_state import require_logical_ref
-from archflow.state.site_context import (
-    Coordinate,
-    GroundModel,
-    GroundModelKind,
-    GroundSample,
-    SiteApproach,
-    SiteBounds,
-    SiteUnknown,
-)
+from archflow.state.spatial import Coordinate, SiteBounds
+from archive.archflow.state.site_context import GroundModel, GroundModelKind, GroundSample, SiteApproach, SiteUnknown
 from archflow.contracts.canonical import canonical_digest
 
 

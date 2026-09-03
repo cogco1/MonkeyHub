@@ -86,7 +86,7 @@ from archflow.state.geometry_program import (
     ProjectLevels,
     SemanticBinding,
 )
-from archflow.state.site_context import SiteBounds
+from archflow.state.spatial import SiteBounds
 from archflow.state.state_record import Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, developed_design_view, project_grids_of, project_levels_of
 from archflow.state.stage_workflow import (
     ProjectStageWorkflow,

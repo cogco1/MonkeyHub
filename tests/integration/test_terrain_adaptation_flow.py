@@ -30,7 +30,7 @@ from archflow.state.operational_state import OperationalMarkovState
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.contracts.canonical import canonical_digest
-from archflow.state.site_context import SiteContext
+from archive.archflow.state.site_context import SiteContext
 
 
 ROOT = Path(__file__).resolve().parents[2]

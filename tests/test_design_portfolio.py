@@ -8,7 +8,7 @@ from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
 from archflow.state.design_portfolio import AdviceDisposition, BranchLifecycle, DesignOptionPortfolio, DesignPortfolioError, ExpertAdviceResolution, ParetoBranchObservation, SelectionPolicy, attach_pareto_observation, combine_branches, compile_selected_branch_handoff, fork_branch, initialize_design_portfolio, park_branch, reject_branch, revise_branch, select_branch
 from archflow.state.spatial import ComponentMaturity, ConstraintResponseStatus, DesignComponent, MassingVolume, SchematicOption, SchematicOptionSet, SpatialConstraintResponse, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialZone
 from archflow.state.stage_workflow import DesignPhase
-from archflow.state.site_context import SiteBounds
+from archflow.state.spatial import SiteBounds
 
 
 PROJECT_ID = "portfolio-project"

@@ -30,7 +30,7 @@ from archive.archflow.state.build_policy import BuildPolicy
 from archive.archflow.state.design_maturity import DesignMaturityState, PhaseGateReceipt
 from archive.archflow.state.design_program import DesignProgram
 from archflow.state.operational_state import OperationalMarkovState
-from archflow.state.site_context import SiteContext
+from archive.archflow.state.site_context import SiteContext
 from archflow.state.spatial import (
     ComponentMaturity,
     ConstraintResponseStatus,

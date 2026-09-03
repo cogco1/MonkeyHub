@@ -7,12 +7,7 @@ from dataclasses import dataclass
 from archive.archflow.adapters.site_observation import AuthorizedSiteObservation
 from archive.archflow.state.design_brief import DesignBrief
 from archflow.state.operational_state import DesignObligation
-from archflow.state.site_context import (
-    GroundModelKind,
-    SiteApproachStatus,
-    SiteContext,
-    SiteUnknownTopic,
-)
+from archive.archflow.state.site_context import GroundModelKind, SiteApproachStatus, SiteContext, SiteUnknownTopic
 from archflow.contracts.canonical import canonical_digest
 
 

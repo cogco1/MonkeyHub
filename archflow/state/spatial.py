@@ -16,7 +16,6 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
-from archflow.state.site_context import SiteBounds
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 from archflow.contracts.fields import (
     mapping as _mapping,
@@ -36,6 +35,86 @@ FootprintCell = tuple[int, int]
 _MAX_ITEMS = 4_096
 _MAX_TEXT = 2_000
 _HEX = frozenset("0123456789abcdef")
+
+
+# ---------------------------------------------------------------- site bounds
+Coordinate = tuple[int, int, int]
+
+def _coordinate(value: object, field: str) -> Coordinate:
+    if (
+        not isinstance(value, tuple)
+        or len(value) != 3
+        or any(
+            not isinstance(item, int) or isinstance(item, bool)
+            for item in value
+        )
+    ):
+        raise ValueError(f"{field} must be an integer xyz tuple")
+    return value
+
+def _coordinate_from_json(value: object, field: str) -> Coordinate:
+    if not isinstance(value, list):
+        raise TypeError(f"{field} must be a JSON coordinate list")
+    return _coordinate(tuple(value), field)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class SiteBounds:
+    minimum: Coordinate
+    maximum: Coordinate
+
+    def __post_init__(self) -> None:
+        _coordinate(self.minimum, "minimum")
+        _coordinate(self.maximum, "maximum")
+        if any(
+            high < low
+            for low, high in zip(
+                self.minimum,
+                self.maximum,
+                strict=True,
+            )
+        ):
+            raise ValueError("site bounds maximum precedes minimum")
+
+    @property
+    def volume(self) -> int:
+        return (
+            (self.maximum[0] - self.minimum[0] + 1)
+            * (self.maximum[1] - self.minimum[1] + 1)
+            * (self.maximum[2] - self.minimum[2] + 1)
+        )
+
+    def contains(self, coordinate: Coordinate) -> bool:
+        _coordinate(coordinate, "coordinate")
+        return all(
+            low <= value <= high
+            for value, low, high in zip(
+                coordinate,
+                self.minimum,
+                self.maximum,
+                strict=True,
+            )
+        )
+
+    def contains_bounds(self, other: SiteBounds) -> bool:
+        if not isinstance(other, SiteBounds):
+            raise TypeError("other must be SiteBounds")
+        return self.contains(other.minimum) and self.contains(other.maximum)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "minimum": list(self.minimum),
+            "maximum": list(self.maximum),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> SiteBounds:
+        payload = _mapping(value, "site bounds")
+        _exact(payload, {"minimum", "maximum"}, "site bounds")
+        return cls(
+            minimum=_coordinate_from_json(payload["minimum"], "minimum"),
+            maximum=_coordinate_from_json(payload["maximum"], "maximum"),
+        )
 
 
 class SpatialProposalError(ValueError):

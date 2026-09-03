@@ -2538,58 +2538,6 @@
       "notes": "The projection is built here; state no longer imports runtime."
     },
     {
-      "module_id": "state.site_context",
-      "owner_path": "archflow/state/site_context.py",
-      "purpose": "Authorized, evidence-bound observed site input with no site-response vocabulary or authority.",
-      "owns": [
-        "the site bounds value and its containment tests (SiteBounds)",
-        "observed ground character and its samples (GroundModel, GroundModelKind, GroundSample)",
-        "site approaches and their observation status (SiteApproach, SiteApproachStatus)",
-        "named site unknowns by topic (SiteUnknown, SiteUnknownTopic)",
-        "the authorized-versus-observed envelope, protected cells and the context digest (SiteContext)"
-      ],
-      "does_not_own": [
-        "choosing a construction response to the site (explicitly out of scope)",
-        "terrain adaptation (archived sandbox lane)",
-        "the option that sits on the site (state.spatial)",
-        "the obligations it carries (state.operational_state.DesignObligation)"
-      ],
-      "inputs": [
-        "observations and samples",
-        "authorization ref",
-        "brief digest"
-      ],
-      "outputs": [
-        "SiteContext and its digest",
-        "SiteBounds"
-      ],
-      "public_api": [
-        "SiteContext",
-        "SiteBounds",
-        "GroundModelKind"
-      ],
-      "depends_on": [
-        "contracts.canonical",
-        "project.refs",
-        "state.operational_state"
-      ],
-      "used_by": [
-        "archflow/state/spatial.py",
-        "archflow/runtime/project_runner.py"
-      ],
-      "invariants": [
-        "the observed envelope must lie inside the authorized envelope, and the anchor inside both",
-        "observed ground character is never a selected construction response",
-        "an unknown is named rather than defaulted",
-        "never writes the filesystem"
-      ],
-      "status": "fold",
-      "tests": [
-        "tests/test_site_context.py"
-      ],
-      "notes": "fold: '← fold'; both spine importers take only SiteBounds, so 7 of its 10 public types have no consumer outside its own test."
-    },
-    {
       "module_id": "state.spatial",
       "owner_path": "archflow/state/spatial.py",
       "purpose": "The schematic option contracts (grid basis, levels, volumes, zones, connections, components) and the stable-id component transition receipt.",
@@ -2599,7 +2547,8 @@
         "constraint responses to authored constraints (SpatialConstraintResponse, ConstraintResponseStatus)",
         "one architect-authored schematic answer and its digest (SpatialOptionProposal)",
         "validating a progressive refinement without forking the component tree (compile_component_transition, ComponentTransitionReceipt)",
-        "the option and option-set records handed to the portfolio (SchematicOption, SchematicOptionSet)"
+        "the option and option-set records handed to the portfolio (SchematicOption, SchematicOptionSet)",
+        "site bounds in voxel coordinates (SiteBounds, Coordinate)"
       ],
       "does_not_own": [
         "choosing among options (state.design_portfolio)",
@@ -2621,20 +2570,22 @@
         "DesignComponent"
       ],
       "public_api": [
-        "DesignComponent",
         "ComponentMaturity",
-        "SpatialOptionProposal",
-        "SpatialGridBasis",
-        "SpatialLevel",
-        "MassingVolume",
-        "SpatialZone",
-        "SpatialConnection",
-        "SpatialConstraintResponse",
         "ConstraintResponseStatus",
+        "Coordinate",
+        "DesignComponent",
+        "MassingVolume",
         "SchematicOption",
         "SchematicOptionSet",
-        "compile_component_transition",
-        "SpatialProposalError"
+        "SiteBounds",
+        "SpatialConnection",
+        "SpatialConstraintResponse",
+        "SpatialGridBasis",
+        "SpatialLevel",
+        "SpatialOptionProposal",
+        "SpatialProposalError",
+        "SpatialZone",
+        "compile_component_transition"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -2665,7 +2616,7 @@
         "tests/test_geometry_proposal_producer.py",
         "tests/test_design_portfolio.py"
       ],
-      "notes": "Carries module-local _branch_to_dict/_branch_from_dict copies of contracts.branch, and depends on two fold targets (design_maturity for DesignPhase, site_context for SiteBounds); SpatialLevel is a third level vocabulary alongside ProjectLevel and MassingLevel@1."
+      "notes": "Carries module-local _branch_to_dict/_branch_from_dict copies of contracts.branch, and depends on two fold targets (design_maturity for DesignPhase, site_context for SiteBounds); SpatialLevel is a third level vocabulary alongside ProjectLevel and MassingLevel@1. The site-context record (ground model, approach, unknowns) is archived with the sandbox lane."
     },
     {
       "module_id": "state.stage_workflow",

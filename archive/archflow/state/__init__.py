@@ -171,17 +171,8 @@ from archflow.state.program import (
     FootprintTarget,
     ProgramErrorCode,
 )
-from archflow.state.site_context import (
-    GroundModel,
-    GroundModelKind,
-    GroundSample,
-    SiteApproach,
-    SiteApproachStatus,
-    SiteBounds,
-    SiteContext,
-    SiteUnknown,
-    SiteUnknownTopic,
-)
+from archflow.state.spatial import SiteBounds
+from archive.archflow.state.site_context import GroundModel, GroundModelKind, GroundSample, SiteApproach, SiteApproachStatus, SiteContext, SiteUnknown, SiteUnknownTopic
 from archflow.state.spatial import (
     ComponentMaturity,
     ComponentTransitionReceipt,

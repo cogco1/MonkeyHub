@@ -21,7 +21,7 @@ from archflow.state.operational_state import (
     ObligationStatus,
     OperationalMarkovState,
 )
-from archflow.state.site_context import SiteContext
+from archive.archflow.state.site_context import SiteContext
 from archflow.state.spatial import (
     SchematicOption,
     SchematicOptionSet,

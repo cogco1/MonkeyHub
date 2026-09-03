@@ -59,7 +59,7 @@ from archflow.state.spatial import ComponentMaturity, ConstraintResponseStatus, 
 from archflow.state.stage_workflow import DesignPhase
 from archive.archflow.state.design_maturity import DesignMaturityState, PhaseGateRequest, evaluate_forward_phase_gate
 from archive.archflow.state.design_program import ProgramMetricKind, ProgramNodeKind
-from archflow.state.site_context import SiteBounds
+from archflow.state.spatial import SiteBounds
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.geometry_program import (
     GeometryOperationKind,

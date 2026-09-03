@@ -32,7 +32,7 @@ from archive.archflow.runtime.stage_subject_inventory import (
     compile_stage_subject_inventory,
 )
 from archive.tests.test_component_index import _sources
-from archflow.state.site_context import SiteBounds
+from archflow.state.spatial import SiteBounds
 from archflow.state.spatial import (
     ComponentMaturity,
     DesignComponent,

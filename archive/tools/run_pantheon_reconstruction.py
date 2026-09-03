@@ -57,7 +57,7 @@ from archive.tools.pantheon_relation_control import (  # noqa: E402
 )
 from archflow.state.spatial import ComponentMaturity, MassingVolume, SpatialConnection, SpatialConstraintResponse, ConstraintResponseStatus, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialZone, DesignComponent
 from archive.archflow.state.design_program import ProgramMetricKind, ProgramNodeKind
-from archflow.state.site_context import SiteBounds
+from archflow.state.spatial import SiteBounds
 from archflow.state.operational_state import OperationalMarkovState
 from archive.archflow.state.stage_convergence import (  # noqa: E402
     StageConvergenceReceipt,

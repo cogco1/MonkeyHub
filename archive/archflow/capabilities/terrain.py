@@ -9,7 +9,7 @@ from archive.archflow.capabilities.experts import (
 )
 from archflow.state.operational_state import OperationalMarkovState
 from archflow.state.model import StateRef
-from archflow.state.site_context import GroundModelKind, SiteContext
+from archive.archflow.state.site_context import GroundModelKind, SiteContext
 
 
 class TerrainCapabilityError(ValueError):

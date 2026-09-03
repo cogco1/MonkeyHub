@@ -28,7 +28,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
-from archflow.state.site_context import SiteContext
+from archive.archflow.state.site_context import SiteContext
 from archflow.contracts.canonical import canonical_digest
 
 

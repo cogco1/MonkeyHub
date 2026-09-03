@@ -103,7 +103,7 @@ from archive.archflow.state.design_state import (
     compile_tree_phase_change,
 )
 from archflow.state.stage_workflow import DesignPhase
-from archflow.state.site_context import SiteBounds
+from archflow.state.spatial import SiteBounds
 from archflow.state.spatial import (
     ComponentMaturity,
     DesignComponent,

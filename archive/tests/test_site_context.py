@@ -17,7 +17,8 @@ from archive.archflow.compilers.site import (
 )
 from archflow.project.refs import ProjectVersionRef
 from archive.archflow.compilers.brief import compile_design_brief
-from archflow.state.site_context import GroundModelKind, SiteBounds, SiteContext
+from archflow.state.spatial import SiteBounds
+from archive.archflow.state.site_context import GroundModelKind, SiteContext
 
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "site"
