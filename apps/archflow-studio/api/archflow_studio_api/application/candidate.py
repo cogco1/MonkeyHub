@@ -22,6 +22,7 @@ changed nothing rather than implying it did.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from archflow.capabilities.geometry_proposal import (
@@ -187,6 +188,12 @@ class SeatOutcome:
     program_digest: str | None
     objects: int | None
     relation_check_ref: str | None
+    # The seat row's ``cad`` block, carried as the runner wrote it and never
+    # interpreted here. ``None`` is the runner saying this seat was not asked
+    # to export at all; a mapping is it saying one was attempted, and it is
+    # the only evidence anywhere that distinguishes the two. It stays off the
+    # wire: what a client needs from it is the verdict and the honesty line.
+    cad: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,6 +309,7 @@ def describe(
                 program_digest=_text(row.get("program_digest")),
                 objects=_whole(row.get("objects")),
                 relation_check_ref=_text(row.get("relation_check_ref")),
+                cad=_block(row.get("cad")),
             )
             for row in seat_rows
         ),
@@ -403,6 +411,17 @@ def _rows(value: object) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, (list, tuple)):
         return ()
     return tuple(row for row in value if isinstance(row, Mapping))
+
+
+def _block(value: object) -> Mapping[str, Any] | None:
+    """One nested receipt block, frozen and otherwise untouched.
+
+    Nothing here reads what is in it. The runner wrote it, the verdict asks
+    it two questions, and a copy that could be edited afterwards would let a
+    reader of this candidate change what the run said it did.
+    """
+
+    return None if not isinstance(value, Mapping) else MappingProxyType(dict(value))
 
 
 def _text(value: object) -> str | None:

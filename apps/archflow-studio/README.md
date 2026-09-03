@@ -220,8 +220,15 @@ advance  ⟺  validation.receipt
          ∧  runner.exports_available
 ```
 
-The fifth clause is vacuous for a candidate that never asked to export: an empty artifact
-list holds it by construction, since there is nothing that could have failed to export.
+The fifth clause reads two records, not one: the run receipt's own seat rows and the artifact
+records this run retained. The runner fills a seat row's `cad` block only when it was asked to
+export, so that block is the evidence an export happened at all — every seat carrying one must
+have succeeded *and* be matched by an `available`, `succeeded` artifact found by the very
+`execution_ref` the runner wrote there, and every artifact the candidate carries must be
+available and succeeded. A seat that exported and left no artifact record blocks the advance
+and says so in `honesty[]`. The clause is vacuous only for a candidate no seat of which
+attempted an export — which is now something the receipt states, rather than something an empty
+artifact list was taken to mean.
 
 `blockedBy[]` names every clause that refused. The fourth clause is the point of the other
 three: `held` is true whenever nothing was **violated**, including when nothing was

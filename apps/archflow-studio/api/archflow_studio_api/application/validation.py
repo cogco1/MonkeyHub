@@ -18,9 +18,12 @@ names each clause that failed, by the same name every time, because "cannot
 advance" without a reason is a red light nobody can act on. The fourth clause
 is the point of the other three: ``held`` is true whenever nothing was
 violated — including when nothing was checked — so a candidate whose
-relations nobody could check is never green. The fifth is vacuous for a
-candidate that never asked to export: an empty ``artifacts`` tuple holds it by
-construction, since there is nothing that could have failed to export.
+relations nobody could check is never green. The fifth reads the run receipt's
+own seat rows beside the artifact records: a seat the runner exported for
+carries a ``cad`` block, and a block with no available artifact behind it
+blocks the advance. It is vacuous only for a candidate no seat of which
+attempted an export, which is now something the records say rather than
+something an empty list was taken to mean.
 
 What the receipt could *not* prove is stated rather than implied. HEAD in a
 P036 project is a ref-based ``CanonicalProjectState@1``: it carries no facts,
@@ -38,7 +41,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import threading
-from typing import Callable
+from typing import Any, Callable, Mapping
 
 from archflow.state.model import ArtifactRef, CanonicalState
 from archflow.submission.model import CandidateDelta, CandidateSubmission, Claim
@@ -54,7 +57,7 @@ from archflow.project.refs import ProjectVersionRef
 
 from ..ports import StudioEventSink
 from .binding import RECORD_NAME
-from .candidate import CandidateRun, RelationTotals
+from .candidate import CandidateRun, RelationTotals, SeatOutcome
 from .proposals import Proposal
 
 # The claim a candidate makes about itself: this run happened, and here is the
@@ -124,6 +127,15 @@ VALIDATION_COMPUTED = "validation.computed"
 EXPORT_UNAVAILABLE = (
     "export of {stage_id} ({file_name}) is not available: status {status}, "
     "reason {reason}"
+)
+
+# One honesty line per seat whose run receipt says an export was attempted and
+# whose result no artifact record accounts for. The artifact lines above answer
+# for records the project has; this one answers for the export that left none,
+# which is the failure an artifact list alone cannot show.
+EXPORT_UNMATCHED = (
+    "export of {seat_id} was attempted ({status}) but no artifact record is "
+    "available for it"
 )
 
 
@@ -204,11 +216,18 @@ def verdict(receipt: ValidationReceipt, candidate: CandidateRun) -> Verdict:
     ``relations.held`` is the flag, not the count — it says nothing was
     violated — and it is exactly why ``relations.fully_checked`` stands beside
     it. A run that checked nothing has violated nothing, and a verdict built on
-    the first clause alone would call that a pass. ``runner.exports_available``
-    holds iff every record in ``candidate.artifacts`` is both ``available`` and
-    ``status == "succeeded"``; a candidate that never asked to export carries
-    no artifacts at all, so an empty ``artifacts`` tuple satisfies the clause
-    by construction rather than by having anything checked.
+    the first clause alone would call that a pass.
+
+    ``runner.exports_available`` is read from two records, not one. Every
+    artifact the candidate carries must be ``available`` with ``status ==
+    "succeeded"``; and every seat whose run-receipt row carries a ``cad``
+    block — the runner writes one only when the run was asked to export — must
+    have succeeded *and* be matched by such an artifact, found by the very
+    ``execution_ref`` the runner wrote into that row. A seat that exported and
+    left no artifact record blocks, because an empty artifact list cannot
+    otherwise be told from "nothing was ever asked to export". A run with no
+    ``cad`` block anywhere and no artifacts holds the clause by construction,
+    and now says so on the receipt's own evidence.
     """
 
     relations = candidate.relation_checks
@@ -224,12 +243,51 @@ def verdict(receipt: ValidationReceipt, candidate: CandidateRun) -> Verdict:
                 all(
                     record.available and record.status == "succeeded"
                     for record in candidate.artifacts
-                ),
+                )
+                and not _unmatched_exports(candidate),
             ),
         )
         if not holds
     )
     return Verdict(advance=not blocked, blocked_by=blocked)
+
+
+def _unmatched_exports(candidate: CandidateRun) -> tuple[SeatOutcome, ...]:
+    """The seats that exported and have nothing available to show for it.
+
+    ``cad is None`` is the runner saying this seat was never asked to export,
+    and it is passed over. Everything else is a seat that was: it holds only
+    if its own status is ``succeeded`` and this run retained an artifact,
+    still available, for the execution it names.
+    """
+
+    return tuple(
+        seat
+        for seat in candidate.seat_results
+        if seat.cad is not None and not _export_delivered(seat, candidate)
+    )
+
+
+def _export_delivered(seat: SeatOutcome, candidate: CandidateRun) -> bool:
+    """Whether one seat's export both succeeded and can still be had.
+
+    Matched by ``execution_ref``: the runner writes the retained
+    ``seat-rhino-execution`` record's own uri into the seat row, and the
+    artifact listing carries that uri as ``receipt_ref``. Matching on the
+    stage id would work too and would be looser — two receipts of one stage
+    would answer for each other — so the exact ref is what is compared.
+    """
+
+    cad = seat.cad or {}
+    if cad.get("status") != "succeeded":
+        return False
+    execution_ref = cad.get("execution_ref")
+    return isinstance(execution_ref, str) and any(
+        record.receipt_ref == execution_ref
+        and record.available
+        and record.status == "succeeded"
+        for record in candidate.artifacts
+    )
 
 
 def validate_candidate(
@@ -328,13 +386,16 @@ def _artifacts_of(
 
 
 def _exports_of(candidate: CandidateRun) -> tuple[str, ...]:
-    """One honesty line for every artifact that fails the exports clause.
+    """One honesty line for every way the exports clause can refuse.
 
-    Read only from ``candidate.artifacts`` — never ``readback_verified``, which
-    the runner has already folded into ``status``, and never settings, since
-    the artifacts tuple is the only evidence of whether an export was even
-    requested. A candidate that did not export carries none and confesses
-    nothing.
+    Two kinds, and they are different facts. An artifact record the project
+    holds and cannot serve is named by the stage that made it, the file it was
+    supposed to be, and what the run says happened — never
+    ``readback_verified``, which the runner has already folded into ``status``.
+    A seat whose receipt says an export was attempted and that no available
+    artifact accounts for is named by the seat: there is no artifact row to
+    describe, and that absence is the finding. A candidate that did not export
+    has neither and confesses nothing.
     """
 
     return tuple(
@@ -350,7 +411,20 @@ def _exports_of(candidate: CandidateRun) -> tuple[str, ...]:
         )
         for record in candidate.artifacts
         if not (record.available and record.status == "succeeded")
+    ) + tuple(
+        EXPORT_UNMATCHED.format(
+            seat_id=seat.seat_id,
+            status=_status_of(seat.cad),
+        )
+        for seat in _unmatched_exports(candidate)
     )
+
+
+def _status_of(cad: Mapping[str, Any] | None) -> str:
+    """What the seat row says the export did; ``-`` when it says nothing."""
+
+    status = (cad or {}).get("status")
+    return status if isinstance(status, str) else "-"
 
 
 def validation_key(

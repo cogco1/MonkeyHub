@@ -78,6 +78,7 @@ def _export_artifact(
     unavailable_reason: str | None = None,
     stage_id: str | None = "cad-rhino-execution",
     file_name: str = "model.3dm",
+    receipt_ref: str = "receipt-ref-test",
 ) -> ArtifactRecord:
     """A real, minimal ``ArtifactRecord`` for exercising the exports clause.
 
@@ -111,7 +112,7 @@ def _export_artifact(
         design_state_digest=None,
         length_unit=None,
         up_axis=None,
-        receipt_ref="receipt-ref-test",
+        receipt_ref=receipt_ref,
     )
 
 
@@ -492,11 +493,119 @@ class AdvanceVerdictTests(ValidationTestCase):
         accepted, job = self.finished_candidate()
         candidate = self.candidate_run(accepted, job)
         self.assertEqual(candidate.artifacts, ())
+        # Vacuous by what the run's own receipt says, not by an empty list:
+        # no seat row carries a ``cad`` block, so no seat attempted one.
+        self.assertEqual(
+            [seat.cad for seat in candidate.seat_results],
+            [None for _ in candidate.seat_results],
+        )
 
         empty = self.validated(replace(candidate, artifacts=()))
 
         self.assertNotIn(EXPORTS_CLAUSE, empty.blocked_by)
         self.assertEqual(empty.honesty, ())
+
+    def test_a_seat_that_exported_with_no_artifact_record_blocks(self) -> None:
+        """The receipt says an export happened; nothing says it can be had.
+
+        This is the case an empty ``artifacts`` tuple could not tell from "no
+        export was asked for": the seat row carries a ``cad`` block, so the
+        run did export, and the record that would let anyone open the result
+        never reached this run's record area. That is not a candidate that may
+        advance.
+        """
+
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+        seat = candidate.seat_results[0]
+
+        exported = self.validated(
+            replace(
+                candidate,
+                seat_results=(
+                    replace(
+                        seat,
+                        cad={
+                            "status": "succeeded",
+                            "execution_ref": "project://demo-project/runs/x/"
+                            "records/seat-rhino-execution-"
+                            f"{'f' * 64}.json",
+                        },
+                    ),
+                ),
+                artifacts=(),
+            )
+        )
+
+        self.assertIs(exported.advance, False)
+        self.assertIn(EXPORTS_CLAUSE, exported.blocked_by)
+        self.assertEqual(
+            exported.honesty,
+            (
+                f"export of {seat.seat_id} was attempted (succeeded) but no "
+                "artifact record is available for it",
+            ),
+        )
+
+    def test_a_seat_whose_export_has_its_artifact_does_not_block(self) -> None:
+        """Matched by the very ref the runner wrote into the seat row."""
+
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+        seat = candidate.seat_results[0]
+        execution_ref = (
+            f"project://demo-project/runs/{candidate.candidate_id}/records/"
+            f"seat-rhino-execution-{'f' * 64}.json"
+        )
+
+        exported = self.validated(
+            replace(
+                candidate,
+                seat_results=(
+                    replace(
+                        seat,
+                        cad={
+                            "status": "succeeded",
+                            "execution_ref": execution_ref,
+                        },
+                    ),
+                ),
+                artifacts=(
+                    _export_artifact(
+                        status="succeeded",
+                        available=True,
+                        receipt_ref=execution_ref,
+                    ),
+                ),
+            )
+        )
+
+        self.assertNotIn(EXPORTS_CLAUSE, exported.blocked_by)
+        self.assertEqual(exported.honesty, ())
+
+    def test_a_seat_whose_export_failed_blocks_and_says_its_status(
+        self,
+    ) -> None:
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+        seat = candidate.seat_results[0]
+
+        exported = self.validated(
+            replace(
+                candidate,
+                seat_results=(replace(seat, cad={"status": "failed"}),),
+                artifacts=(),
+            )
+        )
+
+        self.assertIn(EXPORTS_CLAUSE, exported.blocked_by)
+        self.assertEqual(
+            exported.honesty,
+            (
+                f"export of {seat.seat_id} was attempted (failed) but no "
+                "artifact record is available for it",
+            ),
+        )
 
     def test_a_succeeded_export_does_not_block_the_advance(self) -> None:
         accepted, job = self.finished_candidate()
