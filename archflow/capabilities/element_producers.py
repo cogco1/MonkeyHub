@@ -439,7 +439,9 @@ def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElemen
     profile = [(_finite(x, f"{row.element_id} profile x"), 0.0, _finite(z, f"{row.element_id} profile z")) for x, z in p["profile"]]
     height = _height(row, context, base_datum)
     op = _extrusion(row.element_id, profile, height, row.binding_id, context.frame_id, base_offset)
-    return ProducedElement((op,), (_bind(row.element_id, base_datum),), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
+    top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
+    context.published[top.datum_id] = top  # a prism is what other elements sit on: it publishes its top like a beam does
+    return ProducedElement((op,), (_bind(row.element_id, base_datum),), (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
 
 
 def produce_ring(row: ElementRow, context: ProductionContext) -> ProducedElement:

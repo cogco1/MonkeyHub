@@ -127,11 +127,15 @@ _CHECKERS = {"support_contact": check_support_contact}
 
 
 def check_relations(record: StateRecord, *, bounds: Mapping[str, Bounds], objects_by_element: Mapping[str, Sequence[str]],
-                    datum_values: Mapping[str, float] | None = None) -> RelationCheckReport:
-    """Measure every relation that binds a validator; others are reported as unchecked."""
+                    datum_values: Mapping[str, float] | None = None, relations: Sequence[Relation] | None = None) -> RelationCheckReport:
+    """Measure every relation that binds a validator; others are reported as unchecked.
+
+    ``relations`` defaults to the record's own; a caller that materialised more (the runner's
+    producers) passes the full set, and the report still cites the record that was retained.
+    """
 
     checks: list[RelationCheck] = []
-    for relation in record.relations:
+    for relation in (record.relations if relations is None else relations):
         if relation.validator is None:
             checks.append(RelationCheck(relation.relation_id, relation.kind, "none", "unchecked", 0.0, {}, "no validator bound"))
             continue

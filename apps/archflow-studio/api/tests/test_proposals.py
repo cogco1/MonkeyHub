@@ -197,9 +197,8 @@ class ElementFieldProposalTests(ProposalTestCase):
         self.assertEqual(
             payload["impact"]["direct"], ["entity:portico-cornice"]
         )
-        self.assertEqual(
-            payload["impact"]["propagated"], ["entity:portico-base"]
-        )
+        # the cornice sits on the base; nothing sits on the cornice
+        self.assertEqual(payload["impact"]["propagated"], [])
         self.assertEqual(
             payload["impact"]["unknownCoverage"],
             {"count": 2, "componentIds": ["building", "portico"]},
@@ -463,9 +462,10 @@ class NoParametersTests(ProposalTestCase):
         )
 
         self.assertEqual(payload["status"], "proposed")
-        self.assertEqual(payload["impact"]["propagated"], [])
-        self.assertIn(
-            "0 dependency edges: impact closure is direct-only",
+        # no parameters, but the cornice still sits on the base: that edge is the record's own
+        self.assertEqual(payload["impact"]["propagated"], ["entity:portico-cornice"])
+        self.assertTrue(
+            any("appear in no dependency edge" in line for line in payload["impact"]["honesty"]),
             payload["impact"]["honesty"],
         )
 

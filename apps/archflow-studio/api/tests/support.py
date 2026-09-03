@@ -155,14 +155,7 @@ RECORD_PAYLOAD: dict[str, object] = {
             "fields": {
                 "component_id": "portico",
                 "producer": "prism",
-                "references": {
-                    "base": {
-                        "offset_from": {
-                            "level": "level-ground",
-                            "offset": 0.6,
-                        }
-                    }
-                },
+                "references": {"base": {"datum": "portico-base-top"}},
                 "params": {
                     "profile": [[0, 0], [4, 0], [4, 2], [0, 2]],
                     "height": 0.3,
@@ -197,8 +190,8 @@ RECORD_PAYLOAD: dict[str, object] = {
         {
             "relation_id": "rel-cornice-on-base",
             "kind": "support",
-            "subject": "portico-cornice",
-            "object": "portico-base",
+            "subject": "portico-base",
+            "object": "portico-cornice",
             "propagation": "revalidate",
             "validator": {
                 "check_kind": "support_contact",

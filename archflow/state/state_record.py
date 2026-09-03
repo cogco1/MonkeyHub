@@ -501,6 +501,9 @@ def _entity_references(fields: Mapping[str, Any]) -> tuple[tuple[str, str, str],
         for kind, payload in value.items():
             if kind == "level" and isinstance(payload, str):
                 out.append((key, "entity", payload))
+            elif kind == "datum" and isinstance(payload, str):
+                # a datum another element published (``<element>-top``) names that element
+                out.append((key, "entity", payload[:-4] if payload.endswith("-top") else payload))
             elif kind == "offset_from" and isinstance(payload, Mapping) and isinstance(payload.get("level"), str):
                 out.append((key, "entity", payload["level"]))
             elif kind == "host" and isinstance(payload, Mapping) and isinstance(payload.get("element"), str):

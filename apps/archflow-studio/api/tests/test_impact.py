@@ -80,13 +80,13 @@ class RelationTests(ImpactTestCase):
     """``rel-cornice-on-base``: what the record says holds up what."""
 
     def test_a_supporting_element_propagates_to_what_it_supports(self) -> None:
-        answer = impact(self.projection, "entity:portico-cornice", ())
+        answer = impact(self.projection, "entity:portico-base", ())
 
-        self.assertEqual(answer.direct, ("entity:portico-cornice",))
-        self.assertEqual(answer.propagated, ("entity:portico-base",))
+        self.assertEqual(answer.direct, ("entity:portico-base",))
+        self.assertEqual(answer.propagated, ("entity:portico-cornice",))
 
     def test_the_supported_element_propagates_to_nothing(self) -> None:
-        answer = impact(self.projection, "entity:portico-base", ())
+        answer = impact(self.projection, "entity:portico-cornice", ())
 
         self.assertEqual(answer.propagated, ())
 
@@ -122,16 +122,16 @@ class ProtectionTests(ImpactTestCase):
     def test_a_target_with_nothing_downstream_still_conflicts_with_itself(
         self,
     ) -> None:
-        # ``portico-base`` propagates to nothing at all: if conflicts were read
+        # ``portico-cornice`` propagates to nothing at all: if conflicts were read
         # off the propagation alone, this protection would vanish silently.
         answer = impact(
             self.projection,
-            "entity:portico-base",
-            ("entity:portico-base",),
+            "entity:portico-cornice",
+            ("entity:portico-cornice",),
         )
 
         self.assertEqual(answer.propagated, ())
-        self.assertEqual(answer.conflicts, ("entity:portico-base",))
+        self.assertEqual(answer.conflicts, ("entity:portico-cornice",))
 
     def test_the_target_and_something_downstream_are_both_named(self) -> None:
         answer = impact(
@@ -201,7 +201,10 @@ class NoEdgesTests(ImpactTestCase):
 
         self.assertEqual(answer.direct, ("entity:portico-cornice",))
         self.assertEqual(answer.propagated, ())
-        self.assertIn(NO_EDGES, answer.honesty)
+        # the elements still reference level-ground, so the kernel derives two edges and the
+        # record is not edge-free; what it says instead is that the components sit in none
+        self.assertNotIn(NO_EDGES, answer.honesty)
+        self.assertTrue(any("appear in no dependency edge" in line for line in answer.honesty), answer.honesty)
 
     def test_every_component_is_unknown_coverage_when_nothing_is_declared(
         self,

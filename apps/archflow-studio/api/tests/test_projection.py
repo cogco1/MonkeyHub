@@ -106,7 +106,7 @@ class StateProjectionTests(unittest.TestCase):
                 "parameters": 3,
                 "relations": 1,
                 "obligations": 0,
-                "dependencyEdges": 3,
+                "dependencyEdges": 5,
             },
         )
 
@@ -173,8 +173,8 @@ class StateProjectionTests(unittest.TestCase):
             self.payload["dependencyEdges"],
             [
                 {
-                    "upstreamRef": "entity:portico-cornice",
-                    "downstreamRef": "entity:portico-base",
+                    "upstreamRef": "entity:portico-base",
+                    "downstreamRef": "entity:portico-cornice",
                     "relation": "support",
                     "effect": "requires_revalidation",
                 },
@@ -189,6 +189,18 @@ class StateProjectionTests(unittest.TestCase):
                     "downstreamRef": "parameter:span",
                     "relation": "derives",
                     "effect": "requires_revalidation",
+                },
+                {
+                    "upstreamRef": "entity:level-ground",
+                    "downstreamRef": "entity:portico-base",
+                    "relation": "base",
+                    "effect": "requires_revalidation",
+                },
+                {
+                    "upstreamRef": "entity:portico-base",
+                    "downstreamRef": "entity:portico-cornice",
+                    "relation": "base",
+                    "effect": "invalidates",
                 },
             ],
         )
@@ -316,13 +328,13 @@ class ProjectionWithoutAnyRunTests(unittest.TestCase):
 
         self.assertEqual(payload["counts"]["parameters"], 0)
         self.assertEqual(payload["counts"]["relations"], 0)
-        self.assertEqual(payload["counts"]["dependencyEdges"], 0)
+        # the two elements still reference level-ground: those are edges the kernel derives
+        self.assertEqual(payload["counts"]["dependencyEdges"], 2)
         for line in (
             "0 parameters declared: parameter intents will be "
             "BLOCKED_NEEDS_HUMAN",
             "0 relations declared: relation checks are unchecked by "
             "construction",
-            "0 dependency edges: impact closure is direct-only",
         ):
             self.assertIn(line, payload["honesty"])
 
@@ -489,7 +501,7 @@ class MalformedRecordTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["code"], "STATE_RECORD_INVALID")
         self.assertIn(RUNNER_RECORD_PATH, body["detail"])
-        self.assertIn("component_id", body["detail"])
+        self.assertIn("producer", body["detail"])
 
     def test_a_record_authored_for_another_project_is_a_422(self) -> None:
         """Binding is where that is found out, and it is still the record."""
@@ -563,7 +575,7 @@ class UnviewableRecordTests(unittest.TestCase):
         self.assertEqual(payload["counts"]["components"], 2)
         self.assertEqual(len(payload["elements"]), 2)
         self.assertEqual(len(payload["parameters"]), 3)
-        self.assertEqual(len(payload["dependencyEdges"]), 3)
+        self.assertEqual(len(payload["dependencyEdges"]), 5)
         self.assertIn(
             f"component tree unavailable: {NO_EVIDENCE}", payload["honesty"]
         )

@@ -489,86 +489,101 @@ def run_project(
     handovers_for: dict[str, list] = {s.seat_id: [] for s in seats}
     results: list[SeatResult] = []
     frame = CoordinateFrame(frame_id=FRAME_ID, parent_frame_id=None, transform_from_parent=AffineTransform.identity(), source_refs=tuple(record.evidence_refs[:1]) or (record_ref.uri,))
-    for round_index, round_seats in enumerate(rounds):
-        for seat_id in round_seats:
-            seat = seat_by_id[seat_id]
-            if seat.reviewer:
+    try:
+        for round_index, round_seats in enumerate(rounds):
+            for seat_id in round_seats:
+                seat = seat_by_id[seat_id]
+                if seat.reviewer:
+                    continue
+                t0 = time.perf_counter()
+                subtree = owned_subtree(proposal_tree, seat.owned_component_ids)
+                leaves = _subtree_leaves(proposal_tree, subtree)
+                own = tuple(r for r in rows if r.component_id in set(subtree))
+                handovers = tuple(handovers_for[seat_id])
+                context = project_seat_context(seat=seat, design_state=state, inherited_commitment_refs=(options.commitment_ref,), handovers=handovers,
+                                               project_levels=levels, project_grids=grids)
+                context_ref = put("seat-authoring-context", context.to_dict())
+                exclusions = tuple(b for h in handovers for b in _exclusion_bounds(h))
+                production = ProductionContext(references=ReferenceContext(grids=grids, levels=levels), published={d.datum_id: d for h in handovers for d in h.datums}, exclusions=exclusions)
+                try:
+                    elements_produced = produce_rows(own, production)
+                except ElementProducerError as exc:
+                    raise ProjectRunnerError(str(exc)) from exc
+                produced = _gather(elements_produced)
+                check_seat_datums(seat=seat, published_datums=produced.datums, project_levels=levels, project_grids=grids)
+                declined = tuple(sorted({e.component_id for e in own if e.producer == "declined"}))
+                # a component is covered when an element names it or when produced geometry is bound to it
+                # (openings hosted by a wall bind their own components)
+                realized = {b.removeprefix("binding-") for op in produced.operations for b in op.semantic_binding_ids}
+                covered = tuple(sorted({e.component_id for e in own if e.producer != "declined"} | (realized & set(subtree))))
+                undeclared = tuple(c for c in leaves if c not in set(covered) | set(declined))
+                if undeclared and options.strict_coverage:
+                    raise ProjectRunnerError(f"seat {seat_id!r} owns components with no element and no declination: {undeclared}")
+                if not covered:
+                    results.append(SeatResult(seat_id, round_index, "empty", None, None, 0, covered, undeclared, (), time.perf_counter() - t0, declined=declined))
+                    continue
+                by_component: dict[str, list[str]] = {}
+                for op in produced.operations:
+                    by_component.setdefault(op.semantic_binding_ids[0].removeprefix("binding-"), []).extend(op.output_object_ids)
+                bindings = tuple(SemanticBinding(binding_id=f"binding-{c}", component_id=c, object_ids=tuple(sorted(o)), commitment_refs=(options.commitment_ref,),
+                                                 evidence_refs=tuple(sorted({spatial_ref.uri, record_ref.uri}))) for c, o in sorted(by_component.items()))
+                proposal = GeometryProgramProposal(
+                    proposal_id=f"{run.project_id}-{seat_id}-round-{round_index}", project_id=run.project_id, run_id=run.run_id, base=run.base,
+                    design_state_digest=state.state_digest, predecessor_program_digest=None, length_unit=_M, tolerance=GeometryTolerance(0.001, 0.001),
+                    frames=(frame,), assets=(), semantic_bindings=bindings, operations=produced.operations, assemblies=produced.assemblies)
+                datums = tuple(sorted({d.datum_id: d for d in project_datums + tuple(d for h in handovers for d in h.datums) + produced.datums}.values(), key=lambda d: d.datum_id))
+                provider = RecordedProposalProvider(proposal_authoring_output(proposal), options.provider_identity)
+                result = asyncio.run(produce_geometry_program_proposal(
+                    repository, provider, run=run, destination=destination, spatial_option_ref=spatial_ref, design_state=state,
+                    required_commitment_refs=(options.commitment_ref,), provider_identity=options.provider_identity, policy=GeometryProposalPolicy(1),
+                    seat_scope=subtree, interface_datums=datums, datum_bindings=produced.bindings))
+                issues = tuple(row for r in result.round_refs for row in repository.load_json(r).get("issues", []))
+                if result.status is not GeometryProposalStatus.ACCEPTED:
+                    results.append(SeatResult(seat_id, round_index, result.status.value, None, None, 0, covered, undeclared, issues, time.perf_counter() - t0))
+                    break
+                program = result.program
+                program_ref = put("seat-geometry-program", program.to_dict())
+                programs[seat_id] = program
+                bounds = expected_object_bounds(program)
+                realized = {oid: (tuple(row["bbox_min"]), tuple(row["bbox_max"])) for oid, row in bounds.items()}
+                # the relations the producers materialized are checked against the compiled bounds; nothing is healed
+                relation_report = _check_produced_relations(record, own, elements_produced, produced, realized, levels)
+                relation_check_ref = put("seat-relation-check", {**relation_report.to_dict(), "seat_id": seat_id, "program_ref": program_ref.uri, **no_authority(_AUTH)}).uri
+                if not relation_report.held:
+                    # a violated relation is a result, not a crash: program, report and seat are retained with
+                    # its issues, nothing is handed over or exported, and the relation report (held / violated /
+                    # unchecked) is the clause a verdict reads; the seat itself did produce its program
+                    violations = [{"code": "relation_violated", "relation_id": c.relation_id, "detail": c.detail} for c in relation_report.checks if c.status == "violated"]
+                    seat_result = SeatResult(seat_id, round_index, "proposal_accepted", program_ref.uri, program.program_digest, len(program.objects), covered, undeclared,
+                                             tuple(issues) + tuple(violations), time.perf_counter() - t0, relation_check_ref=relation_check_ref)
+                    receipt_ref = put("seat-round-receipt", {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], **no_authority(_AUTH)})
+                    results.append(replace(seat_result, receipt_ref=receipt_ref.uri))
+                    continue
+                digests = {o.object_id: o.object_digest for o in program.objects}
+                for consumer in seats:
+                    if seat_id in consumer.consumes and not consumer.reviewer:
+                        handover = compile_handover(from_seat=seat, to_seat=consumer, design_state=state, published_datums=program.interface_datums,
+                                                    program_bindings=program.proposal.semantic_bindings, realized_bounds=realized, object_digests=digests)
+                        put("seat-handover", handover.to_dict())
+                        handovers_for[consumer.seat_id].append(handover)
+                cad = None
+                if options.export:
+                    cad = _export(repository, run, branch, branch_destination, program, f"{stage_guard.envelope.stage_id}-{seat_id}", options,
+                                  {"target": "PROJECT_RUNNER", "workflow_stage_id": stage_guard.envelope.stage_id, "workflow_stage_index": str(stage_guard.envelope.stage_index), "stage_envelope_ref": stage_guard.envelope_record_ref.uri, "seat": seat_id, "candidate_status": "HOLD", "frame_semantics": "BUILDING_LOCAL_Y_UP", "state_record_ref": record_ref.uri})
+                seat_status = "proposal_accepted" if cad is None or cad.get("status") == "succeeded" else "export_failed"
+                seat_result = SeatResult(seat_id, round_index, seat_status, program_ref.uri, program.program_digest, len(program.objects), covered, undeclared, issues, time.perf_counter() - t0, cad, declined=declined,
+                                         declination_reasons={e.component_id: str(e.params.get("reason")) for e in own if e.producer == "declined"}, relation_check_ref=relation_check_ref)
+                receipt_ref = put("seat-round-receipt", {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], **no_authority(_AUTH)})
+                results.append(replace(seat_result, receipt_ref=receipt_ref.uri))
+            else:
                 continue
-            t0 = time.perf_counter()
-            subtree = owned_subtree(proposal_tree, seat.owned_component_ids)
-            leaves = _subtree_leaves(proposal_tree, subtree)
-            own = tuple(r for r in rows if r.component_id in set(subtree))
-            handovers = tuple(handovers_for[seat_id])
-            context = project_seat_context(seat=seat, design_state=state, inherited_commitment_refs=(options.commitment_ref,), handovers=handovers,
-                                           project_levels=levels, project_grids=grids)
-            context_ref = put("seat-authoring-context", context.to_dict())
-            exclusions = tuple(b for h in handovers for b in _exclusion_bounds(h))
-            production = ProductionContext(references=ReferenceContext(grids=grids, levels=levels), published={d.datum_id: d for h in handovers for d in h.datums}, exclusions=exclusions)
-            try:
-                elements_produced = produce_rows(own, production)
-            except ElementProducerError as exc:
-                raise ProjectRunnerError(str(exc)) from exc
-            produced = _gather(elements_produced)
-            check_seat_datums(seat=seat, published_datums=produced.datums, project_levels=levels, project_grids=grids)
-            declined = tuple(sorted({e.component_id for e in own if e.producer == "declined"}))
-            # a component is covered when an element names it or when produced geometry is bound to it
-            # (openings hosted by a wall bind their own components)
-            realized = {b.removeprefix("binding-") for op in produced.operations for b in op.semantic_binding_ids}
-            covered = tuple(sorted({e.component_id for e in own if e.producer != "declined"} | (realized & set(subtree))))
-            undeclared = tuple(c for c in leaves if c not in set(covered) | set(declined))
-            if undeclared and options.strict_coverage:
-                raise ProjectRunnerError(f"seat {seat_id!r} owns components with no element and no declination: {undeclared}")
-            if not covered:
-                results.append(SeatResult(seat_id, round_index, "empty", None, None, 0, covered, undeclared, (), time.perf_counter() - t0, declined=declined))
-                continue
-            by_component: dict[str, list[str]] = {}
-            for op in produced.operations:
-                by_component.setdefault(op.semantic_binding_ids[0].removeprefix("binding-"), []).extend(op.output_object_ids)
-            bindings = tuple(SemanticBinding(binding_id=f"binding-{c}", component_id=c, object_ids=tuple(sorted(o)), commitment_refs=(options.commitment_ref,),
-                                             evidence_refs=tuple(sorted({spatial_ref.uri, record_ref.uri}))) for c, o in sorted(by_component.items()))
-            proposal = GeometryProgramProposal(
-                proposal_id=f"{run.project_id}-{seat_id}-round-{round_index}", project_id=run.project_id, run_id=run.run_id, base=run.base,
-                design_state_digest=state.state_digest, predecessor_program_digest=None, length_unit=_M, tolerance=GeometryTolerance(0.001, 0.001),
-                frames=(frame,), assets=(), semantic_bindings=bindings, operations=produced.operations, assemblies=produced.assemblies)
-            datums = tuple(sorted({d.datum_id: d for d in project_datums + tuple(d for h in handovers for d in h.datums) + produced.datums}.values(), key=lambda d: d.datum_id))
-            provider = RecordedProposalProvider(proposal_authoring_output(proposal), options.provider_identity)
-            result = asyncio.run(produce_geometry_program_proposal(
-                repository, provider, run=run, destination=destination, spatial_option_ref=spatial_ref, design_state=state,
-                required_commitment_refs=(options.commitment_ref,), provider_identity=options.provider_identity, policy=GeometryProposalPolicy(1),
-                seat_scope=subtree, interface_datums=datums, datum_bindings=produced.bindings))
-            issues = tuple(row for r in result.round_refs for row in repository.load_json(r).get("issues", []))
-            if result.status is not GeometryProposalStatus.ACCEPTED:
-                results.append(SeatResult(seat_id, round_index, result.status.value, None, None, 0, covered, undeclared, issues, time.perf_counter() - t0))
-                break
-            program = result.program
-            program_ref = put("seat-geometry-program", program.to_dict())
-            programs[seat_id] = program
-            bounds = expected_object_bounds(program)
-            realized = {oid: (tuple(row["bbox_min"]), tuple(row["bbox_max"])) for oid, row in bounds.items()}
-            # the relations the producers materialized are checked against the compiled bounds; nothing is healed
-            relation_report = _check_produced_relations(record, own, elements_produced, produced, realized, levels)
-            relation_check_ref = put("seat-relation-check", {**relation_report.to_dict(), "seat_id": seat_id, "program_ref": program_ref.uri, **no_authority(_AUTH)}).uri
-            if not relation_report.held:
-                raise ProjectRunnerError(f"seat {seat_id!r}: a relation the producers built does not hold in the compiled program: "
-                                         + "; ".join(c.detail for c in relation_report.checks if c.status == "violated"))
-            digests = {o.object_id: o.object_digest for o in program.objects}
-            for consumer in seats:
-                if seat_id in consumer.consumes and not consumer.reviewer:
-                    handover = compile_handover(from_seat=seat, to_seat=consumer, design_state=state, published_datums=program.interface_datums,
-                                                program_bindings=program.proposal.semantic_bindings, realized_bounds=realized, object_digests=digests)
-                    put("seat-handover", handover.to_dict())
-                    handovers_for[consumer.seat_id].append(handover)
-            cad = None
-            if options.export:
-                cad = _export(repository, run, branch, branch_destination, program, f"{stage_guard.envelope.stage_id}-{seat_id}", options,
-                              {"target": "PROJECT_RUNNER", "workflow_stage_id": stage_guard.envelope.stage_id, "workflow_stage_index": str(stage_guard.envelope.stage_index), "stage_envelope_ref": stage_guard.envelope_record_ref.uri, "seat": seat_id, "candidate_status": "HOLD", "frame_semantics": "BUILDING_LOCAL_Y_UP", "state_record_ref": record_ref.uri})
-            seat_result = SeatResult(seat_id, round_index, "proposal_accepted", program_ref.uri, program.program_digest, len(program.objects), covered, undeclared, issues, time.perf_counter() - t0, cad, declined=declined,
-                                     declination_reasons={e.component_id: str(e.params.get("reason")) for e in own if e.producer == "declined"}, relation_check_ref=relation_check_ref)
-            receipt_ref = put("seat-round-receipt", {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], **no_authority(_AUTH)})
-            results.append(replace(seat_result, receipt_ref=receipt_ref.uri))
-        else:
-            continue
-        break
+            break
+    except Exception as exc:  # retained records stay; the run says why it stopped
+        put("runner-run-failure", {"schema": "RunnerRunFailure@1", "project_id": run.project_id, "run_id": run.run_id,
+                                   "state_record_ref": record_ref.uri, "stage_id": stage_guard.envelope.stage_id,
+                                   "error": type(exc).__name__, "detail": str(exc)[:2000],
+                                   "seat_results": [_seat_dict(r) for r in results], "wall_time_s": round(time.perf_counter() - started, 3)})
+        raise
     owned_any = set()
     for seat in seats:
         owned_any.update(owned_subtree(proposal_tree, seat.owned_component_ids))
@@ -622,8 +637,8 @@ def _check_produced_relations(record: StateRecord, rows, elements, produced: Pro
     import json as _json
 
     known = {e.entity_id for e in record.entities}
-    relations = []
-    seen = set()
+    relations = list(record.relations)          # what the record declares is checked (or reported unchecked) too
+    seen = {r.relation_id for r in relations}
     for element in elements:
         for r in element.relations:
             if r.kind != "support" or r.subject not in known or r.object not in known or r.relation_id in seen:
@@ -631,12 +646,11 @@ def _check_produced_relations(record: StateRecord, rows, elements, produced: Pro
             seen.add(r.relation_id)
             relations.append(Relation(r.relation_id, r.kind, r.subject, r.object, datum_role=r.datum_id, propagation="revalidate",
                                       validator=ValidatorBinding("support_contact", tolerance=0.001), parameters=dict(r.parameters)))
-    check_record = replace(record, relations=tuple(relations), obligations=())
     objects = {row.element_id: [oid for op in element.operations for oid in op.output_object_ids] for row, element in zip(rows, elements)}
     datum_values = {d.datum_id: float(_json.loads(d.value_json)) for d in produced.datums}
     datum_values.update({l.level_id: l.elevation for l in levels.levels})
     bounds = {oid: (list(low), list(high)) for oid, (low, high) in realized.items()}
-    return check_relations(check_record, bounds=bounds, objects_by_element=objects, datum_values=datum_values)
+    return check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datum_values, relations=tuple(relations))
 
 
 def _load_json(path: Path) -> dict:
