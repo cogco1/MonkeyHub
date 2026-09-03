@@ -17,6 +17,7 @@
 import type { RefObject } from "react";
 
 import type { StudioApiError } from "../api/client";
+import { ErrorBoundary } from "../app/ErrorBoundary";
 import { ErrorPanel } from "../app/ErrorPanel";
 import type { SceneInspection } from "./sceneInspection";
 import {
@@ -90,14 +91,21 @@ export function ViewerPanel({
           what="GET /api/artifacts/{sha256}/bytes"
         />
       )}
-      <ThreeDmViewport
-        ref={viewportRef}
-        onInspection={onInspection}
-        onStatus={onStatus}
-        onRequestFile={onRequestFile}
-        onSource={onSource}
-        onPick={onPick}
-      />
+      {/* The viewport is the one part of this shell that can fail for a reason
+          that has nothing to do with the project: a machine with no WebGL
+          context throws while the renderer is being built. Behind its own
+          boundary that costs the canvas, and the chip, the facts and every
+          panel around it survive to say what is still true. */}
+      <ErrorBoundary label="viewer">
+        <ThreeDmViewport
+          ref={viewportRef}
+          onInspection={onInspection}
+          onStatus={onStatus}
+          onRequestFile={onRequestFile}
+          onSource={onSource}
+          onPick={onPick}
+        />
+      </ErrorBoundary>
       {inspection && (
         <p className="viewer__facts mono">
           {inspection.fileName} · {inspection.meshCount} meshes ·{" "}
