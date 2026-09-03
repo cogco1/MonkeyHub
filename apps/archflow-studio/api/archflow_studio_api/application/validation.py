@@ -10,14 +10,17 @@ validator anywhere in this file. A gate re-implemented beside the kernel is a
 second opinion, and two opinions about whether a design is admissible is one
 too many.
 
-The **verdict** is the server's, and it is a fixed conjunction of four named
+The **verdict** is the server's, and it is a fixed conjunction of five named
 clauses: the receipt passed, the runner finished its seats, no relation was
-violated, and every declared relation was actually checked. ``blockedBy`` names
-each clause that failed, by the same name every time, because "cannot advance"
-without a reason is a red light nobody can act on. The fourth clause is the
-point of the other three: ``held`` is true whenever nothing was violated —
-including when nothing was checked — so a candidate whose relations nobody
-could check is never green.
+violated, every declared relation was actually checked, and every artifact the
+run was asked to export is available. ``blockedBy`` names each clause that
+failed, by the same name every time, because "cannot advance" without a reason
+is a red light nobody can act on. The fourth clause is the point of the other
+three: ``held`` is true whenever nothing was violated — including when nothing
+was checked — so a candidate whose relations nobody could check is never
+green. The fifth is vacuous for a candidate that never asked to export: an
+empty ``artifacts`` tuple holds it by construction, since there is nothing
+that could have failed to export.
 
 What the receipt could *not* prove is stated rather than implied. HEAD in a
 P036 project is a ref-based ``CanonicalProjectState@1``: it carries no facts,
@@ -105,13 +108,23 @@ VALIDATOR_NOTE = (
     "proves artifact presence and base match only"
 )
 
-# The four clauses of the advance verdict, named exactly as they travel.
+# The five clauses of the advance verdict, named exactly as they travel.
 RECEIPT_CLAUSE = "validation.receipt"
 SEATS_CLAUSE = "runner.seat_execution_complete"
 HELD_CLAUSE = "relations.held"
 CHECKED_CLAUSE = "relations.fully_checked"
+EXPORTS_CLAUSE = "runner.exports_available"
 
 VALIDATION_COMPUTED = "validation.computed"
+
+# One honesty line per artifact the candidate could not deliver: named by the
+# stage that was supposed to produce it, the file it was supposed to be, and
+# what the run actually says happened. A field the record does not have is
+# ``-``, never a guessed reason.
+EXPORT_UNAVAILABLE = (
+    "export of {stage_id} ({file_name}) is not available: status {status}, "
+    "reason {reason}"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,12 +199,16 @@ def _submission(
 
 
 def verdict(receipt: ValidationReceipt, candidate: CandidateRun) -> Verdict:
-    """The advance decision: four clauses, all of which must hold.
+    """The advance decision: five clauses, all of which must hold.
 
     ``relations.held`` is the flag, not the count — it says nothing was
     violated — and it is exactly why ``relations.fully_checked`` stands beside
     it. A run that checked nothing has violated nothing, and a verdict built on
-    the first clause alone would call that a pass.
+    the first clause alone would call that a pass. ``runner.exports_available``
+    holds iff every record in ``candidate.artifacts`` is both ``available`` and
+    ``status == "succeeded"``; a candidate that never asked to export carries
+    no artifacts at all, so an empty ``artifacts`` tuple satisfies the clause
+    by construction rather than by having anything checked.
     """
 
     relations = candidate.relation_checks
@@ -202,6 +219,13 @@ def verdict(receipt: ValidationReceipt, candidate: CandidateRun) -> Verdict:
             (SEATS_CLAUSE, candidate.seat_execution_complete),
             (HELD_CLAUSE, relations.held_flag),
             (CHECKED_CLAUSE, relations.fully_checked),
+            (
+                EXPORTS_CLAUSE,
+                all(
+                    record.available and record.status == "succeeded"
+                    for record in candidate.artifacts
+                ),
+            ),
         )
         if not holds
     )
@@ -232,6 +256,7 @@ def validate_candidate(
     """
 
     artifacts, honesty = _artifacts_of(candidate)
+    honesty = honesty + _exports_of(candidate)
     receipt = validate_submission(
         CanonicalState(ref=head),
         _submission(candidate, proposal, artifacts),
@@ -300,6 +325,32 @@ def _artifacts_of(
             )
         )
     return tuple(artifacts), tuple(honesty)
+
+
+def _exports_of(candidate: CandidateRun) -> tuple[str, ...]:
+    """One honesty line for every artifact that fails the exports clause.
+
+    Read only from ``candidate.artifacts`` — never ``readback_verified``, which
+    the runner has already folded into ``status``, and never settings, since
+    the artifacts tuple is the only evidence of whether an export was even
+    requested. A candidate that did not export carries none and confesses
+    nothing.
+    """
+
+    return tuple(
+        EXPORT_UNAVAILABLE.format(
+            stage_id=record.stage_id if record.stage_id is not None else "-",
+            file_name=record.file_name,
+            status=record.status if record.status is not None else "-",
+            reason=(
+                record.unavailable_reason
+                if record.unavailable_reason is not None
+                else "-"
+            ),
+        )
+        for record in candidate.artifacts
+        if not (record.available and record.status == "succeeded")
+    )
 
 
 def validation_key(

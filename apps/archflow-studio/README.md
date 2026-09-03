@@ -23,7 +23,7 @@ The round-1 boundary, verbatim from the plan:
 > question.
 
 Nothing in round 1 commits. The chain ends at a validation receipt and a server verdict; no
-route touches `HEAD`, `canonical/` or `input/`, and no route calls `compare_and_swap`. The
+route writes `HEAD`, `canonical/` or `input/`, and no route calls `compare_and_swap`. The
 only writes the API performs are `repository.create_run(...)` and `repository.put_json(...)`
 into run areas of the bound project — which is what running a candidate is.
 
@@ -193,14 +193,18 @@ runner's sentence*, printed verbatim rather than flattened into a status word.
 over `CanonicalState(ref=head)` with three production validators — `artifact-present`,
 `obligation-discharge`, `authorized-commitment-claims` — and reports the receipt's findings
 and its `passed` unedited. Beside it stands the server's own **verdict**, a fixed conjunction
-of four named clauses:
+of five named clauses:
 
 ```
 advance  ⟺  validation.receipt
          ∧  runner.seat_execution_complete
          ∧  relations.held
          ∧  relations.fully_checked
+         ∧  runner.exports_available
 ```
+
+The fifth clause is vacuous for a candidate that never asked to export: an empty artifact
+list holds it by construction, since there is nothing that could have failed to export.
 
 `blockedBy[]` names every clause that refused. The fourth clause is the point of the other
 three: `held` is true whenever nothing was **violated**, including when nothing was

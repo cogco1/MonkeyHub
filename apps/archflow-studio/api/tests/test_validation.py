@@ -32,6 +32,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
+from archflow_studio_api.application.artifacts import ArtifactRecord
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.candidate import (
     CandidateRun,
@@ -41,6 +42,7 @@ from archflow_studio_api.application.candidate import (
 from archflow_studio_api.application.validation import (
     CANONICAL_FACTS,
     EFFECTIVE_CHECKS,
+    EXPORTS_CLAUSE,
     VALIDATOR_NAMES,
     VALIDATOR_NOTE,
     submission_for,
@@ -67,6 +69,50 @@ THREE = [
     "obligation-discharge",
     "authorized-commitment-claims",
 ]
+
+
+def _export_artifact(
+    *,
+    status: str | None,
+    available: bool,
+    unavailable_reason: str | None = None,
+    stage_id: str | None = "cad-rhino-execution",
+    file_name: str = "model.3dm",
+) -> ArtifactRecord:
+    """A real, minimal ``ArtifactRecord`` for exercising the exports clause.
+
+    The clause and its honesty line read only ``stage_id``, ``file_name``,
+    ``status``, ``available`` and ``unavailable_reason``; every other field is
+    an inert placeholder, filled in rather than mocked because
+    ``ArtifactRecord`` is a real dataclass and this is a real instance of it.
+    """
+
+    return ArtifactRecord(
+        artifact_id="artifact-test",
+        run_id="studio-cand-test",
+        stage_id=stage_id,
+        file_name=file_name,
+        relative_path=None,
+        path=None,
+        sha256=None,
+        size_bytes=None,
+        object_count=None,
+        status=status,
+        readback_verified=None,
+        available=available,
+        unavailable_reason=unavailable_reason,
+        unavailable_error=None,
+        base_version=None,
+        base_state_sha256=None,
+        branch_id=None,
+        branch_epoch=None,
+        program_ref=None,
+        program_digest=None,
+        design_state_digest=None,
+        length_unit=None,
+        up_axis=None,
+        receipt_ref="receipt-ref-test",
+    )
 
 
 class ValidationTestCase(CandidateTestCase):
@@ -406,6 +452,67 @@ class AdvanceVerdictTests(ValidationTestCase):
         self.assertEqual(
             incomplete.blocked_by, ("runner.seat_execution_complete",)
         )
+
+    def test_a_failed_export_blocks_the_advance_and_is_confessed(self) -> None:
+        """A candidate whose requested export failed must not be told it may
+        advance — its artifacts already say so, and the verdict must agree.
+        """
+
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+
+        failed = self.validated(
+            replace(
+                candidate,
+                artifacts=(
+                    _export_artifact(
+                        status="failed",
+                        available=False,
+                        unavailable_reason="no inspection digest",
+                        stage_id="cad-rhino-execution",
+                        file_name="model.3dm",
+                    ),
+                ),
+            )
+        )
+
+        self.assertIs(failed.advance, False)
+        self.assertIn(EXPORTS_CLAUSE, failed.blocked_by)
+        self.assertIn(
+            "export of cad-rhino-execution (model.3dm) is not available: "
+            "status failed, reason no inspection digest",
+            failed.honesty,
+        )
+
+    def test_no_export_requested_satisfies_the_clause_by_construction(
+        self,
+    ) -> None:
+        """An unexported candidate — the default — is not asked about exports."""
+
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+        self.assertEqual(candidate.artifacts, ())
+
+        empty = self.validated(replace(candidate, artifacts=()))
+
+        self.assertNotIn(EXPORTS_CLAUSE, empty.blocked_by)
+        self.assertEqual(empty.honesty, ())
+
+    def test_a_succeeded_export_does_not_block_the_advance(self) -> None:
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+
+        succeeded = self.validated(
+            replace(
+                candidate,
+                artifacts=(
+                    _export_artifact(status="succeeded", available=True),
+                ),
+            )
+        )
+
+        self.assertNotIn(EXPORTS_CLAUSE, succeeded.blocked_by)
+        self.assertEqual(succeeded.honesty, ())
 
     def test_every_failing_clause_is_named_together(self) -> None:
         """Four clauses, four names, in the order the verdict states them."""
