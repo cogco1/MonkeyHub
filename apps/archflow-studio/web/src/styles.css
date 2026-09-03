@@ -1,23 +1,93 @@
+/* ---------------------------------------------------------------------------
+   Tokens. Dark-first, in the register of the Unreal Editor: charcoal panels
+   separated by hairlines, one cool accent for the primary action and the
+   selection, three semantic colours that never decorate. The bare :root is the
+   dark set; the light set answers an explicit light choice or a light OS.
+   ------------------------------------------------------------------------ */
+
 :root {
-  color-scheme: light;
-  font-family:
-    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  color-scheme: dark;
   font-synthesis: none;
-  --ink: #191918;
-  --muted-ink: #66645f;
-  --faint-ink: #8c8982;
-  --paper: #f7f6f2;
-  --panel: #fbfaf7;
-  --viewport: #f3f1ec;
-  --line: #d9d6cf;
-  --line-strong: #bdb9b0;
-  --rust: #99482f;
-  --rust-dark: #74331f;
-  --teal: #174e4a;
-  --danger: #a12c2c;
-  --warning: #9a650d;
-  --shadow: 0 12px 30px rgb(25 25 24 / 8%);
+  --font-ui: Roboto, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ground: #1b1b1b;
+  --panel: #242424;
+  --panel-2: #2c2c2c;
+  --ink: #e4e4e4;
+  --ink-2: #c8c8c8;
+  --muted: #9b9b9b;
+  --faint: #6f6f6f;
+  --line: #3a3a3a;
+  --line-2: #2f2f2f;
+  --accent: #2f80ed;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(47, 128, 237, 0.18);
+  --held: #58b368;
+  --violated: #e5534b;
+  --unchecked: #e0a03a;
+  --viewport: #202020;
+  --grid-major: #3d3d3d;
+  --grid-minor: #2e2e2e;
+  --shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  --radius: 3px;
+  /* names the pre-chat-shell rules still use; retired with them in Task 7 */
+  --muted-ink: var(--muted);
+  --faint-ink: var(--faint);
+  --paper: var(--ground);
+  --line-strong: var(--line);
+  --rust: var(--accent);
+  --rust-dark: var(--accent);
+  --teal: var(--accent);
+  --danger: var(--violated);
+  --warning: var(--unchecked);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --ground: #e9e9e9;
+    --panel: #f5f5f5;
+    --panel-2: #ececec;
+    --ink: #1e1e1e;
+    --ink-2: #3a3a3a;
+    --muted: #5f5f5f;
+    --faint: #8a8a8a;
+    --line: #cfcfcf;
+    --line-2: #dedede;
+    --accent: #1f6fd1;
+    --accent-ink: #ffffff;
+    --accent-soft: rgba(31, 111, 209, 0.14);
+    --held: #2e7d32;
+    --violated: #c62828;
+    --unchecked: #b26a00;
+    --viewport: #e4e4e4;
+    --grid-major: #c9c9c9;
+    --grid-minor: #d9d9d9;
+    --shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ground: #e9e9e9;
+  --panel: #f5f5f5;
+  --panel-2: #ececec;
+  --ink: #1e1e1e;
+  --ink-2: #3a3a3a;
+  --muted: #5f5f5f;
+  --faint: #8a8a8a;
+  --line: #cfcfcf;
+  --line-2: #dedede;
+  --accent: #1f6fd1;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(31, 111, 209, 0.14);
+  --held: #2e7d32;
+  --violated: #c62828;
+  --unchecked: #b26a00;
+  --viewport: #e4e4e4;
+  --grid-major: #c9c9c9;
+  --grid-minor: #d9d9d9;
+  --shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
 }
 
 * {
@@ -35,10 +105,9 @@ body,
 
 body {
   overflow: hidden;
-  background: var(--paper);
+  background: var(--ground);
   color: var(--ink);
-  font-size: 14px;
-  line-height: 1.45;
+  font: 13px/1.5 var(--font-ui);
 }
 
 button,

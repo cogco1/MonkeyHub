@@ -85,6 +85,54 @@ interface ViewportRuntime {
 
 const MAX_FILE_SIZE = 512 * 1024 * 1024;
 
+interface ThemeColours {
+  viewport: string;
+  gridMajor: string;
+  gridMinor: string;
+}
+
+/**
+ * The canvas belongs to the theme: its background and grid are the same tokens
+ * the shell paints with, read off the document rather than fixed here, so a
+ * dark shell never frames a bright canvas. Colours only — nothing about what
+ * is drawn changes with them.
+ */
+function themeColours(): ThemeColours {
+  const style = getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: string) =>
+    style.getPropertyValue(name).trim() || fallback;
+  return {
+    viewport: read("--viewport", "#202020"),
+    gridMajor: read("--grid-major", "#3d3d3d"),
+    gridMinor: read("--grid-minor", "#2e2e2e"),
+  };
+}
+
+function gridMaterialsOf(grid: GridHelper) {
+  return Array.isArray(grid.material) ? grid.material : [grid.material];
+}
+
+function buildGrid(colours: ThemeColours): GridHelper {
+  const grid = new GridHelper(
+    40,
+    40,
+    new Color(colours.gridMajor),
+    new Color(colours.gridMinor),
+  );
+  grid.rotation.x = Math.PI / 2;
+  grid.position.z = -0.002;
+  gridMaterialsOf(grid).forEach((material) => {
+    material.transparent = true;
+    material.opacity = 0.62;
+  });
+  return grid;
+}
+
+function disposeGrid(grid: GridHelper): void {
+  grid.geometry.dispose();
+  gridMaterialsOf(grid).forEach((material) => material.dispose());
+}
+
 function fitRuntime(runtime: ViewportRuntime): void {
   if (!runtime.model) return;
   const box = new Box3().setFromObject(runtime.model);
@@ -161,7 +209,7 @@ function errorMessage(error: unknown): string {
   ) {
     return error.message;
   }
-  return "无法解析这个 3DM 文件。";
+  return "This 3DM file could not be parsed.";
 }
 
 export const ThreeDmViewport = forwardRef<
@@ -178,7 +226,7 @@ export const ThreeDmViewport = forwardRef<
   const callbacksRef = useRef({ onInspection, onStatus, onSource, onPick });
   const [dragActive, setDragActive] = useState(false);
   const [visualStatus, setVisualStatus] = useState<ViewportStatus>("idle");
-  const [visualMessage, setVisualMessage] = useState("拖入 .3dm，或从本机选择文件");
+  const [visualMessage, setVisualMessage] = useState("Drop a .3dm here, or open one from this machine");
 
   callbacksRef.current = { onInspection, onStatus, onSource, onPick };
 
@@ -194,7 +242,7 @@ export const ThreeDmViewport = forwardRef<
     callbacksRef.current.onSource(null);
     if (!runtime?.model) {
       callbacksRef.current.onInspection(null);
-      reportStatus("idle", "拖入 .3dm，或从本机选择文件");
+      reportStatus("idle", "Drop a .3dm here, or open one from this machine");
       return;
     }
     runtime.scene.remove(runtime.model);
@@ -202,13 +250,17 @@ export const ThreeDmViewport = forwardRef<
     runtime.model = null;
     runtime.render();
     callbacksRef.current.onInspection(null);
-    reportStatus("idle", "拖入 .3dm，或从本机选择文件");
+    reportStatus("idle", "Drop a .3dm here, or open one from this machine");
   }, [reportStatus]);
 
   const openFile = useCallback(
     async (file: File, sourceLabel: string = LOCAL_SOURCE_LABEL) => {
       const runtime = runtimeRef.current;
-      if (!runtime) throw new Error("3D 视口尚未初始化。请稍后重试。");
+      if (!runtime) {
+        throw new Error(
+          "The 3D viewport is not ready yet; try again in a moment.",
+        );
+      }
       // A refused file leaves whatever was already loaded on screen, so the
       // fact line under the canvas has to go: it names the *previous* file, and
       // beside an error status it would read as that file having failed to
@@ -216,18 +268,24 @@ export const ThreeDmViewport = forwardRef<
       // before it was read, and the refusal below says which.
       if (!file.name.toLowerCase().endsWith(".3dm")) {
         callbacksRef.current.onInspection(null);
-        reportStatus("error", "仅支持 Rhino .3dm 文件。文件没有上传。");
+        reportStatus(
+          "error",
+          "Only Rhino .3dm files are supported. The file was not opened.",
+        );
         return;
       }
       if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
         callbacksRef.current.onInspection(null);
-        reportStatus("error", "文件为空或超过首版 512 MB 的本地解析上限。");
+        reportStatus(
+          "error",
+          "The file is empty or over the 512 MB local parse limit.",
+        );
         return;
       }
 
       const generation = loadGenerationRef.current + 1;
       loadGenerationRef.current = generation;
-      reportStatus("loading", `正在本地解析 ${file.name}`);
+      reportStatus("loading", `Parsing ${file.name} locally`);
       const started = performance.now();
       let buffer: ArrayBuffer;
       try {
@@ -274,7 +332,7 @@ export const ThreeDmViewport = forwardRef<
               "ready",
               inspection.meshCount > 0
                 ? `${file.name} · ${inspection.meshCount.toLocaleString()} meshes`
-                : `${file.name} 已打开，但没有发现可显示网格`,
+                : `${file.name} opened, but it holds no displayable mesh`,
             );
             resolve();
           },
@@ -361,7 +419,8 @@ export const ThreeDmViewport = forwardRef<
     if (!host) return undefined;
 
     const scene = new Scene();
-    scene.background = new Color(0xf3f1ec);
+    const background = new Color(themeColours().viewport);
+    scene.background = background;
     const camera = new PerspectiveCamera(38, 1, 0.01, 10000);
     camera.up.set(0, 0, 1);
     camera.position.set(8, -8, 6);
@@ -375,7 +434,7 @@ export const ThreeDmViewport = forwardRef<
     renderer.toneMappingExposure = 1.05;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.domElement.className = "viewport-canvas";
-    renderer.domElement.setAttribute("aria-label", "3DM 模型视口");
+    renderer.domElement.setAttribute("aria-label", "3DM model viewport");
     host.prepend(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -390,19 +449,30 @@ export const ThreeDmViewport = forwardRef<
     fill.position.set(-10, 6, 8);
     scene.add(ambient, key, fill);
 
-    const grid = new GridHelper(40, 40, 0xa6a29a, 0xd8d4cc);
-    grid.rotation.x = Math.PI / 2;
-    grid.position.z = -0.002;
-    const gridMaterials = Array.isArray(grid.material)
-      ? grid.material
-      : [grid.material];
-    gridMaterials.forEach((material) => {
-      material.transparent = true;
-      material.opacity = 0.62;
-    });
+    let grid = buildGrid(themeColours());
     scene.add(grid);
 
     const render = () => renderer.render(scene, camera);
+
+    // The tokens can change under a running canvas — a theme toggle, or the OS
+    // switching at dusk — and the grid's colours are baked into its vertices,
+    // so it is rebuilt rather than recoloured.
+    const applyTheme = () => {
+      const colours = themeColours();
+      background.set(colours.viewport);
+      scene.remove(grid);
+      disposeGrid(grid);
+      grid = buildGrid(colours);
+      scene.add(grid);
+      render();
+    };
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    media.addEventListener("change", applyTheme);
+    const themeObserver = new MutationObserver(applyTheme);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
     const runtime: ViewportRuntime = {
       scene,
       camera,
@@ -432,8 +502,9 @@ export const ThreeDmViewport = forwardRef<
       controls.removeEventListener("change", render);
       controls.dispose();
       if (runtime.model) disposeScene(runtime.model);
-      grid.geometry.dispose();
-      gridMaterials.forEach((material) => material.dispose());
+      media.removeEventListener("change", applyTheme);
+      themeObserver.disconnect();
+      disposeGrid(grid);
       renderer.dispose();
       renderer.domElement.remove();
       runtimeRef.current = null;
@@ -480,12 +551,12 @@ export const ThreeDmViewport = forwardRef<
           <p aria-live="polite">{visualMessage}</p>
           {(visualStatus === "idle" || visualStatus === "error") && (
             <button className="button button--primary" type="button" onClick={onRequestFile}>
-              选择 3DM
+              Open .3dm
             </button>
           )}
         </div>
       )}
-      {dragActive && <div className="drop-target">释放以在本地打开</div>}
+      {dragActive && <div className="drop-target">Release to open locally</div>}
     </div>
   );
 });
