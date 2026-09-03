@@ -1037,10 +1037,9 @@ button.chip:hover {
 
 .vcard {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   min-width: 150px;
   max-width: 260px;
-  padding: 7px 11px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--overlay);
@@ -1048,13 +1047,28 @@ button.chip:hover {
   text-align: left;
 }
 
-.vcard:hover:not(:disabled) {
+.vcard__open {
+  display: grid;
+  gap: 2px;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  text-align: left;
+}
+
+.vcard:hover {
   border-color: var(--accent);
 }
 
-.vcard[aria-pressed="true"] {
+.vcard--loaded {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow);
+}
+
+.vcard__compare {
+  margin: 0 8px 7px;
+  justify-self: start;
 }
 
 .vcard .label {
@@ -1518,4 +1532,33 @@ button.chip:hover {
 
 .mark__x:hover {
   text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------------------
+   Before / after
+   ------------------------------------------------------------------------ */
+
+.compare__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.compare__component {
+  font-size: 12.5px;
+}
+
+.compare__name {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.compare__objects summary {
+  cursor: pointer;
+}
+
+.compare__objects .reflist {
+  margin-top: 6px;
 }

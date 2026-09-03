@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
+import type { CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -131,6 +131,19 @@ export const readJobApiJobsJobIdGet = <ThrowOnError extends boolean = false>(opt
  * One finished candidate, read back out of the records its run retained.
  */
 export const readCandidateApiCandidatesCandidateIdGet = <ThrowOnError extends boolean = false>(options: Options<ReadCandidateApiCandidatesCandidateIdGetData, ThrowOnError>): RequestResult<ReadCandidateApiCandidatesCandidateIdGetResponses, ReadCandidateApiCandidatesCandidateIdGetErrors, ThrowOnError> => (options.client ?? client).get<ReadCandidateApiCandidatesCandidateIdGetResponses, ReadCandidateApiCandidatesCandidateIdGetErrors, ThrowOnError>({ url: '/api/candidates/{candidate_id}', ...options });
+
+/**
+ * Compare Candidate
+ *
+ * Before / After / Why: the candidate's exported objects against another
+ * run's, from the inspection records both runs retained.
+ *
+ * The counts are the records' own. The 'why' is the sentence the candidate
+ * was made from, when this process still holds its proposal; after a
+ * restart the run records still compare, and the card says the sentence
+ * is unavailable rather than guessing one.
+ */
+export const compareCandidateApiCandidatesCandidateIdCompareGet = <ThrowOnError extends boolean = false>(options: Options<CompareCandidateApiCandidatesCandidateIdCompareGetData, ThrowOnError>): RequestResult<CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, ThrowOnError> => (options.client ?? client).get<CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, ThrowOnError>({ url: '/api/candidates/{candidate_id}/compare', ...options });
 
 /**
  * Read Validation

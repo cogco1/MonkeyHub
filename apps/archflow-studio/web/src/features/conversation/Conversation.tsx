@@ -20,6 +20,7 @@ import type {
 import type { EvidenceTab } from "../../app/evidence";
 import type { Entry } from "../../app/transcript";
 import { CandidateCard } from "./cards/CandidateCard";
+import { CompareCard } from "./cards/CompareCard";
 import { ProposalCard } from "./cards/ProposalCard";
 import { QuestionCard } from "./cards/QuestionCard";
 import { RefusalCard } from "./cards/RefusalCard";
@@ -219,6 +220,13 @@ function renderEntry(
             onValidation={callbacks.onValidation}
             onEvidence={callbacks.onEvidence}
           />
+        </>
+      );
+    case "compare":
+      return (
+        <>
+          <p className="msg__who">Studio · before / after</p>
+          <CompareCard comparison={entry.comparison} onCompareInModel={null} />
         </>
       );
   }

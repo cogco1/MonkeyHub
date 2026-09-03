@@ -69,6 +69,28 @@ export type ArtifactListDto = {
 };
 
 /**
+ * BoxDto
+ */
+export type BoxDto = {
+    /**
+     * Min
+     */
+    min: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Max
+     */
+    max: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
  * CameraDto
  *
  * Where the architect stood when they drew: the viewpoint is part of the intent.
@@ -245,6 +267,126 @@ export type CandidateSeatResultDto = {
      * Relationcheckref
      */
     relationCheckRef: string | null;
+};
+
+/**
+ * CompareComponentDto
+ *
+ * A component's objects, counted by what happened to them.
+ */
+export type CompareComponentDto = {
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Changed
+     */
+    changed: number;
+    /**
+     * Unchanged
+     */
+    unchanged: number;
+    /**
+     * Added
+     */
+    added: number;
+    /**
+     * Removed
+     */
+    removed: number;
+};
+
+/**
+ * CompareDto
+ */
+export type CompareDto = {
+    /**
+     * Candidateid
+     */
+    candidateId: string;
+    /**
+     * Against
+     *
+     * the run whose exports are the 'before'
+     */
+    against: string;
+    /**
+     * Why
+     *
+     * the sentence the candidate was made from, verbatim, when this process still holds its proposal; null otherwise
+     */
+    why: string | null;
+    /**
+     * Whysource
+     *
+     * proposal (held in this process) or unavailable (the proposal store does not survive a restart)
+     */
+    whySource: string;
+    /**
+     * Tolerance
+     *
+     * boxes closer than this on every coordinate are the same box
+     */
+    tolerance: number;
+    /**
+     * Changed
+     */
+    changed: number;
+    /**
+     * Unchanged
+     */
+    unchanged: number;
+    /**
+     * Added
+     */
+    added: number;
+    /**
+     * Removed
+     */
+    removed: number;
+    /**
+     * Components
+     *
+     * components with something to say first, most first
+     */
+    components: Array<CompareComponentDto>;
+    /**
+     * Objects
+     */
+    objects: Array<CompareObjectDto>;
+};
+
+/**
+ * CompareObjectDto
+ *
+ * One exported object, before and after, by the export's own name.
+ */
+export type CompareObjectDto = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Seatid
+     */
+    seatId: string;
+    /**
+     * Componentid
+     */
+    componentId: string | null;
+    /**
+     * Producerop
+     */
+    producerOp: string | null;
+    /**
+     * Status
+     *
+     * unchanged | changed | added | removed
+     */
+    status: string;
+    before: BoxDto | null;
+    after: BoxDto | null;
 };
 
 /**
@@ -1849,6 +1991,43 @@ export type ReadCandidateApiCandidatesCandidateIdGetResponses = {
 };
 
 export type ReadCandidateApiCandidatesCandidateIdGetResponse = ReadCandidateApiCandidatesCandidateIdGetResponses[keyof ReadCandidateApiCandidatesCandidateIdGetResponses];
+
+export type CompareCandidateApiCandidatesCandidateIdCompareGetData = {
+    body?: never;
+    path: {
+        /**
+         * Candidate Id
+         */
+        candidate_id: string;
+    };
+    query: {
+        /**
+         * Against
+         *
+         * the run whose exports are the 'before': the reference run, or another candidate
+         */
+        against: string;
+    };
+    url: '/api/candidates/{candidate_id}/compare';
+};
+
+export type CompareCandidateApiCandidatesCandidateIdCompareGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CompareCandidateApiCandidatesCandidateIdCompareGetError = CompareCandidateApiCandidatesCandidateIdCompareGetErrors[keyof CompareCandidateApiCandidatesCandidateIdCompareGetErrors];
+
+export type CompareCandidateApiCandidatesCandidateIdCompareGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CompareDto;
+};
+
+export type CompareCandidateApiCandidatesCandidateIdCompareGetResponse = CompareCandidateApiCandidatesCandidateIdCompareGetResponses[keyof CompareCandidateApiCandidatesCandidateIdCompareGetResponses];
 
 export type ReadValidationApiCandidatesCandidateIdValidationGetData = {
     body?: never;

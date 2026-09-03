@@ -26,6 +26,7 @@ import {
   readProposalApiProposalsProposalIdGet,
   readStateApiStateGet,
   readValidationApiCandidatesCandidateIdValidationGet,
+  compareCandidateApiCandidatesCandidateIdCompareGet,
   resolveApiPickResolvePost,
   startCandidateApiProposalsProposalIdCandidatePost,
 } from "./generated";
@@ -33,6 +34,7 @@ import type {
   ArtifactListDto,
   CandidateAcceptedDto,
   CandidateDto,
+  CompareDto,
   IntentDto,
   IntentRequestDto,
   JobDto,
@@ -284,6 +286,17 @@ export const studio = {
       `GET /api/candidates/${candidateId}/validation`,
       readValidationApiCandidatesCandidateIdValidationGet({
         path: { candidate_id: candidateId },
+      }),
+    );
+  },
+
+  /** Before / After / Why: this candidate's exports against another run's. */
+  compare(candidateId: string, against: string): Promise<CompareDto> {
+    return call(
+      `GET /api/candidates/${candidateId}/compare`,
+      compareCandidateApiCandidatesCandidateIdCompareGet({
+        path: { candidate_id: candidateId },
+        query: { against },
       }),
     );
   },

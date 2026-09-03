@@ -18,11 +18,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import secrets
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from starlette.requests import Request
 
 from ..application.binding import ProjectBinding, bound_project
 from ..application.candidate import describe, execute_candidate
+from ..application.compare import compare_runs
 from ..application.jobs import Job, JobRegistry
 from ..application.projection import project_state
 from ..application.proposals import closure_of, Proposal
@@ -35,6 +36,7 @@ from ..transport.candidate import (
     job_dto,
 )
 from ..transport.candidate import to_dto as candidate_dto
+from ..transport.compare import CompareDto, compare_dto
 from ..transport.errors import StudioError
 
 router = APIRouter(tags=["candidates"])
@@ -120,6 +122,52 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
             candidate_id=candidate_id,
             job_id=job.job_id,
             status=job.status,
+        )
+    )
+
+
+@router.get(
+    "/candidates/{candidate_id}/compare",
+    response_model=CompareDto,
+    response_model_by_alias=True,
+)
+def compare_candidate(
+    request: Request,
+    candidate_id: str,
+    against: str = Query(
+        min_length=1,
+        description="the run whose exports are the 'before': the reference "
+        "run, or another candidate",
+    ),
+) -> CompareDto:
+    """Before / After / Why: the candidate's exported objects against another
+    run's, from the inspection records both runs retained.
+
+    The counts are the records' own. The 'why' is the sentence the candidate
+    was made from, when this process still holds its proposal; after a
+    restart the run records still compare, and the card says the sentence
+    is unavailable rather than guessing one.
+    """
+
+    state = request.app.state
+    binding = bound_project(state)
+    why: str | None = None
+    why_source = "unavailable"
+    try:
+        job: Job = state.jobs.for_candidate(candidate_id)
+        why = state.proposals.get(job.proposal_id).utterance
+        why_source = "proposal"
+    except StudioError:
+        # Not this process's candidate, or its proposal is gone: the
+        # comparison still stands on the records; only the sentence is missing.
+        pass
+    return compare_dto(
+        compare_runs(
+            binding,
+            candidate_id=candidate_id,
+            against=against,
+            why=why,
+            why_source=why_source,
         )
     )
 

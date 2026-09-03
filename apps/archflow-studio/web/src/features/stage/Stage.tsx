@@ -72,6 +72,8 @@ export function Stage({
   onSource,
   onPick,
   onOpenVersion,
+  loadedRunId,
+  onCompareVersion,
   onEvidence,
 }: {
   viewportRef: RefObject<ViewportController | null>;
@@ -102,6 +104,9 @@ export function Stage({
   onSource(sourceLabel: string | null): void;
   onPick(pick: ViewportPick): void;
   onOpenVersion(artifact: ProjectArtifactDto, sourceLabel: string): void;
+  /** The run whose export is on screen, for the strip's comparisons. */
+  loadedRunId: string | null;
+  onCompareVersion(artifact: ProjectArtifactDto): void;
   onEvidence(tab: EvidenceTab): void;
 }) {
   return (
@@ -190,7 +195,9 @@ export function Stage({
           versions={versions}
           loadingSha={loadingSha}
           loadedSha={loadedSha}
+          loadedRunId={loadedRunId}
           onOpen={onOpenVersion}
+          onCompare={onCompareVersion}
         />
         <span className="stage__spacer" />
         <button

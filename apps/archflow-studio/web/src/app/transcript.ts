@@ -14,7 +14,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import type { StudioApiError } from "../api/client";
-import type { AgentReadingDto, ProposalDto } from "../api/generated";
+import type { AgentReadingDto, CompareDto, ProposalDto } from "../api/generated";
 
 export type Entry =
   | { kind: "system"; id: string; text: string }
@@ -43,7 +43,13 @@ export type Entry =
       /** The server's own word for the job: queued, running, succeeded, failed. */
       status: string;
     }
-  | { kind: "verdict"; id: string; candidateId: string };
+  | { kind: "verdict"; id: string; candidateId: string }
+  | {
+      kind: "compare";
+      id: string;
+      /** Before / After / Why, as the server counted it from the records. */
+      comparison: CompareDto;
+    };
 
 /** An entry before the transcript names it. */
 export type EntryDraft =
@@ -53,7 +59,8 @@ export type EntryDraft =
   | Omit<Extract<Entry, { kind: "question" }>, "id">
   | Omit<Extract<Entry, { kind: "refusal" }>, "id">
   | Omit<Extract<Entry, { kind: "candidate" }>, "id">
-  | Omit<Extract<Entry, { kind: "verdict" }>, "id">;
+  | Omit<Extract<Entry, { kind: "verdict" }>, "id">
+  | Omit<Extract<Entry, { kind: "compare" }>, "id">;
 
 export interface Transcript {
   readonly entries: readonly Entry[];

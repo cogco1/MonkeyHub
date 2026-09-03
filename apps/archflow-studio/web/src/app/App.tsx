@@ -507,6 +507,29 @@ export default function App() {
     ],
   );
 
+  /**
+   * Before / After / Why: this card's run against the run on screen, from
+   * the inspection records both retained. The answer is a card in the
+   * conversation; the counts are the server's.
+   */
+  const compareVersions = useCallback(
+    async (artifact: ProjectArtifactDto) => {
+      const against = loadedArtifact?.runId ?? null;
+      if (against === null || artifact.runId === against) return;
+      try {
+        const comparison = await studio.compare(artifact.runId, against);
+        append({ kind: "compare", comparison });
+      } catch (cause) {
+        append({
+          kind: "refusal",
+          error: asStudioApiError(cause),
+          what: `GET /api/candidates/${artifact.runId}/compare`,
+        });
+      }
+    },
+    [append, loadedArtifact],
+  );
+
   const runCandidate = useCallback(
     async (proposalId: string) => {
       setCandidateBusy(true);
@@ -843,6 +866,8 @@ export default function App() {
             onOpenVersion={(artifact, label) =>
               void loadArtifactIntoViewer(artifact, label)
             }
+            loadedRunId={loadedArtifact?.runId ?? null}
+            onCompareVersion={(artifact) => void compareVersions(artifact)}
             onEvidence={openEvidence}
           />
         }
