@@ -109,7 +109,7 @@ The one pure compiler: bind a neutral geometry proposal to an exact state, order
 
 ## contracts
 
-### contracts.authority (fold) — `archflow/contracts/authority.py`
+### contracts.authority — `archflow/contracts/authority.py`
 The single source of the all-False authority-flag block that every retained record carries.
 - owns: the default authority field names (DEFAULT_AUTHORITY_FIELDS); constructing a key-sorted, all-False authority block (no_authority); rejecting a malformed, duplicated or non-'_authority' field name (AuthorityContractError)
 - does not own: deciding which record needs which flags (each writer passes its field list); enforcing that a producer really holds no authority (a static scan in the test suite holds the inline-block count at a baseline); record serialization (each record type)
@@ -226,14 +226,14 @@ The one runtime loop: run admitted seat rounds from a single State Record, retai
 
 ## state
 
-### state.commitments (fold) — `archflow/state/commitments.py`
+### state.commitments — `archflow/state/commitments.py`
 Typed normative commitments and their authorized lifecycle transitions.
 - owns: the commitment record and its schema (Commitment, CriterionRef); the kind, strength, status and revision-policy vocabularies; which commitments carry hard gate authority (has_hard_gate_authority); the legal status transition table and who may make each transition (transition_commitment, RevisionPolicy); typed authority and transition failures (CommitmentAuthorityError, CommitmentTransitionError)
 - does not own: evaluating a satisfaction criterion (validation.engine reads the criterion; it never executes predicates); obligations (state.operational_state.DesignObligation); findings and receipts (validation.model); persisting a commitment (project.repository)
 - api: `Commitment`, `CommitmentKind`, `CommitmentStrength`, `CommitmentStatus`, `RevisionPolicy`, `CriterionRef`, `transition_commitment`, `CommitmentAuthorityError`, `CommitmentTransitionError`
 - invariants: a transition never mutates history; it returns a new commitment with a predecessor link; an unauthorized actor raises rather than being silently ignored; commitments hold no prompt transcripts, executable predicates, findings or obligations; never writes the filesystem
 
-### state.decision_operator (fold) — `archflow/state/decision_operator.py`
+### state.decision_operator — `archflow/state/decision_operator.py`
 Compile one typed design action into a deterministic state delta, a successor operational state and a closure receipt.
 - owns: the typed intent record with no write authority (DecisionOperator, StateCondition, ConditionComparator); precondition, lock-authority and commitment-spawn authority checks; the delta and its digest (StateDelta); the explicit deterministic dependency closure over invalidations (ClosureReceipt); refreshing obligation readiness after a delta and minting revalidation obligations; the read-only V1 compatibility record and its migration gate (LegacyDecisionOperatorV1, load_decision_operator_record)
 - does not own: the state types it operates on (state.operational_state); commitment lifecycle legality (state.commitments.transition_commitment); phase gates (state.design_maturity); persisting the compiled result (project.repository)
@@ -247,7 +247,7 @@ Named quantities as small arithmetic expressions over evidence readings, evaluat
 - api: `DerivationTable`, `DerivedQuantity`, `EvaluatedDerivations`, `evaluate`, `substitute`, `expression_names`, `DerivationError`
 - invariants: never calls Python eval; the operator and function set is closed; an unresolvable name, a cycle or a non-finite result fails typed rather than defaulting; quantity count is bounded; never writes the filesystem
 
-### state.design_portfolio (fold) — `archflow/state/design_portfolio.py`
+### state.design_portfolio — `archflow/state/design_portfolio.py`
 The reloadable ledger of schematic branches, their lineage, and the authorized selection among them.
 - owns: the branch, revision and lineage records (DesignBranch, BranchRevision, BranchRevisionRef, LineageKind); the branch lifecycle and its transitions (fork_branch, revise_branch, combine_branches, park_branch, reject_branch, select_branch); who may make or release a selection (SelectionPolicy); resolution of detached expert advice (ExpertAdviceResolution, AdviceDisposition); detached comparison evidence with deliberately no selection authority (ParetoBranchObservation); the append-only transition log and the portfolio digest (PortfolioTransition, DesignOptionPortfolio); the handoff record for the selected branch (SelectedBranchHandoff, compile_selected_branch_handoff)
 - does not own: ranking or evaluating options (explicitly not the portfolio's job); hard usability gates (validation/*); promoting canonical state (project.repository); the option content itself (state.spatial)
@@ -282,7 +282,7 @@ The branch-local kernel state (facts, bindings, locks, obligations, dependency e
 - api: `OperationalMarkovState`, `DesignObligation`, `DependencyEdge`, `DependencyEffect`, `ObligationStatus`, `ObligationCondition`, `StateFact`, `StateDomain`, `FactEpistemicStatus`, `FactValue`, `ParameterBinding`, `StateLock`, `require_logical_ref`, `require_local_id`, `PORTABLE_LOGICAL_REF_PATTERN`, `load_operational_state_record`, `LegacyOperationalMarkovStateV2`, `OperationalStateMigrationRequired`
 - invariants: stores only future-relevant compiled consequences: no prompt history, tool transcripts or rejected drafts; blocking edges between obligations must be acyclic; an obligation's status is consistent with its blockers and its exact activation condition; a legacy V2 record has no current-state authority and must be migrated explicitly; never writes the filesystem
 
-### state.program (fold) — `archflow/state/program.py`
+### state.program — `archflow/state/program.py`
 The compact voxel-era building program (use, footprint, required spaces, clearances) carried by canonical state.
 - owns: the BuildingProgram@1 record and its JSON form; footprint targets with tolerance (FootprintTarget); the typed program error codes (ProgramErrorCode, BuildingProgramError); cross-clause feasibility checks (circulation width against footprint, prohibitions against requirements)
 - does not own: the design that answers the program (state.spatial); commitments derived from the program (state.commitments); site input (state.site_context)
@@ -356,7 +356,7 @@ Say what a finished candidate validates to - the kernel's receipt - and, separat
 
 ## submission
 
-### submission.model (fold) — `archflow/submission/model.py`
+### submission.model — `archflow/submission/model.py`
 The candidate submission: the only boundary from speculative work to formal review.
 - owns: the submission record and its full content digest (CandidateSubmission.content_digest); the delta a candidate proposes (CandidateDelta: facts, commitments, obligations, artifacts); claims with their evidence refs (Claim); the rule that a candidate may add only PROPOSED commitments
 - does not own: running the gates over a submission (validation.engine); the receipt a gate run produces (validation.model); promoting an accepted delta into canonical state (project.repository.prepare_transition)

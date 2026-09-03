@@ -727,11 +727,11 @@ class FrameworkPurityTests(unittest.TestCase):
     def test_maturity_framework_contains_no_instance_answer_defaults(
         self,
     ) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = Path(__file__).resolve().parents[2]
         text = "\n".join(
             (root / relative).read_text(encoding="utf-8").lower()
             for relative in (
-                "archflow/state/design_maturity.py",
+                "archive/archflow/state/design_maturity.py",
                 "archive/archflow/capabilities/phase_gates.py",
             )
         )

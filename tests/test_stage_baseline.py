@@ -96,7 +96,7 @@ from tests.test_cad_readback_contracts import (
     profile as cad_profile_fixture,
     snapshot as cad_snapshot_fixture,
 )
-from tests.test_check_receipt_bridges import (
+from archive.tests.test_check_receipt_bridges import (
     SHA_A,
     SHA_B,
     SUBJECT_DIGEST,

@@ -308,7 +308,7 @@ class CompositeStageClosureReceipt:
                 payload.get("profile_digest"), "profile_digest"
             ),
             stage_id=_text(payload.get("stage_id"), "stage_id"),
-            branch=_branch_from_dict(payload.get("branch")),
+            branch=BranchRef.from_dict(payload.get("branch")),
             stage_subject_ref=_text(
                 payload.get("stage_subject_ref"), "stage_subject_ref"
             ),

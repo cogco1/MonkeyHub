@@ -977,11 +977,11 @@
         "field names are lowercase identifiers ending in _authority",
         "output keys are sorted, so canonical serialization is independent of caller order"
       ],
-      "status": "fold",
+      "status": "canonical",
       "tests": [
         "tests/test_stage_workflow.py"
       ],
-      "notes": "fold: marked '← fold' in the move list; the hand-inlined authority blocks it replaced are still counted at a recorded baseline by a static test scan."
+      "notes": "Canonical per ADR-004: the one writer of the historical authority block; never re-checked on read; never added to a new record kind."
     },
     {
       "module_id": "contracts.canonical",
@@ -1890,12 +1890,12 @@
         "commitments hold no prompt transcripts, executable predicates, findings or obligations",
         "never writes the filesystem"
       ],
-      "status": "fold",
+      "status": "canonical",
       "tests": [
         "tests/test_commitment_contract.py",
         "tests/test_commitment_monitor.py"
       ],
-      "notes": "fold: marked '← fold'; §2.2 collapses CommitmentRevisionProposal and CommitmentRevision into one. It imports nothing from archflow, so the fold is inward only."
+      "notes": "Canonical: state.model, operational_state, submission.model, decision_operator and capabilities.declaration all take Commitment from here; the lifecycle transitions are the same type's, not a parallel."
     },
     {
       "module_id": "state.decision_operator",
@@ -1948,13 +1948,13 @@
         "invalidation closure is explicit and deterministic, not a blanket invalidation",
         "a legacy V1 operator cannot compile current state"
       ],
-      "status": "fold",
+      "status": "canonical",
       "tests": [
         "tests/test_operational_markov_compiler.py",
         "tests/integration/test_pantheon_compiled_state.py",
         "apps/archflow-studio/api/tests/test_proposals.py"
       ],
-      "notes": "fold: '← fold'; §2.2 leaves P109 to decide what of decision_operator the record needs. No archflow/ module imports it - its only production consumers are the Studio API application modules."
+      "notes": "Canonical: the Studio's typed proposals are DecisionOperators. P109 lands the kernel function that applies one to a StateRecord and retires the Studio's successor_record candidate."
     },
     {
       "module_id": "state.derivation",
@@ -2078,12 +2078,12 @@
         "the portfolio preserves alternatives and their lineage; it never ranks them",
         "never writes the filesystem"
       ],
-      "status": "fold",
+      "status": "canonical",
       "tests": [
         "tests/test_design_portfolio.py",
         "tests/integration/test_branch_portfolio_reload.py"
       ],
-      "notes": "fold: '← fold'; §2.2 sends DesignBranch to the portfolio lane. Only two spine modules import it, and runtime/project_runner.py takes only BranchRevisionRef."
+      "notes": "Canonical for now: the developed-design projection cites a selected schematic (BranchRevisionRef, DesignOptionPortfolio types); retiring the massing view is P102's remaining tail and changes state_digest, so it is a decided change, not a fold."
     },
     {
       "module_id": "state.developed_design",
@@ -2316,7 +2316,7 @@
         "tests/test_promotion.py",
         "tests/test_project_authority_seam.py"
       ],
-      "notes": "§2.2 retires CanonicalState@1 as a HEAD shape in favour of CanonicalProjectState@1 (P110); the legacy Obligation here leaves with walking_skeleton, and it depends on two fold targets (commitments, program)."
+      "notes": "Canonical; its Obligation is the legacy obligation shape CanonicalState@1 carries. P110 projects DesignObligation into it; until then the two shapes coexist by decision, not by accident."
     },
     {
       "module_id": "state.operational_state",
@@ -2440,12 +2440,12 @@
         "text values must not carry surrounding whitespace",
         "an impossible constraint combination raises rather than being clamped"
       ],
-      "status": "fold",
+      "status": "canonical",
       "tests": [
         "tests/test_commitment_contract.py",
         "tests/test_expert_capabilities.py"
       ],
-      "notes": "fold: '← fold'; reached on the spine only through CanonicalState.legacy_program_view in state/model.py, and its units are Minecraft blocks."
+      "notes": "Canonical: BuildingProgram is the legacy_program_view field of CanonicalState@1 and retained states carry it."
     },
     {
       "module_id": "state.record",
@@ -3262,13 +3262,13 @@
         "only PROPOSED commitments may be added by a candidate",
         "never writes the filesystem"
       ],
-      "status": "fold",
+      "status": "canonical",
       "tests": [
         "tests/test_project_authority_seam.py",
         "tests/test_commitment_contract.py",
         "tests/test_aesthetic_evaluation.py"
       ],
-      "notes": "fold: '← fold'; it is the input type of validate_submission, so it can only fold together with validation/engine.py and the CanonicalState@1 path P110 retires."
+      "notes": "Canonical: CandidateSubmission/CandidateDelta are what validate_submission reads; the Studio builds them. P110 replaces the empty CanonicalState they are checked against."
     },
     {
       "module_id": "tools.archcheck",
