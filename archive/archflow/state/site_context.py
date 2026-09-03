@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from archflow.project.refs import ProjectVersionRef, require_identifier
-from archflow.state.spatial import Coordinate, SiteBounds, _coordinate_from_json
+from archflow.state.spatial import Coordinate, SiteBounds, _coordinate, _coordinate_from_json
 from archflow.state.operational_state import (
     DesignObligation,
     require_local_id,
