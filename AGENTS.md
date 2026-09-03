@@ -54,6 +54,27 @@ If a new artifact, state, trace, cache, screenshot, export or recovery record
 does not have one unambiguous destination in the project layout, stop before
 writing it and ask Kevin to decide its ownership.
 
+## Before implementing anything
+
+The repository has one production spine (`docs/CANONICAL_SPINE.md`) and a module contract
+registry (`governance/module_registry.json`, rendered as `docs/SYSTEM_MAP.md`). Every
+capability has exactly one owner there. Before writing code:
+
+1. Read `docs/SYSTEM_MAP.md` (200 lines), not the tree.
+2. Find the capability the request needs in the registry: which module `owns` it, what that
+   module `does_not_own`, its contract (`inputs`, `outputs`, `public_api`, `invariants`).
+3. Search the spine for a semantically equivalent implementation (`python tools/archcheck.py`
+   reports duplicate function bodies; grep the owner's `public_api`).
+4. Decide EXTEND (default), REFACTOR, or CREATE. CREATE needs a written reason why no owner
+   fits; a second implementation of an owned capability is allowed only behind an interface
+   declared in the registry with its implementations listed.
+5. Update the registry entry (owner, `owns`, `public_api`, `tests`) before the code.
+6. Implement; run `python tools/archcheck.py` (import boundaries, no `archive` imports,
+   registry truth, duplicate capability owners) and the owner's tests.
+
+Code under `archive/` is not extended and not imported; a lane returns only as a fold onto
+the spine.
+
 ## One mechanism in, one mechanism out
 
 Any new mechanism replaces an old one; it does not stand beside it.

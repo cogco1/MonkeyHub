@@ -471,9 +471,86 @@ def check_probe_boundary(root: Path, policy: dict[str, Any]) -> Iterator[Finding
         )
 
 
+def _normalized_body(src: str, node: ast.FunctionDef) -> str:
+    seg = ast.get_source_segment(src, node) or ""
+    seg = re.sub(r'"""[\s\S]*?"""', "", seg)
+    seg = re.sub(r"#.*", "", seg)
+    seg = re.sub(r"\s+", " ", seg).strip()
+    return re.sub(r"def \w+", "def F", seg)
+
+
+def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[Finding]:
+    """The module registry must tell the truth, and a capability has one owner.
+
+    Owner paths exist; every public_api symbol is defined in its owner; listed
+    tests exist; every string in ``owns`` appears in exactly one entry; and no
+    spine module outside an owner defines a function whose normalised body
+    equals one of the owner's functions (a copied helper is a duplicate owner).
+    """
+
+    registry_path = root / "governance" / "module_registry.json"
+    if not registry_path.is_file():
+        return
+    data = json.loads(registry_path.read_text(encoding="utf-8"))
+    entries = data.get("modules", [])
+    rel_registry = registry_path.relative_to(root).as_posix()
+    owners: dict[str, str] = {}
+    ids: set[str] = set()
+    owner_bodies: dict[str, tuple[str, str]] = {}
+    for entry in entries:
+        module_id = entry.get("module_id", "?")
+        if module_id in ids:
+            yield Finding(rel_registry, 1, "REGISTRY_DUPLICATE_MODULE", f"module_id {module_id} listed twice")
+        ids.add(module_id)
+        owner = root / entry.get("owner_path", "")
+        if not owner.is_file():
+            yield Finding(rel_registry, 1, "REGISTRY_OWNER_MISSING", f"{module_id}: owner_path {entry.get('owner_path')} does not exist")
+            continue
+        for capability in entry.get("owns", ()):
+            key = capability.strip().lower()
+            if key in owners and owners[key] != module_id:
+                yield Finding(rel_registry, 1, "REGISTRY_DUPLICATE_OWNER", f"capability {capability!r} owned by both {owners[key]} and {module_id}")
+            owners.setdefault(key, module_id)
+        for test in entry.get("tests", ()):
+            if not (root / test).is_file():
+                yield Finding(rel_registry, 1, "REGISTRY_TEST_MISSING", f"{module_id}: test {test} does not exist")
+        if owner.suffix != ".py":
+            continue
+        src = owner.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            continue
+        defined = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+        defined |= {t.id for n in tree.body if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)}
+        for symbol in entry.get("public_api", ()):
+            if symbol.isidentifier() and symbol not in defined:
+                yield Finding(rel_registry, 1, "REGISTRY_SYMBOL_MISSING", f"{module_id}: public_api symbol {symbol} is not defined in {entry['owner_path']}")
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef) and not node.name.startswith("__"):
+                body = _normalized_body(src, node)
+                if len(body) > 80:
+                    owner_bodies.setdefault(body, (module_id, node.name))
+    owner_paths = {root / e.get("owner_path", "") for e in entries}
+    for path in _checked_python_files(root, policy):
+        if path in owner_paths or "/tests/" in path.as_posix() or path.name == "__init__.py":
+            continue
+        try:
+            src = path.read_text(encoding="utf-8")
+            tree = ast.parse(src)
+        except (OSError, SyntaxError):
+            continue
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef) and not node.name.startswith("__"):
+                hit = owner_bodies.get(_normalized_body(src, node))
+                if hit:
+                    yield Finding(path.relative_to(root).as_posix(), node.lineno, "DUPLICATE_OWNED_FUNCTION", f"{node.name} duplicates {hit[0]}.{hit[1]}; import the owner")
+
+
 def run_checks(root: Path, policy: dict[str, Any]) -> tuple[Finding, ...]:
     validate_policy(policy)
     findings: list[Finding] = list(check_probe_boundary(root, policy))
+    findings.extend(check_registry(root, policy))
     for path in _checked_python_files(root, policy):
         relative = path.relative_to(root).as_posix()
         tree, parse_finding = _parse(path, root)
