@@ -180,3 +180,71 @@ pediment" → ghost in under 1 s → "yes" → Apply.
 
 Order of execution: 0 → 1 → 2 → 5 → 4, with 3 whenever the kernel cards land. Phase 1 is the one that
 changes how the product feels; it ships before any new modelling capability.
+
+---
+
+## I. Review addendum (second Fable session, 2026-09-03 15:30 UTC) — corrections and added tasks
+
+Context: Kaiwen asked both sessions to write this plan after the first session's process was torn down
+(interrupt + rewind at 10:04 local, two subagents lost). The first session had already committed the plan
+(fb0b91c), Phase 0 (df7c8d6, a5e6c51) and was mid-Phase 1 in its working tree when this review was made. This
+addendum does not restate the plan; it corrects three claims against the code and adds the tasks the sources
+ask for that the plan does not yet carry. The working tree's Phase 1 files were not touched by this session.
+
+### I.1 Corrections to section A
+
+- **The agent's 45 s is not the sheet.** On the villa temp copy `record_sheet()` serialises to ≈ 0.9 KB
+  (4 elements, 0 parameters, 5 honesty lines; measured from `/api/state`), and a trivial `codex exec` with
+  the same flags answers in 6 s. The cost is the agent process and its reasoning per call, not re-reading a
+  static sheet. The lever is therefore Phase 2 (ask once) plus `ARCHFLOW_STUDIO_INTENT_MODEL` / reasoning
+  effort, and `IntentDto.timings.compileMs` is the number to watch — not sheet slimming. Section A's
+  "rebuilds what did not change: yes" for the agent row should read "no; the cost is per-call reasoning".
+- **`_prior_export` root cause confirmed** (`archflow/runtime/project_runner.py:434-453`): it globs
+  `records_dir = repository.layout.run(run.run_id).records` and the model must be under *this run's*
+  workspace, so a candidate run — unique id, fresh workspace (`application/candidate.py:159-170`) — never
+  finds a prior and every seat is a full rebuild. K-A is the right card; the studio cannot fake a prior
+  record into a new run without inventing a receipt.
+- **Parallel candidates: the repository is not the risk.** `create_run` holds only the process-local
+  `self._lock` (`archflow/project/repository.py:513-541`), run directories are per run id, and no candidate
+  route writes HEAD. The one shared resource is Rhino COM (one `-Embedding` process per export, PID-owned).
+  Phase 4 can run kernel-only candidates on parallel workers today; exports stay serialised until K-B.
+
+### I.2 Added tasks
+
+- [ ] **T0.3 codex timeout must kill the tree (API).** `CodexCompiler.compile` uses `subprocess.run(timeout=)`
+  (`application/intent_agent.py:307-316`) on `codex.cmd`, a cmd shim that spawns `node codex.js`. On Windows
+  a timeout kills `cmd.exe` only; `communicate()` then waits on pipes the orphaned `node` still holds, and the
+  route hangs past the 120 s it promised. Fix: `Popen(..., creationflags=CREATE_NEW_PROCESS_GROUP)` and on
+  `TimeoutExpired` run `taskkill /T /F /PID <pid>` before reading, or resolve the shim to
+  `node <…>/@openai/codex/bin/codex.js` and call it directly. Test with a scripted executable that sleeps past
+  the timeout and holds stdout open; assert the route answers `502 INTENT_AGENT_FAILED` within timeout + 2 s.
+  Commit `P108: a codex that does not answer is killed with its children`.
+- [ ] **T2.1 precision.** Slider domain for a unit-less element field: `[old × 0.5, old × 1.5]` clamped to
+  `> 0`, step `1 % of old`; the `set <key> to <n>` sentence carries `n` rounded to 6 decimals (the grammar's
+  `ROUNDING`). A release while a refinement is in flight is coalesced (last value wins), the entry keeps
+  `refinements: n`, and the ghost is redrawn from the *new* proposal's `change.new` — never from the slider
+  value, so the picture is always the server's number.
+- [ ] **T3.2 experiment harness on the wire.** `options.patch_oracle` already runs the full rebuild beside
+  the patch and writes `cad.oracle.seconds` (`project_runner.py:519-526`); that pair *is* T_full vs
+  T_incremental in one run. Add `ExportTimingDto.oracleSeconds` and `oracleEqual` (null when no oracle ran) so
+  the research metric is read off the receipt, not the ledger.
+- [ ] **T4.0 concurrency proof before T4.1.** An api test that submits two kernel-only candidates against one
+  temp project on two workers and asserts two run directories, two receipts, no shared record and HEAD
+  unchanged. Only then raise `max_workers`.
+- [ ] **T6 Before / After / Why (Kaiwen's feedback item 4, missing from the plan).** Phase 6, after Phase 2:
+  `GET /api/candidates/{id}/compare?against=<runId>` reads the two runs' retained `seat-3dm-inspection`
+  records (`named_object_bboxes`, written at `project_runner.py:499-501`) and answers per element
+  `changed | unchanged | added | removed` with the bbox delta — kernel facts, no browser inference. The
+  version card gains **Compare**: the viewer loads both exports and cross-fades them (a second additive
+  controller method, `compare(a, b, t)`), and the card reads `WEST PORTICO · changed because "<utterance>" ·
+  affected 4 · unchanged 27`. Ships before Phase 4; it is the sentence ArchFlow sells.
+- [ ] **T7 versions strip per run.** Group `VersionsStrip` cards by `runId` (reference first, then candidates
+  newest first, older folded behind a count) — six cards after two candidates is already noise.
+- [ ] **Global Constraints, viewer line.** Phases 5 and 6 need two more additive controller methods
+  (`raycast(screenPoints)` for gesture samples, `compare(a, b, t)`); amend "only by one additive controller
+  method" to "only by additive controller methods; load and pick paths unchanged".
+
+### I.3 Order after this review
+
+0 (incl. T0.3) → 1 → 2 → 6 → 7 → 5 → 4 (with T4.0 first), and 3 whenever K-A lands. Phase 1 remains the
+one that changes how the product feels.
