@@ -1,0 +1,191 @@
+/**
+ * The conversation column: what this tab said and what the server answered,
+ * in order, with the composer under it.
+ *
+ * Every entry is rendered by its kind and nothing else is inferred from it. The
+ * list follows the newest entry unless the reader has scrolled up to read an
+ * older one, in which case it stays where they are.
+ */
+
+import { useEffect, useRef, type ReactNode } from "react";
+
+import type { StudioApiError } from "../../api/client";
+import type {
+  CandidateDto,
+  ProjectArtifactDto,
+  StateProjectionDto,
+  ValidationDto,
+} from "../../api/generated";
+import type { EvidenceTab } from "../../app/evidence";
+import type { Entry } from "../../app/transcript";
+import { CandidateCard } from "./cards/CandidateCard";
+import { ProposalCard } from "./cards/ProposalCard";
+import { QuestionCard } from "./cards/QuestionCard";
+import { RefusalCard } from "./cards/RefusalCard";
+import { SystemLine } from "./cards/Verbatim";
+import { VerdictCard } from "./cards/VerdictCard";
+import { Composer, type Selection } from "./Composer";
+
+/** How far from the bottom still counts as "following the newest entry". */
+const FOLLOW_SLOP_PX = 40;
+
+export interface ConversationCallbacks {
+  onRun(proposalId: string): void;
+  onReply(text: string): void;
+  onJobStatus(candidateId: string, status: string): void;
+  onCandidate(candidate: CandidateDto): void;
+  onPreview(artifact: ProjectArtifactDto, sourceLabel: string): void;
+  onValidation(validation: ValidationDto): void;
+  onEvidence(tab: EvidenceTab): void;
+}
+
+export function Conversation({
+  entries,
+  sessionError,
+  projection,
+  selection,
+  disabledReason,
+  busy,
+  runBusy,
+  loadingSha,
+  draft,
+  onDraft,
+  onSubmit,
+  onSelect,
+  callbacks,
+}: {
+  entries: readonly Entry[];
+  sessionError: StudioApiError | null;
+  projection: StateProjectionDto | null;
+  selection: Selection | null;
+  disabledReason: string | null;
+  busy: boolean;
+  runBusy: boolean;
+  loadingSha: string | null;
+  draft: string;
+  onDraft(text: string): void;
+  onSubmit(utterance: string): void;
+  onSelect(componentId: string, elementId: string | null): void;
+  callbacks: ConversationCallbacks;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const followRef = useRef(true);
+
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (node && followRef.current) node.scrollTop = node.scrollHeight;
+  }, [entries]);
+
+  return (
+    <section className="chat" aria-label="conversation">
+      <header className="chat__head">
+        <span className="label">Conversation</span>
+        <span className="chat__head-meta mono">this tab · not version history</span>
+      </header>
+      <div
+        ref={scrollRef}
+        className="chat__scroll"
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          followRef.current =
+            node.scrollHeight - node.scrollTop - node.clientHeight <
+            FOLLOW_SLOP_PX;
+        }}
+      >
+        {sessionError && (
+          <RefusalCard
+            error={sessionError}
+            what="GET /api/project · GET /api/state"
+          />
+        )}
+        {entries.map((entry) => (
+          <div key={entry.id} className={`msg msg--${entry.kind}`}>
+            {renderEntry(entry, { runBusy, loadingSha, callbacks })}
+          </div>
+        ))}
+      </div>
+      <Composer
+        selection={selection}
+        projection={projection}
+        disabledReason={disabledReason}
+        busy={busy}
+        draft={draft}
+        onDraft={onDraft}
+        onSubmit={onSubmit}
+        onSelect={onSelect}
+      />
+    </section>
+  );
+}
+
+function renderEntry(
+  entry: Entry,
+  {
+    runBusy,
+    loadingSha,
+    callbacks,
+  }: {
+    runBusy: boolean;
+    loadingSha: string | null;
+    callbacks: ConversationCallbacks;
+  },
+): ReactNode {
+  switch (entry.kind) {
+    case "system":
+      return <SystemLine text={entry.text} />;
+    case "you":
+      return <p className="bubble">{entry.text}</p>;
+    case "proposal":
+      return (
+        <>
+          <p className="msg__who">Studio · typed proposal</p>
+          <ProposalCard
+            proposal={entry.proposal}
+            busy={runBusy}
+            onRun={() => callbacks.onRun(entry.proposal.proposalId)}
+            onEvidence={callbacks.onEvidence}
+          />
+        </>
+      );
+    case "question":
+      return (
+        <>
+          <p className="msg__who">Studio · needs you</p>
+          <QuestionCard error={entry.error} onReply={callbacks.onReply} />
+        </>
+      );
+    case "refusal":
+      return (
+        <>
+          <p className="msg__who">Studio</p>
+          <RefusalCard error={entry.error} what={entry.what} />
+        </>
+      );
+    case "candidate":
+      return (
+        <>
+          <p className="msg__who">Studio · candidate</p>
+          <CandidateCard
+            candidateId={entry.candidateId}
+            jobId={entry.jobId}
+            loadingSha={loadingSha}
+            onJobStatus={callbacks.onJobStatus}
+            onCandidate={callbacks.onCandidate}
+            onPreview={callbacks.onPreview}
+            onEvidence={callbacks.onEvidence}
+          />
+        </>
+      );
+    case "verdict":
+      return (
+        <>
+          <p className="msg__who">Studio · verdict</p>
+          <VerdictCard
+            candidateId={entry.candidateId}
+            onValidation={callbacks.onValidation}
+            onEvidence={callbacks.onEvidence}
+          />
+        </>
+      );
+  }
+}
