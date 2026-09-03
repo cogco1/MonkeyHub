@@ -30,7 +30,7 @@ class StudioEventDto(BaseModel):
     at: str = Field(description="when the event was published, UTC ISO-8601")
     type: str = Field(
         description="candidate.queued | candidate.running | "
-        "candidate.succeeded | candidate.failed",
+        "candidate.succeeded | candidate.failed | validation.computed",
     )
     job_id: str | None = Field(alias="jobId", default=None)
     candidate_id: str | None = Field(alias="candidateId", default=None)
@@ -38,6 +38,17 @@ class StudioEventDto(BaseModel):
     run_id: str | None = Field(alias="runId", default=None)
     wall_time_s: float | None = Field(alias="wallTimeS", default=None)
     error: str | None = Field(default=None)
+    advance: bool | None = Field(
+        default=None,
+        description="on validation.computed, the server's verdict; null on "
+        "the lifecycle events, which decide nothing",
+    )
+    blocked_by: list[str] | None = Field(
+        alias="blockedBy",
+        default=None,
+        description="on validation.computed, the clauses that refused. An "
+        "empty list is a real answer and is not the same as null",
+    )
 
 
 def to_dto(event: Mapping[str, Any]) -> StudioEventDto:
@@ -53,4 +64,6 @@ def to_dto(event: Mapping[str, Any]) -> StudioEventDto:
         run_id=event.get("run_id"),
         wall_time_s=event.get("wall_time_s"),
         error=event.get("error"),
+        advance=event.get("advance"),
+        blocked_by=event.get("blocked_by"),
     )

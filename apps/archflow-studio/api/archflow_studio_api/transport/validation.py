@@ -1,0 +1,146 @@
+"""The wire form of one candidate's validation: a receipt, and a verdict.
+
+Three things this shape refuses to let a client do.
+
+It cannot read the receipt as proof of more than was checked: ``validators``
+names every gate that ran, ``effectiveChecks`` names the one that had anything
+to check, and ``validatorNote`` and ``canonicalFacts`` say in words why the two
+lists differ. A client that shows "validation passed" without showing those is
+showing a claim the server never made.
+
+It cannot derive the verdict itself. ``advance`` and ``blockedBy`` are issued
+here; the browser is never given the four clauses to combine on its own, and
+``blockedBy`` names the failing ones so a refusal is actionable rather than
+merely red.
+
+And it cannot lose a state: ``relationChecks`` is the candidate's own
+three-state block, the same object the candidate readout serves, so nothing
+unchecked can be rounded up to held on the way through.
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from ..application.validation import (
+    CANONICAL_FACTS,
+    EFFECTIVE_CHECKS,
+    VALIDATOR_NAMES,
+    VALIDATOR_NOTE,
+    CandidateValidation,
+)
+from archflow.validation.model import ValidationReceipt
+
+from .candidate import RelationChecksDto, relations_dto
+from .project import HeadDto
+
+
+class ValidationFindingDto(BaseModel):
+    """One finding, in the kernel's own words."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    code: str
+    message: str
+    severity: str = Field(description="error | warning")
+
+
+class ValidationReceiptDto(BaseModel):
+    """The kernel's receipt, unedited."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    receipt_id: str = Field(alias="receiptId")
+    submission_id: str = Field(alias="submissionId")
+    submission_digest: str = Field(
+        alias="submissionDigest",
+        description="the exact submission content these gates examined",
+    )
+    checked_state: HeadDto = Field(
+        alias="checkedState",
+        description="the canonical version the submission was checked against",
+    )
+    passed: bool
+    findings: list[ValidationFindingDto] = Field(
+        description="every finding the gates returned; empty is a real answer",
+    )
+
+
+class ValidationDto(BaseModel):
+    """The wire form of ``GET /api/candidates/{id}/validation``."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    candidate_id: str = Field(alias="candidateId")
+    receipt: ValidationReceiptDto
+    canonical_facts: str = Field(
+        alias="canonicalFacts",
+        description="what the checked canonical state could supply; a "
+        "ref-only HEAD supplies no facts, and this says so rather than "
+        "letting an empty state read as a clean one",
+    )
+    validators: list[str] = Field(
+        description="every gate that ran, in the order it ran",
+    )
+    effective_checks: list[str] = Field(
+        alias="effectiveChecks",
+        description="the gates that had anything to check on this state; "
+        "narrower than validators, and never to be shown as equal to it",
+    )
+    validator_note: str = Field(
+        alias="validatorNote",
+        description="why the two lists differ, in a line the UI shows verbatim",
+    )
+    relation_checks: RelationChecksDto = Field(
+        alias="relationChecks",
+        description="the candidate's own three states, copied not recomputed",
+    )
+    seat_execution_complete: bool = Field(alias="seatExecutionComplete")
+    advance: bool = Field(
+        description="the server's verdict: every one of the four clauses "
+        "holds. It is issued here and never derived by a client",
+    )
+    blocked_by: list[str] = Field(
+        alias="blockedBy",
+        description="each clause that refused, by name: validation.receipt, "
+        "runner.seat_execution_complete, relations.held, "
+        "relations.fully_checked",
+    )
+
+
+def to_dto(validation: CandidateValidation) -> ValidationDto:
+    """Shape one validation for the wire; the receipt travels as it came."""
+
+    return ValidationDto(
+        candidate_id=validation.candidate_id,
+        receipt=_receipt_dto(validation.receipt),
+        canonical_facts=CANONICAL_FACTS,
+        validators=list(VALIDATOR_NAMES),
+        effective_checks=list(EFFECTIVE_CHECKS),
+        validator_note=VALIDATOR_NOTE,
+        relation_checks=relations_dto(validation.relation_checks),
+        seat_execution_complete=validation.seat_execution_complete,
+        advance=validation.advance,
+        blocked_by=list(validation.blocked_by),
+    )
+
+
+def _receipt_dto(receipt: ValidationReceipt) -> ValidationReceiptDto:
+    return ValidationReceiptDto(
+        receipt_id=receipt.receipt_id,
+        submission_id=receipt.submission_id,
+        submission_digest=receipt.submission_digest,
+        checked_state=HeadDto(
+            version=receipt.checked_state.version,
+            state_sha256=receipt.checked_state.state_sha256,
+        ),
+        passed=receipt.passed,
+        findings=[
+            ValidationFindingDto(
+                code=finding.code,
+                message=finding.message,
+                severity=finding.severity.value,
+            )
+            for finding in receipt.findings
+        ],
+    )

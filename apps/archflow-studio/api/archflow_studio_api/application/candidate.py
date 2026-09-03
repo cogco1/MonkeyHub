@@ -27,7 +27,7 @@ from typing import Any, Mapping
 from archflow.capabilities.geometry_proposal import (
     GeometryProposalProviderIdentity,
 )
-from archflow.project.refs import ProjectVersionRef
+from archflow.project.refs import ProjectRecordRef, ProjectVersionRef
 from archflow.runtime.project_runner import RunOptions, run_project
 from archflow.state.state_record import StateRecord, developed_design_view
 
@@ -219,7 +219,9 @@ class CandidateRun:
     state_digest: str | None
     record_digest: str | None
     changed_vs_projection: bool | None
-    receipt_ref: str | None
+    # The record this readout was made from; a candidate that could not name
+    # one is a 404, so this is never absent.
+    receipt_ref: str
     seat_execution_complete: bool
     seat_results: tuple[SeatOutcome, ...]
     relation_checks: RelationTotals
@@ -258,7 +260,7 @@ def describe(
             f"Poll GET /api/jobs/{job_id} and read the candidate when it "
             "reports succeeded.",
         )
-    receipt = _receipt(binding, candidate_id)
+    retained, receipt = _receipt(binding, candidate_id)
     seat_rows = _rows(receipt.get("seat_results"))
     record_digest = _text(receipt.get("state_record_digest"))
     projection = project_state(binding)
@@ -278,7 +280,11 @@ def describe(
             if record_digest is None
             else record_digest != projection.record_digest
         ),
-        receipt_ref=_text(receipt.get("receipt_ref")),
+        # The runner writes ``receipt_ref`` into the mapping it returns and
+        # not into the record it retains, so a run read back off disk names
+        # nothing. The retained record's own ref is that same URI, and naming
+        # it is the difference between evidence and a null.
+        receipt_ref=_text(receipt.get("receipt_ref")) or retained.uri,
         seat_execution_complete=bool(receipt.get("seat_execution_complete")),
         seat_results=tuple(
             SeatOutcome(
@@ -336,17 +342,24 @@ def _honesty(
     return ()
 
 
-def _receipt(binding: ProjectBinding, run_id: str) -> Mapping[str, Any]:
-    """The run's newest ``runner-run-receipt``, or a 404 that says why not."""
+def _receipt(
+    binding: ProjectBinding, run_id: str
+) -> tuple[ProjectRecordRef, Mapping[str, Any]]:
+    """The run's newest ``runner-run-receipt``, or a 404 that says why not.
 
-    newest: tuple[float, Mapping[str, Any]] | None = None
+    The ref travels with the payload because the receipt does not name itself
+    on disk, and a candidate has to be able to say which record it was read
+    from.
+    """
+
+    newest: tuple[float, ProjectRecordRef, Mapping[str, Any]] | None = None
     for ref in binding.record_refs(run_id):
         if record_kind(ref) != RUNNER_RECEIPT_KIND:
             continue
         mtime = binding.repository.layout.resolve_record(ref).stat().st_mtime
         payload = binding.repository.load_json(ref)
         if newest is None or mtime > newest[0]:
-            newest = (mtime, payload)
+            newest = (mtime, ref, payload)
     if newest is None:
         raise StudioError(
             404,
@@ -355,7 +368,7 @@ def _receipt(binding: ProjectBinding, run_id: str) -> Mapping[str, Any]:
             f"{RUNNER_RECEIPT_KIND}, so there is no candidate to read. A run "
             "that failed leaves its reason on its job, not a candidate.",
         )
-    return newest[1]
+    return newest[1], newest[2]
 
 
 def _relation_totals(

@@ -119,7 +119,10 @@ class CandidateDto(BaseModel):
         "project's current projection; null when the receipt names no "
         "record digest",
     )
-    receipt_ref: str | None = Field(alias="receiptRef")
+    receipt_ref: str = Field(
+        alias="receiptRef",
+        description="the retained runner receipt this readout was made from",
+    )
     seat_execution_complete: bool = Field(alias="seatExecutionComplete")
     seat_results: list[CandidateSeatResultDto] = Field(alias="seatResults")
     relation_checks: RelationChecksDto = Field(alias="relationChecks")
@@ -181,7 +184,7 @@ def to_dto(candidate: CandidateRun) -> CandidateDto:
         receipt_ref=candidate.receipt_ref,
         seat_execution_complete=candidate.seat_execution_complete,
         seat_results=[_seat_dto(seat) for seat in candidate.seat_results],
-        relation_checks=_relations_dto(candidate.relation_checks),
+        relation_checks=relations_dto(candidate.relation_checks),
         artifacts=[
             artifact_dto(record) for record in candidate.artifacts
         ],
@@ -203,7 +206,13 @@ def _seat_dto(seat: SeatOutcome) -> CandidateSeatResultDto:
     )
 
 
-def _relations_dto(totals: RelationTotals) -> RelationChecksDto:
+def relations_dto(totals: RelationTotals) -> RelationChecksDto:
+    """Shape the three-state block for the wire.
+
+    Public because the validation readout carries the *same* block: a candidate
+    and its verdict must not be able to disagree about what held.
+    """
+
     return RelationChecksDto(
         held=totals.held,
         violated=totals.violated,
