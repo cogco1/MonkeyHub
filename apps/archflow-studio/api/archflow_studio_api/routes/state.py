@@ -7,7 +7,6 @@ from starlette.requests import Request
 
 from ..application.binding import bound_project
 from ..application.projection import project_state
-from ..transport.errors import StudioErrorDto
 from ..transport.state import StateProjectionDto, to_dto
 
 router = APIRouter(tags=["state"])
@@ -17,15 +16,6 @@ router = APIRouter(tags=["state"])
     "/state",
     response_model=StateProjectionDto,
     response_model_by_alias=True,
-    responses={
-        404: {"model": StudioErrorDto},
-        # This route takes a query parameter, so FastAPI would otherwise
-        # document its own validation shape here; the service answers 422 in
-        # the one Studio error shape like everything else.
-        422: {"model": StudioErrorDto},
-        503: {"model": StudioErrorDto},
-    },
-    summary="Project the authored State Record against one run",
 )
 def read_state(
     request: Request,

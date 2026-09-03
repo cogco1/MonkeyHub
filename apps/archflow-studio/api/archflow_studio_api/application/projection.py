@@ -27,7 +27,7 @@ from archflow.state.state_record import (
     developed_design_view,
 )
 
-from ..transport.errors import NotFound
+from ..transport.errors import StudioError
 from .binding import ProjectBinding, ReferenceRun
 
 # Where a project keeps the record the runner executes. It is authored input,
@@ -149,7 +149,8 @@ def project_state(
 def _load_authored_record(binding: ProjectBinding) -> StateRecord:
     path = binding.repository.layout.resolve_relative(RUNNER_RECORD_PATH)
     if not path.is_file():
-        raise NotFound(
+        raise StudioError(
+            404,
             "STATE_RECORD_NOT_FOUND",
             f"{binding.project_id}: no authored state record at "
             f"{RUNNER_RECORD_PATH} under {binding.project_dir}",

@@ -16,8 +16,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..application.projection import RUNNER_RECORD_PATH, StateProjection
 from .project import HeadDto, ReferenceRunDto, head_dto, reference_run_dto
 
-STATE_SCHEMA = "StudioStateProjection@2"
-
 
 class ReferenceReceiptDto(BaseModel):
     """What the reference run's own receipt says it executed."""
@@ -25,9 +23,10 @@ class ReferenceReceiptDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     run_id: str = Field(alias="runId")
-    # The receipt's schema, not this DTO's: a run may have been executed by an
-    # older runner and the client should see which one.
-    receipt_schema: str | None = Field(alias="schema")
+    # Which runner wrote the receipt, read off the record on disk. Named
+    # ``receiptSchema`` rather than ``schema`` so it cannot be mistaken for a
+    # schema tag on this payload: the API stamps none.
+    receipt_schema: str | None = Field(alias="receiptSchema")
     design_state_digest: str | None = Field(alias="designStateDigest")
 
 
@@ -110,7 +109,6 @@ class StateProjectionDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
-    schema_id: str = Field(default=STATE_SCHEMA, alias="schema")
     project_id: str = Field(alias="projectId")
     head: HeadDto
     reference_run: ReferenceRunDto = Field(alias="referenceRun")

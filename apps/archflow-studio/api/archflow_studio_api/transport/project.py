@@ -13,8 +13,6 @@ from archflow.project.refs import ProjectVersionRef
 
 from ..application.binding import ProjectBinding, ReferenceRun
 
-PROJECT_SCHEMA = "ProjectBinding@1"
-
 
 class HeadDto(BaseModel):
     """One canonical project version."""
@@ -40,15 +38,10 @@ class ProjectBindingDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
-    schema_id: str = Field(default=PROJECT_SCHEMA, alias="schema")
     project_id: str = Field(alias="projectId")
     project_dir: str = Field(alias="projectDir")
     head: HeadDto
     reference_run: ReferenceRunDto = Field(alias="referenceRun")
-    canonical_write_authority: bool = Field(
-        default=False,
-        alias="canonicalWriteAuthority",
-    )
 
 
 def head_dto(head: ProjectVersionRef) -> HeadDto:

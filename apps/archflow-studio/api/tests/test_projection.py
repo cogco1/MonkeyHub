@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
@@ -29,7 +30,7 @@ from .support import (
 class StateProjectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())
-        self.addCleanup(_remove_tree, self.root)
+        self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
         self.settings = StudioSettings(project_dir=self.root / PROJECT_ID)
         self.client = TestClient(create_app(self.settings))
@@ -69,10 +70,7 @@ class StateProjectionTests(unittest.TestCase):
             self.payload["recordDigest"],
         )
 
-    def test_the_projection_names_the_schema_source_and_phase(self) -> None:
-        self.assertEqual(
-            self.payload["schema"], "StudioStateProjection@2"
-        )
+    def test_the_projection_names_its_source_and_phase(self) -> None:
         self.assertEqual(self.payload["projectId"], PROJECT_ID)
         self.assertEqual(
             self.payload["recordSource"], RUNNER_RECORD_PATH
@@ -88,7 +86,7 @@ class StateProjectionTests(unittest.TestCase):
         )
         receipt = self.payload["referenceReceipt"]
         self.assertEqual(receipt["runId"], REFERENCE_RUN_ID)
-        self.assertEqual(receipt["schema"], "RunnerRunReceipt@3")
+        self.assertEqual(receipt["receiptSchema"], "RunnerRunReceipt@3")
         self.assertEqual(
             receipt["designStateDigest"], self.payload["stateDigest"]
         )
@@ -229,7 +227,6 @@ class StateProjectionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         payload = response.json()
-        self.assertEqual(payload["schema"], "StudioError@1")
         self.assertEqual(payload["code"], "RUN_NOT_FOUND")
         self.assertIn("run-nowhere", payload["detail"])
 
@@ -251,7 +248,7 @@ class StateProjectionTests(unittest.TestCase):
 class DisagreeingReceiptTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())
-        self.addCleanup(_remove_tree, self.root)
+        self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(
             self.root, design_state_digest="0" * 64
         )
@@ -279,7 +276,7 @@ class DisagreeingReceiptTests(unittest.TestCase):
 class ProjectionWithoutAnyRunTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())
-        self.addCleanup(_remove_tree, self.root)
+        self.addCleanup(shutil.rmtree, self.root, True)
         self.repository = make_empty_project(self.root)
         self.client = TestClient(
             create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
@@ -304,12 +301,6 @@ class ProjectionWithoutAnyRunTests(unittest.TestCase):
             "run id; its digests are not comparable to any receipt",
             payload["honesty"],
         )
-
-
-def _remove_tree(root: Path) -> None:
-    import shutil
-
-    shutil.rmtree(root, ignore_errors=True)
 
 
 if __name__ == "__main__":

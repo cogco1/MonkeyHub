@@ -24,7 +24,7 @@ from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.project.repository import FilesystemProjectRepository
 
 from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
-from ..transport.errors import NotBound, NotFound
+from ..transport.errors import StudioError
 
 # ``<kind>-<64 hex>.json``. The kind is compared by equality: a prefix test
 # would let ``runner-run-receipt-summary`` answer as a run receipt.
@@ -91,9 +91,11 @@ class ProjectBinding:
                 local_projects_root=project_dir.parent,
             )
         except Exception as exc:  # the reason belongs on the wire, not in a log
-            raise NotBound(
+            raise StudioError(
+                503,
+                "PROJECT_NOT_BOUND",
                 f"{project_dir}: {exc}. The Studio API binds the project named "
-                f"by {PROJECT_DIR_ENV} or --project-dir; it never guesses one."
+                f"by {PROJECT_DIR_ENV} or --project-dir; it never guesses one.",
             ) from exc
         return cls(
             repository,
@@ -121,7 +123,8 @@ class ProjectBinding:
         try:
             return self.repository.load_run(run_id)
         except Exception as exc:
-            raise NotFound(
+            raise StudioError(
+                404,
                 "RUN_NOT_FOUND",
                 f"{self.project_id}: run {run_id!r} does not exist in "
                 f"{self.project_dir}: {exc}",
@@ -166,8 +169,9 @@ class ProjectBinding:
         if configured is not None:
             try:
                 run = self.load_run(configured)
-            except NotFound as exc:
-                raise NotFound(
+            except StudioError as exc:
+                raise StudioError(
+                    404,
                     "RUN_NOT_FOUND",
                     f"{REFERENCE_RUN_ENV} names run {configured!r}, which does "
                     f"not exist in {self.project_dir}: {exc.detail}",
