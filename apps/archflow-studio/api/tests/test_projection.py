@@ -21,9 +21,14 @@ from .support import (
     PROJECT_ID,
     REFERENCE_RUN_ID,
     RUNNER_RECORD_PATH,
+    STRIPPED_RECORD_PAYLOAD,
     add_harness_run,
+    add_later_run,
+    add_unreadable_run,
     make_empty_project,
     make_project,
+    missing_workflow_ref,
+    write_runner_record,
 )
 
 
@@ -59,15 +64,9 @@ class StateProjectionTests(unittest.TestCase):
         ).state_digest
 
         self.assertEqual(self.payload["stateDigest"], expected)
+        # The record's content identity, read off the same bound record.
         self.assertEqual(
             self.payload["recordDigest"], authored.bound_to(run).digest
-        )
-        self.assertEqual(
-            self.payload["authoredRecordDigest"], authored.digest
-        )
-        self.assertNotEqual(
-            self.payload["authoredRecordDigest"],
-            self.payload["recordDigest"],
         )
 
     def test_the_projection_names_its_source_and_phase(self) -> None:
@@ -299,6 +298,201 @@ class ProjectionWithoutAnyRunTests(unittest.TestCase):
         self.assertIn(
             "no eligible reference run: projection bound to the studio "
             "run id; its digests are not comparable to any receipt",
+            payload["honesty"],
+        )
+
+    def test_a_record_declaring_nothing_says_what_it_cannot_check(
+        self,
+    ) -> None:
+        write_runner_record(self.repository, STRIPPED_RECORD_PAYLOAD)
+
+        payload = self.client.get("/api/state").json()
+
+        self.assertEqual(payload["counts"]["parameters"], 0)
+        self.assertEqual(payload["counts"]["relations"], 0)
+        self.assertEqual(payload["counts"]["dependencyEdges"], 0)
+        for line in (
+            "0 parameters declared: parameter intents will be "
+            "BLOCKED_NEEDS_HUMAN",
+            "0 relations declared: relation checks are unchecked by "
+            "construction",
+            "0 dependency edges: impact closure is direct-only",
+        ):
+            self.assertIn(line, payload["honesty"])
+
+
+class UnreadableRunTests(unittest.TestCase):
+    """One corrupt run directory must not cost the client every answer."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root)
+        self.broken = add_unreadable_run(self.repository)
+        self.client = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(self.client.close)
+
+    def test_the_binding_still_answers_with_the_rules_pick(self) -> None:
+        response = self.client.get("/api/project")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["referenceRun"]["runId"], REFERENCE_RUN_ID
+        )
+
+    def test_the_projection_answers_and_names_what_it_skipped(self) -> None:
+        response = self.client.get("/api/state")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            payload["referenceRun"]["runId"], REFERENCE_RUN_ID
+        )
+        self.assertIn(
+            "1 run directories could not be read and were skipped by the "
+            f"reference-run rule: {self.broken}",
+            payload["honesty"],
+        )
+
+    def test_a_run_the_caller_names_must_still_exist(self) -> None:
+        response = self.client.get(
+            "/api/state", params={"run": self.broken}
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["code"], "RUN_NOT_FOUND")
+
+
+class MalformedRecordTests(unittest.TestCase):
+    """A record that is there but unreadable is a project fault, not a bug."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root)
+        self.client = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(self.client.close)
+
+    def _write(self, text: str) -> None:
+        self.repository.layout.resolve_relative(
+            RUNNER_RECORD_PATH
+        ).write_text(text, encoding="utf-8")
+
+    def test_a_truncated_record_is_a_422(self) -> None:
+        self._write('{"schema": "StateRecord@1", "project_id": "demo')
+
+        response = self.client.get("/api/state")
+
+        self.assertEqual(response.status_code, 422)
+        payload = response.json()
+        self.assertEqual(payload["code"], "STATE_RECORD_INVALID")
+        self.assertIn(RUNNER_RECORD_PATH, payload["detail"])
+
+    def test_a_record_whose_schema_drifted_is_a_422(self) -> None:
+        self._write(json.dumps({"schema": "StateRecord@99", "entities": []}))
+
+        response = self.client.get("/api/state")
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.json()["code"], "STATE_RECORD_INVALID"
+        )
+
+    def test_a_record_missing_a_required_field_is_a_422(self) -> None:
+        self._write(json.dumps({"schema": "StateRecord@1"}))
+
+        response = self.client.get("/api/state")
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.json()["code"], "STATE_RECORD_INVALID"
+        )
+
+
+class HarnessRuleTests(unittest.TestCase):
+    """The rule excludes harness runs positively, and nothing else."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root)
+        self.client = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(self.client.close)
+
+    def test_a_newer_run_with_a_project_workflow_becomes_the_reference(
+        self,
+    ) -> None:
+        add_later_run(
+            self.repository,
+            run_id="run-003",
+            workflow_id="villa-project-workflow",
+        )
+
+        payload = self.client.get("/api/state").json()
+
+        self.assertEqual(payload["referenceRun"]["runId"], "run-003")
+        self.assertEqual(payload["referenceRunSource"], "rule")
+
+    def test_a_newer_harness_run_is_excluded(self) -> None:
+        add_harness_run(self.repository)
+
+        payload = self.client.get("/api/state").json()
+
+        self.assertEqual(
+            payload["referenceRun"]["runId"], REFERENCE_RUN_ID
+        )
+
+    def test_a_workflow_that_will_not_load_stays_eligible_and_says_so(
+        self,
+    ) -> None:
+        add_later_run(
+            self.repository,
+            run_id="run-004",
+            workflow_ref=missing_workflow_ref("run-004"),
+        )
+
+        payload = self.client.get("/api/state").json()
+
+        self.assertEqual(payload["referenceRun"]["runId"], "run-004")
+        self.assertIn(
+            "reference run's workflow record could not be loaded; harness "
+            "status unknown",
+            payload["honesty"],
+        )
+
+
+class ReceiptWithoutADigestTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root, design_state_digest=None)
+        self.client = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(self.client.close)
+
+    def test_a_receipt_claiming_no_digest_leaves_the_check_unmade(
+        self,
+    ) -> None:
+        payload = self.client.get("/api/state").json()
+
+        self.assertEqual(
+            payload["referenceRun"]["runId"], REFERENCE_RUN_ID
+        )
+        self.assertIsNone(
+            payload["referenceReceipt"]["designStateDigest"]
+        )
+        # Unchecked is not violated: no mismatch line either.
+        self.assertIsNone(payload["matchesReferenceReceipt"])
+        self.assertNotIn(
+            "projection digest differs from the reference receipt: the "
+            f"authored record is not what run {REFERENCE_RUN_ID} executed",
             payload["honesty"],
         )
 

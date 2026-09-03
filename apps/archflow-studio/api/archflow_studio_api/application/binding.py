@@ -21,7 +21,10 @@ from starlette.datastructures import State
 from archflow.project.location import open_located_project
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
-from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.repository import (
+    FilesystemProjectRepository,
+    ProjectRepositoryError,
+)
 
 from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
 from ..transport.errors import StudioError
@@ -53,6 +56,12 @@ class ReferenceRun:
     run: RunRef
     source: str
     receipt: Mapping[str, Any] | None
+    # Run directories the survey could not read. One corrupt run must not cost
+    # the client every answer, but the skip is never silent.
+    skipped_runs: tuple[str, ...] = ()
+    # The chosen receipt names a workflow that would not load, so whether the
+    # run was a harness is unknown rather than settled.
+    workflow_unresolved: bool = False
 
 
 def record_kind(ref: ProjectRecordRef) -> str | None:
@@ -145,9 +154,31 @@ class ProjectBinding:
     ) -> tuple[str, ProjectRecordRef, Mapping[str, Any]] | None:
         """The newest complete, non-harness runner receipt in the project."""
 
+        return self._survey()[0]
+
+    def _survey(
+        self,
+    ) -> tuple[
+        tuple[str, ProjectRecordRef, Mapping[str, Any]] | None,
+        tuple[str, ...],
+    ]:
+        """Survey the runs for a reference, reporting what could not be read.
+
+        Choosing a reference run is a survey, not a transaction: one run
+        directory without a manifest, or with a record the repository refuses,
+        must not cost the client every other answer in the project. Such a run
+        is skipped and named, and the projection says how many were skipped.
+        """
+
         newest: tuple[float, str, ProjectRecordRef, Mapping[str, Any]] | None = None
+        skipped: list[str] = []
         for run_id in self.run_ids():
-            for ref, payload in self._receipts_of(run_id):
+            try:
+                receipts = self._receipts_of(run_id)
+            except (StudioError, ProjectRepositoryError, ValueError, OSError):
+                skipped.append(run_id)
+                continue
+            for ref, payload in receipts:
                 if not _is_complete(payload):
                     continue
                 if self._is_harness(payload):
@@ -155,16 +186,16 @@ class ProjectBinding:
                 mtime = self.repository.layout.resolve_record(ref).stat().st_mtime
                 if newest is None or mtime > newest[0]:
                     newest = (mtime, run_id, ref, payload)
-        if newest is None:
-            return None
-        return newest[1], newest[2], newest[3]
+        chosen = None if newest is None else (newest[1], newest[2], newest[3])
+        return chosen, tuple(skipped)
 
     def reference_run(self, run_id: str | None = None) -> ReferenceRun:
         """Resolve which run answers: the request, the operator, then the rule."""
 
         if run_id is not None:
-            run = self.load_run(run_id)
-            return ReferenceRun(run, "query", self._newest_receipt_of(run_id))
+            # An explicitly named run must exist; the survey's tolerance is for
+            # runs nobody asked about.
+            return self._chosen(self.load_run(run_id), "query", run_id)
         configured = self.settings.reference_run
         if configured is not None:
             try:
@@ -176,8 +207,8 @@ class ProjectBinding:
                     f"{REFERENCE_RUN_ENV} names run {configured!r}, which does "
                     f"not exist in {self.project_dir}: {exc.detail}",
                 ) from exc
-            return ReferenceRun(run, "config", self._newest_receipt_of(configured))
-        chosen = self.latest_runner_receipt()
+            return self._chosen(run, "config", configured)
+        chosen, skipped = self._survey()
         if chosen is None:
             # No run has finished design work here. Rather than refuse to
             # describe the project, bind to a run id that claims nothing.
@@ -185,8 +216,28 @@ class ProjectBinding:
                 RunRef(self.project_id, STUDIO_RUN_ID, self.head()),
                 "none",
                 None,
+                skipped_runs=skipped,
             )
-        return ReferenceRun(self.load_run(chosen[0]), "rule", chosen[2])
+        return ReferenceRun(
+            self.load_run(chosen[0]),
+            "rule",
+            chosen[2],
+            skipped_runs=skipped,
+            workflow_unresolved=self._workflow_unresolved(chosen[2]),
+        )
+
+    def _chosen(self, run: RunRef, source: str, run_id: str) -> ReferenceRun:
+        """A run the caller named, with whatever receipt it happens to hold."""
+
+        receipt = self._newest_receipt_of(run_id)
+        return ReferenceRun(
+            run,
+            source,
+            receipt,
+            workflow_unresolved=(
+                False if receipt is None else self._workflow_unresolved(receipt)
+            ),
+        )
 
     # ---- the rule's own reading of the run records
 
@@ -207,21 +258,41 @@ class ProjectBinding:
                 newest = (mtime, payload)
         return None if newest is None else newest[1]
 
-    def _is_harness(self, receipt: Mapping[str, Any]) -> bool:
-        """Whether the receipt's workflow says this run is a harness.
-
-        A receipt that names no workflow (``RunnerRunReceipt@1``) is a project
-        run. A receipt that names one the project cannot produce is treated as
-        a harness: the rule may not promote a run it cannot account for.
-        """
+    def _load_workflow(
+        self, receipt: Mapping[str, Any]
+    ) -> Mapping[str, Any] | None:
+        """The stage workflow the receipt names, or None if it does not resolve."""
 
         workflow_ref = receipt.get("workflow_ref")
         if workflow_ref is None:
-            return False
+            return None
         workflow = self._load_uri(workflow_ref)
         if workflow is None or workflow.get("schema") != STAGE_WORKFLOW_SCHEMA:
-            return True
-        return workflow.get("workflow_id") in HARNESS_WORKFLOW_IDS
+            return None
+        return workflow
+
+    def _is_harness(self, receipt: Mapping[str, Any]) -> bool:
+        """Whether the receipt's workflow says, positively, that it is a harness.
+
+        Harness runs are defined by what their workflow *is*, never by what it
+        might be: a receipt naming no workflow (``RunnerRunReceipt@1``), or one
+        whose workflow will not load, stays eligible. Excluding the unknown
+        would let one unreadable record silently disqualify a real design run.
+        """
+
+        workflow = self._load_workflow(receipt)
+        return (
+            workflow is not None
+            and workflow.get("workflow_id") in HARNESS_WORKFLOW_IDS
+        )
+
+    def _workflow_unresolved(self, receipt: Mapping[str, Any]) -> bool:
+        """The receipt names a workflow the project cannot produce."""
+
+        return (
+            receipt.get("workflow_ref") is not None
+            and self._load_workflow(receipt) is None
+        )
 
     def _load_uri(self, uri: object) -> Mapping[str, Any] | None:
         """Load a ``project://`` record reference, or None if it does not resolve."""

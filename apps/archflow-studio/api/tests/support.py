@@ -29,6 +29,10 @@ HARNESS_RUN_ID = "run-002"
 RUNNER_RECORD_PATH = "input/runner/state-record.json"
 EVIDENCE = "evidence:demo"
 
+# "compute the digest the way production does" — distinct from ``None``, which
+# is a receipt that deliberately claims no digest at all.
+COMPUTED = object()
+
 # The kwargs the project runner passes to ``developed_design_view``; the
 # projection has to reproduce this exact view or its digest names nothing.
 VIEW_KWARGS = {
@@ -166,10 +170,29 @@ RECORD_PAYLOAD: dict[str, object] = {
 }
 
 
+# The same record with nothing declared beyond its entities: no parameters, no
+# relations, and so no dependency edges. What a project looks like before
+# anyone has said how its quantities relate.
+STRIPPED_RECORD_PAYLOAD: dict[str, object] = {
+    key: value
+    for key, value in RECORD_PAYLOAD.items()
+    if key not in {"parameters", "relations"}
+}
+
+
 def run_records(run_id: str) -> PersistenceDestination:
     """The run-record area of one run."""
 
     return PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id)
+
+
+def missing_workflow_ref(run_id: str) -> str:
+    """A well-formed record URI for a workflow record that is not there."""
+
+    return (
+        f"project://{PROJECT_ID}/runs/{run_id}/records/"
+        f"project-stage-workflow-{'a' * 64}.json"
+    )
 
 
 def runner_state_digest(
@@ -206,18 +229,23 @@ def retain_runner_receipt(
     repository: FilesystemProjectRepository,
     run: RunRef,
     *,
-    design_state_digest: str,
+    design_state_digest: str | None,
     workflow_ref: str | None = None,
 ) -> ProjectRecordRef:
-    """Retain the receipt a completed runner run leaves behind."""
+    """Retain the receipt a completed runner run leaves behind.
+
+    ``design_state_digest=None`` writes a receipt that claims no digest, which
+    is what an older or interrupted runner can leave.
+    """
 
     payload: dict[str, object] = {
         "schema": "RunnerRunReceipt@3",
         "project_id": PROJECT_ID,
         "run_id": run.run_id,
         "seat_execution_complete": True,
-        "design_state_digest": design_state_digest,
     }
+    if design_state_digest is not None:
+        payload["design_state_digest"] = design_state_digest
     if workflow_ref is not None:
         payload["workflow_ref"] = workflow_ref
     return repository.put_json(
@@ -231,12 +259,13 @@ def retain_runner_receipt(
 def make_project(
     root: Path,
     *,
-    design_state_digest: str | None = None,
+    design_state_digest: object = COMPUTED,
 ) -> tuple[FilesystemProjectRepository, ProjectRecordRef]:
     """One initialized project with the authored record and one finished run.
 
-    ``design_state_digest`` overrides what the retained receipt claims the run
-    executed, so a test can watch the projection disagree with a receipt.
+    ``design_state_digest`` replaces what the retained receipt claims the run
+    executed — another digest, or ``None`` for a receipt that claims none — so
+    a test can watch the projection disagree with a receipt, or decline to.
     """
 
     project_dir = Path(root) / PROJECT_ID
@@ -257,9 +286,9 @@ def make_project(
         repository,
         run,
         design_state_digest=(
-            design_state_digest
-            if design_state_digest is not None
-            else runner_state_digest(repository, REFERENCE_RUN_ID)
+            runner_state_digest(repository, REFERENCE_RUN_ID)
+            if design_state_digest is COMPUTED
+            else design_state_digest
         ),
     )
     return repository, record_ref
@@ -278,47 +307,74 @@ def make_empty_project(root: Path) -> FilesystemProjectRepository:
     return repository
 
 
-def add_harness_run(
+def add_later_run(
     repository: FilesystemProjectRepository,
     *,
-    run_id: str = HARNESS_RUN_ID,
-    workflow_id: str = "equivalence-harness",
+    run_id: str,
+    workflow_id: str | None = None,
+    workflow_ref: str | None = None,
 ) -> RunRef:
-    """A newer, complete run whose workflow says it is a harness, not the design.
+    """A complete run whose receipt is stamped newer than everything else.
 
-    Its receipt is stamped strictly newer than every other file in the project
-    so "newest complete receipt" would pick it if the rule did not exclude
-    harness workflows.
+    ``workflow_id`` retains a real ``ProjectStageWorkflow`` and points the
+    receipt at it; ``workflow_ref`` points the receipt at a URI verbatim, which
+    is how a test builds a reference that will not resolve. The mtime is forced
+    forward so "newest complete receipt" would pick this run unless the rule
+    itself excludes it — the test then fails for the reason it names.
     """
 
     run = repository.create_run(run_id)
-    workflow = ProjectStageWorkflow(
-        project_id=PROJECT_ID,
-        workflow_id=workflow_id,
-        stages=(
-            ProjectStage(
-                stage_id="stage-0",
-                stage_index=0,
-                phase=DesignPhase.DESIGN_DEVELOPMENT,
-                required_roles=("seat-structure",),
-                required_checks=("relation-check",),
-                close_obligation_id="obligation-close-stage-0",
+    if workflow_id is not None:
+        workflow = ProjectStageWorkflow(
+            project_id=PROJECT_ID,
+            workflow_id=workflow_id,
+            stages=(
+                ProjectStage(
+                    stage_id="stage-0",
+                    stage_index=0,
+                    phase=DesignPhase.DESIGN_DEVELOPMENT,
+                    required_roles=("seat-structure",),
+                    required_checks=("relation-check",),
+                    close_obligation_id="obligation-close-stage-0",
+                ),
             ),
-        ),
-    )
-    workflow_ref = repository.put_json(
-        run=run,
-        destination=run_records(run_id),
-        record_kind="project-stage-workflow",
-        payload=workflow.to_dict(),
-    )
+        )
+        workflow_ref = repository.put_json(
+            run=run,
+            destination=run_records(run_id),
+            record_kind="project-stage-workflow",
+            payload=workflow.to_dict(),
+        ).uri
     receipt_ref = retain_runner_receipt(
         repository,
         run,
         design_state_digest=runner_state_digest(repository, run_id),
-        workflow_ref=workflow_ref.uri,
+        workflow_ref=workflow_ref,
     )
     receipt_path = repository.layout.resolve_record(receipt_ref)
     newest = receipt_path.stat().st_mtime + 60.0
     os.utime(receipt_path, (newest, newest))
     return run
+
+
+def add_harness_run(
+    repository: FilesystemProjectRepository,
+    *,
+    run_id: str = HARNESS_RUN_ID,
+) -> RunRef:
+    """A newer, complete run whose workflow says it is a harness, not the design."""
+
+    return add_later_run(
+        repository, run_id=run_id, workflow_id="equivalence-harness"
+    )
+
+
+def add_unreadable_run(
+    repository: FilesystemProjectRepository,
+    *,
+    run_id: str = "broken-run",
+) -> str:
+    """A run directory with no manifest: the repository cannot read it at all."""
+
+    (repository.layout.runs / run_id).mkdir(parents=True, exist_ok=True)
+    return run_id

@@ -6,6 +6,9 @@ hand-built base — the component tree comes from ``design_components_of``, the
 edges from ``StateRecord.dependency_edges`` and the digest from the same
 ``developed_design_view`` the project runner uses, so a projection and a run
 receipt name the same number or the difference is stated out loud.
+
+Two identities travel, not three: ``record.digest`` is the record's content and
+``state.state_digest`` is that content bound to a run. Neither is computed here.
 """
 
 from __future__ import annotations
@@ -61,7 +64,6 @@ class StateProjection:
     reference: ReferenceRun
     record: StateRecord
     state: DevelopedDesignState
-    authored_record_digest: str
     matches_reference_receipt: bool | None
     components: tuple[DesignComponent, ...] | None
     component_tree_error: str | None
@@ -72,13 +74,13 @@ class StateProjection:
 
     @property
     def record_digest(self) -> str:
-        """The bound record's content digest."""
+        """Content identity: what the record says, invariant under binding."""
 
         return self.record.digest
 
     @property
     def state_digest(self) -> str:
-        """The developed-design digest a runner receipt carries."""
+        """Binding identity: the digest runner receipts carry."""
 
         return self.state.state_digest
 
@@ -129,7 +131,6 @@ def project_state(
         reference=reference,
         record=record,
         state=state,
-        authored_record_digest=authored.digest,
         matches_reference_receipt=matches,
         components=components,
         component_tree_error=component_tree_error,
@@ -147,6 +148,13 @@ def project_state(
 
 
 def _load_authored_record(binding: ProjectBinding) -> StateRecord:
+    """The authored record, or a typed refusal naming what is wrong with it.
+
+    A record that is absent and a record that is unreadable are different
+    problems for whoever has to fix them, and neither is an API bug: the second
+    must not arrive as a 500 that says nothing.
+    """
+
     path = binding.repository.layout.resolve_relative(RUNNER_RECORD_PATH)
     if not path.is_file():
         raise StudioError(
@@ -155,7 +163,21 @@ def _load_authored_record(binding: ProjectBinding) -> StateRecord:
             f"{binding.project_id}: no authored state record at "
             f"{RUNNER_RECORD_PATH} under {binding.project_dir}",
         )
-    return StateRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    try:
+        return StateRecord.from_dict(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+    except (
+        json.JSONDecodeError,
+        StateRecordError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        raise StudioError(
+            422,
+            "STATE_RECORD_INVALID",
+            f"{RUNNER_RECORD_PATH}: {exc}",
+        ) from exc
 
 
 def _component_tree(
@@ -226,6 +248,17 @@ def _honesty(
         lines.append(
             "no eligible reference run: projection bound to the studio run "
             "id; its digests are not comparable to any receipt"
+        )
+    if reference.skipped_runs:
+        lines.append(
+            f"{len(reference.skipped_runs)} run directories could not be read "
+            "and were skipped by the reference-run rule: "
+            + ", ".join(reference.skipped_runs)
+        )
+    if reference.workflow_unresolved:
+        lines.append(
+            "reference run's workflow record could not be loaded; harness "
+            "status unknown"
         )
     if matches is False:
         lines.append(

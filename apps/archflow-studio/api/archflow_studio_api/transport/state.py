@@ -1,10 +1,9 @@
 """The wire form of one StateRecord projection.
 
-Three digests travel here and they are three different numbers:
-``authoredRecordDigest`` is the record as written (stable across runs),
-``recordDigest`` is that record bound to a run, and ``stateDigest`` is the
-developed-design view a runner receipt cites. Naming them apart is the whole
-point — a client that confused them would compare a project against itself.
+Two digests travel here and they answer different questions: ``recordDigest``
+is the record's content identity, and ``stateDigest`` is that content bound to
+a run — the number a runner receipt cites. Naming them apart is the whole
+point; a client that confused them would compare a project against itself.
 """
 
 from __future__ import annotations
@@ -75,7 +74,9 @@ class ParameterDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     key: str
-    value: float
+    # Authored quantities keep the type they were written with, like
+    # ``numericFields``: a parameter authored as 4 must not come back as 4.0.
+    value: int | float
     unit: str
     expr: str | None
     inputs: list[str]
@@ -120,9 +121,14 @@ class StateProjectionDto(BaseModel):
         alias="matchesReferenceReceipt"
     )
     record_source: str = Field(alias="recordSource")
-    authored_record_digest: str = Field(alias="authoredRecordDigest")
-    record_digest: str = Field(alias="recordDigest")
-    state_digest: str = Field(alias="stateDigest")
+    record_digest: str = Field(
+        alias="recordDigest",
+        description="content identity: invariant under binding",
+    )
+    state_digest: str = Field(
+        alias="stateDigest",
+        description="binding identity: the digest runner receipts carry",
+    )
     active_phase: str = Field(alias="activePhase")
     counts: CountsDto
     component_tree: list[ComponentNodeDto] | None = Field(
@@ -151,13 +157,18 @@ def to_dto(projection: StateProjection) -> StateProjectionDto:
         ),
         matches_reference_receipt=projection.matches_reference_receipt,
         record_source=RUNNER_RECORD_PATH,
-        authored_record_digest=projection.authored_record_digest,
         record_digest=projection.record_digest,
         state_digest=projection.state_digest,
         active_phase=projection.state.active_phase.value,
         counts=CountsDto(
             entities=len(record.entities),
-            components=len(record.entities_of("Component@1")),
+            # The kernel's tree is the count when it resolved; the raw entities
+            # answer only when there is no tree to count.
+            components=(
+                len(record.entities_of("Component@1"))
+                if projection.components is None
+                else len(projection.components)
+            ),
             parameters=len(record.parameters),
             relations=len(record.relations),
             obligations=len(record.obligations),
