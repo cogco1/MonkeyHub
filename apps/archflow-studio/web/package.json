@@ -1,0 +1,29 @@
+{
+  "name": "archflow-studio-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:rhino3dm": "node scripts/sync-rhino3dm.mjs",
+    "dev": "npm run sync:rhino3dm && vite",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run sync:rhino3dm && tsc --noEmit && vite build",
+    "api:dump": "py -3.12 scripts/dump-openapi.py",
+    "api:generate": "npm run api:dump && npm --prefix tools/openapi-ts exec -- openapi-ts -i .generated/openapi.json -o src/api/generated",
+    "api:check": "node scripts/check-generated.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "rhino3dm": "8.32.2",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@types/three": "0.185.4",
+    "@vitejs/plugin-react": "6.1.1",
+    "typescript": "7.0.2",
+    "vite": "8.2.2"
+  }
+}
