@@ -99,16 +99,19 @@ any reader it needs kept on the spine. P104, P107, P109, P110 are spine work and
 
 ## 3. The archive
 
-`archive/` at the repository root, one directory per lane, created at execution. Rules:
+`archive/` at the repository root, created at execution. The lanes share ninety-odd kernel
+modules (`control/`, `relations/`, `evidence/`, `validation/`), so the archive is one mirror of
+the tree, not one directory per lane. Rules:
 
-1. Moved with `git mv`; history is preserved. A moved module keeps its relative path under
-   the lane directory; imports among moved modules are rewritten to `archive.<lane>.…`;
-   imports of spine modules stay `archflow.…`. The spine never imports `archive` (an
-   `archcheck` rule enforces it).
-2. Each lane directory carries a `README.md`: what the lane was, its entry points, the probes
-   it reads, the tag at which it last ran green on `main`, and the command that runs it from
-   the archive.
-3. A lane's tests move to `archive/<lane>/tests/` and leave the main suite; they run on demand.
+1. Moved with `git mv`; history is preserved. A moved module keeps its relative path:
+   `archflow/control/baseline.py` becomes `archive/archflow/control/baseline.py`, a tool
+   becomes `archive/tools/<name>.py`. Imports among moved modules are rewritten
+   `archflow.…` → `archive.archflow.…`; imports of spine modules stay `archflow.…`. The spine
+   never imports `archive` (an `archcheck` rule enforces it).
+2. `archive/README.md` lists the lanes: what each was, its entry points, the probes it reads,
+   the tag at which it last ran green on `main` (`pre-spine`), and the command that runs it
+   from the archive.
+3. A lane's tests move to `archive/tests/` and leave the main suite; they run on demand.
 4. Nothing under `archive/` is a work-card target. A lane comes back only through a card that
    lands it on the spine, as a fold.
 
