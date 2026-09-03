@@ -5,8 +5,10 @@ schemas (level, grid axis, type, element, assembly, space, reading),
 parameters (named quantities with basis and lifecycle), relations (the
 architectural relation vocabulary with datum roles, propagation rules and
 validator bindings), obligations (open duties, separate from relations),
-evidence, provenance and stage / authority. Geometry programs, validation
-results, receipts and indexes are derived from it and never authoritative.
+evidence and provenance. Geometry programs, validation results, receipts and
+indexes are derived from it and never authoritative. It carries no stage: a
+stage is a property of the run that executes the record, stated by that run's
+retained ``StageRunEnvelope`` (ADR-007).
 
 The record is the canonical abstraction that retires the second design
 state model used by geometry production. Until every consumer reads it
@@ -244,22 +246,6 @@ class Relation:
                               source_ref=f"relation:{self.relation_id}", effect=effect)
 
 
-@dataclass(frozen=True, slots=True)
-class StageBinding:
-    workflow_ref: str | None = None
-    envelope_ref: str | None = None
-    stage_id: str | None = None
-    predecessor_exit_binding_ref: str | None = None
-
-    def to_dict(self) -> dict[str, object]:
-        return {"workflow_ref": self.workflow_ref, "envelope_ref": self.envelope_ref, "stage_id": self.stage_id, "predecessor_exit_binding_ref": self.predecessor_exit_binding_ref}
-
-    @classmethod
-    def from_dict(cls, value: object) -> "StageBinding":
-        value = value or {}
-        return cls(value.get("workflow_ref"), value.get("envelope_ref"), value.get("stage_id"), value.get("predecessor_exit_binding_ref"))
-
-
 @dataclass(frozen=True)
 class StateRecord:
     project_id: str
@@ -271,7 +257,6 @@ class StateRecord:
     evidence_refs: tuple[str, ...] = ()
     basis_refs: tuple[str, ...] = ()
     predecessor_ref: str | None = None
-    stage: StageBinding = field(default_factory=StageBinding)
     decision_ref: str | None = None
     invalidated_refs: tuple[str, ...] = ()
     option: Mapping[str, Any] = field(default_factory=dict)     # the declared selection: option_id, label, typology, rationale, footprint_cells, assumption_refs
@@ -455,7 +440,7 @@ class StateRecord:
         return {"schema": self.SCHEMA, "project_id": self.project_id, "run_id": self.run_id, "entities": [e.to_dict() for e in self.entities],
                 "parameters": [p.to_dict() for p in self.parameters], "relations": [r.to_dict() for r in self.relations],
                 "obligations": [o.to_dict() for o in self.obligations], "evidence_refs": list(self.evidence_refs), "basis_refs": list(self.basis_refs),
-                "predecessor_ref": self.predecessor_ref, "stage": self.stage.to_dict(), "decision_ref": self.decision_ref, "invalidated_refs": list(self.invalidated_refs),
+                "predecessor_ref": self.predecessor_ref, "decision_ref": self.decision_ref, "invalidated_refs": list(self.invalidated_refs),
                 "option": dict(self.option),
                 "base": None if self.base is None else {"project_id": self.base.project_id, "version": self.base.version, "state_sha256": self.base.state_sha256}}
 
@@ -463,10 +448,12 @@ class StateRecord:
     def from_dict(cls, value: object) -> "StateRecord":
         if not isinstance(value, Mapping) or value.get("schema") != cls.SCHEMA:
             raise StateRecordError("state record payload malformed")
+        if "stage" in value:
+            raise StateRecordError("stage is the run's, stated by its envelope (ADR-007); remove the key")
         return cls(value["project_id"], value["run_id"], tuple(Entity.from_dict(e) for e in value["entities"]),
                    tuple(Parameter.from_dict(p) for p in value.get("parameters", ())), tuple(Relation.from_dict(r) for r in value.get("relations", ())),
                    tuple(DesignObligation.from_dict(o) for o in value.get("obligations", ())), tuple(value.get("evidence_refs", ())), tuple(value.get("basis_refs", ())),
-                   value.get("predecessor_ref"), StageBinding.from_dict(value.get("stage")), value.get("decision_ref"), tuple(value.get("invalidated_refs", ())),
+                   value.get("predecessor_ref"), value.get("decision_ref"), tuple(value.get("invalidated_refs", ())),
                    dict(value.get("option", {})),
                    None if value.get("base") is None else ProjectVersionRef(value["base"]["project_id"], int(value["base"]["version"]), value["base"].get("state_sha256")))
 
@@ -476,7 +463,7 @@ class StateRecord:
         it is bound to. ``state_digest`` is the binding identity."""
 
         content = self.to_dict()
-        for binding_key in ("run_id", "base", "stage"):  # what binds the record, not what it says (ADR-003)
+        for binding_key in ("run_id", "base"):  # what binds the record, not what it says (ADR-003)
             del content[binding_key]
         return canonical_digest(content)
 

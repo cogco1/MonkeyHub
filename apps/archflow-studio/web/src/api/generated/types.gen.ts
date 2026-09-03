@@ -1340,26 +1340,6 @@ export type SeatTimingDto = {
 };
 
 /**
- * StageBindingDto
- *
- * Which stage the record is bound to; the nulls are the answer.
- */
-export type StageBindingDto = {
-    /**
-     * Workflowref
-     */
-    workflowRef: string | null;
-    /**
-     * Enveloperef
-     */
-    envelopeRef: string | null;
-    /**
-     * Stageid
-     */
-    stageId: string | null;
-};
-
-/**
  * StateProjectionDto
  *
  * The wire form of ``GET /api/state``.
@@ -1423,7 +1403,6 @@ export type StateProjectionDto = {
      * Dependencyedges
      */
     dependencyEdges: Array<DependencyEdgeDto>;
-    stageBinding: StageBindingDto;
     /**
      * Honesty
      */

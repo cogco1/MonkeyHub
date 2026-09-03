@@ -205,17 +205,9 @@ class StateProjectionTests(unittest.TestCase):
             ],
         )
 
-    def test_the_stage_binding_keeps_its_nulls(self) -> None:
-        self.assertEqual(
-            self.payload["stageBinding"],
-            {"workflowRef": None, "envelopeRef": None, "stageId": None},
-        )
-
-    def test_honesty_says_the_record_carries_no_stage_binding(self) -> None:
-        self.assertIn(
-            "no stage binding on the authored record",
-            self.payload["honesty"],
-        )
+    def test_honesty_is_silent_about_a_record_that_declares_parameters(
+        self,
+    ) -> None:
         self.assertNotIn(
             "0 parameters declared: parameter intents will be "
             "BLOCKED_NEEDS_HUMAN",

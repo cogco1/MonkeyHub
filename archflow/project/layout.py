@@ -12,6 +12,12 @@ from archflow.project.refs import (
     require_project_relative_path,
 )
 
+# The two files the designer authors: the work-in-progress container (ADR-007).
+# They are named here because the layout owns a project's on-disk names, and
+# read in exactly one place, ``archflow.project.inputs``.
+AUTHORED_RECORD_PATH = "input/runner/state-record.json"
+SEAT_PACK_PATH = "input/runner/seats.json"
+
 
 @dataclass(frozen=True, slots=True)
 class RunLayout:
@@ -66,6 +72,18 @@ class ProjectLayout:
     @property
     def inputs(self) -> Path:
         return self.root / "input"
+
+    @property
+    def authored_record(self) -> Path:
+        """The designer's authored ``StateRecord@1``: work in progress."""
+
+        return self.resolve_relative(AUTHORED_RECORD_PATH)
+
+    @property
+    def seat_pack(self) -> Path:
+        """The seats the designer authored, beside the record."""
+
+        return self.resolve_relative(SEAT_PACK_PATH)
 
     @property
     def objects(self) -> Path:

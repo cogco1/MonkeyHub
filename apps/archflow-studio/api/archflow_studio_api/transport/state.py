@@ -12,7 +12,9 @@ from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.projection import RUNNER_RECORD_PATH, StateProjection
+from archflow.project.layout import AUTHORED_RECORD_PATH
+
+from ..application.projection import StateProjection
 from .project import HeadDto, ReferenceRunDto, head_dto, reference_run_dto
 
 
@@ -95,16 +97,6 @@ class DependencyEdgeDto(BaseModel):
     effect: str
 
 
-class StageBindingDto(BaseModel):
-    """Which stage the record is bound to; the nulls are the answer."""
-
-    model_config = ConfigDict(populate_by_name=True, frozen=True)
-
-    workflow_ref: str | None = Field(alias="workflowRef")
-    envelope_ref: str | None = Field(alias="envelopeRef")
-    stage_id: str | None = Field(alias="stageId")
-
-
 class StateProjectionDto(BaseModel):
     """The wire form of ``GET /api/state``."""
 
@@ -144,7 +136,6 @@ class StateProjectionDto(BaseModel):
     elements: list[ElementDto]
     parameters: list[ParameterDto]
     dependency_edges: list[DependencyEdgeDto] = Field(alias="dependencyEdges")
-    stage_binding: StageBindingDto = Field(alias="stageBinding")
     honesty: list[str]
 
 
@@ -162,7 +153,7 @@ def to_dto(projection: StateProjection) -> StateProjectionDto:
             found_in=projection.reference.run.run_id,
         ),
         matches_reference_receipt=projection.matches_reference_receipt,
-        record_source=RUNNER_RECORD_PATH,
+        record_source=AUTHORED_RECORD_PATH,
         record_digest=projection.record_digest,
         state_digest=projection.state_digest,
         active_phase=(
@@ -230,11 +221,6 @@ def to_dto(projection: StateProjection) -> StateProjectionDto:
             )
             for edge in projection.edges
         ],
-        stage_binding=StageBindingDto(
-            workflow_ref=projection.stage.workflow_ref,
-            envelope_ref=projection.stage.envelope_ref,
-            stage_id=projection.stage.stage_id,
-        ),
         honesty=list(projection.honesty),
     )
 

@@ -1,20 +1,22 @@
 """Run a project from its State Record (P089 / P102).
 
-    python tools/run_project.py --project <repo root> --run <run id> \
+    python tools/run_project.py --project <project root> --run <run id> \
       --workflow-ref project://... --stage-envelope-ref project://... \
-      --packs <dir> [--export] [--workspace <dir>]
+      [--export] [--workspace <dir>]
 
-``<dir>`` holds ``state-record.json`` (``StateRecord@1``: components and
-massing, levels and grid axes, element rows with references) and
-``seats.json``. Seats carry the provider identity and the commitment ref. The run's records are the receipt; this
-tool prints a summary only.  The run must already exist and the exact workflow
-and envelope must already be retained in P036; this CLI never turns a raw run
-or a copied pack into a stage by side effect.
+The design and the seats come from the project's own work-in-progress files —
+``input/runner/state-record.json`` (``StateRecord@1``: components and massing,
+levels and grid axes, element rows with references) and ``input/runner/seats.json``
+(the provider identity and the commitment ref) — read by ``archflow.project.inputs``
+at the paths the layout owns. There is no pack directory to point elsewhere: the
+run executes the record the project holds (ADR-007). The run's records are the
+receipt; this tool prints a summary only. The run must already exist and the
+exact workflow and envelope must already be retained in P036; this CLI never
+turns a raw run into a stage by side effect.
 """
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
@@ -28,6 +30,7 @@ from archflow.capabilities.declaration import DeclarationQuadrant  # noqa: E402
 from archflow.capabilities.discipline_seats import SeatSpec  # noqa: E402
 from archflow.capabilities.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
 from archflow.state.stage_workflow import CompositeStageClosureReceipt
+from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.refs import ProjectRecordRef  # noqa: E402
 from archflow.runtime.project_runner import (  # noqa: E402
@@ -37,7 +40,6 @@ from archflow.runtime.project_runner import (  # noqa: E402
 )
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopmentDiscipline  # noqa: E402
-from archflow.state.state_record import StateRecord  # noqa: E402
 from archflow.state.stage_workflow import (  # noqa: E402
     ProjectStageWorkflow,
     StageExitBinding,
@@ -117,26 +119,26 @@ def _seat(payload: dict) -> SeatSpec:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--project", required=True)
+    parser = argparse.ArgumentParser(
+        description="Run a project's authored State Record and seat pack, read from the "
+                    "project root at input/runner/ (ADR-007), inside an already-retained stage.",
+    )
+    parser.add_argument("--project", required=True, help="project root; its input/runner/ holds the record and the seats")
     parser.add_argument("--run", required=True)
     parser.add_argument("--workflow-ref", required=True)
     parser.add_argument("--stage-envelope-ref", required=True)
-    parser.add_argument("--packs", required=True)
     parser.add_argument("--export", action="store_true")
     parser.add_argument("--workspace")
     parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
     parser.add_argument("--relaxed-coverage", action="store_true")
     parser.add_argument("--patch-oracle", action="store_true", help="when an export is patched, also rebuild in full and compare the two readbacks")
     args = parser.parse_args()
-    packs = Path(args.packs)
-    load = lambda name: json.loads((packs / name).read_text(encoding="utf-8"))
-    record = StateRecord.from_dict(load("state-record.json"))
-    seats_payload = load("seats.json")
-    seats = tuple(_seat(s) for s in seats_payload["seats"])
-    identity = GeometryProposalProviderIdentity(**seats_payload["provider_identity"])
     project_root = Path(args.project).resolve()
     repository = FilesystemProjectRepository.open(project_root)
+    record = load_authored_record(repository).record
+    seats_payload = load_seat_pack_file(repository).payload
+    seats = tuple(_seat(s) for s in seats_payload["seats"])
+    identity = GeometryProposalProviderIdentity(**seats_payload["provider_identity"])
     if not repository.layout.run(args.run).manifest.exists():
         raise ValueError(
             "stage run does not exist; create and retain its envelope before invoking the runner"

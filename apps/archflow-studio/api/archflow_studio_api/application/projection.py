@@ -14,16 +14,20 @@ Two identities travel, not three: ``record.digest`` is the record's content and
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from typing import Any, Mapping
 
+from archflow.project.inputs import (
+    AuthoredRecordInvalid,
+    AuthoredRecordMissing,
+    load_authored_record,
+)
+from archflow.project.layout import AUTHORED_RECORD_PATH
 from archflow.project.refs import ProjectVersionRef, RunRef
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.operational_state import DependencyEdge
 from archflow.state.spatial import DesignComponent
 from archflow.state.state_record import (
     Parameter,
-    StageBinding,
     StateRecord,
     StateRecordError,
     design_components_of,
@@ -32,10 +36,6 @@ from archflow.state.state_record import (
 
 from ..transport.errors import StudioError, error_sentence
 from .binding import ProjectBinding, ReferenceRun
-
-# Where a project keeps the record the runner executes. It is authored input,
-# not a retained record, so it is read by path and never written by the API.
-RUNNER_RECORD_PATH = "input/runner/state-record.json"
 
 # The project runner's own view kwargs. Changing any of them turns
 # ``stateDigest`` into a number no receipt carries.
@@ -95,10 +95,6 @@ class StateProjection:
     @property
     def reference_receipt(self) -> Mapping[str, Any] | None:
         return self.reference.receipt
-
-    @property
-    def stage(self) -> StageBinding:
-        return self.record.stage
 
 
 def project_state(
@@ -188,43 +184,33 @@ def _record_invalid(exc: BaseException) -> StudioError:
     return StudioError(
         422,
         "STATE_RECORD_INVALID",
-        f"{RUNNER_RECORD_PATH}: {error_sentence(exc)}",
+        f"{AUTHORED_RECORD_PATH}: {error_sentence(exc)}",
     )
 
 
 def _load_authored_record(binding: ProjectBinding) -> StateRecord:
-    """The authored record, or a typed refusal naming what is wrong with it.
+    """The kernel's one reader of the authored record, answered on the wire.
 
-    A record that is absent and a record that is unreadable are different
-    problems for whoever has to fix them, and neither is an API bug: the second
-    must not arrive as a 500 that says nothing.
+    ``archflow.project.inputs`` owns the reading and the two refusals; this
+    turns them into the API's own bodies. A record that is absent and a record
+    that is unreadable are different problems for whoever has to fix them, and
+    neither is an API bug: the second must not arrive as a 500 that says
+    nothing. The sentence quoted is the underlying reason, because the reader
+    names the file with its whole path and a client asking about a project is
+    not entitled to learn where the process keeps it.
     """
 
-    path = binding.repository.layout.resolve_relative(RUNNER_RECORD_PATH)
-    if not path.is_file():
+    try:
+        return load_authored_record(binding.repository).record
+    except AuthoredRecordMissing as exc:
         raise StudioError(
             404,
             "STATE_RECORD_NOT_FOUND",
             f"{binding.project_id}: the bound project holds no authored state "
-            f"record at {RUNNER_RECORD_PATH}",
-        )
-    try:
-        return StateRecord.from_dict(
-            json.loads(path.read_text(encoding="utf-8"))
-        )
-    except (
-        # ``UnicodeDecodeError`` is a ``ValueError``: a record written in
-        # another encoding is undecodable, not absent, and ``OSError`` is a
-        # file that is there and would not open. Both are the project's to
-        # fix and neither is an API bug.
-        OSError,
-        json.JSONDecodeError,
-        StateRecordError,
-        KeyError,
-        TypeError,
-        ValueError,
-    ) as exc:
-        raise _record_invalid(exc) from exc
+            f"record at {AUTHORED_RECORD_PATH}",
+        ) from exc
+    except AuthoredRecordInvalid as exc:
+        raise _record_invalid(exc.__cause__ or exc) from exc
 
 
 def _bound_view(
@@ -317,13 +303,6 @@ def _honesty(
         )
     if not edges:
         lines.append("0 dependency edges: impact closure is direct-only")
-    stage = record.stage
-    if (
-        stage.workflow_ref is None
-        and stage.envelope_ref is None
-        and stage.stage_id is None
-    ):
-        lines.append("no stage binding on the authored record")
     if reference.source == "none":
         lines.append(
             "no eligible reference run: projection bound to the studio run "

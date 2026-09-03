@@ -1,11 +1,12 @@
 """The seats a project declares, read onto the kernel's ``SeatSpec``.
 
 Seats are people, not state: who owns which components, who reviews, who
-consumes whose handover. The project authors that in ``input/runner/seats.json``
-and the runner takes it as given — so this module reads that file and nothing
-else. There is deliberately no default seat and no fallback: a studio that
-invented a seat when the file was missing would run somebody's design under an
-ownership nobody declared, and the receipt would say it was fine.
+consumes whose handover. The project authors that beside its authored record,
+and the runner takes it as given — so this module turns what
+``archflow.project.inputs`` read into ``SeatSpec`` and does nothing else. There
+is deliberately no default seat and no fallback: a studio that invented a seat
+when the file was missing would run somebody's design under an ownership
+nobody declared, and the receipt would say it was fine.
 
 A missing seat pack is therefore a named failure carrying the path, which is
 the one piece of information whoever has to fix it needs.
@@ -13,18 +14,19 @@ the one piece of information whoever has to fix it needs.
 
 from __future__ import annotations
 
-import json
 from typing import Any, Mapping
 
 from archflow.capabilities.declaration import DeclarationQuadrant
 from archflow.capabilities.discipline_seats import SeatSpec
+from archflow.project.inputs import (
+    SeatPackInvalid,
+    SeatPackMissing,
+    load_seat_pack_file,
+)
+from archflow.project.layout import SEAT_PACK_PATH
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopmentDiscipline
-
-# Where a project keeps the seats the runner executes. Authored input, beside
-# the authored record: read by path, never written by the API.
-RUNNER_SEATS_PATH = "input/runner/seats.json"
 
 
 class SeatsError(ValueError):
@@ -65,23 +67,22 @@ def load_seat_pack(
     """
 
     layout = repository.layout
-    path = layout.resolve_relative(RUNNER_SEATS_PATH)
-    if not path.is_file():
+    try:
+        pack = load_seat_pack_file(repository)
+    except SeatPackMissing as exc:
         raise SeatsError(
             f"SEATS_NOT_FOUND: {layout.project_id} declares no seats at "
-            f"{RUNNER_SEATS_PATH} under {layout.root}. A candidate runs the "
+            f"{SEAT_PACK_PATH} under {layout.root}. A candidate runs the "
             "seats the project authored; it never invents one."
-        )
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        raise SeatsError(f"{RUNNER_SEATS_PATH}: {exc}") from exc
-    if not isinstance(payload, Mapping) or not payload.get("seats"):
+        ) from exc
+    except SeatPackInvalid as exc:
+        raise SeatsError(str(exc)) from exc
+    if not pack.payload.get("seats"):
         raise SeatsError(
-            f"{RUNNER_SEATS_PATH}: no seats declared. A run with no seat "
+            f"{SEAT_PACK_PATH}: no seats declared. A run with no seat "
             "produces no geometry and would report an empty success."
         )
-    return payload
+    return pack.payload
 
 
 def seats_of(payload: Mapping[str, Any]) -> tuple[SeatSpec, ...]:
@@ -90,4 +91,4 @@ def seats_of(payload: Mapping[str, Any]) -> tuple[SeatSpec, ...]:
     try:
         return tuple(seat_from(seat) for seat in payload["seats"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise SeatsError(f"{RUNNER_SEATS_PATH}: {exc}") from exc
+        raise SeatsError(f"{SEAT_PACK_PATH}: {exc}") from exc

@@ -1,7 +1,12 @@
 """Prove a State Record reproduces a reference runner run (P102 migration receipt).
 
-    python tools/verify_state_record.py --project <root> --packs input/runner \\
+    python tools/verify_state_record.py --project <project root> \\
         --reference-run runner-002 --run equivalence-001 [--rename old=new ...]
+
+The record and the seats are the project's own work in progress, read by
+``archflow.project.inputs`` at ``input/runner/`` under ``--project``; there is
+no pack directory to point elsewhere, because the claim is about the record
+this project holds (ADR-007).
 
 Two checks, both recorded in ``--run`` as ``state-record-equivalence``:
 
@@ -32,6 +37,7 @@ if str(REPO) not in sys.path:
 from archflow.adapters.cad_program import expected_object_bounds  # noqa: E402
 from archflow.capabilities.geometry_proposal import GeometryProposalProviderIdentity, load_compiled_geometry_program  # noqa: E402
 from archflow.contracts.authority import no_authority  # noqa: E402
+from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import record_ref_from_uri  # noqa: E402
@@ -39,7 +45,7 @@ from archflow.runtime.project_runner import RunOptions, StageExecutionGuard, run
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import DesignObligation  # noqa: E402
 from archflow.state.stage_workflow import ProjectStage, ProjectStageWorkflow, open_stage_run_envelope  # noqa: E402
-from archflow.state.state_record import StateRecord, developed_design_view  # noqa: E402
+from archflow.state.state_record import developed_design_view  # noqa: E402
 from tools.run_project import _seat  # noqa: E402
 
 _AUTH = ("canonical_write_authority", "design_authority", "stage_acceptance_authority")
@@ -71,8 +77,11 @@ def _harness_guard(repository, run, state, options) -> StageExecutionGuard:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--project", required=True); parser.add_argument("--packs", required=True)
+    parser = argparse.ArgumentParser(
+        description="Prove the project's authored State Record, read from its own input/runner/ "
+                    "(ADR-007), reproduces a reference runner run; both checks are retained in --run.",
+    )
+    parser.add_argument("--project", required=True, help="project root; its input/runner/ holds the record and the seats")
     parser.add_argument("--reference-run", required=True); parser.add_argument("--run", required=True)
     parser.add_argument("--rename", action="append", default=[], help="old=new element id mapping")
     parser.add_argument("--tolerance", type=float, default=1e-6)
@@ -82,12 +91,11 @@ def main() -> int:
     parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
     args = parser.parse_args()
     renames = dict(item.split("=", 1) for item in args.rename)
-    packs = Path(args.packs)
-    record = StateRecord.from_dict(json.loads((packs / "state-record.json").read_text(encoding="utf-8")))
-    seats_payload = json.loads((packs / "seats.json").read_text(encoding="utf-8"))
+    repository = FilesystemProjectRepository.open(Path(args.project).resolve())
+    record = load_authored_record(repository).record
+    seats_payload = load_seat_pack_file(repository).payload
     seats = tuple(_seat(s) for s in seats_payload["seats"])
     identity = GeometryProposalProviderIdentity(**seats_payload["provider_identity"])
-    repository = FilesystemProjectRepository.open(Path(args.project).resolve())
     reference = repository.load_run(args.reference_run)
     reference_records = Path(repository.layout.run(reference.run_id).records)
     reference_receipt = json.loads(_latest(reference_records, "runner-run-receipt").read_text(encoding="utf-8"))

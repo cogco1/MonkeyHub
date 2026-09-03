@@ -1403,18 +1403,79 @@
       "notes": "31 lines; it is the seam between the semantic content digest and the repository's byte digest, which differ by a trailing newline."
     },
     {
+      "module_id": "project.inputs",
+      "owner_path": "archflow/project/inputs.py",
+      "purpose": "The one reader of a project's work-in-progress inputs: the designer's authored State Record and seat pack, at the two paths the layout owns (ADR-007).",
+      "owns": [
+        "reading the work-in-progress inputs at the layout's authored_record and seat_pack paths",
+        "the typed refusals for those two files - absent, unreadable, undecodable, not JSON, not a State Record - each carrying the path it wanted (InputsError and its four kinds)",
+        "how each file is identified on the way out: the record's own content digest, and the sha-256 of the seat pack's bytes"
+      ],
+      "does_not_own": [
+        "naming the two paths (project.layout)",
+        "parsing SeatPack@1 (tools.run_project, the Studio's adapters/seats.py)",
+        "retaining anything; nothing read here is indexed, digested or verified by the repository (project.repository)",
+        "deciding which run uses the record (runtime.project_runner, studio.candidate)",
+        "the meaning of the record it parsed (state.record)"
+      ],
+      "inputs": [
+        "FilesystemProjectRepository",
+        "input/runner/state-record.json bytes",
+        "input/runner/seats.json bytes"
+      ],
+      "outputs": [
+        "AuthoredRecord",
+        "SeatPackFile"
+      ],
+      "public_api": [
+        "AuthoredRecord",
+        "SeatPackFile",
+        "load_authored_record",
+        "load_seat_pack_file",
+        "InputsError",
+        "AuthoredRecordMissing",
+        "AuthoredRecordInvalid",
+        "SeatPackMissing",
+        "SeatPackInvalid"
+      ],
+      "depends_on": [
+        "project.repository",
+        "state.record"
+      ],
+      "used_by": [
+        "tools/run_project.py",
+        "tools/verify_state_record.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
+        "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py"
+      ],
+      "invariants": [
+        "never writes: the work-in-progress container is read, and nothing about it is retained until a run uses it",
+        "absent and unreadable are different refusals, and each names the file it wanted",
+        "the record's content digest is taken from the record, never recomputed here (ADR-003)",
+        "both files are decoded as strict UTF-8; another encoding is invalid, not absent",
+        "the seat pack comes back as the mapping the project authored; no seat is parsed, defaulted or invented"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_project_inputs.py"
+      ],
+      "notes": "The finding was never that the file is read by path - work in progress is read by path. It was that three readers did it and nobody owned it."
+    },
+    {
       "module_id": "project.layout",
       "owner_path": "archflow/project/layout.py",
       "purpose": "Pure mapping from a project root and identifiers to filesystem paths, with no directory creation and no writes.",
       "owns": [
         "the on-disk names of a project's areas (project.json, HEAD, objects/sha256, events, canonical, runs, exports, input)",
         "the run subdirectory names (RunLayout: run.json, records, branches, candidates, reviews, workspaces, recovery)",
-        "resolving a project-relative path or a record/artifact ref to an absolute path inside the root"
+        "resolving a project-relative path or a record/artifact ref to an absolute path inside the root",
+        "the names of the two authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json)"
       ],
       "does_not_own": [
         "creating directories or writing files (project.repository)",
         "reference validity (project.refs)",
-        "locating an existing project root (project.location)"
+        "locating an existing project root (project.location)",
+        "reading those two authored files (project.inputs)"
       ],
       "inputs": [
         "Path root",
@@ -1429,13 +1490,20 @@
         "RunLayout"
       ],
       "public_api": [
-        "ProjectLayout"
+        "ProjectLayout",
+        "AUTHORED_RECORD_PATH",
+        "SEAT_PACK_PATH"
       ],
       "depends_on": [
         "project.refs"
       ],
       "used_by": [
-        "archflow/project/repository.py"
+        "archflow/project/repository.py",
+        "archflow/project/inputs.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
+        "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/state.py"
       ],
       "invariants": [
         "never creates a directory and never writes",
@@ -1443,9 +1511,10 @@
         "a ref belonging to another project is refused"
       ],
       "status": "canonical",
-      "tests": [],
-      "notes": "Sole importer is project/repository.py and no test imports it directly; it is covered only through tests/test_project_repository.py. RunLayout is returned by ProjectLayout.run but never imported by name.",
-      "untested_reason": "a path table; every FilesystemProjectRepository test walks it"
+      "tests": [
+        "tests/test_project_inputs.py"
+      ],
+      "notes": "A path table walked by every FilesystemProjectRepository test; only the two authored-input paths are asserted directly, in tests/test_project_inputs.py. RunLayout is returned by ProjectLayout.run but never imported by name."
     },
     {
       "module_id": "project.location",
@@ -1723,6 +1792,7 @@
         "project.refs"
       ],
       "used_by": [
+        "archflow/project/inputs.py",
         "archflow/project/location.py",
         "archflow/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
@@ -2662,7 +2732,7 @@
     {
       "module_id": "state.record",
       "owner_path": "archflow/state/state_record.py",
-      "purpose": "The canonical StateRecord@1: a project's design state as typed entities, parameters, relations, obligations, evidence and stage binding, plus the typed views derived from it.",
+      "purpose": "The canonical StateRecord@1: a project's design state as typed entities, parameters, relations, obligations and evidence, plus the typed views derived from it. It states no stage: a stage belongs to the run that executes it (ADR-007).",
       "owns": [
         "design content identity, independent of run and base (StateRecord.digest)",
         "the binding identity a geometry program cites (StateRecord.state_digest)",
@@ -2682,7 +2752,7 @@
         "the ProjectLevel/ProjectGridAxis shapes it emits (state.geometry_program)",
         "persisting the record (project.repository)",
         "compiling geometry from it (compilers/geometry.py via capabilities/element_producers.py)",
-        "running the stage it names (runtime/project_runner.py, state.stage_workflow)"
+        "the stage a run opens; the record names none, and from_dict refuses a stage key (runtime/project_runner.py, state.stage_workflow, ADR-007)"
       ],
       "inputs": [
         "Entity/Parameter/Relation/DesignObligation tuples",
@@ -2704,7 +2774,6 @@
         "Parameter",
         "Relation",
         "SchematicPack",
-        "StageBinding",
         "StateRecord",
         "StateRecordError",
         "ValidatorBinding",
@@ -2716,7 +2785,6 @@
         "schematic_proposal"
       ],
       "depends_on": [
-        "archflow.runtime.project_runner",
         "contracts.canonical",
         "project.refs",
         "relations.contracts",
@@ -2731,13 +2799,13 @@
         "state.stage_workflow"
       ],
       "used_by": [
+        "archflow/project/inputs.py",
         "archflow/runtime/project_runner.py",
         "archflow/compilers/geometry.py",
         "archflow/capabilities/geometry_proposal.py",
         "archflow/capabilities/relation_checks.py",
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
-        "tools/run_project.py",
         "tools/verify_state_record.py"
       ],
       "invariants": [
@@ -2987,7 +3055,7 @@
         "opening the located project on first use and holding that one binding for the process",
         "choosing the reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping harness workflows",
         "reading the P036 record-name convention (kind plus sha256) and listing a run's record refs",
-        "loading the authored record at input/runner/state-record.json and refusing a bad one by name",
+        "answering project.inputs' refusals on the wire: 404 STATE_RECORD_NOT_FOUND and 422 STATE_RECORD_INVALID, each naming the file",
         "the projection: bound view, component tree, Element@1 rows with their numeric fields, parameters, dependency edges",
         "the honesty lines stating what this projection cannot tell you"
       ],
@@ -3024,14 +3092,8 @@
         "ProjectedElement"
       ],
       "depends_on": [
-        "archflow.project.location",
-        "archflow.project.ports",
-        "archflow.project.refs",
-        "archflow.project.repository",
-        "archflow.state.developed_design",
-        "archflow.state.operational_state",
-        "archflow.state.spatial",
-        "archflow.state.state_record",
+        "project.inputs",
+        "project.layout",
         "project.location",
         "project.ports",
         "project.refs",
@@ -3080,7 +3142,7 @@
         "the successor record: the authored record with exactly the one value the proposal names replaced",
         "arranging the run - new run id, harness stage guard, seat pack, RunOptions - and calling run_project",
         "the studio candidate harness workflow and stage, explicitly not a project stage advance",
-        "reading the project's authored seat pack (input/runner/seats.json) onto SeatSpec",
+        "turning the authored seat pack project.inputs read onto SeatSpec, and refusing a pack that declares no seat",
         "the worker pool and queue: closure-based conflicts, the exclusive Rhino export lane, and per-job lifecycle state",
         "the bounded in-process event log, its replay and its live subscribers",
         "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines"
@@ -3129,21 +3191,11 @@
         "seat_from"
       ],
       "depends_on": [
-        "archflow.capabilities.declaration",
-        "archflow.capabilities.discipline_seats",
-        "archflow.capabilities.geometry_proposal",
-        "archflow.project.ports",
-        "archflow.project.refs",
-        "archflow.project.repository",
-        "archflow.runtime.project_runner",
-        "archflow.state.design_maturity",
-        "archflow.state.developed_design",
-        "archflow.state.operational_state",
-        "archflow.state.stage_workflow",
-        "archflow.state.state_record",
         "capabilities.declaration",
         "capabilities.discipline_seats",
         "capabilities.geometry_proposal",
+        "project.inputs",
+        "project.layout",
         "project.ports",
         "project.refs",
         "project.repository",
@@ -3249,11 +3301,8 @@
         "ProposalStore"
       ],
       "depends_on": [
-        "archflow.contracts.canonical",
-        "archflow.state.decision_operator",
-        "archflow.state.operational_state",
-        "archflow.state.state_record",
         "contracts.canonical",
+        "project.layout",
         "state.decision_operator",
         "state.operational_state",
         "state.record"
@@ -3663,9 +3712,9 @@
     {
       "module_id": "tools.run_project",
       "owner_path": "tools/run_project.py",
-      "purpose": "The spine's entry point: load a project's State Record, workflow, envelope and seat pack from disk and hand them to run_project.",
+      "purpose": "The spine's entry point: open a project, take its authored State Record and seat pack from project.inputs with the retained workflow and envelope, and hand them to run_project.",
       "owns": [
-        "the run-project command line (project root, run id, workflow ref, stage envelope ref, packs dir, export, workspace, powershell)",
+        "the run-project command line (project root, run id, workflow ref, stage envelope ref, export, workspace, powershell)",
         "parsing a project:// record URI into a ProjectRecordRef",
         "assembling the StageExecutionGuard from retained workflow, envelope, predecessor exit and predecessor closure records",
         "reading an authored seat payload into a SeatSpec (_seat, reused by tools/verify_state_record.py)"
@@ -3674,12 +3723,12 @@
         "the run itself and every record it writes - runtime.project_runner",
         "seat semantics - capabilities.discipline_seats",
         "creating or freezing a workflow - tools.freeze_project_stage_workflow",
-        "proving equivalence against a reference run - tools.verify_state_record"
+        "proving equivalence against a reference run - tools.verify_state_record",
+        "reading the authored record and seat pack - project.inputs; there is no pack directory to point elsewhere"
       ],
       "inputs": [
         "CLI arguments",
-        "state record JSON",
-        "seat pack JSON",
+        "the project's authored State Record and seat pack",
         "retained workflow / envelope / exit / closure records"
       ],
       "outputs": [
@@ -3691,25 +3740,14 @@
         "_seat"
       ],
       "depends_on": [
-        "archflow.capabilities.declaration",
-        "archflow.capabilities.discipline_seats",
-        "archflow.capabilities.geometry_proposal",
-        "archflow.control.stage_closure",
-        "archflow.project.refs",
-        "archflow.project.repository",
-        "archflow.runtime.project_runner",
-        "archflow.state.design_maturity",
-        "archflow.state.developed_design",
-        "archflow.state.stage_workflow",
-        "archflow.state.state_record",
         "capabilities.declaration",
         "capabilities.discipline_seats",
         "capabilities.geometry_proposal",
+        "project.inputs",
         "project.refs",
         "project.repository",
         "runtime.project_runner",
         "state.developed_design",
-        "state.record",
         "state.stage_workflow"
       ],
       "used_by": [
@@ -3729,20 +3767,20 @@
       "owner_path": "tools/verify_state_record.py",
       "purpose": "Prove a State Record reproduces a reference runner run, recording both checks in a fresh run as state-record-equivalence.",
       "owns": [
-        "the equivalence command line (project, packs, reference run, target run, object renames)",
+        "the equivalence command line (project, reference run, target run, object renames)",
         "building a self-contained harness StageExecutionGuard so the equivalence run opens its own stage",
         "comparing the record-driven run's compiled programs and analytic object bounds against the reference run's",
         "the state-record-equivalence receipt this run retains"
       ],
       "does_not_own": [
         "running the project - runtime.project_runner",
-        "reading the seat pack - it reuses tools.run_project._seat",
+        "reading the authored record and seat pack - project.inputs; a seat is parsed with tools.run_project._seat",
         "comparing saved .3dm geometry - adapters.three_dm_inspector and studio.validation's compare do that"
       ],
       "inputs": [
         "CLI arguments",
         "reference run records",
-        "state record and seat pack"
+        "the project's authored State Record and seat pack"
       ],
       "outputs": [
         "state-record-equivalence records",
@@ -3753,19 +3791,9 @@
       ],
       "depends_on": [
         "adapters.cad_program",
-        "archflow.adapters.cad_program",
-        "archflow.capabilities.geometry_proposal",
-        "archflow.contracts.authority",
-        "archflow.project.ports",
-        "archflow.project.refs",
-        "archflow.project.repository",
-        "archflow.runtime.project_runner",
-        "archflow.state.design_maturity",
-        "archflow.state.operational_state",
-        "archflow.state.stage_workflow",
-        "archflow.state.state_record",
         "capabilities.geometry_proposal",
         "contracts.authority",
+        "project.inputs",
         "project.ports",
         "project.refs",
         "project.repository",

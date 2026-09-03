@@ -27,6 +27,7 @@ from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
 from archflow.contracts.canonical import canonical_json
+from archflow.project.layout import AUTHORED_RECORD_PATH
 from archflow.state.decision_operator import (
     ConditionComparator,
     DecisionOperator,
@@ -37,11 +38,7 @@ from archflow.state.state_record import Parameter
 
 from ..transport.errors import BlockedNeedsHuman, StudioError
 from .impact import impact
-from .projection import (
-    RUNNER_RECORD_PATH,
-    ProjectedElement,
-    StateProjection,
-)
+from .projection import ProjectedElement, StateProjection
 
 # Who the proposal says it is, on the wire and in the operator. It is not an
 # authority that can write: the id names a seat that only ever proposes.
@@ -478,7 +475,7 @@ class DeterministicIntentProvider:
                 "the record declares no parameters",
                 question=(
                     f"the record declares 0 parameters; parameter intents "
-                    f"need parameters authored into {RUNNER_RECORD_PATH} — "
+                    f"need parameters authored into {AUTHORED_RECORD_PATH} — "
                     "which element field did you mean?"
                 ),
             )
