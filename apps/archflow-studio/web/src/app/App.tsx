@@ -671,6 +671,13 @@ export default function App() {
     [append, recoverFromStaleBase],
   );
 
+  // The transcript as of the last render, for callbacks that must stay
+  // stable: a card's poll restarts whenever its reporter changes identity,
+  // so the reporter reads the entries through a ref instead of closing over
+  // them.
+  const entriesRef = useRef(transcript.entries);
+  entriesRef.current = transcript.entries;
+
   const noteJobStatus = useCallback(
     (candidateId: string, status: string) => {
       noteTranscriptStatus(candidateId, status);
@@ -678,12 +685,12 @@ export default function App() {
         verdictsRef.current.add(candidateId);
         // The card's Protected line quotes what the sentence asked to keep;
         // that is the proposal's, found through the candidate it became.
-        const candidateEntry = transcript.entries.find(
+        const candidateEntry = entriesRef.current.find(
           (entry) => entry.kind === "candidate" && entry.candidateId === candidateId,
         );
         const proposalEntry =
           candidateEntry && candidateEntry.kind === "candidate"
-            ? transcript.entries.find(
+            ? entriesRef.current.find(
                 (entry) =>
                   entry.kind === "proposal" &&
                   entry.proposal.proposalId === candidateEntry.proposalId,
@@ -700,7 +707,7 @@ export default function App() {
         void loadArtifacts();
       }
     },
-    [append, loadArtifacts, noteTranscriptStatus, transcript.entries],
+    [append, loadArtifacts, noteTranscriptStatus],
   );
 
   const noteCandidate = useCallback((candidate: CandidateDto) => {
