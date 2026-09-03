@@ -53,12 +53,8 @@ from archive.archflow.runtime.stage_artifact_chain import (
     compile_relation_realization_baseline_source,
     compile_stage_artifact_claim,
 )
-from archflow.state.design_maturity import (
-    DesignPhase,
-    DeliverableRole,
-    PhaseGateReceipt,
-    StageEntryProof,
-)
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import DeliverableRole, PhaseGateReceipt, StageEntryProof
 from archflow.state.model import ArtifactRef
 from archflow.state.geometry_program import (
     AffineTransform,

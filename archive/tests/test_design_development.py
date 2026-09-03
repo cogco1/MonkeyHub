@@ -19,7 +19,7 @@ from archive.archflow.capabilities.experts import (
 from archive.archflow.capabilities.phase_gates import PhaseExpertMetadata
 from archflow.project.refs import RunRef
 from archflow.state.developed_design import ArchitectDevelopmentDecision, DetachedDevelopmentAdvice, DevelopedAttribute, DevelopedComponent, DevelopedDesignState, DevelopmentClaim, DevelopmentClaimDisposition, DevelopmentClaimResolution, DevelopmentCoordinationStatus, DevelopmentDependency, DevelopmentDependencyImpact, DevelopmentDiscipline, DevelopmentObligation, DevelopmentObligationPriority, DevelopmentObligationStatus
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.design_portfolio import compile_selected_branch_handoff, park_branch, revise_branch, select_branch
 from tests.test_design_portfolio import (
     DECISION,

@@ -20,7 +20,7 @@ import archflow_studio_api  # noqa: F401
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.project.repository import FilesystemProjectRepository
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.stage_workflow import ProjectStage, ProjectStageWorkflow
 from archflow.state.state_record import StateRecord, developed_design_view
 

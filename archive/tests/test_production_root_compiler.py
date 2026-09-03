@@ -59,12 +59,8 @@ from archflow.state.commitments import (
     CommitmentStrength,
     CriterionRef,
 )
-from archflow.state.design_maturity import (
-    DesignPhase,
-    DesignMaturityState,
-    PhaseGateRequest,
-    evaluate_forward_phase_gate,
-)
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import DesignMaturityState, PhaseGateRequest, evaluate_forward_phase_gate
 from archflow.state.developed_design import DevelopedDesignState
 from archive.tools.projects.monument_common.context import (
     rebase_authoring_context as _rebase_context,

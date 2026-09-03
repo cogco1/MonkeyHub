@@ -159,16 +159,8 @@ from archive.archflow.state.design_state import (
     StatePathSegment,
     compile_nested_decision,
 )
-from archflow.state.design_maturity import (
-    BackwardRevisionRequest,
-    DeliverableRole,
-    DesignMaturityState,
-    DesignPhase,
-    PHASE_DELIVERABLE_ROLES,
-    PhaseDeliverable,
-    PhaseGateRequest,
-    evaluate_forward_phase_gate,
-)
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import BackwardRevisionRequest, DeliverableRole, DesignMaturityState, PHASE_DELIVERABLE_ROLES, PhaseDeliverable, PhaseGateRequest, evaluate_forward_phase_gate
 from archflow.state.operational_state import (
     DependencyEdge,
     DependencyEffect,

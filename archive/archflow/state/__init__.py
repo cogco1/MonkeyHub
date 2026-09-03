@@ -74,27 +74,8 @@ from archive.archflow.state.design_program import (
     ProgramRelationshipStrength,
     ProgramScenario,
 )
-from archflow.state.design_maturity import (
-    DELIVERABLE_ROLE_PHASE,
-    DESIGN_PHASES,
-    PHASE_DELIVERABLE_ROLES,
-    BackwardRevisionRequest,
-    BackwardRevisionResult,
-    DeliverableRole,
-    DesignMaturityError,
-    DesignMaturityState,
-    DesignPhase,
-    GateCertificationSource,
-    PhaseDeliverable,
-    PhaseGateReceipt,
-    PhaseGateRequest,
-    PhaseGateStatus,
-    RevisionImpact,
-    compile_backward_revision,
-    evaluate_forward_phase_gate,
-    next_design_phase,
-    require_current_phase_gate,
-)
+from archflow.state.stage_workflow import DESIGN_PHASES, DesignPhase
+from archive.archflow.state.design_maturity import DELIVERABLE_ROLE_PHASE, PHASE_DELIVERABLE_ROLES, BackwardRevisionRequest, BackwardRevisionResult, DeliverableRole, DesignMaturityError, DesignMaturityState, GateCertificationSource, PhaseDeliverable, PhaseGateReceipt, PhaseGateRequest, PhaseGateStatus, RevisionImpact, compile_backward_revision, evaluate_forward_phase_gate, next_design_phase, require_current_phase_gate
 from archflow.state.design_portfolio import (
     AdviceDisposition,
     BranchLifecycle,

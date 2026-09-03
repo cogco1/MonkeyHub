@@ -21,7 +21,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import RunRef
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.runtime.project_runner import StageExecutionGuard
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.operational_state import DesignObligation
 from archflow.state.stage_workflow import (

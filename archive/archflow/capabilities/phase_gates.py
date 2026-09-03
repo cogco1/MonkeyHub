@@ -10,11 +10,8 @@ from archive.archflow.capabilities.experts import (
     ExpertSnapshot,
     ExpertSpec,
 )
-from archflow.state.design_maturity import (
-    DELIVERABLE_ROLE_PHASE,
-    DeliverableRole,
-    DesignPhase,
-)
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import DELIVERABLE_ROLE_PHASE, DeliverableRole
 
 
 class PhaseCapabilityError(ValueError):

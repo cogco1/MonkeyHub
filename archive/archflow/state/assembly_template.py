@@ -29,7 +29,7 @@ from archive.archflow.state.component_template import (
     ParameterForm,
     TemplateParameter,
 )
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.geometry_program import InterfaceDatumKind, ProjectGrids, ProjectLevels
 from archflow.state.spatial import DesignComponent
 from archflow.contracts.canonical import canonical_digest, canonical_json

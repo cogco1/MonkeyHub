@@ -25,7 +25,7 @@ from enum import StrEnum
 from archflow.contracts.authority import no_authority
 from archflow.contracts.canonical import canonical_json, require_sha256
 from archflow.project.refs import require_identifier
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.geometry_program import InterfaceDatum
 from archflow.state.operational_state import DependencyEdge, DependencyEffect
 

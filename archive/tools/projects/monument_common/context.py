@@ -11,10 +11,7 @@ from dataclasses import replace
 
 from archflow.project.refs import RunRef
 from archive.archflow.runtime.production_runtime import ProductionAuthoringContext
-from archflow.state.design_maturity import (
-    PhaseGateRequest,
-    evaluate_forward_phase_gate,
-)
+from archive.archflow.state.design_maturity import PhaseGateRequest, evaluate_forward_phase_gate
 
 
 def _rebase_program(program, run: RunRef):  # type: ignore[no-untyped-def]

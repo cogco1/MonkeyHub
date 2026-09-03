@@ -34,7 +34,7 @@ from archive.archflow.research.branch import (
     BranchResearchScope,
     require_record_payload,
 )
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.validation.contracts import CheckStatus
 
 

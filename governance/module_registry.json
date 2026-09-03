@@ -2227,85 +2227,6 @@
       "notes": "One spine consumer (reference_resolver) and one test; EvaluatedQuantity is never imported by name."
     },
     {
-      "module_id": "state.design_maturity",
-      "owner_path": "archflow/state/design_maturity.py",
-      "purpose": "The design phase graph, typed deliverable roles, forward phase gates and backward revision impact.",
-      "owns": [
-        "the phase vocabulary and its order (DesignPhase, DESIGN_PHASES, next_design_phase)",
-        "deliverable roles and the phase each belongs to (DeliverableRole, PHASE_DELIVERABLE_ROLES)",
-        "the maturity projection paired with one operational state (DesignMaturityState, PhaseDeliverable)",
-        "the forward gate, its receipt and staleness check (evaluate_forward_phase_gate, PhaseGateRequest, PhaseGateReceipt, require_current_phase_gate)",
-        "durable proof that one exact predecessor gate entered a new phase (StageEntryProof, require_stage_entry_proof)",
-        "backward revision impact split into invalidated versus revalidation-required (compile_backward_revision)"
-      ],
-      "does_not_own": [
-        "the stage workflow and its envelopes (state.stage_workflow)",
-        "obligations and dependency edges (state.operational_state)",
-        "the content of a deliverable (each deliverable's own record)",
-        "running or accepting a phase transition (runtime/project_runner.py)"
-      ],
-      "inputs": [
-        "OperationalMarkovState",
-        "PhaseDeliverable tuple",
-        "BranchRef",
-        "from/to phase"
-      ],
-      "outputs": [
-        "DesignMaturityState",
-        "PhaseGateReceipt",
-        "StageEntryProof",
-        "BackwardRevisionResult"
-      ],
-      "public_api": [
-        "DesignPhase",
-        "DESIGN_PHASES",
-        "DeliverableRole",
-        "PHASE_DELIVERABLE_ROLES",
-        "next_design_phase",
-        "DesignMaturityState",
-        "PhaseDeliverable",
-        "PhaseGateRequest",
-        "PhaseGateReceipt",
-        "evaluate_forward_phase_gate",
-        "require_current_phase_gate",
-        "StageEntryProof",
-        "require_stage_entry_proof",
-        "BackwardRevisionRequest",
-        "compile_backward_revision",
-        "GateCertificationSource",
-        "DesignMaturityError"
-      ],
-      "depends_on": [
-        "contracts.canonical",
-        "project.refs",
-        "state.operational_state"
-      ],
-      "used_by": [
-        "archflow/state/stage_workflow.py",
-        "archflow/state/spatial.py",
-        "archflow/state/developed_design.py",
-        "archflow/capabilities/discipline_seats.py",
-        "archflow/runtime/project_runner.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
-        "tools/run_project.py",
-        "tools/verify_state_record.py"
-      ],
-      "invariants": [
-        "fail closed: a gate passes only when the immediately prior phase is deterministically met",
-        "a once-valid receipt goes stale as soon as the branch base advances",
-        "cross-branch evidence is rejected",
-        "PASSED is the only gate status the vocabulary admits",
-        "the graph encodes precedence and deliverable roles, never a building answer or a mandatory expert list"
-      ],
-      "status": "fold",
-      "tests": [
-        "tests/test_design_maturity.py",
-        "tests/integration/test_decision_design_closure.py"
-      ],
-      "notes": "fold: '← fold'; §2.2 sends the phase gates to the controller lane, but DesignPhase alone is imported by six spine modules and both spine tools, so the fold has to split the enum from the gate machinery."
-    },
-    {
       "module_id": "state.design_portfolio",
       "owner_path": "archflow/state/design_portfolio.py",
       "purpose": "The reloadable ledger of schematic branches, their lineage, and the authorized selection among them.",
@@ -2970,7 +2891,8 @@
         "binding one run to exactly one stage with its base, branch and state digest (StageRunEnvelope, open_stage_run_envelope)",
         "the SATISFIED exit binding of one independently closed stage (StageExitBinding, StageExitStatus)",
         "carrying the exact retained predecessor envelope and exit into a successor (StageRunPredecessor)",
-        "the fail-closed guards callers use before running or closing a stage (require_stage_run_envelope, require_stage_exit_binding)"
+        "the fail-closed guards callers use before running or closing a stage (require_stage_run_envelope, require_stage_exit_binding)",
+        "the design-phase ladder (DesignPhase, DESIGN_PHASES)"
       ],
       "does_not_own": [
         "running a stage or producing its closure record (runtime/project_runner.py)",
@@ -2991,15 +2913,17 @@
         "StageExitBinding"
       ],
       "public_api": [
-        "ProjectStageWorkflow",
+        "DESIGN_PHASES",
+        "DesignPhase",
         "ProjectStage",
-        "StageRunEnvelope",
+        "ProjectStageWorkflow",
         "StageExitBinding",
         "StageExitStatus",
+        "StageRunEnvelope",
+        "StageWorkflowError",
         "open_stage_run_envelope",
-        "require_stage_run_envelope",
         "require_stage_exit_binding",
-        "StageWorkflowError"
+        "require_stage_run_envelope"
       ],
       "depends_on": [
         "contracts.authority",
@@ -3028,7 +2952,7 @@
         "tests/test_freeze_project_stage_workflow.py",
         "tests/test_project_runner.py"
       ],
-      "notes": "Depends on the fold target state/design_maturity only for DesignPhase/DESIGN_PHASES; StageRunPredecessor is nested inside the envelope and never imported by name."
+      "notes": "Depends on the fold target state/design_maturity only for DesignPhase/DESIGN_PHASES; StageRunPredecessor is nested inside the envelope and never imported by name. Phase gates, entry proofs and backward revision (design_maturity) are archived with the controller lane."
     },
     {
       "module_id": "studio.artifacts",

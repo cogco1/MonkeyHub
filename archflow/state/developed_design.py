@@ -8,7 +8,7 @@ from enum import StrEnum
 
 from archflow.project.refs import ProjectVersionRef
 from archflow.project.refs import require_identifier
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.design_portfolio import (
     BranchRevisionRef,
     SelectedBranchHandoff,

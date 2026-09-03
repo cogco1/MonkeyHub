@@ -24,7 +24,7 @@ from archive.archflow.runtime.semantic_geometry_lifecycle import (
 )
 from archflow.state.developed_design import DevelopedDesignState
 from archive.archflow.state.build_policy import BuildPolicy
-from archflow.state.design_maturity import DesignMaturityState, PhaseGateReceipt
+from archive.archflow.state.design_maturity import DesignMaturityState, PhaseGateReceipt
 from archive.archflow.state.design_program import DesignProgram
 from archflow.state.operational_state import (
     OperationalMarkovState,

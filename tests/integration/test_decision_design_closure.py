@@ -33,11 +33,8 @@ from archive.archflow.runtime.design_controller import (
     ControllerOutcome,
     advance_design_phase,
 )
-from archflow.state.design_maturity import (
-    DesignPhase,
-    PhaseGateRequest,
-    evaluate_forward_phase_gate,
-)
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import PhaseGateRequest, evaluate_forward_phase_gate
 from archflow.state.operational_state import (
     DesignObligation,
     FactEpistemicStatus,

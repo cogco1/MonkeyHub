@@ -68,7 +68,7 @@ from archflow.control.stage_closure import (
     CompositeStageClosureReceipt,
     StageClosureStatus,
 )
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.design_portfolio import BranchRevisionRef
 from archflow.state.developed_design import (
     DevelopedDesignState,

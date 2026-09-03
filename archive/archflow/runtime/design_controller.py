@@ -68,7 +68,8 @@ from archflow.state.commitments import (
     CommitmentStatus,
     CommitmentStrength,
 )
-from archflow.state.design_maturity import BackwardRevisionRequest, BackwardRevisionResult, DESIGN_PHASES, DesignPhase, DesignMaturityState, PhaseGateReceipt, compile_backward_revision, next_design_phase, require_current_phase_gate
+from archflow.state.stage_workflow import DESIGN_PHASES, DesignPhase
+from archive.archflow.state.design_maturity import BackwardRevisionRequest, BackwardRevisionResult, DesignMaturityState, PhaseGateReceipt, compile_backward_revision, next_design_phase, require_current_phase_gate
 from archflow.state.commitments import Commitment
 from archive.archflow.state.design_state import ContextSlice, ContextSliceCompiler, DesignStateTree, NestedStateTransition, PhaseTreeTransition, compile_nested_decision, compile_tree_phase_change
 from archflow.state.decision_operator import DecisionCompilationError, DecisionOperator
@@ -1416,7 +1417,7 @@ class ProjectControllerArchiveAdapter:
         from archflow.capabilities.geometry_proposal import (
             load_compiled_geometry_program,
         )
-        from archflow.state.design_maturity import StageEntryProof
+        from archive.archflow.state.design_maturity import StageEntryProof
 
         if claim.branch != self.branch:
             raise DesignControllerError(

@@ -33,11 +33,8 @@ from archive.archflow.state.assembly_template import (
     require_assembly_votes,
 )
 from archive.archflow.state.component_template import CaseVote, TemplateParameter
-from archflow.state.design_maturity import (
-    DesignMaturityState,
-    DesignPhase,
-    StageEntryProof,
-)
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import DesignMaturityState, StageEntryProof
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.geometry_program import DatumBinding, InterfaceDatum
 from archflow.state.spatial import ComponentMaturity

@@ -4,7 +4,7 @@ import unittest
 from dataclasses import replace
 
 from archflow.contracts.authority import DEFAULT_AUTHORITY_FIELDS
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import DesignObligation, ObligationStatus
 from archflow.state.stage_workflow import (
     ProjectStage,

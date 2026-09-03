@@ -85,7 +85,7 @@ from archive.archflow.state.build_policy import (
     ConstructabilityTopic,
     PolicyConstraintStrength,
 )
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import (
     DesignObligation,
     ObligationStatus,

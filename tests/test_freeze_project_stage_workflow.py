@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from archflow.project.repository import FilesystemProjectRepository, ProjectIntegrityError
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.stage_workflow import ProjectStage, ProjectStageWorkflow
 from tools.freeze_project_stage_workflow import freeze_workflow
 

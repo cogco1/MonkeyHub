@@ -19,7 +19,7 @@ from typing import Any, Mapping
 from archflow.capabilities.declaration import DeclarationQuadrant
 from archflow.capabilities.discipline_seats import SeatSpec
 from archflow.project.repository import FilesystemProjectRepository
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopmentDiscipline
 
 # Where a project keeps the seats the runner executes. Authored input, beside

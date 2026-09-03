@@ -27,7 +27,7 @@ from archive.archflow.runtime.terrain_adaptation import (
     validate_terrain_relationship,
 )
 from archflow.state.operational_state import OperationalMarkovState
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.contracts.canonical import canonical_digest
 from archflow.state.site_context import SiteContext

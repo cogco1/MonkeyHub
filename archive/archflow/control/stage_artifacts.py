@@ -15,10 +15,7 @@ from typing import Mapping
 from urllib.parse import quote
 
 from archflow.project.refs import BranchRef, ProjectRecordRef, require_identifier
-from archflow.state.design_maturity import (
-    StageEntryProof,
-    require_stage_entry_proof,
-)
+from archive.archflow.state.design_maturity import StageEntryProof, require_stage_entry_proof
 from archflow.state.geometry_program import require_sha256
 from archflow.state.model import ArtifactRef
 from archflow.state.operational_state import require_logical_ref

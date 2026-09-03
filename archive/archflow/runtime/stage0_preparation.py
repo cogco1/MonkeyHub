@@ -28,7 +28,8 @@ from archive.archflow.runtime.design_controller import (
 )
 from archive.archflow.runtime.event_log import DesignEvent, EventDecision
 from archflow.state.commitments import Commitment
-from archflow.state.design_maturity import DesignMaturityState, DesignPhase
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import DesignMaturityState
 from archive.archflow.state.design_state import (
     DesignStateLayer,
     DesignStateNode,

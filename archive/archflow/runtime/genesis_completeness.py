@@ -25,7 +25,7 @@ from archflow.control.requirements import (
 )
 from archive.archflow.control.stage_subjects import StageSubjectInventory
 from archflow.project.refs import ProjectRecordRef
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import OperationalMarkovState
 
 

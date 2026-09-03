@@ -21,7 +21,7 @@ from enum import StrEnum
 from archflow.capabilities.declaration import DeclarationQuadrant
 from archflow.contracts.authority import no_authority
 from archflow.project.refs import require_identifier
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import (
     DevelopedDesignState,
     DevelopmentDiscipline,

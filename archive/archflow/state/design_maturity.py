@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Mapping
 
+from archflow.state.stage_workflow import DESIGN_PHASES, DesignPhase
 from archflow.project.refs import (
     BranchRef,
     ProjectRecordRef,
@@ -42,17 +43,8 @@ class DesignMaturityError(ValueError):
     """A maturity transition is not valid for its exact operational base."""
 
 
-class DesignPhase(StrEnum):
-    RESEARCH_BRIEF = "research_brief"
-    PROGRAMMING = "programming"
-    SITE_RESOURCE_COORDINATION = "site_resource_coordination"
-    SCHEMATIC_DESIGN = "schematic_design"
-    DESIGN_DEVELOPMENT = "design_development"
-    CANDIDATE_COORDINATION = "candidate_coordination"
-    EXECUTION_READY = "execution_ready"
 
 
-DESIGN_PHASES: tuple[DesignPhase, ...] = tuple(DesignPhase)
 
 
 class DeliverableRole(StrEnum):

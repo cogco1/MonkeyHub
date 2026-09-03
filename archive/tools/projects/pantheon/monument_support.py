@@ -56,7 +56,8 @@ from archive.archflow.runtime.semantic_geometry_lifecycle import (
 )
 from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef
 from archflow.state.spatial import ComponentMaturity, ConstraintResponseStatus, DesignComponent, MassingVolume, SpatialConnection, SpatialConstraintResponse, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialZone
-from archflow.state.design_maturity import DesignMaturityState, DesignPhase, PhaseGateRequest, evaluate_forward_phase_gate
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import DesignMaturityState, PhaseGateRequest, evaluate_forward_phase_gate
 from archive.archflow.state.design_program import ProgramMetricKind, ProgramNodeKind
 from archflow.state.site_context import SiteBounds
 from archflow.state.developed_design import DevelopedDesignState

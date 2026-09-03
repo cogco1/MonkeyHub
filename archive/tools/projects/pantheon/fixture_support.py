@@ -43,7 +43,8 @@ from archive.archflow.runtime.resource_compiler import (
 from archive.archflow.runtime.site_compiler import compile_site_context
 from archive.archflow.state.design_brief import BriefClaimKind, BriefSlot
 from archive.archflow.state.build_policy import BuildStagingMode, ConstructabilityTopic, PolicyConstraintStrength, ResourcePolicyMode
-from archflow.state.design_maturity import DeliverableRole, DesignMaturityState, DesignPhase, PhaseDeliverable, PhaseGateRequest, evaluate_forward_phase_gate
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import DeliverableRole, DesignMaturityState, PhaseDeliverable, PhaseGateRequest, evaluate_forward_phase_gate
 from archflow.state.operational_state import FactEpistemicStatus, OperationalMarkovState
 from archive.archflow.state.design_program import ProgramMetricKind, ProgramNodeKind, ProgramRelationshipKind, ProgramRelationshipStrength
 from archflow.state.site_context import SiteBounds

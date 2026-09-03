@@ -19,7 +19,6 @@ from archflow.contracts.authority import (
 )
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.project.refs import require_identifier
-from archflow.state.design_maturity import DESIGN_PHASES, DesignPhase
 from archflow.state.operational_state import (
     DesignObligation,
     ObligationStatus,
@@ -39,6 +38,20 @@ _AUTHORITY_FIELDS = DEFAULT_AUTHORITY_FIELDS
 _AUTHORITY_KEYS = frozenset(_AUTHORITY_FIELDS)
 _MAX_STAGES = 256
 _MAX_REQUIREMENTS = 4096
+
+
+# ---------------------------------------------------------------- the phase ladder
+class DesignPhase(StrEnum):
+    RESEARCH_BRIEF = "research_brief"
+    PROGRAMMING = "programming"
+    SITE_RESOURCE_COORDINATION = "site_resource_coordination"
+    SCHEMATIC_DESIGN = "schematic_design"
+    DESIGN_DEVELOPMENT = "design_development"
+    CANDIDATE_COORDINATION = "candidate_coordination"
+    EXECUTION_READY = "execution_ready"
+
+
+DESIGN_PHASES: tuple[DesignPhase, ...] = tuple(DesignPhase)
 
 
 class StageWorkflowError(ValueError):

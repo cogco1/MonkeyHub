@@ -16,7 +16,7 @@ from archive.archflow.capabilities.phase_gates import (
     PhaseExpertMetadata,
     discover_phase_experts,
 )
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.design_portfolio import SelectedBranchHandoff
 from archflow.state.developed_design import (
     ArchitectDevelopmentDecision,

@@ -45,7 +45,7 @@ from archive.archflow.materials.binding import (
 )
 from archive.archflow.materials.ledger import MaterialLedger
 from archflow.project.refs import BranchRef
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archive.archflow.validation.assembly import (
     AssemblyObligationDisposition,
     AssemblyProfile,

@@ -18,12 +18,8 @@ from archflow.project.refs import (
     ProjectVersionRef,
     RunRef,
 )
-from archflow.state.design_maturity import (
-    DesignPhase,
-    DeliverableRole,
-    PhaseGateReceipt,
-    StageEntryProof,
-)
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import DeliverableRole, PhaseGateReceipt, StageEntryProof
 from archflow.state.model import ArtifactRef
 
 

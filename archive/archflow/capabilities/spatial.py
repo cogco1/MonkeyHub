@@ -9,12 +9,8 @@ from archive.archflow.state.build_policy import (
     BuildPolicy,
     PolicyConstraintStrength,
 )
-from archflow.state.design_maturity import (
-    DesignMaturityState,
-    DesignPhase,
-    PhaseGateReceipt,
-    require_current_phase_gate,
-)
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import DesignMaturityState, PhaseGateReceipt, require_current_phase_gate
 from archive.archflow.state.design_program import (
     DesignProgram,
     ProgramMetricKind,

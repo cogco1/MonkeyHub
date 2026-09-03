@@ -28,7 +28,7 @@ from archflow.capabilities.geometry_proposal import (
     GeometryProposalStatus,
     proposal_authoring_output,
 )
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import (
     DevelopmentCoordinationStatus,
     DevelopmentDiscipline,

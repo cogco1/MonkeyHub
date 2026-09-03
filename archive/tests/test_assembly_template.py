@@ -44,15 +44,8 @@ from archive.archflow.state.component_template import (
     ParameterForm,
     TemplateParameter,
 )
-from archflow.state.design_maturity import (
-    PHASE_DELIVERABLE_ROLES,
-    DesignMaturityState,
-    DesignPhase,
-    PhaseDeliverable,
-    PhaseGateRequest,
-    StageEntryProof,
-    evaluate_forward_phase_gate,
-)
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import PHASE_DELIVERABLE_ROLES, DesignMaturityState, PhaseDeliverable, PhaseGateRequest, StageEntryProof, evaluate_forward_phase_gate
 from archflow.state.geometry_program import (
     DatumBinding,
     InterfaceDatum,

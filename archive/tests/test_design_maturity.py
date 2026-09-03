@@ -25,25 +25,8 @@ from archflow.project.refs import (
     ProjectVersionRef,
     RunRef,
 )
-from archflow.state.design_maturity import (
-    DESIGN_PHASES,
-    PHASE_DELIVERABLE_ROLES,
-    BackwardRevisionRequest,
-    DeliverableRole,
-    DesignMaturityError,
-    DesignMaturityState,
-    DesignPhase,
-    GateCertificationSource,
-    PhaseDeliverable,
-    PhaseGateReceipt,
-    PhaseGateRequest,
-    StageEntryProof,
-    compile_backward_revision,
-    evaluate_forward_phase_gate,
-    next_design_phase,
-    require_current_phase_gate,
-    require_stage_entry_proof,
-)
+from archflow.state.stage_workflow import DESIGN_PHASES, DesignPhase
+from archive.archflow.state.design_maturity import PHASE_DELIVERABLE_ROLES, BackwardRevisionRequest, DeliverableRole, DesignMaturityError, DesignMaturityState, GateCertificationSource, PhaseDeliverable, PhaseGateReceipt, PhaseGateRequest, StageEntryProof, compile_backward_revision, evaluate_forward_phase_gate, next_design_phase, require_current_phase_gate, require_stage_entry_proof
 from archflow.state.operational_state import (
     DependencyEdge,
     DependencyEffect,

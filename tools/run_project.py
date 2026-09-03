@@ -35,7 +35,7 @@ from archflow.runtime.project_runner import (  # noqa: E402
     StageExecutionGuard,
     run_project,
 )
-from archflow.state.design_maturity import DesignPhase  # noqa: E402
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopmentDiscipline  # noqa: E402
 from archflow.state.state_record import StateRecord  # noqa: E402
 from archflow.state.stage_workflow import (  # noqa: E402

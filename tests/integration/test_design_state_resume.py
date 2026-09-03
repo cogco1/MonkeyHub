@@ -107,7 +107,7 @@ from archive.archflow.state.design_state import (
     DesignStateTree,
     compile_tree_phase_change,
 )
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.site_context import SiteBounds
 from archflow.state.spatial import (
     ComponentMaturity,
@@ -1301,11 +1301,7 @@ def _persist_verified_stage_artifact_claim(
         finalize_stage_control_chain,
         prepare_stage_control_chain,
     )
-    from archflow.state.design_maturity import (
-        DeliverableRole,
-        PhaseGateReceipt,
-        StageEntryProof,
-    )
+    from archive.archflow.state.design_maturity import DeliverableRole, PhaseGateReceipt, StageEntryProof
     from archflow.state.model import ArtifactRef
     from archive.archflow.validation.relation_realization import (
         check_relation_realization,

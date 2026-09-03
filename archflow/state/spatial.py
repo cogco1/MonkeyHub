@@ -11,7 +11,7 @@ from archflow.project.refs import (
     RunRef,
     require_identifier,
 )
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,

@@ -38,7 +38,7 @@ from archive.archflow.control.relation_checks import check_relation_coverage
 from archive.archflow.control.relation_promotion import promote_verified_relation_graph
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.refs import BranchRef, ProjectRecordRef
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.geometry_program import LengthUnit
 from archive.archflow.materials.binding import validate_material_bindings
 from archive.archflow.relations.authoring import (

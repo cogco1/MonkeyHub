@@ -72,12 +72,8 @@ from archive.archflow.runtime.stage_control_chain import (
     finalize_stage_control_chain,
     prepare_stage_control_chain,
 )
-from archflow.state.design_maturity import (
-    DesignPhase,
-    DeliverableRole,
-    PhaseGateReceipt,
-    StageEntryProof,
-)
+from archflow.state.stage_workflow import DesignPhase
+from archive.archflow.state.design_maturity import DeliverableRole, PhaseGateReceipt, StageEntryProof
 from archflow.state.model import ArtifactRef
 from archive.archflow.validation.relation_realization import check_relation_realization
 from archive.archflow.validation.check_bridges import (

@@ -35,7 +35,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import record_ref_from_uri  # noqa: E402
 from archflow.runtime.project_runner import RunOptions, StageExecutionGuard, run_project  # noqa: E402
-from archflow.state.design_maturity import DesignPhase  # noqa: E402
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import DesignObligation  # noqa: E402
 from archflow.state.stage_workflow import ProjectStage, ProjectStageWorkflow, open_stage_run_envelope  # noqa: E402
 from archflow.state.state_record import StateRecord, developed_design_view  # noqa: E402
