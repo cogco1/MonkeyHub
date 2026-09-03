@@ -4,9 +4,6 @@
   "checked_source_roots": [
     "archflow",
     "tools",
-    "apps/archflow-studio/backend",
-    "server",
-    "shared",
     "apps/archflow-studio/api"
   ],
   "probe_root": "probes",
@@ -302,57 +299,6 @@
         "archflow.project.repository"
       ],
       "reason": "Detached experts and capabilities cannot acquire persistence or promotion authority."
-    },
-    {
-      "source": "apps/archflow-studio/backend",
-      "targets": [
-        "rhino3dm",
-        "numpy",
-        "networkx",
-        "OCP",
-        "build123d",
-        "shapely",
-        "trimesh",
-        "scipy",
-        "tests",
-        "tools",
-        "probes"
-      ],
-      "reason": "Preview Slice 01 backend, retired by P108 (tag studio-preview-slice-01); fenced until the directory is removed so nothing grows there in the meantime."
-    },
-    {
-      "source": "server",
-      "targets": [
-        "rhino3dm",
-        "numpy",
-        "networkx",
-        "OCP",
-        "build123d",
-        "shapely",
-        "trimesh",
-        "scipy",
-        "tests",
-        "tools",
-        "probes"
-      ],
-      "reason": "The top-level /client /server /shared layout was proposed and rejected on 2026-09-03: the Studio in apps/archflow-studio is the product shell (P108). This root stays checked as a tripwire — code appearing here is a layout violation to review, and geometry/graph/rhino3dm imports fail immediately."
-    },
-    {
-      "source": "shared",
-      "targets": [
-        "rhino3dm",
-        "numpy",
-        "networkx",
-        "OCP",
-        "build123d",
-        "shapely",
-        "trimesh",
-        "scipy",
-        "tests",
-        "tools",
-        "probes"
-      ],
-      "reason": "The top-level /client /server /shared layout was proposed and rejected on 2026-09-03: the Studio in apps/archflow-studio is the product shell (P108). This root stays checked as a tripwire — code appearing here is a layout violation to review, and geometry/graph/rhino3dm imports fail immediately."
     },
     {
       "source": "apps/archflow-studio/api",

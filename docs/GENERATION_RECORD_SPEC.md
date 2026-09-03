@@ -131,7 +131,7 @@ IFC 导出回执(`ifc-export-receipt`)、渲染清单
 ## 六、物理落位(2026-08-29 起生效)
 
 - **框架代码与治理**:`D:\ARCHFLOW_V4`(git)。卡片、registry、
-  机制证明 probes 与代码同仓演进 —— 它们是机制证据,`devctl verify`
+  机制证明 probes 与代码同仓演进 —— 它们是机制证据,the test suite
   依赖其与代码的同版本性。
 - **设计项目运行时工作区**:
   `D:\PROJECTS\01_ACTIVE_当前项目\ARCHFLOW CAADRIA 2027\V4_RUNTIME\`
