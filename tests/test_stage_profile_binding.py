@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from archflow.control.profile import (
+from archive.archflow.control.profile import (
     StageProfileBindingError,
     StageRequirementProfileBinding,
 )

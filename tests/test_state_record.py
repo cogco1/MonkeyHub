@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.project import FilesystemProjectRepository
+from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.operational_state import DependencyEffect, DesignObligation, ObligationStatus
 from archflow.project.refs import RunRef
 from archflow.state.state_record import (

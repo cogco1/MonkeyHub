@@ -62,7 +62,8 @@ from archflow.capabilities.relation_checks import check_relations
 from archflow.contracts.authority import no_authority
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus
-from archflow.project import FilesystemProjectRepository, PersistenceArea, PersistenceDestination
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef
 from archflow.control.stage_closure import (
     CompositeStageClosureReceipt,

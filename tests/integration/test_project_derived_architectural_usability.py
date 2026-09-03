@@ -5,19 +5,17 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    ProjectVersionRef,
-    bootstrap_raw_request_project,
-    locate_project,
-)
-from archflow.realization import realize_geometry
-from archflow.runtime.brief_compiler import BriefObservation, compile_design_brief
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.refs import ProjectVersionRef
+from archive.archflow.project.bootstrap import bootstrap_raw_request_project
+from archflow.project.location import locate_project
+from archive.archflow.realization.sandbox import realize_geometry
+from archive.archflow.runtime.brief_compiler import BriefObservation, compile_design_brief
 from archflow.compilers.geometry import compile_geometry_program
-from archflow.state import BriefClaimKind, BriefSlot, FactEpistemicStatus
-from archflow.validation.architectural import (
+from archive.archflow.state.design_brief import BriefClaimKind, BriefSlot
+from archflow.state.operational_state import FactEpistemicStatus
+from archive.archflow.validation.architectural import (
     ArchitecturalCriterion,
     ArchitecturalObservation,
     ArchitecturalUsabilityContract,

@@ -4,20 +4,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.capabilities.design_development import (
+from archive.archflow.capabilities.design_development import (
     invalidate_developed_design,
 )
-from archflow.project import FilesystemProjectRepository
-from archflow.runtime.development_controller import (
+from archflow.project.repository import FilesystemProjectRepository
+from archive.archflow.runtime.development_controller import (
     DevelopmentControllerArchive,
     DevelopmentControllerCheckpoint,
 )
-from archflow.runtime.state_reducer import canonical_state_to_dict
-from archflow.state import (
-    DevelopmentCoordinationStatus,
-    initialize_canonical_project,
-)
-from tests.test_design_development import (
+from archive.archflow.runtime.state_reducer import canonical_state_to_dict
+from archflow.state.developed_design import DevelopmentCoordinationStatus
+from archflow.state.model import initialize_canonical_project
+from archive.tests.test_design_development import (
     OPENING_REF,
     _coordinated_state,
 )

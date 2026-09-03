@@ -10,21 +10,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    ProjectArtifactRef,
-    ProjectAlreadyExists,
-    ProjectHeadLocked,
-    ProjectIntegrityError,
-    ProjectRecordRef,
-    ProjectVersionRef,
-    PromotionAuthorityError,
-    RunRef,
-    StaleProjectHead,
-    project_state_sha256,
-)
+from archflow.project.repository import FilesystemProjectRepository, ProjectAlreadyExists, ProjectHeadLocked, ProjectIntegrityError, PromotionAuthorityError, StaleProjectHead
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, ProjectVersionRef, RunRef
+from archflow.project.digests import project_state_sha256
 
 
 _FOREIGN_LOCK_HOLDER = """
@@ -213,7 +202,6 @@ class ProjectRepositoryTests(unittest.TestCase):
 
     def test_fixed_run_batch_rolls_back_new_roots_on_second_write_failure(self) -> None:
         from archflow.project import repository as repository_module
-
         original = repository_module._write_immutable
 
         def fail_second_manifest(path: Path, data: bytes) -> None:

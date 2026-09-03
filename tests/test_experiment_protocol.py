@@ -5,7 +5,7 @@ from pathlib import Path
 import copy
 import unittest
 
-from archflow.evaluation.experiment import (
+from archive.archflow.evaluation.experiment import (
     ExperimentAssignment,
     ExperimentAssignmentLifecycle,
     ExperimentAttemptIntent,
@@ -34,7 +34,7 @@ from archflow.evaluation.experiment import (
     compile_experiment_outcome,
     compile_experiment_result_index,
 )
-from archflow.project import ProjectVersionRef
+from archflow.project.refs import ProjectVersionRef
 
 
 REGISTERED_AT = "2026-08-17T13:58:00+08:00"
@@ -980,7 +980,7 @@ class ExperimentAttemptTests(unittest.TestCase):
     def test_framework_protocol_contains_no_case_or_platform_answer(self) -> None:
         source = (
             Path(__file__).resolve().parents[1]
-            / "archflow"
+            / "archive" / "archflow"
             / "evaluation"
             / "experiment.py"
         ).read_text(encoding="utf-8").lower()

@@ -29,11 +29,8 @@ from archflow.contracts.authority import (  # noqa: E402
     DEFAULT_AUTHORITY_FIELDS,
     no_authority,
 )
-from archflow.project import (  # noqa: E402
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.state.stage_workflow import ProjectStageWorkflow  # noqa: E402
 
 

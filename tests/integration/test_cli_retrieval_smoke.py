@@ -4,12 +4,12 @@ import json
 import os
 import unittest
 
-from archflow.adapters.cli_retrieval import (
+from archive.archflow.adapters.cli_retrieval import (
     CliProviderSpec,
     CliRetrievalAdapter,
 )
-from archflow.ports.retrieval import RetrievalQuery, RetrievalStatus
-from archflow.project import ProjectVersionRef
+from archive.archflow.ports.retrieval import RetrievalQuery, RetrievalStatus
+from archflow.project.refs import ProjectVersionRef
 
 
 class LiveCliRetrievalSmoke(unittest.TestCase):

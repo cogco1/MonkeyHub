@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from archflow.compilers.geometry import compile_geometry_program
-from tools.projects.pantheon import monument_support as S
+from archive.tools.projects.pantheon import monument_support as S
 
 
 class MonumentLifecycleFastTests(unittest.TestCase):

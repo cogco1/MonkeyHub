@@ -5,23 +5,19 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
-from archflow.adapters.site_observation import (
+from archive.archflow.adapters.site_observation import (
     SiteObservationAuthorization,
     SiteObservationError,
     SiteObservationErrorCode,
     authorize_site_observation,
 )
-from archflow.compilers.site import (
+from archive.archflow.compilers.site import (
     SiteCompilationError,
     compile_site_context,
 )
-from archflow.project import ProjectVersionRef
-from archflow.compilers.brief import compile_design_brief
-from archflow.state import (
-    GroundModelKind,
-    SiteBounds,
-    SiteContext,
-)
+from archflow.project.refs import ProjectVersionRef
+from archive.archflow.compilers.brief import compile_design_brief
+from archflow.state.site_context import GroundModelKind, SiteBounds, SiteContext
 
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "site"

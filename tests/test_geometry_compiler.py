@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 import unittest
 
-import archflow.compilers as compiler_api
+import archive.archflow.compilers as compiler_api
 import archflow.compilers.geometry as canonical_geometry_compiler
 import archflow.runtime.geometry_compiler as runtime_geometry_compiler
 from archflow.compilers.geometry import (
@@ -37,7 +37,7 @@ from archflow.state.geometry_program import (
 
 EVIDENCE = "evidence:geometry-compiler"
 COMMITMENT = "commitment:maintain-egress"
-from tests.test_design_development import _coordinated_state
+from archive.tests.test_design_development import _coordinated_state
 
 
 def _state(*, width: float = 6.0) -> DevelopedDesignState:

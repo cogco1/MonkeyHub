@@ -13,7 +13,7 @@ from archflow.capabilities.declaration import (
     select_decision_basis,
     validate_stage_declarations,
 )
-from archflow.state import CommitmentStrength
+from archflow.state.commitments import CommitmentStrength
 
 
 def field(field_id, quadrant, check=GeometryCheck.NONE, minimum=0.0,
@@ -216,7 +216,7 @@ class DecisionBasisSelectionTest(unittest.TestCase):
         self.assertLess(metrics["chars_selected"], metrics["chars_total"])
 
     def test_prompt_guard_bounds_and_shapes(self):
-        from archflow.capabilities.semantic_spatial_authoring import (
+        from archive.archflow.capabilities.semantic_spatial_authoring import (
             _validated_decision_basis,
         )
 

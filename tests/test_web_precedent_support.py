@@ -4,15 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    bootstrap_raw_request_project,
-)
-from tests.test_production_root_compiler import _context_and_options
-from tools.projects.monument_common.context import rebase_authoring_context
-from tools.projects.web_precedent.support import (
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.project.bootstrap import bootstrap_raw_request_project
+from archive.tests.test_production_root_compiler import _context_and_options
+from archive.tools.projects.monument_common.context import rebase_authoring_context
+from archive.tools.projects.web_precedent.support import (
     WebPrecedentSupportError,
     load_rebased_authoring_context,
 )

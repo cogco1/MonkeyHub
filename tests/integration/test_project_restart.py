@@ -4,16 +4,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
-from archflow.runtime.state_reducer import (
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.runtime.state_reducer import (
     canonical_state_to_dict,
     make_initialization_event,
 )
-from archflow.state import initialize_canonical_project
+from archflow.state.model import initialize_canonical_project
 
 
 class ProjectRestartIntegrationTests(unittest.TestCase):

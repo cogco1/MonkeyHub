@@ -5,14 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.project import (
-    FilesystemProjectRepository,
-    RuntimeConfigError,
-    RuntimePaths,
-    bootstrap_external_project,
-    initialize_runtime,
-    load_runtime_config,
-)
+from archflow.project.repository import FilesystemProjectRepository
+from archive.archflow.project.runtime import RuntimeConfigError, RuntimePaths, bootstrap_external_project, initialize_runtime, load_runtime_config
 
 
 class ExternalProjectRuntimeTests(unittest.TestCase):

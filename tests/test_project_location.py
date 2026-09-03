@@ -6,13 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.project import (
-    ProjectLocationError,
-    ProjectLocationKind,
-    bootstrap_raw_request_project,
-    locate_project,
-    open_located_project,
-)
+from archflow.project.location import ProjectLocationError, ProjectLocationKind, locate_project, open_located_project
+from archive.archflow.project.bootstrap import bootstrap_raw_request_project
 
 
 class ProjectLocationTests(unittest.TestCase):

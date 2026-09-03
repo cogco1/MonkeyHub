@@ -2,18 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from archflow.project import ProjectVersionRef
-from archflow.state import (
-    Commitment,
-    CommitmentKind,
-    CommitmentStatus,
-    CommitmentStrength,
-    CriterionRef,
-    RevisionPolicy,
-    initialize_canonical_project,
-)
-from archflow.submission import CandidateDelta, CandidateSubmission, Claim
-from archflow.validation import AuthorizedCommitmentClaimsValidator
+from archflow.project.refs import ProjectVersionRef
+from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef, RevisionPolicy
+from archflow.state.model import initialize_canonical_project
+from archflow.submission.model import CandidateDelta, CandidateSubmission, Claim
+from archflow.validation.engine import AuthorizedCommitmentClaimsValidator
 
 
 def _hard_commitment(

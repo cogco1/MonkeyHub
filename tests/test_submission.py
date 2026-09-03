@@ -2,22 +2,20 @@ from __future__ import annotations
 
 import unittest
 
-from archflow.commit import (
-    PromotionPackageError,
-    build_promotion_decision_package,
-)
-from archflow.interaction import CandidateApprovalMode
-from archflow.project import BranchRef, RunRef
-from archflow.runtime.candidate_assembly import bind_mcp_execution
-from archflow.runtime.player_control import (
+from archive.archflow.commit.model import PromotionPackageError, build_promotion_decision_package
+from archive.archflow.interaction.player import CandidateApprovalMode
+from archflow.project.refs import BranchRef, RunRef
+from archive.archflow.runtime.candidate_assembly import bind_mcp_execution
+from archive.archflow.runtime.player_control import (
     issue_disposable_automation_approval,
     issue_human_candidate_approval,
 )
-from archflow.state import ArtifactRef, OperationalMarkovState
-from archflow.validation.commitments import monitor_commitments
+from archflow.state.model import ArtifactRef
+from archflow.state.operational_state import OperationalMarkovState
+from archive.archflow.validation.commitments import monitor_commitments
 from archflow.validation.model import Finding, ValidationReceipt
-from tests.test_candidate_assembly import _assembly
-from tests.test_player_control import (
+from archive.tests.test_candidate_assembly import _assembly
+from archive.tests.test_player_control import (
     ISSUED,
     VALID,
     _approval_policy,

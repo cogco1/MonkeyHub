@@ -3,12 +3,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
-from archflow.runtime.artifact_library import load_neutral_building_package
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.runtime.artifact_library import load_neutral_building_package
 from archflow.state.geometry_program import digest_value
 
 

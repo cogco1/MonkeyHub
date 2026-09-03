@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping
 
-from archflow.project import ProjectVersionRef
+from archflow.project.refs import ProjectVersionRef
 from archflow.project.refs import require_identifier
 from archflow.state.operational_state import require_logical_ref
 from archflow.contracts.canonical import canonical_json

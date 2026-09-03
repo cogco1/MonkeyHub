@@ -11,10 +11,10 @@ from unittest.mock import Mock, patch
 import rhino3dm
 
 from archflow.adapters.three_dm_inspector import inspect_three_dm
-from archflow.project import BranchRef, ProjectVersionRef, RunRef
+from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
 from archflow.state.operational_state import ObligationStatus
-from tools import run_parthenon_reconstruction as stage3
-from tools import run_parthenon_stage4_reconstruction as stage4
+from archive.tools import run_parthenon_reconstruction as stage3
+from archive.tools import run_parthenon_stage4_reconstruction as stage4
 
 
 HUMAN_AUTHORIZATION_REF = (

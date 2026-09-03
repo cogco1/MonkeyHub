@@ -11,13 +11,13 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-from archflow.capabilities.visual_evidence import (
+from archive.archflow.capabilities.visual_evidence import (
     VisualClaimKind,
     VisualReviewState,
 )
-from archflow.project import FilesystemProjectRepository
-from tools import refine_parthenon_stage4_visual_regions as visual_regions
-from tools import run_parthenon_stage4_visual_rag as visual_rag
+from archflow.project.repository import FilesystemProjectRepository
+from archive.tools import refine_parthenon_stage4_visual_regions as visual_regions
+from archive.tools import run_parthenon_stage4_visual_rag as visual_rag
 
 
 def _generated_jpeg(index: int) -> bytes:

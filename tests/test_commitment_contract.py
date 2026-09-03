@@ -6,24 +6,14 @@ import unittest
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
-from archflow.adapters import FakeVoxelAdapter
-from archflow.commit import InMemoryStateStore
-from archflow.runtime import FakeArchitect, RunStatus, initial_state, run_once
-from archflow.state import (
-    Commitment,
-    CommitmentAuthorityError,
-    CommitmentKind,
-    CommitmentStatus,
-    CommitmentStrength,
-    CommitmentTransitionError,
-    CriterionRef,
-    BuildingProgram,
-    FootprintTarget,
-    RevisionPolicy,
-    transition_commitment,
-)
-from archflow.submission import CandidateDelta
-from archflow.workspace import WorkspaceManager
+from archive.archflow.adapters.fake_voxel import FakeVoxelAdapter
+from archive.archflow.commit.store import InMemoryStateStore
+from archive.archflow.runtime.fake_architect import FakeArchitect
+from archive.archflow.runtime.walking_skeleton import RunStatus, initial_state, run_once
+from archflow.state.commitments import Commitment, CommitmentAuthorityError, CommitmentKind, CommitmentStatus, CommitmentStrength, CommitmentTransitionError, CriterionRef, RevisionPolicy, transition_commitment
+from archflow.state.program import BuildingProgram, FootprintTarget
+from archflow.submission.model import CandidateDelta
+from archive.archflow.workspace.manager import WorkspaceManager
 
 
 def _commitment(

@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from archflow.capabilities.visual_inventory import (
+from archive.archflow.capabilities.visual_inventory import (
     PixelRegion,
     ROISelection,
     SourceDerivationKind,
@@ -13,8 +13,8 @@ from archflow.capabilities.visual_inventory import (
     VisualSourceDispositionKind,
     compile_visual_evidence_inventory,
 )
-from archflow.control.baseline import BASELINE_LEVEL_ROLES, StageBaselineLevel
-from archflow.control.component_functions import (
+from archive.archflow.control.baseline import BASELINE_LEVEL_ROLES, StageBaselineLevel
+from archive.archflow.control.component_functions import (
     DEFAULT_COMPONENT_FUNCTION_POLICY,
     ComponentFunctionContract,
     ComponentFunctionId,
@@ -25,24 +25,24 @@ from archflow.control.component_functions import (
     FunctionObligationClaim,
     compile_component_function_ledger,
 )
-from archflow.control.function_relations import (
+from archive.archflow.control.function_relations import (
     FunctionRelationEndpoint,
     FunctionRelationEndpointBinding,
     FunctionRelationEvidenceEnvelope,
 )
-from archflow.control.relation_checks import (
+from archive.archflow.control.relation_checks import (
     RELATION_VERIFICATION_CHECKERS,
     relation_subject_inventory_ref,
 )
-from archflow.control.semantic_capabilities import (
+from archive.archflow.control.semantic_capabilities import (
     current_semantic_capability_policy,
 )
-from archflow.control.stage_subjects import (
+from archive.archflow.control.stage_subjects import (
     StageSubjectDisposition,
     StageSubjectRoleObligation,
 )
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.relations.authoring import (
+from archive.archflow.relations.authoring import (
     RelationAnswerStatus,
     RelationAuthoringProposal,
     RelationBasisBinding,
@@ -62,23 +62,23 @@ from archflow.relations.contracts import (
     RelationParticipant,
     RelationProjection,
 )
-from archflow.runtime.stage_control_chain import (
+from archive.archflow.runtime.stage_control_chain import (
     FinalizedStageControlChain,
     PreparedStageControlChain,
     StageControlChainError,
     finalize_stage_control_chain,
     prepare_stage_control_chain,
 )
-from archflow.runtime.stage_subject_inventory import (
+from archive.archflow.runtime.stage_subject_inventory import (
     compile_stage_subject_inventory,
 )
 from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
-from archflow.validation.relation_verification import (
+from archive.archflow.validation.relation_verification import (
     RelationQuestionVerificationProfile,
     RelationVerificationBinding,
     compile_relation_question_verification,
 )
-from tests.test_stage_subject_inventory import (
+from archive.tests.test_stage_subject_inventory import (
     _record_ref,
     _stair_sources,
     _text_only_visual_inventory,
@@ -313,7 +313,7 @@ def _raw_inputs(
                 prompt="Identify the exact project-authored host relation.",
             )
         )
-    from archflow.control.function_relations import (
+    from archive.archflow.control.function_relations import (
         compile_function_relation_requirements,
     )
 

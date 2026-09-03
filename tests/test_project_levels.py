@@ -14,12 +14,12 @@ from archflow.capabilities.discipline_seats import (
     check_seat_datums,
     project_seat_context,
 )
-from archflow.state.assembly_template import (
+from archive.archflow.state.assembly_template import (
     AssemblyTemplateError,
     RoleBinding,
     bind_assembly_template,
 )
-from archflow.state.component_template import ParameterForm, TemplateParameter
+from archive.archflow.state.component_template import ParameterForm, TemplateParameter
 from archflow.state.geometry_program import (
     GeometryProgramError,
     InterfaceDatum,
@@ -31,7 +31,7 @@ from archflow.state.geometry_program import (
     ProjectLevels,
     verify_project_datums,
 )
-from tests.test_assembly_template import BASIS, _template
+from archive.tests.test_assembly_template import BASIS, _template
 from tests.test_discipline_seats import _seats
 from tests.test_geometry_compiler import COMMITMENT
 from tests.test_sandbox_realization import compiled_room

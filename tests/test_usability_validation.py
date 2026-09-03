@@ -7,18 +7,18 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.adapters.voxel_observation import (
+from archive.archflow.adapters.voxel_observation import (
     VoxelObservation,
     VoxelObservationExtractor,
 )
-from archflow.state import ArtifactRef, StateRef
-from archflow.validation import compile_building_program
-from archflow.validation.usability import (
+from archflow.state.model import ArtifactRef, StateRef
+from archive.archflow.compilers.voxel_program import compile_building_program
+from archive.archflow.validation.usability import (
     UseZoneEvidence,
     UsabilityGate,
     validate_usability,
 )
-from archflow.workspace import WorkspaceRef
+from archive.archflow.workspace.manager import WorkspaceRef
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "voxel"

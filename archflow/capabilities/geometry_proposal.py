@@ -21,15 +21,8 @@ from archflow.ports.model import (
     ModelInvocationStatus,
     ModelPhase,
 )
-from archflow.project import (
-    PersistenceArea,
-    PersistenceDestination,
-    ProjectRecordRef,
-    ProjectVersionRef,
-    RecordSink,
-    RunRef,
-    require_destination,
-)
+from archflow.project.ports import PersistenceArea, PersistenceDestination, RecordSink, require_destination
+from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.contracts.authority import no_authority
 from archflow.compilers.geometry import (
     AssetSubstitutionReceipt,
@@ -39,7 +32,8 @@ from archflow.compilers.geometry import (
     GeometryIssueCode,
     compile_geometry_program,
 )
-from archflow.state import DevelopedDesignState, SpatialOptionProposal
+from archflow.state.developed_design import DevelopedDesignState
+from archflow.state.spatial import SpatialOptionProposal
 from archflow.state.geometry_program import (
     ASSET_URI_PATTERN,
     AffineTransform,

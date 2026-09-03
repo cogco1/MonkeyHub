@@ -6,7 +6,7 @@ import unittest
 from dataclasses import replace
 from hashlib import sha256
 
-from archflow.control.check_requirements import (
+from archive.archflow.control.check_requirements import (
     component_lineage_stage_requirement,
     spatial_layout_stage_requirement,
 )
@@ -16,13 +16,13 @@ from archflow.control.stage_closure import (
     compile_composite_stage_closure,
 )
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.validation.check_bridges import (
+from archive.archflow.validation.check_bridges import (
     ComponentLineageCheckProfile,
     SpatialLayoutCheckProfile,
     bridge_component_lineage_receipt,
     bridge_spatial_validation_receipt,
 )
-from archflow.validation.component_lineage import (
+from archive.archflow.validation.component_lineage import (
     OperationDisposition,
     OperationLineageResolution,
     PredecessorOperationDisposition,
@@ -31,7 +31,7 @@ from archflow.validation.component_lineage import (
     compile_stage_component_coverage,
 )
 from archflow.validation.contracts import CheckStatus
-from archflow.validation.spatial import (
+from archive.archflow.validation.spatial import (
     AABB,
     HostRegion,
     SpatialElement,

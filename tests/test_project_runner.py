@@ -21,11 +21,8 @@ from archflow.control.stage_closure import (
     CompositeStageClosureReceipt,
     StageClosureStatus,
 )
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.runtime.project_runner import (
     ProjectRunnerError,
     RunOptions,

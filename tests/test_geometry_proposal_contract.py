@@ -16,12 +16,9 @@ from archflow.capabilities.geometry_proposal import (
     produce_geometry_program_proposal,
     proposal_authoring_output,
 )
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    ProjectRecordRef,
-)
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.refs import ProjectRecordRef
 from archflow.state.operational_state import (
     PORTABLE_LOGICAL_REF_PATTERN,
     require_logical_ref,
@@ -43,7 +40,7 @@ def _probe_root() -> Path:
     """Resolve the relocated evidence probe; an absent root triggers skips."""
 
     try:
-        from tools._probe_paths import resolve_probe_root
+        from archive.tools._probe_paths import resolve_probe_root
 
         return resolve_probe_root("p026-sandbox-gold")
     except Exception:

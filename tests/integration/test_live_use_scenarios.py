@@ -7,20 +7,20 @@ import os
 import unittest
 from pathlib import Path
 
-from archflow.adapters.minecraft_volume import (
+from archive.archflow.adapters.minecraft_volume import (
     MinecraftVolumeAdapter,
     MinecraftVolumeBounds,
     MinecraftVolumeHttpTransport,
 )
-from archflow.adapters.voxel_observation import VoxelObservationExtractor
-from archflow.state import ArtifactRef, StateRef
-from archflow.validation import compile_building_program
-from archflow.validation.use_scenarios import (
+from archive.archflow.adapters.voxel_observation import VoxelObservationExtractor
+from archflow.state.model import ArtifactRef, StateRef
+from archive.archflow.compilers.voxel_program import compile_building_program
+from archive.archflow.validation.use_scenarios import (
     UseScenarioStatus,
     evaluate_use_scenarios,
 )
-from archflow.validation.usability import UseZoneEvidence
-from archflow.workspace import WorkspaceRef
+from archive.archflow.validation.usability import UseZoneEvidence
+from archive.archflow.workspace.manager import WorkspaceRef
 
 
 class LiveUseScenarioObservationSmoke(unittest.TestCase):

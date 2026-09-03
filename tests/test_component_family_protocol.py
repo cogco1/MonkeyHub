@@ -4,8 +4,8 @@ from dataclasses import replace
 import copy
 import unittest
 
-from archflow.realization import RealizationStatus, realize_geometry
-from archflow.runtime.family_compiler import (
+from archive.archflow.realization.sandbox import RealizationStatus, realize_geometry
+from archive.archflow.runtime.family_compiler import (
     CompiledFamilyInstance,
     ComponentFamilyCompilationReceipt,
     ComponentFamilyLifecycleReceipt,
@@ -19,19 +19,11 @@ from archflow.runtime.family_compiler import (
     compile_component_family_lifecycle,
 )
 from archflow.compilers.geometry import compile_geometry_program
-from archflow.runtime.semantic_geometry_lifecycle import (
+from archive.archflow.runtime.semantic_geometry_lifecycle import (
     SemanticGeometryLifecycleStatus,
     compile_semantic_geometry_lifecycle,
 )
-from archflow.state import (
-    ComponentFamilyError,
-    ComponentFamilyInstance,
-    ComponentFamilyKind,
-    ComponentFamilySet,
-    FamilyAnchorBinding,
-    FamilyParameterRef,
-    FamilySocket,
-)
+from archive.archflow.state.component_family import ComponentFamilyError, ComponentFamilyInstance, ComponentFamilyKind, ComponentFamilySet, FamilyAnchorBinding, FamilyParameterRef, FamilySocket
 from archflow.state.geometry_program import (
     AffineTransform,
     AssetReference,
@@ -48,7 +40,7 @@ from archflow.state.geometry_program import (
 )
 from tests.test_geometry_compiler import COMMITMENT, EVIDENCE, _state
 from tests.test_sandbox_realization import _asset_payload, compiled_room
-from tests.test_semantic_geometry_lifecycle import (
+from archive.tests.test_semantic_geometry_lifecycle import (
     _design_state,
     _geometry_proposal,
     _initial,

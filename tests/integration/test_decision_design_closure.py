@@ -5,7 +5,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.capabilities.evidence_sufficiency import (
+from archive.archflow.capabilities.evidence_sufficiency import (
     DecisionEdge,
     DecisionNode,
     DecisionUniverseRevision,
@@ -29,7 +29,7 @@ from archflow.control.stage_closure import (
     compile_composite_stage_closure,
 )
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.runtime.design_controller import (
+from archive.archflow.runtime.design_controller import (
     ControllerOutcome,
     advance_design_phase,
 )
@@ -47,7 +47,7 @@ from archflow.state.operational_state import (
     StateFact,
     StateLock,
 )
-from archflow.state.stage_convergence import (
+from archive.archflow.state.stage_convergence import (
     StageConvergenceEvidence,
     StageConvergenceOutcome,
     StageConvergencePolicy,
@@ -56,7 +56,7 @@ from archflow.state.stage_convergence import (
     evaluate_stage_convergence,
 )
 from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
-from tests.test_design_controller import (
+from archive.tests.test_design_controller import (
     _phase_ready_checkpoint,
     _stage_closure_receipt,
     _stage_convergence_receipt,

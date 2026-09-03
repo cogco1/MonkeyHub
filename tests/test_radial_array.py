@@ -3,11 +3,7 @@
 import math
 import unittest
 
-from archflow.realization import (
-    VoxelizationPolicy,
-    derive_voxel_view,
-    realize_geometry,
-)
+from archive.archflow.realization.sandbox import VoxelizationPolicy, derive_voxel_view, realize_geometry
 from archflow.compilers.geometry import compile_geometry_program
 from archflow.state.geometry_program import (
     AffineTransform,

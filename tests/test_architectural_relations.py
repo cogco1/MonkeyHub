@@ -5,17 +5,17 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.control.baseline import StageBaselineLevel
-from archflow.control.check_requirements import (
+from archive.archflow.control.baseline import StageBaselineLevel
+from archive.archflow.control.check_requirements import (
     relation_coverage_stage_requirement,
 )
-from archflow.control.relation_checks import check_relation_coverage
+from archive.archflow.control.relation_checks import check_relation_coverage
 from archflow.control.requirements import StageRequirementProfile
 from archflow.control.stage_closure import (
     StageClosureStatus,
     compile_composite_stage_closure,
 )
-from archflow.control.stage_subjects import (
+from archive.archflow.control.stage_subjects import (
     StageSubjectInventory,
     StageSubjectInventoryEntry,
 )
@@ -25,7 +25,7 @@ from archflow.project.refs import (
     ProjectVersionRef,
     RunRef,
 )
-from archflow.relations.adapters import (
+from archive.archflow.relations.adapters import (
     compile_dependency_edges,
     compile_support_requirements,
 )
@@ -42,7 +42,7 @@ from archflow.relations.contracts import (
     RelationProjection,
     RelationPropagationRule,
 )
-from archflow.relations.coverage import (
+from archive.archflow.relations.coverage import (
     GraphCoverageManifest,
     RelationCoverageError,
     RelationCoverageStatus,
@@ -52,7 +52,7 @@ from archflow.relations.coverage import (
     compile_graph_coverage,
     compile_requirement_slots,
 )
-from archflow.relations.traversal import (
+from archive.archflow.relations.traversal import (
     GraphTraversalReceipt,
     RelationArc,
     RelationCheckerRequirement,
@@ -69,7 +69,7 @@ from archflow.relations.traversal import (
     topological_order,
 )
 from archflow.state.operational_state import DependencyEffect
-from archflow.validation.assembly import RelationshipKind
+from archive.archflow.validation.assembly import RelationshipKind
 from archflow.validation.contracts import (
     CheckFinding,
     CheckReceiptEnvelope,

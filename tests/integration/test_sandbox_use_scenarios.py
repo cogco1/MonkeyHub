@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from archflow.realization import (
-    VoxelizationPolicy,
-    derive_voxel_view,
-    realize_geometry,
-)
+from archive.archflow.realization.sandbox import VoxelizationPolicy, derive_voxel_view, realize_geometry
 from archflow.compilers.geometry import compile_geometry_program
-from archflow.state import CanonicalState
+from archflow.state.model import CanonicalState
 from archflow.state.geometry_program import (
     AffineTransform,
     AssemblyKind,
@@ -23,14 +19,14 @@ from archflow.state.geometry_program import (
     LengthUnit,
     SemanticBinding,
 )
-from archflow.submission import CandidateDelta, CandidateSubmission
-from archflow.validation import validate_submission
-from archflow.validation.use_scenarios import (
+from archflow.submission.model import CandidateDelta, CandidateSubmission
+from archflow.validation.engine import validate_submission
+from archive.archflow.validation.use_scenarios import (
     ScenarioObservationBinding,
     UseScenarioValidator,
     VerticalCirculationEvidence,
 )
-from archflow.validation.usability import UseZoneEvidence
+from archive.archflow.validation.usability import UseZoneEvidence
 from tests.test_geometry_compiler import COMMITMENT, EVIDENCE, _state
 from tests.test_sandbox_realization import _boolean, _curve, _solid
 from tests.test_usability_validation import program_with

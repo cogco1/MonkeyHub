@@ -11,7 +11,7 @@ from archflow.control.requirements import (
     StageCheckRequirement,
     StageRequirementProfile,
 )
-from archflow.control.check_requirements import (
+from archive.archflow.control.check_requirements import (
     material_binding_stage_requirement,
 )
 from archflow.control.stage_closure import (
@@ -19,7 +19,7 @@ from archflow.control.stage_closure import (
     compile_composite_stage_closure,
 )
 from archflow.contracts.canonical import canonical_digest
-from archflow.materials.binding import (
+from archive.archflow.materials.binding import (
     MaterialBindingObservation,
     MaterialBindingProfile,
     MaterialBindingRequirement,
@@ -27,7 +27,7 @@ from archflow.materials.binding import (
     MaterialBindingSnapshot,
     validate_material_bindings,
 )
-from archflow.materials.ledger import MaterialIntent, MaterialLedger
+from archive.archflow.materials.ledger import MaterialIntent, MaterialLedger
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
 from archflow.validation.contracts import CheckStatus
 

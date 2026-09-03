@@ -4,22 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.interaction import (
-    AuthorityDecisionReceipt,
-    ClarificationAlternative,
-    ClarificationDisposition,
-    ClarificationEffect,
-    ClarificationRequest,
-    ClarifiedFactValue,
-)
-from archflow.project import (
-    BranchRef,
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    bootstrap_raw_request_project,
-)
-from archflow.runtime.clarification import (
+from archive.archflow.interaction.clarification import AuthorityDecisionReceipt, ClarificationAlternative, ClarificationDisposition, ClarificationEffect, ClarificationRequest, ClarifiedFactValue
+from archflow.project.refs import BranchRef
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.project.bootstrap import bootstrap_raw_request_project
+from archive.archflow.runtime.clarification import (
     ClarificationDuplicateError,
     ClarificationError,
     ClarificationResumeStatus,
@@ -29,13 +19,7 @@ from archflow.runtime.clarification import (
     persist_clarification_request,
     resume_from_clarification,
 )
-from archflow.state import (
-    DesignObligation,
-    FactEpistemicStatus,
-    OperationalMarkovState,
-    StateDomain,
-    StateFact,
-)
+from archflow.state.operational_state import DesignObligation, FactEpistemicStatus, OperationalMarkovState, StateDomain, StateFact
 
 
 class ClarificationResumeIntegrationTests(unittest.TestCase):

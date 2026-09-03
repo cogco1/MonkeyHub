@@ -8,12 +8,9 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
-from tools import run_parthenon_stage4_visual_rag as visual_rag
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.tools import run_parthenon_stage4_visual_rag as visual_rag
 
 
 def _image_bytes(

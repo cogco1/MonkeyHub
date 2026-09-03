@@ -6,8 +6,8 @@ import hashlib
 import json
 from typing import Protocol
 
-from archflow.state import CanonicalState
-from archflow.submission import CandidateSubmission
+from archflow.state.model import CanonicalState
+from archflow.submission.model import CandidateSubmission
 from archflow.validation.model import Finding, Severity, ValidationReceipt
 
 

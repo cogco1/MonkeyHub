@@ -7,7 +7,7 @@ from dataclasses import replace
 
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.validation.assembly import (
+from archive.archflow.validation.assembly import (
     AssemblyCoverageManifest,
     AssemblyObligationDisposition,
     AssemblyProfile,
@@ -22,7 +22,7 @@ from archflow.validation.assembly import (
     check_assembly,
 )
 from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
-from archflow.validation.spatial import AABB
+from archive.archflow.validation.spatial import AABB
 
 
 SHA_A = "a" * 64

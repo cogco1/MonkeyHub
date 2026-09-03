@@ -22,7 +22,7 @@ from archflow.capabilities.geometry_proposal import (
     GeometryProposalStatus,
     proposal_authoring_output,
 )
-from archflow.realization import realize_geometry
+from archive.archflow.realization.sandbox import realize_geometry
 from archflow.state.geometry_program import (
     DatumBinding,
     GeometryOperationKind,

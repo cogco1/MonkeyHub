@@ -7,36 +7,12 @@ import sys
 import unittest
 from pathlib import Path
 
-from archflow.project import (
-    BranchRef,
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    RunRef,
-)
-from archflow.state import (
-    Commitment,
-    CommitmentKind,
-    CommitmentStatus,
-    CommitmentStrength,
-    ConditionComparator,
-    CriterionRef,
-    DecisionOperator,
-    DependencyEffect,
-    DependencyEdge,
-    DesignObligation,
-    FactEpistemicStatus,
-    LegacyDecisionOperatorV1,
-    LegacyOperationalMarkovStateV2,
-    ObligationStatus,
-    OperationalMarkovState,
-    StateCondition,
-    StateDomain,
-    StateFact,
-    compile_decision_operator,
-    load_decision_operator_record,
-    load_operational_state_record,
-)
+from archflow.project.refs import BranchRef, RunRef
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef
+from archflow.state.decision_operator import ConditionComparator, DecisionOperator, LegacyDecisionOperatorV1, StateCondition, compile_decision_operator, load_decision_operator_record
+from archflow.state.operational_state import DependencyEffect, DependencyEdge, DesignObligation, FactEpistemicStatus, LegacyOperationalMarkovStateV2, ObligationStatus, OperationalMarkovState, StateDomain, StateFact, load_operational_state_record
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

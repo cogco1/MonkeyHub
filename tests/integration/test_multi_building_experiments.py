@@ -15,7 +15,7 @@ from archflow.ports.model import (
     ModelInvocationStatus,
     ModelPhase,
 )
-from archflow.evaluation.experiment import (
+from archive.archflow.evaluation.experiment import (
     ExperimentAssignment,
     ExperimentAssignmentLifecycle,
     ExperimentAttemptIntent,
@@ -35,23 +35,20 @@ from archflow.evaluation.experiment import (
     compile_experiment_outcome,
 )
 from archflow.contracts.canonical import canonical_digest
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    bootstrap_raw_request_project,
-    locate_project,
-)
-from archflow.runtime.family_compiler import (
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.project.bootstrap import bootstrap_raw_request_project
+from archflow.project.location import locate_project
+from archive.archflow.runtime.family_compiler import (
     bind_component_family_realization,
     compile_component_families,
 )
-from archflow.runtime.production_runtime import ProductionAuthoringContext
-from archflow.runtime.semantic_geometry_lifecycle import (
+from archive.archflow.runtime.production_runtime import ProductionAuthoringContext
+from archive.archflow.runtime.semantic_geometry_lifecycle import (
     InitialSemanticGeometryReceipt,
 )
 from archflow.state.geometry_program import digest_value
-from archflow.validation.architectural import evaluate_architectural_usability
+from archive.archflow.validation.architectural import evaluate_architectural_usability
 from tests.integration.test_project_derived_architectural_usability import (
     _compile_declared_fact_contract,
 )
@@ -65,7 +62,7 @@ from tests.test_experiment_protocol import (
     _metric_specs,
     _profile,
 )
-from tools.run_experiment import (
+from archive.tools.run_experiment import (
     PROGRAM_RELATIONSHIP_CONTEXT_ID,
     _main as run_experiment_main,
     bind_preregistered_cases,
@@ -1910,7 +1907,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
         self.assertEqual("realized", realization.source_status)
 
         try:
-            from tools._probe_paths import resolve_probe_root
+            from archive.tools._probe_paths import resolve_probe_root
 
             p058_root = resolve_probe_root("p058-progressive-pantheon")
         except Exception:

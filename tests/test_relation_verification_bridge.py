@@ -10,7 +10,7 @@ from archflow.project.refs import (
     ProjectVersionRef,
     RunRef,
 )
-from archflow.relations.authoring import (
+from archive.archflow.relations.authoring import (
     RelationAnswerStatus,
     RelationAuthoringContext,
     RelationAuthoringProposal,
@@ -32,9 +32,9 @@ from archflow.relations.contracts import (
     RelationParticipant,
     RelationProjection,
 )
-from archflow.validation.assembly import check_assembly
+from archive.archflow.validation.assembly import check_assembly
 from archflow.validation.contracts import CheckStatus
-from archflow.validation.relation_verification import (
+from archive.archflow.validation.relation_verification import (
     RelationQuestionVerificationProfile,
     RelationVerificationBinding,
     RelationVerificationError,

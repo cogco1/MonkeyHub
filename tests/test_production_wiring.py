@@ -14,14 +14,14 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.capabilities.component_catalog import (
+from archive.archflow.capabilities.component_catalog import (
     CatalogEntry,
     FamilyDeclination,
     FamilySelection,
     confront_catalog,
     record_catalog_confrontation,
 )
-from archflow.capabilities.component_library import (
+from archive.archflow.capabilities.component_library import (
     harvest_component_template,
 )
 from archflow.capabilities.geometry_proposal import (
@@ -31,11 +31,8 @@ from archflow.capabilities.geometry_proposal import (
     produce_geometry_program_proposal,
     proposal_authoring_output,
 )
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.state.geometry_program import (
     DatumBinding,
     InterfaceDatum,

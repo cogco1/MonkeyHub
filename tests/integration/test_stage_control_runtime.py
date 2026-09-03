@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from archflow.control.baseline import (
+from archive.archflow.control.baseline import (
     ComponentLineageBaselineSource,
     MaterialBindingBaselineSource,
     SpatialLayoutBaselineSource,
@@ -23,7 +23,7 @@ from archflow.control.requirements import (
     StageCheckRequirement,
     StageRequirementProfile,
 )
-from archflow.control.stage_artifacts import (
+from archive.archflow.control.stage_artifacts import (
     ArtifactShaBinding,
     RecordDigestBinding,
     StageArtifactClaim,
@@ -34,16 +34,16 @@ from archflow.control.stage_closure import (
     compile_composite_stage_closure,
 )
 from archflow.contracts.canonical import canonical_digest
-from archflow.materials.binding import (
+from archive.archflow.materials.binding import (
     MaterialBindingObservation,
     MaterialBindingProfile,
     MaterialBindingRequirement,
     MaterialBindingResolution,
     MaterialBindingSnapshot,
 )
-from archflow.materials.ledger import MaterialIntent, MaterialLedger
+from archive.archflow.materials.ledger import MaterialIntent, MaterialLedger
 from archflow.project.refs import ProjectRecordRef
-from archflow.relations.authoring import (
+from archive.archflow.relations.authoring import (
     RelationAnswerStatus,
     RelationAuthoringProposal,
     RelationBasisBinding,
@@ -63,12 +63,12 @@ from archflow.relations.contracts import (
     RelationParticipant,
     RelationProjection,
 )
-from archflow.runtime.stage_artifact_chain import (
+from archive.archflow.runtime.stage_artifact_chain import (
     StageArtifactChainError,
     compile_relation_realization_baseline_source,
     compile_stage_artifact_claim,
 )
-from archflow.runtime.stage_control_chain import (
+from archive.archflow.runtime.stage_control_chain import (
     finalize_stage_control_chain,
     prepare_stage_control_chain,
 )
@@ -79,12 +79,12 @@ from archflow.state.design_maturity import (
     StageEntryProof,
 )
 from archflow.state.model import ArtifactRef
-from archflow.validation.relation_realization import check_relation_realization
-from archflow.validation.check_bridges import (
+from archive.archflow.validation.relation_realization import check_relation_realization
+from archive.archflow.validation.check_bridges import (
     ComponentLineageCheckProfile,
     SpatialLayoutCheckProfile,
 )
-from archflow.validation.component_lineage import (
+from archive.archflow.validation.component_lineage import (
     OperationDisposition,
     OperationLineageResolution,
     PredecessorOperationDisposition,
@@ -93,7 +93,7 @@ from archflow.validation.component_lineage import (
     compile_stage_component_coverage,
 )
 from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
-from archflow.validation.spatial import (
+from archive.archflow.validation.spatial import (
     AABB,
     HostRegion,
     SpatialElement,
@@ -101,7 +101,7 @@ from archflow.validation.spatial import (
     normalize_spatial_validation_input,
 )
 
-from tests.test_stage_artifact_chain import _realization_inputs, _sha
+from archive.tests.test_stage_artifact_chain import _realization_inputs, _sha
 from tests.test_stage_control_runtime import (
     AUTHORITY_REF,
     SOURCE_REF,

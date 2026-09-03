@@ -4,17 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
-from archflow.runtime.artifact_library import (
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.runtime.artifact_library import (
     ArtifactLibraryError,
     load_neutral_building_package,
     persist_neutral_building_package,
 )
-from tests.test_artifact_library import neutral_package_fixture
+from archive.tests.test_artifact_library import neutral_package_fixture
 
 
 class SavedBuildReloadIntegrationTests(unittest.TestCase):

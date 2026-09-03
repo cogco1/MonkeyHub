@@ -31,7 +31,8 @@ if str(REPO) not in sys.path:
 from archflow.adapters.cad_program import expected_object_bounds  # noqa: E402
 from archflow.capabilities.geometry_proposal import GeometryProposalProviderIdentity, load_compiled_geometry_program  # noqa: E402
 from archflow.contracts.authority import no_authority  # noqa: E402
-from archflow.project import FilesystemProjectRepository, PersistenceArea, PersistenceDestination  # noqa: E402
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef  # noqa: E402
 from archflow.runtime.project_runner import RunOptions, StageExecutionGuard, run_project  # noqa: E402
 from archflow.state.design_maturity import DesignPhase  # noqa: E402

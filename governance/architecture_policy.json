@@ -190,14 +190,16 @@
       "targets": [
         "docs",
         "tests",
-        "tools"
+        "tools",
+        "archive"
       ],
       "reason": "Reusable framework code cannot import repository tooling, tests, or documentation modules. Probe imports are rejected by the dedicated probe reverse-import rule."
     },
     {
       "source": "tools",
       "targets": [
-        "tests"
+        "tests",
+        "archive"
       ],
       "reason": "Repository tools cannot acquire implementation or fixtures from the test suite."
     },
@@ -313,7 +315,8 @@
         "scipy",
         "tests",
         "tools",
-        "probes"
+        "probes",
+        "archive"
       ],
       "reason": "The Studio API (P108, FastAPI BFF) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
     }

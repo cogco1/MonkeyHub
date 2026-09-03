@@ -291,13 +291,7 @@ def compile_declaration_commitments(
     value later requires an authority-gated commitment transition.
     """
 
-    from archflow.state import (
-        Commitment,
-        CommitmentKind,
-        CommitmentStatus,
-        CommitmentStrength,
-        CriterionRef,
-    )
+    from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef
 
     if not isinstance(contract, StageDeclarationContract):
         raise TypeError("contract must be StageDeclarationContract")

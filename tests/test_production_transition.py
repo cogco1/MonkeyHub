@@ -12,32 +12,23 @@ from archflow.ports.model import (
     ModelInvocationStatus,
 )
 from archflow.contracts.canonical import canonical_digest
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    ProjectRecordRef,
-    ProjectVersionRef,
-    RunRef,
-)
-from archflow.project import production_checkpoint as project_checkpoint_facade
-from archflow.project import production_transition as project_transition_facade
-from archflow.production import AuthorizedAsyncModelProvider
-from archflow.runtime import persistence as runtime_persistence
-from archflow.runtime.persistence import (
-    production_checkpoint as runtime_checkpoint,
-)
-from archflow.runtime.persistence import (
-    production_transition as runtime_transition,
-)
-from archflow.runtime.persistence.production_checkpoint import (
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
+from archive.archflow.project import production_checkpoint as project_checkpoint_facade
+from archive.archflow.project import production_transition as project_transition_facade
+from archflow.production.provider_runtime import AuthorizedAsyncModelProvider
+from archive.archflow.runtime import persistence as runtime_persistence
+from archive.archflow.runtime.persistence import production_checkpoint as runtime_checkpoint
+from archive.archflow.runtime.persistence import production_transition as runtime_transition
+from archive.archflow.runtime.persistence.production_checkpoint import (
     ProductionCheckpointError,
     ProductionRunCheckpoint,
     checkpoint_destination,
     load_production_checkpoint,
     persist_production_checkpoint,
 )
-from archflow.runtime.persistence.production_transition import (
+from archive.archflow.runtime.persistence.production_transition import (
     ProductionFailedAttemptReceipt,
     ProductionTransitionError,
     load_failed_production_attempts,
@@ -47,7 +38,7 @@ from archflow.runtime.persistence.production_transition import (
     production_intent_digest,
 )
 from archflow.compilers.geometry import compile_geometry_program
-from archflow.runtime.semantic_geometry_lifecycle import (
+from archive.archflow.runtime.semantic_geometry_lifecycle import (
     bind_initial_semantic_geometry,
     compile_semantic_geometry_lifecycle,
 )
@@ -59,7 +50,7 @@ from tests.test_production_responsibility import (
     _active,
     _request,
 )
-from tests.test_semantic_geometry_lifecycle import (
+from archive.tests.test_semantic_geometry_lifecycle import (
     _design_state,
     _geometry_proposal,
 )

@@ -8,14 +8,14 @@ import unittest
 from dataclasses import replace
 
 from archflow.contracts.canonical import canonical_digest
-from archflow.control.baseline import (
+from archive.archflow.control.baseline import (
     BASELINE_LEVEL_ROLES,
     StageBaselineSourceSet,
     StageBaselineStatus,
     baseline_level_for_design_phase,
     compile_stage_baseline_coverage,
 )
-from archflow.control.convergence import (
+from archive.archflow.control.convergence import (
     StageConvergenceEvidence,
     StageConvergencePolicy,
     StageTransitionKind,
@@ -28,7 +28,7 @@ from archflow.control.requirements import (
     StageCheckRequirement,
     StageRequirementProfile,
 )
-from archflow.control.search_policy import (
+from archive.archflow.control.search_policy import (
     DecisionSpaceKind,
     ObjectiveDirection,
     SearchAction,
@@ -41,7 +41,7 @@ from archflow.control.search_policy import (
     SearchPolicyRequest,
 )
 from archflow.control.stage_closure import compile_composite_stage_closure
-from archflow.control.stage_subjects import (
+from archive.archflow.control.stage_subjects import (
     StageSubjectDisposition,
     StageSubjectInventory,
     StageSubjectInventoryEntry,
@@ -61,9 +61,9 @@ from archflow.project.refs import (
     RunRef,
 )
 from archflow.project.manifest import ProjectManifest
-from archflow.research.adoption import PrecedentAdoption, PrecedentFact
-from archflow.research.branch import BranchPrecedentAdoption
-from archflow.runtime.hierarchical_search import (
+from archive.archflow.research.adoption import PrecedentAdoption, PrecedentFact
+from archive.archflow.research.branch import BranchPrecedentAdoption
+from archive.archflow.runtime.hierarchical_search import (
     AdoptedApplicableSearchEvidence,
     BoundCandidateEvaluatorReceipt,
     HierarchicalSearchCompileInput,
@@ -78,10 +78,10 @@ from archflow.runtime.hierarchical_search import (
     exact_record_ref,
     portfolio_candidate_ref,
 )
-from archflow.runtime.branch_portfolio import PersistedDesignPortfolio
-from archflow.runtime.design_controller import ProjectControllerArchiveAdapter
-from archflow.runtime.search_policy import SearchPolicyRegistry
-from archflow.state.build_policy import (
+from archive.archflow.runtime.branch_portfolio import PersistedDesignPortfolio
+from archive.archflow.runtime.design_controller import ProjectControllerArchiveAdapter
+from archive.archflow.runtime.search_policy import SearchPolicyRegistry
+from archive.archflow.state.build_policy import (
     ConstructabilityTopic,
     PolicyConstraintStrength,
 )

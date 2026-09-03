@@ -5,7 +5,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.capabilities.experts import (
+from archive.archflow.capabilities.experts import (
     ExpertAdvice,
     ExpertEvidence,
     ExpertObligation,
@@ -13,7 +13,7 @@ from archflow.capabilities.experts import (
     ExpertSnapshot,
     ExpertSpec,
 )
-from archflow.capabilities.phase_gates import (
+from archive.archflow.capabilities.phase_gates import (
     PhaseCapabilityError,
     PhaseExpertMetadata,
     discover_phase_experts,
@@ -749,7 +749,7 @@ class FrameworkPurityTests(unittest.TestCase):
             (root / relative).read_text(encoding="utf-8").lower()
             for relative in (
                 "archflow/state/design_maturity.py",
-                "archflow/capabilities/phase_gates.py",
+                "archive/archflow/capabilities/phase_gates.py",
             )
         )
         for forbidden in (

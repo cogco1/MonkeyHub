@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.capabilities.stair_solver import (
+from archive.archflow.capabilities.stair_solver import (
     StairDimensionBand,
     StairDimensionValue,
     StairFlightConstraint,
@@ -19,57 +19,29 @@ from archflow.capabilities.stair_solver import (
     StairTerminalLandingOwnership,
     solve_stair,
 )
-from archflow.control import (
-    BASELINE_LEVEL_ROLES,
-    CadReadbackBaselineSource,
-    ComponentLineageBaselineSource,
-    MaterialBindingBaselineSource,
-    RelationTopologyBaselineSource,
-    RequirementBasisMode,
-    RequirementTargetKind,
-    SpatialLayoutBaselineSource,
-    StageBaselineError,
-    StageBaselineCoverageReceipt,
-    StageBaselineLevel,
-    StageBaselineRole,
-    StageBaselineSourceSet,
-    StageBaselineStatus,
-    StageCheckRequirement,
-    StageClosureStatus,
-    StageRequirementProfile,
-    StageSubjectDisposition,
-    StageSubjectInventory,
-    StageSubjectInventoryEntry,
-    StageSubjectRoleObligation,
-    assembly_stage_requirement,
-    baseline_level_for_design_phase,
-    bind_semantic_rule_packs,
-    cad_readback_stage_requirement,
-    compile_composite_stage_closure,
-    compile_stage_baseline_coverage,
-    derive_stage_requirement_profile,
-    current_semantic_capability_policy,
-    component_lineage_stage_requirement,
-    material_binding_stage_requirement,
-    spatial_layout_stage_requirement,
-)
-from archflow.control.baseline import (
+from archive.archflow.control.baseline import BASELINE_LEVEL_ROLES, CadReadbackBaselineSource, ComponentLineageBaselineSource, MaterialBindingBaselineSource, RelationTopologyBaselineSource, SpatialLayoutBaselineSource, StageBaselineError, StageBaselineCoverageReceipt, StageBaselineLevel, StageBaselineRole, StageBaselineSourceSet, StageBaselineStatus, baseline_level_for_design_phase, compile_stage_baseline_coverage, derive_stage_requirement_profile
+from archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
+from archflow.control.stage_closure import StageClosureStatus, compile_composite_stage_closure
+from archive.archflow.control.stage_subjects import StageSubjectDisposition, StageSubjectInventory, StageSubjectInventoryEntry, StageSubjectRoleObligation
+from archive.archflow.control.check_requirements import assembly_stage_requirement, cad_readback_stage_requirement, component_lineage_stage_requirement, material_binding_stage_requirement, spatial_layout_stage_requirement
+from archive.archflow.control.semantic_capabilities import bind_semantic_rule_packs, current_semantic_capability_policy
+from archive.archflow.control.baseline import (
     VerticalCirculationBaselineSource,
     check_vertical_circulation_baseline_maturity,
     required_vertical_circulation_maturity,
 )
-from archflow.control.check_requirements import (
+from archive.archflow.control.check_requirements import (
     relation_authoring_stage_requirements,
     vertical_circulation_stage_requirement,
 )
-from archflow.control.relation_checks import check_relation_coverage
-from archflow.control.relation_promotion import promote_verified_relation_graph
+from archive.archflow.control.relation_checks import check_relation_coverage
+from archive.archflow.control.relation_promotion import promote_verified_relation_graph
 from archflow.contracts.canonical import canonical_digest
-from archflow.project import BranchRef, ProjectRecordRef
-from archflow.state import DesignPhase
+from archflow.project.refs import BranchRef, ProjectRecordRef
+from archflow.state.design_maturity import DesignPhase
 from archflow.state.geometry_program import LengthUnit
-from archflow.materials.binding import validate_material_bindings
-from archflow.relations.authoring import (
+from archive.archflow.materials.binding import validate_material_bindings
+from archive.archflow.relations.authoring import (
     RelationAnswerStatus,
     RelationAuthoringContext,
     RelationAuthoringProposal,
@@ -91,13 +63,13 @@ from archflow.relations.contracts import (
     RelationParticipant,
     RelationProjection,
 )
-from archflow.validation.assembly import (
+from archive.archflow.validation.assembly import (
     AssemblyObligationDisposition,
     AssemblyProfile,
     RelationshipKind,
     check_assembly,
 )
-from archflow.validation.cad_readback import (
+from archive.archflow.validation.cad_readback import (
     CadBoundingBox,
     CadObjectReadback,
     CadObjectRequirement,
@@ -106,16 +78,16 @@ from archflow.validation.cad_readback import (
     CadUpAxis,
     validate_cad_readback,
 )
-from archflow.validation.check_bridges import (
+from archive.archflow.validation.check_bridges import (
     bridge_component_lineage_receipt,
     bridge_spatial_validation_receipt,
 )
 from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
-from archflow.validation.spatial import (
+from archive.archflow.validation.spatial import (
     normalize_spatial_validation_input,
     validate_spatial_layout,
 )
-from archflow.validation.vertical_circulation import (
+from archive.archflow.validation.vertical_circulation import (
     VerticalCirculationMaturity,
 )
 from tests.test_assembly_validation import passing_profile
@@ -138,7 +110,7 @@ from tests.test_material_binding import (
     profile as material_profile_fixture,
     snapshot as material_snapshot_fixture,
 )
-from tests.test_vertical_circulation import (
+from archive.tests.test_vertical_circulation import (
     aabb as circulation_aabb_fixture,
     assembly_witness as circulation_assembly_fixture,
     contract as circulation_contract_fixture,

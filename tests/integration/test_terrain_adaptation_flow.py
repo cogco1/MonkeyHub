@@ -3,21 +3,18 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from archflow.adapters.sandbox_render import SandboxRenderSet
-from archflow.capabilities.experts import (
+from archive.archflow.adapters.sandbox_render import SandboxRenderSet
+from archive.archflow.capabilities.experts import (
     ExpertAdvice,
     ExpertReceiptStatus,
     ExpertRegistry,
     ExpertSpec,
 )
-from archflow.capabilities.terrain import build_terrain_expert_snapshot
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
-from archflow.realization.sandbox import HybridScene
-from archflow.runtime.terrain_adaptation import (
+from archive.archflow.capabilities.terrain import build_terrain_expert_snapshot
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.realization.sandbox import HybridScene
+from archive.archflow.runtime.terrain_adaptation import (
     TerrainAdaptationPlan,
     TerrainResponseOption,
     TerrainRelationshipReceipt,
@@ -29,7 +26,7 @@ from archflow.runtime.terrain_adaptation import (
     guard_unchanged_terrain_retry,
     validate_terrain_relationship,
 )
-from archflow.state import OperationalMarkovState
+from archflow.state.operational_state import OperationalMarkovState
 from archflow.state.design_maturity import DesignPhase
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.geometry_program import digest_value

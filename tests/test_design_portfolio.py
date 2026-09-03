@@ -4,38 +4,11 @@ import hashlib
 import unittest
 from dataclasses import replace
 
-from archflow.project import BranchRef, ProjectVersionRef, RunRef
-from archflow.state import (
-    AdviceDisposition,
-    BranchLifecycle,
-    ComponentMaturity,
-    ConstraintResponseStatus,
-    DesignComponent,
-    DesignOptionPortfolio,
-    DesignPhase,
-    DesignPortfolioError,
-    ExpertAdviceResolution,
-    MassingVolume,
-    ParetoBranchObservation,
-    SchematicOption,
-    SchematicOptionSet,
-    SelectionPolicy,
-    SiteBounds,
-    SpatialConstraintResponse,
-    SpatialGridBasis,
-    SpatialLevel,
-    SpatialOptionProposal,
-    SpatialZone,
-    attach_pareto_observation,
-    combine_branches,
-    compile_selected_branch_handoff,
-    fork_branch,
-    initialize_design_portfolio,
-    park_branch,
-    reject_branch,
-    revise_branch,
-    select_branch,
-)
+from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
+from archflow.state.design_portfolio import AdviceDisposition, BranchLifecycle, DesignOptionPortfolio, DesignPortfolioError, ExpertAdviceResolution, ParetoBranchObservation, SelectionPolicy, attach_pareto_observation, combine_branches, compile_selected_branch_handoff, fork_branch, initialize_design_portfolio, park_branch, reject_branch, revise_branch, select_branch
+from archflow.state.spatial import ComponentMaturity, ConstraintResponseStatus, DesignComponent, MassingVolume, SchematicOption, SchematicOptionSet, SpatialConstraintResponse, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialZone
+from archflow.state.design_maturity import DesignPhase
+from archflow.state.site_context import SiteBounds
 
 
 PROJECT_ID = "portfolio-project"

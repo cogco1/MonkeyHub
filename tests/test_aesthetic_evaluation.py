@@ -4,7 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
-from archflow.evaluation.aesthetic import (
+from archive.archflow.evaluation.aesthetic import (
     AestheticMetric,
     AestheticObjective,
     AestheticSnapshot,
@@ -13,9 +13,9 @@ from archflow.evaluation.aesthetic import (
     evaluate_aesthetics,
     pareto_front,
 )
-from archflow.state import CanonicalState, GoalContract, StateRef
-from archflow.submission import CandidateDelta, CandidateSubmission
-from archflow.validation.usability import UsabilityReceipt
+from archflow.state.model import CanonicalState, GoalContract, StateRef
+from archflow.submission.model import CandidateDelta, CandidateSubmission
+from archive.archflow.validation.usability import UsabilityReceipt
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "views" / "candidate_views.json"

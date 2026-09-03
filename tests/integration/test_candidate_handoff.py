@@ -4,23 +4,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
-from archflow.runtime.candidate_assembly import (
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.runtime.candidate_assembly import (
     CandidateDerivationArchive,
     CandidateDisposition,
     assemble_candidate,
     load_candidate_archive,
     persist_candidate_archive,
 )
-from tests.test_candidate_assembly import (
+from archive.tests.test_candidate_assembly import (
     _plan_bindings,
     _policies,
 )
-from tests.test_design_development import EVIDENCE, _coordinated_state
+from archive.tests.test_design_development import EVIDENCE, _coordinated_state
 
 
 class CandidateHandoffIntegrationTests(unittest.TestCase):

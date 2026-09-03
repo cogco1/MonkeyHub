@@ -7,7 +7,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.capabilities.component_catalog import (
+from archive.archflow.capabilities.component_catalog import (
     CatalogEntry,
     CatalogGateError,
     FamilyDeclination,
@@ -17,14 +17,11 @@ from archflow.capabilities.component_catalog import (
     emit_harvest_obligations,
     record_catalog_confrontation,
 )
-from archflow.capabilities.component_library import (
+from archive.archflow.capabilities.component_library import (
     harvest_component_template,
 )
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
 from tests.test_component_templates import _stair_template
 
 

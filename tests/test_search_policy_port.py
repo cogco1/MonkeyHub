@@ -4,7 +4,7 @@ import asyncio
 import unittest
 from dataclasses import replace
 
-from archflow.control.search_policy import (
+from archive.archflow.control.search_policy import (
     DecisionSpaceDescriptor,
     DecisionSpaceKind,
     ObjectiveDirection,
@@ -21,7 +21,7 @@ from archflow.control.search_policy import (
     validate_search_directive,
 )
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.runtime.search_policy import (
+from archive.archflow.runtime.search_policy import (
     SearchPolicyRegistry,
     SearchPolicyRegistryError,
     SearchPolicyUnavailableError,

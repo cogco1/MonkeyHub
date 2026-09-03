@@ -11,13 +11,13 @@ from archflow.control.requirements import (
     StageCheckRequirement,
     StageRequirementProfile,
 )
-from archflow.control.check_requirements import cad_readback_stage_requirement
+from archive.archflow.control.check_requirements import cad_readback_stage_requirement
 from archflow.control.stage_closure import (
     StageClosureStatus,
     compile_composite_stage_closure,
 )
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.validation.cad_readback import (
+from archive.archflow.validation.cad_readback import (
     CadBoundingBox,
     CadObjectReadback,
     CadObjectRequirement,

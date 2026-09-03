@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping
 
-from archflow.project import ProjectVersionRef
+from archflow.project.refs import ProjectVersionRef
 from archflow.project.refs import require_identifier
 from archflow.state.design_maturity import DesignPhase
 from archflow.state.design_portfolio import (

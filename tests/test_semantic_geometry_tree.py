@@ -8,12 +8,7 @@ from archflow.compilers.geometry import (
     GeometryIssueCode,
     compile_geometry_program,
 )
-from archflow.state import (
-    ComponentMaturity,
-    DesignComponent,
-    SpatialProposalError,
-    compile_component_transition,
-)
+from archflow.state.spatial import ComponentMaturity, DesignComponent, SpatialProposalError, compile_component_transition
 from archflow.state.geometry_program import SemanticBinding
 from tests.test_design_portfolio import EVIDENCE, _option
 from tests.test_geometry_compiler import COMMITMENT, _proposal, _state

@@ -15,31 +15,8 @@ from archflow.ports.model import (
     ModelInvocationStatus,
     ModelPhase,
 )
-from archflow.production import (
-    AuthorizedAsyncModelProvider,
-    ContractConflict,
-    HandoverDecision,
-    InvalidInvocationEnvelope,
-    InvalidProviderReceipt,
-    InvocationEnvelope,
-    NoProductionAuthority,
-    ProviderIdentity,
-    ProviderInvocationFailed,
-    ProviderLifecycleError,
-    ProviderMode,
-    ProviderUnavailable,
-    ResponsibilityContract,
-    ResponsibilityRouter,
-    ResolutionStatus,
-    StaleAuthority,
-    StaleHandover,
-    UnknownProvider,
-    activate_codex_agent_cli_provider,
-    activate_model_provider,
-    bind_async_model_provider,
-    create_responsibility_control_plane,
-    model_responsibility_contract,
-)
+from archflow.production.provider_runtime import AuthorizedAsyncModelProvider, activate_codex_agent_cli_provider, activate_model_provider, bind_async_model_provider, model_responsibility_contract
+from archflow.production.responsibility import ContractConflict, HandoverDecision, InvalidInvocationEnvelope, InvalidProviderReceipt, InvocationEnvelope, NoProductionAuthority, ProviderIdentity, ProviderInvocationFailed, ProviderLifecycleError, ProviderMode, ProviderUnavailable, ResponsibilityContract, ResponsibilityRouter, ResolutionStatus, StaleAuthority, StaleHandover, UnknownProvider, create_responsibility_control_plane
 
 
 def _fingerprint(label: str) -> str:

@@ -22,19 +22,7 @@ from archflow.state.geometry_program import (
     LengthUnit,
     SemanticBinding,
 )
-from archflow.realization import (
-    DerivedVoxelView,
-    HybridScene,
-    RealizationStatus,
-    SandboxArchiveDisposition,
-    SandboxArchiveRecord,
-    SandboxAssetPayload,
-    SandboxRealizationError,
-    SandboxRealizationReceipt,
-    VoxelizationPolicy,
-    derive_voxel_view,
-    realize_geometry,
-)
+from archive.archflow.realization.sandbox import DerivedVoxelView, HybridScene, RealizationStatus, SandboxArchiveDisposition, SandboxArchiveRecord, SandboxAssetPayload, SandboxRealizationError, SandboxRealizationReceipt, VoxelizationPolicy, derive_voxel_view, realize_geometry
 from tests.test_geometry_compiler import (
     COMMITMENT,
     EVIDENCE,
@@ -275,7 +263,7 @@ def compiled_room(*, include_asset: bool = False):
 
 class SandboxRealizationTests(unittest.TestCase):
     def test_thin_aabb_uses_positive_cell_overlap_not_center_only(self) -> None:
-        from archflow.realization.sandbox import (
+        from archive.archflow.realization.sandbox import (
             AxisAlignedBounds,
             SceneObject,
             SceneRepresentation,
@@ -310,7 +298,7 @@ class SandboxRealizationTests(unittest.TestCase):
     def test_mesh_occupancy_samples_actual_mesh_not_bounding_box(
         self,
     ) -> None:
-        from archflow.realization.sandbox import (
+        from archive.archflow.realization.sandbox import (
             AxisAlignedBounds,
             SceneObject,
             SceneRepresentation,
@@ -463,8 +451,8 @@ class SandboxRealizationTests(unittest.TestCase):
         )
 
     def test_grounded_scene_passes_the_support_hard_gate(self) -> None:
-        from archflow.validation import compile_building_program
-        from archflow.validation.usability import (
+        from archive.archflow.compilers.voxel_program import compile_building_program
+        from archive.archflow.validation.usability import (
             UsabilityGate,
             validate_usability,
         )
@@ -505,10 +493,10 @@ class SandboxRealizationTests(unittest.TestCase):
         )
 
     def test_floating_component_triggers_the_support_hard_gate(self) -> None:
-        from archflow.adapters.voxel_observation import VoxelBounds
-        from archflow.realization.sandbox import _support_relations
-        from archflow.validation import compile_building_program
-        from archflow.validation.usability import validate_usability
+        from archive.archflow.adapters.voxel_observation import VoxelBounds
+        from archive.archflow.realization.sandbox import _support_relations
+        from archive.archflow.compilers.voxel_program import compile_building_program
+        from archive.archflow.validation.usability import validate_usability
 
         grounded_slab = tuple(
             (x, 0, z) for x in range(2) for z in range(2)

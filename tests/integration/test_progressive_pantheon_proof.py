@@ -17,74 +17,42 @@ from archflow.capabilities.geometry_proposal import (
     GeometryProposalProviderIdentity,
     proposal_authoring_output,
 )
-from archflow.capabilities.semantic_spatial_authoring import (
+from archive.archflow.capabilities.semantic_spatial_authoring import (
     semantic_spatial_authoring_output,
 )
-from archflow.production import (
-    InvocationEvidenceCollector,
-    ProviderIdentity,
-    activate_model_provider,
-)
+from archflow.production.provider_runtime import InvocationEvidenceCollector, activate_model_provider
+from archflow.production.responsibility import ProviderIdentity
 from archflow.contracts.canonical import canonical_digest
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    ProjectRecordRef,
-    RunRef,
-    bootstrap_raw_request_project,
-)
-from archflow.runtime.persistence.production_transition import (
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.refs import ProjectRecordRef, RunRef
+from archive.archflow.project.bootstrap import bootstrap_raw_request_project
+from archive.archflow.runtime.persistence.production_transition import (
     ProductionRecordRole,
     persist_compiled_production_transition,
     production_intent_digest,
 )
-from archflow.realization import (
-    SandboxArchiveDisposition,
-    SandboxArchiveRecord,
-    VoxelizationPolicy,
-    derive_voxel_view,
-    realize_geometry,
-)
+from archive.archflow.realization.sandbox import SandboxArchiveDisposition, SandboxArchiveRecord, VoxelizationPolicy, derive_voxel_view, realize_geometry
 from archflow.compilers.geometry import compile_geometry_program
-from archflow.runtime.production_compiler import (
+from archive.archflow.runtime.production_compiler import (
     ProductionRootCompiler,
     schematic_selection_output,
 )
-from archflow.runtime.production_runtime import (
+from archive.archflow.runtime.production_runtime import (
     ProductionAuthoringContext,
     run_or_resume_production_step,
 )
-from archflow.runtime.semantic_geometry_lifecycle import (
+from archive.archflow.runtime.semantic_geometry_lifecycle import (
     SemanticGeometryLifecycleStatus,
     bind_initial_semantic_geometry,
     compile_semantic_geometry_lifecycle,
 )
-from archflow.state import (
-    CanonicalState,
-    Commitment,
-    CommitmentKind,
-    CommitmentStatus,
-    CommitmentStrength,
-    ComponentMaturity,
-    ConstraintResponseStatus,
-    CriterionRef,
-    DesignComponent,
-    DesignMaturityState,
-    DesignPhase,
-    MassingVolume,
-    PhaseGateRequest,
-    ProgramMetricKind,
-    ProgramNodeKind,
-    SiteBounds,
-    SpatialConnection,
-    SpatialConstraintResponse,
-    SpatialGridBasis,
-    SpatialLevel,
-    SpatialOptionProposal,
-    SpatialZone,
-    evaluate_forward_phase_gate,
-)
+from archflow.state.model import CanonicalState
+from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef
+from archflow.state.spatial import ComponentMaturity, ConstraintResponseStatus, DesignComponent, MassingVolume, SpatialConnection, SpatialConstraintResponse, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialZone
+from archflow.state.design_maturity import DesignMaturityState, DesignPhase, PhaseGateRequest, evaluate_forward_phase_gate
+from archive.archflow.state.design_program import ProgramMetricKind, ProgramNodeKind
+from archflow.state.site_context import SiteBounds
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.geometry_program import (
     AffineTransform,
@@ -99,9 +67,9 @@ from archflow.state.geometry_program import (
     ObjectRevisionPrecondition,
     SemanticBinding,
 )
-from archflow.submission import CandidateDelta, CandidateSubmission
-from archflow.validation import ArtifactPresentValidator, validate_submission
-from tests.test_production_root_compiler import _rebase_context
+from archflow.submission.model import CandidateDelta, CandidateSubmission
+from archflow.validation.engine import ArtifactPresentValidator, validate_submission
+from archive.tests.test_production_root_compiler import _rebase_context
 from tests.test_spatial_proposals import _inputs
 
 
@@ -118,7 +86,7 @@ def _probe_root() -> Path:
     """Resolve the relocated evidence probe; an absent root triggers skips."""
 
     try:
-        from tools._probe_paths import resolve_probe_root
+        from archive.tools._probe_paths import resolve_probe_root
 
         return resolve_probe_root(PROJECT_ID)
     except Exception:

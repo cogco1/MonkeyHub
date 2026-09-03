@@ -8,14 +8,14 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.capabilities.visual_inventory import (
+from archive.archflow.capabilities.visual_inventory import (
     VisualEvidenceInventoryReceipt,
     VisualSourceDisposition,
     VisualSourceDispositionKind,
     compile_visual_evidence_inventory,
 )
 from archflow.contracts.canonical import canonical_digest
-from archflow.control.baseline import (
+from archive.archflow.control.baseline import (
     BASELINE_LEVEL_ROLES,
     ComponentLineageBaselineSource,
     RelationRealizationBaselineSource,
@@ -29,17 +29,17 @@ from archflow.control.baseline import (
     derive_stage_requirement_profile,
     StageRelationInheritanceBaselineSource,
 )
-from archflow.control.stage_relation_inheritance import (
+from archive.archflow.control.stage_relation_inheritance import (
     AcceptedRelationTopologyIdentity,
     AcceptedStageRelationPredecessor,
 )
-from archflow.control.check_requirements import (
+from archive.archflow.control.check_requirements import (
     assembly_stage_requirement,
     component_lineage_stage_requirement,
     relation_authoring_stage_requirements,
     spatial_layout_stage_requirement,
 )
-from archflow.control.component_functions import (
+from archive.archflow.control.component_functions import (
     DEFAULT_COMPONENT_FUNCTION_POLICY,
     ComponentFunctionContract,
     ComponentFunctionId,
@@ -50,21 +50,17 @@ from archflow.control.component_functions import (
     FunctionObligationClaim,
     compile_component_function_ledger,
 )
-from archflow.control.function_relations import (
+from archive.archflow.control.function_relations import (
     FunctionRelationEndpoint,
     FunctionRelationEndpointBinding,
     FunctionRelationEvidenceEnvelope,
     compile_function_relation_requirements,
 )
-from archflow.project import (
-    BranchRef,
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    ProjectRecordRef,
-)
-from archflow.control.profile import StageRequirementProfileBinding
-from archflow.control.semantic_capabilities import (
+from archflow.project.refs import BranchRef, ProjectRecordRef
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.control.profile import StageRequirementProfileBinding
+from archive.archflow.control.semantic_capabilities import (
     current_semantic_capability_policy,
 )
 from archflow.control.requirements import (
@@ -74,44 +70,40 @@ from archflow.control.requirements import (
     StageRequirementProfile,
 )
 from archflow.control.stage_closure import compile_composite_stage_closure
-from archflow.control.stage_subjects import (
+from archive.archflow.control.stage_subjects import (
     StageSubjectDisposition,
     StageSubjectInventory,
     StageSubjectRoleObligation,
 )
-from archflow.control.stage_control_sources import (
+from archive.archflow.control.stage_control_sources import (
     ComponentFunctionBaselineSource,
     VisualInventoryBaselineSource,
 )
-from archflow.runtime import (
-    DesignControllerCheckpoint,
-    DesignControllerError,
-    ProjectControllerArchiveAdapter,
-)
-from archflow.runtime.component_index import ComponentIndex, ComponentIndexEntry
-from archflow.runtime.design_controller import (
+from archive.archflow.runtime.design_controller import DesignControllerCheckpoint, DesignControllerError, ProjectControllerArchiveAdapter
+from archive.archflow.runtime.component_index import ComponentIndex, ComponentIndexEntry
+from archive.archflow.runtime.design_controller import (
     StageArtifactArchiveBundle,
     StageExitArchiveBundle,
 )
-from archflow.runtime.hierarchical_search import (
+from archive.archflow.runtime.hierarchical_search import (
     HierarchicalSearchProposalError,
     _replay_search_relation_predecessors,
     exact_record_ref,
 )
-from archflow.runtime.event_log import DesignEvent, EventDecision
-from archflow.runtime.state_reducer import (
+from archive.archflow.runtime.event_log import DesignEvent, EventDecision
+from archive.archflow.runtime.state_reducer import (
     canonical_state_to_dict,
     make_initialization_event,
 )
-from archflow.runtime.stage_subject_inventory import (
+from archive.archflow.runtime.stage_subject_inventory import (
     compile_stage_subject_inventory,
 )
 from archflow.relations.contracts import (
     ArchitecturalRelationKind,
     RelationProjection,
 )
-from archflow.state import initialize_canonical_project
-from archflow.state.design_state import (
+from archflow.state.model import initialize_canonical_project
+from archive.archflow.state.design_state import (
     DesignStateTree,
     compile_tree_phase_change,
 )
@@ -126,28 +118,28 @@ from archflow.state.spatial import (
     SpatialOptionProposal,
     SpatialZone,
 )
-from archflow.validation.check_bridges import (
+from archive.archflow.validation.check_bridges import (
     bridge_component_lineage_receipt,
     bridge_spatial_validation_receipt,
 )
-from archflow.validation.assembly import (
+from archive.archflow.validation.assembly import (
     AssemblyObligationDisposition,
     RelationshipKind,
     check_assembly,
 )
 from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
-from archflow.validation.spatial import validate_spatial_layout
-from archflow.validation.stage_control import (
+from archive.archflow.validation.spatial import validate_spatial_layout
+from archive.archflow.validation.stage_control import (
     check_component_function_baseline,
     check_visual_inventory_baseline,
 )
-from tests.test_design_controller import (
+from archive.tests.test_design_controller import (
     _checkpoint,
     _phase_ready_checkpoint,
     _stage_relation_topology_evidence,
 )
 from tests.test_stage_baseline import physical_sources
-from tests.test_relation_realization import (
+from archive.tests.test_relation_realization import (
     compiled_program as relation_compiled_program,
     graph as relation_graph,
     manifest as relation_manifest,
@@ -1295,17 +1287,17 @@ def _persist_verified_stage_artifact_claim(
 ):
     """Build one full typed Stage 3 denominator and persist every input."""
 
-    from archflow.control.baseline import StageBaselineLevel
-    from archflow.control.stage_artifacts import (
+    from archive.archflow.control.baseline import StageBaselineLevel
+    from archive.archflow.control.stage_artifacts import (
         ArtifactShaBinding,
         RecordDigestBinding,
     )
     from archflow.control.stage_closure import StageClosureStatus
-    from archflow.runtime.stage_artifact_chain import (
+    from archive.archflow.runtime.stage_artifact_chain import (
         compile_relation_realization_baseline_source,
         compile_stage_artifact_claim,
     )
-    from archflow.runtime.stage_control_chain import (
+    from archive.archflow.runtime.stage_control_chain import (
         finalize_stage_control_chain,
         prepare_stage_control_chain,
     )
@@ -1315,7 +1307,7 @@ def _persist_verified_stage_artifact_claim(
         StageEntryProof,
     )
     from archflow.state.model import ArtifactRef
-    from archflow.validation.relation_realization import (
+    from archive.archflow.validation.relation_realization import (
         check_relation_realization,
     )
     from tests.integration.test_stage_control_runtime import (
@@ -1324,13 +1316,13 @@ def _persist_verified_stage_artifact_claim(
         _complete_stage_sources,
         _compile_stage_evidence,
     )
-    from tests.test_stage_artifact_chain import _realization_inputs, _sha
+    from archive.tests.test_stage_artifact_chain import _realization_inputs, _sha
     from tests.test_stage_control_runtime import (
         _proposal as stage_relation_proposal,
         _raw_inputs,
         _verification_receipts,
     )
-    from tests.test_stage_subject_inventory import (
+    from archive.tests.test_stage_subject_inventory import (
         _stair_sources,
         _text_only_visual_inventory,
     )

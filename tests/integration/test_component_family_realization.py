@@ -4,16 +4,13 @@ from dataclasses import replace
 from pathlib import Path
 import unittest
 
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-    ProjectVersionRef,
-    bootstrap_raw_request_project,
-    locate_project,
-)
-from archflow.realization import HybridScene, SandboxRealizationReceipt, realize_geometry
-from archflow.runtime.family_compiler import (
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.refs import ProjectVersionRef
+from archive.archflow.project.bootstrap import bootstrap_raw_request_project
+from archflow.project.location import locate_project
+from archive.archflow.realization.sandbox import HybridScene, SandboxRealizationReceipt, realize_geometry
+from archive.archflow.runtime.family_compiler import (
     ComponentFamilyCompilationReceipt,
     ComponentFamilyLifecycleReceipt,
     ComponentFamilyRealizationReceipt,
@@ -25,18 +22,18 @@ from archflow.runtime.family_compiler import (
     compile_component_family_lifecycle,
 )
 from archflow.compilers.geometry import compile_geometry_program
-from archflow.runtime.semantic_geometry_lifecycle import (
+from archive.archflow.runtime.semantic_geometry_lifecycle import (
     SemanticGeometryLifecycleStatus,
     compile_semantic_geometry_lifecycle,
 )
-from archflow.state import ComponentFamilySet
+from archive.archflow.state.component_family import ComponentFamilySet
 from tests.test_component_family_protocol import (
     _lifecycle_family,
     _mesh_fixture,
     _parametric_fixture,
 )
 from tests.test_geometry_compiler import COMMITMENT
-from tests.test_semantic_geometry_lifecycle import (
+from archive.tests.test_semantic_geometry_lifecycle import (
     _design_state,
     _geometry_proposal,
 )
@@ -687,8 +684,8 @@ class ComponentFamilyIntegrationTests(unittest.TestCase):
         source = "\n".join(
             (root / relative).read_text(encoding="utf-8").lower()
             for relative in (
-                "archflow/state/component_family.py",
-                "archflow/runtime/family_compiler.py",
+                "archive/archflow/state/component_family.py",
+                "archive/archflow/runtime/family_compiler.py",
             )
         )
         forbidden = ("pantheon", "minecraft", "rhino", "revit")

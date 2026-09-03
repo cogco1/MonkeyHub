@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from archflow.adapters.three_dm_inspector import ThreeDmInspection
-from tools.build_pantheon_progress_snapshot import (
+from archive.tools.build_pantheon_progress_snapshot import (
     _closure_inventory,
     _execution_verification_summary,
     _model_alignment,

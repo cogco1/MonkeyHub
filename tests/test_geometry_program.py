@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from archflow.project import ProjectVersionRef
+from archflow.project.refs import ProjectVersionRef
 from archflow.state.geometry_program import (
     AffineTransform,
     AssemblyKind,

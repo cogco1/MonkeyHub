@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 import unittest
 
-from archflow.adapters.sandbox_render import render_paper_views
-from archflow.realization import VoxelizationPolicy, derive_voxel_view, realize_geometry
-from archflow.realization.sandbox import (
+from archive.archflow.adapters.sandbox_render import render_paper_views
+from archive.archflow.realization.sandbox import VoxelizationPolicy, derive_voxel_view, realize_geometry
+from archive.archflow.realization.sandbox import (
     _SUPPORTED,
     SandboxAssetPayload,
     SandboxRealizationError,

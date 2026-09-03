@@ -15,7 +15,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from archflow.adapters.cad_program import expected_object_bounds, expected_object_semantics
-from archflow.capabilities.component_library import (
+from archive.archflow.capabilities.component_library import (
     EditionPropagation,
     propagate_template_edition,
     record_edition_propagation,
@@ -24,8 +24,9 @@ from archflow.capabilities.component_library import (
 from archflow.capabilities.opening_solver import solve_window
 from archflow.capabilities.wall_solver import OpeningKind, OpeningRequest, WallSolverError, solve_wall
 from archflow.compilers.geometry import compile_geometry_program
-from archflow.project import FilesystemProjectRepository, PersistenceArea, PersistenceDestination
-from archflow.state.component_template import (
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.state.component_template import (
     ComponentInstance,
     ComponentTemplateError,
     instance_edition_edge,

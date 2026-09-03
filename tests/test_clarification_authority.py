@@ -4,21 +4,9 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.interaction import (
-    AuthorityDecisionReceipt,
-    ClarificationAlternative,
-    ClarificationDisposition,
-    ClarificationEffect,
-    ClarificationRequest,
-    ClarifiedFactValue,
-    CommitmentClarificationAction,
-)
-from archflow.project import (
-    BranchRef,
-    ProjectVersionRef,
-    RunRef,
-)
-from archflow.runtime.clarification import (
+from archive.archflow.interaction.clarification import AuthorityDecisionReceipt, ClarificationAlternative, ClarificationDisposition, ClarificationEffect, ClarificationRequest, ClarifiedFactValue, CommitmentClarificationAction
+from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
+from archive.archflow.runtime.clarification import (
     ClarificationDuplicateError,
     ClarificationExpiredError,
     ClarificationResumeStatus,
@@ -29,20 +17,8 @@ from archflow.runtime.clarification import (
     resume_from_clarification,
     validate_authority_decision,
 )
-from archflow.state import (
-    Commitment,
-    CommitmentKind,
-    CommitmentStatus,
-    CommitmentStrength,
-    CriterionRef,
-    DesignObligation,
-    FactEpistemicStatus,
-    ObligationStatus,
-    OperationalMarkovState,
-    RevisionPolicy,
-    StateDomain,
-    StateFact,
-)
+from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef, RevisionPolicy
+from archflow.state.operational_state import DesignObligation, FactEpistemicStatus, ObligationStatus, OperationalMarkovState, StateDomain, StateFact
 
 
 CREATED = "2026-07-25T10:00:00Z"
@@ -557,12 +533,12 @@ class ClarificationAuthorityTests(unittest.TestCase):
         self.assertNotEqual(first.request_digest, second.request_digest)
         source = (
             Path(__file__).parents[1]
-            / "archflow"
+            / "archive" / "archflow"
             / "interaction"
             / "clarification.py"
         ).read_text(encoding="utf-8") + (
             Path(__file__).parents[1]
-            / "archflow"
+            / "archive" / "archflow"
             / "runtime"
             / "clarification.py"
         ).read_text(encoding="utf-8")

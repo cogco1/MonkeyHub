@@ -4,18 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.project import FilesystemProjectRepository
-from archflow.runtime.branch_portfolio import (
+from archflow.project.repository import FilesystemProjectRepository
+from archive.archflow.runtime.branch_portfolio import (
     BranchPortfolioArchive,
     BranchPortfolioArchiveError,
 )
-from archflow.runtime.state_reducer import canonical_state_to_dict
-from archflow.state import (
-    DesignOptionPortfolio,
-    initialize_canonical_project,
-    park_branch,
-    select_branch,
-)
+from archive.archflow.runtime.state_reducer import canonical_state_to_dict
+from archflow.state.design_portfolio import DesignOptionPortfolio, park_branch, select_branch
+from archflow.state.model import initialize_canonical_project
 from tests.test_design_portfolio import (
     DECISION,
     EVIDENCE,

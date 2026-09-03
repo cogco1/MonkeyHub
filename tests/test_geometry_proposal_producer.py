@@ -20,23 +20,11 @@ from archflow.capabilities.geometry_proposal import (
     proposal_authoring_output,
     proposal_edit_authoring_output,
 )
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
-from archflow.realization import realize_geometry
-from archflow.state import (
-    ComponentMaturity,
-    DesignComponent,
-    MassingVolume,
-    SiteBounds,
-    SpatialGridBasis,
-    SpatialLevel,
-    SpatialOptionProposal,
-    SpatialConnection,
-    SpatialZone,
-)
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.realization.sandbox import realize_geometry
+from archflow.state.spatial import ComponentMaturity, DesignComponent, MassingVolume, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialConnection, SpatialZone
+from archflow.state.site_context import SiteBounds
 from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from tests.test_sandbox_realization import compiled_room
 

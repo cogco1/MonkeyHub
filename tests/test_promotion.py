@@ -6,31 +6,17 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.adapters import FakeVoxelAdapter
-from archflow.commit import CommitRejected, Committer, InMemoryStateStore
-from archflow.evaluation import (
-    ClaimCoverageEvaluator,
-    ObservationStatus,
-    evaluate_submission,
-)
-from archflow.runtime import FakeArchitect, initial_state
-from archflow.state import (
-    CanonicalState,
-    Commitment,
-    CommitmentKind,
-    CommitmentStatus,
-    CommitmentStrength,
-    CriterionRef,
-    Fact,
-    RevisionPolicy,
-)
-from archflow.validation import (
-    ArtifactPresentValidator,
-    ObligationDischargeValidator,
-    RequiredClaimsValidator,
-    validate_submission,
-)
-from archflow.workspace import WorkspaceManager
+from archive.archflow.adapters.fake_voxel import FakeVoxelAdapter
+from archive.archflow.commit.committer import CommitRejected, Committer
+from archive.archflow.commit.store import InMemoryStateStore
+from archive.archflow.evaluation.engine import ClaimCoverageEvaluator, evaluate_submission
+from archive.archflow.evaluation.model import ObservationStatus
+from archive.archflow.runtime.fake_architect import FakeArchitect
+from archive.archflow.runtime.walking_skeleton import initial_state
+from archflow.state.model import CanonicalState, Fact
+from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef, RevisionPolicy
+from archflow.validation.engine import ArtifactPresentValidator, ObligationDischargeValidator, RequiredClaimsValidator, validate_submission
+from archive.archflow.workspace.manager import WorkspaceManager
 from tests.test_submission import NOW, _human_package
 
 

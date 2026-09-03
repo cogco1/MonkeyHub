@@ -4,7 +4,7 @@ import copy
 import unittest
 
 from archflow.project.refs import ProjectVersionRef
-from archflow.validation.architectural import (
+from archive.archflow.validation.architectural import (
     ArchitecturalCriterion,
     ArchitecturalObservation,
     ArchitecturalUsabilityContract,

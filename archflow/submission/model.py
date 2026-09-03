@@ -6,14 +6,8 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from archflow.state import (
-    ArtifactRef,
-    Commitment,
-    CommitmentStatus,
-    Fact,
-    Obligation,
-    StateRef,
-)
+from archflow.state.model import ArtifactRef, Fact, Obligation, StateRef
+from archflow.state.commitments import Commitment, CommitmentStatus
 
 
 def _require_text(value: str, field_name: str) -> None:

@@ -7,7 +7,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.capabilities.component_library import (
+from archive.archflow.capabilities.component_library import (
     IMPORT_RECEIPT_KIND,
     harvest_component_template,
     import_component_template,
@@ -21,12 +21,9 @@ from archflow.capabilities.geometry_proposal import (
     produce_geometry_program_proposal,
     proposal_authoring_output,
 )
-from archflow.project import (
-    FilesystemProjectRepository,
-    PersistenceArea,
-    PersistenceDestination,
-)
-from archflow.state.component_template import (
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archive.archflow.state.component_template import (
     CaseVote,
     ComponentTemplate,
     ComponentTemplateError,
@@ -50,7 +47,7 @@ from tests.test_geometry_proposal_producer import (
     _ScriptedProvider,
     _spatial_option,
 )
-from archflow.realization import realize_geometry
+from archive.archflow.realization.sandbox import realize_geometry
 from tests.test_sandbox_realization import compiled_room
 
 _BASIS = (
@@ -75,7 +72,7 @@ def _stair_template(
         template_id="palladian-exterior-stair",
         family="exterior-stair",
         edition=1,
-        mathematics_ref="capability:archflow.capabilities.stair_solver",
+        mathematics_ref="capability:archive.archflow.capabilities.stair_solver",
         module=TemplateModule(
             name="riser",
             definition=(

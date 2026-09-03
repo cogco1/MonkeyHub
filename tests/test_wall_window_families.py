@@ -27,7 +27,7 @@ from archflow.capabilities.wall_solver import (
     solve_wall,
 )
 from archflow.compilers.geometry import compile_geometry_program
-from archflow.realization.sandbox import SandboxRealizationError, _lift_to_base_level
+from archive.archflow.realization.sandbox import SandboxRealizationError, _lift_to_base_level
 from archflow.state.geometry_program import (
     AssemblyKind,
     AssemblyMember,

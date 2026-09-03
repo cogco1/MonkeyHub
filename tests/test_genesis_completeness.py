@@ -5,22 +5,22 @@ import hashlib
 import json
 import unittest
 
-from archflow.control.baseline import StageBaselineLevel
-from archflow.control.genesis_completeness import (
+from archive.archflow.control.baseline import StageBaselineLevel
+from archive.archflow.control.genesis_completeness import (
     GenesisSemanticDenominator,
     SemanticDenominatorSourceKind,
     SemanticSystemBasis,
     SemanticSystemDeclaration,
     SemanticSystemDisposition,
 )
-from archflow.control.profile import StageRequirementProfileBinding
+from archive.archflow.control.profile import StageRequirementProfileBinding
 from archflow.control.requirements import (
     RequirementBasisMode,
     RequirementTargetKind,
     StageCheckRequirement,
     StageRequirementProfile,
 )
-from archflow.control.stage_subjects import (
+from archive.archflow.control.stage_subjects import (
     StageSubjectInventory,
     StageSubjectInventoryEntry,
 )
@@ -37,19 +37,19 @@ from archflow.project.refs import (
     ProjectVersionRef,
     RunRef,
 )
-from archflow.runtime.genesis_completeness import (
+from archive.archflow.runtime.genesis_completeness import (
     GenesisSemanticCompletenessCompilationError,
     compile_genesis_semantic_denominator,
 )
-from archflow.research.adoption import PrecedentAdoption, PrecedentFact
-from archflow.research.branch import (
+from archive.archflow.research.adoption import PrecedentAdoption, PrecedentFact
+from archive.archflow.research.branch import (
     BranchEvidenceSnapshot,
     BranchPrecedentAdoption,
     BranchResearchScope,
 )
 from archflow.state.design_maturity import DesignPhase
 from archflow.state.operational_state import OperationalMarkovState
-from archflow.state.build_policy import (
+from archive.archflow.state.build_policy import (
     ConstructabilityTopic,
     PolicyConstraintStrength,
 )

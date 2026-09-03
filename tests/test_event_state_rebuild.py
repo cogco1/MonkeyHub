@@ -7,15 +7,15 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
 
-from archflow.project import ProjectVersionRef
-from archflow.runtime.event_log import (
+from archflow.project.refs import ProjectVersionRef
+from archive.archflow.runtime.event_log import (
     AppendOnlyEventLog,
     DesignEvent,
     EventDecision,
     EventLogError,
     verify_event_chain,
 )
-from archflow.runtime.state_reducer import (
+from archive.archflow.runtime.state_reducer import (
     REDUCER_VERSION,
     CanonicalStateMutation,
     CommitmentLifecycleTransition,
@@ -26,17 +26,8 @@ from archflow.runtime.state_reducer import (
     make_transition_event,
     rebuild_canonical_state,
 )
-from archflow.state import (
-    CanonicalState,
-    Commitment,
-    CommitmentKind,
-    CommitmentStatus,
-    CommitmentStrength,
-    CriterionRef,
-    Fact,
-    RevisionPolicy,
-    initialize_canonical_project,
-)
+from archflow.state.model import CanonicalState, Fact, initialize_canonical_project
+from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef, RevisionPolicy
 
 
 class _DirectoryEventStore:
