@@ -2,8 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** calibrated 2026-09-03 (see "Calibration results" at the end) — awaiting Kaiwen's go to execute.
-Written after Kaiwen adopted codex's review of the two earlier
+**Status:** executed 2026-09-03 in dispatch mode (Kaiwen: "放行：派工模式") — Tasks 1–11 on `main`; per-task
+ratifications are recorded inline below and in the session ledger. Calibrated 2026-09-03 (see "Calibration
+results" at the end). Written after Kaiwen adopted codex's review of the two earlier
 plans (`2026-09-03-p108-phase1-foundation-plan.md`, `2026-09-03-p108-round1-plan-a-read-slice.md`, both
 SUPERSEDED). Execution waits for (a) Kaiwen's go after calibration and (b) the governance items sent to the
 main session (firewall repoint to `apps/archflow-studio/api`, P108 card rewrite, brief Addendum 3, registry,
@@ -519,11 +520,46 @@ Validation (receipt findings, three-state chips, `advance` verdict with `blocked
 
 ### Task 10: README, archive note, full battery
 
-- [ ] `apps/archflow-studio/README.md` rewritten (run: `py -3.12 -m pip install -r api/requirements.txt`;
+- [x] `apps/archflow-studio/README.md` rewritten (run: `py -3.12 -m pip install -r api/requirements.txt`;
   `$env:ARCHFLOW_STUDIO_PROJECT_DIR=…; py -3.12 -m archflow_studio_api.main` from `api/`; `npm run dev`
   from `web/`; route table; boundary; K1/K2; three-state rule; tag of the retired slice).
-- [ ] Battery: `archcheck`, api tests, kernel suite (`tests/`), web typecheck + build, OpenAPI snapshot
+- [x] Battery: `archcheck`, api tests, kernel suite (`tests/`), web typecheck + build, OpenAPI snapshot
   test. Commit `P108 refoundation documented; battery green`.
+
+**Done 2026-09-03** (`dcd475f` web tidy-ups incl. the Task 9 re-review fix T9-R1 and the 587-line dead-CSS
+strip; `72c40de` README + battery: archcheck PASS 363, api 213 OK, kernel 1578 OK, web api:check/typecheck/
+build green). Ratified by the controller: the app-level `apps/archflow-studio/.gitignore` (subsuming
+`web/.gitignore`) — unrequested but behaviour-preserving; K2 is not named in the README (the pins narrowed the
+list to P109/P110 + relayed cards); the archive note `docs/mapping/archive/studio-preview-slice-01.md` is
+outside this lane's write scope and stays with the main session — the README cites the tag
+`studio-preview-slice-01` as the record. Live smoke on the merged main performed by the controller in the
+Browser pane (run-less villa copy, Rhino export on): shell unchanged, candidate with two exports in 83.6 s,
+verdict `advance true`.
+
+---
+
+### Task 11: the verdict counts a failed export (added after the export smoke)
+
+Why: the first exported-candidate smoke ran on a >260-character workspace path, both Rhino exports failed
+(`cad_execution.completion_marker_missing`, the hidden COM Rhino blocked on its own save-changes dialog at
+exit), the candidate readout said so (`artifacts[]` `status: failed`, `available: false`) — and the
+validation still answered `advance: true`, because the submission's artifacts are the seats' compiled
+programs and the four verdict clauses never read `CandidateRun.artifacts`.
+
+- [x] Fifth clause `runner.exports_available` — holds iff every `candidate.artifacts` record is `available`
+  and `status == "succeeded"`; vacuous for an unexported candidate (empty tuple).
+- [x] One honesty line per unavailable export:
+  `export of {stage_id} ({file_name}) is not available: status {status}, reason {reason}` (`-` for a missing
+  field, never a guessed reason); program-related lines first, export lines after.
+- [x] Three tests on real dataclasses (failed export blocks + exact line; empty artifacts vacuous; succeeded
+  export does not block). README verdict block lists five clauses; "no route touches" → "no route writes".
+  Commit `P108: the verdict refuses a candidate whose requested export failed`.
+
+**Done 2026-09-03** (`7312b23`; fix round `e53ba72` after review: the DTO descriptions and the generated
+client name all five clauses, plus a two-artifact ordering test; api 217 OK, archcheck PASS, `api:check` 16
+files match, typecheck clean). Independent judge on the real failed and real succeeded export records: 12/12. The path-length hang itself is a kernel-adapter matter (relayed as a card
+candidate: refuse over-long workspace paths by name; quit Rhino with the document discarded before releasing
+the COM object).
 
 ---
 
