@@ -349,8 +349,14 @@ request (`targetComponentId`, optional `elementId`), never parsed from prose. Th
   blocked with a question that names "0 parameters"; element field change proposed; locked parameter
   blocked; stale base 409; cross-project 403; conflict when protecting a downstream ref.
 
-- [ ] Steps: tests → fail → implement → pass → archcheck → commit
-  `P108 refoundation: the IntentProvider seam speaks a deterministic grammar and returns typed proposals or a question`.
+- [x] Done together with Task 6 (main, 2026-09-03; four worker commits). Ratified after review: one
+  definition of conflict = `closure ∩ protected` including the target, with `status` derived from it;
+  `acceptedForms` = the four typeable forms, the `keep` suffix explained in the question; the kernel's
+  `ParameterBinding.value` is text-only so the number travels as `canonical_json(new)` in the operator
+  (kernel-card candidate: typed binding values); a selected element must belong to the target component.
+  Verified on the real villa: `set height to 2.2` → 1.873→2.2 with a typed exact-base `DecisionOperator`,
+  direct-only impact with 41 unknown-coverage components; `increase height by 20 %` → 2.2476; parameter
+  intents blocked with the "0 parameters" question; stale 409; cross-project 403; self-keep → conflict.
 
 ---
 
@@ -365,8 +371,8 @@ parameters with lock_authority in closure, unknownCoverage: components with no e
 ids), honesty[]}` — no inference beyond the kernel's closure. Tests on the fixture's relation/parameter
 chain (a→b→c: changing a propagates to b and c; protecting c conflicts).
 
-- [ ] Steps: tests → fail → implement → pass → archcheck → commit
-  `P108 refoundation: impact is the kernel closure, shown with what it cannot see`.
+- [x] Done with Task 5 (see above): impact is `record.closure` and nothing else; unknownCoverage names the
+  components no edge touches; honesty lines verbatim.
 
 ---
 
