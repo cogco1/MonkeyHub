@@ -18,6 +18,10 @@ import sys
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 
 if str(REPOSITORY_ROOT) not in sys.path:
+    # Index 0, not ``append``: this repository's ``archflow`` is the one this
+    # service answers for, and an ``archflow`` installed into the environment
+    # would otherwise win the import and be answering with another checkout's
+    # kernel — silently, and about somebody's building.
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 __all__ = ["REPOSITORY_ROOT"]

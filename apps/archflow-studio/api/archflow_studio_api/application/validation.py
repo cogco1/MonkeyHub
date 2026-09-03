@@ -163,8 +163,10 @@ class CandidateValidation:
     honesty: tuple[str, ...]
 
 
-def submission_for(
-    candidate: CandidateRun, proposal: Proposal
+def _submission(
+    candidate: CandidateRun,
+    proposal: Proposal,
+    artifacts: tuple[ArtifactRef, ...],
 ) -> CandidateSubmission:
     """The candidate as something the kernel can be asked about.
 
@@ -182,14 +184,6 @@ def submission_for(
     asked to pose.
     """
 
-    return _submission(candidate, proposal, _artifacts_of(candidate)[0])
-
-
-def _submission(
-    candidate: CandidateRun,
-    proposal: Proposal,
-    artifacts: tuple[ArtifactRef, ...],
-) -> CandidateSubmission:
     return CandidateSubmission(
         submission_id=candidate.candidate_id,
         base=candidate.base,

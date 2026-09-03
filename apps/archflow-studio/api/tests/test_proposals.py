@@ -10,6 +10,7 @@ numbers in it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -525,12 +526,19 @@ class ProposalStoreTests(ProposalTestCase):
 class ProposalOnlyTests(ProposalTestCase):
     """Proposal-only is a mechanical property, not a promise in a docstring."""
 
-    def _project_files(self) -> dict[str, int]:
-        """Every file under the bound project, by path and size."""
+    def _project_files(self) -> dict[str, str]:
+        """Every file under the bound project, by path and content digest.
+
+        Content, not size: a route that rewrote one authored number in place
+        would leave every path and every byte count exactly as it found them,
+        and that is the one write this test exists to catch.
+        """
 
         root = self.root / PROJECT_ID
         return {
-            str(path.relative_to(root)): path.stat().st_size
+            str(path.relative_to(root)): hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
             for path in sorted(root.rglob("*"))
             if path.is_file()
         }

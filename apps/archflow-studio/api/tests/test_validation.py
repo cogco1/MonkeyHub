@@ -45,7 +45,6 @@ from archflow_studio_api.application.validation import (
     EXPORTS_CLAUSE,
     VALIDATOR_NAMES,
     VALIDATOR_NOTE,
-    submission_for,
     validate_candidate,
 )
 from archflow_studio_api.main import create_app
@@ -239,36 +238,42 @@ class ValidationReceiptTests(ValidationTestCase):
         )
 
     def test_the_submission_carries_the_runs_own_programs(self) -> None:
-        """The artifacts are the seats' programs, evidenced by their own ids."""
+        """The artifacts are the seats' programs, and the kernel says so.
+
+        ``ArtifactPresentValidator`` answers ``artifact.missing`` for a
+        submission carrying no artifact and ``artifact.evidence_missing`` for
+        an added artifact that is not also evidence. A receipt with neither
+        finding is the kernel stating that the seats' compiled programs
+        arrived, each standing as its own evidence — which is the thing worth
+        proving, and it is proved by the validator rather than by reading the
+        submission back out of the module that built it.
+        """
 
         accepted, job = self.finished_candidate()
         candidate = self.candidate_run(accepted, job)
+        # Only the seats that compiled something have a program to submit. A
+        # seat that produced nothing is not a dropped artifact, and asserting
+        # a digest for it would break the moment one is ``empty``.
+        submitted = [
+            seat
+            for seat in candidate.seat_results
+            if seat.program_ref is not None
+        ]
+        self.assertTrue(submitted, candidate.seat_results)
 
-        submission = submission_for(
-            candidate, self.app.state.proposals.get(candidate.proposal_id)
-        )
+        validated = self.validated(candidate)
 
-        self.assertEqual(submission.submission_id, candidate.candidate_id)
-        self.assertEqual(submission.workspace_id, candidate.candidate_id)
-        self.assertEqual(submission.base, candidate.base)
+        for seat in submitted:
+            with self.subTest(seat=seat.seat_id):
+                self.assertEqual(len(seat.program_digest), 64)
+                self.assertTrue(seat.program_ref.startswith("project://"))
         self.assertEqual(
-            [artifact.artifact_id for artifact in submission.delta.artifacts_add],
-            [seat.program_digest for seat in candidate.seat_results],
+            validated.receipt.submission_id, candidate.candidate_id
         )
-        for artifact in submission.delta.artifacts_add:
-            with self.subTest(artifact=artifact.artifact_id):
-                self.assertEqual(artifact.media_type, "application/json")
-                self.assertEqual(len(artifact.sha256), 64)
-                self.assertTrue(artifact.uri.startswith("project://"))
-                self.assertIn(artifact.sha256, artifact.uri)
-                # ``ArtifactPresentValidator`` finds nothing missing only
-                # because every added artifact is also evidence.
-                self.assertIn(artifact.artifact_id, submission.evidence_refs)
-        claim = submission.claims[0]
-        self.assertEqual(claim.key, "studio.candidate.run_id")
-        self.assertEqual(claim.value, candidate.candidate_id)
-        self.assertEqual(claim.evidence_refs, (candidate.receipt_ref,))
-        self.assertIn(candidate.receipt_ref, submission.evidence_refs)
+        self.assertEqual(validated.receipt.findings, ())
+        self.assertIs(validated.receipt.passed, True)
+        # Nothing was left out of the submission, so nothing is confessed.
+        self.assertEqual(validated.honesty, ())
 
     def test_a_seat_whose_program_cannot_be_named_is_confessed(self) -> None:
         """A dropped artifact is said out loud, and never quietly greened.

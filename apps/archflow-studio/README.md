@@ -95,7 +95,10 @@ Every route is under `/api`. Every error, without exception, is the one body
 `{"code": "<CODE>", "detail": "<text>"}` — plus `question` and, when non-empty,
 `acceptedForms` for `BLOCKED_NEEDS_HUMAN`. That includes unknown routes (404 `NOT_FOUND`),
 wrong methods (405 `METHOD_NOT_ALLOWED`), request-validation failures (422 `REQUEST_INVALID`)
-and unexpected bugs (500 `INTERNAL_ERROR`, with no traceback on the wire). No DTO carries a
+and unexpected bugs (500 `INTERNAL_ERROR`, with no traceback on the wire). Anything else the
+framework itself refuses before a route runs — a malformed `Range` header, say — keeps its own
+status under the code `HTTP_ERROR`; no route code can reach it, because route code raises
+`StudioError` and that has its own handler. No DTO carries a
 `schema` tag, and no DTO carries a constant-false flag such as `readOnly` or
 `canonicalWriteAuthority`.
 

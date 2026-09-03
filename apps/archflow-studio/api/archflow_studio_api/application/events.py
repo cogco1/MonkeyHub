@@ -5,8 +5,11 @@ which only polled would be watching a spinner. This is what it watches instead:
 an ordered log of what the job did, published as it happens.
 
 Three properties are the whole design. It is **ordered**: ``seq`` is assigned
-once under a lock, so a client can say what it has already seen and be given
-exactly what it missed. It is **bounded**: two hundred events, oldest dropped,
+and the event delivered under one lock, so a client can say what it has
+already seen and be given exactly what it missed — numbering alone would not
+do, since two publishers could then deliver N+1 before N and a client
+resuming from ``max(seq)`` would lose N. It is **bounded**: two hundred
+events, oldest dropped,
 because a process nobody restarts must not grow because somebody kept asking it
 to run candidates. And it is **in-process**: like the proposal store, this is
 not history. It says what this service saw since it started; a restart loses
@@ -65,11 +68,17 @@ class StudioEvents:
             self._seq += 1
             stamped["seq"] = self._seq
             self._buffer.append(stamped)
-            subscribers = tuple(self._subscribers)
-        for inbox in subscribers:
-            # Unbounded queues: a reader that has stopped reading falls behind
-            # on its own connection rather than blocking the design work.
-            inbox.put(stamped)
+            # Delivered under the same lock that numbered it, so the order a
+            # subscriber receives events in is the order they were numbered
+            # in. Handing out and then delivering would let two publishers
+            # interleave and put N+1 in a queue before N, and a client
+            # resuming from max(seq) would then never be sent N again.
+            #
+            # The queues are unbounded, so ``put`` does not block on a slow
+            # reader; a reader that has stopped reading falls behind on its
+            # own connection rather than holding up the design work.
+            for inbox in self._subscribers:
+                inbox.put(stamped)
 
     def replay(self, after: int | None = None) -> tuple[Mapping[str, Any], ...]:
         """What this process still remembers, optionally after one sequence."""

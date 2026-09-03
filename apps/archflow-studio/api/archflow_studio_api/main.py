@@ -47,6 +47,12 @@ async def _handle_studio_error(request: Request, exc: StudioError) -> JSONRespon
 async def _handle_http_exception(
     request: Request, exc: StarletteHTTPException
 ) -> JSONResponse:
+    # Starlette raises these before any route code runs: an unknown path
+    # (404 NOT_FOUND) and a known path with the wrong method (405
+    # METHOD_NOT_ALLOWED). ``HTTP_ERROR`` is the fallback for any other status
+    # the framework itself raises — a malformed ``Range`` header, say. Route
+    # code never reaches it: routes raise ``StudioError``, which has its own
+    # handler and its own named code.
     code = _HTTP_ERROR_CODES.get(exc.status_code, "HTTP_ERROR")
     return _error(exc.status_code, code, str(exc.detail), getattr(exc, "headers", None))
 

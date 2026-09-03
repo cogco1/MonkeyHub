@@ -161,13 +161,6 @@ class ProjectBinding:
             ),
         )
 
-    def latest_runner_receipt(
-        self,
-    ) -> tuple[str, ProjectRecordRef, Mapping[str, Any]] | None:
-        """The newest complete, non-harness runner receipt in the project."""
-
-        return self._survey()[0]
-
     def newest_runner_receipt(
         self, run_id: str
     ) -> tuple[ProjectRecordRef, Mapping[str, Any]] | None:
