@@ -44,6 +44,18 @@ export type AgentReadingDto = {
      * digest of the exact prompt the agent was shown; null for the deterministic provider
      */
     promptSha256: string | null;
+    /**
+     * Receiptid
+     *
+     * the ModelInvocationReceipt@2 that signs the call to the model; null for the deterministic provider, which calls none
+     */
+    receiptId?: string | null;
+    /**
+     * Status
+     *
+     * how that call ended on the shared contract (success); null when no model was called
+     */
+    status?: string | null;
 };
 
 /**

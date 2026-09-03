@@ -114,7 +114,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $webRoot 'node_modules\.bin\vite.cmd
 if (-not (Test-PortFree $apiPort)) { throw "port $apiPort is already in use (a Studio API is running, or another program holds it)." }
 if (-not (Test-PortFree $webPort)) { throw "port $webPort is already in use (a Vite dev server is running, or another program holds it)." }
 if ([string]$runtime.codex -and -not (Test-Path -LiteralPath ([string]$runtime.codex) -PathType Leaf)) {
-    Write-Host "  warning : codex not found at $($runtime.codex); typing a sentence in any words will fail until it is." -ForegroundColor Yellow
+    Write-Host "  warning : codex not found at $($runtime.codex); the API refuses to start with intent_provider codex until it is (it needs codex --version to sign its receipts)." -ForegroundColor Yellow
 }
 
 # --- environment the API reads (settings.py and intent_agent.py name these; no default project in code)
