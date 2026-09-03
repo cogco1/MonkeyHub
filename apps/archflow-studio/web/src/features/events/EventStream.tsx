@@ -13,7 +13,22 @@
  * three apart. Saying which one it was would be a guess dressed as a fact.
  *
  * A reconnect may replay frames this panel already showed, so an event whose
- * `seq` has been seen is dropped rather than appended twice.
+ * `seq` has been seen on *this connection* is dropped rather than appended
+ * twice. The scope matters: `seq` is one API process's own counter and a
+ * restarted process begins again at 1, so a dedupe that outlived the connection
+ * would recognise the new process's first frames as ones it had already shown
+ * and drop every one of them — the panel would go silent for as long as it took
+ * the new process to climb past the old one's last number, and the gap detector,
+ * sitting behind the dedupe, could not say so. So both the seen set and the
+ * last-seq watermark are cleared when a connection opens, and a re-open after an
+ * error says out loud that a frame may repeat and the numbering may restart.
+ * Repeats are the price of never going silent, and this panel would rather show
+ * a line twice than not show it at all.
+ *
+ * The reset happens on `open`, never before the request: the browser puts the
+ * last id it saw in `Last-Event-ID` when it retries, which is how a process that
+ * is still alive knows where to resume, and forgetting it early would ask a live
+ * process to replay from the beginning.
  *
  * This is a live view of a process, not a transcript and not version history:
  * it is bounded, it is dropped on reload, and nothing here is a record of what
@@ -37,11 +52,15 @@ const EVENT_TYPES: readonly string[] = [
 /** How many frames the panel keeps. Older ones are dropped, not summarised. */
 const KEEP = 200;
 
+/** What a re-open after a drop says, because the panel cannot promise more. */
+const RECONNECTED =
+  "the stream reconnected; a frame may repeat and the sequence may restart";
+
 export interface StreamLine {
   readonly key: string;
   readonly seq: number | null;
   readonly text: string;
-  readonly kind: "event" | "gap" | "transport";
+  readonly kind: "event" | "gap" | "transport" | "notice";
 }
 
 function summarise(event: StudioEventDto): string {
@@ -66,9 +85,18 @@ function summarise(event: StudioEventDto): string {
 export function EventStream({ notices }: { notices: readonly string[] }) {
   const [lines, setLines] = useState<readonly StreamLine[]>([]);
   const lastSeqRef = useRef<number | null>(null);
-  // Every seq this panel has already shown. A reconnect can replay them, and a
-  // replayed line must not appear twice — nor collide with its own React key.
+  // Every seq shown on the current connection. A reconnect can replay them, and
+  // a replayed line must not appear twice. Cleared on every open, and capped at
+  // the same bound as the panel itself so a connection that lives for days does
+  // not grow a set of numbers larger than the lines it is protecting.
   const seenSeqRef = useRef<Set<number>>(new Set());
+  // Which connection a line arrived on. Two processes can both publish a seq 1,
+  // and after a restart both may be on screen at once, so the key that tells
+  // them apart has to name the connection as well as the number.
+  const connectionRef = useRef(0);
+  // Whether this connection follows a drop. The browser reconnects on its own,
+  // and only a re-open that follows an error is worth a line.
+  const droppedRef = useRef(false);
   // Lines that carry no seq of their own still need to be told apart.
   const lineIdRef = useRef(0);
 
@@ -84,6 +112,18 @@ export function EventStream({ notices }: { notices: readonly string[] }) {
       push({ key: `${kind}:${lineIdRef.current}`, seq: null, text, kind });
     };
 
+    // A Set iterates in insertion order, so the first entry is the oldest seq
+    // this connection saw and is the one that goes when the set is full.
+    const remember = (seq: number) => {
+      const seen = seenSeqRef.current;
+      seen.add(seq);
+      while (seen.size > KEEP) {
+        const oldest = seen.values().next();
+        if (oldest.done) break;
+        seen.delete(oldest.value);
+      }
+    };
+
     const receive = (message: MessageEvent<string>) => {
       let event: StudioEventDto;
       try {
@@ -96,6 +136,7 @@ export function EventStream({ notices }: { notices: readonly string[] }) {
         return;
       }
       if (seenSeqRef.current.has(event.seq)) return;
+      remember(event.seq);
       const previous = lastSeqRef.current;
       if (previous !== null && event.seq > previous + 1) {
         const missing = event.seq - previous - 1;
@@ -107,9 +148,8 @@ export function EventStream({ notices }: { notices: readonly string[] }) {
         );
       }
       if (previous === null || event.seq > previous) lastSeqRef.current = event.seq;
-      seenSeqRef.current.add(event.seq);
       push({
-        key: `seq:${event.seq}`,
+        key: `seq:${connectionRef.current}:${event.seq}`,
         seq: event.seq,
         text: summarise(event),
         kind: "event",
@@ -120,7 +160,22 @@ export function EventStream({ notices }: { notices: readonly string[] }) {
       source.addEventListener(type, receive as EventListener);
     }
     source.onmessage = receive;
+    // The connection is what `seq` is counted against, so opening one starts the
+    // count over: this is the moment the panel stops recognising the previous
+    // process's numbers as its own. `Last-Event-ID` has already gone out with the
+    // request by now, so a process that is still alive still resumes where it
+    // left off.
+    source.onopen = () => {
+      connectionRef.current += 1;
+      seenSeqRef.current = new Set();
+      lastSeqRef.current = null;
+      if (droppedRef.current) {
+        droppedRef.current = false;
+        note(RECONNECTED, "notice");
+      }
+    };
     source.onerror = () => {
+      droppedRef.current = true;
       note(
         "the event stream dropped; the browser will retry. Nothing about the " +
           "project changed because of this.",

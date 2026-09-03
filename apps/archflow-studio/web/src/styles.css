@@ -682,6 +682,7 @@ input:focus-visible {
 }
 
 .events__line--gap,
+.events__line--notice,
 .events__line--transport {
   color: var(--warning);
 }
