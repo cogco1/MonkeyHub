@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
 from archflow.capabilities.geometry_proposal import (  # noqa: E402
     GeometryProposalProviderIdentity,
 )
-from archflow.production.provider_runtime import InvocationEvidenceCollector, activate_codex_agent_cli_provider
+from archive.archflow.production.provider_runtime import InvocationEvidenceCollector, activate_codex_agent_cli_provider
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archive.archflow.project.bootstrap import bootstrap_raw_request_project
@@ -250,10 +250,10 @@ def main(argv=None) -> int:
     if args.max_output_tokens != 8_192:
         # A larger output budget is a distinct frozen profile: build the
         # provider directly so the budget is explicit, never silent.
-        from archflow.adapters.model_provider import (
+        from archive.archflow.adapters.model_provider import (
             create_codex_cli_model_provider,
         )
-        from archflow.production.provider_runtime import activate_provider_from_spec
+        from archive.archflow.production.provider_runtime import activate_provider_from_spec
 
         raw_provider = create_codex_cli_model_provider(
             executable=args.codex,

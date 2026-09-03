@@ -15,7 +15,7 @@ it exists at all is that ``POST /api/proposals`` must be able to answer a later
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import MISSING, dataclass, fields
 from typing import Any, Mapping
 
 from archflow.state.decision_operator import DecisionOperator
@@ -53,6 +53,12 @@ class Proposal:
     impact: Impact
     utterance: str
     created_at: str
+    # The receipt of the model call that compiled the words, when a model was
+    # called at all: ``ModelInvocationReceipt@2`` as a mapping, exactly as the
+    # shared contract serialises it. ``None`` for a sentence already in the
+    # grammar, which no model read. It travels with the proposal so that a run
+    # made from it can retain what answered; nothing here reads it.
+    compilation_receipt: Mapping[str, Any] | None = None
 
 
 
@@ -82,7 +88,15 @@ def proposal_from(parts: Mapping[str, Any]) -> Proposal:
     """
 
     expected = {field.name for field in fields(Proposal)}
-    missing = sorted(expected - set(parts))
+    # A field with a default is the route's to fill in afterwards, not the
+    # port's to answer with: the port describes the change, and what compiled
+    # the words is attached where that is known.
+    required = {
+        field.name
+        for field in fields(Proposal)
+        if field.default is MISSING and field.default_factory is MISSING
+    }
+    missing = sorted(required - set(parts))
     unexpected = sorted(set(parts) - expected)
     if missing or unexpected:
         raise TypeError(

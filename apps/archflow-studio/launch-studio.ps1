@@ -123,6 +123,8 @@ if ([string]$runtime.reference_run) { $env:ARCHFLOW_STUDIO_REFERENCE_RUN = [stri
 if ($runtime.rhino_export) { $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '1' } else { $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '0' }
 if ([string]$runtime.powershell) { $env:ARCHFLOW_STUDIO_POWERSHELL = [string]$runtime.powershell }
 if ([string]$runtime.intent_provider) { $env:ARCHFLOW_STUDIO_INTENT_PROVIDER = [string]$runtime.intent_provider }
+if ([string]$runtime.intent_model) { $env:ARCHFLOW_STUDIO_INTENT_MODEL = [string]$runtime.intent_model }
+if ([string]$runtime.intent_timeout_s) { $env:ARCHFLOW_STUDIO_INTENT_TIMEOUT_S = [string]$runtime.intent_timeout_s }
 if ([string]$runtime.codex) { $env:ARCHFLOW_STUDIO_CODEX = [string]$runtime.codex }
 # Redirected python output is block-buffered; an unbuffered child is the difference between a
 # log that says why it died and an empty file.

@@ -33,8 +33,8 @@ Entry points: `tools/run_project.py` (a run of one project), `tools/verify_state
 
 Shared foundations: `archflow/project/refs.py` (the four references), `archflow/contracts/`
 (canonical JSON, digests, field parsing), `archflow/validation/{model,engine}.py`
-(`validate_submission`, `Finding`, `ValidationReceipt`), `archflow/ports/model.py` and
-`archflow/production/provider_runtime.py` (governed model invocation).
+(`validate_submission`, `Finding`, `ValidationReceipt`), `archflow/ports/model.py` (the one
+model invocation request and receipt; whoever crosses the boundary signs one).
 
 ## Rules that hold the shape
 

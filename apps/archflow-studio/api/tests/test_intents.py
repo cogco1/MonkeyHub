@@ -31,7 +31,13 @@ from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.transport.errors import StudioError
 
-from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
+from .support import (
+    PROJECT_ID,
+    REFERENCE_RUN_ID,
+    make_project,
+    runner_state_digest,
+    write_codex_shim,
+)
 
 
 def scripted(**fields: object):
@@ -262,7 +268,12 @@ class ProviderOnTheWireTests(IntentTestCase):
     def test_the_codex_compiler_names_itself_and_its_model(self) -> None:
         from archflow_studio_api.application.intent_agent import CodexCompiler
 
-        self.app.state.intent_compiler = CodexCompiler(executable="codex", model="gpt-5")
+        # A real executable, because building the compiler reads its version:
+        # the screen names the agent this process actually has.
+        shim, _ = write_codex_shim(self.root, answer="{}")
+        self.app.state.intent_compiler = CodexCompiler(
+            executable=str(shim), model="gpt-5"
+        )
         response = self.client.get("/api/project")
         self.assertEqual(response.json()["intentProvider"], "codex")
         self.assertEqual(response.json()["intentModel"], "gpt-5")

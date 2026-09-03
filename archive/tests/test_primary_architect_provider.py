@@ -6,7 +6,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from archflow.adapters.model_provider import (
+from archive.archflow.adapters.model_provider import (
     AsyncJsonCommandModelProvider,
     ModelCommandProtocol,
     ModelProviderSpec,
@@ -18,8 +18,8 @@ from archflow.ports.model import (
     ModelInvocationStatus,
     ModelPhase,
 )
-from archflow.production.responsibility import ProviderIdentity
-from archflow.production.provider_runtime import activate_model_provider
+from archive.archflow.production.responsibility import ProviderIdentity
+from archive.archflow.production.provider_runtime import activate_model_provider
 from archive.archflow.runtime.design_controller import prepare_design_turn
 from archive.archflow.runtime.primary_architect import (
     PrimaryArchitectReceipt,
@@ -619,10 +619,10 @@ class PrimaryArchitectRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_prompts_contain_no_building_instance_defaults(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = Path(__file__).resolve().parents[2]
         source = "\n".join(
             (
-                (root / "archflow/adapters/model_provider.py").read_text(
+                (root / "archive/archflow/adapters/model_provider.py").read_text(
                     encoding="utf-8"
                 ),
                 (root / "archive/archflow/runtime/primary_architect.py").read_text(

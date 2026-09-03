@@ -49,7 +49,10 @@ writes — starts both halves and opens the browser at the web client. Its one i
 `runtime.json` beside it, and the line you normally change is the first: `project_dir`, the P036
 project the API binds. The rest are `reference_run`, `rhino_export`, `powershell`,
 `intent_provider` and `codex` (the environment variables the sections below describe), `python`
-(the interpreter command, `py -3.12`), `api_port`, `web_port` and `open_browser`. **The paths in
+(the interpreter command, `py -3.12`), `api_port`, `web_port` and `open_browser`. Two optional
+keys name the agent more exactly: `intent_model` (the model the provider runs, forwarded as
+`ARCHFLOW_STUDIO_INTENT_MODEL`) and `intent_timeout_s` (how long one compile may take, default
+120, forwarded as `ARCHFLOW_STUDIO_INTENT_TIMEOUT_S`). **The paths in
 it are absolute and machine-specific**; it is not a file to copy between machines unchanged.
 The launcher validates all of it before it starts anything, so a `project_dir` with no
 `project.json` in it, a port already held, or a Python that cannot import FastAPI is a refusal

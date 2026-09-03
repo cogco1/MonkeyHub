@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from archflow.adapters.model_provider import (  # noqa: E402
+from archive.archflow.adapters.model_provider import (  # noqa: E402
     ModelInvocationRequest,
     ModelInvocationStatus,
     ModelPhase,
@@ -34,7 +34,7 @@ from archive.archflow.research.query import (  # noqa: E402
     parse_research_output,
     research_prompt,
 )
-from archflow.production.provider_runtime import InvocationEvidenceCollector, activate_codex_agent_cli_provider
+from archive.archflow.production.provider_runtime import InvocationEvidenceCollector, activate_codex_agent_cli_provider
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.contracts.canonical import canonical_digest

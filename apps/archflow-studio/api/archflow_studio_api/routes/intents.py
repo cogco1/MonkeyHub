@@ -113,6 +113,14 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             context_refs=context_refs(body.state_digest, compilation, selection),
         )
     )
+    # What compiled the words travels with what they became. A sentence
+    # already in the grammar was read by no model and carries no receipt.
+    proposal = replace(
+        proposal,
+        compilation_receipt=(
+            None if compilation.receipt is None else compilation.receipt.to_dict()
+        ),
+    )
     request.app.state.proposals.put(proposal)
     type_ms = int((time.perf_counter() - typed_at) * 1000)
     return IntentDto(

@@ -285,7 +285,7 @@ def run_external_production(
     from archflow.capabilities.geometry_proposal import (
         GeometryProposalProviderIdentity,
     )
-    from archflow.production.provider_runtime import InvocationEvidenceCollector, activate_codex_agent_cli_provider
+    from archive.archflow.production.provider_runtime import InvocationEvidenceCollector, activate_codex_agent_cli_provider
     from archive.archflow.runtime.production_compiler import ProductionRootCompiler
     from archive.archflow.runtime.production_runtime import (
         ProductionAuthoringContext,

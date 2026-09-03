@@ -21,7 +21,7 @@ import uvicorn
 
 from . import routes
 from .application.events import StudioEvents
-from .application.intent_agent import compiler_from_env
+from .application.intent_agent import compiler_from_settings
 from .application.jobs import JobRegistry
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
@@ -114,9 +114,11 @@ def create_app(settings: StudioSettings) -> FastAPI:
     app.state.validations = ValidationStore()
     # Who compiles an architect's sentence into the grammar: nobody (the
     # deterministic pass-through), a local codex process, or the Anthropic
-    # API — chosen by ARCHFLOW_STUDIO_INTENT_PROVIDER, held here so a test can
-    # put a scripted compiler in its place and the route stays one code path.
-    app.state.intent_compiler = compiler_from_env()
+    # API — chosen by the settings this app was built with, held here so a
+    # test can put a scripted compiler in its place and the route stays one
+    # code path. A provider that cannot name its own version refuses here,
+    # before a request arrives, rather than at the first sentence.
+    app.state.intent_compiler = compiler_from_settings(settings)
     app.add_exception_handler(StudioError, _handle_studio_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)

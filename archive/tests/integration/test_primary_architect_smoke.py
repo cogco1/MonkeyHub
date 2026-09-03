@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.adapters.model_provider import (
+from archive.archflow.adapters.model_provider import (
     AsyncJsonCommandModelProvider,
     ModelCommandProtocol,
     ModelProviderSpec,
@@ -19,7 +19,7 @@ from archflow.ports.model import (
     ModelInvocationStatus,
     ModelPhase,
 )
-from archflow.production.provider_runtime import InvocationEvidenceCollector, activate_provider_from_spec
+from archive.archflow.production.provider_runtime import InvocationEvidenceCollector, activate_provider_from_spec
 from archflow.project.repository import FilesystemProjectRepository, ProjectAlreadyExists
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archive.archflow.runtime.persistence.production_transition import (

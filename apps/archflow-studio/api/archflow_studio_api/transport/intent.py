@@ -150,6 +150,17 @@ class AgentReadingDto(BaseModel):
         description="digest of the exact prompt the agent was shown; null for "
         "the deterministic provider",
     )
+    receipt_id: str | None = Field(
+        alias="receiptId",
+        default=None,
+        description="the ModelInvocationReceipt@2 that signs the call to the "
+        "model; null for the deterministic provider, which calls none",
+    )
+    status: str | None = Field(
+        default=None,
+        description="how that call ended on the shared contract (success); "
+        "null when no model was called",
+    )
 
 
 class IntentTimingsDto(BaseModel):
@@ -182,11 +193,19 @@ class IntentDto(BaseModel):
 
 
 def agent_dto(compilation: Compilation) -> AgentReadingDto:
+    # Where there is a receipt it is the authority on how long the call took;
+    # ``promptSha256`` stays the digest of the exact bytes that receipt
+    # counted as its input.
+    receipt = compilation.receipt
     return AgentReadingDto(
         provider=compilation.provider,
         model=compilation.model,
         compiled_utterance=compilation.utterance or "",
         why=compilation.why,
-        latency_ms=compilation.latency_ms,
+        latency_ms=(
+            compilation.latency_ms if receipt is None else receipt.duration_ms
+        ),
         prompt_sha256=compilation.prompt_sha256,
+        receipt_id=None if receipt is None else receipt.receipt_id,
+        status=None if receipt is None else receipt.status.value,
     )

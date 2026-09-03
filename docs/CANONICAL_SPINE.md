@@ -32,8 +32,8 @@ Entry points: `tools/run_project.py`, `tools/verify_state_record.py`,
 `tools/freeze_project_stage_workflow.py`, `apps/archflow-studio/api` (and `web/`).
 Shared foundations: `archflow/project/refs.py`, `archflow/contracts/{canonical,fields}.py`,
 `archflow/validation/{model,engine}.py` (`validate_submission`, `Finding`,
-`ValidationReceipt`), `archflow/ports/model.py` + `archflow/production/provider_runtime.py`
-(governed model invocation), `archflow/state/model.py` (`CanonicalState`, `Commitment`),
+`ValidationReceipt`), `archflow/ports/model.py` (model invocation: one request, one receipt,
+signed by whoever crossed the boundary), `archflow/state/model.py` (`CanonicalState`, `Commitment`),
 `archflow/state/operational_state.py` (`DesignObligation`, `DependencyEdge`).
 
 Retained data under `probes/` and the external workspace is never moved: it is data. Readers
@@ -52,7 +52,7 @@ code with no lane, no probe and no spine consumer; Git keeps it.
 | Lane | Entry points today | Verdict | Consequence |
 |---|---|---|---|
 | Record-driven (P089/P102/P103/P108) | `tools/run_project.py`, Studio API | KEEP | the spine |
-| Agent-driven portfolio (P053) | `python -m archflow.runtime run-project` → `production_runtime`, `production_compiler`, `design_development`, `design_portfolio`, `semantic_spatial_authoring` | ARCHIVE as `archive/portfolio/` | live-model authoring re-enters through the Studio intent path (typed intent → record → runner); `provider_runtime`/`responsibility` stay on the spine |
+| Agent-driven portfolio (P053) | `python -m archflow.runtime run-project` → `production_runtime`, `production_compiler`, `design_development`, `design_portfolio`, `semantic_spatial_authoring` | ARCHIVE as `archive/portfolio/` | live-model authoring re-enters through the Studio intent path (typed intent → record → runner); `provider_runtime`, `responsibility` and `adapters/model_provider` followed the lane on 2026-09-03, having no spine caller |
 | Pantheon (P058/P064/P065/P069) | `tools/run_pantheon_reconstruction.py`, `pantheon_relation_control.py`, `build_pantheon_progress_snapshot.py`, `tools/projects/pantheon`, `monument_common` | ARCHIVE as `archive/monuments/` | P069 and P066 close as superseded; monuments come back only as State Records (P105/P106 are the door) |
 | Parthenon | `tools/run_parthenon_*.py`, `parthenon_stage4_*.py`, `refine_parthenon_stage4_visual_regions.py`, `run_parthenon_stage4_visual_rag.py`, `state_tree_viewer.py` | ARCHIVE as `archive/monuments/` | untyped op dicts, direct rhino3dm and the Z-up frame leave the tree with it |
 | Design controller (P042–P060) | `archflow/runtime/design_controller.py` and its loops (`hierarchical_search`, `architectural_revision`, `repair_loop`, `staged_build`, `player_control`, `operational_transition`, `walking_skeleton`, `primary_architect`, `development_controller`), `commit/` in-memory store and committer, `workspace/manager.py`, `event_log.py`, `skills/`, `capabilities/experts.py`, `adapters/cli_retrieval.py`, `interaction/` | ARCHIVE as `archive/controller/` | no production caller today; the second write path goes with it |
@@ -87,7 +87,7 @@ is assigned to the lane whose entry points reach it; what nothing reaches is DEL
 | Obligations and commitments | `DesignObligation`; `Commitment` (for `validate_submission`) | the nine role-specific obligation classes either become `DesignObligation` or leave with their lane; `CommitmentRevisionProposal` vs `CommitmentRevision` become one | legacy `Obligation` in `state/model.py` (with `walking_skeleton`) |
 | Branch | `BranchRef` | envelopes and exit bindings carry a `BranchRef`, not `branch_id`+`epoch` pairs | `DesignBranch` (portfolio lane), research branch (research lane) |
 | Evidence and claims | none on the spine today; a record's `evidence_refs` are strings | | `evidence/`, `research/`, both `EvidenceClaimBinding`s, visual inventory (monuments/research lanes) |
-| Provider invocation | `ModelInvocationReceipt` + `provider_runtime.activate_model_provider` | the runner's inline `RecordedProposalProvider` stays for replay; a live provider is always activated through `provider_runtime` (envelope, lifecycle receipt) | retrieval, skills, experts, v3 (their lanes) |
+| Provider invocation | `ModelInvocationRequest` / `ModelInvocationReceipt` (`ports/model.py`) | the runner's inline `RecordedProposalProvider` stays for replay; a live provider is called by whoever authored the request and signs one receipt for it (the Studio's intent compiler, `ModelPhase.INTENT_COMPILATION`) | the P053 envelope, authority token and lifecycle (`production/`), the subprocess adapter, retrieval, skills, experts, v3 (their lanes) |
 | Runtime loop | `project_runner.run_project` | | every other loop (controller/portfolio lanes) |
 
 ### 2.3 Cards affected

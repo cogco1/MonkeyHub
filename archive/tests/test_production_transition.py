@@ -17,7 +17,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archive.archflow.project import production_checkpoint as project_checkpoint_facade
 from archive.archflow.project import production_transition as project_transition_facade
-from archflow.production.provider_runtime import AuthorizedAsyncModelProvider
+from archive.archflow.production.provider_runtime import AuthorizedAsyncModelProvider
 from archive.archflow.runtime import persistence as runtime_persistence
 from archive.archflow.runtime.persistence import production_checkpoint as runtime_checkpoint
 from archive.archflow.runtime.persistence import production_transition as runtime_transition
@@ -43,7 +43,7 @@ from archive.archflow.runtime.semantic_geometry_lifecycle import (
     compile_semantic_geometry_lifecycle,
 )
 from tests.test_geometry_compiler import COMMITMENT
-from tests.test_production_responsibility import (
+from archive.tests.test_production_responsibility import (
     RESPONSIBILITY_ID,
     MODEL_IDENTITY,
     _ScriptedModelProvider,

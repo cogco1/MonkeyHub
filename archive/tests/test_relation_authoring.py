@@ -8,7 +8,7 @@ import json
 import unittest
 from dataclasses import replace
 
-from archflow.adapters.model_provider import (
+from archive.archflow.adapters.model_provider import (
     ModelInvocationReceipt,
     ModelInvocationRequest,
     ModelInvocationStatus,

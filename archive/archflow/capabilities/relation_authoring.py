@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import ClassVar
 
-from archflow.adapters.model_provider import (
+from archive.archflow.adapters.model_provider import (
     AsyncModelProvider,
     ModelInvocationReceipt,
     ModelInvocationRequest,

@@ -14,11 +14,19 @@ the same grammar, refusable by the same questions.
 Everything the agent said is kept and shown as the agent's — its ``why``, the
 sentence it compiled, which provider and model answered, and how long it took
 — so a reader can tell the agent's reading from the record's answer.
+
+A call to a model is a call across a boundary, and the Studio signs it with the
+same receipt the rest of the system does: ``ModelInvocationRequest`` and
+``ModelInvocationReceipt`` from ``archflow.ports.model``, in the new
+``ModelPhase.INTENT_COMPILATION`` phase. The receipt names the provider, the
+model, the provider's own version and fingerprint, the bytes in and out, and
+whether the call succeeded, timed out, exited non-zero or answered something
+unreadable. The deterministic compiler calls no model and mints no receipt.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import os
@@ -27,7 +35,17 @@ import subprocess
 import tempfile
 import time
 from typing import Any, Mapping, Protocol, Sequence
+import uuid
 
+from archflow.contracts.canonical import canonical_digest, canonical_json
+from archflow.ports.model import (
+    ModelInvocationReceipt,
+    ModelInvocationRequest,
+    ModelInvocationStatus,
+    ModelPhase,
+)
+
+from ..settings import INTENT_PROVIDER_ENV, SettingsError, StudioSettings
 from ..transport.errors import BlockedNeedsHuman, StudioError
 from .intent import ACCEPTED_FORMS, KEEP_SENTENCE, parse_utterance
 from .projection import StateProjection
@@ -38,6 +56,38 @@ ANTHROPIC = "anthropic"
 PROVIDERS = (DETERMINISTIC, CODEX, ANTHROPIC)
 
 AGENT_FAILED = "INTENT_AGENT_FAILED"
+
+# What a receipt calls the boundary that was crossed. Not a vendor's product
+# name: the pair (provider_id, provider_version) is what a reader compares.
+CODEX_PROVIDER_ID = "codex-exec"
+ANTHROPIC_PROVIDER_ID = "anthropic-messages"
+
+# The codex arguments that never vary between calls. They are what the
+# fingerprint binds, beside the executable, the model and the timeout; the
+# per-call paths (the temporary directory, the schema and answer files) name
+# one call and are no part of the provider's identity.
+CODEX_FIXED_ARGUMENTS = (
+    "exec",
+    "--ephemeral",
+    "--skip-git-repo-check",
+    "--ignore-user-config",
+    "--color",
+    "never",
+    "-s",
+    "read-only",
+)
+
+# What a codex call names as its model when none was configured: the CLI
+# chooses one, and the receipt says that rather than inventing an id.
+CODEX_DEFAULT_MODEL_ID = "codex-cli-default"
+
+# The Anthropic model a process falls back to when the provider is chosen and
+# no model is named. Anthropic's API has no default of its own.
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5"
+
+# How long ``codex --version`` may take while a compiler is being built. It
+# prints a version string; it is not an inference call.
+VERSION_PROBE_TIMEOUT_S = 30.0
 
 # The one shape the agent may answer in. A model that answers anything else
 # has failed, and the failure says so rather than being parsed leniently.
@@ -91,6 +141,38 @@ class Selection:
     gestures: tuple[str, ...] = ()
 
 
+class IntentAgentFailed(StudioError):
+    """A model call that failed, carrying the receipt that says how it failed.
+
+    The wire body is the one it always was — 502 ``INTENT_AGENT_FAILED`` with
+    the same sentence — so no client sees a new shape. The receipt is for this
+    side of the wire: a call that reached the provider and came back a
+    timeout, a non-zero exit or an unreadable answer still crossed the
+    boundary, and only a receipt can say which of the three it was.
+    """
+
+    def __init__(self, detail: str, receipt: ModelInvocationReceipt) -> None:
+        super().__init__(502, AGENT_FAILED, detail)
+        self.receipt = receipt
+
+
+@dataclass(frozen=True, slots=True)
+class _ProviderBinding:
+    """Who a receipt says answered, fixed when the compiler is built.
+
+    ``fingerprint`` is a digest over exactly what would make two calls
+    incomparable: the provider, the model, the provider's own version, the
+    timeout, and — for a subprocess provider — the executable and the fixed
+    argument list. Same configuration, same fingerprint; a different model, a
+    different one.
+    """
+
+    provider_id: str
+    model_id: str
+    version: str
+    fingerprint: str
+
+
 @dataclass(frozen=True, slots=True)
 class Compilation:
     """What the agent answered, exactly, plus how it was obtained."""
@@ -106,6 +188,10 @@ class Compilation:
     latency_ms: int
     prompt_sha256: str | None
     raw: str | None
+    # The receipt of the model call this answer came out of, on the shared
+    # ``ModelInvocationReceipt@2`` contract. ``None`` when no model was
+    # called, which is the deterministic compiler's whole case.
+    receipt: ModelInvocationReceipt | None = None
 
 
 class IntentCompiler(Protocol):
@@ -184,8 +270,145 @@ def _prompt(message: str, sheet: Mapping[str, Any]) -> str:
     )
 
 
+# ---- the shared model contract ---------------------------------------------
+
+
+def _invocation_request(
+    *,
+    message: str,
+    selection: Selection,
+    projection: StateProjection,
+    sheet: Mapping[str, Any],
+) -> ModelInvocationRequest:
+    """The request every Studio model call is bound to, in the shared contract.
+
+    The checkpoint is the projection's ``state_digest`` — the number a runner
+    receipt carries — and, when the kernel would not build a bound view and
+    there is none, the record's own content digest. Those are the two
+    identities the request already has; nothing here computes a third
+    (ADR-003).
+    """
+
+    payload = {
+        "message": message,
+        "selection": {
+            "component_id": selection.component_id,
+            "element_id": selection.element_id,
+            "gestures": list(selection.gestures),
+        },
+        "record_sheet": dict(sheet),
+    }
+    return ModelInvocationRequest.create(
+        request_id=f"intent-{uuid.uuid4().hex}",
+        phase=ModelPhase.INTENT_COMPILATION,
+        checkpoint_digest=projection.state_digest or projection.record_digest,
+        context_digest=canonical_digest(payload, ascii=False),
+        payload=payload,
+    )
+
+
+def _answer_object(compilation: Compilation) -> dict[str, Any]:
+    """The agent's answer as the schema's own object, after the field checks."""
+
+    return {
+        "status": compilation.status,
+        "targetComponentId": compilation.component_id,
+        "elementId": compilation.element_id,
+        "utterance": compilation.utterance,
+        "why": compilation.why,
+        "question": compilation.question,
+    }
+
+
+def _model_receipt(
+    binding: _ProviderBinding,
+    request: ModelInvocationRequest,
+    *,
+    status: ModelInvocationStatus,
+    prompt: str,
+    raw: str | None,
+    output: Mapping[str, Any] | None,
+    duration_ms: int,
+    error_code: str | None = None,
+    message: str | None = None,
+) -> ModelInvocationReceipt:
+    """One receipt of one call: what was sent, what came back, and how it ended.
+
+    ``output_sha256`` is over the answer exactly as the provider wrote it;
+    ``output`` is that answer decoded, and it is present only on a success —
+    a timeout or a non-zero exit carries an ``error_code`` and no output,
+    which is the receipt's own rule.
+    """
+
+    answer = b"" if raw is None else raw.encode("utf-8")
+    output_sha256 = None if raw is None else hashlib.sha256(answer).hexdigest()
+    # The receipt's own bound: a sentence, not a transcript.
+    said = (message or "").strip()[:1_000] or None
+    identity = {
+        "request": request.to_dict(),
+        "provider_fingerprint": binding.fingerprint,
+        "status": status.value,
+        "output_sha256": output_sha256,
+        "error_code": error_code,
+        "duration_ms": duration_ms,
+    }
+    return ModelInvocationReceipt(
+        receipt_id=f"intent-{canonical_digest(identity, ascii=False)[:24]}",
+        status=status,
+        request=request,
+        provider_id=binding.provider_id,
+        model_id=binding.model_id,
+        provider_version=binding.version,
+        provider_fingerprint=binding.fingerprint,
+        input_bytes=len(prompt.encode("utf-8")),
+        output_bytes=len(answer),
+        output_sha256=output_sha256,
+        duration_ms=duration_ms,
+        output_json=(
+            None if output is None else canonical_json(dict(output), ascii=False)
+        ),
+        error_code=error_code,
+        message=said,
+    )
+
+
+def _failed(
+    binding: _ProviderBinding,
+    request: ModelInvocationRequest,
+    *,
+    status: ModelInvocationStatus,
+    prompt: str,
+    duration_ms: int,
+    error_code: str,
+    detail: str,
+    raw: str | None = None,
+) -> IntentAgentFailed:
+    """The refusal a caller sees, with the receipt of the call behind it."""
+
+    return IntentAgentFailed(
+        detail,
+        _model_receipt(
+            binding,
+            request,
+            status=status,
+            prompt=prompt,
+            raw=raw,
+            output=None,
+            duration_ms=duration_ms,
+            error_code=error_code,
+            message=detail,
+        ),
+    )
+
+
 def _parse_answer(
-    raw: str, *, provider: str, model: str | None, latency_ms: int, prompt_sha: str
+    raw: str,
+    *,
+    provider: str,
+    model: str | None,
+    latency_ms: int,
+    prompt_sha: str,
+    receipt: ModelInvocationReceipt | None = None,
 ) -> Compilation:
     """The agent's JSON, checked field by field; anything else is a failure."""
 
@@ -232,6 +455,7 @@ def _parse_answer(
         latency_ms=latency_ms,
         prompt_sha256=prompt_sha,
         raw=raw,
+        receipt=receipt,
     )
     if compilation.status == "compiled" and compilation.utterance is None:
         raise StudioError(502, AGENT_FAILED, f"the {provider} agent said compiled but produced no sentence")
@@ -244,7 +468,12 @@ def _parse_answer(
 
 
 class DeterministicCompiler:
-    """No agent: the sentence is taken as already compiled."""
+    """No agent: the sentence is taken as already compiled.
+
+    It invokes no model, so it mints no receipt: there is no boundary to
+    prove a crossing of, and a receipt of a call that never happened would be
+    the one thing a reader could not tell from a real one.
+    """
 
     provider = DETERMINISTIC
     model: str | None = None
@@ -267,12 +496,58 @@ class DeterministicCompiler:
         )
 
 
+def _codex_version(executable: str) -> str:
+    """The first line of ``codex --version``, taken once, or a refusal.
+
+    A provider that cannot say which version it is cannot sign a receipt: the
+    version and the fingerprint over it are how two calls are told apart
+    later. So the compiler refuses to be built rather than writing "unknown"
+    into every receipt it would go on to mint.
+    """
+
+    try:
+        completed = subprocess.run(
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=VERSION_PROBE_TIMEOUT_S,
+            shell=False,
+            check=False,
+        )
+    except OSError as exc:
+        raise SettingsError(
+            f"the codex executable {executable!r} could not be run to read its "
+            f"version: {type(exc).__name__}: {exc.strerror or exc}"
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SettingsError(
+            f"{executable!r} did not print a version within "
+            f"{VERSION_PROBE_TIMEOUT_S:g} s"
+        ) from exc
+    if completed.returncode != 0:
+        tail = (completed.stderr or completed.stdout or "").strip()[-300:]
+        raise SettingsError(
+            f"{executable!r} --version exited with {completed.returncode}: {tail}"
+        )
+    lines = [line.strip() for line in (completed.stdout or "").splitlines()]
+    first = next((line for line in lines if line), "")
+    if not first:
+        raise SettingsError(f"{executable!r} --version printed nothing")
+    return first[:1_000]
+
+
 class CodexCompiler:
     """``codex exec`` as a subprocess: ephemeral, read-only, schema-bound.
 
     The agent gets the prompt on stdin, may not run commands (read-only
     sandbox), keeps no session, and must answer in ``RESPONSE_SCHEMA``. Auth is
     the user's own codex login; this process handles no credential.
+
+    Building one runs ``codex --version`` once: every receipt this compiler
+    mints is signed with that version, and a codex that will not say which one
+    it is refuses the compiler here rather than at the first sentence.
     """
 
     provider = CODEX
@@ -287,27 +562,44 @@ class CodexCompiler:
         self.executable = executable
         self.model = model
         self.timeout_s = timeout_s
+        version = _codex_version(executable)
+        model_id = model or CODEX_DEFAULT_MODEL_ID
+        self.binding = _ProviderBinding(
+            provider_id=CODEX_PROVIDER_ID,
+            model_id=model_id,
+            version=version,
+            fingerprint=canonical_digest(
+                {
+                    "provider_id": CODEX_PROVIDER_ID,
+                    "model_id": model_id,
+                    "provider_version": version,
+                    "timeout_s": float(timeout_s),
+                    "executable": executable,
+                    "arguments": list(CODEX_FIXED_ARGUMENTS),
+                },
+                ascii=False,
+            ),
+        )
 
     def compile(
         self, *, message: str, selection: Selection, projection: StateProjection
     ) -> Compilation:
-        prompt = SYSTEM_PROMPT + "\n\n" + _prompt(message, record_sheet(projection, selection))
+        sheet = record_sheet(projection, selection)
+        prompt = SYSTEM_PROMPT + "\n\n" + _prompt(message, sheet)
         prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        request = _invocation_request(
+            message=message,
+            selection=selection,
+            projection=projection,
+            sheet=sheet,
+        )
         with tempfile.TemporaryDirectory(prefix="archflow-intent-") as tmp:
             workdir = Path(tmp)
             schema_path = workdir / "schema.json"
             schema_path.write_text(json.dumps(RESPONSE_SCHEMA), encoding="utf-8")
             answer_path = workdir / "answer.json"
-            command = [
-                self.executable,
-                "exec",
-                "--ephemeral",
-                "--skip-git-repo-check",
-                "--ignore-user-config",
-                "--color",
-                "never",
-                "-s",
-                "read-only",
+            command = [self.executable, *CODEX_FIXED_ARGUMENTS]
+            command += [
                 "-C",
                 str(workdir),
                 "--output-schema",
@@ -322,29 +614,110 @@ class CodexCompiler:
             try:
                 completed = _run_bounded(command, prompt, self.timeout_s)
             except FileNotFoundError as exc:
-                raise StudioError(
-                    502,
-                    AGENT_FAILED,
-                    f"the codex executable {self.executable!r} was not found: {exc.strerror}",
+                raise _failed(
+                    self.binding,
+                    request,
+                    status=ModelInvocationStatus.EXIT_ERROR,
+                    prompt=prompt,
+                    duration_ms=_elapsed_ms(started),
+                    error_code="model.executable_missing",
+                    detail=(
+                        f"the codex executable {self.executable!r} was not "
+                        f"found: {exc.strerror}"
+                    ),
                 ) from exc
             except subprocess.TimeoutExpired as exc:
-                raise StudioError(
-                    502,
-                    AGENT_FAILED,
-                    f"codex did not answer within {self.timeout_s:g} s",
+                raise _failed(
+                    self.binding,
+                    request,
+                    status=ModelInvocationStatus.TIMEOUT,
+                    prompt=prompt,
+                    duration_ms=_elapsed_ms(started),
+                    error_code="model.timeout",
+                    detail=f"codex did not answer within {self.timeout_s:g} s",
                 ) from exc
-            latency_ms = int((time.perf_counter() - started) * 1000)
+            latency_ms = _elapsed_ms(started)
             if completed.returncode != 0:
                 tail = (completed.stderr or completed.stdout or "").strip()[-600:]
-                raise StudioError(
-                    502,
-                    AGENT_FAILED,
-                    f"codex exited with {completed.returncode}: {tail}",
+                raise _failed(
+                    self.binding,
+                    request,
+                    status=ModelInvocationStatus.EXIT_ERROR,
+                    prompt=prompt,
+                    duration_ms=latency_ms,
+                    error_code="model.provider_exit",
+                    detail=f"codex exited with {completed.returncode}: {tail}",
                 )
             raw = answer_path.read_text(encoding="utf-8") if answer_path.exists() else completed.stdout
-        return _parse_answer(
-            raw, provider=CODEX, model=self.model, latency_ms=latency_ms, prompt_sha=prompt_sha
+        return _answered(
+            self.binding,
+            request,
+            raw=raw,
+            prompt=prompt,
+            prompt_sha=prompt_sha,
+            provider=CODEX,
+            model=self.model,
+            duration_ms=latency_ms,
         )
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
+
+
+def _answered(
+    binding: _ProviderBinding,
+    request: ModelInvocationRequest,
+    *,
+    raw: str,
+    prompt: str,
+    prompt_sha: str,
+    provider: str,
+    model: str | None,
+    duration_ms: int,
+) -> Compilation:
+    """The provider answered: type the answer, then sign what came back.
+
+    An answer that is not the schema is a failed call, not a bug: it becomes a
+    ``MALFORMED`` receipt carrying the bytes that did arrive, and the refusal
+    keeps the sentence the field checks wrote.
+    """
+
+    try:
+        compilation = _parse_answer(
+            raw,
+            provider=provider,
+            model=model,
+            latency_ms=duration_ms,
+            prompt_sha=prompt_sha,
+        )
+    except StudioError as exc:
+        raise IntentAgentFailed(
+            exc.detail,
+            _model_receipt(
+                binding,
+                request,
+                status=ModelInvocationStatus.MALFORMED,
+                prompt=prompt,
+                raw=raw,
+                output=None,
+                duration_ms=duration_ms,
+                error_code="model.output_malformed",
+                message=exc.detail,
+            ),
+        ) from exc
+    return replace(
+        compilation,
+        receipt=_model_receipt(
+            binding,
+            request,
+            status=ModelInvocationStatus.SUCCESS,
+            prompt=prompt,
+            raw=raw,
+            output=_answer_object(compilation),
+            duration_ms=duration_ms,
+        ),
+    )
 
 
 def _run_bounded(
@@ -410,32 +783,72 @@ def _kill_tree(process: subprocess.Popen[str]) -> None:
     process.kill()
 
 
+def _anthropic_sdk() -> tuple[Any, str]:
+    """The SDK module and the version its receipts are signed with, or a refusal."""
+
+    try:
+        import anthropic  # optional dependency; imported only when chosen
+    except ImportError as exc:
+        raise SettingsError(
+            "the anthropic provider is configured but the anthropic package "
+            "is not installed"
+        ) from exc
+    version = getattr(anthropic, "__version__", "")
+    if not isinstance(version, str) or not version.strip():
+        raise SettingsError(
+            "the installed anthropic package does not name its version, so a "
+            "receipt of a call to it could not say which one answered"
+        )
+    return anthropic, version.strip()[:1_000]
+
+
 class AnthropicCompiler:
     """The Anthropic Messages API. The key is the SDK's to read from the
-    environment; this process never holds, logs or forwards it."""
+    environment; this process never holds, logs or forwards it.
+
+    Building one resolves the SDK and its ``__version__`` once, for the same
+    reason ``CodexCompiler`` runs ``codex --version``: that string is what the
+    receipts are signed with, and a provider that cannot name its version is
+    refused here rather than at the first sentence.
+    """
 
     provider = ANTHROPIC
 
     def __init__(self, *, model: str, timeout_s: float = 120.0) -> None:
         self.model = model
         self.timeout_s = timeout_s
+        self._sdk, version = _anthropic_sdk()
+        self.binding = _ProviderBinding(
+            provider_id=ANTHROPIC_PROVIDER_ID,
+            model_id=model,
+            version=version,
+            fingerprint=canonical_digest(
+                {
+                    "provider_id": ANTHROPIC_PROVIDER_ID,
+                    "model_id": model,
+                    "provider_version": version,
+                    "timeout_s": float(timeout_s),
+                },
+                ascii=False,
+            ),
+        )
 
     def compile(
         self, *, message: str, selection: Selection, projection: StateProjection
     ) -> Compilation:
-        try:
-            import anthropic  # optional dependency; imported only when chosen
-        except ImportError as exc:
-            raise StudioError(
-                502,
-                AGENT_FAILED,
-                "the anthropic provider is configured but the anthropic package is not installed",
-            ) from exc
-        user = _prompt(message, record_sheet(projection, selection))
-        prompt_sha = hashlib.sha256((SYSTEM_PROMPT + user).encode("utf-8")).hexdigest()
+        sheet = record_sheet(projection, selection)
+        user = _prompt(message, sheet)
+        prompt = SYSTEM_PROMPT + user
+        prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        request = _invocation_request(
+            message=message,
+            selection=selection,
+            projection=projection,
+            sheet=sheet,
+        )
         started = time.perf_counter()
         try:
-            client = anthropic.Anthropic(timeout=self.timeout_s)
+            client = self._sdk.Anthropic(timeout=self.timeout_s)
             response = client.messages.create(
                 model=self.model,
                 max_tokens=800,
@@ -443,37 +856,61 @@ class AnthropicCompiler:
                 messages=[{"role": "user", "content": user}],
             )
         except Exception as exc:  # the SDK's own errors, stated not swallowed
-            raise StudioError(
-                502, AGENT_FAILED, f"the Anthropic API did not answer: {type(exc).__name__}: {exc}"
+            timeout_error = getattr(self._sdk, "APITimeoutError", None)
+            timed_out = timeout_error is not None and isinstance(exc, timeout_error)
+            raise _failed(
+                self.binding,
+                request,
+                status=(
+                    ModelInvocationStatus.TIMEOUT
+                    if timed_out
+                    else ModelInvocationStatus.EXIT_ERROR
+                ),
+                prompt=prompt,
+                duration_ms=_elapsed_ms(started),
+                error_code="model.timeout" if timed_out else "model.provider_error",
+                detail=f"the Anthropic API did not answer: {type(exc).__name__}: {exc}",
             ) from exc
-        latency_ms = int((time.perf_counter() - started) * 1000)
+        latency_ms = _elapsed_ms(started)
         raw = "".join(
             block.text for block in response.content if getattr(block, "type", "") == "text"
         )
-        return _parse_answer(
-            raw, provider=ANTHROPIC, model=self.model, latency_ms=latency_ms, prompt_sha=prompt_sha
+        return _answered(
+            self.binding,
+            request,
+            raw=raw,
+            prompt=prompt,
+            prompt_sha=prompt_sha,
+            provider=ANTHROPIC,
+            model=self.model,
+            duration_ms=latency_ms,
         )
 
 
-def compiler_from_env(env: Mapping[str, str] = os.environ) -> IntentCompiler:
-    """Which compiler this process runs, from ``ARCHFLOW_STUDIO_INTENT_*``."""
+def compiler_from_settings(settings: StudioSettings) -> IntentCompiler:
+    """Which compiler this process runs, from the settings it was built with.
 
-    provider = env.get("ARCHFLOW_STUDIO_INTENT_PROVIDER", "").strip() or DETERMINISTIC
-    model = env.get("ARCHFLOW_STUDIO_INTENT_MODEL", "").strip() or None
-    timeout_text = env.get("ARCHFLOW_STUDIO_INTENT_TIMEOUT_S", "").strip()
-    timeout_s = float(timeout_text) if timeout_text else 120.0
+    The four ``ARCHFLOW_STUDIO_INTENT_*`` variables are read once, by
+    ``StudioSettings.from_env``; nothing here reads the environment, so a test
+    or a second process configures a compiler by passing settings.
+    """
+
+    provider = settings.intent_provider
     if provider == DETERMINISTIC:
         return DeterministicCompiler()
     if provider == CODEX:
         return CodexCompiler(
-            executable=env.get("ARCHFLOW_STUDIO_CODEX", "").strip() or "codex",
-            model=model,
-            timeout_s=timeout_s,
+            executable=settings.codex_executable,
+            model=settings.intent_model,
+            timeout_s=settings.intent_timeout_s,
         )
     if provider == ANTHROPIC:
-        return AnthropicCompiler(model=model or "claude-sonnet-5", timeout_s=timeout_s)
-    raise ValueError(
-        f"ARCHFLOW_STUDIO_INTENT_PROVIDER={provider!r} is not one of {', '.join(PROVIDERS)}"
+        return AnthropicCompiler(
+            model=settings.intent_model or DEFAULT_ANTHROPIC_MODEL,
+            timeout_s=settings.intent_timeout_s,
+        )
+    raise SettingsError(
+        f"{INTENT_PROVIDER_ENV}={provider!r} is not one of {', '.join(PROVIDERS)}"
     )
 
 

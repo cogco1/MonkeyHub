@@ -31,7 +31,7 @@ from archive.archflow.evaluation.experiment import (  # noqa: E402
     ExperimentTerminalRequirement,
     compile_experiment_result_index,
 )
-from archflow.adapters.model_provider import ModelInvocationReceipt  # noqa: E402
+from archive.archflow.adapters.model_provider import ModelInvocationReceipt  # noqa: E402
 from archflow.contracts.canonical import canonical_digest  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination

@@ -17,7 +17,7 @@ from archflow.ports.model import (
     ModelInvocationStatus,
     ModelPhase,
 )
-from archflow.production.provider_runtime import AuthorizedAsyncModelProvider
+from archive.archflow.production.provider_runtime import AuthorizedAsyncModelProvider
 from archive.archflow.capabilities.experts import (
     ExpertAdvice,
     ExpertReceipt,

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Mapping, Protocol
 
 from archive.archflow.capabilities.spatial import validate_spatial_authoring_context
-from archflow.production.responsibility import InvocationEnvelope
+from archive.archflow.production.responsibility import InvocationEnvelope
 from archflow.contracts.canonical import canonical_digest
 from archive.archflow.runtime.persistence.production_transition import (
     ArchivedFailedProductionAttempt,

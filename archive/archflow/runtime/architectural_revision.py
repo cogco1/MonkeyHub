@@ -35,8 +35,8 @@ from archive.archflow.capabilities.semantic_spatial_authoring import (
     _author_semantic_spatial_option,
     semantic_spatial_repair_feedback,
 )
-from archflow.production.provider_runtime import AuthorizedAsyncModelProvider, InvocationEvidenceCollector
-from archflow.production.responsibility import InvocationEnvelope
+from archive.archflow.production.provider_runtime import AuthorizedAsyncModelProvider, InvocationEvidenceCollector
+from archive.archflow.production.responsibility import InvocationEnvelope
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef, RunRef

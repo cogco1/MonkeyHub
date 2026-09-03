@@ -22,8 +22,8 @@ from archive.archflow.capabilities.spatial import compile_spatial_options
 from archive.archflow.capabilities.semantic_spatial_authoring import (
     semantic_spatial_authoring_output,
 )
-from archflow.production.provider_runtime import InvocationEvidenceCollector, activate_model_provider
-from archflow.production.responsibility import ProviderIdentity, ProviderUnavailable
+from archive.archflow.production.provider_runtime import InvocationEvidenceCollector, activate_model_provider
+from archive.archflow.production.responsibility import ProviderIdentity, ProviderUnavailable
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archive.archflow.project.runtime import RuntimePaths, bootstrap_external_project
@@ -69,7 +69,7 @@ from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from tests.test_sandbox_realization import compiled_room
 from archive.tests.test_semantic_spatial_authoring import _ScriptedProvider
 from tests.test_spatial_proposals import _inputs, _proposal as _spatial
-from tests.test_production_transition import (
+from archive.tests.test_production_transition import (
     _compiled_transition,
     _failed_envelope,
     _success_envelope,
@@ -1170,7 +1170,7 @@ class ProductionCliTests(unittest.TestCase):
                 )
 
             with patch(
-                "archflow.production.provider_runtime.activate_codex_agent_cli_provider",
+                "archive.archflow.production.provider_runtime.activate_codex_agent_cli_provider",
                 side_effect=configured_provider,
             ):
                 started = run_external_production(
@@ -1233,7 +1233,7 @@ class ProductionCliTests(unittest.TestCase):
             )
             stdout = io.StringIO()
             with patch(
-                "archflow.production.provider_runtime.activate_codex_agent_cli_provider",
+                "archive.archflow.production.provider_runtime.activate_codex_agent_cli_provider",
                 side_effect=resume_configured,
             ), redirect_stdout(stdout):
                 code = main(

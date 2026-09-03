@@ -20,6 +20,9 @@ class ModelPhase(StrEnum):
     ACTION_PROPOSAL = "action_proposal"
     SPATIAL_PROPOSAL = "spatial_proposal"
     RESEARCH = "research"
+    # The Studio's intent compiler: free text in, one sentence of the intent
+    # grammar out. Nothing retained carries this phase yet.
+    INTENT_COMPILATION = "intent_compilation"
 
 
 class ModelInvocationStatus(StrEnum):

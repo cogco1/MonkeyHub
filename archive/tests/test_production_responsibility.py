@@ -15,8 +15,8 @@ from archflow.ports.model import (
     ModelInvocationStatus,
     ModelPhase,
 )
-from archflow.production.provider_runtime import AuthorizedAsyncModelProvider, activate_codex_agent_cli_provider, activate_model_provider, bind_async_model_provider, model_responsibility_contract
-from archflow.production.responsibility import ContractConflict, HandoverDecision, InvalidInvocationEnvelope, InvalidProviderReceipt, InvocationEnvelope, NoProductionAuthority, ProviderIdentity, ProviderInvocationFailed, ProviderLifecycleError, ProviderMode, ProviderUnavailable, ResponsibilityContract, ResponsibilityRouter, ResolutionStatus, StaleAuthority, StaleHandover, UnknownProvider, create_responsibility_control_plane
+from archive.archflow.production.provider_runtime import AuthorizedAsyncModelProvider, activate_codex_agent_cli_provider, activate_model_provider, bind_async_model_provider, model_responsibility_contract
+from archive.archflow.production.responsibility import ContractConflict, HandoverDecision, InvalidInvocationEnvelope, InvalidProviderReceipt, InvocationEnvelope, NoProductionAuthority, ProviderIdentity, ProviderInvocationFailed, ProviderLifecycleError, ProviderMode, ProviderUnavailable, ResponsibilityContract, ResponsibilityRouter, ResolutionStatus, StaleAuthority, StaleHandover, UnknownProvider, create_responsibility_control_plane
 
 
 def _fingerprint(label: str) -> str:
@@ -376,7 +376,7 @@ class ProductionResponsibilityTests(unittest.TestCase):
         state_before = router.state(_contract().responsibility_id)
 
         with patch(
-            "archflow.production.responsibility.HandoverReceipt",
+            "archive.archflow.production.responsibility.HandoverReceipt",
             side_effect=RuntimeError("receipt construction failed"),
         ):
             with self.assertRaisesRegex(RuntimeError, "receipt construction failed"):

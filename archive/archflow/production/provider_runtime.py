@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from archflow.adapters.model_provider import (
+from archive.archflow.adapters.model_provider import (
     ModelProviderSpec,
     create_codex_cli_model_provider,
 )
@@ -14,7 +14,7 @@ from archflow.ports.model import (
     ModelInvocationReceipt,
     ModelInvocationRequest,
 )
-from archflow.production.responsibility import (
+from archive.archflow.production.responsibility import (
     HandoverDecision,
     InvalidProviderReceipt,
     InvocationEnvelope,

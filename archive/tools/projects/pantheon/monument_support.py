@@ -22,7 +22,7 @@ import math
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.adapters.model_provider import (
+from archive.archflow.adapters.model_provider import (
     ModelInvocationReceipt,
     ModelInvocationStatus,
 )
@@ -32,8 +32,8 @@ from archflow.capabilities.geometry_proposal import (
 from archive.archflow.capabilities.semantic_spatial_authoring import (
     semantic_spatial_authoring_output,
 )
-from archflow.production.provider_runtime import InvocationEvidenceCollector, activate_model_provider
-from archflow.production.responsibility import ProviderIdentity
+from archive.archflow.production.provider_runtime import InvocationEvidenceCollector, activate_model_provider
+from archive.archflow.production.responsibility import ProviderIdentity
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archive.archflow.project.bootstrap import bootstrap_raw_request_project

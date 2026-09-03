@@ -8,7 +8,12 @@ Imports among archived modules read `archive.archflow.…`; imports of spine mod
 
 Lanes and how to run them from the repository root:
 
-- **portfolio** (agent-driven production, P053): `python -m archive.archflow.project.runtime --config <cfg> run-project`
+- **portfolio** (agent-driven production, P053): `python -m archive.archflow.project.runtime --config <cfg> run-project`.
+  The P053 control plane joined it on 2026-09-03: `archive/archflow/production/responsibility.py`,
+  `archive/archflow/production/provider_runtime.py` and the subprocess adapter
+  `archive/archflow/adapters/model_provider.py` had no caller on the spine, and a live model now
+  enters through the Studio's intent compiler, which signs its call with the same
+  `archflow/ports/model.py` receipt and no authority envelope.
 - **monuments** (Pantheon P058/P064/P065/P069, Parthenon): `python archive/tools/run_pantheon_reconstruction.py …`,
   `python archive/tools/run_parthenon_reconstruction.py …`, `python archive/tools/build_pantheon_progress_snapshot.py …`
 - **research** (experiments P062/P063, web precedent, basis index): `python archive/tools/run_experiment.py …`

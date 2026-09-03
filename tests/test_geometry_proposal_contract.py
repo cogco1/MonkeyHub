@@ -7,7 +7,7 @@ import re
 import tempfile
 import unittest
 
-from archflow.ports.model import ModelInvocationStatus
+from archflow.ports.model import ModelInvocationStatus, ModelPhase
 from archflow.capabilities.geometry_proposal import (
     GeometryProposalPolicy,
     GeometryProposalProductionError,
@@ -283,6 +283,13 @@ class AvailableInterfaceRefsTests(_ProducerHarness):
             }
         )
         self.assertEqual(payload["available_interface_refs"]["refs"], expected)
+
+
+class ModelPhaseTests(unittest.TestCase):
+    def test_intent_compilation_round_trips_through_its_wire_literal(self) -> None:
+        self.assertIs(
+            ModelPhase("intent_compilation"), ModelPhase.INTENT_COMPILATION
+        )
 
 
 class GeometryProposalReferenceContractTests(unittest.TestCase):

@@ -24,8 +24,8 @@ from archive.archflow.capabilities.evidence_sufficiency import (
 from archive.archflow.capabilities.semantic_spatial_authoring import (
     semantic_spatial_authoring_output,
 )
-from archflow.production.provider_runtime import InvocationEvidenceCollector, activate_model_provider
-from archflow.production.responsibility import ProviderIdentity
+from archive.archflow.production.provider_runtime import InvocationEvidenceCollector, activate_model_provider
+from archive.archflow.production.responsibility import ProviderIdentity
 from archflow.project.refs import ProjectRecordRef
 from archive.archflow.runtime.architectural_revision import (
     ArchitecturalRevisionCompiler,

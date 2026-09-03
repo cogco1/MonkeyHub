@@ -14,7 +14,7 @@ from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
 from archflow.ports.model import ModelInvocationReceipt
-from archflow.production.responsibility import InvocationEnvelope
+from archive.archflow.production.responsibility import InvocationEnvelope
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archive.archflow.runtime.persistence.production_checkpoint import (

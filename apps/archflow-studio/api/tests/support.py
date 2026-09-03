@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 
 # Importing the API package first puts the repository root on ``sys.path``;
 # the fixture then reaches the kernel the same way the service does.
@@ -590,3 +591,74 @@ def unlistable_run(
     for path in repository.layout.run(run_id).records.glob("*.json"):
         path.write_text("{ not a record", encoding="utf-8")
     return run_id
+
+
+# ---- a fake codex, of the real one's shape ---------------------------------
+
+# What the shim answers ``codex --version`` with. Building a CodexCompiler
+# asks for it once, and every receipt that compiler mints is signed with it.
+CODEX_SHIM_VERSION = "codex-cli 0.0.0-test"
+
+
+def write_codex_shim(
+    directory: Path,
+    *,
+    answer: str | None = None,
+    hang_seconds: float | None = None,
+) -> tuple[Path, Path]:
+    """A fake ``codex``, shaped like the real one on this machine.
+
+    ``codex`` here is a shim (``codex.cmd`` -> ``cmd.exe`` -> ``node``), so a
+    fake that is one process proves nothing about killing a hung agent. This
+    one is a script over a Python grandchild: the grandchild either writes
+    ``answer`` to stdout and exits, or holds stdout open and sleeps for
+    ``hang_seconds``, which is exactly the case that outlives a kill that does
+    not take the tree.
+
+    ``--version`` is answered by the script itself and immediately, because
+    that is what building a compiler asks it, and a version probe that hung
+    would be measuring the wrong thing.
+
+    Returns the shim's path and the file the grandchild writes its pid to.
+    """
+
+    if (answer is None) == (hang_seconds is None):
+        raise ValueError("a shim either answers or hangs, and says which")
+    pid_file = directory / "grandchild.pid"
+    grandchild = directory / "agent.py"
+    body = [
+        "import os, sys, time",
+        f"open({str(pid_file)!r}, 'w').write(str(os.getpid()))",
+    ]
+    if answer is not None:
+        body.append(f"sys.stdout.write({answer!r})")
+        body.append("sys.stdout.flush()")
+    else:
+        body.append("sys.stdout.write('started')")
+        body.append("sys.stdout.flush()")
+        body.append(f"time.sleep({hang_seconds})")
+    grandchild.write_text("\n".join(body) + "\n", encoding="utf-8")
+    if os.name == "nt":
+        shim = directory / "codex.cmd"
+        shim.write_text(
+            "@echo off\r\n"
+            'if "%1"=="--version" (\r\n'
+            f"  echo {CODEX_SHIM_VERSION}\r\n"
+            "  exit /b 0\r\n"
+            ")\r\n"
+            f'"{sys.executable}" "{grandchild}"\r\n',
+            encoding="utf-8",
+        )
+    else:
+        shim = directory / "codex"
+        shim.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "--version" ]; then\n'
+            f'  echo "{CODEX_SHIM_VERSION}"\n'
+            "  exit 0\n"
+            "fi\n"
+            f'"{sys.executable}" "{grandchild}"\n',
+            encoding="utf-8",
+        )
+        shim.chmod(0o755)
+    return shim, pid_file

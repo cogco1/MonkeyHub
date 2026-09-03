@@ -34,7 +34,7 @@ from archflow.capabilities.geometry_proposal import (  # noqa: E402
     load_compiled_geometry_program,
 )
 from archive.archflow.capabilities.spatial import SpatialOptionProposal  # noqa: E402
-from archflow.production.provider_runtime import InvocationEvidenceCollector, activate_codex_agent_cli_provider
+from archive.archflow.production.provider_runtime import InvocationEvidenceCollector, activate_codex_agent_cli_provider
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef
