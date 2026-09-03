@@ -145,19 +145,19 @@ pediment" → ghost in under 1 s → "yes" → Apply.
 ## H. Tasks
 
 ### Phase 0
-- [ ] **T0.1 timings on the wire** — `transport/candidate.py` `TimingsDto`; `application/candidate.py` reads
+- [x] **T0.1 timings on the wire** — `transport/candidate.py` `TimingsDto`; `application/candidate.py` reads
   `cad.path/seconds/rebuilt_objects/kept_objects` per seat and `wall_time_s`; `IntentDto.timings`; tests on
   real receipts (`support.retain_rhino_receipt` carries `seconds` and `export_path`); regenerate the client.
   Commit `P108: every stage says how long it took`.
-- [ ] **T0.2 timings on screen** — candidate card footer, Evidence → Receipts `Timings`, ledger metric line.
+- [x] **T0.2 timings on screen** — candidate card footer, Evidence → Receipts `Timings`, ledger metric line.
   Commit `P108: the candidate card shows where the seconds went`.
 
 ### Phase 1
-- [ ] **T1.1 viewer ghost layer** — `ThreeDmViewport.tsx`: `ghost(spec | null)` on `ViewportController`;
+- [x] **T1.1 viewer ghost layer** — `ThreeDmViewport.tsx`: `ghost(spec | null)` on `ViewportController`;
   clone + translucent material (`--accent` at 0.35), Z-scale for `height` about the bbox bottom, highlight
   group for `affected`; disposed on `clear()`, on a new load and on `ghost(null)`. Manual check in the pane.
   Commit `P108: the viewer can draw a ghost of a proposal`.
-- [ ] **T1.2 three states + preview line** — `App.tsx` calls `ghost(...)` when a proposal entry lands
+- [x] **T1.2 three states + preview line** — `App.tsx` calls `ghost(...)` when a proposal entry lands
   (`target.elementId`, `change.old/new`, `target.key`, `impact.propagated` → element ids) and `ghost(null)`
   on Adjust / new sentence / export loaded; `SourceChip` state tag CURRENT / GHOST PREVIEW / VALIDATED;
   proposed-change card line `ghost shown · approximate`. Commit `P108: CURRENT → GHOST PREVIEW → VALIDATED`.
