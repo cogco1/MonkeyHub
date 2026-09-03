@@ -180,9 +180,13 @@ decrease <field> by <number> %
 Any of them may end with `keep <ref>[, <ref>…]` to name what the change must not disturb. The
 *field* is never read out of prose: it is resolved against the selection the request carried
 (`targetComponentId`, optional `elementId`) and only against a scalar number the record
-actually declares. Anything outside the grammar — and anything the record cannot answer —
-becomes `422 BLOCKED_NEEDS_HUMAN` with a concrete question and the accepted forms, never a
-guess about a building.
+actually declares. The optional *unit* is checked and never converted: on a parameter it must
+be the unit the record declares, and an element's `params.<key>` declares none at all — the
+record holds those numbers bare — so `set height to 2200 mm` on an element is a question about
+which number was meant, not a silently dropped word that would put 2200 into a field holding
+0.6. Anything outside the grammar — and anything the record cannot answer — becomes
+`422 BLOCKED_NEEDS_HUMAN` with a concrete question and the accepted forms, never a guess about
+a building.
 
 **Proposal.** What comes back is a typed, exact-base `DecisionOperator` under the
 proposal-only authority `studio:proposal-only`. It is never applied.

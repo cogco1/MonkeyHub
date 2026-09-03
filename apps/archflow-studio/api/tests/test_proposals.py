@@ -138,6 +138,37 @@ class ElementFieldProposalTests(ProposalTestCase):
         self.assertEqual(operator.add_facts, ())
         self.assertEqual(operator.discharge_obligation_ids, ())
 
+    def test_a_unit_on_an_element_field_is_a_question(self) -> None:
+        """An element param is a bare number; a unit word cannot be dropped.
+
+        ``set height to 2200 mm`` against a field the record holds in metres
+        would propose 2200 into it. The seam converts nothing, so it asks
+        instead — the same refusal a parameter gets when the utterance's unit
+        is not the record's.
+        """
+
+        payload = self.blocked(
+            "set height to 2200 mm", elementId="portico-base"
+        )
+
+        self.assertEqual(
+            payload["detail"], "the element field is a unit-less number"
+        )
+        self.assertEqual(
+            payload["question"],
+            "height on portico-base is a bare number in the record and this "
+            "seam converts nothing; what is the value in the record's own "
+            "units?",
+        )
+
+    def test_a_bare_number_on_an_element_field_still_proposes(self) -> None:
+        payload = self.accepted(
+            "set height to 2.2", elementId="portico-base"
+        )
+
+        self.assertEqual(payload["change"]["new"], 2.2)
+        self.assertIsNone(payload["change"]["unit"])
+
     def test_a_percentage_change_is_computed_from_the_records_value(
         self,
     ) -> None:

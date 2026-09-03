@@ -394,18 +394,37 @@ class DeterministicIntentProvider:
         key: str,
         parsed: ParsedIntent,
     ) -> _Target:
-        """One scalar of ``fields["params"]``; a unit word is accepted and dropped."""
+        """One scalar of ``fields["params"]``, which the record holds unit-less.
+
+        A unit word here is a question, exactly as it is on a parameter whose
+        unit the utterance disagrees with. The record states these numbers
+        bare — ``height`` is metres because the producer reads metres, and
+        nothing in the record says so — and ``set height to 2200 mm`` against
+        a field holding ``0.6`` would propose two thousand two hundred metres.
+        This seam converts nothing, so it asks rather than dropping the word
+        that was the whole difference.
+        """
 
         if key not in element.numeric_fields:
             raise self._unknown_element_field(element, key)
+        if parsed.unit is not None:
+            raise BlockedNeedsHuman(
+                "the element field is a unit-less number",
+                question=(
+                    f"{key} on {element.element_id} is a bare number in the "
+                    "record and this seam converts nothing; what is the value "
+                    "in the record's own units?"
+                ),
+            )
         return _Target(
             ref=f"entity:{element.element_id}",
             key=key,
             binding_key=f"params.{key}",
             decision_type=ELEMENT_PARAM_CHANGE,
             old=element.numeric_fields[key],
-            # Element params are unit-less numbers in the record. The unit is
-            # reported as the record has it, never as the utterance said it.
+            # Null because the record declares none, never because one was
+            # said and discarded: an utterance that carried a unit was
+            # refused above.
             unit=None,
             element_id=element.element_id,
         )
