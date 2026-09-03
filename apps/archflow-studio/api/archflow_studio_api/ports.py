@@ -1,4 +1,4 @@
-"""Reserved application ports for later Studio slices.
+"""Reserved application ports for the ArchFlow Studio API (P108).
 
 There are deliberately no implementations here. In particular, no port can
 waive validation or write canonical state directly.
