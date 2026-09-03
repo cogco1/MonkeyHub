@@ -169,9 +169,17 @@ function warningMessages(root: Object3D): string[] {
   return [...new Set(messages)];
 }
 
+/**
+ * What the loaded picture is made of.
+ *
+ * ``file`` is only asked for a name and a size, so one `File` and a whole
+ * run's worth of them (named together, sized together) are inspected the same
+ * way: the counts come from the scene graph, which is one model or a group of
+ * them.
+ */
 export function inspectScene(
   root: Object3D,
-  file: File,
+  file: { name: string; size: number },
   loadDurationMs: number,
 ): SceneInspection {
   let objectCount = 0;

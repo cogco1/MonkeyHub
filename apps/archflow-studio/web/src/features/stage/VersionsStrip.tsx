@@ -2,9 +2,10 @@
  * The models this project can show, one card per run, in one row along the
  * bottom of the stage: the reference run first, then the candidates this tab
  * launched, and every other run folded behind a count until asked for. A
- * run's exports are the buttons on its card — one per seat — so a version is
- * one card and not two. A card is a receipt's claim beside disk's answer: an
- * unavailable export is a button that says why, never a missing one.
+ * run's exports are the buttons on its card — `show run` for all of them at
+ * once, then one per seat — so a version is one card and not two. A card is a
+ * receipt's claim beside disk's answer: an unavailable export is a button that
+ * says why, never a missing one.
  *
  * With a model on screen, every other run's card offers a comparison against
  * it: Before / After / Why from the inspection records, by run, not by file.
@@ -32,29 +33,24 @@ export interface VersionGroup {
   readonly exports: readonly VersionExport[];
 }
 
-/** The seat name an export's stage id ends with, or the file when it has none. */
-export function seatOf(artifact: ProjectArtifactDto): string {
-  const stage = artifact.stageId;
-  if (stage === null) return artifact.fileName;
-  const marker = "seat-";
-  const at = stage.lastIndexOf(marker);
-  return at === -1 ? stage : stage.slice(at + marker.length);
-}
-
 export function VersionsStrip({
   groups,
   loadingSha,
-  loadedSha,
+  loadedShas,
   loadedRunId,
   onOpen,
+  onOpenRun,
   onCompare,
 }: {
   groups: readonly VersionGroup[];
   loadingSha: string | null;
-  loadedSha: string | null;
+  /** The digests of the exports on screen: one seat, or every seat of a run. */
+  loadedShas: readonly string[];
   /** The run whose export is on screen; the 'before' of a comparison. */
   loadedRunId: string | null;
   onOpen(artifact: ProjectArtifactDto, sourceLabel: string): void;
+  /** Put every available export of this run on the stage at once. */
+  onOpenRun(group: VersionGroup): void;
   /** Compare this card's run against the loaded run's exports. */
   onCompare(artifact: ProjectArtifactDto): void;
 }) {
@@ -78,6 +74,9 @@ export function VersionsStrip({
           !loaded &&
           group.exports.some((item) => item.artifact.available);
         const firstAvailable = group.exports.find((item) => item.artifact.available);
+        const servable = group.exports.filter(
+          (item) => item.artifact.available && item.artifact.sha256 !== null,
+        );
         return (
           <div
             key={group.runId}
@@ -91,9 +90,23 @@ export function VersionsStrip({
               {group.detail && <span className="vcard__meta">{group.detail}</span>}
             </div>
             <div className="vcard__exports">
+              {servable.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn--small vcard__run"
+                  aria-pressed={loaded && loadedShas.length > 1}
+                  disabled={loadingSha !== null}
+                  title={`show every seat of this run on the stage · ${servable
+                    .map((item) => item.seat)
+                    .join(" + ")}`}
+                  onClick={() => onOpenRun(group)}
+                >
+                  show run
+                </button>
+              )}
               {group.exports.map(({ artifact, seat, sourceLabel }) => {
                 const isLoaded =
-                  artifact.sha256 !== null && artifact.sha256 === loadedSha;
+                  artifact.sha256 !== null && loadedShas.includes(artifact.sha256);
                 const loadingThis =
                   loadingSha !== null && artifact.sha256 === loadingSha;
                 return (
@@ -105,7 +118,7 @@ export function VersionsStrip({
                     disabled={!artifact.available || loadingSha !== null}
                     title={
                       artifact.available
-                        ? `${artifact.fileName} · ${sha8(artifact.sha256)}`
+                        ? `show this seat's export on the stage · ${artifact.fileName} · ${sha8(artifact.sha256)}`
                         : (artifact.unavailableReason ??
                           "unavailable, and the server gave no reason")
                     }

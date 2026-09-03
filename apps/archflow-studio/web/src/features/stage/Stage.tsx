@@ -58,7 +58,7 @@ export function Stage({
   picked,
   versions,
   loadingSha,
-  loadedSha,
+  loadedShas,
   evidenceCounts,
   review,
   drawer,
@@ -72,6 +72,9 @@ export function Stage({
   onSource,
   onPick,
   onOpenVersion,
+  onOpenRun,
+  onShowReference,
+  referenceRunId,
   loadedRunId,
   onCompareVersion,
   blend,
@@ -90,7 +93,8 @@ export function Stage({
   picked: PickedFacts | null;
   versions: readonly VersionGroup[];
   loadingSha: string | null;
-  loadedSha: string | null;
+  /** The digests on screen: one seat's, or every seat of a run. */
+  loadedShas: readonly string[];
   evidenceCounts: EvidenceCounts;
   review: ReviewSummary;
   /** The drawer, when it overlays the stage rather than standing beside it. */
@@ -107,6 +111,12 @@ export function Stage({
   onSource(sourceLabel: string | null): void;
   onPick(pick: ViewportPick): void;
   onOpenVersion(artifact: ProjectArtifactDto, sourceLabel: string): void;
+  /** Put every available export of one run on the stage at once. */
+  onOpenRun(group: VersionGroup): void;
+  /** Back to the whole reference run, from wherever the stage got to. */
+  onShowReference(): void;
+  /** The reference run, when it has exports to come back to; null when it has none. */
+  referenceRunId: string | null;
   /** The run whose export is on screen, for the strip's comparisons. */
   loadedRunId: string | null;
   onCompareVersion(artifact: ProjectArtifactDto): void;
@@ -209,6 +219,18 @@ export function Stage({
             </span>
           )}
           <span className="viewtools__sep" aria-hidden="true" />
+          <button
+            type="button"
+            disabled={referenceRunId === null}
+            title={
+              referenceRunId === null
+                ? "the reference run left no export to come back to"
+                : `show every seat of the reference run ${referenceRunId} on the stage`
+            }
+            onClick={onShowReference}
+          >
+            reference
+          </button>
           <button type="button" onClick={() => viewportRef.current?.fitView()}>
             fit
           </button>
@@ -228,9 +250,10 @@ export function Stage({
         <VersionsStrip
           groups={versions}
           loadingSha={loadingSha}
-          loadedSha={loadedSha}
+          loadedShas={loadedShas}
           loadedRunId={loadedRunId}
           onOpen={onOpenVersion}
+          onOpenRun={onOpenRun}
           onCompare={onCompareVersion}
         />
         <span className="stage__spacer" />

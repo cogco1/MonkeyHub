@@ -57,6 +57,12 @@ export interface ViewportPick {
   userStrings: UserStrings;
   documentUserStrings: UserStrings | null;
   objectName: string | null;
+  /**
+   * The object the ray met, so the shell can ask for it to be marked while
+   * the server is deciding what it is. It is the loaded scene's own object:
+   * hold no reference to it past the picture it belongs to.
+   */
+  object: Object3D;
 }
 
 /**
@@ -85,6 +91,16 @@ export interface GhostSpec {
   affected: readonly GhostTarget[];
 }
 
+/**
+ * What a highlight is asked for: an element of the record (every object the
+ * export tagged with it), a component alone, or the one object a ray met when
+ * the server could resolve neither. Null takes the highlight off.
+ */
+export type HighlightRequest =
+  | { componentId?: string | null; elementId?: string | null }
+  | { object: Object3D }
+  | null;
+
 export type Vec3 = [number, number, number];
 
 /** One object under a point of a stroke, read the way a click is read. */
@@ -104,6 +120,20 @@ export interface CameraState {
 
 export interface ViewportController {
   openFile(file: File, sourceLabel?: string): Promise<void>;
+  /**
+   * Put several exports on the stage as one picture — a whole run rather than
+   * one seat of it. All of them or none: a file that will not parse leaves
+   * whatever was on screen where it was, and says so. The group is the model
+   * from then on, so picking, ghosting, fit and clear treat it as one.
+   */
+  openFiles(files: readonly File[], sourceLabel?: string): Promise<void>;
+  /**
+   * Mark what was picked. An element lights every object the export tagged
+   * with it; a bare object lights only itself; null takes the mark off.
+   * Returns how many objects were lit — zero means nothing on screen carries
+   * that target.
+   */
+  highlight(target: HighlightRequest): number;
   /**
    * The object under a client-space point, with the file's strings and the
    * world point where the ray met it; null off the model. Nothing is
@@ -161,6 +191,14 @@ interface ViewportRuntime {
   secondary: Object3D | null;
   /** The loaded model's materials as they were before a blend touched them. */
   restore: Map<Material, { transparent: boolean; opacity: number; depthWrite: boolean }>;
+  /** Where the cross-fade stands, so a highlight can be taken off without losing it. */
+  blendT: number | null;
+  /** The meshes wearing a highlight clone, in the order they were lit. */
+  highlighted: Mesh[];
+  /** What each of those meshes wore before; the clone is thrown away, this is not. */
+  original: WeakMap<Mesh, Material | Material[]>;
+  /** The clones themselves, so they are disposed rather than leaked. */
+  clones: Material[];
   render: () => void;
 }
 
@@ -221,30 +259,113 @@ function accentColour(): string {
   );
 }
 
-/** Whether a loaded object is one of this element's, by the export's own tags. */
-function belongsTo(object: Object3D, target: GhostTarget): boolean {
+/** What an object may be asked to be: an element, a component, or both. */
+interface CarrierTarget {
+  elementId?: string | null;
+  componentId?: string | null;
+}
+
+/**
+ * Whether a loaded object is one of this target's, by the export's own tags.
+ *
+ * With both ids, an object whose component disagrees is out and the element is
+ * matched on the producer op or the `obj-<elementId>` name. With a component
+ * alone — a pick the server could name no element for — the objects that
+ * component tagged are the answer.
+ */
+function belongsTo(object: Object3D, target: CarrierTarget): boolean {
   const attributes = object.userData.attributes as { userStrings?: unknown } | undefined;
   const strings = toUserStrings(attributes?.userStrings);
   const component = strings["archflow:component"];
-  if (component !== undefined && component !== target.componentId) return false;
+  const wantedComponent = target.componentId ?? null;
+  if (wantedComponent !== null && component !== undefined && component !== wantedComponent) {
+    return false;
+  }
+  const wantedElement = target.elementId ?? null;
+  if (wantedElement === null) {
+    return wantedComponent !== null && component === wantedComponent;
+  }
   const producerOp = strings["archflow:producer_op"] ?? "";
   const name = object.name ?? "";
-  const byElement = "obj-" + target.elementId;
+  const byElement = "obj-" + wantedElement;
   return (
-    producerOp === target.elementId ||
-    producerOp.startsWith(target.elementId + "-") ||
+    producerOp === wantedElement ||
+    producerOp.startsWith(wantedElement + "-") ||
     name === byElement ||
     name.startsWith(byElement + "-")
   );
 }
 
-function carriersOf(model: Object3D, target: GhostTarget): Object3D[] {
+function carriersOf(model: Object3D, target: CarrierTarget): Object3D[] {
   const found: Object3D[] = [];
   model.traverse((object) => {
     const attributes = object.userData.attributes as { userStrings?: unknown } | undefined;
     if (attributes?.userStrings !== undefined && belongsTo(object, target)) found.push(object);
   });
   return found;
+}
+
+/** Whether this object is still part of the picture on screen. */
+function isUnder(object: Object3D, root: Object3D): boolean {
+  let current: Object3D | null = object;
+  while (current !== null) {
+    if (current === root) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
+/**
+ * The material a picked object wears: its own, cloned once, glowing in the
+ * accent and a little less see-through. No post-processing and no second pass
+ * — the same forward render, one material deep.
+ */
+function highlightMaterial(material: Material, accent: Color): Material {
+  const copy = material.clone();
+  if (copy instanceof MeshStandardMaterial) {
+    copy.emissive = new Color(accent);
+    copy.emissiveIntensity = 0.85;
+  }
+  copy.opacity = Math.min(1, material.opacity + 0.2);
+  copy.transparent = copy.opacity < 1;
+  copy.depthWrite = copy.opacity >= 1;
+  copy.needsUpdate = true;
+  return copy;
+}
+
+/** Give every highlighted mesh back the material it had, and drop the clones. */
+function restoreHighlight(runtime: ViewportRuntime): void {
+  for (const mesh of runtime.highlighted) {
+    const original = runtime.original.get(mesh);
+    if (original !== undefined) mesh.material = original;
+    runtime.original.delete(mesh);
+  }
+  runtime.highlighted = [];
+  for (const material of runtime.clones) material.dispose();
+  runtime.clones = [];
+}
+
+function applyHighlight(runtime: ViewportRuntime, objects: readonly Object3D[]): void {
+  if (objects.length === 0) return;
+  const accent = new Color(accentColour());
+  const cloned = new Map<Material, Material>();
+  const clone = (material: Material): Material => {
+    const existing = cloned.get(material);
+    if (existing) return existing;
+    const copy = highlightMaterial(material, accent);
+    cloned.set(material, copy);
+    runtime.clones.push(copy);
+    return copy;
+  };
+  for (const object of objects) {
+    object.traverse((child) => {
+      if (!(child instanceof Mesh) || runtime.original.has(child)) return;
+      const original = child.material as Material | Material[];
+      runtime.original.set(child, original);
+      child.material = Array.isArray(original) ? original.map(clone) : clone(original);
+      runtime.highlighted.push(child);
+    });
+  }
 }
 
 /** A translucent copy of every mesh under these carriers, in world space. */
@@ -318,6 +439,39 @@ function disposeGhost(ghost: Group): void {
     }
   });
   materials.forEach((material) => material.dispose());
+}
+
+/**
+ * Several parsed exports as one model.
+ *
+ * The group carries the union of its documents' layers so the layer switch and
+ * the inspection still have names to work with; the indices are each
+ * document's own, and where two documents disagree the first name seen stands.
+ * It carries no document user strings of its own: those are one file's claim
+ * about one file, and the receipt the bytes came with is what answers for a
+ * run — `receiptDocumentStrings` in the shell, never a guess made here.
+ */
+function groupOf(models: readonly Object3D[]): Group {
+  const group = new Group();
+  group.name = "archflow-run";
+  const layers: unknown[] = [];
+  const warnings: unknown[] = [];
+  for (const model of models) {
+    const own = model.userData.layers;
+    if (Array.isArray(own)) {
+      for (let index = 0; index < own.length; index += 1) {
+        if (layers[index] === undefined) layers[index] = own[index] ?? {};
+      }
+    }
+    const said = model.userData.warnings;
+    if (Array.isArray(said)) warnings.push(...said);
+    group.add(model);
+  }
+  if (layers.length > 0) {
+    group.userData.layers = [...layers].map((layer) => layer ?? {});
+  }
+  if (warnings.length > 0) group.userData.warnings = warnings;
+  return group;
 }
 
 function fitRuntime(runtime: ViewportRuntime): void {
@@ -413,7 +567,7 @@ export const ThreeDmViewport = forwardRef<
   const callbacksRef = useRef({ onInspection, onStatus, onSource, onPick });
   const [dragActive, setDragActive] = useState(false);
   const [visualStatus, setVisualStatus] = useState<ViewportStatus>("idle");
-  const [visualMessage, setVisualMessage] = useState("No model on screen · choose a version below, or drop a .3dm from this machine here");
+  const [visualMessage, setVisualMessage] = useState("No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here");
 
   callbacksRef.current = { onInspection, onStatus, onSource, onPick };
 
@@ -427,6 +581,12 @@ export const ThreeDmViewport = forwardRef<
     const runtime = runtimeRef.current;
     loadGenerationRef.current += 1;
     callbacksRef.current.onSource(null);
+    if (runtime) {
+      // The mark on a picked object belongs to the picture; it comes off
+      // first so the meshes are disposed wearing their own materials.
+      restoreHighlight(runtime);
+      runtime.blendT = null;
+    }
     if (runtime?.ghost) {
       runtime.scene.remove(runtime.ghost);
       disposeGhost(runtime.ghost);
@@ -440,7 +600,7 @@ export const ThreeDmViewport = forwardRef<
     }
     if (!runtime?.model) {
       callbacksRef.current.onInspection(null);
-      reportStatus("idle", "No model on screen · choose a version below, or drop a .3dm from this machine here");
+      reportStatus("idle", "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here");
       return;
     }
     runtime.scene.remove(runtime.model);
@@ -448,7 +608,7 @@ export const ThreeDmViewport = forwardRef<
     runtime.model = null;
     runtime.render();
     callbacksRef.current.onInspection(null);
-    reportStatus("idle", "No model on screen · choose a version below, or drop a .3dm from this machine here");
+    reportStatus("idle", "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here");
   }, [reportStatus]);
 
   const removeGhost = useCallback(() => {
@@ -535,6 +695,7 @@ export const ThreeDmViewport = forwardRef<
       material.needsUpdate = true;
     }
     runtime.restore.clear();
+    runtime.blendT = null;
     runtime.render();
   }, []);
 
@@ -542,6 +703,7 @@ export const ThreeDmViewport = forwardRef<
     const runtime = runtimeRef.current;
     if (!runtime?.model || !runtime.secondary) return;
     const mix = Math.min(1, Math.max(0, t));
+    runtime.blendT = mix;
     const primary = materialsUnder(runtime.model);
     for (const material of primary) {
       if (!runtime.restore.has(material)) {
@@ -558,6 +720,41 @@ export const ThreeDmViewport = forwardRef<
     runtime.secondary.visible = mix > 0;
     runtime.render();
   }, []);
+
+  /**
+   * Mark what was picked, so the click has an answer on the model and not only
+   * in the transcript.
+   *
+   * The mark is the object's own material, cloned and lit — no outline pass and
+   * no second render — and the originals come back the moment the mark moves,
+   * the model changes, or the stage is cleared. A stale object (the file it
+   * came from is gone) lights nothing rather than resurrecting itself.
+   */
+  const highlight = useCallback(
+    (target: HighlightRequest): number => {
+      const runtime = runtimeRef.current;
+      if (!runtime) return 0;
+      restoreHighlight(runtime);
+      const model = runtime.model;
+      if (target === null || model === null) {
+        runtime.render();
+        return 0;
+      }
+      const objects =
+        "object" in target
+          ? isUnder(target.object, model)
+            ? [target.object]
+            : []
+          : carriersOf(model, target);
+      applyHighlight(runtime, objects);
+      // A cross-fade set the opacities; the clones start from what they were
+      // before it, so the fade is applied again over the mark.
+      if (runtime.secondary && runtime.blendT !== null) blend(runtime.blendT);
+      else runtime.render();
+      return objects.length;
+    },
+    [blend],
+  );
 
   const loadSecondary = useCallback(
     async (file: File): Promise<number> => {
@@ -600,8 +797,8 @@ export const ThreeDmViewport = forwardRef<
     [blend, clearSecondary],
   );
 
-  const openFile = useCallback(
-    async (file: File, sourceLabel: string = LOCAL_SOURCE_LABEL) => {
+  const openFiles = useCallback(
+    async (files: readonly File[], sourceLabel: string = LOCAL_SOURCE_LABEL) => {
       const runtime = runtimeRef.current;
       if (!runtime) {
         throw new Error(
@@ -613,35 +810,45 @@ export const ThreeDmViewport = forwardRef<
       // beside an error status it would read as that file having failed to
       // load. Nothing was loaded and nothing failed — a file was declined
       // before it was read, and the refusal below says which.
-      if (!file.name.toLowerCase().endsWith(".3dm")) {
+      const decline = (message: string) => {
         callbacksRef.current.onInspection(null);
-        reportStatus(
-          "error",
-          "Only Rhino .3dm files are supported. The file was not opened.",
-        );
+        reportStatus("error", message);
+      };
+      if (files.length === 0) {
+        decline("No file was given to open, so nothing was opened.");
         return;
       }
-      if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
-        callbacksRef.current.onInspection(null);
-        reportStatus(
-          "error",
-          "The file is empty or over the 512 MB local parse limit.",
-        );
-        return;
+      for (const file of files) {
+        if (!file.name.toLowerCase().endsWith(".3dm")) {
+          decline(
+            `Only Rhino .3dm files are supported. ${file.name} was not opened.`,
+          );
+          return;
+        }
+        if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
+          decline(`${file.name} is empty or over the 512 MB local parse limit.`);
+          return;
+        }
       }
 
+      const names = files.map((file) => file.name).join(" + ");
+      const totalSize = files.reduce((sum, file) => sum + file.size, 0);
       const generation = loadGenerationRef.current + 1;
       loadGenerationRef.current = generation;
-      reportStatus("loading", `Parsing ${file.name} locally`);
+      reportStatus(
+        "loading",
+        files.length === 1
+          ? `Parsing ${names} locally`
+          : `Parsing ${files.length} exports locally · ${names}`,
+      );
       const started = performance.now();
-      let buffer: ArrayBuffer;
+      let buffers: ArrayBuffer[];
       try {
-        buffer = await file.arrayBuffer();
+        buffers = await Promise.all(files.map((file) => file.arrayBuffer()));
       } catch (error) {
         // Bytes that could not be read are a file that never arrived, and the
         // fact line still names the one before it. Same reason as a refusal.
-        callbacksRef.current.onInspection(null);
-        reportStatus("error", errorMessage(error));
+        decline(errorMessage(error));
         return;
       }
 
@@ -650,66 +857,92 @@ export const ThreeDmViewport = forwardRef<
       loader.setWorkerLimit(
         Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2)),
       );
+      const parsed = await Promise.allSettled(
+        buffers.map(
+          (buffer) =>
+            new Promise<Object3D>((resolve, reject) => {
+              loader.parse(buffer, resolve, (error) =>
+                reject(
+                  error instanceof Error ? error : new Error(String(error)),
+                ),
+              );
+            }),
+        ),
+      );
+      loader.dispose();
+      const models = parsed
+        .filter(
+          (result): result is PromiseFulfilledResult<Object3D> =>
+            result.status === "fulfilled",
+        )
+        .map((result) => result.value);
+      const failure = parsed.find(
+        (result): result is PromiseRejectedResult =>
+          result.status === "rejected",
+      );
+      if (generation !== loadGenerationRef.current) {
+        // Something else was asked for while these parsed; they are nobody's.
+        for (const model of models) disposeScene(model);
+        return;
+      }
+      if (failure !== undefined) {
+        // All of them or none: one file that will not parse is not most of a
+        // run, and a picture quietly missing a seat is worse than the picture
+        // that was already there.
+        for (const model of models) disposeScene(model);
+        callbacksRef.current.onInspection(null);
+        callbacksRef.current.onSource(null);
+        reportStatus("error", errorMessage(failure.reason));
+        return;
+      }
 
-      await new Promise<void>((resolve) => {
-        loader.parse(
-          buffer,
-          (model) => {
-            loader.dispose();
-            if (generation !== loadGenerationRef.current) {
-              disposeScene(model);
-              resolve();
-              return;
-            }
-            if (runtime.model) {
-              runtime.scene.remove(runtime.model);
-              disposeScene(runtime.model);
-            }
-            if (runtime.ghost) {
-              // A ghost belongs to the model it was drawn over; a new model
-              // starts without one.
-              runtime.scene.remove(runtime.ghost);
-              disposeGhost(runtime.ghost);
-              runtime.ghost = null;
-            }
-            if (runtime.secondary) {
-              // So does a comparison: it was against the model going away.
-              runtime.scene.remove(runtime.secondary);
-              disposeSecondary(runtime.secondary);
-              runtime.secondary = null;
-              runtime.restore.clear();
-            }
-            runtime.model = model;
-            runtime.scene.add(model);
-            const inspection = inspectScene(
-              model,
-              file,
-              Math.round(performance.now() - started),
-            );
-            callbacksRef.current.onInspection(inspection);
-            callbacksRef.current.onSource(sourceLabel);
-            fitRuntime(runtime);
-            reportStatus(
-              "ready",
-              inspection.meshCount > 0
-                ? `${file.name} · ${inspection.meshCount.toLocaleString()} meshes`
-                : `${file.name} opened, but it holds no displayable mesh`,
-            );
-            resolve();
-          },
-          (error) => {
-            loader.dispose();
-            if (generation === loadGenerationRef.current) {
-              callbacksRef.current.onInspection(null);
-              callbacksRef.current.onSource(null);
-              reportStatus("error", errorMessage(error));
-            }
-            resolve();
-          },
-        );
-      });
+      const model = models.length === 1 ? models[0] : groupOf(models);
+      // The mark on a picked object belongs to the picture going away.
+      restoreHighlight(runtime);
+      if (runtime.model) {
+        runtime.scene.remove(runtime.model);
+        disposeScene(runtime.model);
+      }
+      if (runtime.ghost) {
+        // A ghost belongs to the model it was drawn over; a new model
+        // starts without one.
+        runtime.scene.remove(runtime.ghost);
+        disposeGhost(runtime.ghost);
+        runtime.ghost = null;
+      }
+      if (runtime.secondary) {
+        // So does a comparison: it was against the model going away.
+        runtime.scene.remove(runtime.secondary);
+        disposeSecondary(runtime.secondary);
+        runtime.secondary = null;
+        runtime.restore.clear();
+        runtime.blendT = null;
+      }
+      runtime.model = model;
+      runtime.scene.add(model);
+      const inspection = inspectScene(
+        model,
+        { name: names, size: totalSize },
+        Math.round(performance.now() - started),
+      );
+      callbacksRef.current.onInspection(inspection);
+      callbacksRef.current.onSource(sourceLabel);
+      fitRuntime(runtime);
+      reportStatus(
+        "ready",
+        inspection.meshCount > 0
+          ? `${names} · ${inspection.meshCount.toLocaleString()} meshes`
+          : `${names} opened, but it holds no displayable mesh`,
+      );
     },
     [reportStatus],
+  );
+
+  /** One file is one export: the same road, with a list of one. */
+  const openFile = useCallback(
+    (file: File, sourceLabel: string = LOCAL_SOURCE_LABEL) =>
+      openFiles([file], sourceLabel),
+    [openFiles],
   );
 
   /**
@@ -754,6 +987,7 @@ export const ThreeDmViewport = forwardRef<
         objectName: carrier.name || null,
         userStrings: toUserStrings(attributes?.userStrings),
         point: hit.point,
+        object: carrier,
       };
     },
     [rayAt],
@@ -769,6 +1003,7 @@ export const ThreeDmViewport = forwardRef<
         userStrings: hit.userStrings,
         documentUserStrings: documentUserStrings(runtime.model),
         objectName: hit.objectName,
+        object: hit.object,
       });
     },
     [hitAt],
@@ -820,6 +1055,8 @@ export const ThreeDmViewport = forwardRef<
     forwardedRef,
     () => ({
       openFile,
+      openFiles,
+      highlight,
       ghost,
       sampleAt,
       camera: cameraState,
@@ -847,7 +1084,19 @@ export const ThreeDmViewport = forwardRef<
       },
       clear,
     }),
-    [blend, cameraState, clear, clearSecondary, ghost, loadSecondary, openFile, sampleAt, unprojectOnPlane],
+    [
+      blend,
+      cameraState,
+      clear,
+      clearSecondary,
+      ghost,
+      highlight,
+      loadSecondary,
+      openFile,
+      openFiles,
+      sampleAt,
+      unprojectOnPlane,
+    ],
   );
 
   useEffect(() => {
@@ -918,6 +1167,10 @@ export const ThreeDmViewport = forwardRef<
       ghost: null,
       secondary: null,
       restore: new Map(),
+      blendT: null,
+      highlighted: [],
+      original: new WeakMap(),
+      clones: [],
       render,
     };
     runtimeRef.current = runtime;
@@ -940,6 +1193,9 @@ export const ThreeDmViewport = forwardRef<
       observer.disconnect();
       controls.removeEventListener("change", render);
       controls.dispose();
+      // Give the highlighted meshes their own materials back, so what is
+      // disposed below is the file's and the clones go with the mark.
+      restoreHighlight(runtime);
       if (runtime.model) disposeScene(runtime.model);
       if (runtime.ghost) disposeGhost(runtime.ghost);
       if (runtime.secondary) disposeSecondary(runtime.secondary);

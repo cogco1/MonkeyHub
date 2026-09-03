@@ -925,6 +925,10 @@ button.chip:hover {
   display: grid;
   gap: 6px;
   max-width: min(520px, 70%);
+  /* The facts about the picture give way to the tools that change it: a long
+     source line wraps inside its own chip rather than pushing a camera button
+     off the edge of the stage. */
+  min-width: 0;
 }
 
 .source {
@@ -984,6 +988,7 @@ button.chip:hover {
 
 .viewtools {
   display: inline-flex;
+  flex: none;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1701,4 +1706,21 @@ button.chip:hover {
   border-radius: 2px;
   background: var(--overlay);
   font-size: 11px;
+}
+
+/* A whole run on the stage ------------------------------------------------- */
+
+/* `show run` puts every seat of one card's run on the stage at once. It is the
+   card's own action rather than one of its seats, so it is dashed like the
+   strip's other run-level control and solid only while the run it names is
+   the picture. */
+
+.vcard__run {
+  border-style: dashed;
+}
+
+.vcard__run[aria-pressed="true"] {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--ink);
 }

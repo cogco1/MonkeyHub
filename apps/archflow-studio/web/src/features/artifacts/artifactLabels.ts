@@ -6,9 +6,34 @@
 import type { ProjectArtifactDto } from "../../api/generated";
 import { sha8 } from "../../app/format";
 
-/** The chip the viewer wears while a canonical artifact is loaded. */
+/** The seat name an export's stage id ends with, or the file when it has none. */
+export function seatOf(artifact: ProjectArtifactDto): string {
+  const stage = artifact.stageId;
+  if (stage === null) return artifact.fileName;
+  const marker = "seat-";
+  const at = stage.lastIndexOf(marker);
+  return at === -1 ? stage : stage.slice(at + marker.length);
+}
+
+/**
+ * The chip the viewer wears while one canonical export is loaded: the run, the
+ * seat that export came from, and the digest of the bytes on screen. The seat
+ * is there so one seat of a run never reads as the whole of it.
+ */
 export function canonicalSourceLabel(artifact: ProjectArtifactDto): string {
-  return `CANONICAL · ${artifact.runId} · ${sha8(artifact.sha256)}`;
+  return `CANONICAL · ${artifact.runId} · ${seatOf(artifact)} · ${sha8(artifact.sha256)}`;
+}
+
+/**
+ * The chip the viewer wears while a whole run is loaded: the run and every
+ * seat on screen, named. No digest — the picture is several files, and one
+ * sha would be a claim about one of them.
+ */
+export function canonicalRunSourceLabel(
+  runId: string,
+  seats: readonly string[],
+): string {
+  return `CANONICAL · ${runId} · ${seats.join(" + ")}`;
 }
 
 /** The chip the viewer wears while a candidate's own export is loaded. */

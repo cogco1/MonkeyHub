@@ -34,9 +34,11 @@ import type {
 } from "../api/generated";
 import type { GestureTool } from "../features/stage/Annotate";
 import {
+  canonicalRunSourceLabel,
   canonicalSourceLabel,
   candidateSourceLabel,
   receiptDocumentStrings,
+  seatOf,
 } from "../features/artifacts/artifactLabels";
 import { Conversation } from "../features/conversation/Conversation";
 import type { Selection } from "../features/conversation/Composer";
@@ -44,11 +46,7 @@ import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import type { ViewState } from "../features/stage/SourceChip";
 import { Stage, type PickedFacts } from "../features/stage/Stage";
-import {
-  seatOf,
-  type VersionExport,
-  type VersionGroup,
-} from "../features/stage/VersionsStrip";
+import type { VersionExport, VersionGroup } from "../features/stage/VersionsStrip";
 import type { SceneInspection } from "../viewer/sceneInspection";
 import {
   LOCAL_SOURCE_LABEL,
@@ -144,16 +142,27 @@ export default function App() {
   const [viewerMessage, setViewerMessage] = useState("");
   const [viewerStatus, setViewerStatus] = useState<ViewportStatus>("idle");
   const [sourceLabel, setSourceLabel] = useState<string | null>(null);
-  // The listing row of the artifact currently in the viewer, kept beside its
-  // source label. It is what the loaded file can be asked about: the bytes
-  // carry document strings the loader does not surface, and the receipt that
-  // certified those bytes does.
-  const [loadedArtifact, setLoadedArtifact] =
-    useState<ProjectArtifactDto | null>(null);
-  // The artifact whose bytes were handed to the viewer and which the viewer
+  // The listing rows of the artifacts currently in the viewer, kept beside
+  // their source label: one seat's export, or every seat of a run shown at
+  // once. They are what the loaded picture can be asked about — the bytes
+  // carry document strings the loader does not surface, and the receipts that
+  // certified those bytes do.
+  const [loadedArtifacts, setLoadedArtifacts] = useState<
+    readonly ProjectArtifactDto[]
+  >([]);
+  // The artifacts whose bytes were handed to the viewer and which the viewer
   // has not yet accepted. Committed only when the viewer reports the label,
   // because a refused file leaves the previous model on screen.
-  const pendingArtifact = useRef<ProjectArtifactDto | null>(null);
+  const pendingArtifacts = useRef<readonly ProjectArtifactDto[]>([]);
+  // The first seat on screen answers for the picture wherever one row is
+  // wanted: the run it belongs to, the receipt a pick is resolved against,
+  // the seat a cross-fade is loaded beside.
+  const loadedArtifact = loadedArtifacts[0] ?? null;
+  // Every digest on screen, for the strip to say which of its buttons is the
+  // picture: one seat's, or all of a run's.
+  const loadedShas = loadedArtifacts
+    .map((artifact) => artifact.sha256)
+    .filter((sha): sha is string => sha !== null);
 
   const [proposalBusy, setProposalBusy] = useState(false);
   const [candidateBusy, setCandidateBusy] = useState(false);
@@ -260,54 +269,165 @@ export default function App() {
           artifact.sha256,
           artifact.fileName,
         );
-        pendingArtifact.current = artifact;
+        pendingArtifacts.current = [artifact];
         await viewportRef.current?.openFile(file, label);
       } catch (cause) {
         setArtifactError(asStudioApiError(cause));
       } finally {
-        pendingArtifact.current = null;
+        pendingArtifacts.current = [];
         setArtifactLoadingSha(null);
       }
     },
     [],
   );
 
+  /**
+   * Put a whole run on the stage: every seat it exported, in the listing's
+   * order, as one picture. The seats are certified separately and shown
+   * together; the chip names the run and the seats rather than one digest,
+   * because there is no one file on screen to address.
+   */
+  const loadRunIntoViewer = useCallback(
+    async (rows: readonly ProjectArtifactDto[], label: string) => {
+      setArtifactError(null);
+      const servable = rows.filter(
+        (row): row is ProjectArtifactDto & { sha256: string } =>
+          row.available && row.sha256 !== null,
+      );
+      if (servable.length === 0) return;
+      if (servable.length === 1) {
+        await loadArtifactIntoViewer(servable[0], label);
+        return;
+      }
+      setArtifactLoadingSha(servable[0].sha256);
+      try {
+        // Every seat, or none: a picture missing a seat that nobody was told
+        // about would read as the run being smaller than it is.
+        const files = await Promise.all(
+          servable.map((row) => studio.artifactFile(row.sha256, row.fileName)),
+        );
+        pendingArtifacts.current = servable;
+        await viewportRef.current?.openFiles(files, label);
+      } catch (cause) {
+        setArtifactError(asStudioApiError(cause));
+      } finally {
+        pendingArtifacts.current = [];
+        setArtifactLoadingSha(null);
+      }
+    },
+    [loadArtifactIntoViewer],
+  );
+
+  /**
+   * The chip a run wears on the stage: the candidate's own, one seat's
+   * digest, or the run and the seats it put there.
+   */
+  const runSourceLabel = useCallback(
+    (runId: string, rows: readonly ProjectArtifactDto[]): string => {
+      const launched = transcript.entries.some(
+        (entry) => entry.kind === "candidate" && entry.candidateId === runId,
+      );
+      if (launched) return candidateSourceLabel(runId);
+      return rows.length === 1
+        ? canonicalSourceLabel(rows[0])
+        : canonicalRunSourceLabel(runId, rows.map(seatOf));
+    },
+    [transcript.entries],
+  );
+
+  /** Every export of the reference run this project can serve, as listed. */
+  const referenceExports = useMemo<readonly ProjectArtifactDto[]>(() => {
+    if (artifacts.status !== "ready" || projection === null) return [];
+    return artifacts.value.artifacts.filter(
+      (row) =>
+        row.runId === projection.referenceRun.runId &&
+        row.available &&
+        row.sha256 !== null,
+    );
+  }, [artifacts, projection]);
+
+  /**
+   * Back to the whole reference run: every seat it exported, together, from
+   * wherever the stage got to — one seat of another run, a candidate's export,
+   * a local file, or nothing at all after clear.
+   */
+  const showReferenceRun = useCallback(() => {
+    if (referenceExports.length === 0 || projection === null) return;
+    manualLoadRef.current = true;
+    const seats = referenceExports.map(seatOf);
+    append({
+      kind: "system",
+      text:
+        referenceExports.length === 1
+          ? `Showing the reference run's export · ${referenceExports[0].fileName}`
+          : `Showing the reference run's exports · ${seats.join(" + ")}`,
+    });
+    void loadRunIntoViewer(
+      referenceExports,
+      runSourceLabel(projection.referenceRun.runId, referenceExports),
+    );
+  }, [append, loadRunIntoViewer, projection, referenceExports, runSourceLabel]);
+
   // The first ten seconds: a bound project shows its own certified model
-  // without being asked - the reference run's export when it has one, else
-  // the last export the listing names (the server lists runs by id; nothing
-  // here claims it is the newest), said so in the conversation. A file from
-  // this machine stays a secondary door; it is the one with no receipt.
+  // without being asked - every export of the reference run, so the stage
+  // opens on the whole thing and not one seat of it; failing that, the last
+  // export the listing names (the server lists runs by id; nothing here
+  // claims it is the newest), said so in the conversation. A file from this
+  // machine stays a secondary door; it is the one with no receipt.
   const autoLoadedRef = useRef(false);
   useEffect(() => {
     if (autoLoadedRef.current) return;
     if (artifacts.status !== "ready" || projection === null) return;
-    if (loadedArtifact !== null || pendingArtifact.current !== null) return;
+    if (loadedArtifacts.length > 0 || pendingArtifacts.current.length > 0) return;
     const rows = artifacts.value.artifacts.filter(
       (row) => row.available && row.sha256 !== null,
     );
     if (rows.length === 0) return;
-    const reference = rows.find((row) => row.runId === projection.referenceRun.runId);
-    const pick = reference ?? rows[rows.length - 1];
     autoLoadedRef.current = true;
+    if (referenceExports.length > 0) {
+      const seats = referenceExports.map(seatOf);
+      append({
+        kind: "system",
+        text:
+          referenceExports.length === 1
+            ? `Showing the reference run's export · ${referenceExports[0].fileName}`
+            : `Showing the reference run's exports · ${seats.join(" + ")}`,
+      });
+      void loadRunIntoViewer(
+        referenceExports,
+        runSourceLabel(projection.referenceRun.runId, referenceExports),
+      );
+      return;
+    }
+    const pick = rows[rows.length - 1];
     append({
       kind: "system",
-      text: reference
-        ? `Showing the reference run's export · ${pick.fileName}`
-        : `The reference run ${projection.referenceRun.runId} left no export; showing the last export listed, ${pick.fileName} from run ${pick.runId}`,
+      text: `The reference run ${projection.referenceRun.runId} left no export; showing the last export listed, ${pick.fileName} from run ${pick.runId}`,
     });
     void loadArtifactIntoViewer(pick, canonicalSourceLabel(pick));
-  }, [append, artifacts, loadArtifactIntoViewer, loadedArtifact, projection]);
+  }, [
+    append,
+    artifacts,
+    loadArtifactIntoViewer,
+    loadRunIntoViewer,
+    loadedArtifacts,
+    projection,
+    referenceExports,
+    runSourceLabel,
+  ]);
 
   /** The viewer says which file it holds; that is when the shell writes it down. */
   const noteSource = useCallback((label: string | null) => {
     setSourceLabel(label);
-    setLoadedArtifact(
+    setLoadedArtifacts(
       label === null || label === LOCAL_SOURCE_LABEL
-        ? null
-        : pendingArtifact.current,
+        ? []
+        : pendingArtifacts.current,
     );
-    pendingArtifact.current = null;
+    pendingArtifacts.current = [];
     setPicked(null);
+    // The mark belonged to the picture going away, as the picked chip did.
+    viewportRef.current?.highlight(null);
     // A new picture, or none: whatever ghost was drawn belonged to the old one,
     // and so did the marks and the cross-fade.
     setGhostProposalId(null);
@@ -318,6 +438,10 @@ export default function App() {
 
   const resolvePick = useCallback(
     async (pick: ViewportPick) => {
+      // What the ray met, lit at once: the click has an answer on the model
+      // before the server has said what it is. A resolved pick widens the mark
+      // to every object of the element below; an unresolved one leaves it here.
+      viewportRef.current?.highlight({ object: pick.object });
       if (stateDigest === null) {
         append({
           kind: "system",
@@ -358,6 +482,18 @@ export default function App() {
               )
             : [],
         });
+        // The server named it, so the mark becomes the element's: every object
+        // the export tagged with it, not only the face the ray met. When the
+        // loaded picture carries none of them, the one hit object stays lit —
+        // never nothing, which would read as the click having missed.
+        if (resolution.elementId !== null || resolution.componentId !== null) {
+          const lit =
+            viewportRef.current?.highlight({
+              componentId: resolution.componentId,
+              elementId: resolution.elementId,
+            }) ?? 0;
+          if (lit === 0) viewportRef.current?.highlight({ object: pick.object });
+        }
         if (resolution.status === "resolved" && resolution.componentId) {
           setSelection({
             componentId: resolution.componentId,
@@ -462,8 +598,10 @@ export default function App() {
             kind: "system",
             text: `Now talking about ${target.elementId ?? target.componentId} · the proposal's target`,
           });
-          // The picked chip described the old subject; it must not outlive it.
+          // The picked chip described the old subject; it must not outlive it,
+          // and neither must the mark on the model that went with it.
           setPicked(null);
+          viewportRef.current?.highlight(null);
         }
         setDraft("");
         // The marks were said; a new sentence starts clean. A question keeps
@@ -1111,7 +1249,7 @@ export default function App() {
             picked={picked}
             versions={versions}
             loadingSha={artifactLoadingSha}
-            loadedSha={loadedArtifact?.sha256 ?? null}
+            loadedShas={loadedShas}
             evidenceCounts={evidenceCounts}
             review={review}
             drawer={evidencePinned ? null : drawer}
@@ -1127,6 +1265,27 @@ export default function App() {
               manualLoadRef.current = true;
               void loadArtifactIntoViewer(artifact, label);
             }}
+            onOpenRun={(group) => {
+              const rows = group.exports
+                .map((item) => item.artifact)
+                .filter((artifact) => artifact.available && artifact.sha256 !== null);
+              if (rows.length === 0) return;
+              manualLoadRef.current = true;
+              append({
+                kind: "system",
+                text:
+                  rows.length === 1
+                    ? `Showing ${group.runId} · ${rows[0].fileName}`
+                    : `Showing every seat of ${group.runId} · ${rows.map(seatOf).join(" + ")}`,
+              });
+              void loadRunIntoViewer(rows, runSourceLabel(group.runId, rows));
+            }}
+            onShowReference={showReferenceRun}
+            referenceRunId={
+              referenceExports.length > 0 && projection !== null
+                ? projection.referenceRun.runId
+                : null
+            }
             loadedRunId={loadedArtifact?.runId ?? null}
             onCompareVersion={(artifact) => void compareVersions(artifact)}
             blend={blendState}
