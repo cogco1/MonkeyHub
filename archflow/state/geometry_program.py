@@ -18,6 +18,7 @@ from typing import Any, Mapping
 from archflow.project import ProjectVersionRef
 from archflow.project.refs import require_identifier
 from archflow.state.operational_state import require_logical_ref
+from archflow.contracts.canonical import canonical_json
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -85,16 +86,6 @@ class DetailMaturity(StrEnum):
     ENVELOPE = "envelope"
     FUNCTIONAL = "functional"
     FINE = "fine"
-
-
-def canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
 
 
 def digest_value(value: object) -> str:

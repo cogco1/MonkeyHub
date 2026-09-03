@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 from dataclasses import dataclass
 from enum import StrEnum
@@ -16,6 +14,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
+from archflow.contracts.canonical import canonical_digest, require_sha256
 
 
 _MAX_ITEMS = 512
@@ -86,7 +85,7 @@ class ProgramMetricApplicabilityDecision:
 
     @property
     def decision_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -209,7 +208,7 @@ class ProgramAssumption:
         _text(self.statement, "statement")
         _refs(self.source_refs, "source_refs")
         _text(self.compiler_id, "compiler_id")
-        _sha256(self.base_state_sha256, "base_state_sha256")
+        require_sha256(self.base_state_sha256, "base_state_sha256")
 
     @property
     def ref(self) -> str:
@@ -275,7 +274,7 @@ class ProgramNode:
                 "derived and hypothetical nodes require assumptions"
             )
         _text(self.compiler_id, "compiler_id")
-        _sha256(self.base_state_sha256, "base_state_sha256")
+        require_sha256(self.base_state_sha256, "base_state_sha256")
 
     @property
     def ref(self) -> str:
@@ -372,7 +371,7 @@ class ProgramRange:
                 "derived and hypothetical ranges require assumptions"
             )
         _text(self.compiler_id, "compiler_id")
-        _sha256(self.base_state_sha256, "base_state_sha256")
+        require_sha256(self.base_state_sha256, "base_state_sha256")
 
     @property
     def ref(self) -> str:
@@ -478,7 +477,7 @@ class ProgramRelationship:
                 "derived and hypothetical relationships require assumptions"
             )
         _text(self.compiler_id, "compiler_id")
-        _sha256(self.base_state_sha256, "base_state_sha256")
+        require_sha256(self.base_state_sha256, "base_state_sha256")
 
     @property
     def ref(self) -> str:
@@ -568,7 +567,7 @@ class ProgramScenario:
         _refs(self.source_refs, "source_refs")
         _refs(self.assumption_refs, "assumption_refs")
         _text(self.compiler_id, "compiler_id")
-        _sha256(self.base_state_sha256, "base_state_sha256")
+        require_sha256(self.base_state_sha256, "base_state_sha256")
 
     @property
     def ref(self) -> str:
@@ -644,7 +643,7 @@ class DesignProgram:
         if self.base.project_id != self.project_id:
             raise ValueError("program and base belong to different projects")
         base_digest = self.base.require_digest()
-        _sha256(self.brief_digest, "brief_digest")
+        require_sha256(self.brief_digest, "brief_digest")
         _text(self.compiler_id, "compiler_id")
         _text(self.compiler_version, "compiler_version")
         _typed(
@@ -759,7 +758,7 @@ class DesignProgram:
 
     @property
     def program_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -919,16 +918,6 @@ def _text(value: object, field: str) -> str:
     return value
 
 
-def _sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in "0123456789abcdef" for char in value)
-    ):
-        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
-    return value
-
-
 def _tuple(value: object, field: str) -> tuple[object, ...]:
     if not isinstance(value, tuple):
         raise TypeError(f"{field} must be a tuple")
@@ -1006,11 +995,3 @@ def _enum(enum_type: type[StrEnum], value: object, field: str) -> StrEnum:
         raise ValueError(f"{field} is not a supported value") from exc
 
 
-def _digest(value: object) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

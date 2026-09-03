@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 
 from archflow.project.refs import require_identifier
@@ -12,6 +10,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
+from archflow.contracts.canonical import canonical_digest, require_sha256
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +61,7 @@ class ConstructabilitySnapshot:
             (self.site_context_digest, "site_context_digest"),
             (self.policy_digest, "policy_digest"),
         ):
-            _sha256(value, field)
+            require_sha256(value, field)
         require_local_id(self.resource_mode, "resource_mode")
         require_local_id(self.staging_mode, "staging_mode")
         _typed(
@@ -80,7 +79,7 @@ class ConstructabilitySnapshot:
 
     @property
     def snapshot_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -117,7 +116,7 @@ class ConstructabilityAdviceReceipt:
 
     def __post_init__(self) -> None:
         require_local_id(self.advisor_id, "advisor_id")
-        _sha256(self.snapshot_digest, "snapshot_digest")
+        require_sha256(self.snapshot_digest, "snapshot_digest")
         _refs(self.proposal_refs, "proposal_refs")
         _refs(self.evidence_refs, "evidence_refs")
 
@@ -215,20 +214,3 @@ def _refs(
         raise ValueError(f"{field} contains duplicates")
 
 
-def _sha256(value: object, field: str) -> None:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in "0123456789abcdef" for char in value)
-    ):
-        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
-
-
-def _digest(value: object) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

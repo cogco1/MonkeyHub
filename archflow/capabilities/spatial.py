@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -33,6 +31,7 @@ from archflow.state.spatial import (
     SchematicOptionSet,
     SpatialOptionProposal,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 _COMPILER_ID = "archflow.spatial-proposal-compiler"
@@ -97,20 +96,6 @@ class SpatialAuthoringReferenceContract:
             "unknown_reference_policy": "reject",
             "reference_normalization_authority": False,
         }
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _policy_ref(prefix: str, local_id: str) -> str:
@@ -455,7 +440,7 @@ def _topology_signature(proposal: SpatialOptionProposal) -> str:
         endpoints = (
             (source, target)
             if item.directed
-            else tuple(sorted((source, target), key=_canonical_json))
+            else tuple(sorted((source, target), key=canonical_json))
         )
         connections.append(
             {
@@ -467,11 +452,11 @@ def _topology_signature(proposal: SpatialOptionProposal) -> str:
     identity = {
         "footprint_cells": sorted(proposal.footprint_cells),
         "levels": sorted(level_by_id.values()),
-        "volumes": sorted(volume_by_id.values(), key=_canonical_json),
-        "zones": sorted(zone_by_id.values(), key=_canonical_json),
-        "connections": sorted(connections, key=_canonical_json),
+        "volumes": sorted(volume_by_id.values(), key=canonical_json),
+        "zones": sorted(zone_by_id.values(), key=canonical_json),
+        "connections": sorted(connections, key=canonical_json),
     }
-    return _digest(identity)
+    return canonical_digest(identity)
 
 
 def _validate_option(
@@ -857,7 +842,7 @@ def compile_spatial_options(
         site_context_digest=site_context.context_digest,
         build_policy_digest=build_policy.policy_digest,
         phase_gate_receipt_ref=phase_gate.ref,
-        phase_gate_receipt_digest=_digest(phase_gate.to_dict()),
+        phase_gate_receipt_digest=canonical_digest(phase_gate.to_dict()),
         compiler_id=_COMPILER_ID,
         compiler_version=_COMPILER_VERSION,
         options=tuple(sorted(compiled, key=lambda item: item.option_id)),
@@ -866,7 +851,7 @@ def compile_spatial_options(
         option_set_ref=option_set.ref,
         option_set_digest=option_set.option_set_digest,
         phase_gate_receipt_ref=phase_gate.ref,
-        phase_gate_receipt_digest=_digest(phase_gate.to_dict()),
+        phase_gate_receipt_digest=canonical_digest(phase_gate.to_dict()),
         proposal_digests=tuple(
             item.proposal.proposal_digest
             for item in option_set.options

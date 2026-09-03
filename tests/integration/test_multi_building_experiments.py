@@ -34,12 +34,12 @@ from archflow.evaluation.experiment import (
     compile_experiment_attempt_intent,
     compile_experiment_outcome,
 )
+from archflow.contracts.canonical import canonical_digest
 from archflow.project import (
     FilesystemProjectRepository,
     PersistenceArea,
     PersistenceDestination,
     bootstrap_raw_request_project,
-    canonical_json_sha256,
     locate_project,
 )
 from archflow.runtime.family_compiler import (
@@ -781,7 +781,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
             manifest["code_identity_digest"],
         )
         self.assertEqual(
-            canonical_json_sha256({"files": manifest["source_files"]}),
+            canonical_digest({"files": manifest["source_files"]}),
             manifest["code_identity_digest"],
         )
         for item in manifest["source_files"]:
@@ -790,11 +790,11 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
                 all(character in "0123456789abcdef" for character in item["sha256"])
             )
         self.assertEqual(
-            canonical_json_sha256(manifest["provider_configuration"]),
+            canonical_digest(manifest["provider_configuration"]),
             manifest["provider_configuration_digest"],
         )
         self.assertEqual(
-            canonical_json_sha256(manifest["contract_identity"]),
+            canonical_digest(manifest["contract_identity"]),
             preregistration.contract_identity_digest,
         )
         intents = by_schema[ExperimentAttemptIntent.SCHEMA]
@@ -1111,7 +1111,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
             & {item.get("schema") for item in successor_payloads}
         )
         self.assertEqual(
-            canonical_json_sha256(
+            canonical_digest(
                 {"files": successor_manifest["source_files"]}
             ),
             successor.code_identity_digest,
@@ -1245,7 +1245,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
             all(item.status.value == "unknown" for item in outcome.observations)
         )
         self.assertEqual(
-            canonical_json_sha256({"files": manifest["source_files"]}),
+            canonical_digest({"files": manifest["source_files"]}),
             preregistration.code_identity_digest,
         )
         for item in manifest["source_files"]:
@@ -1342,11 +1342,11 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            canonical_json_sha256({"files": manifest["source_files"]}),
+            canonical_digest({"files": manifest["source_files"]}),
             preregistration.code_identity_digest,
         )
         self.assertEqual(
-            canonical_json_sha256(manifest["contract_identity"]),
+            canonical_digest(manifest["contract_identity"]),
             preregistration.contract_identity_digest,
         )
         self.assertEqual(ExperimentAttemptStatus.TIMED_OUT, attempt.status)
@@ -1432,7 +1432,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            canonical_json_sha256(
+            canonical_digest(
                 {"files": projection_manifest["source_files"]}
             ),
             projection_preregistration.code_identity_digest,
@@ -1563,7 +1563,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            canonical_json_sha256(
+            canonical_digest(
                 {"files": alternative_manifest["source_files"]}
             ),
             alternative_preregistration.code_identity_digest,
@@ -1760,7 +1760,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
                     },
                     "role": "lifecycle-receipt",
                     "semantic_digest": digest_value(content),
-                    "content_sha256": canonical_json_sha256(content),
+                    "content_sha256": canonical_digest(content),
                     "content": content,
                     "canonical_write_authority": False,
                 },

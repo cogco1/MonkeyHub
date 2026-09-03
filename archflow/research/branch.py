@@ -25,7 +25,7 @@ from enum import StrEnum
 from typing import Mapping
 from urllib.parse import urlsplit
 
-from archflow.contracts.canonical import canonical_digest
+from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.research.adoption import PrecedentAdoption
 from archflow.project.refs import (
     BranchRef,
@@ -65,10 +65,6 @@ class BranchSelectionMode(StrEnum):
 class BranchSelectionStatus(StrEnum):
     HUMAN_REVIEW_REQUIRED = "human_review_required"
     SELECTED = "selected"
-
-
-def _digest(value: object) -> str:
-    return canonical_digest(value)
 
 
 def _record_sha256(value: Mapping[str, object]) -> str:
@@ -128,16 +124,6 @@ def require_record_payload(
         or ref.sha256 != _record_sha256(payload)
     ):
         raise BranchResearchError(f"{field} does not bind the exact P036 record")
-
-
-def _sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in _HEX for char in value.lower())
-    ):
-        raise BranchResearchError(f"{field} must be a SHA-256 digest")
-    return value.lower()
 
 
 def _text(value: object, field: str) -> str:
@@ -237,7 +223,7 @@ class BranchResearchProfile:
 
     def __post_init__(self) -> None:
         require_identifier(self.branch_id, "branch_id")
-        _sha256(self.branch_revision_digest, "branch_revision_digest")
+        require_sha256(self.branch_revision_digest, "branch_revision_digest")
         _strings(
             self.active_decision_refs,
             "profile active_decision_refs",
@@ -407,7 +393,7 @@ class BranchHardFeasibilityAssessment:
     def __post_init__(self) -> None:
         require_identifier(self.assessment_id, "assessment_id")
         require_identifier(self.branch_id, "hard assessment branch_id")
-        _sha256(
+        require_sha256(
             self.branch_revision_digest,
             "hard assessment branch_revision_digest",
         )
@@ -480,7 +466,7 @@ class BranchScorecard:
 
     def __post_init__(self) -> None:
         require_identifier(self.branch_id, "branch_id")
-        _sha256(self.branch_revision_digest, "branch_revision_digest")
+        require_sha256(self.branch_revision_digest, "branch_revision_digest")
         if not isinstance(self.research_profile, BranchResearchProfile):
             raise TypeError("research_profile must be BranchResearchProfile")
         if (
@@ -750,9 +736,9 @@ class BranchSelectionDecision:
         require_identifier(self.project_id, "project_id")
         require_identifier(self.run_id, "run_id")
         require_identifier(self.portfolio_id, "portfolio_id")
-        _sha256(self.candidate_portfolio_digest, "candidate_portfolio_digest")
-        _sha256(self.base_state_sha256, "base_state_sha256")
-        _sha256(self.operational_state_digest, "operational_state_digest")
+        require_sha256(self.candidate_portfolio_digest, "candidate_portfolio_digest")
+        require_sha256(self.base_state_sha256, "base_state_sha256")
+        require_sha256(self.operational_state_digest, "operational_state_digest")
         if not isinstance(self.rules, BranchSelectionRules):
             raise TypeError("rules must be BranchSelectionRules")
         if not isinstance(self.status, BranchSelectionStatus):
@@ -845,7 +831,7 @@ class BranchSelectionDecision:
 
     @property
     def decision_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1204,18 +1190,18 @@ class BranchResearchScope:
         if not isinstance(self.run, RunRef):
             raise TypeError("run must be RunRef")
         require_identifier(self.portfolio_id, "portfolio_id")
-        _sha256(self.portfolio_digest, "portfolio_digest")
-        _sha256(self.operational_state_digest, "operational_state_digest")
+        require_sha256(self.portfolio_digest, "portfolio_digest")
+        require_sha256(self.operational_state_digest, "operational_state_digest")
         if not isinstance(self.source_branch, BranchRef):
             raise TypeError("source_branch must be BranchRef")
         if self.source_branch.run != self.run:
             raise BranchResearchError("source branch belongs to another run")
         require_identifier(self.branch_id, "branch_id")
         require_identifier(self.branch_revision_id, "branch_revision_id")
-        _sha256(self.branch_revision_digest, "branch_revision_digest")
+        require_sha256(self.branch_revision_digest, "branch_revision_digest")
         if self.predecessor_scope_digest is not None:
-            _sha256(self.predecessor_scope_digest, "predecessor_scope_digest")
-        _sha256(self.selection_decision_digest, "selection_decision_digest")
+            require_sha256(self.predecessor_scope_digest, "predecessor_scope_digest")
+        require_sha256(self.selection_decision_digest, "selection_decision_digest")
         if not isinstance(self.selection_record_ref, ProjectRecordRef):
             raise TypeError("selection_record_ref must be ProjectRecordRef")
         for ref, prefix, field in (
@@ -1279,7 +1265,7 @@ class BranchResearchScope:
 
     @property
     def scope_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def identity_dict(self) -> dict[str, object]:
         return {
@@ -1652,7 +1638,7 @@ class BranchPrecedentQuery:
 
     @property
     def query_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def allows_url(self, url: str) -> bool:
         if not self.domain_allowlist:
@@ -1787,22 +1773,22 @@ class BranchEvidenceSnapshot:
     SCHEMA = "BranchEvidenceSnapshot@1"
 
     def __post_init__(self) -> None:
-        _sha256(self.scope_digest, "snapshot scope_digest")
+        require_sha256(self.scope_digest, "snapshot scope_digest")
         require_identifier(self.branch_id, "snapshot branch_id")
-        _sha256(
+        require_sha256(
             self.branch_revision_digest,
             "snapshot branch_revision_digest",
         )
         require_identifier(self.query_id, "snapshot query_id")
-        _sha256(self.query_digest, "snapshot query_digest")
+        require_sha256(self.query_digest, "snapshot query_digest")
         for value, field in (
             (self.requested_url, "requested_url"),
             (self.final_url, "final_url"),
             (self.retrieved_at, "retrieved_at"),
         ):
             _text(value, field)
-        _sha256(self.content_sha256, "snapshot content_sha256")
-        _sha256(self.text_sha256, "snapshot text_sha256")
+        require_sha256(self.content_sha256, "snapshot content_sha256")
+        require_sha256(self.text_sha256, "snapshot text_sha256")
         if (
             not isinstance(self.content_bytes, int)
             or isinstance(self.content_bytes, bool)
@@ -1954,10 +1940,10 @@ class BranchPrecedentAdoption:
 
     def __post_init__(self) -> None:
         require_identifier(self.query_id, "query_id")
-        _sha256(self.query_digest, "query_digest")
-        _sha256(self.scope_digest, "scope_digest")
+        require_sha256(self.query_digest, "query_digest")
+        require_sha256(self.scope_digest, "scope_digest")
         require_identifier(self.branch_id, "branch_id")
-        _sha256(self.branch_revision_digest, "branch_revision_digest")
+        require_sha256(self.branch_revision_digest, "branch_revision_digest")
         if not isinstance(self.adoption, PrecedentAdoption):
             raise TypeError("adoption must be PrecedentAdoption")
 

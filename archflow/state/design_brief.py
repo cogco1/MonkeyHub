@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping
@@ -18,6 +17,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
+from archflow.contracts.canonical import canonical_json, require_sha256
 
 
 _MAX_ITEMS = 256
@@ -80,7 +80,7 @@ class BriefClaim:
         if self.fact.source_ref not in self.source_refs:
             raise ValueError("fact source_ref must be retained in source_refs")
         _text(self.compiler_id, "compiler_id")
-        _sha256(self.base_state_sha256, "base_state_sha256")
+        require_sha256(self.base_state_sha256, "base_state_sha256")
         allowed = {
             BriefClaimKind.USER_FACT: {
                 FactEpistemicStatus.DECLARED,
@@ -178,7 +178,7 @@ class BriefConstraintProposal:
         require_local_id(self.commitment_id, "commitment_id")
         _refs(self.source_refs, "source_refs")
         _text(self.compiler_id, "compiler_id")
-        _sha256(self.base_state_sha256, "base_state_sha256")
+        require_sha256(self.base_state_sha256, "base_state_sha256")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -484,7 +484,7 @@ class DesignBrief:
     @property
     def brief_digest(self) -> str:
         return hashlib.sha256(
-            _canonical_json(self._identity()).encode("utf-8")
+            canonical_json(self._identity()).encode("utf-8")
         ).hexdigest()
 
     def _identity(self) -> dict[str, object]:
@@ -630,19 +630,6 @@ class DesignBrief:
         return brief
 
 
-def _canonical_json(value: object) -> str:
-    try:
-        return json.dumps(
-            value,
-            allow_nan=False,
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    except (TypeError, ValueError) as exc:
-        raise ValueError("brief value must be finite JSON") from exc
-
-
 def _text(value: object, field: str) -> str:
     if (
         not isinstance(value, str)
@@ -650,16 +637,6 @@ def _text(value: object, field: str) -> str:
         or len(value) > _MAX_TEXT
     ):
         raise ValueError(f"{field} must be bounded non-empty text")
-    return value
-
-
-def _sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in "0123456789abcdef" for char in value.lower())
-    ):
-        raise ValueError(f"{field} must be a SHA-256 digest")
     return value
 
 

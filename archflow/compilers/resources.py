@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 
 from archflow.state.build_policy import (
@@ -31,6 +29,7 @@ from archflow.state.operational_state import (
     require_logical_ref,
 )
 from archflow.state.site_context import SiteContext
+from archflow.contracts.canonical import canonical_digest
 
 
 _COMPILER_ID = "archflow.resource-constructability-compiler"
@@ -465,7 +464,7 @@ def compile_build_policy(
         obligations=obligations,
         evidence_refs=evidence_refs,
     )
-    compilation_id = _digest(
+    compilation_id = canonical_digest(
         {
             "project_id": brief.project_id,
             "run_id": brief.run_id,
@@ -502,7 +501,7 @@ def _compile_obligations(
 ) -> tuple[DesignObligation, ...]:
     source_ref = (
         "build-policy-proposal:"
-        + _digest(
+        + canonical_digest(
             {
                 "resource_mode": proposal.resource_mode.value,
                 "staging_mode": proposal.staging_mode.value,
@@ -671,16 +670,6 @@ def _typed(value: object, item_type: type, field: str) -> None:
 def _unique(values: tuple[object, ...], field: str) -> None:
     if len(values) != len(set(values)):
         raise ValueError(f"{field} contains duplicates")
-
-
-def _digest(value: object) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 __all__ = [

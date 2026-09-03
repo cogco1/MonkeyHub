@@ -13,7 +13,6 @@ carry no authority. All records are authority-free derived views.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -30,6 +29,7 @@ from archflow.state.developed_design import (
 )
 from archflow.state.geometry_program import InterfaceDatum, ProjectGrids, ProjectLevels, verify_project_datums
 from archflow.state.spatial import DesignComponent, SpatialOptionProposal
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 _RECORD_AUTHORITY = (
     "canonical_write_authority",
@@ -40,16 +40,6 @@ _RECORD_AUTHORITY = (
 
 class SeatError(ValueError):
     """Typed failure of the seat contracts."""
-
-
-def _canonical(value: object) -> str:
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
 def _sorted_unique(values: tuple[str, ...], field: str) -> tuple[str, ...]:
@@ -190,7 +180,7 @@ class HandoverConstraint:
             payload = json.loads(self.payload_json)
         except json.JSONDecodeError as exc:
             raise SeatError("payload_json is invalid JSON") from exc
-        if _canonical(payload) != self.payload_json:
+        if canonical_json(payload, ascii=False) != self.payload_json:
             raise SeatError("payload_json must be canonical JSON")
         if not isinstance(self.basis_refs, tuple) or any(
             not isinstance(item, str) or not item for item in self.basis_refs
@@ -252,7 +242,7 @@ class SeatHandover:
 
     @property
     def digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict(), ascii=False)
 
 
 Bounds = tuple[tuple[float, float, float], tuple[float, float, float]]
@@ -318,7 +308,7 @@ def compile_handover(
             HandoverConstraint(
                 kind=HandoverKind.PUBLISHED_DATUM,
                 subject_id=item.published_by,
-                payload_json=_canonical(item.to_dict()),
+                payload_json=canonical_json(item.to_dict(), ascii=False),
                 basis_refs=(basis,),
             )
         )
@@ -341,7 +331,7 @@ def compile_handover(
             HandoverConstraint(
                 kind=HandoverKind.EXCLUSION_BOUNDS,
                 subject_id=object_id,
-                payload_json=_canonical(payload),
+                payload_json=canonical_json(payload, ascii=False),
                 basis_refs=basis_refs,
             )
         )
@@ -361,7 +351,7 @@ def compile_handover(
                 HandoverConstraint(
                     kind=HandoverKind.OPEN_OBLIGATION,
                     subject_id=obligation.obligation_id,
-                    payload_json=_canonical(payload),
+                    payload_json=canonical_json(payload, ascii=False),
                     basis_refs=basis_refs or (f"obligation:{obligation.obligation_id}",),
                 )
             )
@@ -475,7 +465,7 @@ class SeatAuthoringContext:
 
     @property
     def digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict(), ascii=False)
 
 
 def project_seat_context(

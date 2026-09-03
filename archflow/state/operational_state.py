@@ -20,6 +20,7 @@ from archflow.project.refs import (
     RunRef,
 )
 from archflow.state.commitments import Commitment
+from archflow.contracts.canonical import canonical_json
 
 
 _MAX_ITEMS = 4096
@@ -117,19 +118,6 @@ def _unique(values: tuple[str, ...], field: str) -> None:
         raise ValueError(f"{field} contains duplicates")
 
 
-def _canonical_json(value: object) -> str:
-    try:
-        return json.dumps(
-            value,
-            allow_nan=False,
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    except (TypeError, ValueError) as exc:
-        raise ValueError("value must be bounded JSON data") from exc
-
-
 def _mapping(value: object, field: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError(f"{field} must be an object")
@@ -177,14 +165,14 @@ class FactValue:
             raise ValueError("fact canonical_json is invalid") from exc
         if decoded is None:
             raise ValueError("fact value cannot be null")
-        if _canonical_json(decoded) != self.canonical_json:
+        if canonical_json(decoded) != self.canonical_json:
             raise ValueError("fact value must already be canonical JSON")
 
     @classmethod
     def from_value(cls, value: object) -> FactValue:
         if isinstance(value, cls):
             return value
-        encoded = _canonical_json(value)
+        encoded = canonical_json(value)
         if len(encoded.encode("utf-8")) > _MAX_FACT_JSON_BYTES:
             raise ValueError("fact value exceeds bounded JSON size")
         return cls(encoded)
@@ -538,7 +526,7 @@ class DependencyEdge:
     @property
     def ref(self) -> str:
         digest = hashlib.sha256(
-            _canonical_json(self.identity).encode("utf-8")
+            canonical_json(self.identity).encode("utf-8")
         ).hexdigest()
         return f"dependency:{digest}"
 
@@ -742,7 +730,7 @@ class OperationalMarkovState:
     @property
     def sufficient_digest(self) -> str:
         return hashlib.sha256(
-            _canonical_json(self._future_identity()).encode("utf-8")
+            canonical_json(self._future_identity()).encode("utf-8")
         ).hexdigest()
 
     @property
@@ -752,7 +740,7 @@ class OperationalMarkovState:
             "future": self._future_identity(),
         }
         return hashlib.sha256(
-            _canonical_json(identity).encode("utf-8")
+            canonical_json(identity).encode("utf-8")
         ).hexdigest()
 
     def _future_identity(self) -> dict[str, object]:
@@ -944,7 +932,7 @@ def load_operational_state_record(
     if schema == OperationalMarkovState.SCHEMA:
         return OperationalMarkovState.from_dict(payload)
     if schema == LegacyOperationalMarkovStateV2.SCHEMA:
-        encoded = _canonical_json(dict(payload))
+        encoded = canonical_json(dict(payload))
         return LegacyOperationalMarkovStateV2(encoded)
     raise ValueError("unsupported operational-state schema")
 
@@ -981,7 +969,7 @@ def _validate_obligation_readiness(
             continue
         condition_ready = (
             item.condition is None
-            or _canonical_json(
+            or canonical_json(
                 state.value_for_ref(item.condition.ref)
             )
             == item.condition.expected_value.canonical_json

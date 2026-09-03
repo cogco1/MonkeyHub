@@ -60,7 +60,7 @@ from archflow.capabilities.element_producers import ElementProducerError, Produc
 from archflow.capabilities.reference_resolver import ReferenceContext
 from archflow.capabilities.relation_checks import check_relations
 from archflow.contracts.authority import no_authority
-from archflow.contracts.canonical import canonical_json
+from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus
 from archflow.project import FilesystemProjectRepository, PersistenceArea, PersistenceDestination
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef
@@ -116,10 +116,6 @@ FRAME_ID = "building-local"
 
 class ProjectRunnerError(ValueError):
     """Typed failure of the runner's contracts."""
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _finite(value: object, field_name: str) -> float:
@@ -203,10 +199,10 @@ def bootstrap_developed_state(pack: SchematicPack, *, run: RunRef, portfolio_id:
         raise ProjectRunnerError("schematic pack belongs to another project")
     proposal = schematic_proposal(pack)
     option = SchematicOption(proposal=proposal, footprint_area=float(len(proposal.footprint_cells)),
-                             topology_signature=_digest({"components": [c.to_dict() for c in proposal.components], "option_id": proposal.option_id}))
-    revision_digest = _digest({"branch_id": branch_id, "option_digest": option.option_digest})
+                             topology_signature=canonical_digest({"components": [c.to_dict() for c in proposal.components], "option_id": proposal.option_id}))
+    revision_digest = canonical_digest({"branch_id": branch_id, "option_digest": option.option_digest})
     selected = SelectedSchematicInput(
-        portfolio_id=portfolio_id, portfolio_digest=_digest({"portfolio_id": portfolio_id, "option_digest": option.option_digest}),
+        portfolio_id=portfolio_id, portfolio_digest=canonical_digest({"portfolio_id": portfolio_id, "option_digest": option.option_digest}),
         project_id=run.project_id, run_id=run.run_id, base=run.base, branch_id=branch_id,
         revision=BranchRevisionRef(branch_id=branch_id, revision_id="revision-declared-selection", revision_digest=revision_digest),
         option=option, selection_transition_id="select-by-declared-record", selection_decision_ref=selection_decision_ref,

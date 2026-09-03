@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Mapping
 
 from archflow.realization import HybridScene, SceneObject, SceneRepresentation
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 class SandboxRenderError(ValueError):
@@ -22,20 +22,6 @@ class SandboxViewKind(StrEnum):
     LONGITUDINAL_SECTION = "longitudinal_section"
     TRANSVERSE_SECTION = "transverse_section"
     ELEVATION = "elevation"
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _sha(value: object, field: str) -> str:
@@ -202,7 +188,7 @@ class SandboxRenderSet:
 
     @property
     def render_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -439,7 +425,7 @@ def render_paper_views(
     if not isinstance(policy, SandboxRenderPolicy):
         raise TypeError("policy must be SandboxRenderPolicy")
     before = scene.scene_digest
-    policy_digest = _digest(policy.to_dict())
+    policy_digest = canonical_digest(policy.to_dict())
     views = tuple(
         SandboxPaperView(
             kind=kind,

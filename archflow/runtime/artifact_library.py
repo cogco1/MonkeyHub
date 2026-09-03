@@ -48,6 +48,7 @@ from archflow.runtime.staged_build import (
 )
 from archflow.state import ArtifactRef
 from archflow.state.build_policy import BuildPolicy
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 class ArtifactLibraryError(ValueError):
@@ -76,23 +77,6 @@ class ExportEquivalence(StrEnum):
 
 
 _SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
-
-
-def _canonical(value: object) -> str:
-    try:
-        return json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise ArtifactLibraryError("record must be finite canonical JSON") from exc
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
 def _sha(value: object, field: str) -> str:
@@ -199,10 +183,10 @@ class CanonicalProgramRecord:
             or payload.get("schema") not in CompiledGeometryProgram.ACCEPTED_SCHEMAS
         ):
             raise ArtifactLibraryError("program_json is not a compiled geometry program")
-        if _canonical(payload) != self.program_json:
+        if canonical_json(payload, ascii=False) != self.program_json:
             raise ArtifactLibraryError("program_json must be canonical JSON")
         object.__setattr__(self, "program_digest", _sha(self.program_digest, "program_digest"))
-        if _digest(payload) != self.program_digest:
+        if canonical_digest(payload, ascii=False) != self.program_digest:
             raise ArtifactLibraryError("program digest does not match canonical program JSON")
 
     @classmethod
@@ -210,7 +194,7 @@ class CanonicalProgramRecord:
         if not isinstance(value, CompiledGeometryProgram):
             raise TypeError("value must be CompiledGeometryProgram")
         return cls(
-            program_json=_canonical(value.to_dict()),
+            program_json=canonical_json(value.to_dict(), ascii=False),
             program_digest=value.program_digest,
         )
 
@@ -279,7 +263,7 @@ class PackageEvidenceRecord:
             raise ArtifactLibraryError("evidence payload is invalid JSON") from exc
         if not isinstance(payload, dict) or not isinstance(payload.get("schema"), str):
             raise ArtifactLibraryError("evidence payload requires a schema")
-        if _canonical(payload) != self.payload_json:
+        if canonical_json(payload, ascii=False) != self.payload_json:
             raise ArtifactLibraryError("evidence payload must be canonical JSON")
         _refs(self.evidence_refs, "evidence_refs")
 
@@ -297,7 +281,7 @@ class PackageEvidenceRecord:
             record_id=record_id,
             role=role,
             authority_id=authority_id,
-            payload_json=_canonical(dict(payload)),
+            payload_json=canonical_json(dict(payload), ascii=False),
             evidence_refs=evidence_refs,
         )
 
@@ -510,7 +494,7 @@ class NeutralBuildingPackage:
 
     @property
     def package_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict(), ascii=False)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -685,7 +669,7 @@ class PlatformExportReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict(), ascii=False)
 
     def to_dict(self) -> dict[str, object]:
         return {

@@ -8,8 +8,6 @@ cross-node interfaces; unrelated node state and full event history are absent.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any, Mapping
@@ -32,6 +30,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 _MAX_ITEMS = 4096
@@ -58,20 +57,6 @@ _LAYER_INDEX = {
 }
 
 
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
 def _text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise DesignStateError(f"{field} must be non-empty text")
@@ -89,15 +74,6 @@ def _tuple(value: object, field: str) -> tuple[Any, ...]:
 def _unique(values: tuple[str, ...], field: str) -> None:
     if len(values) != len(set(values)):
         raise DesignStateError(f"{field} contains duplicates")
-
-
-def _sha256(value: object, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    digest = value.lower()
-    if len(digest) != 64 or any(char not in _HEX for char in digest):
-        raise DesignStateError(f"{field} must be a SHA-256 digest")
-    return digest
 
 
 def _branch_identity(branch: BranchRef) -> tuple[object, ...]:
@@ -226,7 +202,7 @@ class StatePath:
 
     @property
     def ref(self) -> str:
-        return f"design-state:{_digest(self.to_dict())}"
+        return f"design-state:{canonical_digest(self.to_dict())}"
 
     @property
     def parent_ref(self) -> str | None:
@@ -579,7 +555,7 @@ class DesignStateTree:
 
     @property
     def tree_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def node(self, node_ref: str) -> DesignStateNode:
         for item in self.nodes:
@@ -908,9 +884,9 @@ class ContextSlice:
     SCHEMA = "ContextSlice@1"
 
     def __post_init__(self) -> None:
-        _sha256(self.tree_digest, "tree_digest")
+        require_sha256(self.tree_digest, "tree_digest")
         require_logical_ref(self.target_node_ref, "target_node_ref")
-        _sha256(self.target_state_digest, "target_state_digest")
+        require_sha256(self.target_state_digest, "target_state_digest")
         if not isinstance(self.path, StatePath):
             raise TypeError("path must be a StatePath")
         for field, values, item_type in (
@@ -941,7 +917,7 @@ class ContextSlice:
 
     @property
     def context_digest(self) -> str:
-        return _digest(
+        return canonical_digest(
             {
                 "schema": self.SCHEMA,
                 "tree_digest": self.tree_digest,

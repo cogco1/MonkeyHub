@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 from dataclasses import dataclass
 from enum import StrEnum
@@ -21,6 +19,7 @@ from archflow.state.operational_state import (
     require_logical_ref,
 )
 from archflow.state.site_context import SiteBounds
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 FootprintCell = tuple[int, int]
@@ -54,16 +53,6 @@ def _text(value: object, field: str) -> str:
     if len(value) > _MAX_TEXT:
         raise SpatialProposalError(f"{field} exceeds bounded text")
     return value
-
-
-def _sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in _HEX for char in value.lower())
-    ):
-        raise SpatialProposalError(f"{field} must be a SHA-256 digest")
-    return value.lower()
 
 
 def _tuple(value: object, item_type: type, field: str) -> tuple[Any, ...]:
@@ -133,20 +122,6 @@ def _number(value: object, field: str) -> float:
     ):
         raise SpatialProposalError(f"{field} must be finite")
     return float(value)
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _mapping(value: object, field: str) -> Mapping[str, Any]:
@@ -589,7 +564,7 @@ class DesignComponent:
 
     @property
     def component_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:
@@ -828,7 +803,7 @@ class SpatialOptionProposal:
 
     @property
     def proposal_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:
@@ -1020,7 +995,7 @@ class ComponentTransitionReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1150,7 +1125,7 @@ class SchematicOption:
         if area <= 0:
             raise SpatialProposalError("footprint_area must be positive")
         object.__setattr__(self, "footprint_area", area)
-        _sha256(self.topology_signature, "topology_signature")
+        require_sha256(self.topology_signature, "topology_signature")
 
     @property
     def option_id(self) -> str:
@@ -1158,7 +1133,7 @@ class SchematicOption:
 
     @property
     def option_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:
@@ -1247,7 +1222,7 @@ class SchematicOptionSet:
             raise SpatialProposalError(
                 "option set project run branch and base disagree"
             )
-        _sha256(
+        require_sha256(
             self.operational_state_digest,
             "operational_state_digest",
         )
@@ -1265,7 +1240,7 @@ class SchematicOptionSet:
             (self.build_policy_digest, "build_policy_digest"),
             (self.phase_gate_receipt_digest, "phase_gate_receipt_digest"),
         ):
-            _sha256(value, field)
+            require_sha256(value, field)
         require_logical_ref(
             self.phase_gate_receipt_ref,
             "phase_gate_receipt_ref",
@@ -1294,7 +1269,7 @@ class SchematicOptionSet:
 
     @property
     def option_set_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:

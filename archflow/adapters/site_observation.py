@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Mapping
@@ -19,6 +17,7 @@ from archflow.state.site_context import (
     SiteBounds,
     SiteUnknown,
 )
+from archflow.contracts.canonical import canonical_digest
 
 
 _MAX_ITEMS = 2_048
@@ -202,7 +201,7 @@ class AuthorizedSiteObservation:
 
     @property
     def observation_digest(self) -> str:
-        return _digest(self._identity())
+        return canonical_digest(self._identity())
 
     def _identity(self) -> dict[str, object]:
         return {
@@ -525,11 +524,3 @@ def _text(value: object, field: str) -> str:
     return value
 
 
-def _digest(value: object) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

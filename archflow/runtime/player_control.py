@@ -9,8 +9,6 @@ only canonical writer.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from enum import StrEnum
@@ -50,6 +48,7 @@ from archflow.state.operational_state import require_logical_ref
 from archflow.submission import CandidateSubmission
 from archflow.validation.commitments import CommitmentMonitorReceipt
 from archflow.validation.model import ValidationReceipt
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -74,20 +73,6 @@ class CandidateControlStatus(StrEnum):
     UNDO_REQUIRED = "undo_required"
     RESTORED = "restored"
     MANUAL_RECONCILIATION_REQUIRED = "manual_reconciliation_required"
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _sha(value: object, field: str) -> str:
@@ -221,14 +206,14 @@ class WorldTarget:
                 "world trace lacks a named world and dimension"
             )
         return cls(
-            server_sha256=_digest(trace.server),
+            server_sha256=canonical_digest(trace.server),
             world_id=world_id,
             dimension_id=dimension_id,
         )
 
     def matches(self, trace: WorldMutationTrace) -> bool:
         return (
-            self.server_sha256 == _digest(trace.server)
+            self.server_sha256 == canonical_digest(trace.server)
             and self.world_id == trace.world_identity.get("world_id")
             and self.dimension_id
             == trace.world_identity.get("dimension_id")
@@ -376,7 +361,7 @@ class CandidatePreviewReceipt:
 
     @property
     def preview_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:
@@ -484,7 +469,7 @@ class CandidateComponentInspection:
 
     @property
     def inspection_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:
@@ -557,7 +542,7 @@ class CandidateRevisionProposal:
 
     @property
     def proposal_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:
@@ -632,7 +617,7 @@ class CandidatePreferenceReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:
@@ -752,7 +737,7 @@ class CandidateControlState:
 
     @property
     def state_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:

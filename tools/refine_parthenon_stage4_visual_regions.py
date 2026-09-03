@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
-import json
 import math
 import warnings
 from dataclasses import dataclass
@@ -47,6 +46,7 @@ from archflow.project.refs import (
     require_identifier,
     require_project_relative_path,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 PROJECT_ID = "parthenon-reconstruction"
@@ -663,20 +663,6 @@ def _region_ordinal_map() -> dict[tuple[str, str], int]:
 
 
 _REGION_ORDINAL_BY_KEY = _region_ordinal_map()
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _sha256(data: bytes) -> str:
@@ -1302,7 +1288,7 @@ def refine_project(
         region_specs,
         sources=sources_by_id,
     )
-    region_spec_digest = _digest(
+    region_spec_digest = canonical_digest(
         [item.to_input_dict() for item in ordered_specs]
     )
     derived_root = (

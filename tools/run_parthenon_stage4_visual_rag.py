@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
-import json
 import math
 import urllib.parse
 import urllib.request
@@ -47,6 +46,7 @@ from archflow.project import (
     RunRef,
 )
 from archflow.project.refs import require_identifier
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 PROJECT_ID = "parthenon-reconstruction"
@@ -489,20 +489,6 @@ DEFAULT_CANDIDATE_SPECS: tuple[VisualCandidateSpec, ...] = (
         review_state="selected",
     ),
 )
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _sha256(data: bytes) -> str:
@@ -967,7 +953,7 @@ def run_project(
             repository.put_json(
                 run=run,
                 destination=branch_destination,
-                record_kind=f"visual-source-{_digest(source.to_dict())[:20]}",
+                record_kind=f"visual-source-{canonical_digest(source.to_dict())[:20]}",
                 payload={
                     "schema": "ParthenonVisualSourceRecord@1",
                     "project_id": PROJECT_ID,
@@ -990,7 +976,7 @@ def run_project(
         repository.put_json(
             run=run,
             destination=branch_destination,
-            record_kind=f"visual-candidate-{_digest(item.to_dict())[:20]}",
+            record_kind=f"visual-candidate-{canonical_digest(item.to_dict())[:20]}",
             payload={
                 "schema": "ParthenonVisualCandidateRecord@1",
                 "project_id": PROJECT_ID,

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any, Mapping, Protocol
 
-from archflow.project.digests import canonical_json_sha256
+from archflow.contracts.canonical import canonical_digest
 from archflow.project.manifest import ProjectManifest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import (
@@ -411,7 +411,7 @@ class Stage0Declaration:
 
     @property
     def declaration_digest(self) -> str:
-        return canonical_json_sha256(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def compile_operational_state(
         self,

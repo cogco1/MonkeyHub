@@ -9,7 +9,6 @@ from archflow.project.bootstrap import (
     bootstrap_raw_request_project,
 )
 from archflow.project.digests import (
-    canonical_json_sha256,
     project_state_sha256,
 )
 from archflow.project.layout import ProjectLayout, RunLayout
@@ -67,7 +66,6 @@ __all__ = [
     "ArtifactSink",
     "BranchRef",
     "CanonicalRepository",
-    "canonical_json_sha256",
     "FilesystemProjectRepository",
     "PersistenceArea",
     "PersistenceDestination",

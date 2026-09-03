@@ -7,8 +7,6 @@ external tool, changes canonical state, or claims that compensation is atomic.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping, Protocol
@@ -23,6 +21,7 @@ from archflow.project import (
 )
 from archflow.project.refs import require_identifier
 from archflow.state.operational_state import require_logical_ref
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -54,23 +53,6 @@ class RecoveryDisposition(StrEnum):
     MANUAL_RECONCILIATION = "manual_reconciliation"
     MANUALLY_RECONCILED = "manually_reconciled"
     RECONCILED_COMMITTED = "reconciled_committed"
-
-
-def _canonical_json(value: object) -> str:
-    try:
-        return json.dumps(
-            value,
-            allow_nan=False,
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-    except (TypeError, ValueError) as exc:
-        raise WorldRecoveryError("receipt contains non-finite JSON") from exc
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _sha(value: object, field: str) -> str:
@@ -148,9 +130,9 @@ class MutationPhaseReceipt:
             _sha(self.prior_phase_sha256, "prior_phase_sha256")
         if not isinstance(self.evidence, dict):
             raise TypeError("phase evidence must be an object")
-        _canonical_json(self.evidence)
+        canonical_json(self.evidence)
         _sha(self.phase_sha256, "phase_sha256")
-        if self.phase_sha256 != _digest(self.body_dict()):
+        if self.phase_sha256 != canonical_digest(self.body_dict()):
             raise WorldRecoveryError("phase receipt digest changed")
 
     def body_dict(self) -> dict[str, object]:
@@ -239,7 +221,7 @@ class WorldMutationTrace:
         _sha(self.plan_sha256, "plan_sha256")
         if not isinstance(self.server, dict):
             raise TypeError("server must be an object")
-        _canonical_json(self.server)
+        canonical_json(self.server)
         _world_identity(self.world_identity)
         _sha(self.session_sha256, "session_sha256")
         _text(self.preview_plan_id, "preview_plan_id")
@@ -284,7 +266,7 @@ class WorldMutationTrace:
 
     @property
     def trace_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @classmethod
     def from_dict(cls, value: object) -> WorldMutationTrace:

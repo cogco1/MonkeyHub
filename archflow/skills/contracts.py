@@ -17,6 +17,7 @@ from typing import Any, Mapping
 from archflow.state.decision_operator import DecisionOperator
 from archflow.state.design_state import ContextSlice
 from archflow.state.operational_state import require_logical_ref
+from archflow.contracts.canonical import canonical_json, require_sha256
 
 
 _ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -55,19 +56,6 @@ class SkillAuthority(StrEnum):
     PROPOSAL = "proposal"
 
 
-def canonical_json(value: object) -> str:
-    try:
-        return json.dumps(
-            value,
-            allow_nan=False,
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    except (TypeError, ValueError) as exc:
-        raise SkillContractError("value must be canonical JSON data") from exc
-
-
 def digest_json(value: object) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
@@ -87,15 +75,6 @@ def _identifier(value: object, field: str) -> str:
             f"{field} must use lowercase letters, digits, and single hyphens"
         )
     return text
-
-
-def _sha256(value: object, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    lowered = value.lower()
-    if len(lowered) != 64 or any(char not in _HEX for char in lowered):
-        raise SkillContractError(f"{field} must be a SHA-256 digest")
-    return lowered
 
 
 def _tuple(value: object, field: str) -> tuple[Any, ...]:
@@ -263,7 +242,7 @@ class SkillSpec:
             self.version
         ) is None:
             raise SkillContractError("version must be semantic version text")
-        _sha256(self.package_digest, "package_digest")
+        require_sha256(self.package_digest, "package_digest")
         _text(self.description, "description", maximum=2048)
         _text(
             self.instruction_entrypoint,
@@ -471,9 +450,9 @@ class DetachedSkillContext:
     SCHEMA = "DetachedSkillContext@1"
 
     def __post_init__(self) -> None:
-        _sha256(self.context_digest, "context_digest")
+        require_sha256(self.context_digest, "context_digest")
         require_logical_ref(self.target_node_ref, "target_node_ref")
-        _sha256(self.target_state_digest, "target_state_digest")
+        require_sha256(self.target_state_digest, "target_state_digest")
         _text(self.phase, "phase", maximum=128)
         payload = json.loads(self.context_payload_json)
         if canonical_json(payload) != self.context_payload_json:
@@ -691,7 +670,7 @@ class SkillInvocationInput:
         _identifier(self.package_id, "package_id")
         if _SEMVER.fullmatch(self.package_version) is None:
             raise SkillContractError("package_version must be semantic version")
-        _sha256(self.package_digest, "package_digest")
+        require_sha256(self.package_digest, "package_digest")
         _text(self.instructions, "instructions")
         _tuple(self.references, "references")
         paths: list[str] = []

@@ -48,7 +48,7 @@ from archflow.project import (
     RunRef,
 )
 from archflow.runtime.branch_research import BranchResearchArchive
-from archflow.project.digests import canonical_json_sha256
+from archflow.contracts.canonical import canonical_digest
 from archflow.realization import RealizationStatus, realize_geometry
 from archflow.runtime.production_runtime import (
     CompiledProductionStep,
@@ -89,6 +89,7 @@ from archflow.validation.architectural import (
     CriterionFindingStatus,
     CriterionOperator,
 )
+from archflow.contracts.canonical import require_sha256
 
 
 class ArchitecturalRevisionError(ValueError):
@@ -116,7 +117,7 @@ class ArchitecturalRevisionFeedback:
             (self.receipt_digest, "receipt_digest"),
             (self.predecessor_proposal_digest, "predecessor_proposal_digest"),
         ):
-            _sha256(value, field)
+            require_sha256(value, field)
         if not self.failures:
             raise ArchitecturalRevisionError("revision feedback needs a blocker")
         ids = tuple(criterion.criterion_id for criterion, _ in self.failures)
@@ -434,7 +435,7 @@ class ArchitecturalRevisionCompiler:
                 "branch-selected predecessor requires its persisted RAG index"
             )
         if self.expected_branch_scope_digest is not None:
-            _sha256(
+            require_sha256(
                 self.expected_branch_scope_digest,
                 "expected_branch_scope_digest",
             )
@@ -1252,23 +1253,13 @@ def _production_record_content(
     if not isinstance(content, Mapping):
         raise TypeError("production transition content must be an object")
     if (
-        canonical_json_sha256(content) != value.get("content_sha256")
+        canonical_digest(content) != value.get("content_sha256")
         or digest_value(content) != value.get("semantic_digest")
     ):
         raise ArchitecturalRevisionError(
             "production transition record content digest drifted"
         )
     return content
-
-
-def _sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in "0123456789abcdef" for char in value)
-    ):
-        raise ArchitecturalRevisionError(f"{field} must be a lowercase SHA-256")
-    return value
 
 
 def architectural_revision_feedback_digest(
@@ -1278,4 +1269,4 @@ def architectural_revision_feedback_digest(
 
     if not isinstance(feedback, ArchitecturalRevisionFeedback):
         raise TypeError("feedback must be ArchitecturalRevisionFeedback")
-    return canonical_json_sha256(feedback.to_dict())
+    return canonical_digest(feedback.to_dict())

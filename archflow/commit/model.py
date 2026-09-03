@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -15,6 +13,7 @@ from archflow.interaction import (
 from archflow.state import StateRef
 from archflow.validation.commitments import CommitmentMonitorReceipt
 from archflow.validation.model import ValidationReceipt
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 if TYPE_CHECKING:
     from archflow.runtime.candidate_assembly import (
@@ -28,20 +27,6 @@ if TYPE_CHECKING:
 
 class PromotionPackageError(ValueError):
     """The exact production decision package is incomplete or inconsistent."""
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _require_exact_execution(
@@ -160,7 +145,7 @@ class PromotionDecisionPackage:
 
     @property
     def package_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def package_id(self) -> str:

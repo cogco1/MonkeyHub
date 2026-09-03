@@ -17,7 +17,6 @@ import argparse
 import copy
 import hashlib
 import io
-import json
 import math
 import re
 import tempfile
@@ -97,6 +96,7 @@ from archflow.state.stage_convergence import (
     StageTransitionRequest,
     evaluate_stage_convergence,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 PROJECT_ID = "parthenon-reconstruction"
@@ -660,14 +660,6 @@ OPEN_ASSET_CANDIDATES: tuple[dict[str, object], ...] = (
 )
 
 
-def _canonical_json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
 def _sha_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -732,7 +724,7 @@ def _operation_fingerprint(operation: Mapping[str, object]) -> str:
             "material_id",
         )
     }
-    return _digest(identity)
+    return canonical_digest(identity, ascii=False)
 
 
 def _visual_refs(manifest_ref: str, candidate_ids: Sequence[str]) -> list[str]:
@@ -2158,8 +2150,8 @@ def create_stage4_model(
             "archflow:coordinate_system": "RhinoWorldXY_ZUp",
             "archflow:up_axis": "Z",
             "archflow:material_id": str(operation["material_id"]),
-            "archflow:decision_refs": _canonical_json(operation["decision_refs"]),
-            "archflow:source_refs": _canonical_json(operation["source_refs"]),
+            "archflow:decision_refs": canonical_json(operation["decision_refs"], ascii=False),
+            "archflow:source_refs": canonical_json(operation["source_refs"], ascii=False),
         }
         for lineage_key in ("replaces_operation_id", "refines_operation_id"):
             if lineage_key in operation:
@@ -2395,7 +2387,7 @@ def _window_clear_regions(
             derived: list[dict[str, object]] = []
             for side, pieces in groups.items():
                 clear_contracts = {
-                    _canonical_json(item["parameters"]["window_clear"]): item[
+                    canonical_json(item["parameters"]["window_clear"], ascii=False): item[
                         "parameters"
                     ]["window_clear"]
                     for item in pieces
@@ -2882,7 +2874,7 @@ def validate_stage4_model(
         "status": "PASSED" if not failures else "FAILED",
         "checks": checks,
         "failures": failures,
-        "spatial_validation_digest": _digest(spatial),
+        "spatial_validation_digest": canonical_digest(spatial, ascii=False),
         "canonical_write_authority": False,
     }
 
@@ -2947,9 +2939,9 @@ def rebind_predecessor_state(
         "facts_unchanged": predecessor.facts == opened.facts,
         "locks_unchanged": predecessor.locks == opened.locks,
         "evidence_refs_unchanged": predecessor.evidence_refs == opened.evidence_refs,
-        "facts_canonical_sha256": _digest([item.to_dict() for item in predecessor.facts]),
-        "locks_canonical_sha256": _digest([item.to_dict() for item in predecessor.locks]),
-        "evidence_refs_canonical_sha256": _digest(list(predecessor.evidence_refs)),
+        "facts_canonical_sha256": canonical_digest([item.to_dict() for item in predecessor.facts], ascii=False),
+        "locks_canonical_sha256": canonical_digest([item.to_dict() for item in predecessor.locks], ascii=False),
+        "evidence_refs_canonical_sha256": canonical_digest(list(predecessor.evidence_refs), ascii=False),
         "stage4_obligation_status": "open",
         "canonical_write_authority": False,
     }
@@ -3057,7 +3049,7 @@ def compile_stage4_close_gate(
         "failures": failures,
         "canonical_write_authority": False,
     }
-    return {**payload, "receipt_digest": _digest(payload)}
+    return {**payload, "receipt_digest": canonical_digest(payload, ascii=False)}
 
 
 def close_stage4_state(
@@ -3819,7 +3811,7 @@ def _preflight_research_record_uri(
 ) -> str:
     return (
         f"project://{PROJECT_ID}/runs/{RESEARCH_RUN_ID}/branches/"
-        f"{BRANCH_ID}/records/{record_kind}-{_digest(payload)}.json"
+        f"{BRANCH_ID}/records/{record_kind}-{canonical_digest(payload, ascii=False)}.json"
     )
 
 
@@ -3827,7 +3819,7 @@ def _preflight_reconstruction_record_ref(
     record_kind: str,
     payload: Mapping[str, object],
 ) -> ProjectRecordRef:
-    digest = _digest(payload)
+    digest = canonical_digest(payload, ascii=False)
     return ProjectRecordRef(
         project_id=PROJECT_ID,
         relative_path=(
@@ -3842,7 +3834,7 @@ def _preflight_run_record_ref(
     record_kind: str,
     payload: Mapping[str, object],
 ) -> ProjectRecordRef:
-    digest = _digest(payload)
+    digest = canonical_digest(payload, ascii=False)
     return ProjectRecordRef(
         project_id=PROJECT_ID,
         relative_path=f"runs/{RUN_ID}/records/{record_kind}-{digest}.json",
@@ -3854,7 +3846,7 @@ def _preflight_review_record_ref(
     record_kind: str,
     payload: Mapping[str, object],
 ) -> ProjectRecordRef:
-    digest = _digest(payload)
+    digest = canonical_digest(payload, ascii=False)
     return ProjectRecordRef(
         project_id=PROJECT_ID,
         relative_path=f"runs/{RUN_ID}/reviews/{record_kind}-{digest}.json",
@@ -3984,12 +3976,12 @@ def preflight_stage4_candidate(
             "preflight-door-decision", {"variant": "door-decision"}
         ),
     )
-    operation_execution_digest = _digest(
+    operation_execution_digest = canonical_digest(
         _stage4_execution_projection(operations)
-    )
-    variant_execution_digest = _digest(
+    , ascii=False)
+    variant_execution_digest = canonical_digest(
         _stage4_execution_projection(reference_variant_operations)
-    )
+    , ascii=False)
     if operation_execution_digest != variant_execution_digest:
         raise ParthenonStage4Error(
             "Stage 4 executable IR improperly depends on evidence-record URIs"
@@ -4009,10 +4001,10 @@ def preflight_stage4_candidate(
             reference_variant_operations
         )
     )
-    relation_contract_digest = _digest(list(relation_contracts))
-    variant_relation_contract_digest = _digest(
+    relation_contract_digest = canonical_digest(list(relation_contracts), ascii=False)
+    variant_relation_contract_digest = canonical_digest(
         list(variant_relation_contracts)
-    )
+    , ascii=False)
     if (
         not variant_relation_compilation["passed"]
         or relation_contract_digest != variant_relation_contract_digest
@@ -4020,13 +4012,13 @@ def preflight_stage4_candidate(
         raise ParthenonStage4Error(
             "Stage 4 relation contracts improperly depend on provenance refs"
         )
-    preflight_program_digest = _digest(
+    preflight_program_digest = canonical_digest(
         {
             "schema": "ParthenonStage4PreflightProgram@1",
             "operations": list(operations),
             "relation_contracts": list(relation_contracts),
         }
-    )
+    , ascii=False)
     with tempfile.TemporaryDirectory(prefix="archflow-parthenon-stage4-") as directory:
         model_path = Path(directory) / "parthenon-stage-4-preflight.3dm"
         create_stage4_model(
@@ -4127,7 +4119,7 @@ def preflight_stage4_candidate(
     synthetic_refs = {
         name: _preflight_reconstruction_record_ref(
             f"preflight-{name.replace('_', '-')}",
-            {"gate": name, "receipt_digest": _digest(receipt)},
+            {"gate": name, "receipt_digest": canonical_digest(receipt, ascii=False)},
         )
         for name, receipt in sorted(receipts.items())
     }
@@ -4310,13 +4302,13 @@ def preflight_stage4_candidate(
             ),
         },
         "preflight_gate_receipt_snapshot_digests": {
-            name: _digest(receipt) for name, receipt in sorted(receipts.items())
+            name: canonical_digest(receipt, ascii=False) for name, receipt in sorted(receipts.items())
         },
         "gate_names": sorted(receipts),
         "closure_preflight": {
-            "preclose_gate_digest": _digest(preclose_gate),
+            "preclose_gate_digest": canonical_digest(preclose_gate, ascii=False),
             "closed_state_digest": closed_state.state_digest,
-            "convergence_digest": _digest(convergence.to_dict()),
+            "convergence_digest": canonical_digest(convergence.to_dict(), ascii=False),
             "stage_ready": convergence.stage_ready,
             "pack_status": preflight_pack.compilation_status.value,
             "pack_digest": preflight_pack.pack_digest,
@@ -4380,7 +4372,7 @@ def verify_stage4_persisted_run_chain(
     if not isinstance(operations, list) or len(operations) != 687:
         failures.append("persisted program does not retain the exact 687 operations")
     else:
-        execution_digest = _digest(_stage4_execution_projection(operations))
+        execution_digest = canonical_digest(_stage4_execution_projection(operations), ascii=False)
         if execution_digest != progress.get("operation_execution_digest"):
             failures.append("program/progress execution projection digest mismatch")
         if execution_digest != relation_set.get("operation_execution_digest"):
@@ -4388,7 +4380,7 @@ def verify_stage4_persisted_run_chain(
         if execution_digest != preflight.get("operation_execution_digest"):
             failures.append("program/preflight execution projection digest mismatch")
     contracts = relation_set.get("contracts")
-    contract_digest = _digest(contracts) if isinstance(contracts, list) else None
+    contract_digest = canonical_digest(contracts, ascii=False) if isinstance(contracts, list) else None
     if (
         not isinstance(contracts, list)
         or len(contracts) != int(relation_set.get("contract_count", -1))
@@ -4666,9 +4658,9 @@ def run_project(
             "satisfied_obligations": sum(item.status is ObligationStatus.SATISFIED for item in predecessor_state.obligations),
             "evidence_refs": len(predecessor_state.evidence_refs),
         },
-        "facts_canonical_sha256": _digest([item.to_dict() for item in predecessor_state.facts]),
-        "locks_canonical_sha256": _digest([item.to_dict() for item in predecessor_state.locks]),
-        "evidence_refs_canonical_sha256": _digest(list(predecessor_state.evidence_refs)),
+        "facts_canonical_sha256": canonical_digest([item.to_dict() for item in predecessor_state.facts], ascii=False),
+        "locks_canonical_sha256": canonical_digest([item.to_dict() for item in predecessor_state.locks], ascii=False),
+        "evidence_refs_canonical_sha256": canonical_digest(list(predecessor_state.evidence_refs), ascii=False),
         "pack_ref": _record_dict(PREDECESSOR_PACK_REF),
         "pack_status": predecessor_pack.compilation_status.value,
         "pack_closed": predecessor_pack.closure.closed,
@@ -4962,10 +4954,10 @@ def run_project(
                 for item in relation_contract_compilation["failures"]
             )
         )
-    operation_execution_digest = _digest(
+    operation_execution_digest = canonical_digest(
         _stage4_execution_projection(operations)
-    )
-    relation_contract_digest = _digest(list(relation_contracts))
+    , ascii=False)
+    relation_contract_digest = canonical_digest(list(relation_contracts), ascii=False)
     if operation_execution_digest != preflight_receipt.get(
         "operation_execution_digest"
     ):
@@ -5045,7 +5037,7 @@ def run_project(
         "lineage": lineage,
         "canonical_write_authority": False,
     }
-    program_digest = _digest(program_identity)
+    program_digest = canonical_digest(program_identity, ascii=False)
     program_ref = _put_branch_json(
         repository,
         run,
@@ -5360,7 +5352,7 @@ def run_project(
             "correction_manifest_ref": _record_dict(correction_manifest_ref),
             "source_record_refs": {key: _record_dict(value) for key, value in sorted(source_record_refs.items())},
             "visual_manifest_ref": _record_dict(VISUAL_MANIFEST_REF),
-            "lineage_digest": _digest(lineage),
+            "lineage_digest": canonical_digest(lineage, ascii=False),
             "canonical_write_authority": False,
         },
     )

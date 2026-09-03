@@ -32,7 +32,7 @@ from archflow.evaluation.experiment import (  # noqa: E402
     compile_experiment_result_index,
 )
 from archflow.adapters.model_provider import ModelInvocationReceipt  # noqa: E402
-from archflow.project import canonical_json_sha256  # noqa: E402
+from archflow.contracts.canonical import canonical_digest  # noqa: E402
 from archflow.project import (  # noqa: E402
     FilesystemProjectRepository,
     PersistenceArea,
@@ -536,7 +536,7 @@ def _validate_production_terminal_record(
         "InitialSemanticGeometryReceipt@1",
         "SemanticGeometryLifecycleReceipt@1",
     } or (
-        payload.get("content_sha256") != canonical_json_sha256(content)
+        payload.get("content_sha256") != canonical_digest(content)
         or payload.get("semantic_digest") != digest_value(content)
     ):
         raise ExperimentProtocolError("production terminal content drifted")

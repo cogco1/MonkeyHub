@@ -6,18 +6,10 @@ from dataclasses import dataclass
 
 from archflow.project.refs import BranchRef
 from archflow.state.operational_state import require_local_id
+from archflow.contracts.canonical import require_sha256
 
 
 _HEX = frozenset("0123456789abcdef")
-
-
-def _sha256(value: str, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    digest = value.lower()
-    if len(digest) != 64 or any(char not in _HEX for char in digest):
-        raise ValueError(f"{field} must be a SHA-256 hex digest")
-    return digest
 
 
 def _text(value: object, field: str) -> str:
@@ -48,7 +40,7 @@ class CommitmentRevisionProposal:
         object.__setattr__(
             self,
             "base_state_digest",
-            _sha256(self.base_state_digest, "base_state_digest"),
+            require_sha256(self.base_state_digest, "base_state_digest"),
         )
         require_local_id(self.reason_finding_id, "reason_finding_id")
         if not isinstance(self.required_authority_ids, tuple) or not (

@@ -7,7 +7,6 @@ tree and massing volumes form one current schematic option.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from enum import StrEnum
@@ -42,6 +41,7 @@ from archflow.state.spatial import (
     SpatialProposalError,
     SchematicOption,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 AUTHORING_INSTRUCTIONS = (
@@ -86,7 +86,7 @@ class SemanticSpatialAuthoringReceipt:
             (self.option_digest, "option_digest"),
         ):
             if value is not None:
-                _sha256(value, field)
+                require_sha256(value, field)
         if self.status is SemanticSpatialAuthoringStatus.ACCEPTED:
             if (
                 self.proposal_digest is None
@@ -362,7 +362,7 @@ def semantic_spatial_repair_feedback(
         "prior_model_receipt_id": model_receipt.receipt_id,
         "exact_base_state_digest": receipt.request.checkpoint_digest,
         "prior_context_digest": receipt.request.context_digest,
-        "rejected_output_digest": _digest(rejected_output),
+        "rejected_output_digest": canonical_digest(rejected_output),
         "rejected_output": rejected_output,
         "rejection_code": receipt.error_code,
         "diagnostic": receipt.message,
@@ -524,7 +524,7 @@ async def _author_semantic_spatial_option(
         request_id=request_id,
         phase=ModelPhase.SPATIAL_PROPOSAL,
         checkpoint_digest=state.state_digest,
-        context_digest=_digest(prompt),
+        context_digest=canonical_digest(prompt),
         payload=prompt,
     )
     model_receipt = await provider.invoke(request)
@@ -656,7 +656,7 @@ def _validated_repair_feedback(
         raise ValueError("semantic-spatial repair feedback schema drifted")
     rejected_output = value.get("rejected_output")
     if not isinstance(rejected_output, Mapping) or (
-        value.get("rejected_output_digest") != _digest(rejected_output)
+        value.get("rejected_output_digest") != canonical_digest(rejected_output)
     ):
         raise ValueError("semantic-spatial rejected output digest changed")
     if value.get("exact_base_state_digest") != exact_base_state_digest:
@@ -734,7 +734,7 @@ def _validated_branch_research_context(
 
     if not isinstance(state, OperationalMarkovState):
         raise TypeError("state must be OperationalMarkovState")
-    _sha256(expected_scope_digest, "expected_branch_scope_digest")
+    require_sha256(expected_scope_digest, "expected_branch_scope_digest")
     from archflow.research.index import BranchDecisionContext
 
     context = BranchDecisionContext.from_dict(value)
@@ -854,7 +854,7 @@ def _validated_revision_context(
         "architectural_contract_digest",
         "architectural_receipt_digest",
     ):
-        _sha256(value.get(field), field)
+        require_sha256(value.get(field), field)
     findings = value.get("failed_mandatory_findings")
     if not isinstance(findings, list) or not findings:
         raise ValueError("revision context needs failed mandatory findings")
@@ -995,7 +995,7 @@ def _receipt(
         "error_code": error_code,
     }
     return SemanticSpatialAuthoringReceipt(
-        receipt_id=f"semantic-spatial-{_digest(identity)[:24]}",
+        receipt_id=f"semantic-spatial-{canonical_digest(identity)[:24]}",
         status=status,
         request=request,
         model_receipt=model_receipt,
@@ -1012,25 +1012,3 @@ def _mapping(value: object, field: str) -> Mapping[str, object]:
     return value
 
 
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
-def _sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
-        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
-    return value

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Iterable
 
-from archflow.contracts.canonical import canonical_digest
+from archflow.contracts.canonical import canonical_digest, require_sha256
 
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -73,15 +73,6 @@ def _text(value: object, field: str) -> str:
     candidate = value.strip()
     if not candidate or len(candidate) > 4_000:
         raise VisualEvidenceError(f"{field} must be bounded non-empty text")
-    return candidate
-
-
-def _sha256(value: object, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    candidate = value.lower()
-    if len(candidate) != 64 or any(char not in _HEX for char in candidate):
-        raise VisualEvidenceError(f"{field} must be a SHA-256 digest")
     return candidate
 
 
@@ -236,7 +227,7 @@ class VisualSource:
         object.__setattr__(
             self,
             "content_sha256",
-            _sha256(self.content_sha256, "content_sha256"),
+            require_sha256(self.content_sha256, "content_sha256"),
         )
         if not isinstance(self.modality, VisualSourceModality):
             raise TypeError("modality must be VisualSourceModality")
@@ -447,7 +438,7 @@ class VisualRegionManifestBinding:
         object.__setattr__(
             self,
             "source_content_sha256",
-            _sha256(self.source_content_sha256, "source_content_sha256"),
+            require_sha256(self.source_content_sha256, "source_content_sha256"),
         )
         object.__setattr__(
             self,

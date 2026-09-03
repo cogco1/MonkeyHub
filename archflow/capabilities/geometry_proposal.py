@@ -8,7 +8,6 @@ mutation authority.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from dataclasses import dataclass, replace
@@ -66,6 +65,7 @@ from archflow.state.geometry_program import (
     required_assembly_roles,
 )
 from archflow.state.operational_state import PORTABLE_LOGICAL_REF_PATTERN
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 _AUTHORING_OUTPUT_SCHEMA = "GeometryProposalAuthoringOutput@1"
@@ -588,7 +588,7 @@ def _realization_requirements(
             raise GeometryProposalProductionError(
                 f"realization_requirements[{index}] threshold_json is invalid"
             ) from exc
-        if _canonical_json(threshold) != threshold_json:
+        if canonical_json(threshold) != threshold_json:
             raise GeometryProposalProductionError(
                 f"realization_requirements[{index}] threshold_json is not canonical"
             )
@@ -1404,7 +1404,7 @@ class GeometryProposalRoundReceipt:
             raise TypeError("status must be GeometryProposalRoundStatus")
         if not isinstance(self.spatial_option_ref, ProjectRecordRef):
             raise TypeError("spatial_option_ref must be ProjectRecordRef")
-        _sha256(self.design_state_digest, "design_state_digest")
+        require_sha256(self.design_state_digest, "design_state_digest")
         if not isinstance(self.request, ModelInvocationRequest):
             raise TypeError("request must be ModelInvocationRequest")
         if not isinstance(self.model_receipt, ModelInvocationReceipt):
@@ -1424,10 +1424,10 @@ class GeometryProposalRoundReceipt:
                 "rejected or refused round requires typed issues"
             )
         if self.proposal_digest is not None:
-            _sha256(self.proposal_digest, "proposal_digest")
+            require_sha256(self.proposal_digest, "proposal_digest")
         if self.compiler_receipt_json is not None:
             decoded = json.loads(self.compiler_receipt_json)
-            if _canonical_json(decoded) != self.compiler_receipt_json:
+            if canonical_json(decoded) != self.compiler_receipt_json:
                 raise GeometryProposalProductionError(
                     "compiler receipt JSON must be canonical"
                 )
@@ -1494,7 +1494,7 @@ class GeometryProposalRoundReceipt:
             issues=tuple(GeometryProposalIssue.from_dict(item) for item in issues),
             proposal_digest=payload["proposal_digest"],
             compiler_receipt_json=(
-                None if compiler_receipt is None else _canonical_json(compiler_receipt)
+                None if compiler_receipt is None else canonical_json(compiler_receipt)
             ),
         )
 
@@ -1526,8 +1526,8 @@ class GeometryProposalLineage:
             raise GeometryProposalProductionError("lineage and base disagree")
         if self.spatial_option_ref.project_id != self.project_id:
             raise GeometryProposalProductionError("lineage source project disagrees")
-        _sha256(self.spatial_option_digest, "spatial_option_digest")
-        _sha256(self.design_state_digest, "design_state_digest")
+        require_sha256(self.spatial_option_digest, "spatial_option_digest")
+        require_sha256(self.design_state_digest, "design_state_digest")
         _strings(self.required_commitment_refs, "required_commitment_refs")
         if not isinstance(self.provider_identity, GeometryProposalProviderIdentity):
             raise TypeError("provider_identity is invalid")
@@ -1541,7 +1541,7 @@ class GeometryProposalLineage:
         elif self.accepted_proposal_ref is not None or self.accepted_proposal_digest is not None:
             raise GeometryProposalProductionError("failed lineage cannot carry proposal")
         if self.accepted_proposal_digest is not None:
-            _sha256(self.accepted_proposal_digest, "accepted_proposal_digest")
+            require_sha256(self.accepted_proposal_digest, "accepted_proposal_digest")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1840,7 +1840,7 @@ async def produce_geometry_program_proposal(
             request_id=f"geometry-proposal-{run.run_id}-{round_index:02d}",
             phase=ModelPhase.ACTION_PROPOSAL,
             checkpoint_digest=design_state.state_digest,
-            context_digest=_digest(request_payload),
+            context_digest=canonical_digest(request_payload),
             payload=request_payload,
         )
         receipt = await provider.invoke(request)
@@ -2007,7 +2007,7 @@ async def produce_geometry_program_proposal(
             issues=issues,
             proposal_digest=None if proposal is None else proposal.proposal_digest,
             compiler_receipt_json=(
-                None if compiler_receipt is None else _canonical_json(compiler_receipt)
+                None if compiler_receipt is None else canonical_json(compiler_receipt)
             ),
         )
         round_ref = repository.put_json(
@@ -2401,7 +2401,7 @@ def _request_payload(
         "repair_context": (
             None
             if repair_context is None
-            else json.loads(_canonical_json(repair_context))
+            else json.loads(canonical_json(repair_context))
         ),
         "required_output_schema": required_output_schema,
         "required_output_contract": _authoring_output_contract(
@@ -2487,8 +2487,8 @@ def _rejected_output_repair_context(
         "rejected_round_ref": (
             None if rejected_round_ref is None else rejected_round_ref.uri
         ),
-        "rejected_output": json.loads(_canonical_json(rejected_output)),
-        "rejected_output_digest": _digest(rejected_output),
+        "rejected_output": json.loads(canonical_json(rejected_output)),
+        "rejected_output_digest": canonical_digest(rejected_output),
         "rejected_proposal_digest": rejected_proposal_digest,
         "issues": [item.to_dict() for item in issues],
         "instructions": (
@@ -2542,7 +2542,7 @@ def _validate_rejected_round_resume(
         receipt.request != request
         or request.phase is not ModelPhase.ACTION_PROPOSAL
         or request.checkpoint_digest != design_state.state_digest
-        or request.context_digest != _digest(request.payload)
+        or request.context_digest != canonical_digest(request.payload)
         or receipt.status is not ModelInvocationStatus.SUCCESS
         or not provider_identity.matches(receipt)
     ):
@@ -2637,7 +2637,7 @@ def _compiler_repair_issue(
         if prior_object is not None:
             detail += (
                 "; exact_revision_token="
-                + _canonical_json(
+                + canonical_json(
                     {
                         "object_id": prior_object.object_id,
                         "expected_digest": prior_object.object_digest,
@@ -3398,7 +3398,7 @@ def _parameter(value: object) -> GeometryParameter:
         except json.JSONDecodeError:
             pass
         else:
-            value_json = _canonical_json(decoded_value)
+            value_json = canonical_json(decoded_value)
     return GeometryParameter(
         name=payload["name"],
         kind=GeometryParameterKind(payload["kind"]),
@@ -3884,20 +3884,6 @@ def _decode_sorted_list(
     return tuple(
         sorted(_decode_list(value, decoder, field, errors=errors), key=key)
     )
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(value, allow_nan=False, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
-def _sha256(value: object, field: str) -> str:
-    if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value.lower()):
-        raise GeometryProposalProductionError(f"{field} must be a SHA-256 digest")
-    return value.lower()
 
 
 def _base_dict(base: ProjectVersionRef) -> dict[str, object]:

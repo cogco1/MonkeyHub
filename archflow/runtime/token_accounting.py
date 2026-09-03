@@ -9,10 +9,10 @@ complete provider-reported token telemetry.
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Iterable
+from archflow.contracts.canonical import canonical_json
 
 
 class TokenAccountingError(ValueError):
@@ -61,16 +61,6 @@ def _count(value: object, field: str, *, optional: bool = False) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise TokenAccountingError(f"{field} must be a non-negative integer")
     return value
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,7 +168,7 @@ class TokenAccountingReceipt:
     @property
     def receipt_digest(self) -> str:
         return hashlib.sha256(
-            _canonical_json(self.to_dict()).encode("utf-8")
+            canonical_json(self.to_dict()).encode("utf-8")
         ).hexdigest()
 
     def to_dict(self) -> dict[str, object]:

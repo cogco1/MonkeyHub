@@ -6,8 +6,6 @@ does not map a building label to functions, areas, topology, or form.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 
 from archflow.state.design_brief import (
@@ -37,6 +35,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
+from archflow.contracts.canonical import canonical_digest
 
 
 _COMPILER_ID = "archflow.program-compiler"
@@ -614,7 +613,7 @@ def compile_design_program(
             )
         )
     )
-    compilation_id = _digest(
+    compilation_id = canonical_digest(
         {
             "project_id": brief.project_id,
             "run_id": brief.run_id,
@@ -870,16 +869,6 @@ def _ids(
 def _unique(values: tuple[str, ...], field: str) -> None:
     if len(values) != len(set(values)):
         raise ValueError(f"{field} contains duplicates")
-
-
-def _digest(value: object) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 __all__ = [

@@ -16,11 +16,10 @@ an adapter with a lineage note, scheduled for retirement with them.
 """
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from archflow.contracts.canonical import canonical_json
+from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.refs import ProjectVersionRef, RunRef, require_identifier
 from archflow.state.operational_state import DependencyEdge, DependencyEffect, DesignObligation
 from archflow.relations.contracts import ArchitecturalRelationKind
@@ -34,10 +33,6 @@ _MAX_ITEMS = 50_000
 
 class StateRecordError(ValueError):
     """Typed failure of the state record contracts."""
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _refs(values: object, field_name: str, *, allow_empty: bool = True) -> tuple[str, ...]:
@@ -421,7 +416,7 @@ class StateRecord:
 
     @property
     def digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
 
 # ---------------------------------------------------------------- typed views of the record

@@ -7,8 +7,6 @@ deterministic design controller may compile that proposal into next state.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping
@@ -37,6 +35,7 @@ from archflow.runtime.design_controller import (
 )
 from archflow.state.decision_operator import DecisionOperator
 from archflow.state.operational_state import require_logical_ref
+from archflow.contracts.canonical import canonical_digest, require_sha256
 
 
 SELECTION_INSTRUCTIONS = (
@@ -78,8 +77,8 @@ class PrimaryArchitectReceipt:
         _text(self.receipt_id, "receipt_id")
         if not isinstance(self.status, PrimaryArchitectStatus):
             raise TypeError("status must be PrimaryArchitectStatus")
-        _sha256(self.checkpoint_digest, "checkpoint_digest")
-        _sha256(self.context_digest, "context_digest")
+        require_sha256(self.checkpoint_digest, "checkpoint_digest")
+        require_sha256(self.context_digest, "context_digest")
         if not isinstance(
             self.selection_receipt,
             ModelInvocationReceipt,
@@ -95,7 +94,7 @@ class PrimaryArchitectReceipt:
                 "action_receipt must be ModelInvocationReceipt or None"
             )
         if self.next_checkpoint_digest is not None:
-            _sha256(
+            require_sha256(
                 self.next_checkpoint_digest,
                 "next_checkpoint_digest",
             )
@@ -260,10 +259,10 @@ async def run_primary_architect_turn(
         checkpoint.target_node_ref
     ).operational_state
     action_request = ModelInvocationRequest.create(
-        request_id=f"action-{_digest({
+        request_id=f"action-{canonical_digest({
             'checkpoint': checkpoint.checkpoint_digest,
             'selection': selection_receipt.receipt_id,
-        })[:24]}",
+        }, ascii=False)[:24]}",
         phase=ModelPhase.ACTION_PROPOSAL,
         checkpoint_digest=checkpoint.checkpoint_digest,
         context_digest=prepared.context_digest,
@@ -478,7 +477,7 @@ def _receipt(
         "error_code": error_code,
     }
     return PrimaryArchitectReceipt(
-        receipt_id=f"primary-architect-{_digest(identity)[:24]}",
+        receipt_id=f"primary-architect-{canonical_digest(identity, ascii=False)[:24]}",
         status=status,
         checkpoint_digest=checkpoint.checkpoint_digest,
         context_digest=prepared.context_digest,
@@ -508,18 +507,6 @@ def _mapping(value: object, field: str) -> dict[str, Any]:
     return dict(value)
 
 
-def _digest(value: object) -> str:
-    return hashlib.sha256(
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
-    ).hexdigest()
-
-
 def _text(
     value: object,
     field: str,
@@ -534,10 +521,3 @@ def _text(
         raise ValueError(f"{field} must be bounded non-empty text")
 
 
-def _sha256(value: object, field: str) -> None:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in "0123456789abcdef" for char in value.lower())
-    ):
-        raise ValueError(f"{field} must be a SHA-256 digest")

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Mapping
@@ -14,6 +12,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
+from archflow.contracts.canonical import canonical_digest, require_sha256
 
 
 Coordinate = tuple[int, int, int]
@@ -356,7 +355,7 @@ class SiteContext:
         if self.base.project_id != self.project_id:
             raise ValueError("site context and base belong to different projects")
         self.base.require_digest()
-        _sha256(self.brief_digest, "brief_digest")
+        require_sha256(self.brief_digest, "brief_digest")
         _text(self.compiler_id, "compiler_id")
         _text(self.compiler_version, "compiler_version")
         require_identifier(self.world_id, "world_id")
@@ -395,7 +394,7 @@ class SiteContext:
             raise ValueError(
                 "protection sources require protected cells"
             )
-        _sha256(self.observation_digest, "observation_digest")
+        require_sha256(self.observation_digest, "observation_digest")
         _typed(self.unknowns, SiteUnknown, "unknowns")
         _typed(self.obligations, DesignObligation, "obligations")
         _refs(self.evidence_refs, "evidence_refs")
@@ -438,7 +437,7 @@ class SiteContext:
 
     @property
     def context_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -629,16 +628,6 @@ def _text(value: object, field: str) -> str:
     return value
 
 
-def _sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in "0123456789abcdef" for char in value)
-    ):
-        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
-    return value
-
-
 def _tuple(value: object, field: str) -> tuple[object, ...]:
     if not isinstance(value, tuple):
         raise TypeError(f"{field} must be a tuple")
@@ -707,11 +696,3 @@ def _enum(enum_type: type[StrEnum], value: object, field: str) -> StrEnum:
         raise ValueError(f"{field} is not a supported value") from exc
 
 
-def _digest(value: object) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

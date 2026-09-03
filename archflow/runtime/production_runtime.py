@@ -7,7 +7,7 @@ from typing import Mapping, Protocol
 
 from archflow.capabilities.spatial import validate_spatial_authoring_context
 from archflow.production.responsibility import InvocationEnvelope
-from archflow.project.digests import canonical_json_sha256
+from archflow.contracts.canonical import canonical_digest
 from archflow.runtime.persistence.production_transition import (
     ArchivedFailedProductionAttempt,
     ProductionTransitionArchive,
@@ -145,7 +145,7 @@ class ProductionAuthoringContext:
 
     @property
     def context_digest(self) -> str:
-        return canonical_json_sha256(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def require_run(self, run: RunRef) -> None:
         if not isinstance(run, RunRef):

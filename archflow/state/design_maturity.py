@@ -8,8 +8,6 @@ result through the project repository.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping
@@ -29,6 +27,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 _MAX_ITEMS = 4096
@@ -123,15 +122,6 @@ class RevisionImpact(StrEnum):
     REVALIDATION_REQUIRED = "revalidation_required"
 
 
-def _sha256(value: object, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    digest = value.lower()
-    if len(digest) != 64 or any(char not in _HEX for char in digest):
-        raise ValueError(f"{field} must be a SHA-256 hex digest")
-    return digest
-
-
 def _text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be non-empty text")
@@ -149,20 +139,6 @@ def _tuple(value: object, field: str) -> tuple[Any, ...]:
 def _unique(values: tuple[str, ...], field: str) -> None:
     if len(values) != len(set(values)):
         raise ValueError(f"{field} contains duplicates")
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _branch_to_dict(branch: BranchRef) -> dict[str, object]:
@@ -254,7 +230,7 @@ class PhaseDeliverable:
         object.__setattr__(
             self,
             "base_state_digest",
-            _sha256(self.base_state_digest, "base_state_digest"),
+            require_sha256(self.base_state_digest, "base_state_digest"),
         )
         require_logical_ref(self.artifact_ref, "artifact_ref")
         _tuple(self.evidence_refs, "evidence_refs")
@@ -324,7 +300,7 @@ class DesignMaturityState:
         object.__setattr__(
             self,
             "operational_state_digest",
-            _sha256(
+            require_sha256(
                 self.operational_state_digest,
                 "operational_state_digest",
             ),
@@ -399,7 +375,7 @@ class DesignMaturityState:
 
     @property
     def state_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def require_exact_operational_state(
         self,
@@ -492,7 +468,7 @@ class PhaseGateRequest:
         object.__setattr__(
             self,
             "base_state_digest",
-            _sha256(self.base_state_digest, "base_state_digest"),
+            require_sha256(self.base_state_digest, "base_state_digest"),
         )
         if not isinstance(self.from_phase, DesignPhase):
             raise TypeError("from_phase must be a DesignPhase")
@@ -534,7 +510,7 @@ class PhaseGateReceipt:
         object.__setattr__(
             self,
             "base_state_digest",
-            _sha256(self.base_state_digest, "base_state_digest"),
+            require_sha256(self.base_state_digest, "base_state_digest"),
         )
         if not isinstance(self.from_phase, DesignPhase) or not isinstance(
             self.to_phase,
@@ -678,7 +654,7 @@ class StageEntryProof:
             object.__setattr__(
                 self,
                 field,
-                _sha256(getattr(self, field), field),
+                require_sha256(getattr(self, field), field),
             )
         if not isinstance(self.successor_branch, BranchRef):
             raise TypeError("successor_branch must be a BranchRef")
@@ -716,7 +692,7 @@ class StageEntryProof:
 
     @property
     def proof_digest(self) -> str:
-        return _digest(self._content_dict())
+        return canonical_digest(self._content_dict())
 
     @property
     def ref(self) -> str:
@@ -916,7 +892,7 @@ def evaluate_forward_phase_gate(
         "authority": request.certification_source.value,
     }
     return PhaseGateReceipt(
-        receipt_id=f"pgr-{_digest(receipt_payload)[:24]}",
+        receipt_id=f"pgr-{canonical_digest(receipt_payload)[:24]}",
         request_id=request.request_id,
         branch=request.branch,
         base_state_digest=request.base_state_digest,
@@ -977,7 +953,7 @@ class BackwardRevisionRequest:
         object.__setattr__(
             self,
             "base_state_digest",
-            _sha256(self.base_state_digest, "base_state_digest"),
+            require_sha256(self.base_state_digest, "base_state_digest"),
         )
         if not isinstance(self.from_phase, DesignPhase) or not isinstance(
             self.to_phase,
@@ -1011,7 +987,7 @@ class BackwardRevisionResult:
         object.__setattr__(
             self,
             "base_state_digest",
-            _sha256(self.base_state_digest, "base_state_digest"),
+            require_sha256(self.base_state_digest, "base_state_digest"),
         )
         if not isinstance(self.from_phase, DesignPhase) or not isinstance(
             self.to_phase,
@@ -1220,7 +1196,7 @@ def compile_backward_revision(
     obligations = tuple(
         DesignObligation(
             obligation_id=(
-                f"phase-revision-{_digest((request.revision_id, ref))[:20]}"
+                f"phase-revision-{canonical_digest((request.revision_id, ref))[:20]}"
             ),
             statement=(
                 f"Recompile {ref} after backward design revision "

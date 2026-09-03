@@ -144,6 +144,7 @@ from archflow.runtime.stage_subject_inventory import (
 from archflow.state.spatial import SpatialOptionProposal
 from archflow.validation.cad_readback import CadReadbackSnapshot
 from archflow.validation.contracts import CheckReceiptEnvelope
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 _MAX_ITEMS = 4096
@@ -207,20 +208,6 @@ class ControllerRecordSink(Protocol):
     def load_json(self, ref: ProjectRecordRef) -> dict[str, Any]: ...
 
 
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
 def _p036_json_record_digest(value: Mapping[str, Any]) -> str:
     """Recompute the exact byte digest owned by the P036 JSON writer."""
 
@@ -251,15 +238,6 @@ def _tuple(value: object, field: str) -> tuple[Any, ...]:
 def _unique(values: tuple[str, ...], field: str) -> None:
     if len(values) != len(set(values)):
         raise DesignControllerError(f"{field} contains duplicates")
-
-
-def _sha256(value: object, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    digest = value.lower()
-    if len(digest) != 64 or any(char not in _HEX for char in digest):
-        raise DesignControllerError(f"{field} must be a SHA-256 digest")
-    return digest
 
 
 def _same_branch(left: object, right: object) -> bool:
@@ -363,7 +341,7 @@ class DesignControllerCheckpoint:
         ):
             require_logical_ref(ref, "checkpoint reference")
         for digest in self.recent_action_digests:
-            _sha256(digest, "recent action digest")
+            require_sha256(digest, "recent action digest")
         if self.status is ControllerStatus.PAUSED_AUTHORITY:
             if not isinstance(
                 self.pending_clarification,
@@ -389,7 +367,7 @@ class DesignControllerCheckpoint:
 
     @property
     def checkpoint_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -620,12 +598,12 @@ class StageArtifactArchiveBundle:
         object.__setattr__(
             self,
             "claim_digest",
-            _sha256(self.claim_digest, "claim_digest"),
+            require_sha256(self.claim_digest, "claim_digest"),
         )
         object.__setattr__(
             self,
             "artifact_sha256",
-            _sha256(self.artifact_sha256, "artifact_sha256"),
+            require_sha256(self.artifact_sha256, "artifact_sha256"),
         )
         expected_prefix = (
             f"runs/{self.branch.run.run_id}/branches/"
@@ -654,7 +632,7 @@ class StageArtifactArchiveBundle:
 
     @property
     def bundle_digest(self) -> str:
-        return _digest(self._content_dict())
+        return canonical_digest(self._content_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {**self._content_dict(), "bundle_digest": self.bundle_digest}
@@ -894,7 +872,7 @@ class StageExitArchiveBundle:
 
     @property
     def bundle_digest(self) -> str:
-        return _digest(self._content_dict())
+        return canonical_digest(self._content_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1104,7 +1082,7 @@ class _LegacyStageExitArchiveBundle:
 
     @property
     def bundle_digest(self) -> str:
-        return _digest(self._content_dict())
+        return canonical_digest(self._content_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -2069,7 +2047,7 @@ class ProjectControllerArchiveAdapter:
                 )
             return
 
-        previous_digest = _sha256(
+        previous_digest = require_sha256(
             raw_previous_digest,
             "previous_checkpoint_digest",
         )
@@ -3120,7 +3098,7 @@ class ProjectControllerArchiveAdapter:
                 )
             ],
         }
-        return {**content, "proof_digest": _digest(content)}
+        return {**content, "proof_digest": canonical_digest(content)}
 
     def _require_accepted_relation_predecessors(
         self,
@@ -3430,7 +3408,7 @@ class ProjectControllerArchiveAdapter:
             raise TypeError("check_receipt_digests must be a list")
         checks = tuple(
             sorted(
-                _sha256(item, "check_receipt_digest")
+                require_sha256(item, "check_receipt_digest")
                 for item in raw_checks
             )
         )
@@ -3441,44 +3419,44 @@ class ProjectControllerArchiveAdapter:
         content = {
             "schema": schema,
             "bundle": bundle.to_dict(),
-            "previous_checkpoint_digest": _sha256(
+            "previous_checkpoint_digest": require_sha256(
                 value.get("previous_checkpoint_digest"),
                 "previous_checkpoint_digest",
             ),
-            "next_checkpoint_digest": _sha256(
+            "next_checkpoint_digest": require_sha256(
                 value.get("next_checkpoint_digest"),
                 "next_checkpoint_digest",
             ),
             "stage_id": _text(value.get("stage_id"), "stage_id"),
             "stage_subject_ref": value.get("stage_subject_ref"),
-            "subject_digest": _sha256(
+            "subject_digest": require_sha256(
                 value.get("subject_digest"),
                 "subject_digest",
             ),
-            "profile_digest": _sha256(
+            "profile_digest": require_sha256(
                 value.get("profile_digest"),
                 "profile_digest",
             ),
-            "profile_binding_digest": _sha256(
+            "profile_binding_digest": require_sha256(
                 value.get("profile_binding_digest"),
                 "profile_binding_digest",
             ),
-            "closure_digest": _sha256(
+            "closure_digest": require_sha256(
                 value.get("closure_digest"),
                 "closure_digest",
             ),
-            "baseline_sources_digest": _sha256(
+            "baseline_sources_digest": require_sha256(
                 value.get("baseline_sources_digest"),
                 "baseline_sources_digest",
             ),
-            "baseline_coverage_digest": _sha256(
+            "baseline_coverage_digest": require_sha256(
                 value.get("baseline_coverage_digest"),
                 "baseline_coverage_digest",
             ),
             "check_receipt_digests": list(checks),
         }
         if schema == self.STAGE_EXIT_PROOF_SCHEMA:
-            content["stage_subject_inventory_digest"] = _sha256(
+            content["stage_subject_inventory_digest"] = require_sha256(
                 value.get("stage_subject_inventory_digest"),
                 "stage_subject_inventory_digest",
             )
@@ -3486,7 +3464,7 @@ class ProjectControllerArchiveAdapter:
             content["stage_subject_ref"],
             "stage_subject_ref",
         )
-        if value.get("proof_digest") != _digest(content):
+        if value.get("proof_digest") != canonical_digest(content):
             raise DesignControllerError(
                 "stage-exit archive proof digest changed"
             )
@@ -3597,7 +3575,7 @@ class ProjectControllerArchiveAdapter:
                 )
             ],
         }
-        expected = {**content, "proof_digest": _digest(content)}
+        expected = {**content, "proof_digest": canonical_digest(content)}
         if dict(proof) != expected:
             raise DesignControllerError(
                 "legacy archived stage-exit proof disagrees with checkpoint"
@@ -3731,7 +3709,7 @@ class PreparedDesignTurn:
     semantic_work_items: tuple[SemanticDesignWorkItem, ...] = ()
 
     def __post_init__(self) -> None:
-        _sha256(self.checkpoint_digest, "checkpoint_digest")
+        require_sha256(self.checkpoint_digest, "checkpoint_digest")
         if not isinstance(self.context, ContextSlice):
             raise TypeError("context must be a ContextSlice")
         if not isinstance(self.snapshot, ExpertSnapshot):
@@ -3739,7 +3717,7 @@ class PreparedDesignTurn:
         _tuple(self.discovered_expert_ids, "discovered_expert_ids")
         _unique(self.discovered_expert_ids, "discovered_expert_ids")
         if self.subject_inventory_digest is not None:
-            _sha256(
+            require_sha256(
                 self.subject_inventory_digest,
                 "subject_inventory_digest",
             )
@@ -3772,7 +3750,7 @@ class PreparedDesignTurn:
     def context_digest(self) -> str:
         if self.subject_inventory_digest is None:
             return self.context.context_digest
-        return _digest(
+        return canonical_digest(
             {
                 "schema": "PreparedDesignTurnContext@2",
                 "context_digest": self.context.context_digest,
@@ -3801,8 +3779,8 @@ class ExpertConsultation:
     receipts: tuple[ExpertReceipt, ...]
 
     def __post_init__(self) -> None:
-        _sha256(self.checkpoint_digest, "checkpoint_digest")
-        _sha256(self.context_digest, "context_digest")
+        require_sha256(self.checkpoint_digest, "checkpoint_digest")
+        require_sha256(self.context_digest, "context_digest")
         _tuple(self.selected_expert_ids, "selected_expert_ids")
         _unique(self.selected_expert_ids, "selected_expert_ids")
         _tuple(self.receipts, "receipts")
@@ -3841,8 +3819,8 @@ class GroundedArchitectAction:
 
     def __post_init__(self) -> None:
         _text(self.action_id, "action_id")
-        _sha256(self.checkpoint_digest, "checkpoint_digest")
-        _sha256(self.context_digest, "context_digest")
+        require_sha256(self.checkpoint_digest, "checkpoint_digest")
+        require_sha256(self.context_digest, "context_digest")
         if not isinstance(self.operator, DecisionOperator):
             raise TypeError("operator must be a DecisionOperator")
         for field, values in (
@@ -3873,7 +3851,7 @@ class GroundedArchitectAction:
 
     @property
     def action_digest(self) -> str:
-        return _digest(
+        return canonical_digest(
             {
                 "action_id": self.action_id,
                 "checkpoint_digest": self.checkpoint_digest,
@@ -3894,7 +3872,7 @@ class GroundedArchitectAction:
         operator = self.operator.to_dict()
         operator.pop("decision_id", None)
         operator.pop("base_state_digest", None)
-        return _digest(
+        return canonical_digest(
             {
                 "operator": operator,
                 "responds_to_refs": self.responds_to_refs,
@@ -3927,23 +3905,23 @@ class ControllerTurnReceipt:
         _text(self.receipt_id, "receipt_id")
         if not isinstance(self.outcome, ControllerOutcome):
             raise TypeError("outcome must be a ControllerOutcome")
-        _sha256(
+        require_sha256(
             self.previous_checkpoint_digest,
             "previous_checkpoint_digest",
         )
-        _sha256(
+        require_sha256(
             self.next_checkpoint_digest,
             "next_checkpoint_digest",
         )
         if self.action_digest is not None:
-            _sha256(self.action_digest, "action_digest")
+            require_sha256(self.action_digest, "action_digest")
         if self.stage_profile_binding_digest is not None:
-            _sha256(
+            require_sha256(
                 self.stage_profile_binding_digest,
                 "stage_profile_binding_digest",
             )
         if self.stage_baseline_coverage_digest is not None:
-            _sha256(
+            require_sha256(
                 self.stage_baseline_coverage_digest,
                 "stage_baseline_coverage_digest",
             )
@@ -5407,7 +5385,7 @@ def _result(
     return ControllerTurnResult(
         checkpoint=checkpoint,
         receipt=ControllerTurnReceipt(
-            receipt_id=f"controller-turn-{_digest(payload)[:24]}",
+            receipt_id=f"controller-turn-{canonical_digest(payload)[:24]}",
             outcome=outcome,
             previous_checkpoint_digest=previous.checkpoint_digest,
             next_checkpoint_digest=checkpoint.checkpoint_digest,

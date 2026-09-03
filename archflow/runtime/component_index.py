@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
@@ -38,22 +36,11 @@ from archflow.state.developed_design import (
 from archflow.state.geometry_program import digest_value
 from archflow.state.operational_state import require_logical_ref
 from archflow.state.spatial import DesignComponent
+from archflow.contracts.canonical import canonical_digest
 
 
 class ComponentIndexError(ValueError):
     """Authoritative inputs cannot form one coherent derived index."""
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(
-        json.dumps(
-            value,
-            allow_nan=False,
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-    ).hexdigest()
 
 
 def _sha(value: object, field: str) -> str:
@@ -311,7 +298,7 @@ class ComponentIndex:
 
     @property
     def index_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def unassigned_task_ids(self) -> tuple[str, ...]:
@@ -471,7 +458,7 @@ class ComponentTaskContext:
 
     @property
     def context_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {

@@ -7,8 +7,6 @@ the Architect, and it owns no persistence or external-platform handle.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
@@ -21,6 +19,7 @@ from archflow.state import (
     StateFact,
 )
 from archflow.state.site_context import GroundModelKind, SiteContext
+from archflow.contracts.canonical import canonical_digest
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -64,7 +63,7 @@ class TerrainResponseOption:
 
     @property
     def option_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -304,7 +303,7 @@ class TerrainAdaptationPlan:
 
     @property
     def plan_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -493,7 +492,7 @@ class TerrainRelationshipReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -969,12 +968,3 @@ def _exact(value: Mapping[str, object], fields: set[str], label: str) -> None:
         raise TerrainAdaptationError(f"{label} schema drifted")
 
 
-def _digest(value: object) -> str:
-    payload = json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

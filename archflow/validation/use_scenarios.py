@@ -14,6 +14,7 @@ from archflow.state import BuildingProgram, CanonicalState
 from archflow.submission import CandidateSubmission
 from archflow.validation.model import Finding
 from archflow.validation.usability import UseZoneEvidence
+from archflow.contracts.canonical import require_sha256
 
 
 class UseScenarioKind(StrEnum):
@@ -30,16 +31,6 @@ class UseScenarioStatus(StrEnum):
 class ScenarioObservationSource(StrEnum):
     SANDBOX_REALIZATION = "sandbox_realization"
     EXTERNAL_COMPARISON = "external_comparison"
-
-
-def _sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value.lower())
-    ):
-        raise ValueError(f"{field} must be a SHA-256 digest")
-    return value.lower()
 
 
 def _content_digest(value: str) -> str:
@@ -87,7 +78,7 @@ class ScenarioObservationBinding:
             object.__setattr__(
                 self,
                 field,
-                _sha256(getattr(self, field), field),
+                require_sha256(getattr(self, field), field),
             )
         if (
             not isinstance(self.evidence_refs, tuple)
@@ -253,7 +244,7 @@ class UseScenarioValidator:
                 object.__setattr__(
                     self,
                     field,
-                    _sha256(value, field),
+                    require_sha256(value, field),
                 )
         if not isinstance(self.vertical_circulation, tuple):
             raise TypeError("vertical_circulation must be a tuple")

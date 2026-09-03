@@ -24,6 +24,7 @@ from archflow.capabilities.experts import (
 )
 from archflow.project import ProjectVersionRef
 from archflow.project.refs import require_identifier
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 CAPABILITY_ID = "v3.gate.load_path_analysis"
@@ -323,7 +324,7 @@ class V3DiagnosticReceipt:
             raise TypeError("base must be ProjectVersionRef")
         self.base.require_digest()
         require_identifier(self.input_id, "input_id")
-        _sha256(self.input_sha256, "input_sha256")
+        require_sha256(self.input_sha256, "input_sha256")
         require_identifier(self.obligation_id, "obligation_id")
         if not isinstance(
             self.provider_receipt,
@@ -428,11 +429,11 @@ class V3LoadPathDiagnostic:
                 "exact component-graph evidence is unavailable"
             )
         request_id = (
-            f"v3diag-{_digest({
+            f"v3diag-{canonical_digest({
                 'input_sha256': diagnostic_input.input_sha256,
                 'obligation_id': obligation_id,
                 'base': _base_dict(diagnostic_input.base),
-            })[:20]}"
+            }, ascii=False)[:20]}"
         )
         provider_receipt = self.bridge.invoke(
             V3LegacyCapabilityRequest.create(
@@ -610,7 +611,7 @@ class V3LoadPathDiagnostic:
             "provider_receipt_id": provider_receipt.receipt_id,
         }
         return V3DiagnosticReceipt(
-            receipt_id=f"v3-diagnostic-{_digest(identity)[:20]}",
+            receipt_id=f"v3-diagnostic-{canonical_digest(identity, ascii=False)[:20]}",
             status=status,
             base=diagnostic_input.base,
             input_id=diagnostic_input.input_id,
@@ -748,7 +749,7 @@ def _validate_component_graph(value: object) -> str:
             raise V3DiagnosticError(
                 "declared support edges must name other components"
             )
-    return _canonical_json(value)
+    return canonical_json(value, ascii=False)
 
 
 def _base_dict(base: ProjectVersionRef) -> dict[str, Any]:
@@ -759,31 +760,8 @@ def _base_dict(base: ProjectVersionRef) -> dict[str, Any]:
     }
 
 
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return _sha(_canonical_json(value).encode("utf-8"))
-
-
 def _sha(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
-
-
-def _sha256(value: object, field: str) -> None:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
-        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
 
 
 def _text(value: object, field: str, *, maximum: int = 1_000) -> None:

@@ -7,8 +7,6 @@ hard usability, or promote canonical state.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any, Mapping
@@ -20,6 +18,7 @@ from archflow.project.refs import (
 )
 from archflow.state.operational_state import require_logical_ref
 from archflow.state.spatial import SchematicOption, SchematicOptionSet
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -68,16 +67,6 @@ def _text(value: object, field: str) -> str:
     if len(value) > _MAX_TEXT:
         raise DesignPortfolioError(f"{field} exceeds bounded text")
     return value
-
-
-def _sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in _HEX for char in value.lower())
-    ):
-        raise DesignPortfolioError(f"{field} must be a SHA-256 digest")
-    return value.lower()
 
 
 def _mapping(value: object, field: str) -> Mapping[str, Any]:
@@ -138,20 +127,6 @@ def _refs(
     if len(values) != len(set(values)):
         raise DesignPortfolioError(f"{field} contains duplicates")
     return values
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _base_to_dict(base: ProjectVersionRef) -> dict[str, object]:
@@ -288,7 +263,7 @@ class BranchRevisionRef:
     def __post_init__(self) -> None:
         require_identifier(self.branch_id, "branch_id")
         require_identifier(self.revision_id, "revision_id")
-        _sha256(self.revision_digest, "revision_digest")
+        require_sha256(self.revision_digest, "revision_digest")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -382,7 +357,7 @@ class BranchRevision:
 
     @property
     def revision_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> BranchRevisionRef:
@@ -695,7 +670,7 @@ class PortfolioTransition:
         require_identifier(self.transition_id, "transition_id")
         if not isinstance(self.kind, PortfolioTransitionKind):
             raise TypeError("kind must be PortfolioTransitionKind")
-        _sha256(
+        require_sha256(
             self.predecessor_portfolio_digest,
             "predecessor_portfolio_digest",
         )
@@ -811,11 +786,11 @@ class DesignOptionPortfolio:
             raise DesignPortfolioError(
                 "portfolio and base belong to different projects"
             )
-        _sha256(
+        require_sha256(
             self.source_option_set_digest,
             "source_option_set_digest",
         )
-        _sha256(
+        require_sha256(
             self.operational_state_digest,
             "operational_state_digest",
         )
@@ -945,7 +920,7 @@ class DesignOptionPortfolio:
 
     @property
     def portfolio_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def selected_branch(self) -> DesignBranch | None:
@@ -1076,7 +1051,7 @@ class SelectedBranchHandoff:
 
     def __post_init__(self) -> None:
         require_identifier(self.portfolio_id, "portfolio_id")
-        _sha256(self.portfolio_digest, "portfolio_digest")
+        require_sha256(self.portfolio_digest, "portfolio_digest")
         require_identifier(self.project_id, "project_id")
         require_identifier(self.run_id, "run_id")
         if not isinstance(self.base, ProjectVersionRef):
@@ -1130,7 +1105,7 @@ def _require_expected(
 ) -> str:
     if not isinstance(portfolio, DesignOptionPortfolio):
         raise TypeError("portfolio must be DesignOptionPortfolio")
-    expected = _sha256(
+    expected = require_sha256(
         expected_portfolio_digest,
         "expected_portfolio_digest",
     )
@@ -1680,7 +1655,7 @@ def compile_selected_branch_handoff(
         raise DesignPortfolioError(
             "candidate assembly requires an explicit selected branch"
         )
-    expected_revision = _sha256(
+    expected_revision = require_sha256(
         expected_revision_digest,
         "expected_revision_digest",
     )

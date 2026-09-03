@@ -26,6 +26,7 @@ from archflow.ports.model import (
     ModelPhase,
 )
 from archflow.project.refs import require_identifier
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 class ModelCommandProtocol(StrEnum):
@@ -100,7 +101,7 @@ class ModelProviderSpec:
 
     @property
     def fingerprint(self) -> str:
-        return _digest(
+        return canonical_digest(
             {
                 "provider_id": self.provider_id,
                 "model_id": self.model_id,
@@ -115,7 +116,7 @@ class ModelProviderSpec:
                 "max_output_bytes": self.max_output_bytes,
                 "max_output_tokens": self.max_output_tokens,
             }
-        )
+        , ascii=False)
 
 
 class AsyncJsonCommandModelProvider:
@@ -133,7 +134,7 @@ class AsyncJsonCommandModelProvider:
         if not isinstance(request, ModelInvocationRequest):
             raise TypeError("request must be ModelInvocationRequest")
         started = time.monotonic()
-        input_data = (_canonical_json(request.to_dict()) + "\n").encode(
+        input_data = (canonical_json(request.to_dict(), ascii=False) + "\n").encode(
             "utf-8"
         )
         if len(input_data) > self.spec.max_input_bytes:
@@ -340,14 +341,14 @@ class AsyncJsonCommandModelProvider:
             metrics["duration_ms"],
         )
         return ModelInvocationReceipt(
-            receipt_id=f"model-{_digest(identity)[:24]}",
+            receipt_id=f"model-{canonical_digest(identity, ascii=False)[:24]}",
             status=ModelInvocationStatus.SUCCESS,
             request=request,
             provider_id=self.spec.provider_id,
             model_id=self.spec.model_id,
             provider_version=self.spec.version,
             provider_fingerprint=self.spec.fingerprint,
-            output_json=_canonical_json(output),
+            output_json=canonical_json(output, ascii=False),
             error_code=None,
             message=None,
             **metrics,
@@ -375,7 +376,7 @@ class AsyncJsonCommandModelProvider:
             duration_ms,
         )
         return ModelInvocationReceipt(
-            receipt_id=f"model-{_digest(identity)[:24]}",
+            receipt_id=f"model-{canonical_digest(identity, ascii=False)[:24]}",
             status=status,
             request=request,
             provider_id=self.spec.provider_id,
@@ -543,16 +544,6 @@ def _decode_codex_exec_jsonl(
     }
 
 
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
-
-
 def _duration_ms(started: float) -> int:
     return max(0, int((time.monotonic() - started) * 1_000))
 
@@ -587,10 +578,6 @@ def _nested_keys(value: object) -> set[str]:
     return keys
 
 
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
 def _text(value: object, field: str, *, maximum: int) -> None:
     if (
         not isinstance(value, str)
@@ -598,15 +585,6 @@ def _text(value: object, field: str, *, maximum: int) -> None:
         or len(value) > maximum
     ):
         raise ValueError(f"{field} must be bounded non-empty text")
-
-
-def _sha256(value: object, field: str) -> None:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in "0123456789abcdef" for char in value.lower())
-    ):
-        raise ValueError(f"{field} must be a SHA-256 digest")
 
 
 __all__ = [

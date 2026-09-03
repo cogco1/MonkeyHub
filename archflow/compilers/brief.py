@@ -7,7 +7,6 @@ project base without selecting rooms, area, topology, or geometry.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 
@@ -35,6 +34,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
+from archflow.contracts.canonical import canonical_digest
 
 
 _COMPILER_ID = "archflow.design-brief-compiler"
@@ -373,7 +373,7 @@ def compile_design_brief(
         "compiler_version": compiler_version,
         "brief_digest": brief.brief_digest,
     }
-    compilation_id = f"brief-{_digest(identity)[:20]}"
+    compilation_id = f"brief-{canonical_digest(identity)[:20]}"
     receipt = BriefCompilationReceipt(
         compilation_id=compilation_id,
         project_id=project_id,
@@ -449,17 +449,6 @@ def _slot_obligation(
         subject_refs=subject_refs,
         validator_ref="validator:brief-slot-resolution",
     )
-
-
-def _digest(value: object) -> str:
-    encoded = json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def _bounded_value(value: object) -> None:

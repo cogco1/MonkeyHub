@@ -12,6 +12,7 @@ from typing import Any, Mapping
 from archflow.adapters.mcp_stdio import McpClientError, StdioMcpClient
 from archflow.state import ArtifactRef, CanonicalState
 from archflow.workspace import WorkspaceRef
+from archflow.contracts.canonical import canonical_json_bytes
 
 
 SESSION_TOOL = "minecraft_session"
@@ -83,7 +84,7 @@ class MinecraftExportRequest:
             raise ValueError("payload_json must contain JSON") from exc
         if not isinstance(payload, dict) or not payload:
             raise ValueError("translated plan must be a non-empty object")
-        if _canonical_json(payload).decode("utf-8") != self.payload_json:
+        if canonical_json_bytes(payload, ascii=False).decode("utf-8") != self.payload_json:
             raise ValueError("translated plan must be canonical JSON")
 
     @classmethod
@@ -101,7 +102,7 @@ class MinecraftExportRequest:
             request_id=request_id,
             source_artifact=source_artifact,
             acceptance_receipt_ref=acceptance_receipt_ref,
-            payload_json=_canonical_json(dict(translated_plan)).decode("utf-8"),
+            payload_json=canonical_json_bytes(dict(translated_plan), ascii=False).decode("utf-8"),
         )
 
     @property
@@ -614,7 +615,7 @@ class MinecraftMcpAdapter:
                 "candidate artifact requires state plan server session preview"
             )
         screenshot = _extract_png(capture, workspace.root) if capture else None
-        plan_encoded = _canonical_json(plan)
+        plan_encoded = canonical_json_bytes(plan, ascii=False)
         mutation_ref = (
             _mutation_journal_ref(workspace, mutation_journal)
             if mutation_journal is not None
@@ -758,7 +759,7 @@ def _compensation_acknowledged(result: dict[str, Any]) -> bool:
 
 
 def _json_digest(value: Any) -> str:
-    return hashlib.sha256(_canonical_json(value)).hexdigest()
+    return hashlib.sha256(canonical_json_bytes(value, ascii=False)).hexdigest()
 
 
 def _new_mutation_journal(
@@ -960,15 +961,6 @@ def _error_code(error: Exception) -> str:
     if "timed out" in message.lower():
         return "MCP_TIMEOUT"
     return "MCP_ADAPTER_FAILED"
-
-
-def _canonical_json(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
 
 
 def _pretty_json(value: Any) -> bytes:

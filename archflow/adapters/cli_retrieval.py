@@ -15,6 +15,7 @@ from archflow.ports.retrieval import (
     RetrievedEvidence,
 )
 from archflow.project.refs import require_identifier
+from archflow.contracts.canonical import canonical_digest
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,13 +54,13 @@ class CliProviderSpec:
 
     @property
     def fingerprint(self) -> str:
-        return _digest(
+        return canonical_digest(
             {
                 "provider_id": self.provider_id,
                 "version": self.version,
                 "command": list(self.command),
             }
-        )
+        , ascii=False)
 
 
 class CliRetrievalAdapter:
@@ -156,7 +157,7 @@ class CliRetrievalAdapter:
         )
         return RetrievalReceipt(
             schema="RetrievalReceipt@1",
-            receipt_id=f"retrieval-{_digest(identity)[:20]}",
+            receipt_id=f"retrieval-{canonical_digest(identity, ascii=False)[:20]}",
             status=RetrievalStatus.SUCCESS,
             query=query,
             provider_id=self.spec.provider_id,
@@ -200,7 +201,7 @@ class CliRetrievalAdapter:
                 "result excerpt",
                 maximum=self.spec.max_excerpt_chars,
             )
-            evidence_digest = _digest(
+            evidence_digest = canonical_digest(
                 {
                     "project_id": query.project_id,
                     "query_id": query.query_id,
@@ -210,7 +211,7 @@ class CliRetrievalAdapter:
                     "excerpt": excerpt,
                     "output_sha256": output_digest,
                 }
-            )
+            , ascii=False)
             parsed.append(
                 RetrievedEvidence(
                     evidence_id=f"evidence-{evidence_digest[:20]}",
@@ -236,7 +237,7 @@ class CliRetrievalAdapter:
         identity = self._identity(query, status, output_sha256, error_code)
         return RetrievalReceipt(
             schema="RetrievalReceipt@1",
-            receipt_id=f"retrieval-{_digest(identity)[:20]}",
+            receipt_id=f"retrieval-{canonical_digest(identity, ascii=False)[:20]}",
             status=status,
             query=query,
             provider_id=self.spec.provider_id,
@@ -277,7 +278,7 @@ def missing_provider_receipt(
     }
     return RetrievalReceipt(
         schema="RetrievalReceipt@1",
-        receipt_id=f"retrieval-{_digest(identity)[:20]}",
+        receipt_id=f"retrieval-{canonical_digest(identity, ascii=False)[:20]}",
         status=RetrievalStatus.MISSING_PROVIDER,
         query=query,
         provider_id=provider_id,
@@ -288,17 +289,6 @@ def missing_provider_receipt(
         error_code="retrieval.provider_missing",
         message="requested provider is not registered; fallback is forbidden",
     )
-
-
-def _digest(payload: dict[str, object]) -> str:
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def _text(value: object, field: str, *, maximum: int = 1_000) -> None:

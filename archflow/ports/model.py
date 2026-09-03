@@ -12,6 +12,7 @@ from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
 from archflow.project.refs import require_identifier
+from archflow.contracts.canonical import canonical_json, require_sha256
 
 
 class ModelPhase(StrEnum):
@@ -45,10 +46,10 @@ class ModelInvocationRequest:
         require_identifier(self.request_id, "request_id")
         if not isinstance(self.phase, ModelPhase):
             raise TypeError("phase must be ModelPhase")
-        _sha256(self.checkpoint_digest, "checkpoint_digest")
-        _sha256(self.context_digest, "context_digest")
+        require_sha256(self.checkpoint_digest, "checkpoint_digest")
+        require_sha256(self.context_digest, "context_digest")
         payload = _decode_object(self.payload_json, "payload_json")
-        canonical = _canonical_json(payload)
+        canonical = canonical_json(payload, ascii=False)
         if canonical != self.payload_json:
             raise ValueError("payload_json must use canonical JSON")
         forbidden = {
@@ -81,7 +82,7 @@ class ModelInvocationRequest:
             phase=phase,
             checkpoint_digest=checkpoint_digest,
             context_digest=context_digest,
-            payload_json=_canonical_json(dict(payload)),
+            payload_json=canonical_json(dict(payload), ascii=False),
         )
 
     @property
@@ -164,7 +165,7 @@ class ModelInvocationReceipt:
             if type(value) is not int or value < 0:
                 raise ValueError(f"{field} must be non-negative")
         if self.output_sha256 is not None:
-            _sha256(self.output_sha256, "output_sha256")
+            require_sha256(self.output_sha256, "output_sha256")
         for value, field in (
             (self.input_tokens, "input_tokens"),
             (self.output_tokens, "output_tokens"),
@@ -265,7 +266,7 @@ class ModelInvocationReceipt:
             output_sha256=payload["output_sha256"],
             duration_ms=duration_ms,
             output_json=(
-                None if output is None else _canonical_json(output)
+                None if output is None else canonical_json(output, ascii=False)
             ),
             input_tokens=payload["input_tokens"],
             output_tokens=payload["output_tokens"],
@@ -279,16 +280,6 @@ class AsyncModelProvider(Protocol):
         self,
         request: ModelInvocationRequest,
     ) -> ModelInvocationReceipt: ...
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
 
 
 def _decode_object(value: str, field: str) -> dict[str, object]:
@@ -328,15 +319,6 @@ def _text(value: object, field: str, *, maximum: int) -> None:
         or len(value) > maximum
     ):
         raise ValueError(f"{field} must be bounded non-empty text")
-
-
-def _sha256(value: object, field: str) -> None:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in "0123456789abcdef" for char in value.lower())
-    ):
-        raise ValueError(f"{field} must be a SHA-256 digest")
 
 
 __all__ = [

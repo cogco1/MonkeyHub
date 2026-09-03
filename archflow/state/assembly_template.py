@@ -17,7 +17,6 @@ is a new record.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -33,6 +32,7 @@ from archflow.state.component_template import (
 from archflow.state.design_maturity import DesignPhase
 from archflow.state.geometry_program import InterfaceDatumKind, ProjectGrids, ProjectLevels
 from archflow.state.spatial import DesignComponent
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 LIBRARY_PROMOTION_MIN_VOTES = 2
 _RECORD_AUTHORITY = ("canonical_write_authority", "design_authority")
@@ -40,14 +40,6 @@ _RECORD_AUTHORITY = ("canonical_write_authority", "design_authority")
 
 class AssemblyTemplateError(ValueError):
     """Typed failure of the assembly template contracts."""
-
-
-def _canonical(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
 def _text(value: object, field_name: str) -> str:
@@ -390,7 +382,7 @@ class BuildingAssemblyTemplate:
 
     @property
     def digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict(), ascii=False)
 
     def to_dict(self) -> dict[str, object]:
         return {

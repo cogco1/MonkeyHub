@@ -7,7 +7,6 @@ geometry.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from collections import deque
@@ -35,6 +34,7 @@ from archflow.state.geometry_program import (
     GeometryOperation,
     GeometryOperationKind,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -77,20 +77,6 @@ class SandboxArchiveDisposition(StrEnum):
     REJECTED = "rejected"
     REPAIRED = "repaired"
     ACCEPTED = "accepted"
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _sha(value: object, field: str) -> str:
@@ -288,7 +274,7 @@ class SandboxAssetPayload:
 
     @property
     def payload_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def bounds(self) -> AxisAlignedBounds:
@@ -360,7 +346,7 @@ class SceneObject:
             raise SandboxRealizationError(
                 "geometry_json must contain JSON"
             ) from exc
-        if _canonical_json(decoded) != self.geometry_json:
+        if canonical_json(decoded) != self.geometry_json:
             raise SandboxRealizationError("geometry_json must be canonical")
         if not isinstance(self.bounds, AxisAlignedBounds):
             raise TypeError("bounds must be AxisAlignedBounds")
@@ -480,7 +466,7 @@ class HybridScene:
 
     @property
     def scene_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def object(self, object_id: str) -> SceneObject:
         for item in self.objects:
@@ -626,7 +612,7 @@ class SandboxRealizationReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1914,7 +1900,7 @@ def realize_geometry(
         raise SandboxRealizationError(
             "asset payloads require deterministic identities"
         )
-    policy_digest = _digest(policy.to_dict())
+    policy_digest = canonical_digest(policy.to_dict())
     issues: list[RealizationIssue] = []
     if len(program.objects) > policy.maximum_objects:
         issues.append(
@@ -2009,7 +1995,7 @@ def realize_geometry(
                 producer_op_id=op_id,
                 source_object_digest=source.object_digest,
                 representation=representation,
-                geometry_json=_canonical_json(geometry),
+                geometry_json=canonical_json(geometry),
                 bounds=bounds,
                 semantic_binding_ids=operation.semantic_binding_ids,
                 physical=(
@@ -2205,7 +2191,7 @@ class DerivedVoxelView:
 
     @property
     def view_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def artifact(self) -> ArtifactRef:
@@ -2225,7 +2211,7 @@ class DerivedVoxelView:
         }
         return VoxelObservation(
             observation_id=(
-                f"sandbox-observation-{_digest(observation_payload)[:20]}"
+                f"sandbox-observation-{canonical_digest(observation_payload)[:20]}"
             ),
             source_artifact_id=artifact.artifact_id,
             source_artifact_sha256=artifact.sha256,
@@ -2791,7 +2777,7 @@ def _local_sample(
         object_id=item.object_id,
         resolution=resolution,
         occupied_sample_count=len(occupied),
-        sample_digest=_digest(
+        sample_digest=canonical_digest(
             {
                 "object_id": item.object_id,
                 "source_object_digest": item.source_object_digest,
@@ -2915,7 +2901,7 @@ def derive_voxel_view(
     return DerivedVoxelView(
         scene_digest=scene.scene_digest,
         realization_receipt_digest=receipt.receipt_digest,
-        policy_digest=_digest(policy.to_dict()),
+        policy_digest=canonical_digest(policy.to_dict()),
         resolution=policy.default_resolution,
         bounds=integer_bounds,
         occupied_cells=tuple(sorted(occupied)),

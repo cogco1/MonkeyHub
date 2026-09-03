@@ -12,7 +12,6 @@ must first give those mechanics typed public contracts and independent tests.
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 
 from archflow.adapters.site_observation import (
@@ -70,6 +69,7 @@ from archflow.state.geometry_program import (
     GeometryParameterKind,
     LengthUnit,
 )
+from archflow.contracts.canonical import canonical_json
 
 
 IDENTITY = GeometryProposalProviderIdentity(
@@ -78,16 +78,6 @@ IDENTITY = GeometryProposalProviderIdentity(
     provider_version="1",
     provider_fingerprint="5" * 64,
 )
-
-
-def _canonical(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
 
 
 def _parameter(
@@ -565,7 +555,7 @@ def _validation_payload(receipt) -> dict[str, object]:  # type: ignore[no-untype
 
 __all__ = [
     "IDENTITY",
-    "_canonical",
+    "canonical_json",
     "_inputs",
     "_operation",
     "_parameter",

@@ -8,8 +8,6 @@ candidate, geometry, repository, aesthetic, expert, or commitment writer.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping
@@ -40,6 +38,7 @@ from archflow.state.operational_state import (
 from archflow.submission.commitment_revision import (
     CommitmentRevisionProposal,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 _MAX_ITEMS = 4096
@@ -125,29 +124,6 @@ def _unique(values: tuple[str, ...], field: str) -> None:
         raise ValueError(f"{field} contains duplicates")
 
 
-def _sha256(value: object, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    digest = value.lower()
-    if len(digest) != 64 or any(char not in _HEX for char in digest):
-        raise ValueError(f"{field} must be a SHA-256 hex digest")
-    return digest
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
 def _branch_to_dict(branch: BranchRef) -> dict[str, object]:
     return {
         "project_id": branch.run.project_id,
@@ -206,7 +182,7 @@ def _commitment_ref(commitment_id: str) -> str:
     try:
         return require_logical_ref(candidate, "commitment ref")
     except ValueError:
-        return f"commitment-id:{_digest(commitment_id)}"
+        return f"commitment-id:{canonical_digest(commitment_id)}"
 
 
 def _criterion_observation_ref(
@@ -215,7 +191,7 @@ def _criterion_observation_ref(
 ) -> str:
     return (
         "criterion-observation:"
-        f"{_digest((provider_id, criterion_id))}"
+        f"{canonical_digest((provider_id, criterion_id))}"
     )
 
 
@@ -242,7 +218,7 @@ class CriterionObservation:
         object.__setattr__(
             self,
             "base_state_digest",
-            _sha256(self.base_state_digest, "base_state_digest"),
+            require_sha256(self.base_state_digest, "base_state_digest"),
         )
         _text(self.provider_id, "provider_id")
         _text(self.criterion_id, "criterion_id")
@@ -309,7 +285,7 @@ class TemporalMonitorState:
         object.__setattr__(
             self,
             "observed_base_state_digest",
-            _sha256(
+            require_sha256(
                 self.observed_base_state_digest,
                 "observed_base_state_digest",
             ),
@@ -384,7 +360,7 @@ def commitment_content_digest(commitment: Commitment) -> str:
 
     if not isinstance(commitment, Commitment):
         raise TypeError("commitment must be Commitment")
-    return _digest(commitment.to_dict())
+    return canonical_digest(commitment.to_dict())
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,7 +379,7 @@ class CommitmentProgress:
         object.__setattr__(
             self,
             "commitment_digest",
-            _sha256(self.commitment_digest, "commitment_digest"),
+            require_sha256(self.commitment_digest, "commitment_digest"),
         )
         if not isinstance(self.outcome, CommitmentProgressOutcome):
             raise TypeError("outcome must be CommitmentProgressOutcome")
@@ -513,7 +489,7 @@ class CommitmentMonitorReceipt:
         object.__setattr__(
             self,
             "base_state_digest",
-            _sha256(self.base_state_digest, "base_state_digest"),
+            require_sha256(self.base_state_digest, "base_state_digest"),
         )
         if type(self.completion_boundary) is not bool:
             raise TypeError("completion_boundary must be bool")
@@ -662,7 +638,7 @@ def _make_finding(
         "dependency_path": dependency_path,
     }
     return CommitmentFinding(
-        finding_id=f"cmf-{_digest(payload)[:24]}",
+        finding_id=f"cmf-{canonical_digest(payload)[:24]}",
         code=code,
         message=message,
         commitment_id=commitment.commitment_id,
@@ -696,7 +672,7 @@ def _blocked_evidence_obligation(
         status=ObligationStatus.BLOCKED,
         subject_refs=(_commitment_ref(finding.commitment_id),),
         validator_ref=(
-            f"criterion-provider:{_digest(provider_id)[:24]}"
+            f"criterion-provider:{canonical_digest(provider_id)[:24]}"
         ),
         condition=ObligationCondition(
             ref=_criterion_observation_ref(
@@ -1200,7 +1176,7 @@ def monitor_commitments(
             temporal_states.append(temporal)
             temporal_ref = (
                 "temporal-monitor:"
-                f"{_digest(temporal.to_dict())}"
+                f"{canonical_digest(temporal.to_dict())}"
             )
         progress.append(
             CommitmentProgress(
@@ -1240,7 +1216,7 @@ def monitor_commitments(
         tuple(sorted(set(violated_ids))),
     )
     for impact in impacts:
-        identity = _digest(
+        identity = canonical_digest(
             (
                 candidate_id,
                 impact.target_ref,
@@ -1280,7 +1256,7 @@ def monitor_commitments(
         revision_proposals.append(
             CommitmentRevisionProposal(
                 proposal_id=(
-                    f"crp-{_digest((candidate_id, finding.finding_id))[:24]}"
+                    f"crp-{canonical_digest((candidate_id, finding.finding_id))[:24]}"
                 ),
                 commitment_id=commitment_id,
                 candidate_id=candidate_id,
@@ -1356,7 +1332,7 @@ def monitor_commitments(
         ],
     }
     return CommitmentMonitorReceipt(
-        receipt_id=f"cmr-{_digest(receipt_payload)[:24]}",
+        receipt_id=f"cmr-{canonical_digest(receipt_payload)[:24]}",
         candidate_id=candidate_id,
         branch=state.branch,
         base_state_digest=state.state_digest,

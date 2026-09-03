@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -21,6 +20,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
+from archflow.contracts.canonical import canonical_digest, require_sha256
 
 
 _MAX_ITEMS = 128
@@ -270,7 +270,7 @@ class ClarificationRequest:
         if not isinstance(self.branch, BranchRef):
             raise TypeError("branch must be BranchRef")
         self.branch.run.base.require_digest()
-        _sha256(
+        require_sha256(
             self.operational_state_digest,
             "operational_state_digest",
         )
@@ -326,7 +326,7 @@ class ClarificationRequest:
 
     @property
     def request_digest(self) -> str:
-        return _digest(self._identity())
+        return canonical_digest(self._identity())
 
     @property
     def request_id(self) -> str:
@@ -450,11 +450,11 @@ class AuthorityDecisionReceipt:
 
     def __post_init__(self) -> None:
         require_identifier(self.request_id, "request_id")
-        _sha256(self.request_digest, "request_digest")
+        require_sha256(self.request_digest, "request_digest")
         if not isinstance(self.branch, BranchRef):
             raise TypeError("branch must be BranchRef")
         self.branch.run.base.require_digest()
-        _sha256(
+        require_sha256(
             self.operational_state_digest,
             "operational_state_digest",
         )
@@ -502,7 +502,7 @@ class AuthorityDecisionReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return _digest(self._identity())
+        return canonical_digest(self._identity())
 
     @property
     def receipt_id(self) -> str:
@@ -734,17 +734,6 @@ def _utc(value: object, field: str) -> datetime:
     return parsed
 
 
-def _digest(value: object) -> str:
-    encoded = json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _text(value: object, field: str) -> None:
     if (
         not isinstance(value, str)
@@ -752,15 +741,6 @@ def _text(value: object, field: str) -> None:
         or len(value) > _MAX_TEXT
     ):
         raise ValueError(f"{field} must be bounded non-empty text")
-
-
-def _sha256(value: object, field: str) -> None:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(char not in "0123456789abcdef" for char in value.lower())
-    ):
-        raise ValueError(f"{field} must be a SHA-256 digest")
 
 
 def _mapping(value: object, field: str) -> Mapping[str, Any]:

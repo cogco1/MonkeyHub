@@ -25,6 +25,7 @@ from archflow.production import (
     ProviderIdentity,
     activate_model_provider,
 )
+from archflow.contracts.canonical import canonical_digest
 from archflow.project import (
     FilesystemProjectRepository,
     PersistenceArea,
@@ -32,7 +33,6 @@ from archflow.project import (
     ProjectRecordRef,
     RunRef,
     bootstrap_raw_request_project,
-    canonical_json_sha256,
 )
 from archflow.runtime.persistence.production_transition import (
     ProductionRecordRole,

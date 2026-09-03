@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
-import json
 import math
 import time
 import urllib.request
@@ -114,6 +113,7 @@ from archflow.state.stage_convergence import (
     StageTransitionRequest,
     evaluate_stage_convergence,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 PROJECT_ID = "parthenon-reconstruction"
@@ -786,20 +786,6 @@ def compile_stage_architectural_completeness(
         family_coverage=coverage,
         parameter_evidence=_stage_parameter_evidence(stage, decision_sources),
     )
-
-
-def _canonical(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
 def _sha_bytes(data: bytes) -> str:
@@ -1620,8 +1606,8 @@ def _create_three_dm(
             "archflow:coordinate_system": "RhinoWorldXY_ZUp",
             "archflow:up_axis": "Z",
             "archflow:material_id": str(operation["material_id"]),
-            "archflow:decision_refs": _canonical(operation["decision_refs"]),
-            "archflow:source_refs": _canonical(operation["source_refs"]),
+            "archflow:decision_refs": canonical_json(operation["decision_refs"], ascii=False),
+            "archflow:source_refs": canonical_json(operation["source_refs"], ascii=False),
         }.items():
             attributes.SetUserString(key, value)
         source_id = add(geometry, attributes)
@@ -2372,7 +2358,7 @@ def run_project(
                 "canonical_write_authority": False,
             },
         )
-        revision_digest = _digest(candidates[0])
+        revision_digest = canonical_digest(candidates[0], ascii=False)
         branch = BranchRef(run=run, branch_id=BRANCH_ID, epoch=1)
         scope = BranchResearchScope(
             scope_id="parthenon-selected-branch-scope",
@@ -2900,7 +2886,7 @@ def run_project(
                 "operations": list(operations),
                 "canonical_write_authority": False,
             }
-            program_digest = _digest(program_core)
+            program_digest = canonical_digest(program_core, ascii=False)
             program_payload = {**program_core, "program_digest": program_digest}
             program_ref = repository.put_json(
                 run=run,

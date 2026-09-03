@@ -17,11 +17,11 @@ the cella side-wall inner face.
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import math
 from collections import Counter, defaultdict
 from typing import Iterable, Mapping, Sequence
+from archflow.contracts.canonical import canonical_digest
 
 
 BRANCH_ID = "idealized-periclean-original"
@@ -79,18 +79,8 @@ class InnerColonnadeError(RuntimeError):
     """The current successor or requested correction violates the contract."""
 
 
-def _digest(value: object) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
 def _operation_fingerprint(operation: Mapping[str, object]) -> str:
-    return _digest(operation)
+    return canonical_digest(operation, ascii=False)
 
 
 def _finite(value: object, label: str) -> float:
@@ -636,7 +626,7 @@ def _window_replacements(
         wall_min = tuple(min(bounds[0][axis] for bounds in old_bounds) for axis in range(3))
         wall_max = tuple(max(bounds[1][axis] for bounds in old_bounds) for axis in range(3))
         clear_values = {
-            _digest(item["parameters"]["window_clear"]): item["parameters"]["window_clear"]
+            canonical_digest(item["parameters"]["window_clear"], ascii=False): item["parameters"]["window_clear"]
             for item in old_pieces
         }
         if len(clear_values) != 1:
@@ -944,9 +934,9 @@ def compile_inner_colonnade_delta(
             "window": window_basis,
             "visual_role": "topology_or_morphology_only_not_exact_dimension",
         },
-        "validation_digest": _digest(validation),
+        "validation_digest": canonical_digest(validation, ascii=False),
     }
-    receipt["delta_digest"] = _digest({key: value for key, value in receipt.items()})
+    receipt["delta_digest"] = canonical_digest({key: value for key, value in receipt.items()}, ascii=False)
     return full, receipt
 
 

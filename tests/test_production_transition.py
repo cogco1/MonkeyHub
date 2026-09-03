@@ -11,6 +11,7 @@ from archflow.ports.model import (
     ModelInvocationReceipt,
     ModelInvocationStatus,
 )
+from archflow.contracts.canonical import canonical_digest
 from archflow.project import (
     FilesystemProjectRepository,
     PersistenceArea,
@@ -18,7 +19,6 @@ from archflow.project import (
     ProjectRecordRef,
     ProjectVersionRef,
     RunRef,
-    canonical_json_sha256,
 )
 from archflow.project import production_checkpoint as project_checkpoint_facade
 from archflow.project import production_transition as project_transition_facade
@@ -562,7 +562,7 @@ class ProductionCheckpointTests(unittest.TestCase):
             "ProductionRunCheckpoint@2",
         )
         self.assertEqual(
-            canonical_json_sha256(checkpoint.to_dict()),
+            canonical_digest(checkpoint.to_dict()),
             "93931eb17fa010ac1f2dd1557391b4003c5716b180ea046bc8c40775b1953b3a",
         )
         fixed_run = RunRef(

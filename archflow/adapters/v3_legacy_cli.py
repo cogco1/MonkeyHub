@@ -14,6 +14,7 @@ from typing import Any
 
 from archflow.project import ProjectVersionRef
 from archflow.project.refs import require_identifier
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 class V3LegacyStatus(StrEnum):
@@ -75,7 +76,7 @@ class V3LegacyProviderSpec:
         require_identifier(self.provider_id, "provider_id")
         require_identifier(self.capability_id, "capability_id")
         _text(self.provider_version, "provider_version")
-        _sha256(self.v3_fingerprint, "v3_fingerprint")
+        require_sha256(self.v3_fingerprint, "v3_fingerprint")
         if not isinstance(self.command, tuple) or not self.command:
             raise ValueError("command must be an explicit non-empty tuple")
         for item in self.command:
@@ -108,7 +109,7 @@ class V3LegacyProviderSpec:
 
     @property
     def provider_fingerprint(self) -> str:
-        return _digest(
+        return canonical_digest(
             {
                 "provider_id": self.provider_id,
                 "provider_version": self.provider_version,
@@ -116,7 +117,7 @@ class V3LegacyProviderSpec:
                 "v3_fingerprint": self.v3_fingerprint,
                 "command": list(self.command),
             }
-        )
+        , ascii=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,7 +275,7 @@ class V3LegacyCapabilityReceipt:
         if type(self.duration_ms) is not int or self.duration_ms < 0:
             raise ValueError("duration_ms must be a non-negative integer")
         if self.output_sha256 is not None:
-            _sha256(self.output_sha256, "output_sha256")
+            require_sha256(self.output_sha256, "output_sha256")
         if self.status is V3LegacyStatus.SUCCESS:
             if (
                 self.output is None
@@ -335,7 +336,7 @@ class V3LegacyCliBridge:
                 "configured provider does not expose the requested capability",
                 duration_ms=0,
             )
-        input_bytes = _canonical_json(request.to_payload()).encode("utf-8")
+        input_bytes = canonical_json(request.to_payload(), ascii=False).encode("utf-8")
         if len(input_bytes) > self.spec.max_input_bytes:
             return self._failure(
                 request,
@@ -434,7 +435,7 @@ class V3LegacyCliBridge:
             None,
         )
         return V3LegacyCapabilityReceipt(
-            receipt_id=f"v3-legacy-{_digest(identity)[:20]}",
+            receipt_id=f"v3-legacy-{canonical_digest(identity, ascii=False)[:20]}",
             status=V3LegacyStatus.SUCCESS,
             request=request,
             provider_id=self.spec.provider_id,
@@ -531,7 +532,7 @@ class V3LegacyCliBridge:
             error_code,
         )
         return V3LegacyCapabilityReceipt(
-            receipt_id=f"v3-legacy-{_digest(identity)[:20]}",
+            receipt_id=f"v3-legacy-{canonical_digest(identity, ascii=False)[:20]}",
             status=status,
             request=request,
             provider_id=self.spec.provider_id,
@@ -574,7 +575,7 @@ def missing_v3_provider_receipt(
         "status": V3LegacyStatus.MISSING_PROVIDER.value,
     }
     return V3LegacyCapabilityReceipt(
-        receipt_id=f"v3-legacy-{_digest(identity)[:20]}",
+        receipt_id=f"v3-legacy-{canonical_digest(identity, ascii=False)[:20]}",
         status=V3LegacyStatus.MISSING_PROVIDER,
         request=request,
         provider_id=provider_id,
@@ -602,32 +603,9 @@ def _base_payload(base: ProjectVersionRef) -> dict[str, Any]:
     }
 
 
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
 def _text(value: object, field: str, *, maximum: int = 1_000) -> None:
     if not isinstance(value, str) or not value.strip() or len(value) > maximum:
         raise ValueError(f"{field} must be bounded non-empty text")
-
-
-def _sha256(value: object, field: str) -> None:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
-        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
 
 
 def _refs(value: object, field: str) -> None:
@@ -673,7 +651,7 @@ def _detached_object_json(value: object, field: str) -> str:
             raise V3LegacyBoundaryError(
                 f"{field} contains a non-JSON value"
             )
-    encoded = _canonical_json(value)
+    encoded = canonical_json(value, ascii=False)
     if len(encoded.encode("utf-8")) > 1_000_000:
         raise V3LegacyBoundaryError(f"{field} exceeds detached JSON limit")
     return encoded

@@ -50,6 +50,7 @@ from archflow.capabilities.stage_evidence_pack import (  # noqa: E402
 from tools.build_pantheon_progress_snapshot import (  # noqa: E402
     PANTHEON_STAGE_PROGRESS_SNAPSHOT_KEYS,
 )
+from archflow.contracts.canonical import canonical_json_bytes
 
 _STAGE_RE = re.compile(r"^(?P<kind>.+?)-(?P<stage>\d{3})-[0-9a-f]{64}\.json$")
 _DIGEST_RE = re.compile(r"-(?P<digest>[0-9a-f]{64})\.json$")
@@ -281,17 +282,8 @@ def _normalize_coverage(
     }
 
 
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-
-
 def _stage_digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json_bytes(value)).hexdigest()
+    return hashlib.sha256(canonical_json_bytes(value, ascii=False)).hexdigest()
 
 
 def _exact_keys(value: dict, expected: frozenset[str], label: str) -> None:

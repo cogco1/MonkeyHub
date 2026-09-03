@@ -17,10 +17,8 @@ stage is accepted.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from enum import StrEnum
-from hashlib import sha256
 from typing import Mapping
 
 from archflow.project.refs import (
@@ -31,6 +29,7 @@ from archflow.project.refs import (
     RunRef,
     require_identifier,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -88,19 +87,6 @@ class StageEvidenceGapKind(StrEnum):
 class StageEvidenceGapSeverity(StrEnum):
     BLOCKING = "blocking"
     ADVISORY = "advisory"
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _digest(value: object) -> str:
-    return sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _require_sha256(value: str, field: str) -> str:
@@ -936,7 +922,7 @@ class StageEvidencePack:
 
     @property
     def pack_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict(), ascii=False)
 
     @property
     def blocking_gap_ids(self) -> tuple[str, ...]:

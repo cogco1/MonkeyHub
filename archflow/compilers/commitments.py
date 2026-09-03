@@ -7,8 +7,6 @@ ambiguity, and requires named authority before any proposal becomes active.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -22,6 +20,7 @@ from archflow.state import (
     RevisionPolicy,
     transition_commitment,
 )
+from archflow.contracts.canonical import canonical_digest
 
 
 class IntentOperator(StrEnum):
@@ -77,7 +76,7 @@ class IntentTerm:
 
     @property
     def digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict(), ascii=False)
 
     @property
     def ref(self) -> str:
@@ -252,7 +251,7 @@ def compile_intent(
             }
             return IntentCompilation(
                 schema="IntentCompilation@1",
-                compilation_id=f"intent-{_digest(identity)[:20]}",
+                compilation_id=f"intent-{canonical_digest(identity, ascii=False)[:20]}",
                 observation_id=observation.observation_id,
                 status=IntentCompilationStatus.ALREADY_LOCKED,
                 locked_commitment_id=current.commitment.commitment_id,
@@ -281,7 +280,7 @@ def compile_intent(
     }
     return IntentCompilation(
         schema="IntentCompilation@1",
-        compilation_id=f"intent-{_digest(identity)[:20]}",
+        compilation_id=f"intent-{canonical_digest(identity, ascii=False)[:20]}",
         observation_id=observation.observation_id,
         status=status,
         proposals=proposals,
@@ -374,7 +373,7 @@ def _proposal(
         "scope_ref": observation.scope_ref,
         "source_event_ref": observation.source_event_ref,
     }
-    digest = _digest(identity)
+    digest = canonical_digest(identity, ascii=False)
     commitment_id = f"commitment.intent.{digest[:20]}"
     proposal_id = f"proposal.intent.{digest[:20]}"
     commitment = Commitment(
@@ -418,22 +417,11 @@ def _unknown(
     }
     return IntentCompilation(
         schema="IntentCompilation@1",
-        compilation_id=f"intent-{_digest(identity)[:20]}",
+        compilation_id=f"intent-{canonical_digest(identity, ascii=False)[:20]}",
         observation_id=observation.observation_id,
         status=IntentCompilationStatus.UNKNOWN,
         unknown_reasons=(reason,),
     )
-
-
-def _digest(payload: dict[str, object]) -> str:
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def _text(value: object, field: str) -> None:

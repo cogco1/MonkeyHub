@@ -30,6 +30,7 @@ from archflow.state import StateRef
 from archflow.state.operational_state import (
     OperationalMarkovState as CompiledOperationalMarkovState,
 )
+from archflow.contracts.canonical import canonical_json_bytes, require_sha256
 
 _MAX_ITEMS = 128
 _MAX_TEXT = 2_000
@@ -141,12 +142,12 @@ class LegacyOperationalMarkovState:
             if self.last_transition_id is not None:
                 raise ValueError("initial state cannot have a transition id")
         else:
-            _digest(self.parent_state_digest, "parent_state_digest")
+            require_sha256(self.parent_state_digest, "parent_state_digest")
             _text(self.last_transition_id, "last_transition_id")
 
     @property
     def state_digest(self) -> str:
-        return hashlib.sha256(_canonical_json(_state_identity(self))).hexdigest()
+        return hashlib.sha256(canonical_json_bytes(_state_identity(self), ascii=False)).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
         payload = _state_identity(self)
@@ -176,8 +177,8 @@ class LegacyTransitionProposal:
             (self.intent, "intent"),
         ):
             _text(value, field)
-        _digest(self.base_state_digest, "base_state_digest")
-        _digest(self.plan_sha256, "plan_sha256")
+        require_sha256(self.base_state_digest, "base_state_digest")
+        require_sha256(self.plan_sha256, "plan_sha256")
         _bounded_text_tuple(
             self.resolves_obligation_ids,
             "resolves_obligation_ids",
@@ -222,8 +223,8 @@ class TransitionObservation:
         _text(self.observation_id, "observation_id")
         _text(self.proposal_id, "observation.proposal_id")
         _text(self.summary, "observation.summary")
-        _digest(self.base_state_digest, "observation.base_state_digest")
-        _digest(self.plan_sha256, "observation.plan_sha256")
+        require_sha256(self.base_state_digest, "observation.base_state_digest")
+        require_sha256(self.plan_sha256, "observation.plan_sha256")
         if not isinstance(self.status, TransitionObservationStatus):
             raise TypeError("observation.status is invalid")
         if not isinstance(self.fact_updates, tuple):
@@ -492,7 +493,7 @@ def apply_operational_transition(
     }
     receipt_id = (
         "operational-transition-"
-        + hashlib.sha256(_canonical_json(identity)).hexdigest()[:20]
+        + hashlib.sha256(canonical_json_bytes(identity, ascii=False)).hexdigest()[:20]
     )
     receipt = OperationalTransitionReceipt(
         receipt_id=receipt_id,
@@ -592,7 +593,7 @@ def operational_plan_sha256(plan: Mapping[str, Any]) -> str:
         )
     except (TypeError, ValueError) as exc:
         raise OperationalTransitionError("plan must be finite JSON") from exc
-    return hashlib.sha256(_canonical_json(frozen)).hexdigest()
+    return hashlib.sha256(canonical_json_bytes(frozen, ascii=False)).hexdigest()
 
 
 def compile_operational_transition_trace(
@@ -646,7 +647,7 @@ def compile_operational_transition_trace(
         "aesthetic_winner": None,
         "canonical_commit_receipt": None,
     }
-    if len(_canonical_json(payload)) > _MAX_JSON_BYTES:
+    if len(canonical_json_bytes(payload, ascii=False)) > _MAX_JSON_BYTES:
         raise OperationalTransitionError("transition trace is too large")
     return payload
 
@@ -666,7 +667,7 @@ def load_operational_transition_trace(
         ) from exc
     if (
         not isinstance(frozen, dict)
-        or len(_canonical_json(frozen)) > _MAX_JSON_BYTES
+        or len(canonical_json_bytes(frozen, ascii=False)) > _MAX_JSON_BYTES
     ):
         raise OperationalTransitionError("transition trace is not loadable")
     if frozen.get("schema") != "OperationalTransitionTrace@1":
@@ -1135,15 +1136,6 @@ def _state_ref_from_json(value: object, field: str) -> StateRef:
     )
 
 
-def _canonical_json(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-
-
 def _text(value: object, field: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be non-empty text")
@@ -1160,15 +1152,6 @@ def _bounded_text_tuple(value: object, field: str) -> None:
         _text(item, f"{field} item")
 
 
-def _digest(value: object, field: str) -> None:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
-        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
-
-
 def _json_text(value: object, field: str) -> str:
     try:
         _text(value, field)
@@ -1180,7 +1163,7 @@ def _json_text(value: object, field: str) -> str:
 
 def _json_digest(value: object, field: str) -> str:
     try:
-        _digest(value, field)
+        require_sha256(value, field)
     except ValueError as exc:
         raise OperationalTransitionError(str(exc)) from exc
     assert isinstance(value, str)

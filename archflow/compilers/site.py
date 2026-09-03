@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 
 from archflow.adapters.site_observation import AuthorizedSiteObservation
@@ -15,6 +13,7 @@ from archflow.state.site_context import (
     SiteContext,
     SiteUnknownTopic,
 )
+from archflow.contracts.canonical import canonical_digest
 
 
 _COMPILER_ID = "archflow.site-context-compiler"
@@ -127,7 +126,7 @@ def compile_site_context(
         obligations=obligations,
         evidence_refs=evidence_refs,
     )
-    compilation_id = _digest(
+    compilation_id = canonical_digest(
         {
             "project_id": brief.project_id,
             "run_id": brief.run_id,
@@ -272,16 +271,6 @@ def _text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be non-empty text")
     return value
-
-
-def _digest(value: object) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 __all__ = [

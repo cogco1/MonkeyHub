@@ -68,15 +68,19 @@ def _require_json_value(value: object, *, path: str, active: set[int]) -> None:
     )
 
 
-def canonical_json(value: object) -> str:
-    """Return deterministic finite JSON with stable key ordering."""
+def canonical_json(value: object, *, ascii: bool = True) -> str:
+    """Return deterministic finite JSON with stable key ordering.
+
+    ``ascii=False`` keeps non-ASCII text as UTF-8 instead of escaping it; the
+    two forms digest differently, so a record keeps the form it was written in.
+    """
 
     _require_json_value(value, path="$", active=set())
     try:
         return json.dumps(
             value,
             allow_nan=False,
-            ensure_ascii=True,
+            ensure_ascii=ascii,
             separators=(",", ":"),
             sort_keys=True,
         )
@@ -84,16 +88,16 @@ def canonical_json(value: object) -> str:
         raise CanonicalValueError("value is not canonical JSON") from exc
 
 
-def canonical_json_bytes(value: object) -> bytes:
+def canonical_json_bytes(value: object, *, ascii: bool = True) -> bytes:
     """Return UTF-8 bytes for :func:`canonical_json`."""
 
-    return canonical_json(value).encode("utf-8")
+    return canonical_json(value, ascii=ascii).encode("utf-8")
 
 
-def canonical_digest(value: object) -> str:
+def canonical_digest(value: object, *, ascii: bool = True) -> str:
     """Return the lowercase SHA-256 of canonical JSON bytes."""
 
-    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+    return hashlib.sha256(canonical_json_bytes(value, ascii=ascii)).hexdigest()
 
 
 def require_sha256(value: object, field: str) -> str:

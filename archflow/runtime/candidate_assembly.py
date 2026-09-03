@@ -28,6 +28,7 @@ from archflow.submission import (
     CandidateSubmission,
     Claim,
 )
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -48,20 +49,6 @@ class CandidateDisposition(StrEnum):
     EXECUTED = "executed"
     REJECTED = "rejected"
     REVISED = "revised"
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _sha(value: object, field: str) -> str:
@@ -325,7 +312,7 @@ class CandidateExecutablePlan:
             raise CandidateAssemblyError(
                 "MCP plan payload must be a non-empty object"
             )
-        if _canonical_json(payload) != self.payload_json:
+        if canonical_json(payload) != self.payload_json:
             raise CandidateAssemblyError(
                 "MCP plan payload must be canonical JSON"
             )
@@ -365,7 +352,7 @@ class CandidateExecutablePlan:
             run_id=state.run_id,
             base=state.base,
             design_state_digest=state.state_digest,
-            payload_json=_canonical_json(dict(payload)),
+            payload_json=canonical_json(dict(payload)),
             bindings=tuple(
                 sorted(bindings, key=lambda item: item.json_pointer)
             ),
@@ -627,7 +614,7 @@ class CandidateAssembly:
 
     @property
     def assembly_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:
@@ -742,7 +729,7 @@ class CandidateExecutionHandoff:
 
     @property
     def handoff_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -868,7 +855,7 @@ class CandidateDerivationArchive:
 
     @property
     def archive_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -979,12 +966,12 @@ def assemble_candidate(
         "policies": [item.to_dict() for item in ordered_policies],
         "workspace_id": workspace_id,
     }
-    submission_id = f"candidate-{_digest(candidate_seed)[:20]}"
+    submission_id = f"candidate-{canonical_digest(candidate_seed)[:20]}"
     developments = {item.component_id: item for item in state.components}
     claims = tuple(
         Claim(
             key=f"component.{component.component_id}",
-            value=_canonical_json(
+            value=canonical_json(
                 {
                     "component": component.to_dict(),
                     "development": (
@@ -1064,7 +1051,7 @@ def bind_mcp_execution(
     if not isinstance(assembly, CandidateAssembly):
         raise TypeError("assembly must be CandidateAssembly")
     source = assembly.submission
-    executed_id = f"candidate-{_digest({
+    executed_id = f"candidate-{canonical_digest({
         'source_submission_id': source.submission_id,
         'artifact_sha256': executed_artifact.sha256,
         'plan_digest': assembly.plan.plan_digest,

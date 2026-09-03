@@ -2,27 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Mapping
 from typing import Any
+from archflow.contracts.canonical import canonical_digest
 
 
 _HEX = frozenset("0123456789abcdef")
-
-
-def canonical_json_sha256(value: object) -> str:
-    try:
-        encoded = json.dumps(
-            value,
-            allow_nan=False,
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-    except (TypeError, ValueError) as exc:
-        raise ValueError("project state must be finite JSON") from exc
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def project_state_sha256(state: Mapping[str, Any]) -> str:
@@ -32,7 +17,7 @@ def project_state_sha256(state: Mapping[str, Any]) -> str:
         raise TypeError("project state must be a mapping")
     content = dict(state)
     declared = content.pop("state_sha256", None)
-    digest = canonical_json_sha256(content)
+    digest = canonical_digest(content)
     if declared is None:
         return digest
     if (

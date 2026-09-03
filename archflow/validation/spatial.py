@@ -7,14 +7,13 @@ derived exclusively from its checks; callers cannot supply a hard-gate result.
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass, field
 from enum import StrEnum
-from hashlib import sha256
 
 from archflow.contracts.fields import exact_mapping
 from archflow.project.refs import require_identifier
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 class SpatialValidationError(ValueError):
@@ -49,20 +48,6 @@ class SpatialCheckStatus(StrEnum):
 class SpatialValidationStatus(StrEnum):
     PASSED = "PASSED"
     FAILED = "FAILED"
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _number(value: object, field_name: str) -> float:
@@ -468,7 +453,7 @@ class SpatialValidationReceipt:
         object.__setattr__(
             self,
             "receipt_id",
-            f"spatial-validation-{_digest(identity)[:24]}",
+            f"spatial-validation-{canonical_digest(identity)[:24]}",
         )
 
     @property
@@ -481,7 +466,7 @@ class SpatialValidationReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -517,7 +502,7 @@ def _typed_unique(
 
 
 def _check_id(kind: SpatialCheckKind, subject_refs: tuple[str, ...]) -> str:
-    suffix = _digest(
+    suffix = canonical_digest(
         {"kind": kind.value, "subject_refs": list(subject_refs)}
     )[:20]
     return f"spatial-check-{suffix}"
@@ -723,7 +708,7 @@ class SpatialValidationInput:
 
     @property
     def input_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
 
 def normalize_spatial_validation_input(

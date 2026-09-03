@@ -7,8 +7,6 @@ every control transition remains bound to that immutable plan digest.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -28,6 +26,7 @@ from archflow.state.build_policy import (
     ResourceDemand,
 )
 from archflow.state.operational_state import FactEpistemicStatus
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 class StagedBuildError(ValueError):
@@ -48,23 +47,6 @@ class BuildRunStatus(StrEnum):
     PAUSED = "paused"
     CANCELLED = "cancelled"
     COMPLETED = "completed"
-
-
-def _canonical(value: object) -> str:
-    try:
-        return json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise StagedBuildError("value must be finite canonical JSON") from exc
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
 def _sha(value: object, field: str) -> str:
@@ -220,7 +202,7 @@ class StageScope:
 
 
 def _scope_digest(scopes: tuple[StageScope, ...]) -> str:
-    return _digest([item.to_dict() for item in scopes])
+    return canonical_digest([item.to_dict() for item in scopes], ascii=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -392,7 +374,7 @@ class MaterialAccountReceipt:
 
     @property
     def account_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict(), ascii=False)
 
     def needs_for_stage(self, stage_id: str) -> tuple[MaterialReconciliation, ...]:
         require_identifier(stage_id, "stage_id")
@@ -780,7 +762,7 @@ class StagedBuildPlan:
 
     @property
     def plan_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict(), ascii=False)
 
     @property
     def total_work_units(self) -> int:
@@ -1023,7 +1005,7 @@ class StagedBuildCheckpoint:
 
     @property
     def checkpoint_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict(), ascii=False)
 
     def to_dict(self) -> dict[str, object]:
         return {

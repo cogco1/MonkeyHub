@@ -29,6 +29,7 @@ from archflow.state.operational_state import (
     require_local_id,
     require_logical_ref,
 )
+from archflow.contracts.canonical import canonical_json
 
 
 _MAX_ITEMS = 4096
@@ -62,19 +63,6 @@ def _tuple(value: object, field: str) -> tuple[Any, ...]:
 def _unique(values: tuple[str, ...], field: str) -> None:
     if len(values) != len(set(values)):
         raise ValueError(f"{field} contains duplicates")
-
-
-def _canonical_json(value: object) -> str:
-    try:
-        return json.dumps(
-            value,
-            allow_nan=False,
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    except (TypeError, ValueError) as exc:
-        raise ValueError("value must be bounded JSON data") from exc
 
 
 def _mapping(value: object, field: str) -> Mapping[str, Any]:
@@ -451,7 +439,7 @@ def load_decision_operator_record(
     if schema == DecisionOperator.SCHEMA:
         return DecisionOperator.from_dict(payload)
     if schema == LegacyDecisionOperatorV1.SCHEMA:
-        return LegacyDecisionOperatorV1(_canonical_json(dict(payload)))
+        return LegacyDecisionOperatorV1(canonical_json(dict(payload)))
     raise ValueError("unsupported decision-operator schema")
 
 
@@ -517,7 +505,7 @@ class StateDelta:
     @property
     def delta_digest(self) -> str:
         return hashlib.sha256(
-            _canonical_json(self.to_dict()).encode("utf-8")
+            canonical_json(self.to_dict()).encode("utf-8")
         ).hexdigest()
 
 
@@ -789,12 +777,12 @@ def _check_preconditions(
             passed = actual is None
         elif condition.comparator is ConditionComparator.EQUALS:
             passed = (
-                _canonical_json(actual)
+                canonical_json(actual)
                 == condition.expected_value.canonical_json
             )
         else:
             passed = (
-                _canonical_json(actual)
+                canonical_json(actual)
                 != condition.expected_value.canonical_json
             )
         if not passed:
@@ -1088,7 +1076,7 @@ def _refresh_obligation_readiness(
                     else:
                         value = None
                 condition_ready = (
-                    _canonical_json(value)
+                    canonical_json(value)
                     == item.condition.expected_value.canonical_json
                 )
             blockers_ready = all(

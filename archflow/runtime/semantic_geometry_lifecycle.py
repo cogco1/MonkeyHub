@@ -29,6 +29,7 @@ from archflow.state.spatial import (
     SpatialProposalError,
     compile_component_transition,
 )
+from archflow.contracts.canonical import require_sha256
 
 
 class SemanticGeometryLifecycleStatus(StrEnum):
@@ -63,7 +64,7 @@ class InitialSemanticGeometryReceipt:
             (self.geometry_proposal_digest, "geometry_proposal_digest"),
             (self.geometry_program_digest, "geometry_program_digest"),
         ):
-            _sha256(value, field)
+            require_sha256(value, field)
         if (
             not isinstance(self.source_refs, tuple)
             or not self.source_refs
@@ -185,9 +186,9 @@ class SemanticGeometryLifecycleReceipt:
             (self.current_design_state_digest, "current_design_state_digest"),
             (self.predecessor_program_digest, "predecessor_program_digest"),
         ):
-            _sha256(value, field)
+            require_sha256(value, field)
         if self.current_program_digest is not None:
-            _sha256(self.current_program_digest, "current_program_digest")
+            require_sha256(self.current_program_digest, "current_program_digest")
         if self.component_transition is not None and not isinstance(
             self.component_transition,
             ComponentTransitionReceipt,
@@ -706,11 +707,3 @@ def _sorted_ids(values: object, field: str) -> tuple[str, ...]:
     return values
 
 
-def _sha256(value: object, field: str) -> str:
-    if (
-        not isinstance(value, str)
-        or len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
-        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
-    return value

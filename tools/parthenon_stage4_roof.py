@@ -10,11 +10,10 @@ does not establish.
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 import math
 from collections.abc import Mapping, Sequence
 from typing import Any
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 SCOPE = "parthenon-stage4-roof-eaves-pediment"
@@ -241,16 +240,8 @@ class ParthenonStage4RoofError(ValueError):
     """The isolated roof/eaves/pediment IR contract failed closed."""
 
 
-def _canonical_json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
 def _operation_fingerprint(operation: Mapping[str, object]) -> str:
-    return _digest(dict(operation))
+    return canonical_digest(dict(operation), ascii=False)
 
 
 def _normalise_refs(
@@ -765,7 +756,7 @@ def compile_roof_eaves_pediment_delta(
         "selected_visual_refs": list(visual_refs),
         "canonical_write_authority": False,
     }
-    lineage["receipt_digest"] = _digest(lineage)
+    lineage["receipt_digest"] = canonical_digest(lineage, ascii=False)
     return full_operations, lineage
 
 
@@ -1032,7 +1023,7 @@ def validate_roof_eaves_pediment_operations(
         "validated_delta_ids": sorted(delta_by_id),
         "canonical_write_authority": False,
     }
-    receipt["receipt_digest"] = _digest(receipt)
+    receipt["receipt_digest"] = canonical_digest(receipt, ascii=False)
     return receipt
 
 

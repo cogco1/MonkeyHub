@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from enum import StrEnum
@@ -17,6 +16,7 @@ from archflow.state.design_portfolio import (
 )
 from archflow.state.operational_state import require_logical_ref
 from archflow.state.spatial import SchematicOption
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -138,20 +138,6 @@ def _ids(
     if len(values) != len(set(values)):
         raise DevelopedDesignError(f"{field} contains duplicates")
     return values
-
-
-def canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _base_to_dict(base: ProjectVersionRef) -> dict[str, object]:
@@ -423,7 +409,7 @@ class DevelopmentClaim:
 
     @property
     def claim_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -518,7 +504,7 @@ class DetachedDevelopmentAdvice:
 
     @property
     def advice_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:
@@ -742,7 +728,7 @@ class DevelopedComponent:
 
     @property
     def component_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def ref(self) -> str:
@@ -1478,7 +1464,7 @@ class DevelopedDesignState:
 
     @property
     def state_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {

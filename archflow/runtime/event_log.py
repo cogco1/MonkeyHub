@@ -8,7 +8,6 @@ reasoning and external tool traffic remain in separately referenced artifacts.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from enum import StrEnum
@@ -19,6 +18,7 @@ from archflow.project.refs import (
     require_identifier,
 )
 from archflow.state.operational_state import require_logical_ref
+from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 
 _MAX_ITEMS = 4096
@@ -55,36 +55,10 @@ class EventRecordStore(Protocol):
     ) -> tuple[Mapping[str, Any], ...]: ...
 
 
-def _canonical_json(value: object) -> str:
-    try:
-        return json.dumps(
-            value,
-            allow_nan=False,
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    except (TypeError, ValueError) as exc:
-        raise EventLogError("event payload must be bounded JSON") from exc
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
 def _text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise EventLogError(f"{field} must be non-empty text")
     return value
-
-
-def _sha256(value: object, field: str) -> str:
-    if not isinstance(value, str):
-        raise EventLogError(f"{field} must be text")
-    digest = value.lower()
-    if len(digest) != 64 or any(char not in _HEX for char in digest):
-        raise EventLogError(f"{field} must be a SHA-256 digest")
-    return digest
 
 
 def _refs(value: object, field: str) -> tuple[str, ...]:
@@ -164,7 +138,7 @@ class DesignEvent:
         if self.authority_id is not None:
             require_identifier(self.authority_id, "authority_id")
         if self.prior_event_sha256 is not None:
-            _sha256(self.prior_event_sha256, "prior_event_sha256")
+            require_sha256(self.prior_event_sha256, "prior_event_sha256")
         if self.prior_state is not None:
             if not isinstance(self.prior_state, ProjectVersionRef):
                 raise TypeError("prior_state must be a ProjectVersionRef")
@@ -178,7 +152,7 @@ class DesignEvent:
             raise EventLogError("proposed_delta_json is invalid JSON") from exc
         if not isinstance(decoded, dict):
             raise EventLogError("proposed delta must encode an object")
-        canonical = _canonical_json(decoded)
+        canonical = canonical_json(decoded)
         if canonical != self.proposed_delta_json:
             raise EventLogError("proposed delta JSON must be canonical")
         if len(canonical.encode("utf-8")) > _MAX_DELTA_BYTES:
@@ -251,7 +225,7 @@ class DesignEvent:
             authority_id=authority_id,
             prior_event_sha256=prior_event_sha256,
             prior_state=prior_state,
-            proposed_delta_json=_canonical_json(dict(proposed_delta)),
+            proposed_delta_json=canonical_json(dict(proposed_delta)),
             evidence_refs=evidence_refs,
             validation_receipt_refs=validation_receipt_refs,
             commit_receipt_ref=commit_receipt_ref,
@@ -294,7 +268,7 @@ class DesignEvent:
 
     @property
     def event_sha256(self) -> str:
-        return _digest(self.unsigned_dict())
+        return canonical_digest(self.unsigned_dict())
 
     @property
     def event_id(self) -> str:
@@ -372,7 +346,7 @@ class DesignEvent:
             if isinstance(exc, EventLogError):
                 raise
             raise EventLogError("event contains invalid values") from exc
-        if event.event_sha256 != _sha256(
+        if event.event_sha256 != require_sha256(
             value["event_sha256"],
             "event_sha256",
         ):

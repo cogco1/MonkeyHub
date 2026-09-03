@@ -26,6 +26,7 @@ from archflow.submission import (
     RepairObligation,
     obligations_from_findings,
 )
+from archflow.contracts.canonical import canonical_json_bytes
 
 _MAX_JSON_BYTES = 1_000_000
 _SUPPORT_PATTERN = re.compile(
@@ -258,7 +259,7 @@ def load_tool_environment_observation(
         "plan": digest,
         "issues": [item.to_dict() for item in issues],
     }
-    observation_digest = hashlib.sha256(_canonical_json(identity)).hexdigest()
+    observation_digest = hashlib.sha256(canonical_json_bytes(identity, ascii=False)).hexdigest()
     return ToolEnvironmentObservation(
         observation_id=f"environment-observation-{observation_digest[:20]}",
         source_receipt_id=receipt_id,
@@ -408,7 +409,7 @@ def guard_identical_retry(
                 "plan": digest,
                 "observation": observation.observation_id,
             }
-            receipt_digest = hashlib.sha256(_canonical_json(identity)).hexdigest()
+            receipt_digest = hashlib.sha256(canonical_json_bytes(identity, ascii=False)).hexdigest()
             return RetryStopReceipt(
                 receipt_id=f"retry-stop-{receipt_digest[:20]}",
                 code="environment.retry.identical_failed_plan",
@@ -514,7 +515,7 @@ def load_environment_feedback_trace(path: Path) -> dict[str, Any]:
 
 
 def plan_sha256(plan: Mapping[str, Any]) -> str:
-    return hashlib.sha256(_canonical_json(_freeze_mapping(plan, "plan"))).hexdigest()
+    return hashlib.sha256(canonical_json_bytes(_freeze_mapping(plan, "plan"), ascii=False)).hexdigest()
 
 
 def _issues(
@@ -684,15 +685,6 @@ def _freeze_mapping(value: object, field: str) -> dict[str, Any]:
     if not isinstance(frozen, dict):
         raise EnvironmentFeedbackError(f"{field} must be an object")
     return frozen
-
-
-def _canonical_json(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
 
 
 def _file_sha256(path: Path) -> str:

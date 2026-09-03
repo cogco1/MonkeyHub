@@ -6,7 +6,6 @@ subjects, thresholds, and provenance are supplied by one exact project.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from enum import StrEnum
@@ -24,6 +23,7 @@ from archflow.state.design_brief import (
     DesignBrief,
 )
 from archflow.state.developed_design import DevelopedDesignState
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 class ArchitecturalUsabilityError(ValueError):
@@ -81,20 +81,6 @@ def canonical_value(value: object) -> str:
             "criterion values must round-trip through JSON"
         )
     return encoded
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _sha(value: object, field: str) -> str:
@@ -609,7 +595,7 @@ class ArchitecturalUsabilityContract:
 
     @property
     def contract_digest(self) -> str:
-        return _digest(self._identity())
+        return canonical_digest(self._identity())
 
     def _identity(self) -> dict[str, object]:
         return {
@@ -932,7 +918,7 @@ class ArchitecturalUsabilityReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     @property
     def accepted(self) -> bool:

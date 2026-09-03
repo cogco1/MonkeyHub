@@ -12,6 +12,7 @@ from enum import Enum
 from pathlib import PurePosixPath, PureWindowsPath
 from threading import Lock
 from typing import Any, Awaitable, Generic, TypeVar
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 RequestT = TypeVar("RequestT")
@@ -185,20 +186,6 @@ def _jsonable(value: Any) -> Any:
     raise TypeError(f"value of type {type(value).__name__} is not canonical JSON")
 
 
-def _canonical_json(value: Any) -> str:
-    return json.dumps(
-        _jsonable(value),
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: Any) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
-
-
 def _require_portable_payload(value: Any) -> None:
     if isinstance(value, str):
         if _looks_machine_local(value):
@@ -324,7 +311,7 @@ class ProviderLifecycleReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,7 +345,7 @@ class ResponsibilityState:
 
     @property
     def binding_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
 
 @dataclass(frozen=True, slots=True)
@@ -439,7 +426,7 @@ class HandoverReceipt:
 
     @property
     def receipt_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
 
 @dataclass(frozen=True, slots=True)
@@ -529,11 +516,11 @@ class InvocationEnvelope:
             decoded = json.loads(self.provider_receipt_json)
         except (TypeError, json.JSONDecodeError) as exc:
             raise ValueError("provider_receipt_json must be canonical JSON") from exc
-        if _canonical_json(decoded) != self.provider_receipt_json:
+        if canonical_json(decoded) != self.provider_receipt_json:
             raise ValueError("provider_receipt_json must use canonical encoding")
         if not _FINGERPRINT.fullmatch(self.provider_receipt_digest):
             raise ValueError("provider_receipt_digest must be a lowercase sha256 digest")
-        if _digest(decoded) != self.provider_receipt_digest:
+        if canonical_digest(decoded) != self.provider_receipt_digest:
             raise ValueError("provider receipt digest does not match its payload")
         if not _FINGERPRINT.fullmatch(self.envelope_signature):
             raise ValueError("envelope_signature must be a lowercase sha256 hmac")
@@ -1087,18 +1074,18 @@ class _ResponsibilityControlPlane(Generic[RequestT, ReceiptT]):
         try:
             jsonable_receipt = _jsonable(provider_receipt)
             _require_portable_payload(jsonable_receipt)
-            provider_receipt_json = _canonical_json(jsonable_receipt)
+            provider_receipt_json = canonical_json(jsonable_receipt)
         except (TypeError, ValueError) as exc:
             raise InvalidProviderReceipt(
                 "provider receipt violates the portable JSON contract "
                 f"({type(exc).__name__})"
             ) from exc
-        return provider_receipt_json, _digest(jsonable_receipt)
+        return provider_receipt_json, canonical_digest(jsonable_receipt)
 
     def _sign(self, value: object) -> str:
         return hmac.new(
             self._signing_key,
-            _canonical_json(value).encode("utf-8"),
+            canonical_json(value).encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
 

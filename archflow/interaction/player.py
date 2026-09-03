@@ -6,8 +6,6 @@ waive a validator, or advance canonical project state.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
@@ -20,6 +18,7 @@ from archflow.interaction.clarification import (
 from archflow.project import ProjectVersionRef
 from archflow.project.refs import require_identifier
 from archflow.state.operational_state import require_logical_ref
+from archflow.contracts.canonical import canonical_digest, canonical_json
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -38,20 +37,6 @@ class CandidateApprovalMode(StrEnum):
 class CandidateApprovalSource(StrEnum):
     HUMAN_DECISION = "human_decision"
     PREAUTHORIZED_POLICY = "preauthorized_policy"
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _text(value: object, field: str) -> str:
@@ -160,7 +145,7 @@ class CandidateApprovalPolicy:
 
     @property
     def policy_digest(self) -> str:
-        return _digest(self.to_dict())
+        return canonical_digest(self.to_dict())
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -284,7 +269,7 @@ class CandidateApprovalReceipt:
 
     @property
     def approval_digest(self) -> str:
-        return _digest(self._identity())
+        return canonical_digest(self._identity())
 
     @property
     def approval_id(self) -> str:

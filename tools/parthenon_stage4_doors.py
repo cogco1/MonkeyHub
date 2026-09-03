@@ -20,10 +20,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import json
 import math
 from enum import StrEnum
 from typing import Mapping, Sequence
+from archflow.contracts.canonical import canonical_json
 
 
 BRANCH_ID = "idealized-periclean-original"
@@ -64,16 +64,6 @@ class DoorAssemblyResolution(StrEnum):
 
     PARK_DOOR_LEAVES = "PARK_DOOR_LEAVES"
     AUTHORIZED_CLOSED_DOUBLE_LEAF = "AUTHORIZED_CLOSED_DOUBLE_LEAF"
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
 
 
 def _number(value: object, field_name: str) -> float:
@@ -132,7 +122,7 @@ def _operation_geometry_fingerprint(operation: Mapping[str, object]) -> str:
         "parameters": operation.get("parameters"),
         "material_id": operation.get("material_id"),
     }
-    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
 def _box_bounds(
@@ -1354,7 +1344,7 @@ def validate_door_assembly_operations(
             checks["shared_host_local_contract"] = False
             failures.append(str(exc))
             continue
-        canonical_contracts = {_canonical_json(contract) for contract in contracts}
+        canonical_contracts = {canonical_json(contract) for contract in contracts}
         if len(canonical_contracts) != 1:
             checks["shared_host_local_contract"] = False
             failures.append(f"{side} door members do not share one aperture contract")
@@ -1616,7 +1606,7 @@ def validate_door_assembly_operations(
             failures.append(
                 f"{operation.get('operation_id')} lacks SOFT evidence/lineage authority"
             )
-        branch_surface = _canonical_json(
+        branch_surface = canonical_json(
             {
                 "operation_id": operation.get("operation_id"),
                 "material_id": operation.get("material_id"),

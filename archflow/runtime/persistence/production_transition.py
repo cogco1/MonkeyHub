@@ -15,7 +15,7 @@ from typing import Any, Mapping, Protocol
 
 from archflow.ports.model import ModelInvocationReceipt
 from archflow.production.responsibility import InvocationEnvelope
-from archflow.project.digests import canonical_json_sha256
+from archflow.contracts.canonical import canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.runtime.persistence.production_checkpoint import (
     ProductionCheckpointPort,
@@ -269,7 +269,7 @@ def production_intent_digest(
         raise TypeError("run must be RunRef")
     if not isinstance(intent, Mapping):
         raise TypeError("intent must be a mapping")
-    return canonical_json_sha256(
+    return canonical_digest(
         {
             "schema": "ProductionTransitionIntent@1",
             "project_id": run.project_id,
@@ -576,7 +576,7 @@ def _record_payload(
         "base": _base(run.base),
         "role": role.value,
         "semantic_digest": semantic_digest,
-        "content_sha256": canonical_json_sha256(material),
+        "content_sha256": canonical_digest(material),
         "content": material,
         "canonical_write_authority": False,
     }
@@ -640,7 +640,7 @@ def _load_record(
         raise ProductionTransitionError("production record content is not an object")
     semantic_digest = payload["semantic_digest"]
     _sha(semantic_digest, "semantic_digest")
-    if canonical_json_sha256(content) != payload["content_sha256"]:
+    if canonical_digest(content) != payload["content_sha256"]:
         raise ProductionTransitionError("production record content digest drifted")
     if digest_value(content) != semantic_digest:
         raise ProductionTransitionError("production record semantic digest drifted")
@@ -712,7 +712,7 @@ def _validate_failed_envelope(value: Mapping[str, Any]) -> str:
         raise ProductionTransitionError("failed attempt provider receipt is invalid") from exc
     if not isinstance(receipt, Mapping):
         raise ProductionTransitionError("failed attempt model receipt is malformed")
-    if canonical_json_sha256(receipt) != value.get("provider_receipt_digest"):
+    if canonical_digest(receipt) != value.get("provider_receipt_digest"):
         raise ProductionTransitionError("failed attempt provider digest drifted")
     signature = value.get("envelope_signature")
     _sha(signature, "envelope_signature")
