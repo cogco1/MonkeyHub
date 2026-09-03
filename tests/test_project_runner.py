@@ -29,7 +29,7 @@ from archflow.runtime.project_runner import (
     StageExecutionGuard,
     run_project,
 )
-from archflow.state.design_maturity import DesignPhase
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopmentDiscipline
 from archflow.state.state_record import Entity, StateRecord, StateRecordError, developed_design_view
 from archflow.state.operational_state import DesignObligation
@@ -183,7 +183,7 @@ class BootstrapTests(unittest.TestCase):
             StateRecord("demo", "run-1", (Entity("a", "Element@1", {"producer": "prism"}), Entity("a", "Element@1", {"producer": "prism"})))
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "other", project_id="other", initial_state={"schema": "TestState@1"})
-            with self.assertRaises(ProjectRunnerError):
+            with self.assertRaises(StateRecordError):
                 developed_design_view(_record(), run=repository.create_run("run-1"), portfolio_id="declared", branch_id="b", selection_decision_ref="decision:x")
 
 
