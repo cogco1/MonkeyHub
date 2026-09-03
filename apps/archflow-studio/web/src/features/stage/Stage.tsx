@@ -21,7 +21,7 @@ import {
   type ViewportPick,
   type ViewportStatus,
 } from "../../viewer/ThreeDmViewport";
-import { SourceChip } from "./SourceChip";
+import { SourceChip, type ViewState } from "./SourceChip";
 import { VersionsStrip, type VersionCard } from "./VersionsStrip";
 
 export interface PickedFacts {
@@ -53,6 +53,7 @@ export function Stage({
   status,
   inspection,
   artifactError,
+  view,
   picked,
   versions,
   loadingSha,
@@ -74,6 +75,8 @@ export function Stage({
   status: ViewportStatus;
   inspection: SceneInspection | null;
   artifactError: StudioApiError | null;
+  /** CURRENT / GHOST PREVIEW / VALIDATED, with the server's word as detail. */
+  view: ViewState | null;
   picked: PickedFacts | null;
   versions: readonly VersionCard[];
   loadingSha: string | null;
@@ -112,6 +115,7 @@ export function Stage({
             inspection={inspection}
             status={status}
             message={message}
+            view={view}
           />
           {picked && (
             <div className="picked" title={`${picked.status} · source ${picked.sourceState}`}>

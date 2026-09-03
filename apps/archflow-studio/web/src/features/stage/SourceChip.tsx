@@ -17,20 +17,40 @@ function tagOf(sourceLabel: string | null): { tag: string; rest: string } {
   return { tag: head === "CANONICAL" ? "RUN" : head, rest: rest.join(" · ") };
 }
 
+/**
+ * What the picture on screen is, in three words the owner chose: CURRENT (the
+ * loaded model as its receipt certifies it), GHOST PREVIEW (a proposal drawn
+ * over it, approximate), VALIDATED (a candidate's export with its verdict
+ * read). The detail is the server's word — never a colour alone.
+ */
+export interface ViewState {
+  state: "current" | "ghost" | "validated";
+  label: string;
+  detail: string | null;
+}
+
 export function SourceChip({
   sourceLabel,
   inspection,
   status,
   message,
+  view,
 }: {
   sourceLabel: string | null;
   inspection: SceneInspection | null;
   status: ViewportStatus;
   message: string;
+  view: ViewState | null;
 }) {
   const { tag, rest } = tagOf(sourceLabel);
   return (
-    <div className="source" data-tag={tag}>
+    <div className="source" data-tag={tag} data-state={view?.state ?? "none"}>
+      {view && (
+        <span className={`source__state source__state--${view.state}`}>
+          {view.label}
+          {view.detail && <span className="source__state-detail"> · {view.detail}</span>}
+        </span>
+      )}
       <span className="source__tag">{tag}</span>
       {rest && <span className="mono">{rest}</span>}
       {inspection && (

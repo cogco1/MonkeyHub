@@ -26,6 +26,7 @@ import type {
   ArtifactListDto,
   CandidateDto,
   ProjectArtifactDto,
+  ProposalDto,
   StateProjectionDto,
   ValidationDto,
 } from "../api/generated";
@@ -38,11 +39,14 @@ import { Conversation } from "../features/conversation/Conversation";
 import type { Selection } from "../features/conversation/Composer";
 import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { honestyCount } from "../features/evidence/HonestyTab";
+import type { ViewState } from "../features/stage/SourceChip";
 import { Stage, type PickedFacts } from "../features/stage/Stage";
 import type { VersionCard } from "../features/stage/VersionsStrip";
 import type { SceneInspection } from "../viewer/sceneInspection";
 import {
   LOCAL_SOURCE_LABEL,
+  type GhostSpec,
+  type GhostTarget,
   type ViewportController,
   type ViewportPick,
   type ViewportStatus,
@@ -70,6 +74,39 @@ function writePinned(pinned: boolean): void {
   } catch {
     // a browser that refuses site data keeps the default; nothing to say
   }
+}
+
+/** The element as the projection names it, for the viewer to find its objects. */
+function ghostTarget(
+  projection: StateProjectionDto,
+  elementId: string,
+): GhostTarget | null {
+  const element = projection.elements.find((row) => row.elementId === elementId);
+  return element ? { elementId, componentId: element.componentId } : null;
+}
+
+/**
+ * The ghost a proposal is drawn as: the target's objects, stretched along Z
+ * when the field is a height, with the closure's elements as a faint cloud.
+ * Nothing here is a claim about geometry — it is the proposal's two numbers
+ * and the record's element ids, drawn approximately and labelled so.
+ */
+function ghostSpecFor(
+  projection: StateProjectionDto,
+  proposal: ProposalDto,
+): GhostSpec | null {
+  if (proposal.target.elementId === null) return null;
+  const target = ghostTarget(projection, proposal.target.elementId);
+  if (target === null) return null;
+  const isHeight = proposal.target.key === "height";
+  const old = Number(proposal.change.old);
+  const next = Number(proposal.change.new);
+  const factor = isHeight && old > 0 && Number.isFinite(next) ? next / old : 1;
+  const affected = proposal.impact.propagated
+    .filter((ref) => ref.startsWith("entity:"))
+    .map((ref) => ghostTarget(projection, ref.slice("entity:".length)))
+    .filter((item): item is GhostTarget => item !== null);
+  return { target, factor, scaleAxis: isHeight ? "z" : null, affected };
 }
 
 export default function App() {
@@ -114,6 +151,10 @@ export default function App() {
 
   const [proposalBusy, setProposalBusy] = useState(false);
   const [candidateBusy, setCandidateBusy] = useState(false);
+  // The proposal drawn as a ghost over the loaded model, if any. The viewer
+  // drops the drawing itself whenever a model loads or is cleared; this is the
+  // shell's record of which proposal the drawing was of.
+  const [ghostProposalId, setGhostProposalId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Record<string, CandidateDto>>({});
   const [validations, setValidations] = useState<
     Record<string, ValidationDto>
@@ -218,6 +259,8 @@ export default function App() {
     );
     pendingArtifact.current = null;
     setPicked(null);
+    // A new picture, or none: whatever ghost was drawn belonged to the old one.
+    setGhostProposalId(null);
   }, []);
 
   const resolvePick = useCallback(
@@ -302,6 +345,24 @@ export default function App() {
           projectId: project.projectId,
         });
         append({ kind: "proposal", proposal: answer.proposal, agent: answer.agent });
+        // The fast stage's picture: a ghost of this proposal over the loaded
+        // model, drawn the moment the typed change exists. With no model on
+        // screen there is nothing to draw over, and nothing is claimed.
+        const spec = projection ? ghostSpecFor(projection, answer.proposal) : null;
+        const copied =
+          spec && sourceLabel !== null ? (viewportRef.current?.ghost(spec) ?? 0) : 0;
+        if (copied > 0) {
+          setGhostProposalId(answer.proposal.proposalId);
+        } else {
+          viewportRef.current?.ghost(null);
+          setGhostProposalId(null);
+          if (spec && sourceLabel !== null) {
+            append({
+              kind: "system",
+              text: `nothing to preview here: the loaded file carries no objects of ${spec.target.elementId}`,
+            });
+          }
+        }
         const { target } = answer.proposal;
         if (
           selection === null ||
@@ -331,7 +392,7 @@ export default function App() {
         setProposalBusy(false);
       }
     },
-    [append, project, recoverFromStaleBase, selection, stateDigest],
+    [append, project, projection, recoverFromStaleBase, selection, sourceLabel, stateDigest],
   );
 
   const runCandidate = useCallback(
@@ -478,6 +539,30 @@ export default function App() {
           ? "the kernel refused this record's bound view; fix the record before proposing"
           : null;
 
+  // CURRENT / GHOST PREVIEW / VALIDATED — what the picture is, with the
+  // server's word as its detail. A candidate's export is VALIDATED only once
+  // its verdict was read; before that it is a candidate export, and says so.
+  const loadedValidation =
+    loadedArtifact && candidates[loadedArtifact.runId]
+      ? (validations[loadedArtifact.runId] ?? null)
+      : null;
+  const view: ViewState | null =
+    sourceLabel === null
+      ? null
+      : ghostProposalId !== null
+        ? { state: "ghost", label: "Ghost preview", detail: "approximate" }
+        : loadedArtifact && candidates[loadedArtifact.runId]
+          ? loadedValidation
+            ? {
+                state: "validated",
+                label: "Validated",
+                detail: loadedValidation.advance
+                  ? "may advance"
+                  : `blocked: ${loadedValidation.blockedBy.join(", ")}`,
+              }
+            : { state: "current", label: "Candidate export", detail: "verdict not read yet" }
+          : { state: "current", label: "Current", detail: null };
+
   const evidenceCounts = {
     honesty: honestyCount(projection, selectedCandidate, selectedValidation),
     receipts: candidateEntries.length,
@@ -585,6 +670,7 @@ export default function App() {
             busy={proposalBusy}
             runBusy={candidateBusy}
             loadingSha={artifactLoadingSha}
+            ghostProposalId={ghostProposalId}
             draft={draft}
             onDraft={setDraft}
             onSubmit={(utterance) => void propose(utterance)}
@@ -616,6 +702,7 @@ export default function App() {
             status={viewerStatus}
             inspection={inspection}
             artifactError={artifactError}
+            view={view}
             picked={picked}
             versions={versions}
             loadingSha={artifactLoadingSha}

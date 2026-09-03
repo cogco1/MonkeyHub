@@ -50,6 +50,7 @@ export function Conversation({
   busy,
   runBusy,
   loadingSha,
+  ghostProposalId,
   draft,
   onDraft,
   onSubmit,
@@ -64,6 +65,8 @@ export function Conversation({
   busy: boolean;
   runBusy: boolean;
   loadingSha: string | null;
+  /** The proposal currently drawn as a ghost, if any. */
+  ghostProposalId: string | null;
   draft: string;
   onDraft(text: string): void;
   onSubmit(utterance: string): void;
@@ -102,7 +105,7 @@ export function Conversation({
         )}
         {entries.map((entry) => (
           <div key={entry.id} className={`msg msg--${entry.kind}`}>
-            {renderEntry(entry, { runBusy, loadingSha, callbacks })}
+            {renderEntry(entry, { runBusy, loadingSha, ghostProposalId, callbacks })}
           </div>
         ))}
       </div>
@@ -125,10 +128,12 @@ function renderEntry(
   {
     runBusy,
     loadingSha,
+    ghostProposalId,
     callbacks,
   }: {
     runBusy: boolean;
     loadingSha: string | null;
+    ghostProposalId: string | null;
     callbacks: ConversationCallbacks;
   },
 ): ReactNode {
@@ -144,6 +149,7 @@ function renderEntry(
           <ProposalCard
             proposal={entry.proposal}
             agent={entry.agent}
+            ghostShown={entry.proposal.proposalId === ghostProposalId}
             busy={runBusy}
             onRun={() => callbacks.onRun(entry.proposal.proposalId)}
             onAdjust={callbacks.onAdjust}

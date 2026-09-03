@@ -25,6 +25,7 @@ function shortRef(ref: string): string {
 export function ProposalCard({
   proposal,
   agent,
+  ghostShown,
   busy,
   onRun,
   onAdjust,
@@ -32,6 +33,8 @@ export function ProposalCard({
 }: {
   proposal: ProposalDto;
   agent: AgentReadingDto | null;
+  /** Whether this proposal is the one drawn as a ghost in the model right now. */
+  ghostShown: boolean;
   busy: boolean;
   onRun(): void;
   onAdjust(utterance: string): void;
@@ -125,6 +128,14 @@ export function ProposalCard({
           <p className="card__conflict">
             Conflict: the change reaches what you asked to keep —{" "}
             <span className="mono">{impact.conflicts.join(", ")}</span>
+          </p>
+        </div>
+      )}
+      {ghostShown && (
+        <div className="card__row">
+          <p className="quiet">
+            <span className="ghost-mark">ghost shown in the model</span> · approximate — Apply for
+            the exact geometry
           </p>
         </div>
       )}
