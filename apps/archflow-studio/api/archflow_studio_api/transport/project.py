@@ -42,6 +42,16 @@ class ProjectBindingDto(BaseModel):
     project_dir: str = Field(alias="projectDir")
     head: HeadDto
     reference_run: ReferenceRunDto = Field(alias="referenceRun")
+    intent_provider: str = Field(
+        alias="intentProvider",
+        description="who reads a sentence at POST /api/intents in this process: "
+        "deterministic (the grammar alone), codex, anthropic, or unknown when "
+        "the configured compiler does not say",
+    )
+    intent_model: str | None = Field(
+        alias="intentModel",
+        description="the model that provider runs, when it names one",
+    )
 
 
 def head_dto(head: ProjectVersionRef) -> HeadDto:
@@ -64,12 +74,20 @@ def project_binding_dto(
     binding: ProjectBinding,
     reference: ReferenceRun,
     head: ProjectVersionRef,
+    *,
+    intent_compiler: object,
 ) -> ProjectBindingDto:
-    """Shape the binding itself: which project, which HEAD, which run."""
+    """Shape the binding itself: which project, which HEAD, which run - and
+    who reads sentences here, so the screen never claims an agent that is
+    not wired."""
 
+    provider = getattr(intent_compiler, "provider", None)
+    model = getattr(intent_compiler, "model", None)
     return ProjectBindingDto(
         project_id=binding.project_id,
         project_dir=str(binding.project_dir),
         head=head_dto(head),
         reference_run=reference_run_dto(reference),
+        intent_provider=provider if isinstance(provider, str) else "unknown",
+        intent_model=model if isinstance(model, str) else None,
     )

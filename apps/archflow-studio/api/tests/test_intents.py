@@ -243,3 +243,26 @@ class AnswerParsingTests(unittest.TestCase):
         self.assertEqual(compilation.status, "compiled")
         self.assertEqual(compilation.utterance, "set height to 0.8")
         self.assertEqual(compilation.component_id, "portico")
+
+
+class ProviderOnTheWireTests(IntentTestCase):
+    """The screen may not claim an agent the process does not have."""
+
+    def test_the_default_process_says_deterministic(self) -> None:
+        response = self.client.get("/api/project")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["intentProvider"], "deterministic")
+        self.assertIsNone(response.json()["intentModel"])
+
+    def test_a_compiler_that_does_not_say_is_unknown(self) -> None:
+        self.app.state.intent_compiler = scripted(utterance="set height to 0.8")
+        response = self.client.get("/api/project")
+        self.assertEqual(response.json()["intentProvider"], "unknown")
+
+    def test_the_codex_compiler_names_itself_and_its_model(self) -> None:
+        from archflow_studio_api.application.intent_agent import CodexCompiler
+
+        self.app.state.intent_compiler = CodexCompiler(executable="codex", model="gpt-5")
+        response = self.client.get("/api/project")
+        self.assertEqual(response.json()["intentProvider"], "codex")
+        self.assertEqual(response.json()["intentModel"], "gpt-5")

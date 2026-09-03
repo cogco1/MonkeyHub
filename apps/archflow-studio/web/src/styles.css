@@ -1539,7 +1539,10 @@ button.chip:hover {
   gap: 6px;
 }
 
-.mark {
+/* The composer's gesture chips. Not `.mark`: that is the verdict card's 16 px
+   check glyph, and a chip that borrowed the name inherited the width. */
+
+.gesture-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1551,17 +1554,17 @@ button.chip:hover {
   white-space: nowrap;
 }
 
-.mark--keep {
+.gesture-chip--keep {
   border-color: var(--held);
   color: var(--held);
 }
 
-.mark--remove {
+.gesture-chip--remove {
   border-color: var(--violated);
   color: var(--violated);
 }
 
-.mark__x {
+.gesture-chip__x {
   padding: 0 4px;
   border: 0;
   background: none;
@@ -1570,7 +1573,7 @@ button.chip:hover {
   line-height: 1;
 }
 
-.mark__x:hover {
+.gesture-chip__x:hover {
   text-decoration: underline;
 }
 

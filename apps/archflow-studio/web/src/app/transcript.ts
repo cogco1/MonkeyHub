@@ -24,6 +24,8 @@ export type Entry =
       id: string;
       subject: string;
       recordSize: string;
+      /** Who reads here, as GET /api/project said: deterministic, codex, anthropic, unknown. */
+      provider: string;
       startedAt: number;
     }
   | { kind: "you"; id: string; text: string }

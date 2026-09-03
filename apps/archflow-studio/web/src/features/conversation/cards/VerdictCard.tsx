@@ -160,8 +160,9 @@ export function VerdictCard({
                   ))}
                 </ul>
                 <span className="quiet">
-                  kept out of the change: the proposal's closure never reached them, or
-                  it would not have run
+                  the studio never runs a change past a protection you named (a proposal
+                  that reaches one is refused before it runs); whether the relations on
+                  them held is not something this verdict reports
                 </span>
               </>
             )}

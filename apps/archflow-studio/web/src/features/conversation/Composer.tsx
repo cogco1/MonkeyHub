@@ -46,6 +46,7 @@ export function Composer({
   busy,
   gestures,
   onRemoveGesture,
+  intentProvider,
   draft,
   onDraft,
   onSubmit,
@@ -59,6 +60,8 @@ export function Composer({
   /** Marks drawn on the model, sent with the sentence; the server reads them. */
   gestures: readonly GestureDto[];
   onRemoveGesture(index: number): void;
+  /** Who reads sentences here, as the server said; the hint is worded from it. */
+  intentProvider: string | null;
   draft: string;
   onDraft(text: string): void;
   onSubmit(utterance: string): void;
@@ -112,11 +115,11 @@ export function Composer({
         <div className="marks" aria-label="marks on the model">
           <span className="quiet">with</span>
           {gestures.map((gesture, index) => (
-            <span key={index} className={"mark mark--" + gesture.kind}>
+            <span key={index} className={"gesture-chip gesture-chip--" + gesture.kind}>
               {MARK_GLYPH[gesture.kind]} {markLabel(gesture)}
               <button
                 type="button"
-                className="mark__x"
+                className="gesture-chip__x"
                 aria-label={"remove this " + gesture.kind + " mark"}
                 onClick={() => onRemoveGesture(index)}
               >
@@ -132,7 +135,7 @@ export function Composer({
           aria-label="intent"
           placeholder={PLACEHOLDER}
           value={draft}
-          disabled={disabled}
+          disabled={busy}
           onChange={(event) => onDraft(event.target.value)}
           onKeyDown={(event) => {
             // Enter sends; the form's own submission covers the button, and
@@ -155,10 +158,21 @@ export function Composer({
         <p className="composer__hint composer__hint--why">{disabledReason}</p>
       ) : (
         <p className="composer__hint">
-          Say it in your words, about the thing you picked. An agent reads it
-          against the record and proposes one exact change; if the record does
-          not carry what you asked for, it asks. Marks on the model go with the
-          sentence.
+          {intentProvider === "codex" || intentProvider === "anthropic" ? (
+            <>
+              Say it in your words, about the thing you picked. {intentProvider} reads it
+              against the record and proposes one exact change; if the record does not
+              carry what you asked for, it asks. Marks on the model go with the sentence.
+            </>
+          ) : (
+            <>
+              No agent is wired here: the studio types four exact forms —{" "}
+              <code>set … to …</code>, <code>increase … by … %</code>,{" "}
+              <code>decrease … by … %</code>, with an optional <code>keep …</code> — and
+              answers anything else with a question. Marks on the model go with the
+              sentence.
+            </>
+          )}
         </p>
       )}
     </form>

@@ -246,6 +246,9 @@ def _parse_answer(
 class DeterministicCompiler:
     """No agent: the sentence is taken as already compiled."""
 
+    provider = DETERMINISTIC
+    model: str | None = None
+
     def compile(
         self, *, message: str, selection: Selection, projection: StateProjection
     ) -> Compilation:
@@ -271,6 +274,8 @@ class CodexCompiler:
     sandbox), keeps no session, and must answer in ``RESPONSE_SCHEMA``. Auth is
     the user's own codex login; this process handles no credential.
     """
+
+    provider = CODEX
 
     def __init__(
         self,
@@ -408,6 +413,8 @@ def _kill_tree(process: subprocess.Popen[str]) -> None:
 class AnthropicCompiler:
     """The Anthropic Messages API. The key is the SDK's to read from the
     environment; this process never holds, logs or forwards it."""
+
+    provider = ANTHROPIC
 
     def __init__(self, *, model: str, timeout_s: float = 120.0) -> None:
         self.model = model

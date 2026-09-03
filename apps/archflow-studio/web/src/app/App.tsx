@@ -274,7 +274,8 @@ export default function App() {
 
   // The first ten seconds: a bound project shows its own certified model
   // without being asked - the reference run's export when it has one, else
-  // the newest export any run left, said so in the conversation. A file from
+  // the last export the listing names (the server lists runs by id; nothing
+  // here claims it is the newest), said so in the conversation. A file from
   // this machine stays a secondary door; it is the one with no receipt.
   const autoLoadedRef = useRef(false);
   useEffect(() => {
@@ -292,7 +293,7 @@ export default function App() {
       kind: "system",
       text: reference
         ? `Showing the reference run's export · ${pick.fileName}`
-        : `The reference run ${projection.referenceRun.runId} left no export; showing ${pick.fileName} from run ${pick.runId}`,
+        : `The reference run ${projection.referenceRun.runId} left no export; showing the last export listed, ${pick.fileName} from run ${pick.runId}`,
     });
     void loadArtifactIntoViewer(pick, canonicalSourceLabel(pick));
   }, [append, artifacts, loadArtifactIntoViewer, loadedArtifact, projection]);
@@ -401,6 +402,7 @@ export default function App() {
             ? "what you circled"
             : "the record"),
         recordSize: `${projection?.counts.components ?? "?"} components, ${projection?.elements.length ?? "?"} elements`,
+        provider: project.intentProvider,
         startedAt: Date.now(),
       });
       try {
@@ -647,6 +649,7 @@ export default function App() {
       // loaded model until the exact geometry arrives.
       viewportRef.current?.ghost(null);
       setGhostProposalId(null);
+      manualLoadRef.current = false;
       try {
         const accepted = await studio.startCandidate(proposalId);
         append({
@@ -721,6 +724,9 @@ export default function App() {
   // answer. Once a candidate's verdict is read, its export of the seat on
   // screen is loaded in place of the picture the change was drawn over.
   const autoShowRef = useRef<string | null>(null);
+  // Whether the architect chose an export to look at since the last Apply:
+  // then the verdict's model is announced, not swapped in over their choice.
+  const manualLoadRef = useRef(false);
   const noteValidation = useCallback((validation: ValidationDto) => {
     setValidations((current) => ({
       ...current,
@@ -742,6 +748,13 @@ export default function App() {
       rows.find((row) => loadedArtifact !== null && row.stageId === loadedArtifact.stageId) ??
       rows[0];
     autoShowRef.current = null;
+    if (manualLoadRef.current && loadedArtifact !== null && loadedArtifact.runId !== candidateId) {
+      append({
+        kind: "system",
+        text: `the exact model is ready · ${twin.fileName} · not shown: you chose ${loadedArtifact.fileName} to look at; its card can show it`,
+      });
+      return;
+    }
     append({
       kind: "system",
       text: `the exact model is on screen · ${twin.fileName} · ${
@@ -1040,6 +1053,7 @@ export default function App() {
             onRemoveGesture={(index) =>
               setGestures((current) => current.filter((_, i) => i !== index))
             }
+            intentProvider={project?.intentProvider ?? null}
             draft={draft}
             onDraft={setDraft}
             onSubmit={(utterance) => void propose(utterance)}
@@ -1072,8 +1086,10 @@ export default function App() {
               labelOf: sentenceOfCandidate,
               onJobStatus: noteJobStatus,
               onCandidate: noteCandidate,
-              onPreview: (artifact, label) =>
-                void loadArtifactIntoViewer(artifact, label),
+              onPreview: (artifact, label) => {
+                manualLoadRef.current = true;
+                void loadArtifactIntoViewer(artifact, label);
+              },
               onValidation: noteValidation,
               onEvidence: openEvidence,
             }}
@@ -1107,9 +1123,10 @@ export default function App() {
             onRequestFile={() => fileInputRef.current?.click()}
             onSource={noteSource}
             onPick={(pick) => void resolvePick(pick)}
-            onOpenVersion={(artifact, label) =>
-              void loadArtifactIntoViewer(artifact, label)
-            }
+            onOpenVersion={(artifact, label) => {
+              manualLoadRef.current = true;
+              void loadArtifactIntoViewer(artifact, label);
+            }}
             loadedRunId={loadedArtifact?.runId ?? null}
             onCompareVersion={(artifact) => void compareVersions(artifact)}
             blend={blendState}

@@ -65,6 +65,7 @@ export function Conversation({
   refiningEntryId,
   gestures,
   onRemoveGesture,
+  intentProvider,
   draft,
   onDraft,
   onSubmit,
@@ -86,6 +87,8 @@ export function Conversation({
   /** Marks drawn on the model, to go with the next sentence. */
   gestures: readonly GestureDto[];
   onRemoveGesture(index: number): void;
+  /** Who reads sentences in this process, as GET /api/project said; null before the binding. */
+  intentProvider: string | null;
   draft: string;
   onDraft(text: string): void;
   onSubmit(utterance: string): void;
@@ -141,6 +144,7 @@ export function Conversation({
         busy={busy}
         gestures={gestures}
         onRemoveGesture={onRemoveGesture}
+        intentProvider={intentProvider}
         draft={draft}
         onDraft={onDraft}
         onSubmit={onSubmit}
@@ -174,6 +178,7 @@ function renderEntry(
         <ReadingLine
           subject={entry.subject}
           recordSize={entry.recordSize}
+          provider={entry.provider}
           startedAt={entry.startedAt}
         />
       );

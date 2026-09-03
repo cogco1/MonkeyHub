@@ -24,4 +24,5 @@ def read_project(request: Request) -> ProjectBindingDto:
         binding,
         binding.reference_run(),
         binding.head(),
+        intent_compiler=request.app.state.intent_compiler,
     )

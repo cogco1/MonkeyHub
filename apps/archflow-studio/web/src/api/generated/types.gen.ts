@@ -1096,6 +1096,18 @@ export type ProjectBindingDto = {
     projectDir: string;
     head: HeadDto;
     referenceRun: ReferenceRunDto;
+    /**
+     * Intentprovider
+     *
+     * who reads a sentence at POST /api/intents in this process: deterministic (the grammar alone), codex, anthropic, or unknown when the configured compiler does not say
+     */
+    intentProvider: string;
+    /**
+     * Intentmodel
+     *
+     * the model that provider runs, when it names one
+     */
+    intentModel: string | null;
 };
 
 /**
