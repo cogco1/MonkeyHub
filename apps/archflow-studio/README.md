@@ -15,6 +15,21 @@ ArchFlow Studio is the product shell for ArchFlow. It is two programs:
   request and response shapes in `web/src/api/generated/` are the server's own schema,
   regenerated and diffed by `npm run api:check`.
 
+  The shell is two surfaces and a drawer (design:
+  `docs/claude-worktree/2026-09-03-p108-chat-shell-design.md`). A **conversation** column
+  on the left: what you said, and what the server answered — a typed-proposal card, a
+  question card (`BLOCKED_NEEDS_HUMAN`, the question verbatim, the accepted forms as quick
+  replies), a refusal card (code and detail verbatim), a candidate card that follows its job,
+  a verdict card (the server's word, the five clause chips, the three relation chips). The
+  **stage** on the right: the 3DM viewer (three.js + rhino3dm, unchanged from the previous
+  shell), a source chip (`RUN` / `CANDIDATE` / `LOCAL`), the last resolved pick, the camera
+  tools, and a versions strip of every exported model the receipts certify. The **evidence
+  drawer** (bottom right, or pinned as a third column): every honesty line, the identities,
+  the candidate and validation receipts and the event stream, verbatim and one click away.
+  The visual system is dark-first in the register of the Unreal Editor; the light theme is
+  served from the same tokens; the fonts are Roboto and Roboto Mono from Google Fonts with
+  system fallbacks.
+
 The round-1 boundary, verbatim from the plan:
 
 > **Round-1 boundary:** one server-configured project root (env `ARCHFLOW_STUDIO_PROJECT_DIR`
@@ -296,13 +311,16 @@ boolean and nothing else.
 > client-side; chat is not version history; never write the project directory or HEAD; a
 > `.3dm` never implies success.
 
-Two consequences worth stating outright. Every gateway error renders as a **visible error
-state** carrying the server's `code` and `detail` (and `question` / `acceptedForms`) in place
-of the panel's content — never an empty list, because an empty list is the one way a browser
-can turn a server's refusal into a silent, confident-looking answer. And the event panel is a
-live view of a running process: it is bounded, it is dropped on reload, and nothing in it is a
-record of what the project is. The one error the shell *handles* rather than merely displays is
-`STALE_BASE` — it re-projects and says "the project moved under you" out loud.
+Three consequences worth stating outright. Every gateway error renders as a **visible card**
+carrying the server's `code` and `detail` (and `question` / `acceptedForms`) in the transcript
+— never an empty list, because an empty list is the one way a browser can turn a server's
+refusal into a silent, confident-looking answer. The transcript is a view of this tab, not
+version history: it is dropped on reload, and the event stream in the drawer is a bounded live
+view of a running process. And the evidence drawer is where a sentence goes when the
+conversation does not quote it: verbatim, counted on its tab, one click away — a ruling of
+2026-09-03 that folding is not hiding, so long as nothing is summarised. The one error the
+shell *handles* rather than merely displays is `STALE_BASE` — it re-projects and says "the
+project moved under you" in the transcript.
 
 ## 7. Cards this slice stands on
 
@@ -342,3 +360,9 @@ npm run build
 `archcheck` must print `ARCHITECTURE PASS` after every Python change; it is the firewall, not
 a lint. The API tests run on real fixtures — a real P036 project via
 `FilesystemProjectRepository.initialize` — and there are no mocks in them.
+
+The web shell has no unit tests; its acceptance is a live smoke against a **temporary copy** of
+a project with export on: bind → choose or pick a component → propose → run the candidate →
+preview its export under the `CANDIDATE` chip → read the verdict card → send an abstract
+sentence and get a question card → open the evidence drawer; then the light theme and the
+900 px fold.
