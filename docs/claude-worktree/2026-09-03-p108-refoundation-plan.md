@@ -277,8 +277,13 @@ Deleted by this plan: `backend/` (all), `run_server.py`, `launch.py`, `src/App.t
 - Tests: listing carries run/base/status/sha; bytes served; tampered file → 409; unknown sha → 404;
   `rglob` is not used (grep assertion in test).
 
-- [ ] Steps: tests → fail → implement → pass → archcheck → commit
-  `P108 refoundation: artifacts are receipts first - ref, SHA, run and base travel together`.
+- [x] Done (main 6b556a8 + 7b8516b, 2026-09-03). Ratified after review: `unavailableReason` gains
+  `"file unreadable"` (never reported as corruption); bytes of a known-but-stale artifact → 409
+  `ARTIFACT_DIGEST_MISMATCH`, unreadable → 409 `ARTIFACT_UNREADABLE`; RFC 6266 `Content-Disposition`
+  (the kernel's `require_project_relative_path` rejects non-ASCII segments — the route serves from the
+  located path, `relativePath` is display-only); `skippedRuns` on the listing and in 404 details. Real
+  villa: 34 receipts, 30 available, two stale `succeeded` receipts in reconstruction-017 whose on-disk
+  copies no longer match their certified sha (data finding, relayed).
 
 ---
 
