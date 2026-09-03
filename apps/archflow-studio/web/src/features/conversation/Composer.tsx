@@ -15,8 +15,13 @@ export interface Selection {
   readonly elementId: string | null;
 }
 
+/**
+ * The examples an architect would actually say. The studio's round-1 grammar
+ * answers most of them with a question — which field, which number — and the
+ * hint under the box says so rather than teaching the grammar first.
+ */
 const PLACEHOLDER =
-  "set height to 2.2 · increase height by 10 % · keep entity:…";
+  "make the west portico a little taller · open up the entry · keep the roofline";
 
 export function Composer({
   selection,
@@ -41,11 +46,15 @@ export function Composer({
   const [pickerOpen, setPickerOpen] = useState(false);
   const disabled = disabledReason !== null || busy;
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const send = () => {
     const utterance = draft.trim();
     if (disabled || utterance === "") return;
     onSubmit(utterance);
+  };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    send();
   };
 
   return (
@@ -86,6 +95,14 @@ export function Composer({
           value={draft}
           disabled={disabled}
           onChange={(event) => onDraft(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter sends; the form's own submission covers the button, and
+            // this covers a keyboard event that never reaches it.
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              send();
+            }
+          }}
         />
         <button
           type="submit"
@@ -99,10 +116,11 @@ export function Composer({
         <p className="composer__hint composer__hint--why">{disabledReason}</p>
       ) : (
         <p className="composer__hint">
-          Four forms are understood today: <code>set … to …</code>,{" "}
-          <code>set … = …</code>, <code>increase … by … %</code>,{" "}
-          <code>decrease … by … %</code>, optionally ending with{" "}
-          <code>keep …</code>.
+          Say what you want. Today the studio types four exact forms —{" "}
+          <code>set … to …</code>, <code>set … = …</code>,{" "}
+          <code>increase … by … %</code>, <code>decrease … by … %</code>, with an
+          optional <code>keep …</code> — and answers anything else with a
+          question naming the field and the number it needs.
         </p>
       )}
     </form>

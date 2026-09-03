@@ -75,8 +75,13 @@ unless the user has scrolled up.
 - The chip's `change` control opens a searchable list built from `projection.components` (and each
   component's elements) — the component tree, folded into a picker. Choosing there sets the selection without a
   server call (it is the projection's own ids).
-- Composer: one text input (placeholder cycles the four forms), `Propose` button, a hint line naming the
-  grammar; disabled with a reason when nothing is selected or the projection is not loaded.
+- Composer: one text input whose placeholder speaks the architect's language ("make the west portico a
+  little taller · open up the entry · keep the roofline" — Kaiwen 2026-09-03: requests are abstract, not
+  `set height to 2200 mm`), a `Propose` button, and a hint that says the round-1 studio types four exact
+  forms and answers anything else with a question naming the field and the number it needs. Disabled with a
+  reason when nothing is selected or the projection is not loaded. Round 2 (carded): an intent provider that
+  turns the abstract sentence into the typed proposal, with the same question when the record lacks what it
+  needs.
 - `Propose` posts `/api/proposals` with `stateDigest`, `targetComponentId`, `elementId`, `utterance`,
   `projectId` (unchanged request). The reply becomes a `proposal` card; `BLOCKED_NEEDS_HUMAN` a `question`
   card; other errors a `refusal` card. `STALE_BASE` additionally re-projects (existing `useSession`).
@@ -160,6 +165,6 @@ are kept (some moved).
 - Live smoke in the Browser pane against a temp villa copy with export on: bind → pick in the loaded model →
   `set height to 2.2` → proposal card → Run → candidate card updates → Preview loads the candidate export
   with the `CANDIDATE` chip → verdict card `May advance` with five clauses and three relation chips →
-  `set height to 2200 mm` → question card; Evidence drawer shows every honesty line and the receipt; dark
-  theme and the 900 px fold checked.
+  `make the west portico a little taller` → question card naming the field and number it needs; Evidence
+  drawer shows every honesty line and the receipt; dark theme and the 900 px fold checked.
 - Acceptance is Kaiwen's read of the live shell against this document.
