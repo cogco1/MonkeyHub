@@ -37,6 +37,14 @@ instructions.
 - Canonical JSON and digests come from `archflow.contracts.canonical`; no
   module carries its own copy.
 
+## Architectural semantics
+
+- A record's semantic fields name ids from `archflow/semantics/` (`role.*`, `condition.*`)
+  or an alias that resolves to them; the record refuses anything else and names the nearest
+  ids (ADR-006). Entity, role and condition are three things and never one hierarchy.
+- A new term goes into the table with a written reason why existing terms cannot be composed
+  to say it; a compound phrase is registered only for records that already carry it.
+
 ## Persistence authority
 
 - Domain, compiler, capability, validation, evaluation and controller modules

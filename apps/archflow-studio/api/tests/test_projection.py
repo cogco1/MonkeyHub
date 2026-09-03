@@ -126,7 +126,7 @@ class StateProjectionTests(unittest.TestCase):
                 {
                     "componentId": "portico",
                     "parentComponentId": "building",
-                    "semanticKind": "portico",
+                    "semanticKind": "controlled-entry",
                     "intent": "the demo portico",
                     "maturity": "schematic",
                     "revision": 1,

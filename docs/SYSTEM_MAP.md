@@ -224,6 +224,29 @@ The one runtime loop: run admitted seat rounds from a single State Record, retai
 - api: `run_project`, `RunOptions`, `StageExecutionGuard`, `ProjectRunnerError`, `RecordedProposalProvider`, `SeatResult`
 - invariants: the record is the only design input; seats arrive beside it and are never part of state; the record is bound to the run and admitted by the stage guard before the first write; a relation the producers built that does not hold in the compiled program aborts the run - nothing is healed; a seat may not publish a datum over a project level or grid axis; with strict_coverage, a seat owning a component with neither an element nor a declination fails; the receipt is authority-free: no canonical write, design or stage-acceptance authority is claimed; one seat failing to get an accepted proposal ends the round loop rather than continuing
 
+## semantics
+
+### semantics.conditions — `archflow/semantics/conditions.py`
+The registered spatial conditions a component or connection may form, with meanings and aliases.
+- owns: the condition vocabulary (condition.*) and its aliases
+- does not own: roles - semantics.roles; relation kinds - relations.contracts
+- api: `CONDITIONS`, `CONDITION_IDS`
+- invariants: a condition is not an object; one geometry may form several
+
+### semantics.registry — `archflow/semantics/registry.py`
+Resolve a semantic string (id, id+id, alias, or a registered compound phrase) to registered ids, or name the nearest ones.
+- owns: resolution of semantic text to registered ids (resolve_semantic_kind); nearest-id suggestions for refusals (suggest_semantic); the compound phrases existing records were authored with (COMPOUND_PHRASES)
+- does not own: the vocabularies themselves - semantics.roles, semantics.conditions; refusing a record - state.record
+- api: `SemanticResolution`, `resolve_semantic_kind`, `suggest_semantic`, `registered_ids`, `COMPOUND_PHRASES`
+- invariants: a string that resolves to nothing never enters canonical state; aliases resolve to ids and are never stored
+
+### semantics.roles — `archflow/semantics/roles.py`
+The registered roles a component may hold (what it does for the building), with meanings and aliases.
+- owns: the role vocabulary (role.*) and its aliases
+- does not own: entity schemas - state.record; spatial conditions - semantics.conditions; resolving text to ids - semantics.registry
+- api: `SemanticTerm`, `ROLES`, `ROLE_IDS`
+- invariants: ids are role.<name>; a term is added with a written reason why existing terms cannot compose it (ADR-006)
+
 ## state
 
 ### state.commitments — `archflow/state/commitments.py`
@@ -291,7 +314,7 @@ The compact voxel-era building program (use, footprint, required spaces, clearan
 
 ### state.record — `archflow/state/state_record.py`
 The canonical StateRecord@1: a project's design state as typed entities, parameters, relations, obligations, evidence and stage binding, plus the typed views derived from it.
-- owns: design content identity, independent of run and base (StateRecord.digest); the binding identity a geometry program cites (StateRecord.state_digest); the entity schema vocabulary (Level@1, GridAxis@1, Type@1, Element@1, Assembly@1, Space@1, Reading@1, Component@1, MassingLevel@1, Volume@1, Connection@1); referential integrity inside one record: unique ids, known parents, known relation endpoints, known parameter inputs, known zone volumes and connection zones; the record's dependency edges and the downstream closure over them (dependency_edges, closure); binding an authored portable record to one run and canonical base (bound_to, run_ref); the record's own relation shape with datum role, propagation and validator binding (Relation, ValidatorBinding); the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of); the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)
+- owns: design content identity, independent of run and base (StateRecord.digest); the binding identity a geometry program cites (StateRecord.state_digest); the entity schema vocabulary (Level@1, GridAxis@1, Type@1, Element@1, Assembly@1, Space@1, Reading@1, Component@1, MassingLevel@1, Volume@1, Connection@1); referential integrity inside one record: unique ids, known parents, known relation endpoints, known parameter inputs, known zone volumes and connection zones; the record's dependency edges and the downstream closure over them (dependency_edges, closure); binding an authored portable record to one run and canonical base (bound_to, run_ref); the record's own relation shape with datum role, propagation and validator binding (Relation, ValidatorBinding); the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of); the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view); refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1
 - does not own: the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind); DesignObligation, DependencyEdge and DependencyEffect (state.operational_state); the DesignComponent and ComponentMaturity shapes (state.spatial); the ProjectLevel/ProjectGridAxis shapes it emits (state.geometry_program); persisting the record (project.repository); compiling geometry from it (compilers/geometry.py via capabilities/element_producers.py); running the stage it names (runtime/project_runner.py, state.stage_workflow)
 - api: `Entity`, `Lineage`, `Parameter`, `Relation`, `SchematicPack`, `StageBinding`, `StateRecord`, `StateRecordError`, `ValidatorBinding`, `bootstrap_developed_state`, `design_components_of`, `developed_design_view`, `project_grids_of`, `project_levels_of`, `schematic_proposal`
 - invariants: never writes the filesystem; digest excludes run_id and base, so the same design content authored in two runs digests identically; a record without a base cannot name its own run; bound_to is the only sanctioned way to attach one; a relation kind outside the kernel vocabulary is refused; geometry programs, validation results, receipts and indexes are derived from the record and never authoritative; developed_design_view is an adapter, not a second source of truth; design_components_of is the single component-tree builder

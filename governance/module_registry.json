@@ -1841,6 +1841,120 @@
       "notes": "archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion CANONICAL_SPINE 2.2 folds away."
     },
     {
+      "module_id": "semantics.conditions",
+      "owner_path": "archflow/semantics/conditions.py",
+      "purpose": "The registered spatial conditions a component or connection may form, with meanings and aliases.",
+      "owns": [
+        "the condition vocabulary (condition.*) and its aliases"
+      ],
+      "does_not_own": [
+        "roles - semantics.roles",
+        "relation kinds - relations.contracts"
+      ],
+      "inputs": [],
+      "outputs": [
+        "SemanticTerm"
+      ],
+      "public_api": [
+        "CONDITIONS",
+        "CONDITION_IDS"
+      ],
+      "depends_on": [
+        "semantics.roles"
+      ],
+      "used_by": [
+        "archflow/semantics/registry.py",
+        "archflow/state/state_record.py"
+      ],
+      "invariants": [
+        "a condition is not an object; one geometry may form several"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_semantics.py"
+      ],
+      "notes": ""
+    },
+    {
+      "module_id": "semantics.registry",
+      "owner_path": "archflow/semantics/registry.py",
+      "purpose": "Resolve a semantic string (id, id+id, alias, or a registered compound phrase) to registered ids, or name the nearest ones.",
+      "owns": [
+        "resolution of semantic text to registered ids (resolve_semantic_kind)",
+        "nearest-id suggestions for refusals (suggest_semantic)",
+        "the compound phrases existing records were authored with (COMPOUND_PHRASES)"
+      ],
+      "does_not_own": [
+        "the vocabularies themselves - semantics.roles, semantics.conditions",
+        "refusing a record - state.record"
+      ],
+      "inputs": [
+        "str"
+      ],
+      "outputs": [
+        "SemanticResolution"
+      ],
+      "public_api": [
+        "SemanticResolution",
+        "resolve_semantic_kind",
+        "suggest_semantic",
+        "registered_ids",
+        "COMPOUND_PHRASES"
+      ],
+      "depends_on": [
+        "semantics.roles",
+        "semantics.conditions"
+      ],
+      "used_by": [
+        "archflow/state/state_record.py",
+        "tools/devctl.py"
+      ],
+      "invariants": [
+        "a string that resolves to nothing never enters canonical state",
+        "aliases resolve to ids and are never stored"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_semantics.py"
+      ],
+      "notes": ""
+    },
+    {
+      "module_id": "semantics.roles",
+      "owner_path": "archflow/semantics/roles.py",
+      "purpose": "The registered roles a component may hold (what it does for the building), with meanings and aliases.",
+      "owns": [
+        "the role vocabulary (role.*) and its aliases"
+      ],
+      "does_not_own": [
+        "entity schemas - state.record",
+        "spatial conditions - semantics.conditions",
+        "resolving text to ids - semantics.registry"
+      ],
+      "inputs": [],
+      "outputs": [
+        "SemanticTerm"
+      ],
+      "public_api": [
+        "SemanticTerm",
+        "ROLES",
+        "ROLE_IDS"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "archflow/semantics/registry.py",
+        "archflow/state/state_record.py"
+      ],
+      "invariants": [
+        "ids are role.<name>; a term is added with a written reason why existing terms cannot compose it (ADR-006)"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_semantics.py"
+      ],
+      "notes": "V1 seeded from the villa record's 41 semantic_kind phrases."
+    },
+    {
       "module_id": "state.commitments",
       "owner_path": "archflow/state/commitments.py",
       "purpose": "Typed normative commitments and their authorized lifecycle transitions.",
@@ -2460,7 +2574,8 @@
         "binding an authored portable record to one run and canonical base (bound_to, run_ref)",
         "the record's own relation shape with datum role, propagation and validator binding (Relation, ValidatorBinding)",
         "the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of)",
-        "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)"
+        "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)",
+        "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1"
       ],
       "does_not_own": [
         "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
@@ -2503,13 +2618,14 @@
         "schematic_proposal"
       ],
       "depends_on": [
+        "archflow.runtime.project_runner",
         "contracts.canonical",
         "project.refs",
         "relations.contracts",
-        "state.operational_state",
-        "state.spatial",
+        "semantics.registry",
         "state.geometry_program",
-        "archflow.runtime.project_runner"
+        "state.operational_state",
+        "state.spatial"
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",

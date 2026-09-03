@@ -23,6 +23,9 @@ from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.refs import ProjectVersionRef, RunRef, require_identifier
 from archflow.state.operational_state import DependencyEdge, DependencyEffect, DesignObligation
 from archflow.relations.contracts import ArchitecturalRelationKind
+from archflow.semantics.conditions import CONDITION_IDS
+from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic
+from archflow.semantics.roles import ROLE_IDS
 from archflow.state.design_portfolio import BranchRevisionRef
 from archflow.state.developed_design import DevelopedDesignState, DevelopmentCoordinationStatus, SelectedSchematicInput
 from archflow.state.spatial import (
@@ -311,10 +314,29 @@ class StateRecord:
             for volume_id in zone.fields.get("volume_ids", ()):
                 if volume_id not in known:
                     raise StateRecordError(f"zone {zone.entity_id}: unknown volume {volume_id!r}")
+        declared_relations = {f"relation:{r.relation_id}" for r in self.relations}
         for connection in self.entities_of("Connection@1"):
             for end in ("source_zone_id", "target_zone_id"):
                 if connection.fields.get(end) not in known:
                     raise StateRecordError(f"connection {connection.entity_id}: unknown zone {connection.fields.get(end)!r}")
+            for ref in connection.fields.get("relationship_refs", ()):
+                if ref not in declared_relations:
+                    raise StateRecordError(f"connection {connection.entity_id}: relationship_ref {ref!r} names no declared relation")
+        for component in self.entities_of("Component@1"):
+            kind = component.fields.get("semantic_kind")
+            roles, conditions = component.fields.get("roles", ()), component.fields.get("conditions", ())
+            if kind is None and not (roles or conditions):
+                raise StateRecordError(f"component {component.entity_id}: names no semantics (roles/conditions ids, or a semantic_kind that resolves)")
+            if kind is not None:
+                if not isinstance(kind, str) or not kind or kind != kind.strip() or "+" in kind or "." in kind:
+                    raise StateRecordError(f"component {component.entity_id}: semantic_kind must be one registered alias or phrase in local-id form; ids go in roles/conditions")
+                if resolve_semantic_kind(kind) is None:
+                    near = ", ".join(suggest_semantic(kind)) or "none close"
+                    raise StateRecordError(f"component {component.entity_id}: semantic_kind {kind!r} is not a registered role, condition or alias; nearest: {near}")
+            for field_name, allowed in (("roles", ROLE_IDS), ("conditions", CONDITION_IDS)):
+                for item in component.fields.get(field_name, ()):
+                    if item not in allowed:
+                        raise StateRecordError(f"component {component.entity_id}: {field_name} names {item!r}, which is not registered; nearest: {', '.join(suggest_semantic(item)) or 'none close'}")
 
     # ---- views
     def entity(self, entity_id: str) -> Entity:
@@ -464,7 +486,7 @@ def design_components_of(record: StateRecord, *, source_ref: str | None = None) 
         if not refs:
             raise StateRecordError(f"component {e.entity_id} has no source: give the entity source_refs, or the record evidence")
         out.append(DesignComponent(
-            component_id=e.entity_id, parent_component_id=e.parent_id, semantic_kind=str(fields.get("semantic_kind", "component")),
+            component_id=e.entity_id, parent_component_id=e.parent_id, semantic_kind=str(fields.get("semantic_kind") or "-".join(i.split(".", 1)[1].replace("_", "-") for i in (*fields.get("roles", ()), *fields.get("conditions", ()))) or "component"),
             intent=str(fields.get("intent", e.entity_id)), maturity=ComponentMaturity(str(fields.get("maturity", "schematic"))),
             revision=int(fields.get("revision", 1)), volume_ids=tuple(fields.get("volume_ids", ())),
             unresolved_child_roles=tuple(fields.get("unresolved_child_roles", ())), source_refs=refs))

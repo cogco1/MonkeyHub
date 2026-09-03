@@ -112,7 +112,7 @@ RECORD_PAYLOAD: dict[str, object] = {
             "schema": "Component@1",
             "parent_id": "building",
             "fields": {
-                "semantic_kind": "portico",
+                "semantic_kind": "controlled-entry",
                 "intent": "the demo portico",
                 "source_refs": [EVIDENCE],
             },
