@@ -478,15 +478,11 @@ For RAG, the basis must bind the exact retained `BranchEvidenceSnapshot@1`
 record bytes, query/scope/branch revision, snapshot text digest, adopted quote,
 and applicability. Same-path records with a different SHA fail closed.
 
-The compiler never guesses from component names. Each required system is
-typed `PRESENT`, `NOT_APPLICABLE`, or `UNKNOWN`; N/A needs independent evidence
-and authority, while unknown remains open. Later stages can only inherit the
-exact original denominator and receipt digest, so a repeated `research_brief`
-label at a later epoch cannot silently shrink it. The result has no persistence
-or stage authority. `bridge_semantic_completeness_check()` only projects it
-into the existing `CheckReceiptEnvelope`; callers must still supply the
-project-specific denominator and route the receipt through the normal profile,
-closure, controller, and P036 paths.
+The compiler never guesses from component names. Each required system is typed
+`PRESENT`, `NOT_APPLICABLE`, or `UNKNOWN` on the denominator; N/A needs
+independent evidence and authority. The denominator has no persistence or stage
+authority: callers must still supply the project-specific denominator and route
+it through the normal profile, closure, controller, and P036 paths.
 
 `DesignControllerCheckpoint@1` is a typed projection and serialization
 boundary, not a second durable state authority.

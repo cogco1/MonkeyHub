@@ -3884,55 +3884,9 @@ class GroundedArchitectAction:
 
 
 @dataclass(frozen=True, slots=True)
-class ControllerTurnReceipt:
-    receipt_id: str
-    outcome: ControllerOutcome
-    previous_checkpoint_digest: str
-    next_checkpoint_digest: str
-    action_digest: str | None
-    responds_to_refs: tuple[str, ...]
-    adopted_advice_refs: tuple[str, ...]
-    rejected_advice_refs: tuple[str, ...]
-    changed_node_ref: str | None
-    invalidated_node_refs: tuple[str, ...]
-    revalidation_node_refs: tuple[str, ...]
-    history_event_ref: str
-    reason: str
-    stage_profile_binding_digest: str | None = None
-    stage_baseline_coverage_digest: str | None = None
-
-    def __post_init__(self) -> None:
-        _text(self.receipt_id, "receipt_id")
-        if not isinstance(self.outcome, ControllerOutcome):
-            raise TypeError("outcome must be a ControllerOutcome")
-        require_sha256(
-            self.previous_checkpoint_digest,
-            "previous_checkpoint_digest",
-        )
-        require_sha256(
-            self.next_checkpoint_digest,
-            "next_checkpoint_digest",
-        )
-        if self.action_digest is not None:
-            require_sha256(self.action_digest, "action_digest")
-        if self.stage_profile_binding_digest is not None:
-            require_sha256(
-                self.stage_profile_binding_digest,
-                "stage_profile_binding_digest",
-            )
-        if self.stage_baseline_coverage_digest is not None:
-            require_sha256(
-                self.stage_baseline_coverage_digest,
-                "stage_baseline_coverage_digest",
-            )
-        require_logical_ref(self.history_event_ref, "history_event_ref")
-        _text(self.reason, "reason")
-
-
-@dataclass(frozen=True, slots=True)
 class ControllerTurnResult:
     checkpoint: DesignControllerCheckpoint
-    receipt: ControllerTurnReceipt
+    outcome: ControllerOutcome
     transition: NestedStateTransition | None = None
     phase_transition: PhaseTreeTransition | None = None
     phase_gate: PhaseGateReceipt | None = None
@@ -4248,12 +4202,8 @@ def apply_architect_action(
             ),
         )
         return _result(
-            previous=checkpoint,
             checkpoint=stopped,
             outcome=ControllerOutcome.STOPPED_REPEATED_ACTION,
-            history_event_ref=history_event_ref,
-            reason="repeated Architect action stopped before compilation",
-            action=action,
         )
     try:
         nested = compile_nested_decision(
@@ -4281,12 +4231,8 @@ def apply_architect_action(
             ),
         )
         return _result(
-            previous=checkpoint,
             checkpoint=stopped,
             outcome=outcome,
-            history_event_ref=history_event_ref,
-            reason=stop_reason,
-            action=action,
         )
     next_maturity = replace(
         checkpoint.maturity,
@@ -4333,20 +4279,12 @@ def apply_architect_action(
         ),
     )
     return _result(
-        previous=checkpoint,
         checkpoint=next_checkpoint,
         outcome=(
             ControllerOutcome.STOPPED_BUDGET
             if exhausted
             else ControllerOutcome.TRANSITIONED
         ),
-        history_event_ref=history_event_ref,
-        reason=(
-            "transition compiled; iteration budget exhausted"
-            if exhausted
-            else "grounded Architect action compiled"
-        ),
-        action=action,
         nested=nested,
     )
 
@@ -4712,13 +4650,8 @@ def close_reopened_nodes(
         reopened_node_refs=remaining,
     )
     return _result(
-        previous=checkpoint,
         checkpoint=next_checkpoint,
         outcome=ControllerOutcome.REOPENED_REFS_CLOSED,
-        history_event_ref=history_event_ref,
-        reason=(
-            "exact repair receipt closed explicitly named reopened nodes"
-        ),
         stage_convergence=convergence_receipt,
     )
 
@@ -4810,14 +4743,8 @@ def advance_design_phase(
         reopened_node_refs=(),
     )
     return _result(
-        previous=checkpoint,
         checkpoint=next_checkpoint,
         outcome=ControllerOutcome.PHASE_ADVANCED,
-        history_event_ref=history_event_ref,
-        reason=(
-            f"deterministic phase gate advanced "
-            f"{receipt.from_phase.value} to {receipt.to_phase.value}"
-        ),
         phase_transition=phase_transition,
         phase_gate=receipt,
         stage_convergence=convergence_receipt,
@@ -4901,15 +4828,8 @@ def revise_design_phase(
         reopened_node_refs=(next_target_ref,),
     )
     return _result(
-        previous=checkpoint,
         checkpoint=next_checkpoint,
         outcome=ControllerOutcome.PHASE_REVISED,
-        history_event_ref=history_event_ref,
-        reason=(
-            f"dependency-local revision regressed "
-            f"{revision.from_phase.value} to "
-            f"{revision.to_phase.value}"
-        ),
         phase_transition=phase_transition,
         backward_revision=revision,
     )
@@ -5200,11 +5120,8 @@ def pause_for_clarification(
         ),
     )
     return _result(
-        previous=checkpoint,
         checkpoint=paused,
         outcome=ControllerOutcome.PAUSED_AUTHORITY,
-        history_event_ref=history_event_ref,
-        reason="waiting for exact-base named authority",
     )
 
 
@@ -5238,11 +5155,8 @@ def resume_authority_pause(
     )
     if resumed.status is ClarificationResumeStatus.BLOCKED:
         return _result(
-            previous=checkpoint,
             checkpoint=checkpoint,
             outcome=ControllerOutcome.PAUSED_AUTHORITY,
-            history_event_ref=history_event_ref,
-            reason=resumed.reason,
         )
     assert resumed.operator is not None
     assert receipt is not None
@@ -5291,11 +5205,8 @@ def resume_authority_pause(
         ),
     )
     return _result(
-        previous=checkpoint,
         checkpoint=next_checkpoint,
         outcome=ControllerOutcome.RESUMED_AUTHORITY,
-        history_event_ref=history_event_ref,
-        reason=resumed.reason,
         nested=nested,
     )
 
@@ -5341,12 +5252,8 @@ def _checkpoint_after_nested_event(
 
 def _result(
     *,
-    previous: DesignControllerCheckpoint,
     checkpoint: DesignControllerCheckpoint,
     outcome: ControllerOutcome,
-    history_event_ref: str,
-    reason: str,
-    action: GroundedArchitectAction | None = None,
     nested: NestedStateTransition | None = None,
     phase_transition: PhaseTreeTransition | None = None,
     phase_gate: PhaseGateReceipt | None = None,
@@ -5356,77 +5263,9 @@ def _result(
     stage_profile_binding: StageRequirementProfileBinding | None = None,
     stage_baseline_coverage: StageBaselineCoverageReceipt | None = None,
 ) -> ControllerTurnResult:
-    payload = {
-        "outcome": outcome.value,
-        "previous": previous.checkpoint_digest,
-        "next": checkpoint.checkpoint_digest,
-        "action": None if action is None else action.action_digest,
-        "history_event_ref": history_event_ref,
-        "reason": reason,
-        "stage_convergence": (
-            None
-            if stage_convergence is None
-            else stage_convergence.receipt_id
-        ),
-        "stage_closure": (
-            None if stage_closure is None else stage_closure.receipt_id
-        ),
-        "stage_profile_binding": (
-            None
-            if stage_profile_binding is None
-            else stage_profile_binding.binding_digest
-        ),
-        "stage_baseline_coverage": (
-            None
-            if stage_baseline_coverage is None
-            else stage_baseline_coverage.receipt_digest
-        ),
-    }
     return ControllerTurnResult(
         checkpoint=checkpoint,
-        receipt=ControllerTurnReceipt(
-            receipt_id=f"controller-turn-{canonical_digest(payload)[:24]}",
-            outcome=outcome,
-            previous_checkpoint_digest=previous.checkpoint_digest,
-            next_checkpoint_digest=checkpoint.checkpoint_digest,
-            action_digest=(
-                None if action is None else action.action_digest
-            ),
-            responds_to_refs=(
-                () if action is None else action.responds_to_refs
-            ),
-            adopted_advice_refs=(
-                () if action is None else action.adopted_advice_refs
-            ),
-            rejected_advice_refs=(
-                () if action is None else action.rejected_advice_refs
-            ),
-            changed_node_ref=(
-                None if nested is None else nested.changed_node_ref
-            ),
-            invalidated_node_refs=(
-                ()
-                if nested is None
-                else nested.invalidated_node_refs
-            ),
-            revalidation_node_refs=(
-                ()
-                if nested is None
-                else nested.revalidation_node_refs
-            ),
-            history_event_ref=history_event_ref,
-            reason=reason,
-            stage_profile_binding_digest=(
-                None
-                if stage_profile_binding is None
-                else stage_profile_binding.binding_digest
-            ),
-            stage_baseline_coverage_digest=(
-                None
-                if stage_baseline_coverage is None
-                else stage_baseline_coverage.receipt_digest
-            ),
-        ),
+        outcome=outcome,
         transition=nested,
         phase_transition=phase_transition,
         phase_gate=phase_gate,

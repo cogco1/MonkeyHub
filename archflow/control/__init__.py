@@ -55,7 +55,6 @@ from archflow.control.check_requirements import (
 from archflow.control.genesis_completeness import (
     GenesisSemanticCompletenessError,
     GenesisSemanticDenominator,
-    SemanticCompletenessReceipt,
     SemanticDenominatorSourceKind,
     SemanticSystemBasis,
     SemanticSystemDeclaration,
@@ -266,7 +265,6 @@ __all__ = [
     "SearchPolicyDescriptor",
     "SearchPolicyError",
     "SearchPolicyRequest",
-    "SemanticCompletenessReceipt",
     "SemanticCapabilityId",
     "SemanticCapabilityPolicy",
     "SemanticCapabilityPolicyError",

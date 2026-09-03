@@ -362,7 +362,7 @@ class ModernDecisionDesignClosureIntegrationTests(unittest.TestCase):
             history_event_ref="design-event:integrated-phase-advance",
         )
 
-        self.assertIs(result.receipt.outcome, ControllerOutcome.PHASE_ADVANCED)
+        self.assertIs(result.outcome, ControllerOutcome.PHASE_ADVANCED)
         self.assertIs(result.stage_closure, controller_closure)
         self.assertIn(
             controller_closure.receipt_digest,

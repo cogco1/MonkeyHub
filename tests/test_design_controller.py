@@ -2654,22 +2654,15 @@ class DesignControllerTurnTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            result.receipt.outcome,
+            result.outcome,
             ControllerOutcome.TRANSITIONED,
         )
         self.assertEqual(
-            result.receipt.responds_to_refs,
-            (
-                _GLOBAL_COMMITMENT_REF,
-                "obligation:resolve-grid",
-            ),
-        )
-        self.assertEqual(
-            result.receipt.invalidated_node_refs,
+            result.transition.invalidated_node_refs,
             (nodes["stair"].ref,),
         )
         self.assertEqual(
-            result.receipt.revalidation_node_refs,
+            result.transition.revalidation_node_refs,
             (nodes["facade"].ref,),
         )
         self.assertEqual(
@@ -2771,8 +2764,8 @@ class DesignControllerTurnTests(unittest.TestCase):
             history_event_ref="design-event:unrelated-after-reopen",
         )
         self.assertEqual(second.checkpoint.reopened_node_refs, expected)
-        self.assertEqual(second.receipt.invalidated_node_refs, ())
-        self.assertEqual(second.receipt.revalidation_node_refs, ())
+        self.assertEqual(second.transition.invalidated_node_refs, ())
+        self.assertEqual(second.transition.revalidation_node_refs, ())
 
         repair_receipt = _stage_convergence_receipt(
             second.checkpoint,
@@ -2811,7 +2804,7 @@ class DesignControllerTurnTests(unittest.TestCase):
             history_event_ref="design-event:stair-repair-closed",
         )
         self.assertIs(
-            closed.receipt.outcome,
+            closed.outcome,
             ControllerOutcome.REOPENED_REFS_CLOSED,
         )
         self.assertEqual(
@@ -2981,7 +2974,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            stopped.receipt.outcome,
+            stopped.outcome,
             ControllerOutcome.STOPPED_REPEATED_ACTION,
         )
         self.assertEqual(
@@ -3069,7 +3062,7 @@ class DesignControllerTurnTests(unittest.TestCase):
                     stopped.checkpoint.to_dict()
                 )
 
-                self.assertIs(stopped.receipt.outcome, expected)
+                self.assertIs(stopped.outcome, expected)
                 self.assertIs(
                     reloaded.status,
                     ControllerStatus.STOPPED,
@@ -3121,7 +3114,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            result.receipt.outcome,
+            result.outcome,
             ControllerOutcome.STOPPED_BUDGET,
         )
         self.assertEqual(reloaded, result.checkpoint)
@@ -3182,11 +3175,11 @@ class DesignControllerTurnTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            paused.receipt.outcome,
+            paused.outcome,
             ControllerOutcome.PAUSED_AUTHORITY,
         )
         self.assertEqual(
-            resumed.receipt.outcome,
+            resumed.outcome,
             ControllerOutcome.RESUMED_AUTHORITY,
         )
         self.assertEqual(
@@ -3266,7 +3259,7 @@ class DesignControllerTurnTests(unittest.TestCase):
             history_event_ref="design-event:post-authority-action",
         )
         self.assertIs(
-            continued.receipt.outcome,
+            continued.outcome,
             ControllerOutcome.TRANSITIONED,
         )
 
@@ -3361,7 +3354,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            result.receipt.outcome,
+            result.outcome,
             ControllerOutcome.PHASE_ADVANCED,
         )
         self.assertIs(
@@ -3372,14 +3365,6 @@ class DesignControllerTurnTests(unittest.TestCase):
         self.assertIs(result.stage_closure, closure_receipt)
         self.assertIs(result.stage_profile_binding, profile_binding)
         self.assertIsNotNone(result.stage_baseline_coverage)
-        self.assertEqual(
-            profile_binding.binding_digest,
-            result.receipt.stage_profile_binding_digest,
-        )
-        self.assertEqual(
-            result.stage_baseline_coverage.receipt_digest,
-            result.receipt.stage_baseline_coverage_digest,
-        )
         alternate_closure = _stage_closure_receipt(
             checkpoint,
             stage_subject_ref=checkpoint.maturity.deliverables[1].ref,
@@ -3408,10 +3393,6 @@ class DesignControllerTurnTests(unittest.TestCase):
             history_event_ref="design-event:phase-advanced",
         )
         self.assertIs(alternate.stage_closure, alternate_closure)
-        self.assertNotEqual(
-            result.receipt.receipt_id,
-            alternate.receipt.receipt_id,
-        )
         self.assertTrue(
             all(
                 node.operational_state.phase
@@ -4096,7 +4077,7 @@ class DesignControllerTurnTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            revised.receipt.outcome,
+            revised.outcome,
             ControllerOutcome.PHASE_REVISED,
         )
         self.assertEqual(

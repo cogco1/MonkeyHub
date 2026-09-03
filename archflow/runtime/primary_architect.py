@@ -334,7 +334,7 @@ async def run_primary_architect_turn(
         prepared=prepared,
         selection_receipt=selection_receipt,
         action_receipt=action_receipt,
-        controller_outcome=controller_result.receipt.outcome.value,
+        controller_outcome=controller_result.outcome.value,
         next_checkpoint_digest=(
             controller_result.checkpoint.checkpoint_digest
         ),

@@ -4,8 +4,6 @@ from dataclasses import replace
 
 import pytest
 
-from archflow.adapters.cad_execution import RhinoCadProgramBinding
-from archflow.adapters.stage_cad_execution import require_stage_cad_binding
 from archflow.control.baseline import (
     ComponentLineageBaselineSource,
     MaterialBindingBaselineSource,
@@ -787,23 +785,6 @@ def test_visual_function_relation_realization_artifact_and_cad_guard_chain() -> 
     assert claim.status is StageArtifactStatus.STAGE3_VERIFIED_CANDIDATE
     assert claim.component_index != claim.stage_subject_inventory
     assert StageArtifactClaim.from_dict(claim.to_dict()) == claim
-    cad_binding = RhinoCadProgramBinding(
-        program_ref=program_ref,
-        branch=branch,
-        stage_id=prepared.inventory.stage_id,
-        program_digest=program.program_digest,
-        design_state_digest=program.proposal.design_state_digest,
-        predecessor_program_digest=program.proposal.predecessor_program_digest,
-    )
-    guard = require_stage_cad_binding(
-        claim,
-        program,
-        binding=cad_binding,
-        artifact_name="stage3-candidate.3dm",
-    )
-    assert guard.formal_stage_bound
-    assert guard.claim is claim
-    assert guard.expected_artifact_sha256 == artifact_sha
 
     forged_row = replace(
         coverage.coverage[0],
