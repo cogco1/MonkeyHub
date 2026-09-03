@@ -163,7 +163,9 @@ def resolve_pick(
     return answer(
         RESOLVED,
         component_id=component_id,
-        element_id=_element_id(projection, _object_name(request)),
+        element_id=_element_id(
+            projection, _object_name(request), component_id
+        ),
         operation_id=_text(request.user_strings.get(PRODUCER_OP_KEY)),
     )
 
@@ -196,16 +198,26 @@ def _object_name(request: PickRequest) -> str | None:
     return _text(request.object_name)
 
 
-def _element_id(projection: StateProjection, object_name: str | None) -> str | None:
-    """The ``Element@1`` row that produced that object, if one did.
+def _element_id(
+    projection: StateProjection,
+    object_name: str | None,
+    component_id: str,
+) -> str | None:
+    """The ``Element@1`` row of *this component* that produced that object.
 
     Many exported objects are not element rows — the villa's openings are
     produced by operations under a component — so ``None`` here is a normal
     answer meaning component-level resolution, not a failure to look.
 
-    An exact ``obj-<id>`` beats a prefix match, and among prefix matches the
-    longest id wins: with elements ``portico`` and ``portico-base`` both
-    declared, ``obj-portico-base-0`` belongs to the second.
+    Only the resolved component's own elements are considered. An object that
+    claims one component and carries a name matching an element of another is
+    two claims that disagree, and answering with the element would hand the
+    next request an element the picked component does not contain; the
+    component still answers, and the element stays unresolved.
+
+    Among that component's elements, an exact ``obj-<id>`` beats a prefix match
+    and the longest prefix wins: with elements ``portico`` and ``portico-base``
+    both declared, ``obj-portico-base-0`` belongs to the second.
     """
 
     if object_name is None or not object_name.startswith(OBJECT_NAME_PREFIX):
@@ -213,6 +225,8 @@ def _element_id(projection: StateProjection, object_name: str | None) -> str | N
     stem = object_name[len(OBJECT_NAME_PREFIX) :]
     prefixed: list[str] = []
     for element in projection.elements:
+        if element.component_id != component_id:
+            continue
         if stem == element.element_id:
             return element.element_id
         if stem.startswith(f"{element.element_id}-"):

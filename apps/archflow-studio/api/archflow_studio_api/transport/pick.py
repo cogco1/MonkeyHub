@@ -8,6 +8,8 @@ the answer can say which.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..application.pick import PickRequest, PickResolution
@@ -62,7 +64,9 @@ class PickResolutionDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
-    status: str = Field(
+    # The three answers are closed, and closed on the wire: a fourth would fail
+    # here rather than reach a client that has no branch for it.
+    status: Literal["resolved", "unbound", "unknown_component"] = Field(
         description="resolved, unbound, or unknown_component; the last two are "
         "answers about the object, not failures of the request",
     )
@@ -73,10 +77,11 @@ class PickResolutionDto(BaseModel):
         "object is one an operation produced under the component",
     )
     operation_id: str | None = Field(alias="operationId")
-    source_state: str = Field(
+    source_state: Literal["current", "stale", "unknown"] = Field(
         alias="sourceState",
         description="current, stale or unknown: whether the file the object "
-        "came from was exported from the state answering now",
+        "came from was exported from the state answering now; unknown is not "
+        "current",
     )
     source_run: str | None = Field(alias="sourceRun")
     source_program_digest: str | None = Field(alias="sourceProgramDigest")

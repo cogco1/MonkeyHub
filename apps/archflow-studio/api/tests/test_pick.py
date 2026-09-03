@@ -9,6 +9,7 @@ the API invented for itself.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import shutil
 import tempfile
@@ -20,16 +21,58 @@ from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
 from .support import (
+    EVIDENCE,
     PROJECT_ID,
+    RECORD_PAYLOAD,
     REFERENCE_RUN_ID,
     make_project,
     runner_state_digest,
+    write_runner_record,
 )
 
 # The program digest a document carries. Opaque here: the test asserts it
 # travels, not what it means.
 PROGRAM_DIGEST = "e" * 64
 OTHER_DIGEST = "0" * 64
+
+
+def _prefixed_elements_payload() -> dict:
+    """The fixture record with ``portico`` demoted from component to element.
+
+    ``building`` then holds elements ``portico``, ``portico-base`` and
+    ``portico-cornice``: one element id is a prefix of another under one
+    component, which is the only shape in which the tie-break rule can be
+    observed at all.
+    """
+
+    payload = json.loads(json.dumps(RECORD_PAYLOAD))
+    entities = []
+    for entity in payload["entities"]:
+        if entity["entity_id"] == "portico":
+            continue
+        if entity.get("parent_id") == "portico":
+            entity["parent_id"] = "building"
+            entity["fields"]["component_id"] = "building"
+        entities.append(entity)
+    entities.append(
+        {
+            "entity_id": "portico",
+            "schema": "Element@1",
+            "parent_id": "building",
+            "fields": {
+                "component_id": "building",
+                "producer": "prism",
+                "references": {"base": {"level": "level-ground"}},
+                "params": {
+                    "profile": [[0, 0], [6, 0], [6, 4], [0, 4]],
+                    "height": 4.0,
+                },
+            },
+            "basis_refs": [EVIDENCE],
+        }
+    )
+    payload["entities"] = entities
+    return payload
 
 
 def object_strings(
@@ -171,6 +214,75 @@ class ResolvedPickTests(PickTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["componentId"], "building")
         self.assertIsNone(payload["elementId"])
+
+    def test_an_element_of_another_component_is_not_this_picks_element(
+        self,
+    ) -> None:
+        # The object claims ``building`` and carries a name only ``portico``'s
+        # elements answer to. Naming ``portico-base`` here would put a change on
+        # an element of a component nobody clicked, so the element is left
+        # unresolved and the component still answers.
+        status, payload = self.resolve(
+            userStrings=object_strings(
+                "building",
+                object_name="obj-portico-base-0",
+                producer_op="portico-base-0",
+            ),
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["componentId"], "building")
+        self.assertIsNone(payload["elementId"])
+
+
+class ElementTieBreakTests(unittest.TestCase):
+    """Two elements under one component, one of them a prefix of the other."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root)
+        write_runner_record(self.repository, _prefixed_elements_payload())
+        self.client = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(self.client.close)
+        self.state_digest = self.client.get("/api/state").json()["stateDigest"]
+
+    def test_the_longest_element_id_that_prefixes_the_name_wins(self) -> None:
+        response = self.client.post(
+            "/api/pick/resolve",
+            json={
+                "stateDigest": self.state_digest,
+                "userStrings": object_strings(
+                    "building",
+                    object_name="obj-portico-base-0",
+                    producer_op="portico-base-0",
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        # ``portico`` also prefixes the name; ``portico-base`` is the element
+        # that actually produced the object.
+        self.assertEqual(response.json()["elementId"], "portico-base")
+
+    def test_the_shorter_element_still_answers_for_its_own_objects(
+        self,
+    ) -> None:
+        response = self.client.post(
+            "/api/pick/resolve",
+            json={
+                "stateDigest": self.state_digest,
+                "userStrings": object_strings(
+                    "building",
+                    object_name="obj-portico-0",
+                    producer_op="portico-0",
+                ),
+            },
+        )
+
+        self.assertEqual(response.json()["elementId"], "portico")
 
 
 class UnresolvedPickTests(PickTestCase):
