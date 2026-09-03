@@ -75,10 +75,16 @@ validation receipt runs on `CanonicalState(ref=head)` with empty facts and must 
 after the first candidate it would pick `studio-cand-*`. The reference run is either configured explicitly or
 selected by a criterion that excludes harness, equivalence, patch and Studio candidate runs; the projection's
 digest reproduces the reference receipt (`344b2206…` for `runner-002`) only under the reference run's own id.
+*Resolved in the plan (2026-09-03, verified on the villa by both sessions):* `?run=` → `ARCHFLOW_STUDIO_REFERENCE_RUN`
+→ newest complete receipt whose workflow is not a harness (`workflow_id` in {equivalence-harness,
+studio-candidate-harness}; a `RunnerRunReceipt@1` without `workflow_ref` counts). On the villa that leaves
+`runner-002` alone; a Studio candidate can never become the reference by construction.
 
 **Digest scope:** the run id enters both `state_digest` and the program digest (`_StateIdentity`). "Did this edit
 change anything" is answered by comparing two records bound to the same run, or the authored content before
 binding — never a candidate's digest against the projection's, which differ even for an identical record.
+*Resolved in the plan:* projection and candidate DTOs carry `authoredRecordDigest` (the digest before binding;
+`c5c7843d…` on the villa) and content change is judged on that alone; the bound digests stay, labelled.
 
 **Candidate execution mode (calibrated):** the villa retains no stage-run envelopes, so candidates run through the
 harness pattern of `tools/verify_state_record.py` (a one-stage workflow and envelope retained in the candidate
