@@ -159,6 +159,34 @@ versions strip and the candidate cards replace it), `features/project/TopBar.tsx
 `CandidatePanel`'s polling logic, `loadable.ts`, `jobs.ts`, `format.ts`, `useSession.ts`, `ErrorBoundary`
 are kept (some moved).
 
+## 12a. The intent compiler (added 2026-09-03 on Kaiwen's ruling: the seam is an agent, not a grammar)
+
+`POST /api/intents` replaces `POST /api/proposals` as the composer's route. The process's **intent
+compiler** (`ARCHFLOW_STUDIO_INTENT_PROVIDER` = `deterministic` | `codex` | `anthropic`; both agent
+backends are wired, env-selected) is shown the **record sheet** — components, elements with numeric
+fields, parameters, honesty lines, the four grammar forms — and answers with one JSON object (`status`
+compiled | question, `targetComponentId`, `elementId`, `utterance`, `why`, `question`). A compiled sentence
+must parse in the grammar and is then proposed through the deterministic seam unchanged; an agent's
+question, or an agent's sentence the grammar cannot type, is the same `422 BLOCKED_NEEDS_HUMAN` with the
+agent's reading in `detail`; an agent that fails is `502 INTENT_AGENT_FAILED`. A sentence already in the
+grammar never reaches the agent. The answer carries `agent` (provider, model, compiled sentence, `why`,
+latency, prompt sha256) beside `proposal`. On screen the agent's reading sits above the proposed-change
+card as the agent's ("Read by codex · 45.1 s — …"), never as the record's. The codex backend runs
+`codex exec --ephemeral --skip-git-repo-check --ignore-user-config -s read-only` in a temp directory with
+`--output-schema`; the Anthropic backend reads its key from the SDK's environment and this process never
+holds it.
+
+## 12b. Design-review language (Kaiwen's product feedback, 2026-09-03)
+
+Cards speak to an architect: **Proposed change** — Change / Will update / Keep / [Apply] [Adjust]
+(Apply runs the candidate, Adjust puts the compiled sentence back in the composer); **Is it safe?** —
+Geometry / Dependencies / Receipt / Unresolved, each ✓ or △ on the server's own clause names, the three
+relation chips kept; the evidence tab says `N changes · M checked · K need review`; the toolbar shows
+`HEAD vN` without the digest (the digest is in Evidence → Identities); the picked chip names the element
+and its fields, and keeps the resolution status and source state in a tooltip and the system line. Carded
+for the next spec: Before / After / Why per component with a before ↔ after compare; parallel candidates
+with dependency-aware queueing shown as behaviour, never as a graph; folding the versions strip per run.
+
 ## 12. Testing and acceptance
 
 - `npm run api:check` unchanged (no schema change), `npm run typecheck`, `npm run build` green.
