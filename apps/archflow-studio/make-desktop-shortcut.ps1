@@ -9,6 +9,11 @@ $studioRoot = $PSScriptRoot
 $target = Join-Path $studioRoot 'OPEN_ARCHFLOW_STUDIO.bat'
 if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "missing launcher: $target" }
 
+# The icon lives beside the script, in the repository. assets\make_icon.py draws it.
+$icon = Join-Path $studioRoot 'assets\archflow.ico'
+if (-not (Test-Path -LiteralPath $icon -PathType Leaf)) { throw "missing icon: $icon" }
+$iconLocation = "$icon,0"
+
 $desktop = [Environment]::GetFolderPath('Desktop')
 $link = Join-Path $desktop '打开 ArchFlow Studio.lnk'
 $shell = New-Object -ComObject WScript.Shell
@@ -16,7 +21,7 @@ $shortcut = $shell.CreateShortcut($link)
 $shortcut.TargetPath = $target
 $shortcut.WorkingDirectory = $studioRoot
 $shortcut.Description = 'Start the ArchFlow Studio API and web client on the project in runtime.json'
-$shortcut.IconLocation = "$env:SystemRoot\System32\imageres.dll,109"
+$shortcut.IconLocation = $iconLocation
 $shortcut.WindowStyle = 1
 $shortcut.Save()
 
@@ -25,5 +30,7 @@ $written = $shell.CreateShortcut($link)
 Write-Host "shortcut written: $link"
 Write-Host "  target : $($written.TargetPath)"
 Write-Host "  workdir: $($written.WorkingDirectory)"
+Write-Host "  icon   : $($written.IconLocation)"
 if ($written.TargetPath -ne $target) { throw "the shortcut points at $($written.TargetPath), not $target" }
 if ($written.WorkingDirectory -ne $studioRoot) { throw "the shortcut works in $($written.WorkingDirectory), not $studioRoot" }
+if ($written.IconLocation -ne $iconLocation) { throw "the shortcut draws $($written.IconLocation), not $iconLocation" }

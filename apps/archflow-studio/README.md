@@ -60,6 +60,11 @@ API and the web client together.** Each start writes `api-<stamp>.out.log`,
 the tail of it on screen rather than making you go looking. `launch-studio.ps1` takes
 `-NoBrowser` and `-RuntimeConfig <path>`, so a second project can be launched without editing
 the one beside it. Windows PowerShell 5.1 is the floor: the script needs no `pwsh`.
+The shortcut's icon is `assets/archflow.ico` — an arch over a flowing line, drawn at
+16, 24, 32, 48, 64, 128 and 256 px by `assets/make_icon.py` (Pillow), each size from its
+own spec rather than downscaled from one image. Redraw it with
+`py -3.12 apps/archflow-studio/assets/make_icon.py`; the shortcut points at the `.ico` by
+absolute path, so an existing shortcut picks up a redraw without being rewritten.
 
 **Install** (from the repo root):
 
