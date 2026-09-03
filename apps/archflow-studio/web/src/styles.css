@@ -1687,3 +1687,15 @@ button.chip:hover {
 .vcard__save:hover {
   text-decoration: underline;
 }
+
+.annotate__note {
+  position: absolute;
+  top: 44px;
+  left: 12px;
+  z-index: 3;
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 2px;
+  background: var(--overlay);
+  font-size: 11px;
+}
