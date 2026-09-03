@@ -110,13 +110,13 @@ from archflow.submission import CandidateDelta, CandidateSubmission
 from archflow.validation import ArtifactPresentValidator, validate_submission
 from tools.projects.pantheon.fixture_support import (
     IDENTITY,
-    _canonical,
     _inputs,
     _operation,
     _parameter,
     _rebase_context,
     _validation_payload,
 )
+from archflow.contracts.canonical import canonical_json as _canonical
 
 PROJECT_ID = "p065-monument-derivation"
 RUN_ID = "monument-001"

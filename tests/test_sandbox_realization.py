@@ -279,10 +279,10 @@ class SandboxRealizationTests(unittest.TestCase):
             AxisAlignedBounds,
             SceneObject,
             SceneRepresentation,
-            _canonical_json,
             _contains,
             _intersects_cell,
         )
+        from archflow.contracts.canonical import canonical_json as _canonical_json
 
         bounds = AxisAlignedBounds((0.0, 0.0, 0.0), (2.0, 0.2, 2.0))
         slab = SceneObject(
@@ -314,9 +314,9 @@ class SandboxRealizationTests(unittest.TestCase):
             AxisAlignedBounds,
             SceneObject,
             SceneRepresentation,
-            _canonical_json,
             _contains,
         )
+        from archflow.contracts.canonical import canonical_json as _canonical_json
 
         geometry = {
             "kind": "mesh",

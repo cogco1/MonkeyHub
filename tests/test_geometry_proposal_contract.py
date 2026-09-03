@@ -30,9 +30,9 @@ from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from tests.test_geometry_proposal_producer import (
     IDENTITY,
     _ScriptedProvider,
-    _canonical_json,
     _spatial_option,
 )
+from archflow.contracts.canonical import canonical_json as _canonical_json
 from tests.test_sandbox_realization import compiled_room
 
 

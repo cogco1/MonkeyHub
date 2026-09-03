@@ -416,7 +416,13 @@ class StateRecord:
 
     @property
     def digest(self) -> str:
-        return canonical_digest(self.to_dict())
+        """Content identity: the design content, independent of the run and base
+        it is bound to. ``state_digest`` is the binding identity."""
+
+        content = self.to_dict()
+        del content["run_id"]
+        del content["base"]
+        return canonical_digest(content)
 
 
 # ---------------------------------------------------------------- typed views of the record

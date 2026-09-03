@@ -13,6 +13,7 @@ from pathlib import Path
 
 from archflow.project import FilesystemProjectRepository
 from archflow.state.operational_state import DependencyEffect, DesignObligation, ObligationStatus
+from archflow.project.refs import RunRef
 from archflow.state.state_record import (
     Entity,
     Lineage,
@@ -197,6 +198,16 @@ class StateRecordTests(unittest.TestCase):
             ids = [c.component_id for c in state.selected_schematic.option.proposal.components]
             self.assertEqual(ids, ["building", "portico-columns", "portico-entablature", "portico-west"])
             self.assertEqual(len(state.state_digest), 64)
+
+    def test_binding_changes_state_digest_but_not_content_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            record = _record()
+            bound_a = record.bound_to(RunRef("demo", "run-a", repository.read_head()))
+            bound_b = record.bound_to(RunRef("demo", "run-b", repository.read_head()))
+            self.assertEqual(bound_a.digest, record.digest)
+            self.assertEqual(bound_b.digest, record.digest)
+            self.assertNotEqual(bound_a.state_digest, bound_b.state_digest)
 
 
 if __name__ == "__main__":
