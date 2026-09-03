@@ -504,10 +504,16 @@ honesty lines) → Human Review (`Run candidate` button; disabled with reason wh
 Validation (receipt findings, three-state chips, `advance` verdict with `blockedBy`); bottom = event stream
 (SSE), candidate runs (receipts), no chat log. Every failed call → `ErrorPanel` with code + detail.
 
-- [ ] Steps: move → install → generate → typecheck/build green with the shell → live smoke against the villa
-  (bind, tree, pick, intent `set height to 5.0` on a selected element, proposal, impact, candidate run
-  (export off), validation) with screenshots → delete the old app → typecheck/build again → commit
-  `P108 refoundation: the studio shell runs the slice end to end on generated types; Preview Slice 01 retired`.
+- [x] Done (main e2ce261 + 5b6264d, 2026-09-03; one commit for move + generator + shell + retirement, one
+  for the review fixes). The browser app lives at `apps/archflow-studio/web/` on an OpenAPI-generated
+  client (hey-api isolated on TypeScript 5 in `web/tools/openapi-ts/`; `api:dump` from the running app;
+  `api:check` drift test); Preview Slice 01's `backend/`, `run_server.py`, `launch.py` and the old shell are
+  deleted (tag `studio-preview-slice-01`). Ratified after review: a pick on an API-served artifact carries
+  the receipt's own facts (`designStateDigest`/`runId`/`programDigest`) as document strings — three's
+  3DMLoader drops them — while local files stay `unknown`; candidate exports open under a `CANDIDATE` chip
+  (path implemented; exercised by the controller with a real Rhino export after merge); every failure
+  renders as an `ErrorPanel` with code + detail. Live smoke on the real villa (read-only) + a villa-input
+  copy (candidate): ten screenshots archived under `V4_RUNTIME/studio-smoke/2026-09-03-task9/`.
 
 ---
 
