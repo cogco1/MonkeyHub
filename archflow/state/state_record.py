@@ -359,6 +359,23 @@ class StateRecord:
         return tuple(sorted(seen))
 
     # ---- identity the geometry compiler checks (P102)
+    def bound_to(self, run: RunRef) -> "StateRecord":
+        """The authored (portable) record bound to one run's identity and canonical base.
+
+        An authored record carries no ``base``; whoever projects or executes it
+        binds it first. The runner does this before its first write; a
+        read-only projection (Studio) binds against the repository HEAD the
+        same way. This is the one sanctioned path — never a hand-built base.
+        """
+
+        if not isinstance(run, RunRef):
+            raise StateRecordError("bound_to needs a RunRef")
+        if run.project_id != self.project_id:
+            raise StateRecordError("cannot bind a record to a run of another project")
+        from dataclasses import replace as _replace
+
+        return _replace(self, run_id=run.run_id, base=run.base)
+
     @property
     def run_ref(self) -> RunRef:
         """The run this record was authored in; needs ``base``."""

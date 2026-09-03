@@ -136,6 +136,25 @@ class StateRecordTests(unittest.TestCase):
         with self.assertRaises(StateRecordError):
             StateRecord(pack.project_id, "run-1", tuple(entities) + (Entity("z2", "Space@1", {"program_node_refs": [], "level_ids": [], "volume_ids": ["nowhere"]}),))
 
+    def test_an_authored_record_is_bound_before_it_can_name_its_state(self) -> None:
+        """A portable record has no base; bound_to is the one sanctioned way to give it one."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            authored = _record()
+            self.assertIsNone(authored.base)
+            with self.assertRaises(StateRecordError):
+                authored.state_digest                                                   # cannot name its own run
+            bound = authored.bound_to(run)
+            self.assertEqual(bound.base, run.base)
+            self.assertEqual(bound.run_ref, run)
+            self.assertEqual(len(bound.state_digest), 64)
+            self.assertEqual(authored.digest, StateRecord.from_dict(authored.to_dict()).digest)   # the authored record is untouched
+            other = FilesystemProjectRepository.initialize(Path(tmp) / "other", project_id="other", initial_state={"schema": "TestState@1"}).create_run("run-1")
+            with self.assertRaises(StateRecordError):
+                authored.bound_to(other)                                                # another project's run
+
     def test_the_compiler_binds_a_program_to_the_record_itself(self) -> None:
         """P102 last step: the record answers the four identity questions, so the compiler takes it directly."""
 
