@@ -19,6 +19,7 @@ from archflow.state.state_record import StateRecord, developed_design_view
 from .support import (
     HARNESS_RUN_ID,
     PROJECT_ID,
+    RECORD_PAYLOAD,
     REFERENCE_RUN_ID,
     RUNNER_RECORD_PATH,
     STRIPPED_RECORD_PAYLOAD,
@@ -30,6 +31,10 @@ from .support import (
     missing_workflow_ref,
     write_runner_record,
 )
+
+# The kernel's own sentence when a record carries nothing to stand the
+# developed-design view on. Pinned here because the API repeats it verbatim.
+NO_EVIDENCE = "a developed-design view needs at least one evidence ref"
 
 
 class StateProjectionTests(unittest.TestCase):
@@ -408,6 +413,125 @@ class MalformedRecordTests(unittest.TestCase):
         response = self.client.get("/api/state")
 
         self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.json()["code"], "STATE_RECORD_INVALID"
+        )
+
+    def test_an_element_without_its_own_fields_is_a_422(self) -> None:
+        """A record that parses and then cannot be read is still the record's.
+
+        ``StateRecord`` validates no per-schema fields, so an ``Element@1``
+        with an empty ``fields`` mapping parses and fails where the projection
+        reads it. That is a fault in what somebody authored, not a bug in the
+        API, and it must arrive as the refusal that names the field.
+        """
+
+        payload = json.loads(json.dumps(RECORD_PAYLOAD))
+        for entity in payload["entities"]:
+            if entity["entity_id"] == "portico-base":
+                entity["fields"] = {}
+        self._write(json.dumps(payload))
+
+        response = self.client.get("/api/state")
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["code"], "STATE_RECORD_INVALID")
+        self.assertIn(RUNNER_RECORD_PATH, body["detail"])
+        self.assertIn("component_id", body["detail"])
+
+    def test_a_record_written_in_another_encoding_is_a_422(self) -> None:
+        """Undecodable bytes are a record fault, not an unhandled exception."""
+
+        self.repository.layout.resolve_relative(
+            RUNNER_RECORD_PATH
+        ).write_bytes(
+            json.dumps(RECORD_PAYLOAD)
+            .replace("demo option", "d\xe9mo option")
+            .encode("latin-1")
+        )
+
+        response = self.client.get("/api/state")
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["code"], "STATE_RECORD_INVALID")
+        self.assertIn(RUNNER_RECORD_PATH, body["detail"])
+
+
+class UnviewableRecordTests(unittest.TestCase):
+    """A record the kernel will not bind still says what it declares.
+
+    ``developed_design_view`` refuses three authoring faults with one
+    ``StateRecordError``. Failing to arrange a record's components is not a
+    claim that they are absent, so ``GET /api/state`` answers with the
+    entities and names what the kernel refused — and every route that would
+    have to *stand on* that view refuses instead of proceeding without it.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root)
+        payload = json.loads(json.dumps(RECORD_PAYLOAD))
+        payload["evidence_refs"] = []
+        write_runner_record(self.repository, payload)
+        self.client = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(self.client.close)
+
+    def test_the_projection_serves_the_record_and_names_the_refusal(
+        self,
+    ) -> None:
+        response = self.client.get("/api/state")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["componentTreeError"], NO_EVIDENCE)
+        self.assertIsNone(payload["componentTree"])
+        # The entities are the record's answer and they are still served.
+        self.assertEqual(payload["counts"]["entities"], 6)
+        self.assertEqual(payload["counts"]["components"], 2)
+        self.assertEqual(len(payload["elements"]), 2)
+        self.assertEqual(len(payload["parameters"]), 3)
+        self.assertEqual(len(payload["dependencyEdges"]), 3)
+        self.assertIn(
+            f"component tree unavailable: {NO_EVIDENCE}", payload["honesty"]
+        )
+        # No view, no bound digest: the number a receipt cites is absent
+        # rather than invented, and the comparison stays unmade.
+        self.assertIsNone(payload["stateDigest"])
+        self.assertIsNone(payload["activePhase"])
+        self.assertIsNone(payload["matchesReferenceReceipt"])
+
+    def test_a_proposal_on_a_record_with_no_view_is_refused(self) -> None:
+        response = self.client.post(
+            "/api/proposals",
+            json={
+                "stateDigest": "a" * 64,
+                "targetComponentId": "portico",
+                "elementId": "portico-base",
+                "utterance": "set height to 2.2",
+            },
+        )
+
+        self.assertEqual(response.status_code, 422, response.text)
+        body = response.json()
+        self.assertEqual(body["code"], "STATE_RECORD_INVALID")
+        self.assertIn(RUNNER_RECORD_PATH, body["detail"])
+        self.assertIn(NO_EVIDENCE, body["detail"])
+
+    def test_a_pick_on_a_record_with_no_view_is_refused(self) -> None:
+        response = self.client.post(
+            "/api/pick/resolve",
+            json={
+                "stateDigest": "a" * 64,
+                "userStrings": {"archflow:component": "portico"},
+            },
+        )
+
+        self.assertEqual(response.status_code, 422, response.text)
         self.assertEqual(
             response.json()["code"], "STATE_RECORD_INVALID"
         )

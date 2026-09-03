@@ -4,6 +4,29 @@
 from __future__ import annotations
 
 
+def error_sentence(exc: BaseException) -> str:
+    """One exception's own sentence, without this server's filesystem in it.
+
+    ``str(exc)`` on an ``OSError`` renders as ``[Errno 13] Permission denied:
+    '<absolute path>'``. That path is the service's own layout, and a client
+    asking about a project is not entitled to learn where the process keeps
+    it; the exception class and the system's own message say what went wrong
+    without it. Everything else already speaks in the project's own terms and
+    travels verbatim.
+
+    This is the one renderer: a second one would let one refusal publish what
+    another was careful to withhold.
+    """
+
+    if isinstance(exc, OSError):
+        return (
+            f"{type(exc).__name__}: {exc.strerror}"
+            if exc.strerror
+            else type(exc).__name__
+        )
+    return str(exc)
+
+
 class StudioError(Exception):
     """A failure the API states on the wire with a stable code."""
 

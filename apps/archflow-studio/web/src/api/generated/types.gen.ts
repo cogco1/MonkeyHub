@@ -915,13 +915,15 @@ export type StateProjectionDto = {
     /**
      * Statedigest
      *
-     * binding identity: the digest runner receipts carry
+     * binding identity: the digest runner receipts carry; null when the kernel refused to build this record's bound view, since nothing then produced a number a receipt could be compared against
      */
-    stateDigest: string;
+    stateDigest: string | null;
     /**
      * Activephase
+     *
+     * null for the same reason as stateDigest: the phase is read off the bound view
      */
-    activePhase: string;
+    activePhase: string | null;
     counts: CountsDto;
     /**
      * Componenttree

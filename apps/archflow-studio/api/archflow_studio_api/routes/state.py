@@ -27,6 +27,15 @@ def read_state(
         ),
     ),
 ) -> StateProjectionDto:
-    """Ask the kernel; shape the answer. No design question is decided here."""
+    """Ask the kernel; shape the answer. No design question is decided here.
 
-    return to_dto(project_state(bound_project(request.app.state), run))
+    This is the one route served a record whose developed-design view the
+    kernel refused: what such a record *declares* is still its own answer, and
+    the refusal travels as ``componentTreeError`` and an honesty line rather
+    than as a blank screen. Every route that would have to stand on that view
+    refuses instead.
+    """
+
+    return to_dto(
+        project_state(bound_project(request.app.state), run, require_view=False)
+    )

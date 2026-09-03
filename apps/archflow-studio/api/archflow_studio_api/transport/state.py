@@ -125,11 +125,17 @@ class StateProjectionDto(BaseModel):
         alias="recordDigest",
         description="content identity: invariant under binding",
     )
-    state_digest: str = Field(
+    state_digest: str | None = Field(
         alias="stateDigest",
-        description="binding identity: the digest runner receipts carry",
+        description="binding identity: the digest runner receipts carry; null "
+        "when the kernel refused to build this record's bound view, since "
+        "nothing then produced a number a receipt could be compared against",
     )
-    active_phase: str = Field(alias="activePhase")
+    active_phase: str | None = Field(
+        alias="activePhase",
+        description="null for the same reason as stateDigest: the phase is "
+        "read off the bound view",
+    )
     counts: CountsDto
     component_tree: list[ComponentNodeDto] | None = Field(
         alias="componentTree"
@@ -159,7 +165,11 @@ def to_dto(projection: StateProjection) -> StateProjectionDto:
         record_source=RUNNER_RECORD_PATH,
         record_digest=projection.record_digest,
         state_digest=projection.state_digest,
-        active_phase=projection.state.active_phase.value,
+        active_phase=(
+            None
+            if projection.state is None
+            else projection.state.active_phase.value
+        ),
         counts=CountsDto(
             entities=len(record.entities),
             # The kernel's tree is the count when it resolved; the raw entities

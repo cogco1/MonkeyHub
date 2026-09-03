@@ -137,7 +137,14 @@ elements with their `params.<key>` scalars, the declared parameters with their l
 kernel's dependency edges (`StateRecord.dependency_edges()`), and `honesty[]` — the lines
 that say what this record does **not** answer. A record whose tree will not build reports
 `componentTreeError` and still serves its entities; the tree is a view of those ids, and
-failing to arrange them is not a claim that they are absent.
+failing to arrange them is not a claim that they are absent. Such a record has no bound view
+either, so `stateDigest` and `activePhase` come back `null` — nothing produced a number a
+receipt could be compared against — and the kernel's sentence is repeated in `honesty[]`. Every
+other route stands *on* that view, so a pick, a proposal, an impact or a candidate against such
+a record refuses with `422 STATE_RECORD_INVALID` carrying the same sentence rather than
+answering from a tree it does not have. A record that parses and then cannot be read at all —
+an `Element@1` with no `component_id`, bytes in another encoding — is the same refusal: the
+authored file is what is wrong, and no such record is ever answered with a 500.
 
 **Artifacts.** `GET /api/artifacts` lists what the `seat-rhino-execution` receipts certify,
 each row keeping the receipt's own `available` / `unavailableReason` rather than being

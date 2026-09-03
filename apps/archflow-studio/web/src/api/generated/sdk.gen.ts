@@ -36,6 +36,12 @@ export const readProjectApiProjectGet = <ThrowOnError extends boolean = false>(o
  * Read State
  *
  * Ask the kernel; shape the answer. No design question is decided here.
+ *
+ * This is the one route served a record whose developed-design view the
+ * kernel refused: what such a record *declares* is still its own answer, and
+ * the refusal travels as ``componentTreeError`` and an honesty line rather
+ * than as a blank screen. Every route that would have to stand on that view
+ * refuses instead.
  */
 export const readStateApiStateGet = <ThrowOnError extends boolean = false>(options?: Options<ReadStateApiStateGetData, ThrowOnError>): RequestResult<ReadStateApiStateGetResponses, ReadStateApiStateGetErrors, ThrowOnError> => (options?.client ?? client).get<ReadStateApiStateGetResponses, ReadStateApiStateGetErrors, ThrowOnError>({ url: '/api/state', ...options });
 
