@@ -514,24 +514,28 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[Finding]:
         for test in entry.get("tests", ()):
             if not (root / test).is_file():
                 yield Finding(rel_registry, 1, "REGISTRY_TEST_MISSING", f"{module_id}: test {test} does not exist")
-        if owner.suffix != ".py":
-            continue
-        src = owner.read_text(encoding="utf-8")
-        try:
-            tree = ast.parse(src)
-        except SyntaxError:
-            continue
-        defined = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
-        defined |= {t.id for n in tree.body if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)}
+        span = [root / f for f in (entry.get("files") or [entry["owner_path"]])]
+        defined: set[str] = set()
+        for path in span:
+            if path.suffix != ".py" or not path.is_file():
+                continue
+            src = path.read_text(encoding="utf-8")
+            try:
+                tree = ast.parse(src)
+            except SyntaxError:
+                continue
+            defined |= {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+            defined |= {t.id for n in tree.body if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)}
+            defined |= {n.target.id for n in tree.body if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)}
+            for node in tree.body:
+                if isinstance(node, ast.FunctionDef) and not node.name.startswith("__"):
+                    body = _normalized_body(src, node)
+                    if len(body) > 80:
+                        owner_bodies.setdefault(body, (module_id, node.name))
         for symbol in entry.get("public_api", ()):
             if symbol.isidentifier() and symbol not in defined:
-                yield Finding(rel_registry, 1, "REGISTRY_SYMBOL_MISSING", f"{module_id}: public_api symbol {symbol} is not defined in {entry['owner_path']}")
-        for node in tree.body:
-            if isinstance(node, ast.FunctionDef) and not node.name.startswith("__"):
-                body = _normalized_body(src, node)
-                if len(body) > 80:
-                    owner_bodies.setdefault(body, (module_id, node.name))
-    owner_paths = {root / e.get("owner_path", "") for e in entries}
+                yield Finding(rel_registry, 1, "REGISTRY_SYMBOL_MISSING", f"{module_id}: public_api symbol {symbol} is not defined in {entry['owner_path']} or its files")
+    owner_paths = {root / f for e in entries for f in (e.get("files") or [e.get("owner_path", "")])}
     for path in _checked_python_files(root, policy):
         if path in owner_paths or "/tests/" in path.as_posix() or path.name == "__init__.py":
             continue
