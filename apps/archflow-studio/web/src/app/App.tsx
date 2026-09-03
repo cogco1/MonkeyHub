@@ -28,11 +28,11 @@ import type {
 } from "../api/generated";
 import {
   LOCAL_SOURCE_LABEL,
-  ThreeDmViewport,
   type ViewportController,
   type ViewportPick,
   type ViewportStatus,
 } from "../viewer/ThreeDmViewport";
+import { ViewerPanel } from "../viewer/ViewerPanel";
 import type { SceneInspection } from "../viewer/sceneInspection";
 import {
   ArtifactList,
@@ -57,11 +57,9 @@ import { SelectionPanel } from "../features/state/SelectionPanel";
 import { ValidationPanel } from "../features/validation/ValidationPanel";
 import { ErrorPanel } from "./ErrorPanel";
 import { Panel, Shell } from "./Shell";
+import { IN_FLIGHT } from "./jobs";
 import { failed, idle, loading, ready, valueOf, type Loadable } from "./loadable";
 import { useSession } from "./useSession";
-
-/** A job in one of these states has not finished; its verdict is not readable. */
-const IN_FLIGHT = new Set(["queued", "running"]);
 
 const NOTICE_LIMIT = 50;
 
@@ -99,6 +97,14 @@ export default function App() {
   // receipt that certified those bytes does.
   const [loadedArtifact, setLoadedArtifact] =
     useState<ProjectArtifactDto | null>(null);
+  // The artifact whose bytes were handed to the viewer and which the viewer has
+  // not yet accepted. It is held here rather than committed straight to
+  // `loadedArtifact` because the viewer can refuse a file — a name that is not
+  // `.3dm`, an empty one, one over its parse ceiling — and a refusal leaves the
+  // previous model on screen. Committing on hand-off would leave the shell
+  // answering picks on that still-visible model with the receipt of a file that
+  // never loaded.
+  const pendingArtifact = useRef<ProjectArtifactDto | null>(null);
 
   const [pick, setPick] = useState<Loadable<PickResolutionDto>>(idle);
   const [proposal, setProposal] = useState<Loadable<ProposalDto>>(idle);
@@ -163,21 +169,40 @@ export default function App() {
           artifact.sha256,
           artifact.fileName,
         );
-        setLoadedArtifact(artifact);
+        pendingArtifact.current = artifact;
         await viewportRef.current?.openFile(file, sourceLabel);
       } catch (cause) {
         setArtifactError(asStudioApiError(cause));
       } finally {
+        // Whatever happened, this hand-off is over. If the viewer accepted the
+        // file it has already taken the artifact under its label; if it refused
+        // it never will, and the row must not be left waiting to be claimed by
+        // some later load.
+        pendingArtifact.current = null;
         setArtifactLoadingSha(null);
       }
     },
     [],
   );
 
-  /** The viewer says which file it holds; a local one answers for nothing. */
+  /**
+   * The viewer says which file it holds, and that is when the shell writes down
+   * what the file answers for.
+   *
+   * A non-local label is only ever reported once the viewer has actually parsed
+   * the bytes it was given, so it — and nothing earlier — is the moment the
+   * pending artifact becomes the loaded one. A local file, a cleared viewport
+   * and a failed parse all report no non-local source, and each of them leaves
+   * the shell with no receipt to answer picks from.
+   */
   const noteSource = useCallback((label: string | null) => {
     setSourceLabel(label);
-    if (label === null || label === LOCAL_SOURCE_LABEL) setLoadedArtifact(null);
+    setLoadedArtifact(
+      label === null || label === LOCAL_SOURCE_LABEL
+        ? null
+        : pendingArtifact.current,
+    );
+    pendingArtifact.current = null;
   }, []);
 
   const resolvePick = useCallback(
@@ -405,67 +430,22 @@ export default function App() {
         }
         center={
           <>
-            <div className="viewer">
-              <div className="viewer__bar">
-                <span
-                  className={`chip ${
-                    sourceLabel === null ? "chip--neutral" : "chip--source"
-                  }`}
-                >
-                  {sourceLabel ?? "NO MODEL LOADED"}
-                </span>
-                <span className="viewer__status">{viewerMessage}</span>
-                <button
-                  type="button"
-                  className="button button--small"
-                  onClick={() => viewportRef.current?.fitView()}
-                >
-                  fit
-                </button>
-                <button
-                  type="button"
-                  className="button button--small"
-                  onClick={() => viewportRef.current?.frontView()}
-                >
-                  front
-                </button>
-                <button
-                  type="button"
-                  className="button button--small"
-                  onClick={() => viewportRef.current?.clear()}
-                >
-                  clear
-                </button>
-              </div>
-              {/* Bytes are fetched for the canonical list and for a
-                  candidate's own export alike, so the refusal belongs beside
-                  the chip it failed to set, not inside one of the two lists. */}
-              {artifactError && (
-                <ErrorPanel
-                  error={artifactError}
-                  what="GET /api/artifacts/{sha256}/bytes"
-                />
-              )}
-              <ThreeDmViewport
-                ref={viewportRef}
-                onInspection={setInspection}
-                onStatus={(status, message) => {
-                  setViewerStatus(status);
-                  setViewerMessage(message);
-                }}
-                onRequestFile={() => fileInputRef.current?.click()}
-                onSource={noteSource}
-                onPick={(picked) => void resolvePick(picked)}
-              />
-              {inspection && (
-                <p className="viewer__facts mono">
-                  {inspection.fileName} · {inspection.meshCount} meshes ·{" "}
-                  {inspection.objectCount} objects · {inspection.loadDurationMs}{" "}
-                  ms
-                  {viewerStatus === "error" ? " · load failed" : ""}
-                </p>
-              )}
-            </div>
+            <ViewerPanel
+              viewportRef={viewportRef}
+              sourceLabel={sourceLabel}
+              message={viewerMessage}
+              status={viewerStatus}
+              inspection={inspection}
+              artifactError={artifactError}
+              onInspection={setInspection}
+              onStatus={(status, message) => {
+                setViewerStatus(status);
+                setViewerMessage(message);
+              }}
+              onRequestFile={() => fileInputRef.current?.click()}
+              onSource={noteSource}
+              onPick={(picked) => void resolvePick(picked)}
+            />
             <Panel title="pick">
               {pick.status === "failed" ? (
                 <ErrorPanel error={pick.error} what="POST /api/pick/resolve" />

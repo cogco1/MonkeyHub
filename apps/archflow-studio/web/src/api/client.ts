@@ -20,7 +20,6 @@ import {
   readArtifactBytesApiArtifactsSha256BytesGet,
   readArtifactsApiArtifactsGet,
   readCandidateApiCandidatesCandidateIdGet,
-  readHealthApiHealthGet,
   readJobApiJobsJobIdGet,
   readProjectApiProjectGet,
   readProposalApiProposalsProposalIdGet,
@@ -40,7 +39,6 @@ import type {
   ProposalDto,
   ProposalRequestDto,
   StateProjectionDto,
-  StudioHealth,
   ValidationDto,
 } from "./generated";
 
@@ -190,11 +188,12 @@ async function call<T>(
   return result.data;
 }
 
+// `GET /api/health` has no wrapper here on purpose. It answers whether the
+// process is up and whether its project binding opens — an operator's question,
+// asked with curl or by a liveness probe. This shell's own first question is
+// stronger and is the one it asks: `GET /api/project` and `GET /api/state`
+// either return the binding or fail with a code the top bar renders.
 export const studio = {
-  health(): Promise<StudioHealth> {
-    return call("GET /api/health", readHealthApiHealthGet());
-  },
-
   project(): Promise<ProjectBindingDto> {
     return call("GET /api/project", readProjectApiProjectGet());
   },

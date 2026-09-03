@@ -30,7 +30,7 @@ import {
 } from "../../app/loadable";
 import type { ValidationDto } from "../../api/generated";
 import { HonestyLines } from "../state/HonestyLines";
-import { sha8 } from "../project/TopBar";
+import { sha8 } from "../../app/format";
 
 const NOT_FINISHED = "CANDIDATE_NOT_FINISHED";
 

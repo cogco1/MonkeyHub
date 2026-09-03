@@ -16,6 +16,8 @@ import { useEffect, useState } from "react";
 import { asStudioApiError, studio } from "../../api/client";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { RelationChips } from "../../app/RelationChips";
+import { sha8 } from "../../app/format";
+import { IN_FLIGHT } from "../../app/jobs";
 import {
   failed,
   idle,
@@ -30,12 +32,9 @@ import type {
 } from "../../api/generated";
 import { HonestyLines } from "../state/HonestyLines";
 import { candidateSourceLabel } from "../artifacts/ArtifactList";
-import { sha8 } from "../project/TopBar";
 
 /** How often the job is asked whether it is over. */
 const POLL_MS = 400;
-
-const IN_FLIGHT = new Set(["queued", "running"]);
 
 export function CandidatePanel({
   candidateId,

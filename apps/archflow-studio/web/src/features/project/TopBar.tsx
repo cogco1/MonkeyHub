@@ -8,12 +8,9 @@
  */
 
 import type { ProjectBindingDto, StateProjectionDto } from "../../api/generated";
+import { sha8 } from "../../app/format";
 
 const AUTHORITY = "PROPOSAL-ONLY · CANONICAL WRITE DISABLED";
-
-export function sha8(value: string | null | undefined): string {
-  return value ? value.slice(0, 8) : "—";
-}
 
 function receiptChip(matches: boolean | null | undefined) {
   if (matches === null || matches === undefined) {

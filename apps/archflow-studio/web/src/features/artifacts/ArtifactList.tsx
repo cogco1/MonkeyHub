@@ -11,7 +11,7 @@
  */
 
 import type { ArtifactListDto, ProjectArtifactDto } from "../../api/generated";
-import { sha8 } from "../project/TopBar";
+import { sha8 } from "../../app/format";
 
 /** The chip the viewer wears while a canonical artifact is loaded. */
 export function canonicalSourceLabel(artifact: ProjectArtifactDto): string {
