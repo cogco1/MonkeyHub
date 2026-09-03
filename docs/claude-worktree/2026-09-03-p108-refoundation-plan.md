@@ -62,8 +62,19 @@ uvicorn, httpx (tests). React 19, three.js 0.185, rhino3dm 8.32.2 (wasm), Vite 8
 - `open_located_project(project_id, *, local_projects_root)` → `(location, FilesystemProjectRepository)`;
   villa opens in 0.01 s; `read_head()` → `ProjectVersionRef(project_id, version=0, state_sha256=2aa733c5…)`.
 - `StateRecord.state_digest` is a **property** and raises unless the record carries `base`; the villa
-  `input/runner/state-record.json` has no `base`. The runner attaches it with
-  `replace(record, run_id=run.run_id, base=run.base)` (project_runner.py:569) — the sanctioned path.
+  `input/runner/state-record.json` has no `base`. **The one sanctioned binding is
+  `record.bound_to(run)`** (kernel commit 44cf960, 2026-09-03): "a read-only projection (Studio) binds
+  against the repository HEAD the same way — never a hand-built base". The studio builds
+  `RunRef(project_id, reference_run_id, repository.read_head())` and calls `bound_to`; it never constructs
+  `base` by hand and never uses `dataclasses.replace` for binding. Verified on the real villa:
+  `record.bound_to(RunRef(pid, "runner-002", read_head()))` → developed-view digest `344b2206…` (identical to
+  runner-002's receipt); a synthetic run id (`studio-projection`) changes the digest — **the run id
+  participates in the digest**, so the projection binds to the reference run's id, never a made-up one.
+- **Record-name parsing rule (from the benchmark's real-project failure):** a retained record is
+  `<kind>-<64 hex>.json`; parse with `^(?P<kind>.+)-(?P<sha>[0-9a-f]{64})\.json$` and compare `kind` by
+  **equality**, never by prefix — `workflow-001` holds both `project-stage-workflow-<sha>.json` and
+  `project-stage-workflow-freeze-receipt-<sha>.json`. Applies to every lookup in this plan
+  (`runner-run-receipt`, `seat-rhino-execution`, `seat-relation-check`, `seat-geometry-program`).
 - `developed_design_view(record, run=run, portfolio_id="declared-schematic", branch_id="runner-v1",
   selection_decision_ref="decision:declared-schematic-selection")` reproduces runner-002's receipt digest
   `344b2206…` exactly (the `RunOptions` defaults). With other kwargs the digest differs.
@@ -191,7 +202,8 @@ Deleted by this plan: `backend/` (all), `run_server.py`, `launch.py`, `src/App.t
   via `?run=`.
 - `projection(binding, run_id=None) -> StateProjection` (frozen dataclass, application layer):
   loads `input/runner/state-record.json` via `layout.resolve_relative`, `StateRecord.from_dict`,
-  `replace(record, run_id=run.run_id, base=run.base)`, `developed_design_view(record, run=run,
+  `run = RunRef(project_id, reference_run_id, repository.read_head())`, `record = record.bound_to(run)`,
+  `developed_design_view(record, run=run,
   portfolio_id="declared-schematic", branch_id="runner-v1",
   selection_decision_ref="decision:declared-schematic-selection")`; exposes `record`, `state`,
   `record_digest = record.digest`, `state_digest = state.state_digest`, `components =
@@ -334,9 +346,10 @@ counts), `test_events.py`, `test_sse.py`.
 **Mechanism (all kernel calls):**
 1. `run_id = f"studio-cand-{utc %Y%m%d-%H%M%S}-{proposal_id[:8]}"`; `run = repository.create_run(run_id,
    base=binding.head())`.
-2. Candidate record: `replace(record, run_id=run.run_id, base=run.base, entities=…)` where the targeted
-   `Element@1`'s `fields[key]` (or the `Parameter.value`) is replaced with `change.new` — the K1 candidate
-   code, ≤ 30 lines, in `application/candidate.py::successor_record`.
+2. Candidate record: `successor = replace(record, entities=…)` where the targeted `Element@1`'s
+   `fields["params"][key]` (or the `Parameter.value`) is replaced with `change.new` — the K1 candidate code,
+   ≤ 30 lines, in `application/candidate.py::successor_record` — then `successor.bound_to(run)` (binding
+   is the kernel's; the studio only edits the one authored value).
 3. `state = developed_design_view(candidate_record, run=run, portfolio_id="declared-schematic",
    branch_id="runner-v1", selection_decision_ref="decision:declared-schematic-selection")`.
 4. Harness guard (`adapters/harness.py`): `ProjectStageWorkflow(project_id, workflow_id=
@@ -449,6 +462,24 @@ Validation (receipt findings, three-state chips, `advance` verdict with `blocked
   test. Commit `P108 refoundation documented; battery green`.
 
 ---
+
+## Execution protocol (from the main session's benchmark, 2026-09-03)
+
+Fable 5.1 and Opus 5 scored 29/29 on the same pinned plan under independent judging; the differences were
+second-order and cancelled. So:
+
+1. **Pin, then dispatch.** Each task is pinned before dispatch — routes, DTO fields, error codes, file list,
+   test names and assertions written out — and given to an Opus worker (`Agent`, `model: "opus"`) in an
+   isolated worktree (`isolation: "worktree"`). This session plans, reviews and judges; it does not write the
+   pinned code itself.
+2. **Dry-run on real data first.** Before dispatching a task that touches the project, its kernel calls are
+   dry-run against the real villa project (read-only) or a temporary copy (writes) — the calibration script
+   `calibrate_chain.py` is the template.
+3. **Judge with independent scripts, not worker reports.** Acceptance of every task runs an independent
+   verification script against kernel truth (digests recomputed from `archflow`, record kinds counted from the
+   repository, receipts reloaded through `load_json`) plus the test suite and `archcheck`. A worker's
+   self-report is not evidence.
+4. **Merge only what the judge passed**, task by task, explicit paths, never `add -A`.
 
 ## Self-Review
 
