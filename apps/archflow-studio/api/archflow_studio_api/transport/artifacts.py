@@ -29,7 +29,11 @@ class ProjectArtifactDto(BaseModel):
     file_name: str = Field(alias="fileName")
     relative_path: str | None = Field(
         alias="relativePath",
-        description="where the certified bytes were found, project-relative",
+        description="where the certified bytes were found, project-relative; "
+        "display only — never send it back as a project path. A run's "
+        "workspace may hold an export whose name is not a portable P036 "
+        "segment, and resolve_relative rejects non-ASCII segments; the "
+        "artifact is addressed by its sha256, never by this string",
     )
     sha256: str | None
     size_bytes: int | None = Field(alias="sizeBytes")

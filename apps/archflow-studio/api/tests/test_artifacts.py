@@ -337,6 +337,10 @@ class ArtifactTests(unittest.TestCase):
         )
         # Never the mismatch wording: nothing read, nothing disproved.
         self.assertNotIn("is not the exported model", body["detail"])
+        # And never the server's own filesystem: the failure is named by its
+        # class and the system's message, not by the absolute path OSError
+        # would otherwise hand to whoever asked for the file.
+        self.assertNotIn(str(self.root), body["detail"])
 
     def test_a_not_found_names_the_runs_it_could_not_search(self) -> None:
         broken = add_unreadable_run(self.repository)

@@ -178,7 +178,7 @@ def artifact_bytes(
             409,
             "ARTIFACT_UNREADABLE",
             f"{record.relative_path}: the file receipt {record.receipt_ref} "
-            f"certifies could not be read ({type(exc).__name__}: {exc}). "
+            f"certifies could not be read ({_os_error(exc)}). "
             "Nothing is claimed about its contents.",
         ) from exc
     actual = hashlib.sha256(data).hexdigest()
@@ -351,7 +351,7 @@ def _resolve(
         try:
             digest = _file_sha256(binding, path)
         except OSError as exc:
-            error = type(exc).__name__
+            error = _os_error(exc)
             continue
         read_one = True
         if digest == claimed:
@@ -378,6 +378,22 @@ def _file_sha256(binding: ProjectBinding, path: Path) -> str:
         digest = hashlib.file_digest(handle, "sha256").hexdigest()
     cache[key] = digest
     return digest
+
+
+def _os_error(exc: OSError) -> str:
+    """Name a failed read without the server path the exception carries.
+
+    ``str(exc)`` on an ``OSError`` renders as ``[Errno 13] Permission denied:
+    '<absolute path>'``. That path is this service's own filesystem layout, and
+    a client asking for an artifact is not entitled to learn it; the exception
+    class and the system's own message say what went wrong without it.
+    """
+
+    return (
+        f"{type(exc).__name__}: {exc.strerror}"
+        if exc.strerror
+        else type(exc).__name__
+    )
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
