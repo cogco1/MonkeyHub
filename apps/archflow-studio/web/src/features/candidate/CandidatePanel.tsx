@@ -23,8 +23,13 @@ import {
   ready,
   type Loadable,
 } from "../../app/loadable";
-import type { CandidateDto, JobDto } from "../../api/generated";
+import type {
+  CandidateDto,
+  JobDto,
+  ProjectArtifactDto,
+} from "../../api/generated";
 import { HonestyLines } from "../state/HonestyLines";
+import { candidateSourceLabel } from "../artifacts/ArtifactList";
 import { sha8 } from "../project/TopBar";
 
 /** How often the job is asked whether it is over. */
@@ -35,11 +40,15 @@ const IN_FLIGHT = new Set(["queued", "running"]);
 export function CandidatePanel({
   candidateId,
   jobId,
+  loadingSha,
   onJobStatus,
+  onOpenArtifact,
 }: {
   candidateId: string;
   jobId: string;
+  loadingSha: string | null;
   onJobStatus(candidateId: string, status: string): void;
+  onOpenArtifact(artifact: ProjectArtifactDto, sourceLabel: string): void;
 }) {
   const [job, setJob] = useState<Loadable<JobDto>>(idle);
   const [candidate, setCandidate] = useState<Loadable<CandidateDto>>(idle);
@@ -132,13 +141,25 @@ export function CandidatePanel({
         />
       )}
       {candidate.status === "ready" && (
-        <CandidateReadout candidate={candidate.value} />
+        <CandidateReadout
+          candidate={candidate.value}
+          loadingSha={loadingSha}
+          onOpenArtifact={onOpenArtifact}
+        />
       )}
     </div>
   );
 }
 
-function CandidateReadout({ candidate }: { candidate: CandidateDto }) {
+function CandidateReadout({
+  candidate,
+  loadingSha,
+  onOpenArtifact,
+}: {
+  candidate: CandidateDto;
+  loadingSha: string | null;
+  onOpenArtifact(artifact: ProjectArtifactDto, sourceLabel: string): void;
+}) {
   return (
     <div className="candidate__readout">
       <RelationChips checks={candidate.relationChecks} />
@@ -208,14 +229,32 @@ function CandidateReadout({ candidate }: { candidate: CandidateDto }) {
       ) : (
         <ul className="rows">
           {candidate.artifacts.map((artifact) => (
-            <li key={artifact.artifactId} className="row row--static">
-              <span className="row__id">{artifact.fileName}</span>
-              <span className="row__meta mono">{sha8(artifact.sha256)}</span>
-              <span className="row__meta">
-                {artifact.available
-                  ? "available"
-                  : (artifact.unavailableReason ?? "unavailable")}
-              </span>
+            <li key={artifact.artifactId}>
+              {/* A candidate's export is an artifact like any other: the same
+                  digest-addressed bytes route serves it, so it opens in the
+                  same viewer under its own source chip. */}
+              <button
+                type="button"
+                className={`row${artifact.available ? "" : " is-unavailable"}`}
+                disabled={!artifact.available || loadingSha !== null}
+                onClick={() =>
+                  onOpenArtifact(
+                    artifact,
+                    candidateSourceLabel(candidate.candidateId),
+                  )
+                }
+              >
+                <span className="row__id">{artifact.fileName}</span>
+                <span className="row__meta mono">{sha8(artifact.sha256)}</span>
+                <span className="row__meta">
+                  {artifact.available
+                    ? "available"
+                    : (artifact.unavailableReason ?? "unavailable")}
+                </span>
+                {loadingSha !== null && loadingSha === artifact.sha256 && (
+                  <span className="row__fields">loading bytes…</span>
+                )}
+              </button>
             </li>
           ))}
         </ul>

@@ -7,7 +7,13 @@
  * the types below are registered by name. That list is a mirror of the server's
  * documented set, and a mirror can fall behind, so the panel watches `seq` for
  * gaps and says out loud when one appears instead of quietly showing fewer
- * events than the server sent.
+ * events than the server sent. What it does *not* do is name the cause: a gap
+ * is equally consistent with an unlistened name, a reconnect that resumed past
+ * something, and a drop on the server, and this panel can tell none of the
+ * three apart. Saying which one it was would be a guess dressed as a fact.
+ *
+ * A reconnect may replay frames this panel already showed, so an event whose
+ * `seq` has been seen is dropped rather than appended twice.
  *
  * This is a live view of a process, not a transcript and not version history:
  * it is bounded, it is dropped on reload, and nothing here is a record of what
@@ -60,6 +66,11 @@ function summarise(event: StudioEventDto): string {
 export function EventStream({ notices }: { notices: readonly string[] }) {
   const [lines, setLines] = useState<readonly StreamLine[]>([]);
   const lastSeqRef = useRef<number | null>(null);
+  // Every seq this panel has already shown. A reconnect can replay them, and a
+  // replayed line must not appear twice — nor collide with its own React key.
+  const seenSeqRef = useRef<Set<number>>(new Set());
+  // Lines that carry no seq of their own still need to be told apart.
+  const lineIdRef = useRef(0);
 
   useEffect(() => {
     const source = new EventSource(EVENTS_URL);
@@ -68,31 +79,35 @@ export function EventStream({ notices }: { notices: readonly string[] }) {
       setLines((current) => [...current, line].slice(-KEEP));
     };
 
+    const note = (text: string, kind: StreamLine["kind"]) => {
+      lineIdRef.current += 1;
+      push({ key: `${kind}:${lineIdRef.current}`, seq: null, text, kind });
+    };
+
     const receive = (message: MessageEvent<string>) => {
       let event: StudioEventDto;
       try {
         event = JSON.parse(message.data) as StudioEventDto;
       } catch {
-        push({
-          key: `bad:${message.lastEventId}:${Date.now()}`,
-          seq: null,
-          text: `a frame arrived that this client could not parse: ${message.data}`,
-          kind: "transport",
-        });
+        note(
+          `a frame arrived that this client could not parse: ${message.data}`,
+          "transport",
+        );
         return;
       }
+      if (seenSeqRef.current.has(event.seq)) return;
       const previous = lastSeqRef.current;
       if (previous !== null && event.seq > previous + 1) {
-        push({
-          key: `gap:${previous}:${event.seq}`,
-          seq: null,
-          text:
-            `seq ${previous + 1}…${event.seq - 1} arrived under an event name ` +
-            "this panel does not listen for and were not shown",
-          kind: "gap",
-        });
+        const missing = event.seq - previous - 1;
+        note(
+          `${missing} event${missing === 1 ? "" : "s"} (seq ${previous + 1}…` +
+            `${event.seq - 1}) were not shown (a name this panel does not ` +
+            "listen for, a reconnect replay, or a server-side drop)",
+          "gap",
+        );
       }
-      lastSeqRef.current = event.seq;
+      if (previous === null || event.seq > previous) lastSeqRef.current = event.seq;
+      seenSeqRef.current.add(event.seq);
       push({
         key: `seq:${event.seq}`,
         seq: event.seq,
@@ -106,14 +121,11 @@ export function EventStream({ notices }: { notices: readonly string[] }) {
     }
     source.onmessage = receive;
     source.onerror = () => {
-      push({
-        key: `transport:${Date.now()}`,
-        seq: null,
-        text:
-          "the event stream dropped; the browser will retry. Nothing about the " +
+      note(
+        "the event stream dropped; the browser will retry. Nothing about the " +
           "project changed because of this.",
-        kind: "transport",
-      });
+        "transport",
+      );
     };
 
     return () => {

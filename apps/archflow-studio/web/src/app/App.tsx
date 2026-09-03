@@ -27,6 +27,7 @@ import type {
   ProposalDto,
 } from "../api/generated";
 import {
+  LOCAL_SOURCE_LABEL,
   ThreeDmViewport,
   type ViewportController,
   type ViewportPick,
@@ -36,6 +37,7 @@ import type { SceneInspection } from "../viewer/sceneInspection";
 import {
   ArtifactList,
   canonicalSourceLabel,
+  receiptDocumentStrings,
 } from "../features/artifacts/ArtifactList";
 import { CandidatePanel } from "../features/candidate/CandidatePanel";
 import {
@@ -91,6 +93,12 @@ export default function App() {
   const [viewerMessage, setViewerMessage] = useState("");
   const [viewerStatus, setViewerStatus] = useState<ViewportStatus>("idle");
   const [sourceLabel, setSourceLabel] = useState<string | null>(null);
+  // The listing row of the artifact currently in the viewer, kept beside its
+  // source label. It is what the loaded file can be asked about: the bytes
+  // themselves carry document strings the loader does not surface, and the
+  // receipt that certified those bytes does.
+  const [loadedArtifact, setLoadedArtifact] =
+    useState<ProjectArtifactDto | null>(null);
 
   const [pick, setPick] = useState<Loadable<PickResolutionDto>>(idle);
   const [proposal, setProposal] = useState<Loadable<ProposalDto>>(idle);
@@ -130,8 +138,13 @@ export default function App() {
     void viewportRef.current?.openFile(file);
   }, []);
 
+  /**
+   * Put one certified artifact in the viewer, under the chip that says where it
+   * came from. Canonical exports and a candidate's own export take the same
+   * route — same digest-addressed bytes, same viewer, different label.
+   */
   const loadArtifactIntoViewer = useCallback(
-    async (artifact: ProjectArtifactDto) => {
+    async (artifact: ProjectArtifactDto, sourceLabel: string) => {
       setArtifactError(null);
       if (!artifact.sha256) {
         setArtifactError(
@@ -150,7 +163,8 @@ export default function App() {
           artifact.sha256,
           artifact.fileName,
         );
-        await viewportRef.current?.openFile(file, canonicalSourceLabel(artifact));
+        setLoadedArtifact(artifact);
+        await viewportRef.current?.openFile(file, sourceLabel);
       } catch (cause) {
         setArtifactError(asStudioApiError(cause));
       } finally {
@@ -159,6 +173,12 @@ export default function App() {
     },
     [],
   );
+
+  /** The viewer says which file it holds; a local one answers for nothing. */
+  const noteSource = useCallback((label: string | null) => {
+    setSourceLabel(label);
+    if (label === null || label === LOCAL_SOURCE_LABEL) setLoadedArtifact(null);
+  }, []);
 
   const resolvePick = useCallback(
     async (picked: ViewportPick) => {
@@ -173,7 +193,12 @@ export default function App() {
         const resolution = await studio.resolvePick({
           stateDigest,
           userStrings: picked.userStrings,
-          documentUserStrings: picked.documentUserStrings,
+          // What the file says about itself: the loader's own document strings
+          // when it exposes them, and otherwise the receipt that certified
+          // these exact bytes. A locally dropped file has neither and sends
+          // null, which the server reads as "not shown to be current".
+          documentUserStrings:
+            picked.documentUserStrings ?? receiptDocumentStrings(loadedArtifact),
           objectName: picked.objectName,
         });
         setPick(ready(resolution));
@@ -187,7 +212,7 @@ export default function App() {
         setPick(failed(error));
       }
     },
-    [pushNotice, recoverFromStaleBase, stateDigest],
+    [loadedArtifact, pushNotice, recoverFromStaleBase, stateDigest],
   );
 
   const propose = useCallback(
@@ -350,22 +375,28 @@ export default function App() {
                 </button>
               }
             >
-              {artifacts.status === "failed" ? (
+              {/* The listing is only asked for once the binding answers, so a
+                  failed session is why this panel is empty — saying "reading
+                  the receipts…" forever would be a pending state that is never
+                  going to resolve. */}
+              {session.status === "failed" ? (
+                <ErrorPanel
+                  error={session.error}
+                  what="GET /api/project · /api/state"
+                />
+              ) : artifacts.status === "failed" ? (
                 <ErrorPanel error={artifacts.error} what="GET /api/artifacts" />
               ) : artifacts.status === "ready" ? (
-                <>
-                  {artifactError && (
-                    <ErrorPanel
-                      error={artifactError}
-                      what="GET /api/artifacts/{sha256}/bytes"
-                    />
-                  )}
-                  <ArtifactList
-                    listing={artifacts.value}
-                    loadingSha={artifactLoadingSha}
-                    onLoad={(artifact) => void loadArtifactIntoViewer(artifact)}
-                  />
-                </>
+                <ArtifactList
+                  listing={artifacts.value}
+                  loadingSha={artifactLoadingSha}
+                  onLoad={(artifact) =>
+                    void loadArtifactIntoViewer(
+                      artifact,
+                      canonicalSourceLabel(artifact),
+                    )
+                  }
+                />
               ) : (
                 <p className="panel__note">reading the receipts…</p>
               )}
@@ -406,6 +437,15 @@ export default function App() {
                   clear
                 </button>
               </div>
+              {/* Bytes are fetched for the canonical list and for a
+                  candidate's own export alike, so the refusal belongs beside
+                  the chip it failed to set, not inside one of the two lists. */}
+              {artifactError && (
+                <ErrorPanel
+                  error={artifactError}
+                  what="GET /api/artifacts/{sha256}/bytes"
+                />
+              )}
               <ThreeDmViewport
                 ref={viewportRef}
                 onInspection={setInspection}
@@ -414,7 +454,7 @@ export default function App() {
                   setViewerMessage(message);
                 }}
                 onRequestFile={() => fileInputRef.current?.click()}
-                onSource={setSourceLabel}
+                onSource={noteSource}
                 onPick={(picked) => void resolvePick(picked)}
               />
               {inspection && (
@@ -505,7 +545,11 @@ export default function App() {
                   key={selected.candidateId}
                   candidateId={selected.candidateId}
                   jobId={selected.jobId}
+                  loadingSha={artifactLoadingSha}
                   onJobStatus={noteJobStatus}
+                  onOpenArtifact={(artifact, label) =>
+                    void loadArtifactIntoViewer(artifact, label)
+                  }
                 />
               )}
             </Panel>
