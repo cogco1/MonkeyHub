@@ -22,12 +22,7 @@ from archive.archflow.control.convergence import (
     StageTransitionRequest,
     evaluate_stage_convergence,
 )
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
 from archive.archflow.control.search_policy import (
     DecisionSpaceKind,
     ObjectiveDirection,
@@ -40,20 +35,15 @@ from archive.archflow.control.search_policy import (
     SearchPolicyDescriptor,
     SearchPolicyRequest,
 )
-from archflow.control.stage_closure import compile_composite_stage_closure
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archive.archflow.control.stage_subjects import (
     StageSubjectDisposition,
     StageSubjectInventory,
     StageSubjectInventoryEntry,
     StageSubjectRoleObligation,
 )
-from archflow.evidence.applicability import (
-    AllowedClaimUse,
-    ApplicabilityDisposition,
-    ApplicabilityTargetKind,
-    ClaimApplicability,
-)
-from archflow.evidence.claims import EvidenceClaimBinding
+from archive.archflow.evidence.applicability import AllowedClaimUse, ApplicabilityDisposition, ApplicabilityTargetKind, ClaimApplicability
+from archive.archflow.evidence.claims import EvidenceClaimBinding
 from archflow.project.refs import (
     BranchRef,
     ProjectRecordRef,
@@ -91,12 +81,7 @@ from archflow.state.operational_state import (
     ObligationStatus,
     OperationalMarkovState,
 )
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 from tests.test_design_portfolio import _portfolio
 
 

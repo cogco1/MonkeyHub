@@ -14,23 +14,13 @@ from archive.archflow.control.genesis_completeness import (
     SemanticSystemDisposition,
 )
 from archive.archflow.control.profile import StageRequirementProfileBinding
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
 from archive.archflow.control.stage_subjects import (
     StageSubjectInventory,
     StageSubjectInventoryEntry,
 )
-from archflow.evidence.applicability import (
-    AllowedClaimUse,
-    ApplicabilityDisposition,
-    ApplicabilityTargetKind,
-    ClaimApplicability,
-)
-from archflow.evidence.claims import EvidenceClaimBinding
+from archive.archflow.evidence.applicability import AllowedClaimUse, ApplicabilityDisposition, ApplicabilityTargetKind, ClaimApplicability
+from archive.archflow.evidence.claims import EvidenceClaimBinding
 from archflow.project.refs import (
     BranchRef,
     ProjectRecordRef,

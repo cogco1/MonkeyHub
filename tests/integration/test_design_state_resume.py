@@ -63,13 +63,8 @@ from archive.archflow.control.profile import StageRequirementProfileBinding
 from archive.archflow.control.semantic_capabilities import (
     current_semantic_capability_policy,
 )
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
-from archflow.control.stage_closure import compile_composite_stage_closure
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archive.archflow.control.stage_subjects import (
     StageSubjectDisposition,
     StageSubjectInventory,
@@ -127,7 +122,7 @@ from archive.archflow.validation.assembly import (
     RelationshipKind,
     check_assembly,
 )
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.archflow.validation.spatial import validate_spatial_layout
 from archive.archflow.validation.stage_control import (
     check_component_function_baseline,
@@ -1292,7 +1287,7 @@ def _persist_verified_stage_artifact_claim(
         ArtifactShaBinding,
         RecordDigestBinding,
     )
-    from archflow.control.stage_closure import StageClosureStatus
+    from archflow.state.stage_workflow import StageClosureStatus
     from archive.archflow.runtime.stage_artifact_chain import (
         compile_relation_realization_baseline_source,
         compile_stage_artifact_claim,

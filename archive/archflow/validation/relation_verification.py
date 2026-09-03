@@ -24,13 +24,7 @@ from archflow.relations.contracts import (
     ArchitecturalRelationGraph,
     RelationEpistemicStatus,
 )
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckMeasurement,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckMeasurement, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 
 
 _AUTHORITY_FIELDS = {

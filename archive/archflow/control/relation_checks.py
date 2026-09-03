@@ -34,12 +34,7 @@ from archive.archflow.relations.coverage import (
     SemanticKindRelationPolicy,
     compile_graph_coverage,
 )
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 
 
 def relation_subject_inventory_ref(

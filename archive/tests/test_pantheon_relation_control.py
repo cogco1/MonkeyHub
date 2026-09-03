@@ -11,12 +11,7 @@ from archflow.project.refs import ProjectVersionRef
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef
 from archflow.relations.contracts import RelationEpistemicStatus
 from archflow.state.geometry_program import GeometryParameter
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 from archive.archflow.validation.relation_verification import RelationVerificationError
 from archive.tools import run_pantheon_reconstruction as P
 from archive.tools.pantheon_relation_control import (

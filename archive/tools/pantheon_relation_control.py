@@ -93,12 +93,7 @@ from archive.archflow.validation.assembly import (
     RelationshipRequirement,
     check_assembly,
 )
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 from archive.archflow.validation.relation_verification import (
     RelationQuestionVerificationProfile,
     RelationVerificationBinding,

@@ -34,7 +34,7 @@ from archive.archflow.control.convergence import (
     StageConvergenceReceipt,
     StageTransitionKind,
 )
-from archflow.control.requirements import StageRequirementProfile
+from archive.archflow.control.requirements import StageRequirementProfile
 from archive.archflow.control.search_policy import (
     DecisionSpaceDescriptor,
     DecisionSpaceKind,
@@ -48,17 +48,11 @@ from archive.archflow.control.search_policy import (
     SearchPolicyRequest,
     validate_search_directive,
 )
-from archflow.control.stage_closure import (
-    CompositeStageClosureReceipt,
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archive.archflow.control.stage_subjects import StageSubjectInventory
-from archflow.evidence.applicability import (
-    ApplicabilityDisposition,
-    ClaimApplicability,
-)
-from archflow.evidence.claims import EvidenceClaimBinding
+from archive.archflow.evidence.applicability import ApplicabilityDisposition, ClaimApplicability
+from archive.archflow.evidence.claims import EvidenceClaimBinding
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef
 from archive.archflow.research.adoption import PrecedentFact
 from archive.archflow.research.branch import BranchPrecedentAdoption
@@ -70,11 +64,7 @@ from archflow.state.design_portfolio import (
 )
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import OperationalMarkovState
-from archflow.validation.contracts import (
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus, FindingSeverity
 
 if TYPE_CHECKING:
     from archive.archflow.runtime.design_controller import (

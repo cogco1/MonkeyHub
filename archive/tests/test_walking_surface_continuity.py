@@ -6,7 +6,7 @@ import unittest
 from dataclasses import replace
 
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.archflow.validation.walking_surface_continuity import (
     WalkingSurfaceContinuityProfile,
     WalkingSurfaceCriteria,

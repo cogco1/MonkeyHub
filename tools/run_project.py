@@ -27,7 +27,7 @@ if str(REPO) not in sys.path:
 from archflow.capabilities.declaration import DeclarationQuadrant  # noqa: E402
 from archflow.capabilities.discipline_seats import SeatSpec  # noqa: E402
 from archflow.capabilities.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
-from archflow.control.stage_closure import CompositeStageClosureReceipt  # noqa: E402
+from archflow.state.stage_workflow import CompositeStageClosureReceipt
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.refs import ProjectRecordRef  # noqa: E402
 from archflow.runtime.project_runner import (  # noqa: E402

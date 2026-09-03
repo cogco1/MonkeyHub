@@ -28,13 +28,7 @@ from archive.archflow.relations.realization import (
 )
 from archflow.compilers.geometry import CompiledGeometryProgram
 from archive.archflow.validation.cad_readback import CadReadbackSnapshot
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckMeasurement,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckMeasurement, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 
 
 _RELATION_PURPOSES = {

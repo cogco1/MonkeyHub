@@ -10,11 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement
 from archive.archflow.control.relation_promotion import (
     RelationPromotionReceipt,
     RelationPromotionResult,
@@ -265,7 +261,7 @@ def stage_relation_inheritance_stage_requirement(
     from archive.archflow.control.stage_relation_inheritance import (
         AcceptedStageRelationPredecessor,
     )
-    from archflow.validation.contracts import CheckReceiptEnvelope
+    from archive.archflow.validation.contracts import CheckReceiptEnvelope
 
     if not isinstance(predecessor, AcceptedStageRelationPredecessor):
         raise TypeError(

@@ -17,22 +17,15 @@ from archive.archflow.control.baseline import (
     derive_stage_baseline_check_receipts,
     derive_stage_requirement_profile,
 )
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
 from archive.archflow.control.stage_artifacts import (
     ArtifactShaBinding,
     RecordDigestBinding,
     StageArtifactClaim,
     StageArtifactStatus,
 )
-from archflow.control.stage_closure import (
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archflow.state.stage_workflow import StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archflow.contracts.canonical import canonical_digest
 from archive.archflow.materials.binding import (
     MaterialBindingObservation,
@@ -88,7 +81,7 @@ from archive.archflow.validation.component_lineage import (
     StageOperationRef,
     compile_stage_component_coverage,
 )
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.archflow.validation.spatial import (
     AABB,
     HostRegion,

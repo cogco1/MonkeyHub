@@ -18,16 +18,9 @@ from archive.archflow.capabilities.evidence_sufficiency import (
     compile_decision_universe_closure,
     compile_evidence_sufficiency,
 )
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
-from archflow.control.stage_closure import (
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
+from archflow.state.stage_workflow import StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
 from archive.archflow.runtime.design_controller import (
     ControllerOutcome,
@@ -52,7 +45,7 @@ from archive.archflow.state.stage_convergence import (
     StageTransitionRequest,
     evaluate_stage_convergence,
 )
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.tests.test_design_controller import (
     _phase_ready_checkpoint,
     _stage_closure_receipt,

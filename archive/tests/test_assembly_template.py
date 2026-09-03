@@ -8,10 +8,7 @@ from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 
-from archflow.control.stage_closure import (
-    CompositeStageClosureReceipt,
-    StageClosureStatus,
-)
+from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
 from archive.archflow.capabilities.assembly_library import (
     harvest_assembly_template,
     promote_assembly_template,

@@ -5,17 +5,10 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
 from archive.archflow.control.check_requirements import cad_readback_stage_requirement
-from archflow.control.stage_closure import (
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archflow.state.stage_workflow import StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
 from archive.archflow.validation.cad_readback import (
     CadBoundingBox,
@@ -27,7 +20,7 @@ from archive.archflow.validation.cad_readback import (
     CadUpAxis,
     validate_cad_readback,
 )
-from archflow.validation.contracts import CheckStatus
+from archive.archflow.validation.contracts import CheckStatus
 
 
 SHA_A = "a" * 64

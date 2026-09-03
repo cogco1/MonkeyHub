@@ -37,7 +37,7 @@ from archflow.relations.contracts import (
     RelationProjection,
 )
 from archflow.project.refs import BranchRef
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 
 
 MAX_TRAVERSAL_ITEMS = 4_096

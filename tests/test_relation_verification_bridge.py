@@ -33,7 +33,7 @@ from archflow.relations.contracts import (
     RelationProjection,
 )
 from archive.archflow.validation.assembly import check_assembly
-from archflow.validation.contracts import CheckStatus
+from archive.archflow.validation.contracts import CheckStatus
 from archive.archflow.validation.relation_verification import (
     RelationQuestionVerificationProfile,
     RelationVerificationBinding,

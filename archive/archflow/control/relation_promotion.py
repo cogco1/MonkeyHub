@@ -36,7 +36,7 @@ from archflow.relations.contracts import (
     RelationEpistemicStatus,
 )
 from archive.archflow.relations.coverage import SemanticKindRelationPolicy
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 
 if TYPE_CHECKING:
     from archive.archflow.control.stage_subjects import StageSubjectInventory

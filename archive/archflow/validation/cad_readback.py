@@ -21,13 +21,7 @@ from archive.archflow.contracts.branch import (
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import exact_mapping, identifier, logical_ref, text
 from archflow.project.refs import BranchRef
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckMeasurement,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckMeasurement, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 
 
 _MAX_ITEMS = 4_096

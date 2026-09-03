@@ -22,11 +22,7 @@ from archflow.contracts.fields import (
     identifier,
     logical_ref,
 )
-from archflow.evidence.applicability import (
-    AllowedClaimUse,
-    ApplicabilityDisposition,
-    ClaimApplicability,
-)
+from archive.archflow.evidence.applicability import AllowedClaimUse, ApplicabilityDisposition, ClaimApplicability
 from archflow.project.refs import BranchRef, ProjectRecordRef
 from archive.archflow.research.branch import (
     BranchEvidenceSnapshot,
@@ -35,7 +31,7 @@ from archive.archflow.research.branch import (
     require_record_payload,
 )
 from archflow.state.stage_workflow import DesignPhase
-from archflow.validation.contracts import CheckStatus
+from archive.archflow.validation.contracts import CheckStatus
 
 
 class GenesisSemanticCompletenessError(ValueError):

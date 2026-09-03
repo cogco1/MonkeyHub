@@ -20,8 +20,9 @@ from archive.archflow.capabilities.stair_solver import (
     solve_stair,
 )
 from archive.archflow.control.baseline import BASELINE_LEVEL_ROLES, CadReadbackBaselineSource, ComponentLineageBaselineSource, MaterialBindingBaselineSource, RelationTopologyBaselineSource, SpatialLayoutBaselineSource, StageBaselineError, StageBaselineCoverageReceipt, StageBaselineLevel, StageBaselineRole, StageBaselineSourceSet, StageBaselineStatus, baseline_level_for_design_phase, compile_stage_baseline_coverage, derive_stage_requirement_profile
-from archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
-from archflow.control.stage_closure import StageClosureStatus, compile_composite_stage_closure
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
+from archflow.state.stage_workflow import StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archive.archflow.control.stage_subjects import StageSubjectDisposition, StageSubjectInventory, StageSubjectInventoryEntry, StageSubjectRoleObligation
 from archive.archflow.control.check_requirements import assembly_stage_requirement, cad_readback_stage_requirement, component_lineage_stage_requirement, material_binding_stage_requirement, spatial_layout_stage_requirement
 from archive.archflow.control.semantic_capabilities import bind_semantic_rule_packs, current_semantic_capability_policy
@@ -82,7 +83,7 @@ from archive.archflow.validation.check_bridges import (
     bridge_component_lineage_receipt,
     bridge_spatial_validation_receipt,
 )
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.archflow.validation.spatial import (
     normalize_spatial_validation_input,
     validate_spatial_layout,

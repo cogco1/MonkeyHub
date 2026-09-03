@@ -73,12 +73,7 @@ from archive.archflow.control.function_diagnostics import (
     FunctionStatus,
     compile_function_diagnostic_projection,
 )
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
 from archive.archflow.control.relation_checks import (
     RELATION_VERIFICATION_CHECKERS,
     check_relation_coverage,
@@ -113,13 +108,8 @@ from archive.archflow.control.semantic_capabilities import (
     require_current_semantic_capability_policy,
     require_supported_semantic_capability_policy,
 )
-from archflow.control.stage_closure import (
-    CompositeStageClosureReceipt,
-    StageClosureFinding,
-    StageClosureFindingCode,
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureFinding, StageClosureFindingCode, StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archive.archflow.control.stage_subjects import (
     StageSubjectDisposition,
     StageSubjectInventory,

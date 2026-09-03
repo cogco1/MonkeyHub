@@ -36,13 +36,7 @@ from archflow.contracts.fields import (
 )
 from archflow.project.refs import BranchRef
 from archive.archflow.validation.cad_readback import CadBoundingBox
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckMeasurement,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckMeasurement, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 
 
 VAULTED_PASSAGE_CURRENT_STATE_CHECKER_ID = (

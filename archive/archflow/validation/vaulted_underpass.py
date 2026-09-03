@@ -45,12 +45,7 @@ from archive.archflow.validation.cad_readback import (
     CadReadbackSnapshot,
     validate_cad_readback,
 )
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 from archive.archflow.validation.interface_continuity import (
     InterfaceBoundarySegment,
     InterfaceBoundarySupportSet,

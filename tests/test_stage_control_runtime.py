@@ -72,7 +72,7 @@ from archive.archflow.runtime.stage_control_chain import (
 from archive.archflow.runtime.stage_subject_inventory import (
     compile_stage_subject_inventory,
 )
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.archflow.validation.relation_verification import (
     RelationQuestionVerificationProfile,
     RelationVerificationBinding,

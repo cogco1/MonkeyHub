@@ -19,10 +19,7 @@ from archive.archflow.control.genesis_completeness import (
     SemanticSystemRequirement,
 )
 from archive.archflow.control.profile import StageRequirementProfileBinding
-from archflow.control.requirements import (
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
+from archive.archflow.control.requirements import StageCheckRequirement, StageRequirementProfile
 from archive.archflow.control.stage_subjects import StageSubjectInventory
 from archflow.project.refs import ProjectRecordRef
 from archflow.state.stage_workflow import DesignPhase

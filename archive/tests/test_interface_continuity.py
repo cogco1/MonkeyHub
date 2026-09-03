@@ -6,7 +6,7 @@ import math
 import unittest
 
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.archflow.validation.interface_continuity import (
     InterfaceBoundarySegment,
     InterfaceBoundarySupportSet,

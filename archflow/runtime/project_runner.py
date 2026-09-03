@@ -64,10 +64,7 @@ from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef, record_ref_from_uri
-from archflow.control.stage_closure import (
-    CompositeStageClosureReceipt,
-    StageClosureStatus,
-)
+from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.design_portfolio import BranchRevisionRef
 from archflow.state.developed_design import (

@@ -15,20 +15,12 @@ from archive.archflow.control.baseline import (
 )
 from archive.archflow.control.component_functions import compile_component_function_ledger
 from archive.archflow.control.function_relations import FunctionRelationRequirementSet
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
 from archive.archflow.control.stage_artifacts import (
     ArtifactShaBinding,
     RecordDigestBinding,
 )
-from archflow.control.stage_closure import (
-    CompositeStageClosureReceipt,
-    StageClosureStatus,
-)
+from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
 from archive.archflow.control.stage_control_sources import ComponentFunctionBaselineSource
 from archflow.project.refs import (
     BranchRef,
@@ -70,7 +62,7 @@ from archive.archflow.validation.cad_readback import (
     CadObjectReadback,
     CadReadbackSnapshot,
 )
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 
 from archive.tests.test_relation_authoring import (
     _bound_context_and_inventory,

@@ -1,7 +1,7 @@
 """Read-only deterministic validation.
 
 Relation verification is exposed lazily because the relation traversal
-contracts themselves import ``archflow.validation.contracts``.  Eagerly
+contracts themselves import ``archive.archflow.validation.contracts``.  Eagerly
 importing the bridge here would turn that valid dependency into a package
 initialization cycle.
 """

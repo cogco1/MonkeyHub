@@ -32,11 +32,9 @@ from archive.archflow.control.relation_promotion import (
     RelationPromotionResult,
     promote_verified_relation_graph,
 )
-from archflow.control.requirements import StageRequirementProfile
-from archflow.control.stage_closure import (
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archive.archflow.control.requirements import StageRequirementProfile
+from archflow.state.stage_workflow import StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archive.archflow.control.stage_subjects import (
     StageSubjectDisposition,
     StageSubjectInventory,
@@ -80,7 +78,7 @@ from archive.archflow.relations.coverage import (
     compile_graph_coverage,
     compile_requirement_slots,
 )
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 
 
 SHA_A = "a" * 64

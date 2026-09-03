@@ -34,12 +34,7 @@ from archive.archflow.relations.realization import (
     RelationRealizationManifest,
     relation_realization_denominator,
 )
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 
 
 _AUTHORITY_FIELDS = {

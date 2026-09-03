@@ -23,13 +23,7 @@ from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import exact_mapping, identifier, logical_ref
 from archive.archflow.materials.ledger import MaterialLedger
 from archflow.project.refs import BranchRef
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckMeasurement,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckMeasurement, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 
 
 _LEDGER_ID = re.compile(r"^[a-z0-9][a-z0-9\-]{0,80}$")

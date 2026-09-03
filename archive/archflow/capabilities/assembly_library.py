@@ -12,10 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
-from archflow.control.stage_closure import (
-    CompositeStageClosureReceipt,
-    StageClosureStatus,
-)
+from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
 from archflow.contracts.authority import no_authority
 from archflow.contracts.canonical import require_sha256
 from archflow.project.repository import FilesystemProjectRepository

@@ -130,38 +130,6 @@ Strict scalar and deterministic-tuple validators shared by the newer typed contr
 - api: `deterministic_identifiers`, `deterministic_refs`, `enum_value`, `exact_mapping`, `finite_number`, `identifier`, `ids`, `list_of`, `logical_ref`, `mapping`, `number`, `positive`, `refs`, `string_tuple`, `text`, `tuple_of`, `typed_tuple`, `unique`
 - invariants: a tuple field must already be sorted and unique; the validator never sorts on the caller's behalf; collections are bounded at 4096 items; validation is total: an unexpected type raises rather than being coerced
 
-## control
-
-### control.requirements (fold) — `archflow/control/requirements.py`
-Declare a stage's coverage denominator: the mandatory checks, their subjects and the authority each check must carry.
-- owns: StageCheckRequirement: one required check, its checker id, target kind, basis mode and its required claim/applicability/adoption/source/authority refs; StageRequirementProfile: the branch- and scope-bound set of those requirements for one stage; the requirement and profile digests and their serde; RequirementBasisMode and RequirementTargetKind
-- does not own: evaluating requirements against receipts - control.stage_closure; the check receipts themselves - archflow.validation; stage opening, envelopes and exit bindings - archflow.state.stage_workflow; the spine's own relation checking - capabilities.relation_checks
-- api: `StageRequirementProfile`, `StageCheckRequirement`, `RequirementBasisMode`, `RequirementTargetKind`, `StageRequirementError`
-- invariants: a profile is bound to one branch, one predecessor state digest and one scope digest; an ambiguous or malformed authority declaration fails StageRequirementError; the profile digest covers every requirement digest, so the denominator cannot be changed silently
-
-### control.stage_closure (fold) — `archflow/control/stage_closure.py`
-Compile a stage's closure from a requirement profile and exact typed check receipts, so no caller-supplied boolean can satisfy a stage.
-- owns: CompositeStageClosureReceipt: the closure record's shape, its digest, its id and its serde; StageClosureStatus and the finding codes for every way a requirement fails (missing, mismatched subject, insufficient basis, unauthorized, duplicated); compile_composite_stage_closure: matching receipts to requirements and deriving the status from findings alone
-- does not own: declaring the requirements - control.requirements; producing the check receipts - archflow.validation; opening or exiting the stage - archflow.state.stage_workflow and runtime.project_runner's StageExecutionGuard; the spine's relation evidence - capabilities.relation_checks produces that directly
-- api: `CompositeStageClosureReceipt`, `StageClosureStatus`, `StageClosureFindingCode`, `StageClosureFinding`, `compile_composite_stage_closure`, `StageClosureError`
-- invariants: status is derived from findings; a caller cannot assert SATISFIED; a receipt satisfies a requirement only when its subject digest, basis mode and required refs all match; the spine reads it only to verify a predecessor stage's closure is SATISFIED before opening the next stage
-
-## evidence
-
-### evidence.applicability (fold) — `archflow/evidence/applicability.py`
-The authority-bound decision about where one exact claim may be consumed.
-- owns: applicability target kinds and dispositions (ApplicabilityTargetKind, ApplicabilityDisposition); the closed set of uses a claim may be put to (AllowedClaimUse); the applicability record binding a claim to a target with named authorities and invalidation triggers (ClaimApplicability); the check that a supplied claim binding is the exact one the applicability names (require_claim, from_claim)
-- does not own: the claim itself (evidence.claims); running the check that consumes the claim (validation.contracts and the checkers); branch serialization and the same-branch guard (contracts.branch)
-- api: `ClaimApplicability`, `ApplicabilityTargetKind`, `ApplicabilityDisposition`, `AllowedClaimUse`
-- invariants: the applicability and its claim binding must be on the same exact branch and scope; the cited binding id and digest must match the binding supplied; allowed uses are closed: a claim cannot be applied to an unnamed use; the claim's source and authority refs must be carried by the applicability
-
-### evidence.claims (fold) — `archflow/evidence/claims.py`
-The exact-branch binding of one evidence source to one claim about a research target.
-- owns: evidence modality and epistemic role vocabularies (EvidenceModality, EpistemicRole); the binding record with its target, fact, source, claim key and position key (EvidenceClaimBinding); the binding digest and ref
-- does not own: where a bound claim may be consumed (evidence.applicability); the check that cites it (validation.contracts); fetching or reading evidence (archived research and monuments adapters)
-- api: `EvidenceClaimBinding`
-- invariants: exact branch: the binding names a BranchRef whose run base carries a digest; a binding states what the evidence says; it is never an adoption decision; never writes the filesystem
-
 ## ports
 
 ### ports.model — `archflow/ports/model.py`
@@ -344,9 +312,9 @@ The schematic option contracts (grid basis, levels, volumes, zones, connections,
 
 ### state.stage_workflow — `archflow/state/stage_workflow.py`
 The ordered stage sequence of a project and the exact, authority-free envelope and exit binding that guard stage orchestration.
-- owns: the stage sequence record, its stages and its digest (ProjectStageWorkflow, ProjectStage); binding one run to exactly one stage with its base, branch and state digest (StageRunEnvelope, open_stage_run_envelope); the SATISFIED exit binding of one independently closed stage (StageExitBinding, StageExitStatus); carrying the exact retained predecessor envelope and exit into a successor (StageRunPredecessor); the fail-closed guards callers use before running or closing a stage (require_stage_run_envelope, require_stage_exit_binding); the design-phase ladder (DesignPhase, DESIGN_PHASES)
+- owns: the stage sequence record, its stages and its digest (ProjectStageWorkflow, ProjectStage); binding one run to exactly one stage with its base, branch and state digest (StageRunEnvelope, open_stage_run_envelope); the SATISFIED exit binding of one independently closed stage (StageExitBinding, StageExitStatus); carrying the exact retained predecessor envelope and exit into a successor (StageRunPredecessor); the fail-closed guards callers use before running or closing a stage (require_stage_run_envelope, require_stage_exit_binding); the design-phase ladder (DesignPhase, DESIGN_PHASES); the stage-exit record the guard reads (CompositeStageClosureReceipt, StageClosureFinding, StageClosureStatus)
 - does not own: running a stage or producing its closure record (runtime/project_runner.py); the design phase vocabulary it references (state.design_maturity); the content of the closure the exit binding points at (capabilities/relation_checks.py via the runner); the authority block shape (contracts.authority)
-- api: `DESIGN_PHASES`, `DesignPhase`, `ProjectStage`, `ProjectStageWorkflow`, `StageExitBinding`, `StageExitStatus`, `StageRunEnvelope`, `StageWorkflowError`, `open_stage_run_envelope`, `require_stage_exit_binding`, `require_stage_run_envelope`
+- api: `CompositeStageClosureReceipt`, `DESIGN_PHASES`, `DesignPhase`, `ProjectStage`, `ProjectStageWorkflow`, `StageClosureError`, `StageClosureFinding`, `StageClosureFindingCode`, `StageClosureStatus`, `StageExitBinding`, `StageExitStatus`, `StageRunEnvelope`, `StageWorkflowError`, `open_stage_run_envelope`, `require_stage_exit_binding`, `require_stage_run_envelope`
 - invariants: these records are guards only: they never select design, accept a stage, mutate geometry, persist state, promote a candidate or write canonical state; stage 0 has no predecessor; every later stage must name the exact retained predecessor envelope and its SATISFIED exit; SATISFIED is the only exit status the vocabulary admits; record key sets are exact; a drifted payload is refused, never coerced; never writes the filesystem
 
 ## studio
@@ -440,13 +408,6 @@ Prove a State Record reproduces a reference runner run, recording both checks in
 - invariants: the equivalence claim is recorded as a retained record, never printed only; the harness workflow is explicitly not a project stage advance
 
 ## validation
-
-### validation.contracts (fold) — `archflow/validation/contracts.py`
-The common deterministic-check receipt envelope used by the relation, stage-closure and readback checkers.
-- owns: check status and finding severity vocabularies (CheckStatus, FindingSeverity); a check finding and a measurement (CheckFinding, CheckMeasurement); the envelope with its subject, scope, claim/applicability/authority chains and coverage (CheckReceiptEnvelope); the consistency check between an envelope and the applicability records it cites (require_applicabilities)
-- does not own: running any check (capabilities/relation_checks.py and the archived checkers); the spine's validation result, which is Finding/ValidationReceipt (validation.model); the claim records it cites (evidence.claims, evidence.applicability)
-- api: `CheckReceiptEnvelope`, `CheckStatus`, `CheckFinding`, `FindingSeverity`
-- invariants: no design, mutation, promotion or canonical-write authority; every cited applicability must be on the same exact branch and the same scope digest as the envelope; claim, applicability, authority and source refs must match the supplied records exactly; never writes the filesystem
 
 ### validation.engine — `archflow/validation/engine.py`
 The read-only hard gates that turn a canonical state plus a candidate submission into a validation receipt.

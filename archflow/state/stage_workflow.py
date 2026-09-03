@@ -18,7 +18,7 @@ from archflow.contracts.authority import (
     no_authority,
 )
 from archflow.contracts.canonical import canonical_digest, require_sha256
-from archflow.project.refs import require_identifier
+from archflow.project.refs import BranchRef, require_identifier
 from archflow.state.operational_state import (
     DesignObligation,
     ObligationStatus,
@@ -96,6 +96,236 @@ def _stage_index(value: object, field: str = "stage_index") -> int:
     ):
         raise StageWorkflowError(f"{field} must be a non-negative integer")
     return value
+
+from archflow.contracts.fields import text as _text
+from archflow.contracts.fields import mapping
+
+
+# ---------------------------------------------------------------- the stage-exit record
+class StageClosureError(ValueError):
+    """A composite closure request or retained receipt is malformed."""
+
+class StageClosureStatus(StrEnum):
+    OPEN = "OPEN"
+    SATISFIED = "SATISFIED"
+
+class StageClosureFindingCode(StrEnum):
+    MISSING_CHECK = "missing_check"
+    DUPLICATE_CHECK = "duplicate_check"
+    UNEXPECTED_CHECK = "unexpected_check"
+    CHECKER_MISMATCH = "checker_mismatch"
+    BRANCH_MISMATCH = "branch_mismatch"
+    SCOPE_MISMATCH = "scope_mismatch"
+    SUBJECT_DIGEST_MISMATCH = "subject_digest_mismatch"
+    DENOMINATOR_MISMATCH = "denominator_mismatch"
+    CLAIM_BINDING_MISSING = "claim_binding_missing"
+    APPLICABILITY_BINDING_MISSING = "applicability_binding_missing"
+    ADOPTION_BINDING_MISSING = "adoption_binding_missing"
+    SOURCE_BINDING_MISSING = "source_binding_missing"
+    AUTHORITY_BINDING_MISSING = "authority_binding_missing"
+    UNIVERSAL_BASIS_CONTAMINATED = "universal_basis_contaminated"
+    CHECK_FAILED = "check_failed"
+    CHECK_UNKNOWN = "check_unknown"
+    NOT_APPLICABLE_FORBIDDEN = "not_applicable_forbidden"
+    REVALIDATION_OPEN = "revalidation_open"
+
+@dataclass(frozen=True, slots=True)
+class StageClosureFinding:
+    code: StageClosureFindingCode
+    requirement_id: str | None = None
+    receipt_id: str | None = None
+    refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.code, StageClosureFindingCode):
+            raise TypeError("code must be StageClosureFindingCode")
+        if self.requirement_id is not None:
+            _text(self.requirement_id, "requirement_id")
+        if self.receipt_id is not None:
+            _text(self.receipt_id, "receipt_id")
+        if not isinstance(self.refs, tuple):
+            raise TypeError("refs must be a tuple")
+        normalized = tuple(sorted(_text(item, "finding ref") for item in self.refs))
+        if len(normalized) != len(set(normalized)):
+            raise StageClosureError("finding refs contain duplicates")
+        object.__setattr__(self, "refs", normalized)
+
+    @property
+    def identity(self) -> tuple[str, str, str, tuple[str, ...]]:
+        return (
+            self.code.value,
+            self.requirement_id or "",
+            self.receipt_id or "",
+            self.refs,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "code": self.code.value,
+            "requirement_id": self.requirement_id,
+            "receipt_id": self.receipt_id,
+            "refs": list(self.refs),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "StageClosureFinding":
+        payload = mapping(value, "finding")
+        if set(payload) != {"code", "requirement_id", "receipt_id", "refs"}:
+            raise StageClosureError("stage closure finding schema drifted")
+        raw_refs = payload.get("refs", [])
+        if not isinstance(raw_refs, list):
+            raise TypeError("finding refs must be a list")
+        return cls(
+            code=StageClosureFindingCode(payload.get("code")),
+            requirement_id=payload.get("requirement_id"),
+            receipt_id=payload.get("receipt_id"),
+            refs=tuple(raw_refs),
+        )
+
+@dataclass(frozen=True, slots=True)
+class CompositeStageClosureReceipt:
+    profile_id: str
+    profile_digest: str
+    stage_id: str
+    branch: BranchRef
+    stage_subject_ref: str
+    subject_digest: str
+    check_receipt_digests: tuple[str, ...]
+    findings: tuple[StageClosureFinding, ...]
+    status: StageClosureStatus
+
+    SCHEMA = "CompositeStageClosureReceipt@1"
+
+    def __post_init__(self) -> None:
+        _text(self.profile_id, "profile_id")
+        object.__setattr__(
+            self,
+            "profile_digest",
+            require_sha256(self.profile_digest, "profile_digest"),
+        )
+        _text(self.stage_id, "stage_id")
+        if not isinstance(self.branch, BranchRef):
+            raise TypeError("branch must be BranchRef")
+        self.branch.run.base.require_digest()
+        _text(self.stage_subject_ref, "stage_subject_ref")
+        object.__setattr__(
+            self,
+            "subject_digest",
+            require_sha256(self.subject_digest, "subject_digest"),
+        )
+        if not isinstance(self.check_receipt_digests, tuple):
+            raise TypeError("check_receipt_digests must be a tuple")
+        digests = tuple(
+            sorted(
+                require_sha256(item, "check_receipt_digest")
+                for item in self.check_receipt_digests
+            )
+        )
+        if len(digests) != len(set(digests)):
+            raise StageClosureError("check receipt digests contain duplicates")
+        object.__setattr__(self, "check_receipt_digests", digests)
+        if not isinstance(self.findings, tuple) or any(
+            not isinstance(item, StageClosureFinding) for item in self.findings
+        ):
+            raise TypeError("findings must contain StageClosureFinding")
+        ordered = tuple(sorted(self.findings, key=lambda item: item.identity))
+        if len(ordered) != len(set(item.identity for item in ordered)):
+            raise StageClosureError("findings contain duplicates")
+        object.__setattr__(self, "findings", ordered)
+        if not isinstance(self.status, StageClosureStatus):
+            raise TypeError("status must be StageClosureStatus")
+        expected = (
+            StageClosureStatus.SATISFIED
+            if not self.findings
+            else StageClosureStatus.OPEN
+        )
+        if self.status is not expected:
+            raise StageClosureError("status disagrees with closure findings")
+
+    def _content_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "profile_id": self.profile_id,
+            "profile_digest": self.profile_digest,
+            "stage_id": self.stage_id,
+            "branch": self.branch.to_dict(),
+            "stage_subject_ref": self.stage_subject_ref,
+            "subject_digest": self.subject_digest,
+            "check_receipt_digests": list(self.check_receipt_digests),
+            "findings": [item.to_dict() for item in self.findings],
+            "status": self.status.value,
+            "stage_acceptance_authority": False,
+            "design_authority": False,
+            "canonical_write_authority": False,
+        }
+
+    @property
+    def receipt_digest(self) -> str:
+        return canonical_digest(self._content_dict())
+
+    @property
+    def receipt_id(self) -> str:
+        return f"composite-stage-closure-{self.receipt_digest}"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self._content_dict(),
+            "receipt_id": self.receipt_id,
+            "receipt_digest": self.receipt_digest,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "CompositeStageClosureReceipt":
+        payload = mapping(value, "stage closure receipt")
+        expected = {
+            "schema",
+            "profile_id",
+            "profile_digest",
+            "stage_id",
+            "branch",
+            "stage_subject_ref",
+            "subject_digest",
+            "check_receipt_digests",
+            "findings",
+            "status",
+            "stage_acceptance_authority",
+            "design_authority",
+            "canonical_write_authority",
+            "receipt_id",
+            "receipt_digest",
+        }
+        if set(payload) != expected or payload.get("schema") != cls.SCHEMA:
+            raise StageClosureError("unsupported stage closure schema")
+        raw_digests = payload.get("check_receipt_digests")
+        raw_findings = payload.get("findings")
+        if not isinstance(raw_digests, list):
+            raise TypeError("check_receipt_digests must be a list")
+        if not isinstance(raw_findings, list):
+            raise TypeError("findings must be a list")
+        receipt = cls(
+            profile_id=_text(payload.get("profile_id"), "profile_id"),
+            profile_digest=require_sha256(
+                payload.get("profile_digest"), "profile_digest"
+            ),
+            stage_id=_text(payload.get("stage_id"), "stage_id"),
+            branch=_branch_from_dict(payload.get("branch")),
+            stage_subject_ref=_text(
+                payload.get("stage_subject_ref"), "stage_subject_ref"
+            ),
+            subject_digest=require_sha256(
+                payload.get("subject_digest"), "subject_digest"
+            ),
+            check_receipt_digests=tuple(raw_digests),
+            findings=tuple(
+                StageClosureFinding.from_dict(item) for item in raw_findings
+            ),
+            status=StageClosureStatus(payload.get("status")),
+        )
+        if payload.get("receipt_id") != receipt.receipt_id:
+            raise StageClosureError("stage closure receipt identity changed")
+        if payload.get("receipt_digest") != receipt.receipt_digest:
+            raise StageClosureError("stage closure receipt digest changed")
+        return receipt
 
 
 @dataclass(frozen=True, slots=True)

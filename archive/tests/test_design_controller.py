@@ -56,13 +56,8 @@ from archive.archflow.control.relation_checks import check_relation_coverage
 from archive.archflow.control.relation_promotion import (
     promote_verified_relation_graph,
 )
-from archflow.control.stage_closure import (
-    CompositeStageClosureReceipt,
-    StageClosureFinding,
-    StageClosureFindingCode,
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureFinding, StageClosureFindingCode, StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archive.archflow.control.profile import StageRequirementProfileBinding
 from archive.archflow.control.semantic_capabilities import (
     bind_semantic_rule_packs,
@@ -78,12 +73,7 @@ from archive.archflow.control.stage_control_sources import (
     ComponentFunctionBaselineSource,
     VisualInventoryBaselineSource,
 )
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
 from archive.archflow.interaction.clarification import ClarificationAlternative, ClarificationDisposition, ClarificationEffect, ClarifiedFactValue
 from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
 from archive.archflow.relations.authoring import (
@@ -182,7 +172,7 @@ from archive.archflow.validation.check_bridges import (
     bridge_component_lineage_receipt,
     bridge_spatial_validation_receipt,
 )
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.archflow.validation.stage_control import (
     check_component_function_baseline,
     check_visual_inventory_baseline,

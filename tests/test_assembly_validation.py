@@ -21,7 +21,7 @@ from archive.archflow.validation.assembly import (
     RelationshipRequirement,
     check_assembly,
 )
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.archflow.validation.spatial import AABB
 
 

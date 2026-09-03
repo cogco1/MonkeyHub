@@ -5,19 +5,12 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
 from archive.archflow.control.check_requirements import (
     material_binding_stage_requirement,
 )
-from archflow.control.stage_closure import (
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archflow.state.stage_workflow import StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archflow.contracts.canonical import canonical_digest
 from archive.archflow.materials.binding import (
     MaterialBindingObservation,
@@ -29,7 +22,7 @@ from archive.archflow.materials.binding import (
 )
 from archive.archflow.materials.ledger import MaterialIntent, MaterialLedger
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.validation.contracts import CheckStatus
+from archive.archflow.validation.contracts import CheckStatus
 
 
 SHA_A = "a" * 64

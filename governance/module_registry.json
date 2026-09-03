@@ -1104,221 +1104,6 @@
       "notes": "Canonical, but all four of its consumers are themselves fold targets and no test imports it directly; finite_number is never imported."
     },
     {
-      "module_id": "control.requirements",
-      "owner_path": "archflow/control/requirements.py",
-      "purpose": "Declare a stage's coverage denominator: the mandatory checks, their subjects and the authority each check must carry.",
-      "owns": [
-        "StageCheckRequirement: one required check, its checker id, target kind, basis mode and its required claim/applicability/adoption/source/authority refs",
-        "StageRequirementProfile: the branch- and scope-bound set of those requirements for one stage",
-        "the requirement and profile digests and their serde",
-        "RequirementBasisMode and RequirementTargetKind"
-      ],
-      "does_not_own": [
-        "evaluating requirements against receipts - control.stage_closure",
-        "the check receipts themselves - archflow.validation",
-        "stage opening, envelopes and exit bindings - archflow.state.stage_workflow",
-        "the spine's own relation checking - capabilities.relation_checks"
-      ],
-      "inputs": [
-        "requirement and profile dicts",
-        "BranchRef"
-      ],
-      "outputs": [
-        "StageCheckRequirement",
-        "StageRequirementProfile"
-      ],
-      "public_api": [
-        "StageRequirementProfile",
-        "StageCheckRequirement",
-        "RequirementBasisMode",
-        "RequirementTargetKind",
-        "StageRequirementError"
-      ],
-      "depends_on": [
-        "archflow.contracts.canonical",
-        "archflow.project.refs",
-        "archflow.state.operational_state"
-      ],
-      "used_by": [
-        "archflow/control/stage_closure.py",
-        "tests/test_stage_requirement_closure.py",
-        "tests/test_generic_check_requirements.py",
-        "tests/test_cad_readback_contracts.py",
-        "tests/test_material_binding.py",
-        "tests/test_stage_baseline.py",
-        "tests/integration/test_stage_control_runtime.py"
-      ],
-      "invariants": [
-        "a profile is bound to one branch, one predecessor state digest and one scope digest",
-        "an ambiguous or malformed authority declaration fails StageRequirementError",
-        "the profile digest covers every requirement digest, so the denominator cannot be changed silently"
-      ],
-      "status": "fold",
-      "tests": [
-        "tests/test_stage_requirement_closure.py",
-        "tests/test_generic_check_requirements.py"
-      ],
-      "notes": "On the spine only because control.stage_closure imports it (and four private helpers); CANONICAL_SPINE 2.2 leaves StageRequirementProfile with its lane."
-    },
-    {
-      "module_id": "control.stage_closure",
-      "owner_path": "archflow/control/stage_closure.py",
-      "purpose": "Compile a stage's closure from a requirement profile and exact typed check receipts, so no caller-supplied boolean can satisfy a stage.",
-      "owns": [
-        "CompositeStageClosureReceipt: the closure record's shape, its digest, its id and its serde",
-        "StageClosureStatus and the finding codes for every way a requirement fails (missing, mismatched subject, insufficient basis, unauthorized, duplicated)",
-        "compile_composite_stage_closure: matching receipts to requirements and deriving the status from findings alone"
-      ],
-      "does_not_own": [
-        "declaring the requirements - control.requirements",
-        "producing the check receipts - archflow.validation",
-        "opening or exiting the stage - archflow.state.stage_workflow and runtime.project_runner's StageExecutionGuard",
-        "the spine's relation evidence - capabilities.relation_checks produces that directly"
-      ],
-      "inputs": [
-        "StageRequirementProfile",
-        "subject digest",
-        "CheckReceiptEnvelope tuple"
-      ],
-      "outputs": [
-        "CompositeStageClosureReceipt",
-        "StageClosureFinding"
-      ],
-      "public_api": [
-        "CompositeStageClosureReceipt",
-        "StageClosureStatus",
-        "StageClosureFindingCode",
-        "StageClosureFinding",
-        "compile_composite_stage_closure",
-        "StageClosureError"
-      ],
-      "depends_on": [
-        "archflow.contracts.canonical",
-        "archflow.control.requirements",
-        "archflow.project.refs",
-        "archflow.validation.contracts"
-      ],
-      "used_by": [
-        "archflow/runtime/project_runner.py",
-        "tools/run_project.py",
-        "tests/test_stage_requirement_closure.py",
-        "tests/test_project_runner.py",
-        "tests/test_generic_check_requirements.py",
-        "tests/integration/test_stage_control_runtime.py"
-      ],
-      "invariants": [
-        "status is derived from findings; a caller cannot assert SATISFIED",
-        "a receipt satisfies a requirement only when its subject digest, basis mode and required refs all match",
-        "the spine reads it only to verify a predecessor stage's closure is SATISFIED before opening the next stage"
-      ],
-      "status": "fold",
-      "tests": [
-        "tests/test_stage_requirement_closure.py",
-        "tests/test_project_runner.py"
-      ],
-      "notes": "CANONICAL_SPINE 2.2 keeps CompositeStageClosureReceipt as the closure record's shape but drops its compile pipeline once the runner writes closure from its own relation checks."
-    },
-    {
-      "module_id": "evidence.applicability",
-      "owner_path": "archflow/evidence/applicability.py",
-      "purpose": "The authority-bound decision about where one exact claim may be consumed.",
-      "owns": [
-        "applicability target kinds and dispositions (ApplicabilityTargetKind, ApplicabilityDisposition)",
-        "the closed set of uses a claim may be put to (AllowedClaimUse)",
-        "the applicability record binding a claim to a target with named authorities and invalidation triggers (ClaimApplicability)",
-        "the check that a supplied claim binding is the exact one the applicability names (require_claim, from_claim)"
-      ],
-      "does_not_own": [
-        "the claim itself (evidence.claims)",
-        "running the check that consumes the claim (validation.contracts and the checkers)",
-        "branch serialization and the same-branch guard (contracts.branch)"
-      ],
-      "inputs": [
-        "EvidenceClaimBinding",
-        "target kind and ref",
-        "authority refs",
-        "allowed uses"
-      ],
-      "outputs": [
-        "ClaimApplicability and its digest"
-      ],
-      "public_api": [
-        "ClaimApplicability",
-        "ApplicabilityTargetKind",
-        "ApplicabilityDisposition",
-        "AllowedClaimUse"
-      ],
-      "depends_on": [
-        "contracts.branch",
-        "contracts.canonical",
-        "contracts.fields",
-        "evidence.claims",
-        "project.refs"
-      ],
-      "used_by": [
-        "archflow/validation/contracts.py"
-      ],
-      "invariants": [
-        "the applicability and its claim binding must be on the same exact branch and scope",
-        "the cited binding id and digest must match the binding supplied",
-        "allowed uses are closed: a claim cannot be applied to an unnamed use",
-        "the claim's source and authority refs must be carried by the applicability"
-      ],
-      "status": "fold",
-      "tests": [
-        "tests/test_genesis_completeness.py",
-        "tests/test_hierarchical_search_controller.py"
-      ],
-      "notes": "fold: '← fold'; on the spine only because validation/contracts.py (itself a fold target) imports ClaimApplicability."
-    },
-    {
-      "module_id": "evidence.claims",
-      "owner_path": "archflow/evidence/claims.py",
-      "purpose": "The exact-branch binding of one evidence source to one claim about a research target.",
-      "owns": [
-        "evidence modality and epistemic role vocabularies (EvidenceModality, EpistemicRole)",
-        "the binding record with its target, fact, source, claim key and position key (EvidenceClaimBinding)",
-        "the binding digest and ref"
-      ],
-      "does_not_own": [
-        "where a bound claim may be consumed (evidence.applicability)",
-        "the check that cites it (validation.contracts)",
-        "fetching or reading evidence (archived research and monuments adapters)"
-      ],
-      "inputs": [
-        "BranchRef",
-        "scope digest",
-        "target/fact/source refs",
-        "claim key"
-      ],
-      "outputs": [
-        "EvidenceClaimBinding"
-      ],
-      "public_api": [
-        "EvidenceClaimBinding"
-      ],
-      "depends_on": [
-        "contracts.branch",
-        "contracts.canonical",
-        "contracts.fields",
-        "project.refs"
-      ],
-      "used_by": [
-        "archflow/evidence/applicability.py"
-      ],
-      "invariants": [
-        "exact branch: the binding names a BranchRef whose run base carries a digest",
-        "a binding states what the evidence says; it is never an adoption decision",
-        "never writes the filesystem"
-      ],
-      "status": "fold",
-      "tests": [
-        "tests/test_genesis_completeness.py",
-        "tests/test_hierarchical_search_controller.py"
-      ],
-      "notes": "fold: '← fold'; §2.2 records that the spine has no evidence concept today (a record's evidence_refs are plain strings), so both EvidenceClaimBindings leave. Its only non-test importer is evidence/applicability.py."
-    },
-    {
       "module_id": "ports.model",
       "owner_path": "archflow/ports/model.py",
       "purpose": "Own the provider-independent model invocation contracts: request, receipt, status, phase and the AsyncModelProvider Protocol.",
@@ -2892,7 +2677,8 @@
         "the SATISFIED exit binding of one independently closed stage (StageExitBinding, StageExitStatus)",
         "carrying the exact retained predecessor envelope and exit into a successor (StageRunPredecessor)",
         "the fail-closed guards callers use before running or closing a stage (require_stage_run_envelope, require_stage_exit_binding)",
-        "the design-phase ladder (DesignPhase, DESIGN_PHASES)"
+        "the design-phase ladder (DesignPhase, DESIGN_PHASES)",
+        "the stage-exit record the guard reads (CompositeStageClosureReceipt, StageClosureFinding, StageClosureStatus)"
       ],
       "does_not_own": [
         "running a stage or producing its closure record (runtime/project_runner.py)",
@@ -2913,10 +2699,15 @@
         "StageExitBinding"
       ],
       "public_api": [
+        "CompositeStageClosureReceipt",
         "DESIGN_PHASES",
         "DesignPhase",
         "ProjectStage",
         "ProjectStageWorkflow",
+        "StageClosureError",
+        "StageClosureFinding",
+        "StageClosureFindingCode",
+        "StageClosureStatus",
         "StageExitBinding",
         "StageExitStatus",
         "StageRunEnvelope",
@@ -2952,7 +2743,7 @@
         "tests/test_freeze_project_stage_workflow.py",
         "tests/test_project_runner.py"
       ],
-      "notes": "Depends on the fold target state/design_maturity only for DesignPhase/DESIGN_PHASES; StageRunPredecessor is nested inside the envelope and never imported by name. Phase gates, entry proofs and backward revision (design_maturity) are archived with the controller lane."
+      "notes": "Depends on the fold target state/design_maturity only for DesignPhase/DESIGN_PHASES; StageRunPredecessor is nested inside the envelope and never imported by name. Phase gates, entry proofs and backward revision (design_maturity) are archived with the controller lane. The closure compile pipeline (requirement profiles, check receipt envelopes, claim applicability) is archived; the runner writes the exit record from its own checks."
     },
     {
       "module_id": "studio.artifacts",
@@ -3759,60 +3550,6 @@
       "status": "canonical",
       "tests": [],
       "notes": "The P102 migration receipt tool; the paper's replay comparison runs through it."
-    },
-    {
-      "module_id": "validation.contracts",
-      "owner_path": "archflow/validation/contracts.py",
-      "purpose": "The common deterministic-check receipt envelope used by the relation, stage-closure and readback checkers.",
-      "owns": [
-        "check status and finding severity vocabularies (CheckStatus, FindingSeverity)",
-        "a check finding and a measurement (CheckFinding, CheckMeasurement)",
-        "the envelope with its subject, scope, claim/applicability/authority chains and coverage (CheckReceiptEnvelope)",
-        "the consistency check between an envelope and the applicability records it cites (require_applicabilities)"
-      ],
-      "does_not_own": [
-        "running any check (capabilities/relation_checks.py and the archived checkers)",
-        "the spine's validation result, which is Finding/ValidationReceipt (validation.model)",
-        "the claim records it cites (evidence.claims, evidence.applicability)"
-      ],
-      "inputs": [
-        "BranchRef",
-        "subject refs and digest",
-        "ClaimApplicability tuple",
-        "findings and measurements"
-      ],
-      "outputs": [
-        "CheckReceiptEnvelope and its digest"
-      ],
-      "public_api": [
-        "CheckReceiptEnvelope",
-        "CheckStatus",
-        "CheckFinding",
-        "FindingSeverity"
-      ],
-      "depends_on": [
-        "contracts.branch",
-        "contracts.canonical",
-        "contracts.fields",
-        "evidence.applicability",
-        "project.refs"
-      ],
-      "used_by": [
-        "archflow/control/stage_closure.py"
-      ],
-      "invariants": [
-        "no design, mutation, promotion or canonical-write authority",
-        "every cited applicability must be on the same exact branch and the same scope digest as the envelope",
-        "claim, applicability, authority and source refs must match the supplied records exactly",
-        "never writes the filesystem"
-      ],
-      "status": "fold",
-      "tests": [
-        "tests/test_check_receipt_bridges.py",
-        "tests/test_stage_requirement_closure.py",
-        "tests/test_architectural_relations.py"
-      ],
-      "notes": "fold: '← fold'; §2.2 removes CheckReceiptEnvelope and its 27 users in favour of Finding/ValidationReceipt. Its single spine importer, control/stage_closure.py, is itself a fold target."
     },
     {
       "module_id": "validation.engine",

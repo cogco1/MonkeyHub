@@ -3,21 +3,11 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementError,
-    StageRequirementProfile,
-)
-from archflow.control.stage_closure import (
-    CompositeStageClosureReceipt,
-    StageClosureFindingCode,
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementError, StageRequirementProfile
+from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureFindingCode, StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 
 
 SHA_A = "a" * 64

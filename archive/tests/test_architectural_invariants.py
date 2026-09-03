@@ -6,17 +6,9 @@ import math
 import unittest
 from dataclasses import replace
 
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
-from archflow.control.stage_closure import (
-    StageClosureFindingCode,
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
+from archflow.state.stage_workflow import StageClosureFindingCode, StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
 from archive.archflow.validation.architectural_invariants import (
     ArchitecturalInvariantError,
@@ -39,7 +31,7 @@ from archive.archflow.validation.architectural_invariants import (
     check_nfold_rotational_symmetry,
     check_oriented_frame_angle,
 )
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 
 
 SHA_A = "a" * 64

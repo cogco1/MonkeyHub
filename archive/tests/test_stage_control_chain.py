@@ -40,12 +40,7 @@ from archive.archflow.control.function_relations import (
     FunctionRelationEvidenceEnvelope,
     compile_function_relation_requirements,
 )
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
 from archive.archflow.control.semantic_capabilities import (
     bind_semantic_rule_packs,
     current_semantic_capability_policy,
@@ -71,7 +66,7 @@ from archflow.relations.contracts import (
     ArchitecturalRelationKind,
     RelationProjection,
 )
-from archflow.validation.contracts import CheckStatus
+from archive.archflow.validation.contracts import CheckStatus
 from archive.archflow.validation.stage_control import (
     check_component_function_baseline,
     check_visual_inventory_baseline,

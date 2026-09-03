@@ -18,7 +18,7 @@ from archflow.contracts.fields import (
     logical_ref,
     text,
 )
-from archflow.evidence.applicability import ClaimApplicability
+from archive.archflow.evidence.applicability import ClaimApplicability
 from archflow.project.refs import (
     BranchRef,
     require_exact_branch,

@@ -33,11 +33,7 @@ from archive.archflow.relations.realization import (
     RelationRealizationManifest,
     RelationRealizationPurpose,
 )
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckStatus, FindingSeverity
 from archive.archflow.validation.relation_realization import (
     check_relation_realization,
 )

@@ -8,22 +8,13 @@ from archive.archflow.capabilities.visual_inventory import VisualInventoryStatus
 from archflow.contracts.canonical import require_sha256
 from archive.archflow.control.function_diagnostics import FunctionStatus
 from archive.archflow.control.component_functions import ComponentFunctionId
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement
 from archive.archflow.control.stage_control_sources import (
     ComponentFunctionBaselineSource,
     VisualInventoryBaselineSource,
 )
 from archive.archflow.control.stage_subjects import StageSubjectInventory
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 
 
 def _visual_denominator(inventory: StageSubjectInventory) -> tuple[str, ...]:

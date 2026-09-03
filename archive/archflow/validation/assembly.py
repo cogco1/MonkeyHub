@@ -22,13 +22,7 @@ from archflow.contracts.fields import (
     text,
 )
 from archflow.project.refs import BranchRef
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckMeasurement,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckMeasurement, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 from archive.archflow.validation.spatial import AABB
 
 

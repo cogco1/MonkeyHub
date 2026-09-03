@@ -6,13 +6,7 @@ import unittest
 from dataclasses import replace
 
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckMeasurement,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckMeasurement, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 from archive.archflow.validation.vertical_circulation import (
     CirculationAabbNegativePrecheck,
     LandingOwnership,

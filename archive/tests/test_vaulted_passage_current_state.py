@@ -14,7 +14,7 @@ import rhino3dm
 from archflow.adapters.three_dm_inspector import ThreeDmInspection, inspect_three_dm
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.archflow.validation.vaulted_passage_current_state import (
     VAULTED_PASSAGE_CURRENT_STATE_CHECKER_ID,
     VaultedPassageCurrentStateContract,

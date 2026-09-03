@@ -25,13 +25,7 @@ from archive.archflow.validation.component_lineage import (
     StageOperation,
     StageOperationRef,
 )
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckMeasurement,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckMeasurement, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 from archive.archflow.validation.spatial import (
     SpatialCheckStatus,
     SpatialValidationReceipt,

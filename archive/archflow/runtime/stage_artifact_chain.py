@@ -31,20 +31,16 @@ from archive.archflow.control.stage_artifacts import (
     StageArtifactStatus,
     StageArtifactVerificationDenominator,
 )
-from archflow.control.stage_closure import (
-    CompositeStageClosureReceipt,
-    StageClosureError,
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
-from archflow.control.requirements import StageRequirementProfile
+from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureError, StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
+from archive.archflow.control.requirements import StageRequirementProfile
 from archive.archflow.control.stage_subjects import StageSubjectInventory
 from archflow.project.refs import BranchRef
 from archive.archflow.relations.realization import RelationRealizationManifest
 from archflow.compilers.geometry import CompiledGeometryProgram
 from archive.archflow.state.design_maturity import StageEntryProof, require_stage_entry_proof
 from archive.archflow.validation.cad_readback import CadReadbackSnapshot
-from archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
+from archive.archflow.validation.contracts import CheckReceiptEnvelope, CheckStatus
 from archive.archflow.validation.relation_realization import check_relation_realization
 
 

@@ -107,12 +107,9 @@ from archive.archflow.control.baseline import (
 from archive.archflow.control.stage_relation_inheritance import (
     AcceptedRelationTopologyIdentity,
 )
-from archflow.control.requirements import StageRequirementProfile
-from archflow.control.stage_closure import (
-    CompositeStageClosureReceipt,
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archive.archflow.control.requirements import StageRequirementProfile
+from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archive.archflow.control.profile import StageRequirementProfileBinding
 from archive.archflow.control.semantic_capabilities import (
     SemanticCapabilityPolicy,
@@ -127,7 +124,7 @@ from archive.archflow.runtime.stage_subject_inventory import (
 )
 from archflow.state.spatial import SpatialOptionProposal
 from archive.archflow.validation.cad_readback import CadReadbackSnapshot
-from archflow.validation.contracts import CheckReceiptEnvelope
+from archive.archflow.validation.contracts import CheckReceiptEnvelope
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 
 

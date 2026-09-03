@@ -28,16 +28,9 @@ from archive.archflow.control.check_requirements import (
     spatial_layout_stage_requirement,
     vertical_circulation_stage_requirement,
 )
-from archflow.control.requirements import (
-    RequirementBasisMode,
-    RequirementTargetKind,
-    StageCheckRequirement,
-    StageRequirementProfile,
-)
-from archflow.control.stage_closure import (
-    StageClosureStatus,
-    compile_composite_stage_closure,
-)
+from archive.archflow.control.requirements import RequirementBasisMode, RequirementTargetKind, StageCheckRequirement, StageRequirementProfile
+from archflow.state.stage_workflow import StageClosureStatus
+from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archive.archflow.materials.binding import (
     MaterialBindingProfile,
     MaterialBindingSnapshot,
@@ -64,12 +57,7 @@ from archive.archflow.validation.check_bridges import (
     bridge_spatial_validation_receipt,
 )
 from archive.archflow.validation.component_lineage import StageComponentCoverageReceipt
-from archflow.validation.contracts import (
-    CheckFinding,
-    CheckReceiptEnvelope,
-    CheckStatus,
-    FindingSeverity,
-)
+from archive.archflow.validation.contracts import CheckFinding, CheckReceiptEnvelope, CheckStatus, FindingSeverity
 from archive.archflow.validation.spatial import (
     SpatialValidationInput,
     validate_spatial_layout,

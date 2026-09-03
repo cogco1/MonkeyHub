@@ -61,7 +61,7 @@ from archflow.relations.contracts import (
 from archive.archflow.runtime.component_index import ComponentIndex
 from archive.archflow.runtime.stage_subject_inventory import compile_stage_subject_inventory
 from archflow.state.spatial import SpatialOptionProposal
-from archflow.validation.contracts import CheckReceiptEnvelope
+from archive.archflow.validation.contracts import CheckReceiptEnvelope
 
 
 class StageControlChainError(ValueError):
