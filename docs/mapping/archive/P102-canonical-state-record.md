@@ -1,6 +1,6 @@
 # P102 — Canonical StateRecord (one government)
 
-**Status:** completed 2026-09-02 (Claude). Every acceptance item met; the residual derivation is named below.
+**Status:** Done, 2026-09-02 (Claude). Every acceptance item met; the residual derivation is named below.
 **Lane:** productization and componentization (P088–P093, P100)
 **Retires:** `DevelopedDesignState` as an *authoring input*. It stays only as a forwarded view
 (`developed_design_view`) with lineage, until the producer loop reads `StateRecord@1` directly.
@@ -81,3 +81,11 @@ engagement depths.
 - 2026-09-02 night: runner input = `StateRecord@1` (`SchematicPack`/`ElementPack` retired as inputs); relation checks per seat
   (`seat-relation-check`); the villa abutment's 48 mm base offset surfaced as a violated `stands-on` relation until it was declared
   on the relation as an engagement — the checker made a silent reading offset explicit.
+
+
+## Completion
+
+- Completed: 2026-09-02
+- Evidence: StateRecord@1 canonical; the production entry, the project runner and the geometry compiler all bind by the record (_state_identity); design_components_of is the single component-tree builder
+- Evidence: Villa 51 objects and Rocca 27 objects reproduce their runner-002 programs at 0.0 m (equivalence-003 in both projects); villa state digest identical
+- Evidence: RelationCheck@1 per seat against compiled bounds; a violated relation is a typed failure, never healed

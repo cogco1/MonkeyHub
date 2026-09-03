@@ -1,7 +1,7 @@
 # P100 — Derivation table and semantic references (construction by relation)
 
 - Origin: Planning (from the 2026-09-02 architecture review and semantic reference audit)
-- Status: Completed (Claude, 2026-09-02); registered in the work registry the same night, every acceptance item met
+- Status: Done (Claude, 2026-09-02); every acceptance item met, evidence in the Completion block
 - Depends on: P089 (first cut), P092, P098
 - Retires: the villa monolith's 29 dimension constants and inline coordinate arithmetic (as data, in migration steps); `make_packs.py`-style coordinate computation in project pack generators (replaced by references lowered through one resolver); per-side `rotated(profile, angle)` placement
 
@@ -108,3 +108,11 @@ coordinate:
   runner's full-rebuild-only `_export` beside the patch path — both retired on 2026-09-02 night (the runner reads the
   record, exports by digest, patches or restamps on a prior export). Still open: `DevelopedDesignState` as the
   *compiler's* input; the production entry and the runner accept `StateRecord@1` and forward it once.
+
+
+## Completion
+
+- Completed: 2026-09-02
+- Evidence: DerivationTable@1 + safe evaluator + semantic reference resolver; tests.test_derivations_and_references 9, tests.test_element_producers 4
+- Evidence: Villa reference-001: 13 readings from run-016, 14 objects read back within 0.25 mm; only base offsets in the program are the two declared engagements
+- Evidence: Villa and Rocca runner inputs authored as references/derivations; the lowering adapter and every coordinate pack retired once the runner read references

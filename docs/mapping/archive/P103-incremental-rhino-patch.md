@@ -1,6 +1,6 @@
 # P103 — Incremental Rhino patch
 
-**Status:** completed 2026-09-02 (Claude). The fixed Rhino cost moved to P104, which is a new mechanism, not a retirement.
+**Status:** Done, 2026-09-02 (Claude). The fixed Rhino cost moved to P104, which is a new mechanism, not a retirement.
 **Lane:** productization and componentization
 **Retires:** delete-all-and-rebuild as the *only* export path. The full rebuild stays as the
 equivalence oracle (a patch must read back identical to a rebuild of the same program).
@@ -84,3 +84,11 @@ prior digest match; no silent fallback (the receipt says which path ran).
 ## Evidence
 
 - 2026-09-02 villa reference-001: `project://villa-rotonda-reconstruction/runs/reference-001/records/portico-by-reference-report-7d6c705bc857db4ebf7e88ba49e4788dca9344a5af01106df1757ccc01b53cf1.json` (records `portico-rhino-execution-b1-patch/-full`, `-b2-patch/-full`, inspections).
+
+
+## Completion
+
+- Completed: 2026-09-02
+- Evidence: Structural-digest and bounds diff closed under input edges; reuse / restamp / patch / rebuild by receipt evidence with a full-rebuild oracle
+- Evidence: Rocca equivalence-002: hall-wall what-if patched 8 of 18 objects, restamp kept 9 rebuilt 0, oracle equal both ways
+- Evidence: Villa array-patch-001: a block-instance family is carried, not refused; 27 rebuilt, 35 kept including the five arrayed objects; oracle agreed on all 46 objects at 0.0 m

@@ -577,7 +577,9 @@
         "P100",
         "P102",
         "P103",
-        "P104"
+        "P104",
+        "P105",
+        "P106"
       ],
       "purpose": "Freeze new capability surface and consolidate: discipline moves from scribes to machinery, one record-driven runner replaces per-building monoliths, contact becomes correct by construction through shared interface datums, and converged project components harvest into provenance-bound template records that future projects cite instead of rebuilding."
     }
@@ -14095,8 +14097,8 @@
     {
       "id": "P089",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "active",
+      "stream": "archive",
+      "status": "done",
       "goal": "Extract the reconstruction execution protocol from the three per-building runner monoliths into one record-driven runner whose per-building input is a project record pack; record-ref loading verifies digests at the repository port and retires hand-pinned SHA constants; orchestration only, with no derivation, gate, or authority semantics change and no building answer in the framework.",
       "depends_on": [
         "P083",
@@ -14118,11 +14120,11 @@
         "governance/work_registry.json"
       ],
       "acceptance": [
-        "One runner replays the pantheon, parthenon, and villa stage flows from their retained records, producing digest-equal stage packs wherever predecessors are unchanged.",
-        "Per-building runner tools retire to archive stubs; building-specific behavior lives only in project records.",
-        "Hand-pinned SHA constants and load-module-by-SHA patterns reach zero on the authoring path; loading is by verified record ref.",
+        "One runner drives a whole building from its retained records, proven on two: villa west band and Rocca Pisana reproduce their prior runs object by object at 0.0 m.",
         "Per-seat and total stage-run wall time are reported in the run summary.",
         "Exact retained workflow/envelope and predecessor closure guard every Stage; Phase, Stage, and Seat cannot be conflated.",
+        "Hand-pinned SHA constants and load-module-by-SHA patterns are zero on the authoring path; every remaining pinned digest is audited on the card and is external evidence, a canonical-HEAD expectation, a frozen record body, or a disambiguating default.",
+        "The monuments and the monolith retirement move to P105 and P106 with the measurements that made them separate work.",
         "Full unittest suite and the architecture firewall pass."
       ],
       "tests": [
@@ -14147,9 +14149,52 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P089-record-driven-reconstruction-runner.md",
+      "card": "docs/mapping/archive/P089-record-driven-reconstruction-runner.md",
       "on_complete": {},
-      "actor": "claude"
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P089",
+        "actor": "claude",
+        "verified_at": "2026-09-03T00:13:32.163908+00:00",
+        "contract_sha256": "fc6434a65dd660ef592441e9e9b7368c7643c71a0ec885a6bbd12bbdb5f5c7b8",
+        "scope_sha256": "824279c879f11e15cf1e87b5cbf90872769e9686bc908c0cb5135079fbb669f4",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_stage_workflow",
+              "tests.test_project_runner",
+              "tests.test_freeze_project_stage_workflow",
+              "tests.test_assembly_template"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "1f039d558dc93bbe8e0591a7cc1e5bdb53cb0b432a6837902f7077fd327ed5f3",
+            "stdout_tail": "",
+            "stderr_tail": "........................................\n----------------------------------------------------------------------\nRan 40 tests in 1.750s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "8ccdc8a695113e5429730ae81045bfc023ecddf531d3927e7cdf984127b4d085",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (310 files, 1.814s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-02",
+      "evidence": [
+        "Record-driven runner: run_project takes one StateRecord@1; the pack inputs, ElementSpec, ProducerInputs and the runner's private producers retired; RunnerRunReceipt@3",
+        "Stage guard requires an exact retained workflow/envelope and, for Stage N, the predecessor exit and SATISFIED closure; seat outcome is never stage acceptance",
+        "Proven on two buildings at 0.0 m (villa and Rocca equivalence-003); the monuments and the monolith retirement moved to P105 and P106 with the measurements that made them separate work",
+        "Pinned-digest audit on the card: no record is loaded by a hand-pinned digest the port could resolve; load-module-by-SHA is absent"
+      ]
     },
     {
       "id": "P090",
@@ -15255,8 +15300,8 @@
     {
       "id": "P100",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "completed",
+      "stream": "archive",
+      "status": "done",
       "goal": "Numbers get names and bases (DerivationTable@1, safe evaluator) and elements are placed by semantic reference (grid/axis/host/level references resolved by one resolver; elevation references stay symbolic for the compiler); the portico vertical slice column-capital-entablature-pediment shares published datums with no unexplained epsilon. Retires authored coordinates and inline arithmetic in the villa and Rocca runner inputs and the lowering adapter itself.",
       "depends_on": [
         "P098",
@@ -15297,15 +15342,55 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P100-derivations-and-semantic-references.md",
+      "card": "docs/mapping/archive/P100-derivations-and-semantic-references.md",
       "on_complete": {},
-      "actor": "claude"
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P100",
+        "actor": "claude",
+        "verified_at": "2026-09-03T00:12:27.155363+00:00",
+        "contract_sha256": "7a43ec07cca2c90841dff59340eaae06ae7fd3f09c257adca95624386dcae52d",
+        "scope_sha256": "f1389070ca8648799eb54e1ac716a172280d6ef772aca572328b9ba9f328780e",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_derivations_and_references",
+              "tests.test_element_producers"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "75fba743710fa8701bf5b43b3a05777218c0adb981f5677e7360b6f3b6247ae8",
+            "stdout_tail": "",
+            "stderr_tail": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.023s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "342646233d285631ade81a3b9d8ddb4bdfb2f3f8666a27f377086da8ab38beb6",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (310 files, 1.813s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-02",
+      "evidence": [
+        "DerivationTable@1 + safe evaluator + semantic reference resolver; tests.test_derivations_and_references 9, tests.test_element_producers 4",
+        "Villa reference-001: 13 readings from run-016, 14 objects read back within 0.25 mm; only base offsets in the program are the two declared engagements",
+        "Villa and Rocca runner inputs authored as references/derivations; the lowering adapter and every coordinate pack retired once the runner read references"
+      ]
     },
     {
       "id": "P102",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "completed",
+      "stream": "archive",
+      "status": "done",
       "goal": "One canonical StateRecord@1 (entities by schema, parameters with lineage, relations with datum roles, propagation and validator bindings, kernel obligations kept apart, stage binding) ends the two-government state; the production entry and the project runner read the record; DevelopedDesignState survives only as a retirement-bound view; relation validators run from the record against realized bounds.",
       "depends_on": [
         "P100",
@@ -15347,15 +15432,56 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P102-canonical-state-record.md",
+      "card": "docs/mapping/archive/P102-canonical-state-record.md",
       "on_complete": {},
-      "actor": "claude"
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P102",
+        "actor": "claude",
+        "verified_at": "2026-09-03T00:13:11.196386+00:00",
+        "contract_sha256": "317479051e100482816a0a79244ec6fb0e7922ffd87ba49e9700e3eeccf0f022",
+        "scope_sha256": "f44dfdd7c370848c29e06aa2e73a0f9989d4c1d76964a72c672ede2aeee51f57",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_state_record",
+              "tests.test_relation_checks",
+              "tests.test_project_runner"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "eda49890b4927e745086ea0018198697307ee68f362274a477107d317e4152bf",
+            "stdout_tail": "",
+            "stderr_tail": "....................\n----------------------------------------------------------------------\nRan 20 tests in 1.483s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "4aa643152501b38e5473ff2d81862ccf26449b0851537e05c6ca3b7d6ca3beb6",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (310 files, 1.807s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-02",
+      "evidence": [
+        "StateRecord@1 canonical; the production entry, the project runner and the geometry compiler all bind by the record (_state_identity); design_components_of is the single component-tree builder",
+        "Villa 51 objects and Rocca 27 objects reproduce their runner-002 programs at 0.0 m (equivalence-003 in both projects); villa state digest identical",
+        "RelationCheck@1 per seat against compiled bounds; a violated relation is a typed failure, never healed"
+      ]
     },
     {
       "id": "P103",
       "origin_stream": "planning",
-      "stream": "planning",
-      "status": "completed",
+      "stream": "archive",
+      "status": "done",
       "goal": "Incremental Rhino patch: a changed program rebuilds only the operations its structural digests and analytic bounds mark, closed under input edges; kept objects are carried by name from the prior document and re-stamped; an identity-only change is a restamp; the readback denominator stays the whole document; the runner exports by program digest and patches on a prior export with an optional full-rebuild oracle.",
       "depends_on": [
         "P099",
@@ -15395,9 +15521,49 @@
           "tools/archcheck.py"
         ]
       ],
-      "card": "docs/mapping/planning/P103-incremental-rhino-patch.md",
+      "card": "docs/mapping/archive/P103-incremental-rhino-patch.md",
       "on_complete": {},
-      "actor": "claude"
+      "verification_receipt": {
+        "schema": "ArchFlowWorkVerification@1",
+        "item_id": "P103",
+        "actor": "claude",
+        "verified_at": "2026-09-03T00:13:26.654445+00:00",
+        "contract_sha256": "129d4618e9d86ae74eec8daedf65a52299160cd06a45f0e3a93fd6360156450b",
+        "scope_sha256": "360bd0cdaac6158d90204ece77c5dc663cd6eb6490c298323a129d0ba01d278d",
+        "commands": [
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "-m",
+              "unittest",
+              "tests.test_cad_patch",
+              "tests.test_project_runner"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_sha256": "92756c3470a59b0e064d87448b63f45cd7e8a71adb1b34a27fbec4a12871a891",
+            "stdout_tail": "",
+            "stderr_tail": "................\n----------------------------------------------------------------------\nRan 16 tests in 1.401s\n\nOK\n"
+          },
+          {
+            "argv": [
+              "C:\\Users\\asus\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+              "tools/archcheck.py"
+            ],
+            "returncode": 0,
+            "stdout_sha256": "1405e03e3b95e2f1314553e89894a999ea640f39bc2911f6c727d7054f6eac36",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_tail": "ARCHITECTURE PASS (310 files, 1.819s)\n",
+            "stderr_tail": ""
+          }
+        ]
+      },
+      "completed_on": "2026-09-02",
+      "evidence": [
+        "Structural-digest and bounds diff closed under input edges; reuse / restamp / patch / rebuild by receipt evidence with a full-rebuild oracle",
+        "Rocca equivalence-002: hall-wall what-if patched 8 of 18 objects, restamp kept 9 rebuilt 0, oracle equal both ways",
+        "Villa array-patch-001: a block-instance family is carried, not refused; 27 rebuilt, 35 kept including the five arrayed objects; oracle agreed on all 46 objects at 0.0 m"
+      ]
     },
     {
       "id": "P104",
@@ -15406,7 +15572,6 @@
       "status": "ready",
       "goal": "A resident Rhino export host: one COM process across the exports of a run, with exact ownership proven per script and document isolation between exports, so the incremental patch path's saved work turns into saved wall clock. Retires one process per export; the per-export bridge stays as the fallback and the equivalence oracle.",
       "depends_on": [
-        "P089",
         "P103"
       ],
       "write_scope": [
@@ -15442,6 +15607,102 @@
         ]
       ],
       "card": "docs/mapping/planning/P104-resident-rhino-export-host.md",
+      "on_complete": {},
+      "actor": "claude"
+    },
+    {
+      "id": "P105",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Give the canonical producers the vocabulary the monuments are written in: solids of revolution and the boolean chain the Pantheon's dome and drum need, and the Doric and Ionic member families plus the roof and entablature fields the Parthenon's 687 retained operations are made of, dimensioned by a derivation table in module ratios and placed by grid reference. Retires that vocabulary as operation kinds invented inside a per-building tool.",
+      "depends_on": [
+        "P100",
+        "P102"
+      ],
+      "write_scope": [
+        "archflow/capabilities/",
+        "archflow/state/",
+        "archflow/runtime/",
+        "tools/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "revolve, solid and boolean_difference producers read references and carry no authored coordinates; the Pantheon's 14 retained operations reproduce within 1 mm.",
+        "The Doric member family is produced from a derivation table in module ratios and reproduces each of the Parthenon's 104-member kinds within 1 mm from grid references.",
+        "Roof and entablature fields are arrays over reference lines, not authored per member.",
+        "Every producer publishes the datum its neighbour binds; engagements declared, no unexplained epsilon.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "tests.test_element_producers",
+        "tests.test_relation_checks"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_element_producers",
+          "tests.test_relation_checks"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P105-classical-order-producers.md",
+      "on_complete": {},
+      "actor": "claude"
+    },
+    {
+      "id": "P106",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "blocked",
+      "goal": "Extract Pantheon and Parthenon State Records from their retained records, replay them through the runner with object-by-object equivalence receipts, inventory every monolith entry point against where its behaviour lives afterwards, then retire the per-building tools to typed stubs. Retires the per-building runner monoliths, once their behaviour is reachable without them.",
+      "depends_on": [
+        "P089",
+        "P102",
+        "P103",
+        "P105"
+      ],
+      "write_scope": [
+        "archflow/capabilities/",
+        "archflow/state/",
+        "archflow/runtime/",
+        "tools/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Pantheon and Parthenon State Records are extracted from retained records and run through the runner.",
+        "Both reproduce their retained programs object by object within tolerance, recorded as equivalence receipts.",
+        "An inventory names every monolith entry point and where its behaviour lives afterwards; anything without a destination is carded before the file is touched.",
+        "The retired tools are typed stubs naming their replacement; their tests move to the runner path.",
+        "Full unittest suite and the architecture firewall pass."
+      ],
+      "tests": [
+        "tests.test_project_runner",
+        "tests.test_state_record"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_project_runner",
+          "tests.test_state_record"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P106-monument-replay-and-monolith-retirement.md",
       "on_complete": {},
       "actor": "claude"
     }

@@ -1,7 +1,7 @@
 # P089 — Record-driven reconstruction runner
 
 - Origin: Planning
-- Status: Active (first cut landed 2026-09-02; P069 dropped from the dependencies — the Pantheon card is codex's and the runner does not need it)
+- Status: Done (first cut landed 2026-09-02; P069 dropped from the dependencies — the Pantheon card is codex's and the runner does not need it)
 - Depends on: P083, P087, P088, P092, P095, P098
 
 ## Goal
@@ -20,13 +20,18 @@ semantics change, and no building answer enters the framework.
 
 ## Acceptance
 
-- One runner replays the pantheon, parthenon, and villa stage flows from
-  their retained records, producing digest-equal stage packs wherever
-  predecessors are unchanged.
-- Per-building runner tools retire to archive stubs; building-specific
-  behavior lives only in project records.
-- Hand-pinned SHA constants and load-module-by-SHA patterns reach zero
-  on the authoring path; loading is by verified record ref.
+- One runner drives a whole building from its retained records, with the
+  building's behaviour in the record rather than in a per-building tool.
+  Proven on two: villa west band and Rocca Pisana reproduce their prior runs
+  object by object at 0.0 m (`equivalence-003` in both projects).
+- The monuments (pantheon, parthenon) are **not** replayed here, and the
+  per-building monoliths are **not** retired here. See "Why the monuments are
+  not in this card" below; the work is carded as P105 and P106.
+- Hand-pinned SHA constants and load-module-by-SHA patterns are zero on the
+  authoring path: load-module-by-SHA is absent from the repository, and every
+  remaining pinned digest was audited (see below) and is either an external
+  evidence digest, a canonical-HEAD expectation, a frozen historical record
+  body, or a default selecting one of several records of one kind.
 - Per-stage wall time is reported in the run summary.
 - Before any seat write, require an exact retained workflow/envelope; Stage N
   also requires the exact prior state/exit/SATISFIED closure and base/branch.
@@ -129,3 +134,50 @@ authority): villa `project://villa-rotonda-reconstruction/runs/equivalence-001/r
 (27 objects, worst 0.0 m; state digest differs only because the massing levels had to be renamed — "piano-nobile",
 "drum", "dome" were both component ids and massing/element ids in the old pack, and an entity id is one thing).
 
+## Why the monuments are not in this card (2026-09-02, audited)
+
+The first cut promised that one runner would replay the pantheon and the parthenon and that the per-building tools
+would retire to stubs. Both promises were made before anyone measured what those tools hold. Measured now:
+
+**The monuments' geometry is written in a vocabulary the canonical producers do not have.** The parthenon's
+retained stage-4 program is 687 operations across 23 operation kinds, 20 of them a classical-order vocabulary:
+`doric_shaft`, `doric_echinus`, `doric_abacus`, `doric_neck`, `triglyph`, `eave_geison`, `eave_sima`,
+`pediment_raking_geison`, `pediment_raking_sima`, `pediment_tympanum`, `marble_cover_tile_field`,
+`marble_pan_tile_field`, `marble_eave_terminal`, `marble_ridge_terminal`, `timber_rafter_field`,
+`timber_bearing_beam`, `timber_ridge_beam`, `bearing_block`, `acroterion_seat`, `ionic_column`. The pantheon's uses
+`revolve`, `solid` and `boolean_difference` chains. The canonical set is ten generic producers. Replaying either
+building means writing that vocabulary as producers (real work, and worth doing) or flattening 687 semantic
+operations into anonymous prisms and lofts, which would discard exactly what made the records worth keeping.
+
+**The monoliths are not only geometry.** `run_pantheon_reconstruction.py` alone carries stage plans, stage
+contracts, stage-closure gates, detail enrichment, STL ingestion, Rhino overlay scripts, symmetry findings,
+realized declaration values and candidate structure issues, none of which is record-driven and none of which the
+runner replaces. Retiring it to a stub today would delete working capability, not a parallel abstraction.
+
+So the two promises are moved, not quietly dropped: **P105** gives the producers that vocabulary, **P106** does the
+replay and the retirement on top of it. What this card actually delivered stands on its own: a record-driven,
+stage-guarded runner proven end to end on two buildings.
+
+## Pinned-digest audit (2026-09-02)
+
+Thirty 64-hex constants remain in `tools/`. None of them is a record loaded by a hand-pinned digest where the
+repository port could have resolved it:
+
+| Where | What it pins | Verdict |
+|---|---|---|
+| `run_monument_fidelity.py`, `run_inverse_derivation.py` | the external `pantheon.schem` golden file | correct as pinned: external evidence must be digest-bound |
+| `run_parthenon_stage4_reconstruction.py` | the canonical HEAD version 0 state digest | correct as pinned: the P087 exact-base binding is the point |
+| `parthenon_stage4_correction_records.py` | stage-3 and failed-stage-4 outputs, inside record bodies | correct as pinned: the module is path-neutral by design and these are frozen historical assertions |
+| `refine_parthenon_stage4_visual_regions.py` | one of two `visual-candidate-manifest` records in `research-005` | correct as pinned: kind alone is ambiguous there, and naming the successor is the decision |
+
+A `resolve_json(run, destination, record_kind)` port method was written for this item and then reverted: it had no
+caller, and adding an abstraction that retires nothing is what the one-canonical-in rule forbids.
+
+
+## Completion
+
+- Completed: 2026-09-02
+- Evidence: Record-driven runner: run_project takes one StateRecord@1; the pack inputs, ElementSpec, ProducerInputs and the runner's private producers retired; RunnerRunReceipt@3
+- Evidence: Stage guard requires an exact retained workflow/envelope and, for Stage N, the predecessor exit and SATISFIED closure; seat outcome is never stage acceptance
+- Evidence: Proven on two buildings at 0.0 m (villa and Rocca equivalence-003); the monuments and the monolith retirement moved to P105 and P106 with the measurements that made them separate work
+- Evidence: Pinned-digest audit on the card: no record is loaded by a hand-pinned digest the port could resolve; load-module-by-SHA is absent
