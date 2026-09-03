@@ -18,6 +18,7 @@ from starlette.requests import Request
 import uvicorn
 
 from . import routes
+from .application.proposals import ProposalStore
 from .settings import PROJECT_DIR_ENV, StudioSettings
 from .transport.errors import StudioError
 
@@ -69,6 +70,10 @@ async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResp
 def create_app(settings: StudioSettings) -> FastAPI:
     app = FastAPI(title="ArchFlow Studio API", version="0.1.0")
     app.state.settings = settings
+    # Proposals live in this process and nowhere else. The store is created
+    # here so that fact is visible at the top of the application rather than
+    # accumulating quietly at the bottom of a route.
+    app.state.proposals = ProposalStore()
     app.add_exception_handler(StudioError, _handle_studio_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
