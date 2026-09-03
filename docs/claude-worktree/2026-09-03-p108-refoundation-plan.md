@@ -212,7 +212,11 @@ Deleted by this plan: `backend/` (all), `run_server.py`, `launch.py`, `src/App.t
   harness runs** (a receipt whose `workflow_ref` names a workflow with `workflow_id` ∈ {`equivalence-harness`,
   `studio-candidate-harness`} is excluded; receipts without `workflow_ref` are eligible). Verified on the
   villa: the rule selects `runner-002` alone (the patch/equivalence runs are harness runs) and studio
-  candidates can never become the reference. The DTO reports `referenceRunSource`.
+  candidates can never become the reference. The DTO reports `referenceRunSource` (`query` | `config` |
+  `rule` | `none`). A run-less project (nothing eligible, nothing given) still projects: the record binds to
+  `RunRef(project_id, "studio-projection", head)` — a value object that need not exist on disk — with
+  `referenceReceipt: null`, `matchesReferenceReceipt: null` and the honesty line "no eligible reference run:
+  projection bound to the studio run id; its digests are not comparable to any receipt".
 - `projection(binding, run_id=None) -> StateProjection` (frozen dataclass, application layer):
   loads `input/runner/state-record.json` via `layout.resolve_relative`, `StateRecord.from_dict`,
   `run = RunRef(project_id, reference_run_id, repository.read_head())`, `record = record.bound_to(run)`,
