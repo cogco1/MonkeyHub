@@ -109,5 +109,12 @@ the tools' and the Studio's vocabulary.
 ## Out of scope for the workers
 
 The villa WIP file (`input/runner/state-record.json`) is Kaiwen's; when W1 lands, Fable strips its
-dead `stage` key with a dated backup, and when W3 lands, Fable declares validators on its 14
-relations the same way. Workers never write into `D:\PROJECTS`.
+dead `stage` key with a dated backup. Workers never write into `D:\PROJECTS`.
+
+Correction after W3 landed: the villa's 14 declared relations are all between `Space@1` zones
+(corridor to hall clearance, portico to corridor voids, stair passages), not between elements, and
+the checkers measure the bounds of an element's produced objects. Declaring validators on them today
+would only report `unchecked`. The honest step is in Wave C: `check_relations` takes a space's bounds
+from its `Volume@1` (min/max) so `clearance_interval` can measure zone clearance, and `hosts_void`
+between zones gets a checker of its own or stays declared-unchecked. The villa's validators stay
+null until then.
