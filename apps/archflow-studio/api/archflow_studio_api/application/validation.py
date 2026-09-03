@@ -47,8 +47,10 @@ from archflow.validation.engine import (
 )
 from archflow.validation.model import ValidationReceipt
 
+from archflow.project.refs import ProjectVersionRef
+
 from ..ports import StudioEventSink
-from .binding import RECORD_NAME, ProjectBinding
+from .binding import RECORD_NAME
 from .candidate import CandidateRun, RelationTotals
 from .proposals import Proposal
 
@@ -79,13 +81,18 @@ VALIDATOR_NAMES = tuple(validator.name for validator in VALIDATORS)
 # Read off the validator for the same reason the full list is.
 EFFECTIVE_CHECKS = (ArtifactPresentValidator.name,)
 
-# What the studio could not put into the submission, in a line the UI shows
-# verbatim. A seat that named a program record the P036 rule cannot parse has
-# its program dropped, and a dropped program that nobody mentioned would make
-# the receipt look like it covered more than it did.
-UNNAMEABLE_PROGRAM = (
+# What the studio could not put into the submission, in lines the UI shows
+# verbatim. A dropped program that nobody mentioned would make the receipt look
+# like it covered more than it did — and a confession that named the wrong
+# cause would send whoever reads it looking in the wrong place, so the two ways
+# a program can fail to be nameable say which one happened.
+UNPARSED_PROGRAM_NAME = (
     "seat {seat_id}: program record name could not be parsed; its program "
     "was not submitted for validation"
+)
+MISSING_PROGRAM_DIGEST = (
+    "seat {seat_id}: seat carries no program digest; its program was not "
+    "submitted for validation"
 )
 
 CANONICAL_FACTS = (
@@ -202,7 +209,7 @@ def verdict(receipt: ValidationReceipt, candidate: CandidateRun) -> Verdict:
 
 
 def validate_candidate(
-    binding: ProjectBinding,
+    head: ProjectVersionRef,
     candidate: CandidateRun,
     proposal: Proposal,
     *,
@@ -210,7 +217,13 @@ def validate_candidate(
 ) -> CandidateValidation:
     """Ask the kernel about one finished candidate, then issue the verdict.
 
-    The state the submission is checked against is the project's HEAD as a
+    ``head`` is passed in rather than read here so that the version this
+    verdict is *about* is the same one its caller keyed it under. A receipt
+    names the state it checked, and a caller that remembered it under a
+    different one would be able to serve an answer about a version the project
+    has left.
+
+    The state the submission is checked against is that HEAD as a
     ``CanonicalState`` carrying nothing but its ref: the canonical document a
     P036 project holds is not a facts-and-commitments state, and inventing
     facts to fill it would be inventing the very things the validators check.
@@ -220,7 +233,7 @@ def validate_candidate(
 
     artifacts, honesty = _artifacts_of(candidate)
     receipt = validate_submission(
-        CanonicalState(ref=binding.head()),
+        CanonicalState(ref=head),
         _submission(candidate, proposal, artifacts),
         tuple(validator() for validator in VALIDATORS),
     )
@@ -253,12 +266,13 @@ def _artifacts_of(
     """The seats' compiled programs, and what could not be made into one.
 
     A seat that produced no program contributes nothing and confesses nothing:
-    its row already says it was empty. A seat that *named* a program record
-    whose name the P036 rule does not recognize is different — the studio will
-    not invent a digest for a record it cannot name, so the program is left out
-    of the submission and the seat is named in ``honesty``. If that leaves no
-    artifact at all, the kernel answers ``artifact.missing``, which is the same
-    refusal from the side of the boundary that owns it.
+    its row already says it was empty. A seat that *named* a program the studio
+    cannot identify is different — it will not invent a digest for a record it
+    cannot name, nor a name for a digest it was not given — so the program is
+    left out of the submission and the seat is named in ``honesty``, with which
+    of the two went wrong. If that leaves no artifact at all, the kernel
+    answers ``artifact.missing``, which is the same refusal from the side of
+    the boundary that owns it.
     """
 
     artifacts: list[ArtifactRef] = []
@@ -267,8 +281,15 @@ def _artifacts_of(
         if seat.program_ref is None:
             continue
         sha = _record_sha(seat.program_ref)
-        if sha is None or seat.program_digest is None:
-            honesty.append(UNNAMEABLE_PROGRAM.format(seat_id=seat.seat_id))
+        if sha is None:
+            honesty.append(
+                UNPARSED_PROGRAM_NAME.format(seat_id=seat.seat_id)
+            )
+            continue
+        if seat.program_digest is None:
+            honesty.append(
+                MISSING_PROGRAM_DIGEST.format(seat_id=seat.seat_id)
+            )
             continue
         artifacts.append(
             ArtifactRef(
@@ -281,37 +302,74 @@ def _artifacts_of(
     return tuple(artifacts), tuple(honesty)
 
 
+def validation_key(
+    candidate_id: str, head: ProjectVersionRef
+) -> tuple[str, int, str | None]:
+    """What a remembered verdict is *about*: this candidate, at this HEAD.
+
+    Both halves are load-bearing. The candidate is obvious. The HEAD is there
+    because the receipt names the state it checked and ``passed`` depends on
+    the submission's base matching it: a verdict kept under the candidate id
+    alone would go on saying ``advance: true`` after the project moved to a
+    version that candidate is no longer based on, which is exactly the stale
+    green this whole slice exists to prevent. Same HEAD, same key, so polling
+    still dedupes; a moved HEAD is a different question and gets a new answer
+    and a new event.
+    """
+
+    return (candidate_id, head.version, head.state_sha256)
+
+
 class ValidationStore:
-    """One validation per candidate, computed once and kept in this process.
+    """One validation per candidate-and-HEAD, computed once in this process.
 
     A finished candidate's records do not change, and neither does the verdict
-    read off them, so the second request for one is the same answer as the
-    first. Recomputing it would be harmless; *republishing* it would not — a
-    client polling the readout would appear on the event stream as the server
-    deciding over and over, and an event log that counts readings is not a log
-    of what happened.
+    read off them while the project stands where it stood, so the second
+    request for one is the same answer as the first. Recomputing it would be
+    harmless; *republishing* it would not — a client polling the readout would
+    appear on the event stream as the server deciding over and over, and an
+    event log that counts readings is not a log of what happened.
 
     Like the proposal store and the job registry, this is memory and not
-    history: it holds one entry per candidate this process validated, it is
-    lost on restart, and nothing may read it as the record of what a project
-    decided. The compute runs under the lock so two simultaneous readers of the
-    same candidate produce one verdict and one event rather than two of each.
+    history: it is lost on restart, and nothing may read it as the record of
+    what a project decided.
+
+    Each key gets its own lock, created under the store's mutex and dropped
+    once the answer is in. Two simultaneous readers of the same key therefore
+    still produce one verdict and one event, while two readers of different
+    candidates do not queue behind each other for work that has nothing to do
+    with them.
     """
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._by_candidate: dict[str, CandidateValidation] = {}
+        self._mutex = threading.Lock()
+        self._by_key: dict[tuple[str, int, str | None], CandidateValidation] = {}
+        self._locks: dict[tuple[str, int, str | None], threading.Lock] = {}
 
     def remembered(
-        self, candidate_id: str, compute: Callable[[], CandidateValidation]
+        self,
+        key: tuple[str, int, str | None],
+        compute: Callable[[], CandidateValidation],
     ) -> CandidateValidation:
-        """The candidate's validation, computing it the first time only."""
+        """The verdict for one key, computing it the first time only."""
 
-        with self._lock:
-            validation = self._by_candidate.get(candidate_id)
-            if validation is None:
-                validation = compute()
-                self._by_candidate[candidate_id] = validation
+        with self._mutex:
+            validation = self._by_key.get(key)
+            if validation is not None:
+                return validation
+            lock = self._locks.setdefault(key, threading.Lock())
+        with lock:
+            with self._mutex:
+                validation = self._by_key.get(key)
+            if validation is not None:
+                # Another reader of this key finished while this one waited.
+                return validation
+            validation = compute()
+            with self._mutex:
+                # Written and unlocked together, so a reader arriving after
+                # the lock is gone always finds the answer that replaced it.
+                self._by_key[key] = validation
+                self._locks.pop(key, None)
         return validation
 
 

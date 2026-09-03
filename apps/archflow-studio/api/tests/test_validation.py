@@ -52,7 +52,7 @@ from archflow_studio_api.settings import StudioSettings
 from archflow.project.refs import ProjectVersionRef
 from archflow.project.repository import FilesystemProjectRepository
 
-from .support import PROJECT_ID, RUNNER_RECORD_PATH
+from .support import PROJECT_ID, RUNNER_RECORD_PATH, advance_head
 from .test_candidate import (
     JOB_DEADLINE,
     TERMINAL,
@@ -102,7 +102,7 @@ class ValidationTestCase(CandidateTestCase):
 
         state = self.app.state
         return validate_candidate(
-            bound_project(state),
+            bound_project(state).head(),
             candidate,
             state.proposals.get(candidate.proposal_id),
             events=state.events,
@@ -267,6 +267,28 @@ class ValidationReceiptTests(ValidationTestCase):
             ["artifact.missing"],
         )
         self.assertEqual(mangled.blocked_by, ("validation.receipt",))
+
+    def test_a_seat_with_no_program_digest_says_that_instead(self) -> None:
+        """The confession names the actual cause, not a nearby one."""
+
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+        seat = candidate.seat_results[0]
+
+        undigested = self.validated(
+            replace(
+                candidate,
+                seat_results=(replace(seat, program_digest=None),),
+            )
+        )
+
+        self.assertEqual(
+            undigested.honesty,
+            (
+                f"seat {seat.seat_id}: seat carries no program digest; its "
+                "program was not submitted for validation",
+            ),
+        )
 
     def test_a_seat_that_compiled_nothing_is_not_a_confession(self) -> None:
         """An empty seat named no program; there is nothing to have dropped."""
@@ -470,6 +492,50 @@ class ValidationEventTests(ValidationTestCase):
         self.assertEqual(len(published), 1, published)
         stream = self.client.get("/api/events", params={"limit": 50}).text
         self.assertEqual(stream.count("event: validation.computed"), 1)
+
+    def test_a_moved_head_is_a_new_verdict_and_a_new_event(self) -> None:
+        """A verdict names the state it checked, and cannot outlive it.
+
+        The memo exists so polling does not look like deciding. It must not
+        become a way for a stale ``advance: true`` to survive the version it
+        was true about: once HEAD moves, the candidate's base is no longer
+        current, and the kernel says so.
+        """
+
+        accepted, _ = self.finished_candidate()
+        first = self.validation_of(accepted["candidateId"])
+        self.assertIs(first["advance"], True)
+        before = self.repository.read_head()
+
+        # Promotion through P036's own path; the API never does this.
+        promoted = advance_head(self.repository)
+        self.assertNotEqual(promoted, before)
+
+        second = self.validation_of(accepted["candidateId"])
+
+        self.assertEqual(
+            second["receipt"]["checkedState"]["version"], promoted.version
+        )
+        self.assertEqual(
+            second["receipt"]["checkedState"]["stateSha256"],
+            promoted.state_sha256,
+        )
+        self.assertIs(second["receipt"]["passed"], False)
+        self.assertEqual(
+            [
+                finding["code"]
+                for finding in second["receipt"]["findings"]
+            ],
+            ["state.base_mismatch"],
+        )
+        self.assertEqual(second["blockedBy"], ["validation.receipt"])
+        # A new decision about a new state is published, not swallowed.
+        published = [
+            event
+            for event in self.app.state.events.replay()
+            if event["type"] == "validation.computed"
+        ]
+        self.assertEqual([event["advance"] for event in published], [True, False])
 
     def test_two_candidates_are_two_verdicts(self) -> None:
         """The memo is per candidate; it must not answer for another run."""

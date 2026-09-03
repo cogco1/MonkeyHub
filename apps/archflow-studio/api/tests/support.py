@@ -18,7 +18,7 @@ from pathlib import Path
 import archflow_studio_api  # noqa: F401
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.refs import ProjectRecordRef, RunRef
+from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.design_maturity import DesignPhase
 from archflow.state.stage_workflow import ProjectStage, ProjectStageWorkflow
@@ -513,6 +513,60 @@ def add_harness_run(
 
     return add_later_run(
         repository, run_id=run_id, workflow_id="equivalence-harness"
+    )
+
+
+def advance_head(
+    repository: FilesystemProjectRepository,
+    *,
+    run_id: str = "run-promotion",
+) -> ProjectVersionRef:
+    """Move the project's canonical HEAD forward through P036's own path.
+
+    Promotion is the kernel's and nobody else's: a run based on the current
+    HEAD, an accepted ``PromotionDecision@1`` naming the exact state it
+    checked, then ``prepare_transition`` and ``compare_and_swap``. The Studio
+    API may never do any of this — which is precisely why a test has to, to
+    see what the API says once the version it validated against has stopped
+    being current.
+    """
+
+    base = repository.read_head()
+    run = repository.create_run(run_id)
+    decision = repository.put_json(
+        run=run,
+        destination=PersistenceDestination(
+            PersistenceArea.RUN_REVIEW, run_id=run_id
+        ),
+        record_kind="decision",
+        payload={
+            "schema": "PromotionDecision@1",
+            "status": "accepted",
+            "project_id": PROJECT_ID,
+            "run_id": run_id,
+            "checked_state": {
+                "project_id": base.project_id,
+                "version": base.version,
+                "state_sha256": base.require_digest(),
+            },
+            "candidate_ref": (
+                f"project://{PROJECT_ID}/{RUNNER_RECORD_PATH}"
+            ),
+        },
+    )
+    prepared = repository.prepare_transition(
+        run=run,
+        expected=base,
+        replacement_state={
+            "project_id": PROJECT_ID,
+            "version": base.version + 1,
+        },
+        decision_receipt=decision,
+    )
+    return repository.compare_and_swap(
+        expected=prepared.expected,
+        event=prepared.event,
+        replacement=prepared.replacement,
     )
 
 

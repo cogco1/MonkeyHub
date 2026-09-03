@@ -20,7 +20,7 @@ from starlette.requests import Request
 from ..application.binding import bound_project
 from ..application.candidate import describe
 from ..application.jobs import QUEUED, RUNNING, Job
-from ..application.validation import validate_candidate
+from ..application.validation import validate_candidate, validation_key
 from ..transport.errors import StudioError
 from ..transport.validation import ValidationDto
 from ..transport.validation import to_dto as validation_dto
@@ -49,15 +49,19 @@ def read_validation(request: Request, candidate_id: str) -> ValidationDto:
         )
     proposal = state.proposals.get(job.proposal_id)
     binding = bound_project(state)
+    # Read once, then used both to check against and to remember under, so the
+    # verdict and the key it is filed under name the same canonical version.
+    head = binding.head()
     return validation_dto(
-        # Computed on the first request for this candidate and remembered:
-        # a finished run's records do not change, so a client polling the
-        # readout must not appear on the event stream as a server deciding
-        # again.
+        # Computed on the first request for this candidate at this HEAD and
+        # remembered: a finished run's records do not change, so a client
+        # polling the readout must not appear on the event stream as a server
+        # deciding again. A HEAD that moved is a different question, and gets
+        # a fresh answer and a fresh event.
         state.validations.remembered(
-            candidate_id,
+            validation_key(candidate_id, head),
             lambda: validate_candidate(
-                binding,
+                head,
                 describe(
                     binding,
                     proposal,
