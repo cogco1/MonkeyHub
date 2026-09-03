@@ -7,8 +7,10 @@ needs the project is where a wrong project root is discovered.
 from __future__ import annotations
 
 import argparse
+from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -18,6 +20,8 @@ from starlette.requests import Request
 import uvicorn
 
 from . import routes
+from .application.events import StudioEvents
+from .application.jobs import JobRegistry
 from .application.proposals import ProposalStore
 from .settings import PROJECT_DIR_ENV, StudioSettings
 from .transport.errors import StudioError
@@ -67,13 +71,35 @@ async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResp
     )
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Let a candidate that is already running finish before the process ends.
+
+    A candidate run writes P036 records; killing its thread mid-run would
+    leave a run directory nobody can account for. Shutting the worker down and
+    waiting is the difference between a service that stops and one that stops
+    cleanly.
+    """
+
+    yield
+    app.state.jobs.shutdown()
+
+
 def create_app(settings: StudioSettings) -> FastAPI:
-    app = FastAPI(title="ArchFlow Studio API", version="0.1.0")
+    app = FastAPI(
+        title="ArchFlow Studio API", version="0.1.0", lifespan=_lifespan
+    )
     app.state.settings = settings
     # Proposals live in this process and nowhere else. The store is created
     # here so that fact is visible at the top of the application rather than
     # accumulating quietly at the bottom of a route.
     app.state.proposals = ProposalStore()
+    # The event sink is the reserved ``StudioEventSink`` port, and the job
+    # registry owns the one worker thread candidates run on. Both are created
+    # here for the same reason as the store: what this process holds in memory,
+    # and therefore loses on restart, is stated at the top of the application.
+    app.state.events = StudioEvents()
+    app.state.jobs = JobRegistry(app.state.events)
     app.add_exception_handler(StudioError, _handle_studio_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
