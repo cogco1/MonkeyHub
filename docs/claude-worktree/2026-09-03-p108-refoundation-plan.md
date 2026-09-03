@@ -424,8 +424,14 @@ counts), `test_events.py`, `test_sse.py`.
   `GET /api/events` (SSE via `EventSourceResponse`, replay then live, `StudioEvent@1{seq, at, type, …}`).
 - Tests as listed; wall time recorded in the test output.
 
-- [ ] Steps: tests → fail → implement → pass → archcheck → commit
-  `P108 refoundation: a candidate is a harness run of the kernel runner, content-addressed and never canonical`.
+- [x] Done (main 6f43a34 + 5cace39 + eb35aa3, 2026-09-03). Ratified after review: candidate run ids carry a
+  4-hex suffix and the job registry claims ids atomically (409 `CANDIDATE_ID_COLLISION`); `Candidate@1`
+  carries `honesty[]` (the K1 line naming the closure refs not recomputed, or the 0-edges line) and
+  `skippedRuns[]`; `STALE_BASE` is re-checked where the record is read (job fails, no run directory);
+  `GET /api/events?limit=N` is a catch-up ceiling. Verified on a villa-input copy: `set height to 2.2` →
+  harness run succeeded in ~0.25 s, two seats accepted (1 + 60 objects), relations held 1 / violated 0 /
+  unchecked 0, HEAD untouched; `set height to -1` → job failed with the runner's own sentence; a same-second
+  double submit yields two distinct, separately readable candidates. Export (Rhino) path inspection-only.
 
 ---
 
