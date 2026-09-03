@@ -20,7 +20,6 @@ from archflow.contracts.canonical import (
     require_sha256,
 )
 from archflow.contracts.reading import read_key_diagnostics
-from archflow.contracts.references import digest_keys, require_single_digest
 
 __all__ = [
     "AuthorityContractError",
@@ -31,12 +30,10 @@ __all__ = [
     "canonical_digest",
     "canonical_json",
     "canonical_json_bytes",
-    "digest_keys",
     "no_authority",
     "read_key_diagnostics",
     "require_exact_branch",
     "require_no_authority",
     "require_same_branch",
     "require_sha256",
-    "require_single_digest",
 ]
