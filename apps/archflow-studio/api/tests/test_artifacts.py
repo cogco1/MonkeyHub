@@ -235,6 +235,120 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(payload["skippedRuns"], [broken])
         self.assertEqual(len(payload["artifacts"]), 5)
 
+    def test_a_copy_in_another_runs_workspaces_does_not_count(self) -> None:
+        # Content addressing is scoped to the run that claims to have produced
+        # the file. A matching copy under another run is another run's business.
+        other = self.repository.create_run("scoped-run")
+        retain_rhino_receipt(
+            self.repository,
+            self.run,
+            stage_id="scoped-stage",
+            file_name="scoped.3dm",
+            payload_bytes=b"scoped-3dm",
+        )
+        here = self.workspaces / "cad-scoped-stage" / "scoped.3dm"
+        there = (
+            self.repository.layout.run(other.run_id).workspaces
+            / "cad-scoped-stage"
+        )
+        there.mkdir(parents=True, exist_ok=True)
+        (there / "scoped.3dm").write_bytes(here.read_bytes())
+        here.unlink()
+
+        self.payload = self.client.get("/api/artifacts").json()
+        item = self.artifact("scoped-stage")
+
+        self.assertIs(item["available"], False)
+        self.assertEqual(item["unavailableReason"], "file missing")
+        self.assertIsNone(item["relativePath"])
+
+    def test_a_failed_export_whose_file_is_intact_says_both(self) -> None:
+        # Availability and success are separate facts; the villa holds this
+        # exact combination, and neither may be inferred from the other.
+        retain_rhino_receipt(
+            self.repository,
+            self.run,
+            stage_id="failed-but-there-stage",
+            file_name="failed-but-there.3dm",
+            payload_bytes=b"failed-but-there-3dm",
+            status="failed",
+            inspection=True,
+        )
+
+        self.payload = self.client.get("/api/artifacts").json()
+        item = self.artifact("failed-but-there-stage")
+
+        self.assertIs(item["available"], True)
+        self.assertEqual(item["status"], "failed")
+        self.assertIs(item["readbackVerified"], False)
+        self.assertEqual(item["sha256"], sha256_of(b"failed-but-there-3dm"))
+
+    def test_a_copy_that_cannot_be_read_is_not_called_corrupt(self) -> None:
+        # A directory wearing the file's name: present, named right, and
+        # impossible to read. Nothing has disagreed with the receipt.
+        retain_rhino_receipt(
+            self.repository,
+            self.run,
+            stage_id="unreadable-stage",
+            file_name="unreadable.3dm",
+            payload_bytes=b"unreadable-3dm",
+        )
+        blocked = self.workspaces / "cad-unreadable-stage" / "unreadable.3dm"
+        blocked.unlink()
+        blocked.mkdir()
+
+        self.payload = self.client.get("/api/artifacts").json()
+        item = self.artifact("unreadable-stage")
+
+        self.assertIs(item["available"], False)
+        self.assertEqual(item["unavailableReason"], "file unreadable")
+        self.assertIsNone(item["relativePath"])
+        # The receipt's claims survive: only the reading failed.
+        self.assertEqual(item["sha256"], sha256_of(b"unreadable-3dm"))
+
+    def test_an_unreadable_copy_refuses_without_claiming_corruption(self) -> None:
+        retain_rhino_receipt(
+            self.repository,
+            self.run,
+            stage_id="unreadable-stage",
+            file_name="unreadable.3dm",
+            payload_bytes=b"unreadable-3dm",
+        )
+        blocked = self.workspaces / "cad-unreadable-stage" / "unreadable.3dm"
+        blocked.unlink()
+        blocked.mkdir()
+
+        response = self.client.get(
+            f"/api/artifacts/{sha256_of(b'unreadable-3dm')}/bytes"
+        )
+
+        self.assertEqual(response.status_code, 409)
+        body = response.json()
+        self.assertEqual(body["code"], "ARTIFACT_UNREADABLE")
+        self.assertEqual(sorted(body), ["code", "detail"])
+        self.assertIn("could not be read", body["detail"])
+        # The OSError that stopped the read is named, whichever it is here.
+        self.assertTrue(
+            any(
+                name in body["detail"]
+                for name in ("PermissionError", "IsADirectoryError", "OSError")
+            ),
+            body["detail"],
+        )
+        # Never the mismatch wording: nothing read, nothing disproved.
+        self.assertNotIn("is not the exported model", body["detail"])
+
+    def test_a_not_found_names_the_runs_it_could_not_search(self) -> None:
+        broken = add_unreadable_run(self.repository)
+
+        response = self.client.get(f"/api/artifacts/{'a' * 64}/bytes")
+
+        self.assertEqual(response.status_code, 404)
+        detail = response.json()["detail"]
+        self.assertIn("could not be read", detail)
+        self.assertIn("may hold the claiming receipt", detail)
+        self.assertIn(broken, detail)
+
     def test_the_listing_never_walks_the_project_for_3dm_files(self) -> None:
         source = Path(artifacts.__file__).read_text(encoding="utf-8")
 
@@ -256,9 +370,36 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(response.headers["etag"], f'"{digest}"')
         self.assertEqual(
             response.headers["content-disposition"],
-            'attachment; filename="model.3dm"',
+            "attachment; filename=\"model.3dm\"; filename*=UTF-8''model.3dm",
         )
         self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_a_name_no_header_can_spell_is_served_the_rfc_6266_way(self) -> None:
+        # Header values go out as latin-1. This name cannot, so the response
+        # carries an ASCII stand-in and the real name percent-encoded beside it.
+        name = "别墅-façade.3dm"
+        payload = b"unicode-named-3dm"
+        retain_rhino_receipt(
+            self.repository,
+            self.run,
+            stage_id="unicode-stage",
+            file_name=name,
+            payload_bytes=payload,
+        )
+
+        response = self.client.get(f"/api/artifacts/{sha256_of(payload)}/bytes")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, payload)
+        disposition = response.headers["content-disposition"]
+        self.assertIn(
+            "filename*=UTF-8''%E5%88%AB%E5%A2%85-fa%C3%A7ade.3dm", disposition
+        )
+        self.assertIn('filename="__-fa_ade.3dm"', disposition)
+        self.assertTrue(disposition.isascii(), disposition)
+        # The real name is still readable where it is not a header value.
+        self.payload = self.client.get("/api/artifacts").json()
+        self.assertEqual(self.artifact("unicode-stage")["fileName"], name)
 
     def test_two_receipts_sharing_a_file_name_serve_different_bytes(self) -> None:
         response = self.client.get(

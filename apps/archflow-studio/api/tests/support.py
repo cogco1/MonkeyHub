@@ -278,6 +278,7 @@ def retain_rhino_receipt(
     workspace_subdir: str | None = None,
     status: str = "succeeded",
     inspection: bool = True,
+    readback_verified: bool | None = None,
 ) -> ProjectRecordRef:
     """Write an exported file and retain the receipt that certifies it.
 
@@ -287,6 +288,10 @@ def retain_rhino_receipt(
     file somewhere other than the ``cad-<stage_id>`` convention — older runs did
     — and ``inspection=False`` writes the receipt a failed export leaves, which
     claims no digest at all.
+
+    ``readback_verified`` follows ``status`` unless a test states it, so a
+    receipt that failed and still inspected its file is written on purpose
+    rather than by the default's accident.
     """
 
     directory = repository.layout.run(run.run_id).workspaces / Path(
@@ -301,7 +306,11 @@ def retain_rhino_receipt(
     payload: dict[str, object] = {
         "schema": RHINO_RECEIPT_SCHEMA,
         "status": status,
-        "readback_verified": status == "succeeded",
+        "readback_verified": (
+            (status == "succeeded")
+            if readback_verified is None
+            else readback_verified
+        ),
         "artifact_relative_path": file_name,
         "identity": {
             "schema": "RhinoCadExportIdentity@2",

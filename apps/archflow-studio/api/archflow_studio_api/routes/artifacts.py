@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from fastapi import APIRouter
 from fastapi.responses import Response
 from starlette.requests import Request
@@ -37,8 +39,8 @@ def read_artifact_bytes(request: Request, sha256: str) -> Response:
         headers={
             # The digest is the identity, so it is the entity tag.
             "ETag": f'"{record.sha256}"',
-            "Content-Disposition": (
-                f'attachment; filename="{_header_safe(record.file_name)}"'
+            "Content-Disposition": _content_disposition(
+                record.file_name, sha256
             ),
             # Never cached: the next request must verify the file again.
             "Cache-Control": "no-store",
@@ -46,16 +48,27 @@ def read_artifact_bytes(request: Request, sha256: str) -> Response:
     )
 
 
-def _header_safe(file_name: str) -> str:
-    """The file name as a header value can carry it.
+def _content_disposition(file_name: str, sha256: str) -> str:
+    """The save-as name, in the two forms RFC 6266 asks for.
 
-    File names come off a receipt, so a quote or a newline in one is a project
-    on disk deciding this response's headers. The name the client should show
-    travels as ``fileName`` in the listing; here it is only a save-as hint.
+    Header values go out as latin-1, so a model called ``别墅.3dm`` — or any
+    name with an accent in it — cannot travel as itself. RFC 6266 answers this
+    exactly: an ASCII ``filename`` every client can read, and a
+    percent-encoded UTF-8 ``filename*`` that carries the real name for those
+    that can. The ASCII form also drops the quote and backslash a receipt on
+    disk would otherwise use to write this response's headers.
     """
 
-    return "".join(
+    name = file_name or f"{sha256[:8]}.3dm"
+    fallback = "".join(
         character
-        for character in file_name
-        if character.isprintable() and character not in '"\\'
+        if character.isascii()
+        and character.isprintable()
+        and character not in '"\\'
+        else "_"
+        for character in name
+    )
+    return (
+        f'attachment; filename="{fallback}"; '
+        f"filename*=UTF-8''{quote(name, safe='')}"
     )
