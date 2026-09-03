@@ -1,0 +1,93 @@
+"""The seats a project declares, read onto the kernel's ``SeatSpec``.
+
+Seats are people, not state: who owns which components, who reviews, who
+consumes whose handover. The project authors that in ``input/runner/seats.json``
+and the runner takes it as given — so this module reads that file and nothing
+else. There is deliberately no default seat and no fallback: a studio that
+invented a seat when the file was missing would run somebody's design under an
+ownership nobody declared, and the receipt would say it was fine.
+
+A missing seat pack is therefore a named failure carrying the path, which is
+the one piece of information whoever has to fix it needs.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Mapping
+
+from archflow.capabilities.declaration import DeclarationQuadrant
+from archflow.capabilities.discipline_seats import SeatSpec
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.state.design_maturity import DesignPhase
+from archflow.state.developed_design import DevelopmentDiscipline
+
+# Where a project keeps the seats the runner executes. Authored input, beside
+# the authored record: read by path, never written by the API.
+RUNNER_SEATS_PATH = "input/runner/seats.json"
+
+
+class SeatsError(ValueError):
+    """The project's seat pack is absent or cannot be read as seats.
+
+    Deliberately not a ``StudioError``: loading seats happens inside the
+    candidate job, on a worker thread, where there is no request to answer.
+    The job reports it as a failure with this message in it.
+    """
+
+
+def seat_from(payload: Mapping[str, Any]) -> SeatSpec:
+    """One authored seat as the kernel's ``SeatSpec``."""
+
+    return SeatSpec(
+        seat_id=payload["seat_id"],
+        disciplines=tuple(
+            DevelopmentDiscipline(d) for d in payload["disciplines"]
+        ),
+        owned_component_ids=tuple(sorted(payload.get("owned_component_ids", ()))),
+        phases=tuple(DesignPhase(p) for p in payload["phases"]),
+        quadrants=tuple(
+            DeclarationQuadrant(q) for q in payload.get("quadrants", ())
+        ),
+        consumes=tuple(sorted(payload.get("consumes", ()))),
+        reviewer=bool(payload.get("reviewer", False)),
+    )
+
+
+def load_seat_pack(
+    repository: FilesystemProjectRepository,
+) -> Mapping[str, Any]:
+    """The project's authored seat pack, or a refusal naming the file.
+
+    The pack carries more than the seats — the commitment the run is made
+    under and the provider identity that answers for its geometry — so it is
+    returned whole and the caller reads what it needs from it.
+    """
+
+    layout = repository.layout
+    path = layout.resolve_relative(RUNNER_SEATS_PATH)
+    if not path.is_file():
+        raise SeatsError(
+            f"SEATS_NOT_FOUND: {layout.project_id} declares no seats at "
+            f"{RUNNER_SEATS_PATH} under {layout.root}. A candidate runs the "
+            "seats the project authored; it never invents one."
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise SeatsError(f"{RUNNER_SEATS_PATH}: {exc}") from exc
+    if not isinstance(payload, Mapping) or not payload.get("seats"):
+        raise SeatsError(
+            f"{RUNNER_SEATS_PATH}: no seats declared. A run with no seat "
+            "produces no geometry and would report an empty success."
+        )
+    return payload
+
+
+def seats_of(payload: Mapping[str, Any]) -> tuple[SeatSpec, ...]:
+    """Every declared seat, in the order the project authored them."""
+
+    try:
+        return tuple(seat_from(seat) for seat in payload["seats"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise SeatsError(f"{RUNNER_SEATS_PATH}: {exc}") from exc

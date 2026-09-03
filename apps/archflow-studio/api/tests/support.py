@@ -28,7 +28,34 @@ PROJECT_ID = "demo-project"
 REFERENCE_RUN_ID = "run-001"
 HARNESS_RUN_ID = "run-002"
 RUNNER_RECORD_PATH = "input/runner/state-record.json"
+RUNNER_SEATS_PATH = "input/runner/seats.json"
 EVIDENCE = "evidence:demo"
+
+# The people the runner seats, authored where the runner reads them. One
+# non-reviewer seat owning the one component the record's elements belong to:
+# enough for ``run_project`` to compile a program, check the support relation
+# and leave a real receipt, and small enough to read in a failure message.
+SEATS_PAYLOAD: dict[str, object] = {
+    "schema": "RunnerSeats@1",
+    "commitment_ref": "commitment:demo",
+    "branch_id": "runner-v1",
+    "provider_identity": {
+        "provider_id": "studio-fixture",
+        "model_id": "deterministic",
+        "provider_version": "2026-09-03",
+        "provider_fingerprint": "0" * 64,
+    },
+    "seats": [
+        {
+            "seat_id": "seat-portico",
+            "disciplines": ["structure_support"],
+            "phases": ["design_development"],
+            "owned_component_ids": ["portico"],
+            "consumes": [],
+            "reviewer": False,
+        }
+    ],
+}
 
 # What a Rhino seat's receipt carries about the program it executed. These are
 # opaque identifiers on the wire: the tests assert they travel, not what they
@@ -237,6 +264,20 @@ def write_runner_record(
     return path
 
 
+def write_runner_seats(
+    repository: FilesystemProjectRepository,
+    payload: object = SEATS_PAYLOAD,
+) -> Path:
+    """Author the seat pack where the runner reads it: input, not a record."""
+
+    path = repository.layout.resolve_relative(RUNNER_SEATS_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return path
+
+
 def retain_runner_receipt(
     repository: FilesystemProjectRepository,
     run: RunRef,
@@ -386,6 +427,7 @@ def make_project(
         payload=RECORD_PAYLOAD,
     )
     write_runner_record(repository)
+    write_runner_seats(repository)
     retain_runner_receipt(
         repository,
         run,
@@ -408,6 +450,7 @@ def make_empty_project(root: Path) -> FilesystemProjectRepository:
         initial_state={"project_id": PROJECT_ID, "version": 0},
     )
     write_runner_record(repository)
+    write_runner_seats(repository)
     return repository
 
 
