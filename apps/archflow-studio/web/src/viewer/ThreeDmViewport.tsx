@@ -233,6 +233,9 @@ export const ThreeDmViewport = forwardRef<
       try {
         buffer = await file.arrayBuffer();
       } catch (error) {
+        // Bytes that could not be read are a file that never arrived, and the
+        // fact line still names the one before it. Same reason as a refusal.
+        callbacksRef.current.onInspection(null);
         reportStatus("error", errorMessage(error));
         return;
       }
