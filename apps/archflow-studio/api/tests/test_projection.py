@@ -29,6 +29,7 @@ from .support import (
     make_empty_project,
     make_project,
     missing_workflow_ref,
+    unlistable_run,
     write_runner_record,
 )
 
@@ -356,7 +357,39 @@ class UnreadableRunTests(unittest.TestCase):
             payload["referenceRun"]["runId"], REFERENCE_RUN_ID
         )
         self.assertIn(
-            "1 run directories could not be read and were skipped by the "
+            "1 run directory could not be read and was skipped by the "
+            f"reference-run rule: {self.broken}",
+            payload["honesty"],
+        )
+
+    def test_two_skipped_runs_are_counted_in_the_plural(self) -> None:
+        """The line is shown verbatim; it has to be a sentence."""
+
+        second = add_unreadable_run(self.repository, run_id="broken-two")
+
+        payload = self.client.get("/api/state").json()
+
+        self.assertIn(
+            "2 run directories could not be read and were skipped by the "
+            f"reference-run rule: {self.broken}, {second}",
+            payload["honesty"],
+        )
+
+    def test_a_named_run_names_the_skipped_runs_too(self) -> None:
+        """Answering for the run the caller asked for hides nothing else.
+
+        The survey's tolerance and its confession are one thing: a projection
+        that skipped a run directory says so whether the run it answers for
+        was chosen by the rule or named in the request.
+        """
+
+        payload = self.client.get(
+            "/api/state", params={"run": REFERENCE_RUN_ID}
+        ).json()
+
+        self.assertEqual(payload["referenceRunSource"], "query")
+        self.assertIn(
+            "1 run directory could not be read and was skipped by the "
             f"reference-run rule: {self.broken}",
             payload["honesty"],
         )
@@ -368,6 +401,24 @@ class UnreadableRunTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json()["code"], "RUN_NOT_FOUND")
+
+    def test_a_named_run_whose_records_will_not_list_is_a_404(self) -> None:
+        """The named-run path gets the survey's tolerance, not a 500.
+
+        This run's manifest is intact, so nothing refuses it before its
+        records are read; the repository then refuses those. That is a fact
+        about a run, and it arrives as the refusal that names it.
+        """
+
+        add_later_run(self.repository, run_id="run-005")
+        unlistable_run(self.repository, run_id="run-005")
+
+        response = self.client.get("/api/state", params={"run": "run-005"})
+
+        self.assertEqual(response.status_code, 404, response.text)
+        body = response.json()
+        self.assertEqual(body["code"], "RUN_NOT_FOUND")
+        self.assertIn("run-005", body["detail"])
 
 
 class MalformedRecordTests(unittest.TestCase):

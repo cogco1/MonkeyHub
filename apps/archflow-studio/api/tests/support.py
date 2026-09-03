@@ -579,3 +579,21 @@ def add_unreadable_run(
 
     (repository.layout.runs / run_id).mkdir(parents=True, exist_ok=True)
     return run_id
+
+
+def unlistable_run(
+    repository: FilesystemProjectRepository,
+    *,
+    run_id: str,
+) -> str:
+    """A run whose manifest is fine and whose records the repository refuses.
+
+    Different from a directory with no manifest: this run *loads*, so nothing
+    refuses it before its records are read. It is what a half-written or
+    tampered-with run looks like from the outside, and it is the case the
+    reference-run rule is tolerant of and the named-run path was not.
+    """
+
+    for path in repository.layout.run(run_id).records.glob("*.json"):
+        path.write_text("{ not a record", encoding="utf-8")
+    return run_id

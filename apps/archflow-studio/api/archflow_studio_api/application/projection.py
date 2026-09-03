@@ -326,10 +326,15 @@ def _honesty(
             "id; its digests are not comparable to any receipt"
         )
     if reference.skipped_runs:
+        # Shown verbatim, so it has to read as a sentence: one skipped run
+        # directory is not "1 run directories".
+        count = len(reference.skipped_runs)
+        noun, verb = (
+            ("directory", "was") if count == 1 else ("directories", "were")
+        )
         lines.append(
-            f"{len(reference.skipped_runs)} run directories could not be read "
-            "and were skipped by the reference-run rule: "
-            + ", ".join(reference.skipped_runs)
+            f"{count} run {noun} could not be read and {verb} skipped by the "
+            "reference-run rule: " + ", ".join(reference.skipped_runs)
         )
     if reference.workflow_unresolved:
         lines.append(

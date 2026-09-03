@@ -185,10 +185,25 @@ class ProjectBinding:
 
         newest: tuple[float, ProjectRecordRef, Mapping[str, Any]] | None = None
         for ref, payload in self._receipts_of(run_id):
-            mtime = self.repository.layout.resolve_record(ref).stat().st_mtime
+            try:
+                mtime = self._mtime(ref)
+            except OSError:
+                # Listed and then gone. A record nobody can stat cannot be
+                # this run's newest receipt, and a file disappearing between
+                # two reads is not a bug in the reader.
+                continue
             if newest is None or mtime > newest[0]:
                 newest = (mtime, ref, payload)
         return None if newest is None else (newest[1], newest[2])
+
+    def _mtime(self, ref: ProjectRecordRef) -> float:
+        """When the record was last written; the only ordering P036 offers.
+
+        The receipt carries no authored timestamp, so "newest" can only mean
+        newest on disk — a kernel card, not a choice made here.
+        """
+
+        return self.repository.layout.resolve_record(ref).stat().st_mtime
 
     def _survey(
         self,
@@ -207,19 +222,22 @@ class ProjectBinding:
         newest: tuple[float, str, ProjectRecordRef, Mapping[str, Any]] | None = None
         skipped: list[str] = []
         for run_id in self.run_ids():
+            # The whole of one run's reading is inside the tolerance, not just
+            # its listing: a record that vanishes between being listed and
+            # being stat'ed is the same kind of accident as a run with no
+            # manifest, and both are skipped and named rather than fatal.
             try:
-                receipts = self._receipts_of(run_id)
+                for ref, payload in self._receipts_of(run_id):
+                    if not _is_complete(payload):
+                        continue
+                    if self._is_harness(payload):
+                        continue
+                    mtime = self._mtime(ref)
+                    if newest is None or mtime > newest[0]:
+                        newest = (mtime, run_id, ref, payload)
             except (StudioError, ProjectRepositoryError, ValueError, OSError):
                 skipped.append(run_id)
                 continue
-            for ref, payload in receipts:
-                if not _is_complete(payload):
-                    continue
-                if self._is_harness(payload):
-                    continue
-                mtime = self.repository.layout.resolve_record(ref).stat().st_mtime
-                if newest is None or mtime > newest[0]:
-                    newest = (mtime, run_id, ref, payload)
         chosen = None if newest is None else (newest[1], newest[2], newest[3])
         return chosen, tuple(skipped)
 
@@ -261,13 +279,34 @@ class ProjectBinding:
         )
 
     def _chosen(self, run: RunRef, source: str, run_id: str) -> ReferenceRun:
-        """A run the caller named, with whatever receipt it happens to hold."""
+        """A run the caller named, with whatever receipt it happens to hold.
 
-        receipt = self._newest_receipt_of(run_id)
+        A run that loads and whose records the repository then refuses is a
+        fact about that run, not a bug: it arrives as the 404 that names it
+        rather than as an uncaught repository error. A run that simply holds
+        no receipt yet is not refused — it exists, which is all a named run
+        was ever asked to be — and answers with no receipt.
+
+        The survey still runs, for its confession alone: a projection that
+        skipped a run directory says so whether the run it answers for was
+        named in the request or chosen by the rule.
+        """
+
+        try:
+            receipt = self._newest_receipt_of(run_id)
+        except (ProjectRepositoryError, ValueError, OSError) as exc:
+            raise StudioError(
+                404,
+                "RUN_NOT_FOUND",
+                f"{self.project_id}: run {run_id!r} exists in the bound "
+                f"project and its records could not be read: "
+                f"{error_sentence(exc)}",
+            ) from exc
         return ReferenceRun(
             run,
             source,
             receipt,
+            skipped_runs=self._survey()[1],
             workflow_unresolved=(
                 False if receipt is None else self._workflow_unresolved(receipt)
             ),

@@ -116,15 +116,26 @@ def list_artifacts(binding: ProjectBinding) -> ArtifactListing:
     skipped: list[str] = []
     for run_id in binding.run_ids():
         try:
-            receipts = _receipts_of(binding, run_id)
+            refs = _receipt_refs(binding, run_id)
         except (StudioError, ProjectRepositoryError, ValueError, OSError):
             skipped.append(run_id)
             continue
-        if not receipts:
+        if not refs:
             continue
         # One walk of the run's workspaces answers every receipt in it.
         index = _workspace_index(binding, run_id)
-        for ref, payload in receipts:
+        for ref in refs:
+            try:
+                payload = binding.repository.load_json(ref)
+            except (ProjectRepositoryError, ValueError, OSError):
+                # One receipt that will not load costs its own row and no
+                # more: the other receipts in this run still certify exactly
+                # what they certified. The run is named as skipped, because a
+                # listing that dropped a row silently would be a shorter
+                # answer indistinguishable from a complete one.
+                if run_id not in skipped:
+                    skipped.append(run_id)
+                continue
             records.append(_artifact(binding, run_id, ref, payload, index))
     records.sort(key=lambda item: (item.run_id, item.stage_id or "", item.file_name))
     return ArtifactListing(
@@ -239,13 +250,17 @@ def _unsearched(skipped_runs: tuple[str, ...]) -> str:
     )
 
 
-def _receipts_of(
+def _receipt_refs(
     binding: ProjectBinding, run_id: str
-) -> tuple[tuple[ProjectRecordRef, Mapping[str, Any]], ...]:
-    """The run's execution receipts, digest-verified by the repository."""
+) -> tuple[ProjectRecordRef, ...]:
+    """The run's execution receipt records, digest-verified by the repository.
+
+    Listing only. What each receipt *says* is read one at a time by the
+    caller, so a record that will not load costs one row rather than a run.
+    """
 
     return tuple(
-        (ref, binding.repository.load_json(ref))
+        ref
         for ref in binding.record_refs(run_id)
         if record_kind(ref) == RHINO_EXECUTION_KIND
     )
