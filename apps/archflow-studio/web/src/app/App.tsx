@@ -1,80 +1,91 @@
 /**
- * The studio shell: one slice of the round-1 chain, end to end, over real
- * routes.
+ * The studio shell: one conversation beside one model, and everything the
+ * server said one click behind.
  *
- * What this file does is hold the few pieces of state the panels share — the
- * selection, the current proposal, the candidate runs this tab launched — and
- * pass every question to the API. What it deliberately does not do:
+ * What this file does is hold the few pieces of state the surfaces share — the
+ * transcript, the selection, the model in the viewer, the candidates this tab
+ * launched — and pass every question to the API. What it deliberately does
+ * not do:
  *
  *  - it imports nothing from archflow and computes no geometry;
  *  - it derives no impact, no relation counts and no advance verdict;
  *  - it writes nothing to the project or to HEAD;
- *  - it keeps no version history: the panels are a view of a running server,
- *    and reloading the tab loses the view, not the work.
+ *  - it keeps no version history: reloading the tab loses the view, not the
+ *    work.
  *
- * Every failed call ends in a panel showing the server's code and detail. The
+ * Every failed call ends in a card showing the server's code and detail. The
  * one error handled rather than merely displayed is `STALE_BASE`: the project
- * moved, so the projection is read again and the fact is announced.
+ * moved, so the projection is read again and the fact is said in the
+ * transcript.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { asStudioApiError, studio, type StudioApiError } from "../api/client";
 import type {
   ArtifactListDto,
-  PickResolutionDto,
+  CandidateDto,
   ProjectArtifactDto,
-  ProposalDto,
+  StateProjectionDto,
+  ValidationDto,
 } from "../api/generated";
+import {
+  canonicalSourceLabel,
+  candidateSourceLabel,
+  receiptDocumentStrings,
+} from "../features/artifacts/artifactLabels";
+import { Conversation } from "../features/conversation/Conversation";
+import type { Selection } from "../features/conversation/Composer";
+import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
+import { honestyCount } from "../features/evidence/HonestyTab";
+import { Stage, type PickedFacts } from "../features/stage/Stage";
+import type { VersionCard } from "../features/stage/VersionsStrip";
+import type { SceneInspection } from "../viewer/sceneInspection";
 import {
   LOCAL_SOURCE_LABEL,
   type ViewportController,
   type ViewportPick,
   type ViewportStatus,
 } from "../viewer/ThreeDmViewport";
-import { ViewerPanel } from "../viewer/ViewerPanel";
-import type { SceneInspection } from "../viewer/sceneInspection";
-import {
-  ArtifactList,
-  canonicalSourceLabel,
-  receiptDocumentStrings,
-} from "../features/artifacts/ArtifactList";
-import { CandidatePanel } from "../features/candidate/CandidatePanel";
-import {
-  CandidateRuns,
-  type LaunchedCandidate,
-} from "../features/candidate/CandidateRuns";
-import { ReviewPanel } from "../features/candidate/ReviewPanel";
-import { EventStream } from "../features/events/EventStream";
-import { ImpactPanel } from "../features/impact/ImpactPanel";
-import { IntentPanel } from "../features/intent/IntentPanel";
-import { PickPanel } from "../features/pick/PickPanel";
-import { ProposalPanel } from "../features/proposal/ProposalPanel";
-import { TopBar } from "../features/project/TopBar";
-import { ComponentTree } from "../features/state/ComponentTree";
-import { HonestyLines } from "../features/state/HonestyLines";
-import { SelectionPanel } from "../features/state/SelectionPanel";
-import { ValidationPanel } from "../features/validation/ValidationPanel";
-import { ErrorPanel } from "./ErrorPanel";
-import { Panel, Shell } from "./Shell";
-import { failed, idle, loading, ready, valueOf, type Loadable } from "./loadable";
+import { AppShell } from "./AppShell";
+import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
+import { sha8 } from "./format";
+import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { useSession } from "./useSession";
+import { useTranscript } from "./transcript";
 
-const NOTICE_LIMIT = 50;
+const BLOCKED = "BLOCKED_NEEDS_HUMAN";
+
+function readPinned(): boolean {
+  try {
+    return window.localStorage.getItem(EVIDENCE_PINNED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writePinned(pinned: boolean): void {
+  try {
+    window.localStorage.setItem(EVIDENCE_PINNED_KEY, String(pinned));
+  } catch {
+    // a browser that refuses site data keeps the default; nothing to say
+  }
+}
 
 export default function App() {
-  const [notices, setNotices] = useState<readonly string[]>([]);
-  const pushNotice = useCallback((line: string) => {
-    setNotices((current) =>
-      [...current, `${new Date().toISOString()} · ${line}`].slice(-NOTICE_LIMIT),
-    );
-  }, []);
+  const transcript = useTranscript();
+  const { append, noteJobStatus: noteTranscriptStatus } = transcript;
+  const pushNotice = useCallback(
+    (line: string) => {
+      append({ kind: "system", text: line });
+    },
+    [append],
+  );
+  const { session, stateDigest, recoverFromStaleBase } = useSession(pushNotice);
 
-  const { session, stateDigest, reload, recoverFromStaleBase } =
-    useSession(pushNotice);
-
-  const [componentId, setComponentId] = useState<string | null>(null);
-  const [elementId, setElementId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [picked, setPicked] = useState<PickedFacts | null>(null);
+  const [draft, setDraft] = useState("");
 
   const [artifacts, setArtifacts] = useState<Loadable<ArtifactListDto>>(idle);
   const [artifactLoadingSha, setArtifactLoadingSha] = useState<string | null>(
@@ -92,34 +103,56 @@ export default function App() {
   const [sourceLabel, setSourceLabel] = useState<string | null>(null);
   // The listing row of the artifact currently in the viewer, kept beside its
   // source label. It is what the loaded file can be asked about: the bytes
-  // themselves carry document strings the loader does not surface, and the
-  // receipt that certified those bytes does.
+  // carry document strings the loader does not surface, and the receipt that
+  // certified those bytes does.
   const [loadedArtifact, setLoadedArtifact] =
     useState<ProjectArtifactDto | null>(null);
-  // The artifact whose bytes were handed to the viewer and which the viewer has
-  // not yet accepted. It is held here rather than committed straight to
-  // `loadedArtifact` because the viewer can refuse a file — a name that is not
-  // `.3dm`, an empty one, one over its parse ceiling — and a refusal leaves the
-  // previous model on screen. Committing on hand-off would leave the shell
-  // answering picks on that still-visible model with the receipt of a file that
-  // never loaded.
+  // The artifact whose bytes were handed to the viewer and which the viewer
+  // has not yet accepted. Committed only when the viewer reports the label,
+  // because a refused file leaves the previous model on screen.
   const pendingArtifact = useRef<ProjectArtifactDto | null>(null);
 
-  const [pick, setPick] = useState<Loadable<PickResolutionDto>>(idle);
-  const [proposal, setProposal] = useState<Loadable<ProposalDto>>(idle);
   const [proposalBusy, setProposalBusy] = useState(false);
-  const [proposalError, setProposalError] = useState<StudioApiError | null>(
-    null,
-  );
-
-  const [launched, setLaunched] = useState<readonly LaunchedCandidate[]>([]);
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(
-    null,
-  );
   const [candidateBusy, setCandidateBusy] = useState(false);
-  const [candidateError, setCandidateError] = useState<StudioApiError | null>(
-    null,
-  );
+  const [candidates, setCandidates] = useState<Record<string, CandidateDto>>({});
+  const [validations, setValidations] = useState<
+    Record<string, ValidationDto>
+  >({});
+  // Which candidates already have a verdict entry; a ref so the job reporter
+  // never reads a stale transcript.
+  const verdictsRef = useRef<Set<string>>(new Set());
+
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [evidencePinned, setEvidencePinned] = useState(readPinned);
+  const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>("honesty");
+  const [eventCount, setEventCount] = useState(0);
+
+  const projection: StateProjectionDto | null =
+    session.status === "ready" ? session.value.projection : null;
+  const project = session.status === "ready" ? session.value.project : null;
+
+  // The binding, said once per projection the tab reads.
+  const announcedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!projection || !project) return;
+    const key = `${projection.recordDigest}:${projection.stateDigest ?? "-"}`;
+    if (announcedRef.current === key) return;
+    announcedRef.current = key;
+    append({
+      kind: "system",
+      text:
+        `Bound to ${project.projectId} at HEAD v${project.head.version} · ` +
+        `reference run ${projection.referenceRun.runId} (${projection.referenceRunSource})` +
+        (projection.matchesReferenceReceipt === true
+          ? " · receipt reproduced"
+          : projection.matchesReferenceReceipt === false
+            ? " · receipt not reproduced"
+            : "") +
+        (projection.stateDigest === null
+          ? " · the kernel refused the bound view; nothing can be proposed"
+          : ""),
+    });
+  }, [append, project, projection]);
 
   const loadArtifacts = useCallback(async () => {
     setArtifacts(loading);
@@ -134,22 +167,17 @@ export default function App() {
     if (session.status === "ready") void loadArtifacts();
   }, [session.status, loadArtifacts]);
 
-  const selectComponent = useCallback((id: string) => {
-    setComponentId(id);
-    setElementId(null);
-  }, []);
-
   const openLocalFile = useCallback((file: File) => {
     void viewportRef.current?.openFile(file);
   }, []);
 
   /**
-   * Put one certified artifact in the viewer, under the chip that says where it
-   * came from. Canonical exports and a candidate's own export take the same
-   * route — same digest-addressed bytes, same viewer, different label.
+   * Put one certified artifact in the viewer, under the chip that says where
+   * it came from. Canonical exports and a candidate's own export take the
+   * same route — same digest-addressed bytes, same viewer, different label.
    */
   const loadArtifactIntoViewer = useCallback(
-    async (artifact: ProjectArtifactDto, sourceLabel: string) => {
+    async (artifact: ProjectArtifactDto, label: string) => {
       setArtifactError(null);
       if (!artifact.sha256) {
         setArtifactError(
@@ -169,14 +197,10 @@ export default function App() {
           artifact.fileName,
         );
         pendingArtifact.current = artifact;
-        await viewportRef.current?.openFile(file, sourceLabel);
+        await viewportRef.current?.openFile(file, label);
       } catch (cause) {
         setArtifactError(asStudioApiError(cause));
       } finally {
-        // Whatever happened, this hand-off is over. If the viewer accepted the
-        // file it has already taken the artifact under its label; if it refused
-        // it never will, and the row must not be left waiting to be claimed by
-        // some later load.
         pendingArtifact.current = null;
         setArtifactLoadingSha(null);
       }
@@ -184,16 +208,7 @@ export default function App() {
     [],
   );
 
-  /**
-   * The viewer says which file it holds, and that is when the shell writes down
-   * what the file answers for.
-   *
-   * A non-local label is only ever reported once the viewer has actually parsed
-   * the bytes it was given, so it — and nothing earlier — is the moment the
-   * pending artifact becomes the loaded one. A local file, a cleared viewport
-   * and a failed parse all report no non-local source, and each of them leaves
-   * the shell with no receipt to answer picks from.
-   */
+  /** The viewer says which file it holds; that is when the shell writes it down. */
   const noteSource = useCallback((label: string | null) => {
     setSourceLabel(label);
     setLoadedArtifact(
@@ -202,116 +217,264 @@ export default function App() {
         : pendingArtifact.current,
     );
     pendingArtifact.current = null;
+    setPicked(null);
   }, []);
 
   const resolvePick = useCallback(
-    async (picked: ViewportPick) => {
+    async (pick: ViewportPick) => {
       if (stateDigest === null) {
-        pushNotice(
-          "a pick is resolved against a state; the projection has not loaded yet",
-        );
+        append({
+          kind: "system",
+          text: "a pick is resolved against a state; the projection has not loaded yet",
+        });
         return;
       }
-      setPick(loading);
       try {
         const resolution = await studio.resolvePick({
           stateDigest,
-          userStrings: picked.userStrings,
-          // What the file says about itself: the loader's own document strings
-          // when it exposes them, and otherwise the receipt that certified
-          // these exact bytes. A locally dropped file has neither and sends
-          // null, which the server reads as "not shown to be current".
+          userStrings: pick.userStrings,
           documentUserStrings:
-            picked.documentUserStrings ?? receiptDocumentStrings(loadedArtifact),
-          objectName: picked.objectName,
+            pick.documentUserStrings ?? receiptDocumentStrings(loadedArtifact),
+          objectName: pick.objectName,
         });
-        setPick(ready(resolution));
+        const subject =
+          resolution.elementId ?? resolution.componentId ?? "nothing resolvable";
+        append({
+          kind: "system",
+          text:
+            `You picked ${subject} in the model · ${resolution.status} · ` +
+            `source ${resolution.sourceState}` +
+            (resolution.detail ? ` · ${resolution.detail}` : ""),
+        });
+        const element = resolution.elementId
+          ? projection?.elements.find(
+              (row) => row.elementId === resolution.elementId,
+            )
+          : undefined;
+        setPicked({
+          componentId: resolution.componentId,
+          elementId: resolution.elementId,
+          status: resolution.status,
+          sourceState: resolution.sourceState,
+          fields: element
+            ? Object.entries(element.numericFields).map(
+                ([key, value]) => [key, value] as const,
+              )
+            : [],
+        });
         if (resolution.status === "resolved" && resolution.componentId) {
-          setComponentId(resolution.componentId);
-          setElementId(resolution.elementId);
+          setSelection({
+            componentId: resolution.componentId,
+            elementId: resolution.elementId,
+          });
         }
       } catch (cause) {
         const error = asStudioApiError(cause);
         recoverFromStaleBase(error);
-        setPick(failed(error));
+        append({ kind: "refusal", error, what: "POST /api/pick/resolve" });
       }
     },
-    [loadedArtifact, pushNotice, recoverFromStaleBase, stateDigest],
+    [append, loadedArtifact, projection, recoverFromStaleBase, stateDigest],
   );
 
   const propose = useCallback(
     async (utterance: string) => {
-      if (stateDigest === null || componentId === null) return;
+      if (stateDigest === null || selection === null || project === null) return;
+      append({ kind: "you", text: utterance });
       setProposalBusy(true);
-      setProposalError(null);
       try {
-        const value = await studio.createProposal({
+        const proposal = await studio.createProposal({
           stateDigest,
-          targetComponentId: componentId,
-          elementId,
+          targetComponentId: selection.componentId,
+          elementId: selection.elementId,
           utterance,
-          projectId:
-            session.status === "ready" ? session.value.project.projectId : null,
+          projectId: project.projectId,
         });
-        setProposal(ready(value));
-        // A candidate belongs to a proposal; a new proposal starts with none.
-        setLaunched([]);
-        setSelectedCandidateId(null);
-        setCandidateError(null);
+        append({ kind: "proposal", proposal });
+        setDraft("");
       } catch (cause) {
         const error = asStudioApiError(cause);
-        recoverFromStaleBase(error);
-        setProposalError(error);
+        if (error.code === BLOCKED) {
+          append({ kind: "question", error, utterance });
+        } else {
+          recoverFromStaleBase(error);
+          append({ kind: "refusal", error, what: "POST /api/proposals" });
+        }
       } finally {
         setProposalBusy(false);
       }
     },
-    [componentId, elementId, recoverFromStaleBase, session, stateDigest],
+    [append, project, recoverFromStaleBase, selection, stateDigest],
   );
 
-  const runCandidate = useCallback(async () => {
-    const current = valueOf(proposal);
-    if (current === null) return;
-    setCandidateBusy(true);
-    setCandidateError(null);
-    try {
-      const accepted = await studio.startCandidate(current.proposalId);
-      setLaunched((current2) => [
-        {
+  const runCandidate = useCallback(
+    async (proposalId: string) => {
+      setCandidateBusy(true);
+      try {
+        const accepted = await studio.startCandidate(proposalId);
+        append({
+          kind: "candidate",
           candidateId: accepted.candidateId,
           jobId: accepted.jobId,
-          proposalId: current.proposalId,
-          startedAt: new Date().toISOString(),
+          proposalId,
           status: accepted.status,
-        },
-        ...current2,
-      ]);
-      setSelectedCandidateId(accepted.candidateId);
-    } catch (cause) {
-      const error = asStudioApiError(cause);
-      recoverFromStaleBase(error);
-      setCandidateError(error);
-    } finally {
-      setCandidateBusy(false);
-    }
-  }, [proposal, recoverFromStaleBase]);
+        });
+      } catch (cause) {
+        const error = asStudioApiError(cause);
+        recoverFromStaleBase(error);
+        append({
+          kind: "refusal",
+          error,
+          what: `POST /api/proposals/${proposalId}/candidate`,
+        });
+      } finally {
+        setCandidateBusy(false);
+      }
+    },
+    [append, recoverFromStaleBase],
+  );
 
-  const noteJobStatus = useCallback((candidate: string, status: string) => {
-    setLaunched((current) =>
-      current.map((run) =>
-        run.candidateId === candidate && run.status !== status
-          ? { ...run, status }
-          : run,
-      ),
-    );
+  const noteJobStatus = useCallback(
+    (candidateId: string, status: string) => {
+      noteTranscriptStatus(candidateId, status);
+      if (status === "succeeded" && !verdictsRef.current.has(candidateId)) {
+        verdictsRef.current.add(candidateId);
+        append({ kind: "verdict", candidateId });
+        void loadArtifacts();
+      }
+    },
+    [append, loadArtifacts, noteTranscriptStatus],
+  );
+
+  const noteCandidate = useCallback((candidate: CandidateDto) => {
+    setCandidates((current) => ({
+      ...current,
+      [candidate.candidateId]: candidate,
+    }));
   }, []);
 
-  const selected = launched.find(
-    (run) => run.candidateId === selectedCandidateId,
+  const noteValidation = useCallback((validation: ValidationDto) => {
+    setValidations((current) => ({
+      ...current,
+      [validation.candidateId]: validation,
+    }));
+  }, []);
+
+  const openEvidence = useCallback((tab: EvidenceTab) => {
+    setEvidenceTab(tab);
+    setEvidenceOpen(true);
+  }, []);
+
+  const pinEvidence = useCallback((pinned: boolean) => {
+    setEvidencePinned(pinned);
+    writePinned(pinned);
+    if (pinned) setEvidenceOpen(true);
+  }, []);
+
+  // ---- derived views ---------------------------------------------------
+
+  const candidateEntries = transcript.entries.filter(
+    (entry) => entry.kind === "candidate",
   );
-  const projection =
-    session.status === "ready" ? session.value.projection : null;
-  const currentProposal = valueOf(proposal);
+  const selectedCandidateId =
+    candidateEntries.length > 0
+      ? candidateEntries[candidateEntries.length - 1].candidateId
+      : null;
+  const selectedCandidate =
+    selectedCandidateId === null ? null : (candidates[selectedCandidateId] ?? null);
+  const selectedValidation =
+    selectedCandidateId === null
+      ? null
+      : (validations[selectedCandidateId] ?? null);
+
+  const utteranceOf = useMemo(() => {
+    const byProposal = new Map<string, string>();
+    for (const entry of transcript.entries) {
+      if (entry.kind === "proposal") {
+        byProposal.set(entry.proposal.proposalId, entry.proposal.utterance);
+      }
+    }
+    return byProposal;
+  }, [transcript.entries]);
+
+  const versions = useMemo<VersionCard[]>(() => {
+    if (artifacts.status !== "ready" || projection === null) return [];
+    const launched = new Map(
+      candidateEntries.map((entry) => [entry.candidateId, entry.proposalId]),
+    );
+    const cards = artifacts.value.artifacts.map((artifact): VersionCard => {
+      if (artifact.runId === projection.referenceRun.runId) {
+        return {
+          artifact,
+          label: "Reference",
+          title: `HEAD v${projection.referenceRun.baseVersion} · ${artifact.fileName}`,
+          meta: `${artifact.runId} · ${sha8(artifact.sha256)}`,
+          verdict: null,
+          sourceLabel: canonicalSourceLabel(artifact),
+        };
+      }
+      const proposalId = launched.get(artifact.runId);
+      if (proposalId !== undefined) {
+        const validation = validations[artifact.runId];
+        return {
+          artifact,
+          label: "Candidate",
+          title: utteranceOf.get(proposalId) ?? artifact.fileName,
+          meta: `${artifact.fileName} · ${sha8(artifact.sha256)}`,
+          verdict: validation
+            ? validation.advance
+              ? "may advance"
+              : `blocked: ${validation.blockedBy.join(", ")}`
+            : null,
+          sourceLabel: candidateSourceLabel(artifact.runId),
+        };
+      }
+      return {
+        artifact,
+        label: "Run",
+        title: artifact.runId,
+        meta: `${artifact.fileName} · ${sha8(artifact.sha256)}`,
+        verdict: null,
+        sourceLabel: canonicalSourceLabel(artifact),
+      };
+    });
+    const rank = { Reference: 0, Candidate: 1, Run: 2 } as const;
+    return cards.sort((a, b) => rank[a.label] - rank[b.label]);
+  }, [artifacts, candidateEntries, projection, utteranceOf, validations]);
+
+  const disabledReason =
+    session.status === "failed"
+      ? `the binding refused: ${session.error.code}`
+      : projection === null
+        ? "reading the projection…"
+        : projection.stateDigest === null
+          ? "the kernel refused this record's bound view; fix the record before proposing"
+          : selection === null
+            ? "pick an object in the model, or choose a component, before proposing"
+            : null;
+
+  const evidenceCounts = {
+    honesty: honestyCount(projection, selectedCandidate, selectedValidation),
+    receipts: candidateEntries.length,
+    events: eventCount,
+  };
+
+  const drawer = (
+    <EvidenceDrawer
+      open={evidenceOpen}
+      pinned={evidencePinned}
+      tab={evidenceTab}
+      counts={evidenceCounts}
+      projection={projection}
+      candidate={selectedCandidate}
+      validation={selectedValidation}
+      notices={[]}
+      onTab={setEvidenceTab}
+      onClose={() => setEvidenceOpen(false)}
+      onPin={pinEvidence}
+      onEventCount={setEventCount}
+    />
+  );
 
   return (
     <>
@@ -326,219 +489,109 @@ export default function App() {
           event.target.value = "";
         }}
       />
-      <Shell
-        top={
-          session.status === "ready" ? (
-            <TopBar
-              project={session.value.project}
-              projection={session.value.projection}
-            />
-          ) : session.status === "failed" ? (
-            <ErrorPanel error={session.error} what="GET /api/project · /api/state" />
-          ) : (
-            <p className="topbar topbar--pending">reading the binding…</p>
-          )
-        }
-        left={
+      <AppShell
+        toolbar={
           <>
-            <Panel
-              title="component tree"
-              aside={
-                <button
-                  type="button"
-                  className="button button--small"
-                  onClick={() => void reload()}
-                >
-                  re-project
-                </button>
+            <span className="wordmark">ArchFlow Studio</span>
+            <span className="toolbar__sep" />
+            {project ? (
+              <>
+                <span className="mono toolbar__item">{project.projectId}</span>
+                <span className="mono toolbar__item">
+                  HEAD v{project.head.version} · {sha8(project.head.stateSha256)}
+                </span>
+                <span className="pill pill--plain">proposal-only</span>
+                <span className="toolbar__spacer" />
+                <span className="mono toolbar__item">{project.projectDir}</span>
+              </>
+            ) : session.status === "failed" ? (
+              <>
+                <span className="toolbar__item">
+                  not bound · {session.error.code}
+                </span>
+                <span className="toolbar__spacer" />
+              </>
+            ) : (
+              <>
+                <span className="toolbar__item">reading the binding…</span>
+                <span className="toolbar__spacer" />
+              </>
+            )}
+            <button
+              type="button"
+              className="toolbar__btn"
+              aria-pressed={evidenceOpen || evidencePinned}
+              onClick={() =>
+                evidenceOpen && !evidencePinned
+                  ? setEvidenceOpen(false)
+                  : openEvidence(evidenceTab)
               }
             >
-              {session.status === "failed" ? (
-                <ErrorPanel error={session.error} what="GET /api/state" />
-              ) : projection ? (
-                <ComponentTree
-                  projection={projection}
-                  selectedComponentId={componentId}
-                  onSelect={selectComponent}
-                />
-              ) : (
-                <p className="panel__note">reading the projection…</p>
-              )}
-            </Panel>
-
-            <Panel title="selection">
-              {projection ? (
-                <SelectionPanel
-                  projection={projection}
-                  selectedComponentId={componentId}
-                  selectedElementId={elementId}
-                  onSelectElement={setElementId}
-                />
-              ) : (
-                <p className="panel__note">reading the projection…</p>
-              )}
-            </Panel>
-
-            <Panel title="record honesty">
-              {projection ? (
-                <HonestyLines lines={projection.honesty} />
-              ) : (
-                <p className="panel__note">reading the projection…</p>
-              )}
-            </Panel>
-
-            <Panel
-              title="artifacts"
-              aside={
-                <button
-                  type="button"
-                  className="button button--small"
-                  onClick={() => void loadArtifacts()}
-                >
-                  reload
-                </button>
-              }
-            >
-              {/* The listing is only asked for once the binding answers, so a
-                  failed session is why this panel is empty — saying "reading
-                  the receipts…" forever would be a pending state that is never
-                  going to resolve. */}
-              {session.status === "failed" ? (
-                <ErrorPanel
-                  error={session.error}
-                  what="GET /api/project · /api/state"
-                />
-              ) : artifacts.status === "failed" ? (
-                <ErrorPanel error={artifacts.error} what="GET /api/artifacts" />
-              ) : artifacts.status === "ready" ? (
-                <ArtifactList
-                  listing={artifacts.value}
-                  loadingSha={artifactLoadingSha}
-                  onLoad={(artifact) =>
-                    void loadArtifactIntoViewer(
-                      artifact,
-                      canonicalSourceLabel(artifact),
-                    )
-                  }
-                />
-              ) : (
-                <p className="panel__note">reading the receipts…</p>
-              )}
-            </Panel>
+              Evidence
+            </button>
           </>
         }
-        center={
-          <>
-            <ViewerPanel
-              viewportRef={viewportRef}
-              sourceLabel={sourceLabel}
-              message={viewerMessage}
-              status={viewerStatus}
-              inspection={inspection}
-              artifactError={artifactError}
-              onInspection={setInspection}
-              onStatus={(status, message) => {
-                setViewerStatus(status);
-                setViewerMessage(message);
-              }}
-              onRequestFile={() => fileInputRef.current?.click()}
-              onSource={noteSource}
-              onPick={(picked) => void resolvePick(picked)}
-            />
-            <Panel title="pick">
-              {pick.status === "failed" ? (
-                <ErrorPanel error={pick.error} what="POST /api/pick/resolve" />
-              ) : pick.status === "ready" ? (
-                <PickPanel pick={pick.value} />
-              ) : pick.status === "loading" ? (
-                <p className="panel__note">resolving the pick…</p>
-              ) : (
-                <p className="panel__note">
-                  click an object in a loaded model. The viewer reads the
-                  object's user strings and the server says what they mean.
-                </p>
-              )}
-            </Panel>
-          </>
+        conversation={
+          <Conversation
+            entries={transcript.entries}
+            sessionError={session.status === "failed" ? session.error : null}
+            projection={projection}
+            selection={selection}
+            disabledReason={disabledReason}
+            busy={proposalBusy}
+            runBusy={candidateBusy}
+            loadingSha={artifactLoadingSha}
+            draft={draft}
+            onDraft={setDraft}
+            onSubmit={(utterance) => void propose(utterance)}
+            onSelect={(componentId, elementId) => {
+              setSelection({ componentId, elementId });
+              append({
+                kind: "system",
+                text: `Talking about ${elementId ?? componentId} · chosen from the record`,
+              });
+            }}
+            callbacks={{
+              onRun: (proposalId) => void runCandidate(proposalId),
+              onReply: setDraft,
+              onJobStatus: noteJobStatus,
+              onCandidate: noteCandidate,
+              onPreview: (artifact, label) =>
+                void loadArtifactIntoViewer(artifact, label),
+              onValidation: noteValidation,
+              onEvidence: openEvidence,
+            }}
+          />
         }
-        right={
-          <>
-            <Panel title="intent">
-              <IntentPanel
-                selectedComponentId={componentId}
-                selectedElementId={elementId}
-                busy={proposalBusy}
-                error={proposalError}
-                onSubmit={(utterance) => void propose(utterance)}
-              />
-            </Panel>
-
-            <Panel title="typed proposal">
-              {currentProposal ? (
-                <ProposalPanel proposal={currentProposal} />
-              ) : (
-                <p className="panel__note">no proposal yet.</p>
-              )}
-            </Panel>
-
-            <Panel title="impact">
-              {currentProposal ? (
-                <ImpactPanel impact={currentProposal.impact} />
-              ) : (
-                <p className="panel__note">
-                  impact is the kernel's closure of a proposal; there is no
-                  proposal yet.
-                </p>
-              )}
-            </Panel>
-
-            <Panel title="human review">
-              <ReviewPanel
-                proposal={currentProposal}
-                busy={candidateBusy}
-                error={candidateError}
-                onRun={() => void runCandidate()}
-              />
-            </Panel>
-
-            <Panel title="validation">
-              {/* The server's own word for the job, passed through. Which of
-                  the three things it means — still running, finished without a
-                  verdict, or a verdict to read — is the panel's to say, and
-                  this shell does not decide it on the way. */}
-              <ValidationPanel
-                candidateId={selected?.candidateId ?? null}
-                jobStatus={selected?.status ?? null}
-              />
-            </Panel>
-          </>
+        stage={
+          <Stage
+            viewportRef={viewportRef}
+            sourceLabel={sourceLabel}
+            message={viewerMessage}
+            status={viewerStatus}
+            inspection={inspection}
+            artifactError={artifactError}
+            picked={picked}
+            versions={versions}
+            loadingSha={artifactLoadingSha}
+            loadedSha={loadedArtifact?.sha256 ?? null}
+            evidenceCounts={evidenceCounts}
+            drawer={evidencePinned ? null : drawer}
+            onInspection={setInspection}
+            onStatus={(status, message) => {
+              setViewerStatus(status);
+              setViewerMessage(message);
+            }}
+            onRequestFile={() => fileInputRef.current?.click()}
+            onSource={noteSource}
+            onPick={(pick) => void resolvePick(pick)}
+            onOpenVersion={(artifact, label) =>
+              void loadArtifactIntoViewer(artifact, label)
+            }
+            onEvidence={openEvidence}
+          />
         }
-        bottom={
-          <>
-            <Panel title="candidate runs (this tab)">
-              <CandidateRuns
-                launched={launched}
-                selectedCandidateId={selectedCandidateId}
-                onSelect={setSelectedCandidateId}
-              />
-              {selected && (
-                <CandidatePanel
-                  key={selected.candidateId}
-                  candidateId={selected.candidateId}
-                  jobId={selected.jobId}
-                  loadingSha={artifactLoadingSha}
-                  onJobStatus={noteJobStatus}
-                  onOpenArtifact={(artifact, label) =>
-                    void loadArtifactIntoViewer(artifact, label)
-                  }
-                />
-              )}
-            </Panel>
-            <Panel title="events">
-              <EventStream notices={notices} />
-            </Panel>
-          </>
-        }
+        pinnedDrawer={evidencePinned ? drawer : null}
       />
     </>
   );
