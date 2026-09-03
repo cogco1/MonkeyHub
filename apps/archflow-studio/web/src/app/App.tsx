@@ -470,11 +470,14 @@ export default function App() {
           projectId: project.projectId,
         });
         transcript.replaceProposal(entryId, answer.proposal, answer.agent);
-        if (ghostProposalId === proposal.proposalId) {
-          const spec = projection ? ghostSpecFor(projection, answer.proposal) : null;
-          const copied = spec ? (viewportRef.current?.ghost(spec) ?? 0) : 0;
-          setGhostProposalId(copied > 0 ? answer.proposal.proposalId : null);
-        }
+        // Drawn under the same condition as the first proposal — a model on
+        // screen — not only when a ghost already stood: the first attempt may
+        // have found no objects in the file loaded then, and a later file may
+        // carry them.
+        const spec = projection ? ghostSpecFor(projection, answer.proposal) : null;
+        const copied =
+          spec && sourceLabel !== null ? (viewportRef.current?.ghost(spec) ?? 0) : 0;
+        setGhostProposalId(copied > 0 ? answer.proposal.proposalId : null);
       } catch (cause) {
         const error = asStudioApiError(cause);
         if (error.code === BLOCKED) {
@@ -495,10 +498,10 @@ export default function App() {
     },
     [
       append,
-      ghostProposalId,
       project,
       projection,
       recoverFromStaleBase,
+      sourceLabel,
       stateDigest,
       transcript,
     ],
