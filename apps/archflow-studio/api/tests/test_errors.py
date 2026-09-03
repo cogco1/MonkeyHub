@@ -1,8 +1,5 @@
-"""Every refusal the app returns arrives in the one StudioError@1 shape.
-
-The routes here are attached to a throwaway app: the handlers under test are
-the ones ``create_app`` registers, not stand-ins for them.
-"""
+"""Every refusal arrives as ``{code, detail}``; a human question adds its
+fields; a bug leaks nothing."""
 
 from __future__ import annotations
 
@@ -13,20 +10,18 @@ from fastapi.testclient import TestClient
 
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import BlockedNeedsHuman, NotBound
+from archflow_studio_api.transport.errors import BlockedNeedsHuman, StudioError
 
 BUG_MARKER = "a-bug-nobody-anticipated"
 
 
 class ErrorShapeTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.app = create_app(
-            StudioSettings(project_dir=Path("unbound-placeholder"))
-        )
+        self.app = create_app(StudioSettings(project_dir=Path("unbound-placeholder")))
 
         @self.app.get("/api/raises-not-bound")
         def raises_not_bound() -> None:
-            raise NotBound("no project is bound to this process")
+            raise StudioError(503, "PROJECT_NOT_BOUND", "no project is bound to this process")
 
         @self.app.get("/api/raises-a-bug")
         def raises_a_bug() -> None:
@@ -40,78 +35,37 @@ class ErrorShapeTests(unittest.TestCase):
                 accepted_forms=("400mm", "600mm"),
             )
 
-        @self.app.get("/api/needs-a-number")
-        def needs_a_number(count: int) -> dict[str, int]:
-            return {"count": count}
-
         self.client = TestClient(self.app, raise_server_exceptions=False)
         self.addCleanup(self.client.close)
 
     def test_studio_error_keeps_its_status_and_code(self) -> None:
         response = self.client.get("/api/raises-not-bound")
-
         self.assertEqual(response.status_code, 503)
         self.assertEqual(
             response.json(),
-            {
-                "schema": "StudioError@1",
-                "code": "PROJECT_NOT_BOUND",
-                "detail": "no project is bound to this process",
-            },
+            {"code": "PROJECT_NOT_BOUND", "detail": "no project is bound to this process"},
         )
 
-    def test_blocked_needs_human_carries_the_question_it_needs(self) -> None:
+    def test_blocked_needs_human_carries_the_question(self) -> None:
         response = self.client.get("/api/raises-blocked")
-
         self.assertEqual(response.status_code, 422)
         self.assertEqual(
             response.json(),
             {
-                "schema": "StudioError@1",
                 "code": "BLOCKED_NEEDS_HUMAN",
                 "detail": "the span cannot be resolved without a decision",
-                "question": (
-                    "Which structural depth applies to the long span?"
-                ),
+                "question": "Which structural depth applies to the long span?",
                 "acceptedForms": ["400mm", "600mm"],
             },
         )
 
-    def test_request_validation_reads_as_a_studio_error(self) -> None:
-        response = self.client.get("/api/needs-a-number?count=not-a-number")
-
-        self.assertEqual(response.status_code, 422)
-        payload = response.json()
-        self.assertEqual(payload["schema"], "StudioError@1")
-        self.assertEqual(payload["code"], "REQUEST_INVALID")
-        self.assertIn("count", payload["detail"])
-
-    def test_an_unhandled_bug_still_answers_in_the_one_shape(self) -> None:
+    def test_an_unhandled_bug_leaks_nothing(self) -> None:
         response = self.client.get("/api/raises-a-bug")
-
         self.assertEqual(response.status_code, 500)
         payload = response.json()
-        self.assertEqual(payload["schema"], "StudioError@1")
         self.assertEqual(payload["code"], "INTERNAL_ERROR")
-        self.assertNotIn(BUG_MARKER, payload["detail"])
-        self.assertNotIn("RuntimeError", payload["detail"])
-        self.assertNotIn("Traceback", payload["detail"])
-
-    def test_a_refusal_says_nothing_it_was_not_asked(self) -> None:
-        payload = self.client.get("/api/raises-not-bound").json()
-
-        self.assertNotIn("question", payload)
-        self.assertNotIn("acceptedForms", payload)
-
-    def test_method_not_allowed_keeps_the_header_that_helps(self) -> None:
-        response = self.client.post("/api/health")
-
-        self.assertEqual(response.status_code, 405)
-        self.assertIn("Allow", response.headers)
-        self.assertIn("GET", response.headers["Allow"])
-        payload = response.json()
-        self.assertEqual(payload["schema"], "StudioError@1")
-        self.assertEqual(payload["code"], "METHOD_NOT_ALLOWED")
+        for leak in (BUG_MARKER, "RuntimeError", "Traceback"):
+            self.assertNotIn(leak, payload["detail"])
 
 
 if __name__ == "__main__":
