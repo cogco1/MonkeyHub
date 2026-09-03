@@ -288,3 +288,41 @@ scratch folders.
    spec section 14's "rhino3dm for headless writing" is satisfied by delegation, not by importing rhino3dm in
    the server.
 
+---
+
+## Addendum 2 (2026-09-03, later) — supersedes Addendum items 1 and 2; items 3 and 4 stand
+
+An independent review (verified symbol-by-symbol by the main session against the code) reversed the layout and
+stack decisions, and Kaiwen adopted it:
+
+1. **No `/client` `/server` `/shared` trees. No FastAPI.** The phase-2 C/S vertical slice is built inside
+   `apps/archflow-studio` along its existing structure; the stdlib server grows HTTP + SSE routes. The `server/`
+   and `shared/` roots remain in the architecture policy purely as tripwires for this rejected layout.
+2. **Extension points, file by file:** `src/contracts/studio.ts` (read-model/proposal/diff/receipt/event DTOs —
+   transport shapes only), `backend/contracts.py` (one-to-one with the TS DTOs), `backend/ports.py` (implement
+   the reserved ports, no second engine), `backend/kernel.py` (from presence probe to real read-only/proposal
+   facade), `backend/server.py` (HTTP/SSE routes), `src/gateway/*` (project binding, state, dependencies,
+   proposal, validation, artifact, events), `src/components/*` (new small components in existing directories
+   only), `ThreeDmViewport.tsx` (semantic pick, candidate overlay, before/after; keep local read-only mode).
+   Replace the `stage: 1 | 2 | 3 | 4` hardcode in `src/ports/studioPorts.ts` by binding to
+   `ProjectStageWorkflow`.
+3. **Verified reuse table** (every symbol checked to exist): `open_located_project()` (archflow/project/location.py),
+   `DesignStateTree` (archflow/runtime/component_index.py), `DecisionOperator` / `compile_decision_operator()`
+   (archflow/state/decision_operator.py, archflow/runtime), `compile_nested_decision()`
+   (archflow/state/design_state.py), `validate_submission()` (archflow/validation/engine.py),
+   `ValidationReceipt` and the `Committer` (archflow/commit/), `StageEvidencePack`
+   (archflow/capabilities/stage_evidence_pack.py, archflow/evidence/stage_pack.py), plus everything already in
+   the inventory. Use these; do not re-derive their answers client-side.
+4. **Kernel backing for the display rule:** `RelationCheckReport` now exposes `fully_checked` beside `held`
+   (`held` = none violated, deliberately not subsuming unchecked). Show held / violated / unchecked as three
+   states; the server issues the advance verdict.
+5. **Round-one boundary (confirmed):** one server-configured external project root — the villa project at
+   `D:\PROJECTS\01_ACTIVE_当前项目\ARCHFLOW CAADRIA 2027\V4_RUNTIME\workspace\projects\villa-rotonda-reconstruction`;
+   proposal-only (stop at candidate/validation); canonical write, live model providers and login identity
+   disabled; the first `IntentProvider` is deterministic (a constrained grammar over the selected component and
+   its parameters — no live LLM), and anything it cannot parse returns `BLOCKED_NEEDS_HUMAN` with a concrete
+   question.
+6. **Browser prohibitions (restated as law):** no importing archflow; no client-side impact inference; no
+   client-side "validation passed"; chat history is not version history; no writes to the project directory or
+   canonical HEAD; the presence of a .3dm never implies task success.
+

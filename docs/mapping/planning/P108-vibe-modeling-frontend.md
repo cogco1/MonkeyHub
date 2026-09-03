@@ -4,13 +4,10 @@
 **Lane:** productization and componentization
 **Depends on:** P102 (StateRecord is the source of truth), P103 (diff data), and — for the sub-second preview —
 P107; until P107 lands the frontend works read-only over existing runs or tolerates the 37-second Rhino path.
-**Write scope:** `client/`, `server/`, `shared/`, and `apps/archflow-studio/` (the last only to mark it as the
-retained demo and to harvest its viewer pieces). Codex is active in `archflow/runtime/`, `archflow/state/` and
-`governance/`; the frontend session does not touch those. Tests live under `server/tests` and the client's own
-test setup — the repo-root `tests/` belongs to archflow.
-**Retires:** `apps/archflow-studio` as the product shell. Kaiwen's ruling (2026-09-03): the studio was a
-low-cost reproduction demo; the formal product is this lane. The demo stays read-only until its useful pieces
-(the rhino3dm-wasm three.js viewer, the launch pattern) are harvested or it is removed; it must not be extended.
+**Write scope:** `apps/archflow-studio/` only. Codex is active in `archflow/runtime/`, `archflow/state/` and
+`governance/`; the frontend session does not touch those. Kernel gaps are carded, never fixed in passing.
+**Retires:** the studio's read-only-preview limitation — the phase-2 C/S vertical slice is built *in place* on
+the studio's reserved seams. Nothing parallel is created and nothing existing is abandoned.
 
 ## What it is
 
@@ -28,10 +25,10 @@ mapping) is `docs/claude-worktree/2026-09-02-vibe-modeling-frontend-brief.md`.
    a probe import failed archcheck, then was reverted. The reverse fence already stands in the Studio README:
    the browser bundle never imports archflow.
 2. **DO-NOT-REBUILD inventory** in the brief, precise to module paths, each marked "import, never reimplement".
-3. **Named seams only**, relocated with the layout decision: `server/ports.py`, `shared/contracts/`, and the
-   client's gateway module. Declare a port first, then implement it by delegation to archflow. The reserved
-   `IntentProvider` protocol ("Translate a user utterance into a proposal candidate, never a commit") moves from
-   the demo's `backend/ports.py` into `server/ports.py` — moved, not duplicated.
+3. **Named seams only:** `backend/ports.py`, `backend/contracts.py` (paired one-to-one with
+   `src/contracts/studio.ts`), and `src/gateway`. Declare a port first, then implement it by delegation to
+   archflow. The reserved `IntentProvider` protocol ("Translate a user utterance into a proposal candidate,
+   never a commit") is implemented where it already sits.
 4. **The AGENTS.md rule binds this lane too:** one canonical abstraction in, one parallel abstraction out.
 
 One fence the machine cannot hold, stated here instead: **the client never computes geometry — preview meshes
@@ -75,3 +72,38 @@ the brief maps every spec section to its existing home.
    identity survives the renumbering. The kernel never guesses a category (P049 neutrality): an unmapped
    component stays visibly on the historical `archflow::` path. **This lane supplies the category map** from the
    record's component tree using the spec's list.
+
+## Revised the same day (2026-09-03, after an independent review Kaiwen adopted)
+
+Decisions 1 and 2 below are **reversed**; 3 and 4 stand. The review — verified symbol-by-symbol against the
+code by the main session — concluded that a top-level `/client /server /shared` tree and a FastAPI migration
+would create exactly the parallel structures this lane exists to prevent, when the studio's reserved seams were
+built for this expansion. So:
+
+- **The phase-2 C/S vertical slice is built inside `apps/archflow-studio`**, along its existing structure:
+  `src/contracts/studio.ts` gains read-model / proposal / diff / receipt / event DTOs (transport shapes, no
+  domain-model copies); `backend/contracts.py` mirrors them one-to-one; `backend/kernel.py` grows from a
+  presence probe into the real read-only/proposal orchestration facade; `backend/server.py` gains HTTP + SSE
+  routes on the stdlib server (no FastAPI migration — no reason exists yet); `src/gateway` gains the calls;
+  `ThreeDmViewport.tsx` gains semantic pick, candidate overlay and before/after while keeping local read-only
+  mode; the `stage: 1 | 2 | 3 | 4` hardcode in `src/ports/studioPorts.ts` is replaced by binding to
+  `ProjectStageWorkflow`.
+- **The strict reuse mapping is authoritative and was verified** (every symbol exists): project identity via
+  `ProjectVersionRef`/`RunRef`/`BranchRef`/`open_located_project()`/`FilesystemProjectRepository`; tree via
+  `StateRecord` entities and `DesignStateTree`; parameters and dependencies via `StateRecord.dependency_edges()`
+  and `OperationalMarkovState.dependencies`; stages via `ProjectStageWorkflow` + `StageEvidencePack`; design
+  mutation via `DecisionOperator`/`compile_decision_operator()`/`compile_nested_decision()`; impact via kernel
+  closure/invalidation receipts; validation via `validate_submission()`/`ValidationReceipt`
+  (archflow/validation, archflow/commit); candidates via `GeometryProgramProposal` and the existing compiler;
+  commits via `archflow/commit/committer.py` + P036 compare-and-swap; viewing via `ThreeDmViewport` and the
+  reserved `ViewerAssetProvider`.
+- **Forbidden:** new databases, networkx graphs, a MutationEngine/ProjectState/Validator of the studio's own,
+  or any parallel version history. The `server/` and `shared/` roots stay in the architecture policy as
+  tripwires for the rejected layout.
+- **Display rule with kernel backing:** `RelationCheckReport.held` means "none violated" and deliberately does
+  NOT subsume unchecked relations; the kernel now also exposes `fully_checked`, and the UI must show
+  held / violated / unchecked as three states with the server issuing the advance verdict.
+- **Round-one boundary (Kaiwen confirmed):** one server-configured external project root; proposal-only —
+  candidate and validation are the stopping line, canonical write, live model providers and login identity stay
+  disabled; missing information stops visibly as `BLOCKED_NEEDS_HUMAN` with a concrete question, never a
+  silently invented coordinate, relation or piece of architectural knowledge.

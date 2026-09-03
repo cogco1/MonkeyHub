@@ -52,11 +52,20 @@ class RelationCheckReport:
 
     @property
     def held(self) -> bool:
+        """No relation is violated. An unchecked relation does NOT count against this —
+        display code must never render ``held`` alone as a green light; pair it with
+        ``fully_checked`` and show held / violated / unchecked as three states."""
+
         return all(c.status != "violated" for c in self.checks)
+
+    @property
+    def fully_checked(self) -> bool:
+        return all(c.status != "unchecked" for c in self.checks)
 
     def to_dict(self) -> dict[str, Any]:
         counts = {status: sum(1 for c in self.checks if c.status == status) for status in ("held", "violated", "unchecked")}
-        return {"schema": self.SCHEMA, "record_digest": self.record_digest, "counts": counts, "held": self.held, "checks": [c.to_dict() for c in self.checks]}
+        return {"schema": self.SCHEMA, "record_digest": self.record_digest, "counts": counts, "held": self.held,
+                "fully_checked": self.fully_checked, "checks": [c.to_dict() for c in self.checks]}
 
     @property
     def digest(self) -> str:

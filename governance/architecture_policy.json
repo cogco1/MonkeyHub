@@ -334,7 +334,7 @@
         "tools",
         "probes"
       ],
-      "reason": "The formal vibe-modeling server (P108) orchestrates and delegates: geometry mathematics, dependency graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
+      "reason": "The top-level /client /server /shared layout was proposed and rejected on 2026-09-03: the Studio in apps/archflow-studio is the product shell (P108). This root stays checked as a tripwire — code appearing here is a layout violation to review, and geometry/graph/rhino3dm imports fail immediately."
     },
     {
       "source": "shared",
@@ -351,7 +351,7 @@
         "tools",
         "probes"
       ],
-      "reason": "Shared frontend/server contracts (P108) carry transport shapes only; geometry and state computation stay in archflow."
+      "reason": "The top-level /client /server /shared layout was proposed and rejected on 2026-09-03: the Studio in apps/archflow-studio is the product shell (P108). This root stays checked as a tripwire — code appearing here is a layout violation to review, and geometry/graph/rhino3dm imports fail immediately."
     }
   ],
   "authority_symbol_patterns": [

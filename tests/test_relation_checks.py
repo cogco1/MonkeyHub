@@ -62,7 +62,9 @@ class RelationCheckTests(unittest.TestCase):
                                                                     Relation("s", "support", "capitals-west", "entablature-west")))
         report = check_relations(other, bounds=bounds, objects_by_element=objects)
         self.assertEqual([c.status for c in report.checks], ["unchecked", "unchecked"])
-        self.assertTrue(report.held)
+        self.assertTrue(report.held)                                                     # not violated ...
+        self.assertFalse(report.fully_checked)                                           # ... but no green light either
+        self.assertFalse(report.to_dict()["fully_checked"])
 
 
 if __name__ == "__main__":
