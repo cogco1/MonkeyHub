@@ -14,6 +14,7 @@ import {
   DirectionalLight,
   GridHelper,
   Group,
+  Material,
   Mesh,
   MeshStandardMaterial,
   Object3D,
@@ -118,6 +119,15 @@ export interface ViewportController {
    */
   unprojectOnPlane(clientX: number, clientY: number, through: Vec3 | null): Vec3 | null;
   /**
+   * Load a second file beside the loaded one for a cross-fade: the loaded
+   * model is 'before', this one 'after'. Resolves with its mesh count.
+   * Dropped by clear(), by a new load and by clearSecondary().
+   */
+  loadSecondary(file: File): Promise<number>;
+  clearSecondary(): void;
+  /** 0 shows only the loaded model, 1 only the secondary; in between, both. */
+  blend(t: number): void;
+  /**
    * Draw a ghost of a proposal over the loaded model, or remove it with null.
    * Returns how many meshes the ghost copied for the target: zero means the
    * loaded file carries no objects of that element, and nothing was drawn.
@@ -148,6 +158,9 @@ interface ViewportRuntime {
   controls: OrbitControls;
   model: Object3D | null;
   ghost: Group | null;
+  secondary: Object3D | null;
+  /** The loaded model's materials as they were before a blend touched them. */
+  restore: Map<Material, { transparent: boolean; opacity: number; depthWrite: boolean }>;
   render: () => void;
 }
 
@@ -248,6 +261,53 @@ function ghostCopy(carriers: readonly Object3D[], material: MeshStandardMaterial
     });
   }
   return group;
+}
+
+/** Every material under an object, once each. */
+function materialsUnder(root: Object3D): Material[] {
+  const seen = new Set<Material>();
+  root.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    const material = object.material;
+    for (const item of Array.isArray(material) ? material : [material]) seen.add(item);
+  });
+  return [...seen];
+}
+
+function setOpacity(materials: readonly Material[], opacity: number): void {
+  for (const material of materials) {
+    material.transparent = opacity < 1;
+    material.opacity = opacity;
+    material.depthWrite = opacity >= 1;
+    material.needsUpdate = true;
+  }
+}
+
+/**
+ * Give the secondary model its own materials, tinted towards the accent so
+ * 'after' reads apart from 'before' at any blend; the loader's materials
+ * are left as they were.
+ */
+function tintSecondary(root: Object3D, accent: Color): void {
+  const cloned = new Map<Material, Material>();
+  root.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    const original = object.material as Material | Material[];
+    const clone = (material: Material): Material => {
+      const existing = cloned.get(material);
+      if (existing) return existing;
+      const copy = material.clone();
+      if (copy instanceof MeshStandardMaterial) copy.color.lerp(accent, 0.45);
+      cloned.set(material, copy);
+      return copy;
+    };
+    object.material = Array.isArray(original) ? original.map(clone) : clone(original);
+  });
+}
+
+function disposeSecondary(root: Object3D): void {
+  for (const material of materialsUnder(root)) material.dispose();
+  disposeScene(root);
 }
 
 function disposeGhost(ghost: Group): void {
@@ -372,6 +432,12 @@ export const ThreeDmViewport = forwardRef<
       disposeGhost(runtime.ghost);
       runtime.ghost = null;
     }
+    if (runtime?.secondary) {
+      runtime.scene.remove(runtime.secondary);
+      disposeSecondary(runtime.secondary);
+      runtime.secondary = null;
+      runtime.restore.clear();
+    }
     if (!runtime?.model) {
       callbacksRef.current.onInspection(null);
       reportStatus("idle", "Drop a .3dm here, or open one from this machine");
@@ -453,6 +519,87 @@ export const ThreeDmViewport = forwardRef<
     [removeGhost],
   );
 
+  const clearSecondary = useCallback(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    if (runtime.secondary) {
+      runtime.scene.remove(runtime.secondary);
+      disposeSecondary(runtime.secondary);
+      runtime.secondary = null;
+    }
+    // The loaded model gets its materials back exactly as they were.
+    for (const [material, state] of runtime.restore) {
+      material.transparent = state.transparent;
+      material.opacity = state.opacity;
+      material.depthWrite = state.depthWrite;
+      material.needsUpdate = true;
+    }
+    runtime.restore.clear();
+    runtime.render();
+  }, []);
+
+  const blend = useCallback((t: number) => {
+    const runtime = runtimeRef.current;
+    if (!runtime?.model || !runtime.secondary) return;
+    const mix = Math.min(1, Math.max(0, t));
+    const primary = materialsUnder(runtime.model);
+    for (const material of primary) {
+      if (!runtime.restore.has(material)) {
+        runtime.restore.set(material, {
+          transparent: material.transparent,
+          opacity: material.opacity,
+          depthWrite: material.depthWrite,
+        });
+      }
+    }
+    setOpacity(primary, 1 - mix);
+    setOpacity(materialsUnder(runtime.secondary), mix);
+    runtime.model.visible = mix < 1;
+    runtime.secondary.visible = mix > 0;
+    runtime.render();
+  }, []);
+
+  const loadSecondary = useCallback(
+    async (file: File): Promise<number> => {
+      const runtime = runtimeRef.current;
+      if (!runtime?.model) throw new Error("Load a model first; the second one is compared against it.");
+      const buffer = await file.arrayBuffer();
+      const loader = new Rhino3dmLoader();
+      loader.setLibraryPath("/rhino3dm/");
+      loader.setWorkerLimit(Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2)));
+      const generation = loadGenerationRef.current;
+      return new Promise<number>((resolve, reject) => {
+        loader.parse(
+          buffer,
+          (model) => {
+            loader.dispose();
+            if (generation !== loadGenerationRef.current || !runtimeRef.current?.model) {
+              // The loaded model changed while this parsed: nothing to compare against any more.
+              disposeScene(model);
+              resolve(0);
+              return;
+            }
+            clearSecondary();
+            tintSecondary(model, new Color(accentColour()));
+            runtime.secondary = model;
+            runtime.scene.add(model);
+            let meshes = 0;
+            model.traverse((object) => {
+              if (object instanceof Mesh) meshes += 1;
+            });
+            blend(0.5);
+            resolve(meshes);
+          },
+          (error) => {
+            loader.dispose();
+            reject(error instanceof Error ? error : new Error(String(error)));
+          },
+        );
+      });
+    },
+    [blend, clearSecondary],
+  );
+
   const openFile = useCallback(
     async (file: File, sourceLabel: string = LOCAL_SOURCE_LABEL) => {
       const runtime = runtimeRef.current;
@@ -524,6 +671,13 @@ export const ThreeDmViewport = forwardRef<
               runtime.scene.remove(runtime.ghost);
               disposeGhost(runtime.ghost);
               runtime.ghost = null;
+            }
+            if (runtime.secondary) {
+              // So does a comparison: it was against the model going away.
+              runtime.scene.remove(runtime.secondary);
+              disposeSecondary(runtime.secondary);
+              runtime.secondary = null;
+              runtime.restore.clear();
             }
             runtime.model = model;
             runtime.scene.add(model);
@@ -670,6 +824,9 @@ export const ThreeDmViewport = forwardRef<
       sampleAt,
       camera: cameraState,
       unprojectOnPlane,
+      loadSecondary,
+      clearSecondary,
+      blend,
       fitView: () => {
         const runtime = runtimeRef.current;
         if (runtime) fitRuntime(runtime);
@@ -690,7 +847,7 @@ export const ThreeDmViewport = forwardRef<
       },
       clear,
     }),
-    [cameraState, clear, ghost, openFile, sampleAt, unprojectOnPlane],
+    [blend, cameraState, clear, clearSecondary, ghost, loadSecondary, openFile, sampleAt, unprojectOnPlane],
   );
 
   useEffect(() => {
@@ -759,6 +916,8 @@ export const ThreeDmViewport = forwardRef<
       controls,
       model: null,
       ghost: null,
+      secondary: null,
+      restore: new Map(),
       render,
     };
     runtimeRef.current = runtime;
@@ -783,6 +942,7 @@ export const ThreeDmViewport = forwardRef<
       controls.dispose();
       if (runtime.model) disposeScene(runtime.model);
       if (runtime.ghost) disposeGhost(runtime.ghost);
+      if (runtime.secondary) disposeSecondary(runtime.secondary);
       media.removeEventListener("change", applyTheme);
       themeObserver.disconnect();
       disposeGrid(grid);

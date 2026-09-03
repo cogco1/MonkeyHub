@@ -12,6 +12,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import type { StudioApiError } from "../../api/client";
 import type {
   CandidateDto,
+  CompareDto,
   GestureDto,
   ProjectArtifactDto,
   StateProjectionDto,
@@ -43,6 +44,8 @@ export interface ConversationCallbacks {
   onPreview(artifact: ProjectArtifactDto, sourceLabel: string): void;
   onValidation(validation: ValidationDto): void;
   onEvidence(tab: EvidenceTab): void;
+  /** Cross-fade a comparison's two exports in the viewer. */
+  onCompareInModel(comparison: CompareDto): void;
 }
 
 export function Conversation({
@@ -226,7 +229,10 @@ function renderEntry(
       return (
         <>
           <p className="msg__who">Studio · before / after</p>
-          <CompareCard comparison={entry.comparison} onCompareInModel={null} />
+          <CompareCard
+            comparison={entry.comparison}
+            onCompareInModel={() => callbacks.onCompareInModel(entry.comparison)}
+          />
         </>
       );
   }
