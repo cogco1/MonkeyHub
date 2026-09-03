@@ -179,6 +179,16 @@ class ScriptedAgentTests(IntentTestCase):
         self.assertEqual(payload["code"], AGENT_FAILED)
         self.assertIn("no auth", payload["detail"])
 
+    def test_a_sentence_already_in_the_grammar_never_reaches_the_agent(self) -> None:
+        compiler = scripted(utterance="set height to 9", element_id="portico-cornice")
+        self.app.state.intent_compiler = compiler
+        status, payload = self.ask("set height to 0.8", elementId="portico-base")
+        self.assertEqual(status, 201, payload)
+        self.assertEqual(payload["agent"]["provider"], "deterministic")
+        self.assertEqual(payload["proposal"]["target"]["elementId"], "portico-base")
+        self.assertEqual(payload["proposal"]["change"]["new"], 0.8)
+        self.assertEqual(compiler.calls, [])
+
     def test_a_stale_base_is_refused_before_the_agent_is_asked(self) -> None:
         compiler = scripted(utterance="set height to 0.8", element_id="portico-base")
         self.app.state.intent_compiler = compiler

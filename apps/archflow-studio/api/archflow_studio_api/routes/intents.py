@@ -16,8 +16,9 @@ from fastapi import APIRouter
 from starlette.requests import Request
 
 from ..application.binding import bound_project
-from ..application.intent import DeterministicIntentProvider
+from ..application.intent import DeterministicIntentProvider, parse_utterance
 from ..application.intent_agent import (
+    DeterministicCompiler,
     IntentCompiler,
     Selection,
     context_refs,
@@ -53,7 +54,15 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             f"{binding.project_id} is at {projection.state_digest}. Read "
             "/api/state again and ask against the state that answers now.",
         )
-    compiler: IntentCompiler = request.app.state.intent_compiler
+    # A sentence already in the grammar is not read by the agent: the grammar
+    # is the truth about it, the agent could only re-target it, and the
+    # architect who typed an exact sentence gets the same answer, in the same
+    # time, as before there was an agent at all.
+    compiler: IntentCompiler = (
+        DeterministicCompiler()
+        if parse_utterance(body.utterance) is not None
+        else request.app.state.intent_compiler
+    )
     selection = Selection(
         component_id=body.target_component_id, element_id=body.element_id
     )
