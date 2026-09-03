@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@1",
-  "updated_on": "2026-09-02",
+  "updated_on": "2026-09-03",
   "phase": "P7 - semantic geometry production closure proven",
   "streams": {
     "retirement": "Old responsibilities leave only after a named replacement owns them.",
@@ -15791,6 +15791,90 @@
         ]
       ],
       "card": "docs/mapping/planning/P108-vibe-modeling-frontend.md",
+      "on_complete": {},
+      "actor": "claude",
+      "notes": [
+        "Kernel gaps carded from the 2026-09-03 calibration: P109 (typed operator on StateRecord@1; Studio carries the candidate under the card) and P110 (CanonicalState projection; receipt labelled vacuous until it lands). P108 does not depend on either for round one."
+      ]
+    },
+    {
+      "id": "P109",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "A kernel function applies a typed intent to a StateRecord@1 and returns the successor record: exact-base check on state_digest, protected set checked against the record's closure, deterministic, no propagation (propagation is the runner's). Raised by the Studio's P108 calibration: DecisionOperator/compile_decision_operator are typed to OperationalMarkovState and nothing applies a typed intent to a StateRecord. Until it lands the Studio carries a single-value-replace candidate under this card (AGENTS.md rule 3). Retires that Studio candidate the day it lands.",
+      "depends_on": [
+        "P102"
+      ],
+      "write_scope": [
+        "archflow/state/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Exact-base, protected-set and single-value-change behaviour covered by tests in tests/test_state_record.py; one villa run through the verify_state_record harness.",
+        "The Studio's successor_record candidate is deleted in the same change; no second implementation remains.",
+        "python tools/archcheck.py passes."
+      ],
+      "tests": [
+        "tests.test_state_record"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_state_record"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P109-typed-operator-on-state-record.md",
+      "on_complete": {},
+      "actor": "claude"
+    },
+    {
+      "id": "P110",
+      "origin_stream": "planning",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "A CanonicalState projection for State-Record projects: canonical_state_from_dict accepts only CanonicalState@1, while a State-Record project's HEAD (load_current_state) is the ref-based CanonicalProjectState@1 and its snapshot record is CanonicalSnapshot@2, so validate_submission can only be given CanonicalState(ref=head) with empty facts, commitments and obligations, on which ObligationDischargeValidator and AuthorizedCommitmentClaimsValidator have nothing to check. Project open_obligations from record.obligations, commitments from the record's authorized commitments, artifacts and facts from the run's receipts; one named path beside developed_design_view, or canonical_state_from_dict learns the ref-based shape, never both. Retires the labelled-vacuous validation receipt in P108.",
+      "depends_on": [
+        "P102"
+      ],
+      "write_scope": [
+        "archflow/runtime/",
+        "archflow/state/",
+        "archflow/validation/",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json"
+      ],
+      "acceptance": [
+        "Villa HEAD plus bound record projects to a CanonicalState whose ref equals read_head() and whose open obligations equal the record's.",
+        "validate_submission on that state exercises ObligationDischargeValidator and AuthorizedCommitmentClaimsValidator on real content; a test shows a finding is reachable.",
+        "The Studio drops the 'unavailable' label and the empty-facts construction in the same change.",
+        "python tools/archcheck.py passes."
+      ],
+      "tests": [
+        "tests.test_state_record"
+      ],
+      "verification_commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "tests.test_state_record"
+        ],
+        [
+          "{python}",
+          "tools/archcheck.py"
+        ]
+      ],
+      "card": "docs/mapping/planning/P110-canonical-state-projection.md",
       "on_complete": {},
       "actor": "claude"
     }

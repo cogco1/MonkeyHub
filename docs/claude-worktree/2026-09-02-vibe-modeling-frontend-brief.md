@@ -362,3 +362,13 @@ three-state display rule and the round-one boundary from Addendum 2 remain in fo
    Opus workers in isolated worktrees via the Agent tool's `model` parameter; dry-run the plan against real
    project data before dispatch; accept only by an independent judge against kernel-computed truth.
 
+### Addendum 3, calibration notes (2026-09-03 late; facts, not a new ruling)
+
+- K1 → **P109**, K2 → **P110** (cards in `docs/mapping/planning/`). Round one carries the K1 candidate in the api
+  application layer under P109 and labels the K2 receipt as vacuous under P110; neither blocks round one.
+- **Reference run:** never "newest complete receipt". On the villa that is `array-patch-001` today and a Studio
+  candidate tomorrow. Configure it or exclude harness/equivalence/patch/`studio-cand-*` runs by rule.
+- **Digest scope:** run id enters `state_digest` and the program digest; compare like with like.
+- **Execution mode:** harness workflow and envelope retained in the candidate run (precedent
+  `tools/verify_state_record.py`); ~0.2 s per candidate without export; failures surface as `ProjectRunnerError`.
+

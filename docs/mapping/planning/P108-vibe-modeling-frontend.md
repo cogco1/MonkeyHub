@@ -64,6 +64,26 @@ opened in round one); viewing via `ThreeDmViewport` and `ViewerAssetProvider`.
 unchecked; the kernel also exposes `fully_checked`. Show held / violated / unchecked as three states; the server
 issues the advance verdict.
 
+**Kernel gaps carded from the calibration (2026-09-03, raised by 新建会话, verified by the main session):**
+P109 — no kernel function applies a typed intent to a `StateRecord@1` (`compile_decision_operator` is typed to
+`OperationalMarkovState`); the Studio carries a single-value-replace candidate under that card. P110 —
+`canonical_state_from_dict` rejects a State-Record project's HEAD (`CanonicalProjectState@1`, ref-based), so the
+validation receipt runs on `CanonicalState(ref=head)` with empty facts and must say so. Round one depends on neither.
+
+**Reference-run rule (defect found in the plan's Task 2):** "the newest run whose receipt is complete" picks
+`array-patch-001` on the real villa today (harness and patch experiments also retain complete receipts), and
+after the first candidate it would pick `studio-cand-*`. The reference run is either configured explicitly or
+selected by a criterion that excludes harness, equivalence, patch and Studio candidate runs; the projection's
+digest reproduces the reference receipt (`344b2206…` for `runner-002`) only under the reference run's own id.
+
+**Digest scope:** the run id enters both `state_digest` and the program digest (`_StateIdentity`). "Did this edit
+change anything" is answered by comparing two records bound to the same run, or the authored content before
+binding — never a candidate's digest against the projection's, which differ even for an identical record.
+
+**Candidate execution mode (calibrated):** the villa retains no stage-run envelopes, so candidates run through the
+harness pattern of `tools/verify_state_record.py` (a one-stage workflow and envelope retained in the candidate
+run); a candidate run without Rhino export takes about 0.2 s and a bad value fails visibly as `ProjectRunnerError`.
+
 ## Round-one stopping line
 
 exact HEAD ↔ exact StateRecord ref/base ↔ component and dependency projection ↔ intent on a selected component
