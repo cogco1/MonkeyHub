@@ -42,6 +42,13 @@ from archflow.state.spatial import (
 from archflow.state.stage_workflow import DesignPhase
 
 _RELATION_KINDS = frozenset(kind.value for kind in ArchitecturalRelationKind)   # one vocabulary: the kernel's
+# What each schema's readers take off ``fields`` by key; a record that lacks them is refused
+# here instead of failing as a KeyError inside a producer or a projection.
+_REQUIRED_FIELDS: Mapping[str, tuple[str, ...]] = {
+    "Level@1": ("role", "elevation"), "GridAxis@1": ("role", "origin", "direction"), "Element@1": ("producer",),
+    "Space@1": ("program_node_refs", "level_ids", "volume_ids"), "Volume@1": ("min", "max", "level_ids"),
+    "MassingLevel@1": ("base_y", "height"), "Connection@1": ("source_zone_id", "target_zone_id", "relationship_refs"),
+}
 _ENTITY_SCHEMAS = frozenset({"Level@1", "GridAxis@1", "Type@1", "Element@1", "Assembly@1", "Space@1", "Reading@1", "Component@1",
                              "MassingLevel@1", "Volume@1", "Connection@1"})   # Space@1 = a zone of the spatial option
 _EPISTEMIC = frozenset({"observed", "declared", "derived", "hypothesis", "disputed", "unknown"})
@@ -97,6 +104,9 @@ class Entity:
             raise StateRecordError(f"entity {self.entity_id}: unknown schema {self.schema!r}")
         if not isinstance(self.fields, Mapping):
             raise StateRecordError(f"entity {self.entity_id}: fields must be a mapping")
+        missing = [k for k in _REQUIRED_FIELDS.get(self.schema, ()) if k not in self.fields]
+        if missing:
+            raise StateRecordError(f"entity {self.entity_id} ({self.schema}): missing required fields {missing}")
         if self.parent_id is not None:
             require_identifier(self.parent_id, "parent_id")
         _refs(self.basis_refs, f"entity {self.entity_id} basis_refs")
@@ -314,6 +324,17 @@ class StateRecord:
             for volume_id in zone.fields.get("volume_ids", ()):
                 if volume_id not in known:
                     raise StateRecordError(f"zone {zone.entity_id}: unknown volume {volume_id!r}")
+        for e in self.entities:
+            for name in ("level_ids",):
+                for ref in e.fields.get(name, ()):
+                    if ref not in known:
+                        raise StateRecordError(f"entity {e.entity_id}: {name} names unknown entity {ref!r}")
+            grid_roles = {str(g.fields.get("role")) for g in self.entities_of("GridAxis@1")}
+            for key, kind, target in _entity_references(e.fields):
+                if kind == "entity" and target not in known:
+                    raise StateRecordError(f"entity {e.entity_id}: reference {key} names no entity {target!r}")
+                if kind == "grid_role" and target not in grid_roles:
+                    raise StateRecordError(f"entity {e.entity_id}: reference {key} names no grid axis role {target!r}")
         declared_relations = {f"relation:{r.relation_id}" for r in self.relations}
         for connection in self.entities_of("Connection@1"):
             for end in ("source_zone_id", "target_zone_id"):
@@ -363,14 +384,11 @@ class StateRecord:
                 edges.append(DependencyEdge(upstream_ref=f"parameter:{item}", downstream_ref=p.ref, relation="derives",
                                             source_ref=p.source_ref or f"parameter:{p.key}", effect=DependencyEffect.REQUIRES_REVALIDATION))
         for e in self.entities:
-            for key in ("base_level", "top_level", "sill_level"):
-                target = e.fields.get(key)
-                if isinstance(target, str):
-                    edges.append(DependencyEdge(upstream_ref=f"entity:{target}", downstream_ref=e.ref, relation=key, source_ref=e.ref, effect=DependencyEffect.REQUIRES_REVALIDATION))
-            for key in ("host", "type_ref"):
-                target = e.fields.get(key)
-                if isinstance(target, str):
-                    edges.append(DependencyEdge(upstream_ref=f"entity:{target}", downstream_ref=e.ref, relation=key, source_ref=e.ref, effect=DependencyEffect.INVALIDATES))
+            for key, kind, target in _entity_references(e.fields):
+                if kind != "entity":
+                    continue
+                effect = DependencyEffect.INVALIDATES if key in ("host", "type_ref") or target in {x.entity_id for x in self.entities_of("Element@1")} else DependencyEffect.REQUIRES_REVALIDATION
+                edges.append(DependencyEdge(upstream_ref=f"entity:{target}", downstream_ref=e.ref, relation=key, source_ref=e.ref, effect=effect))
         return tuple(edges)
 
     def closure(self, changed_refs: tuple[str, ...]) -> tuple[str, ...]:
@@ -378,6 +396,8 @@ class StateRecord:
 
         adjacency: dict[str, set[str]] = {}
         for edge in self.dependency_edges():
+            if edge.effect not in (DependencyEffect.INVALIDATES, DependencyEffect.REQUIRES_REVALIDATION):
+                continue  # BLOCKS and SUPPORTS_ONLY do not propagate a change downstream
             adjacency.setdefault(edge.upstream_ref, set()).add(edge.downstream_ref)
         seen = set(changed_refs)
         queue = sorted(changed_refs)
@@ -456,12 +476,48 @@ class StateRecord:
         it is bound to. ``state_digest`` is the binding identity."""
 
         content = self.to_dict()
-        del content["run_id"]
-        del content["base"]
+        for binding_key in ("run_id", "base", "stage"):  # what binds the record, not what it says (ADR-003)
+            del content[binding_key]
         return canonical_digest(content)
 
 
 # ---------------------------------------------------------------- typed views of the record
+
+def _entity_references(fields: Mapping[str, Any]) -> tuple[tuple[str, str, str], ...]:
+    """(key, kind, id) for every reference that names something: ``level`` and ``offset_from.level``
+    name a Level@1, ``host.element`` names an Element@1 (kind ``entity``); grid labels name
+    GridAxis@1 roles (kind ``grid_role``); the flat keys base_level/top_level/sill_level/host/type_ref
+    name entities. Other strings (a direction, a face) name nothing."""
+
+    out: list[tuple[str, str, str]] = []
+    for key in ("base_level", "top_level", "sill_level", "host", "type_ref"):
+        target = fields.get(key)
+        if isinstance(target, str):
+            out.append((key, "entity", target))
+
+    def walk(key: str, value: object) -> None:
+        if not isinstance(value, Mapping):
+            return
+        for kind, payload in value.items():
+            if kind == "level" and isinstance(payload, str):
+                out.append((key, "entity", payload))
+            elif kind == "offset_from" and isinstance(payload, Mapping) and isinstance(payload.get("level"), str):
+                out.append((key, "entity", payload["level"]))
+            elif kind == "host" and isinstance(payload, Mapping) and isinstance(payload.get("element"), str):
+                out.append((key, "entity", payload["element"]))
+            elif kind == "grid":
+                labels = payload if isinstance(payload, (list, tuple)) else [payload]
+                out.extend((key, "grid_role", str(label)) for label in labels)
+            elif kind == "axis_point" and isinstance(payload, Mapping) and "axis" in payload:
+                out.append((key, "grid_role", str(payload["axis"])))
+            elif isinstance(payload, Mapping):
+                walk(key, payload)
+
+    for key, value in fields.get("references", {}).items():
+        walk(key, value)
+    return tuple(out)
+
+
 def design_components_of(record: StateRecord, *, source_ref: str | None = None) -> tuple:
     """The record's ``Component@1`` entities as the semantic component tree.
 

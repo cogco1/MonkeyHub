@@ -64,13 +64,20 @@ COMPOUND_PHRASES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "stair-to-floor-interface": (("role.load_transfer",), ("condition.interface",)),
     "landing-load-path-and-undercroft": (("role.load_transfer", "role.undercroft"), ()),
     "roof-to-main-block-interface": (("role.load_transfer",), ("condition.interface",)),
-    "component": ((), ()),  # the record's own default when a component names no kind
 }
 
-_ALIASES: dict[str, str] = {}
-for _term in ROLES + CONDITIONS:
-    for _alias in _term.aliases:
-        _ALIASES.setdefault(_alias.lower(), _term.id)
+# An alias may stand for one role and one condition at once ("entry" is the access role and
+# the threshold condition); two terms of the same table may not share an alias.
+_ALIASES: dict[str, tuple[str, ...]] = {}
+for _table in (ROLES, CONDITIONS):
+    _seen_in_table: dict[str, str] = {}
+    for _term in _table:
+        for _alias in _term.aliases:
+            _key = _alias.lower()
+            if _key in _seen_in_table:
+                raise ValueError(f"semantic alias {_alias!r} is registered under both {_seen_in_table[_key]} and {_term.id}")
+            _seen_in_table[_key] = _term.id
+            _ALIASES[_key] = _ALIASES.get(_key, ()) + (_term.id,)
 _KNOWN: frozenset[str] = frozenset(ROLE_IDS | CONDITION_IDS)
 
 
@@ -95,7 +102,7 @@ def resolve_semantic_kind(text: str) -> SemanticResolution | None:
         if part in _KNOWN:
             resolved.append(part)
         elif part.lower() in _ALIASES:
-            resolved.append(_ALIASES[part.lower()])
+            resolved.extend(_ALIASES[part.lower()])
         else:
             return None
     return SemanticResolution(
@@ -107,14 +114,13 @@ def resolve_semantic_kind(text: str) -> SemanticResolution | None:
 def suggest_semantic(text: str, limit: int = 3) -> tuple[str, ...]:
     """The nearest registered ids, for the refusal message."""
 
-    candidates = {**{i: i for i in _KNOWN}, **_ALIASES, **{k: k for k in COMPOUND_PHRASES}}
+    candidates: dict[str, str] = {i: i for i in _KNOWN}
+    candidates.update({alias: "+".join(ids) for alias, ids in _ALIASES.items()})
+    candidates.update({k: "+".join(v[0] + v[1]) for k, v in COMPOUND_PHRASES.items()})
     near = difflib.get_close_matches(str(text).strip().lower(), list(candidates), n=limit, cutoff=0.4)
     out: list[str] = []
     for hit in near:
         target = candidates[hit]
-        if target in COMPOUND_PHRASES:
-            roles, conditions = COMPOUND_PHRASES[target]
-            target = "+".join(roles + conditions) or target
         if target not in out:
             out.append(target)
     return tuple(out)
