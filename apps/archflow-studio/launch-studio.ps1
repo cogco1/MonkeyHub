@@ -84,13 +84,11 @@ $FaultPanel = [System.Drawing.Color]::FromArgb(38, 12, 13)
 $FaultRed = [System.Drawing.Color]::FromArgb(240, 138, 130)
 
 function Get-BrandIcon {
-    # The MonkeyArch icon once it is drawn, the ArchFlow one until then. Both names are
-    # tried at run time rather than one being assumed, because the rename lands in its own
-    # change and this launcher has to work either side of it. Neither file is written here.
-    foreach ($name in @('monkeyarch.ico', 'archflow.ico')) {
-        $path = Join-Path $assetRoot $name
-        if (Test-Path -LiteralPath $path -PathType Leaf) { return $path }
-    }
+    # One icon, drawn by assets\make_icon.py and never written here. The splash and the
+    # tray fall back to their own defaults when it is missing, so this returns $null
+    # rather than throwing: a missing icon is not a reason to refuse to start.
+    $path = Join-Path $assetRoot 'monkeyarch.ico'
+    if (Test-Path -LiteralPath $path -PathType Leaf) { return $path }
     return $null
 }
 

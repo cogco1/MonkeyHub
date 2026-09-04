@@ -11,15 +11,10 @@ $studioRoot = $PSScriptRoot
 $target = Join-Path $studioRoot 'OPEN_MONKEYARCH.bat'
 if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "missing launcher: $target" }
 
-# The icon lives beside the script, in the repository. The MonkeyArch icon once it is
-# drawn, the ArchFlow one until then -- the rename lands in its own change, and a shortcut
-# script that assumed one name would refuse to run on the other side of it.
-$icon = $null
-foreach ($name in @('monkeyarch.ico', 'archflow.ico')) {
-    $candidate = Join-Path $studioRoot "assets\$name"
-    if (Test-Path -LiteralPath $candidate -PathType Leaf) { $icon = $candidate; break }
-}
-if (-not $icon) { throw "missing icon: no monkeyarch.ico and no archflow.ico in $(Join-Path $studioRoot 'assets')" }
+# The icon lives beside the script, in the repository. assets\make_icon.py draws it: one
+# name, because there is one icon -- the ArchFlow arch it replaced is gone from the tree.
+$icon = Join-Path $studioRoot 'assets\monkeyarch.ico'
+if (-not (Test-Path -LiteralPath $icon -PathType Leaf)) { throw "missing icon: $icon" }
 $iconLocation = "$icon,0"
 
 $desktop = [Environment]::GetFolderPath('Desktop')

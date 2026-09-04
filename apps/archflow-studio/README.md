@@ -84,14 +84,18 @@ launched without editing the one beside it, and running the script by hand from 
 you the console output as well as the splash. Windows PowerShell 5.1 is the floor: WinForms
 only, no WPF, no extra runtime.
 
-The icon on the shortcut, on the splash window and in the tray is `assets/monkeyarch.ico`
-when that file is there and `assets/archflow.ico` — an arch over a flowing line, drawn at
-16, 24, 32, 48, 64, 128 and 256 px by `assets/make_icon.py` (Pillow), each size from its
-own spec rather than downscaled from one image — until it is. Redraw the ArchFlow one with
+The icon on the shortcut, on the splash window and in the tray is `assets/monkeyarch.ico` —
+a monkey hanging by one arm from the amber keystone of a limestone arch, ink tile, drawn at
+16, 24, 32, 48, 64, 128 and 256 px by `assets/make_icon.py` (Pillow), each size from its own
+spec rather than downscaled from one image. It is the animal that is spent down as the tile
+shrinks, not the arch: below 48 px the eyes, the free hand and one leg go, below 32 px the
+arm and the swing go and the figure hangs straight under the keystone, and at 16 px the tail
+goes too. `assets/monkeyarch-icon-512.png` is the same drawing at 512 px, for anywhere an
+`.ico` will not do. Redraw both with
 `py -3.12 apps/archflow-studio/assets/make_icon.py`; the shortcut points at the `.ico` by
 absolute path, so an existing shortcut picks up a redraw without being rewritten, but a
-shortcut written before the MonkeyArch icon arrived still names the old file and has to be
-written again. The loading
+shortcut written before the MonkeyArch icon arrived names the retired `archflow.ico` and has
+to be written again with `make-desktop-shortcut.ps1`. The loading
 animation is four frames in `assets/loading/` (`frame-01.png` … `frame-04.png`), cycled at 8 fps
 by the splash window and, in the browser, by the same overlay while the client waits for the API
 and while the viewport parses exports. `assets/loading/make_frames.py` draws the placeholder

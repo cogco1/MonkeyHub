@@ -1,26 +1,42 @@
 #!/usr/bin/env python3
-"""Draw the ArchFlow Studio icon: archflow.ico, plus a 512 px PNG preview.
+"""Draw the MonkeyArch icon: monkeyarch.ico, plus a 512 px PNG preview.
 
     py -3.12 apps/archflow-studio/assets/make_icon.py
 
-The mark is a semicircular arch -- two piers, impost blocks marking the springing
-line, a keystone at the crown -- standing on a plinth, with one warm line flowing
-through the opening: the record-driven derivation running under an architectural
-order.
+MonkeyArch is the software; ArchFlow stays the name of the method it runs --
+record-driven derivation of buildings. The mark has to carry both at once, so it
+is one figure and one structure: a semicircular arch -- two piers, a ring, an
+amber keystone at the crown -- and a monkey hanging from that keystone by one
+arm. The keystone is the piece that has to be in place before either of them
+holds, which is why it is the only amber in the icon and why the animal's hand
+is on it.
 
-Three colours on a rounded-square tile: ink for the tile, limestone for the
-stonework, amber for the flow. The tile's corners are transparent; the tile is
-dark enough to hold its own against a light Desktop and, with its rim, light
-enough to show on a dark one. There is no text at any size.
+Four colours on a rounded-square tile: ink for the tile, limestone for the
+stonework and for the monkey's face patch, amber for the keystone, one warm
+brown for the animal. The tile's corners are transparent; the tile is dark
+enough to hold its own against a light Desktop and, with its rim, light enough
+to show on a dark one. There is no text at any size.
 
 Every size is drawn from its own spec rather than downscaled from one large
-image, because 16 px cannot carry what 256 px can. Below 128 px the mortar joints
-beside the keystone go; below 48 px the keystone and the impost blocks go; below
-32 px the plinth goes; and the strokes grow relatively thicker as the tile
-shrinks, so the arch keeps its weight when there are only sixteen pixels to
-spend. Each size is rasterised at 8x and box-filtered down -- exact area
-averaging over the supersamples -- so two runs of this script write the same
-bytes.
+image, because 16 px cannot carry what 256 px can, and here the staging is the
+animal's rather than the arch's -- the arch ring and the amber keystone are
+there at every size, and it is the monkey that is spent down:
+
+    16 px   a head, two ears and a short body, hanging straight under the
+            keystone. No arm, no free hand, no tail, no face: at this scale
+            each of them is a smear that costs the silhouette.
+    24 px   the same figure, and a stub tail; the face arrives as one plain
+            limestone oval, which is all a five-pixel head can hold.
+    32 px   the figure swings off to one side, the arm reaches up to the
+            keystone, the face patch takes its shape, and the tail becomes a
+            hook.
+    48 px   the whole animal: the eyes cut into the patch, the free hand out on
+            the intrados, a leg, and a tail whose hook closes into a loop.
+   128 px   and up: the second leg, the nose and mouth, and the two mortar
+            joints that cut the keystone out of the ring.
+
+Each size is rasterised at 8x and box-filtered down -- exact area averaging over
+the supersamples -- so two runs of this script write the same bytes.
 """
 
 from __future__ import annotations
@@ -28,195 +44,343 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageDraw
 
-INK = (18, 38, 63)  # the tile
-RIM = (46, 74, 110)  # the tile's edge, so it still reads on a dark Desktop
-STONE = (244, 239, 230)  # arch, imposts, keystone, plinth
-FLOW = (232, 163, 61)  # the line through the opening
+INK = (18, 38, 63)  # #12263F the tile, the opening, the eyes
+RIM = (46, 74, 110)  # #2E4A6E the tile's edge, so it shows on a dark Desktop
+STONE = (244, 239, 230)  # #F4EFE6 limestone: the arch, and the face patch
+AMBER = (232, 163, 61)  # #E8A33D the keystone, and nothing else
+BROWN = (168, 112, 64)  # #A87040 the monkey
 
 SS = 8  # supersampling factor; the downsample is a box filter, so this is exact
 
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 PREVIEW_SIZE = 512
 
-# Geometry per size, in that size's own device pixels. x0/x1 are the outer faces
-# of the piers, top is the crown of the extrados, base is where the piers meet
-# the plinth, thick is the depth of the arch ring. The centre and the springing
-# line follow: cx = (x0 + x1) / 2, radius = (x1 - x0) / 2, springing = top +
-# radius. Optional parts are None when that size is too small to carry them.
-#
-#   plinth   = (height, how far it oversails the piers)
-#   impost   = (how far it projects sideways, its height)
-#   keystone = (half-width at the extrados, half-width at the intrados,
-#               rise above the extrados, drop below the intrados)
-#   mortar   = width of the two joints flanking the keystone
-#   flow     = (centre line, amplitude, stroke width)
-SPECS = {
-    16: {
-        "margin": 0, "radius": 3, "rim": 1,
-        "x0": 2, "x1": 14, "top": 2, "base": 14, "thick": 2,
-        "plinth": None, "impost": None, "keystone": None, "mortar": None,
-        "flow": (11, 1.0, 2),
-    },
-    24: {
-        "margin": 0, "radius": 5, "rim": 1,
-        "x0": 3, "x1": 21, "top": 3, "base": 21, "thick": 3,
-        "plinth": None, "impost": None, "keystone": None, "mortar": None,
-        "flow": (16.5, 1.5, 2.5),
-    },
-    32: {
-        "margin": 0, "radius": 6, "rim": 1,
-        "x0": 4, "x1": 28, "top": 4, "base": 26, "thick": 3.5,
-        "plinth": (2, 1), "impost": None, "keystone": None, "mortar": None,
-        "flow": (21, 2, 3),
-    },
-    48: {
-        "margin": 1, "radius": 9, "rim": 1,
-        "x0": 7, "x1": 41, "top": 6, "base": 39, "thick": 4.5,
-        "plinth": (3, 2), "impost": (2.5, 2), "keystone": (3.5, 2.5, 1.5, 1),
-        "mortar": None,
-        "flow": (31, 3, 4),
-    },
-    64: {
-        "margin": 2, "radius": 12, "rim": 1,
-        "x0": 10, "x1": 54, "top": 8, "base": 52, "thick": 5.5,
-        "plinth": (4, 2), "impost": (3, 2.5), "keystone": (4.5, 3, 1.5, 1),
-        "mortar": None,
-        "flow": (41, 4, 5),
-    },
-    128: {
-        "margin": 4, "radius": 24, "rim": 2,
-        "x0": 20, "x1": 108, "top": 15, "base": 105, "thick": 11,
-        "plinth": (8, 4), "impost": (6, 5), "keystone": (8.5, 6, 3, 2),
-        "mortar": 1,
-        "flow": (82, 8, 9),
-    },
-    256: {
-        "margin": 8, "radius": 48, "rim": 3,
-        "x0": 40, "x1": 216, "top": 30, "base": 210, "thick": 22,
-        "plinth": (16, 9), "impost": (12, 10), "keystone": (17, 11.5, 5.5, 3.5),
-        "mortar": 2,
-        "flow": (164, 16, 18),
-    },
-    512: {
-        "margin": 16, "radius": 96, "rim": 6,
-        "x0": 80, "x1": 432, "top": 60, "base": 420, "thick": 44,
-        "plinth": (32, 18), "impost": (24, 20), "keystone": (34, 23, 11, 7),
-        "mortar": 4,
-        "flow": (328, 32, 36),
-    },
+# How much of the animal each size can carry. 0 and 1 draw the reduced figure,
+# 2 and up the full one.
+LEVEL = {16: 0, 24: 1, 32: 2, 48: 3, 64: 3, 128: 4, 256: 4, 512: 4}
+
+# margin, corner radius, rim width -- in that size's own device pixels.
+TILE = {16: (0, 3, 1), 24: (0, 5, 1), 32: (0, 6, 1), 48: (1, 9, 1),
+        64: (2, 12, 1), 128: (4, 24, 2), 256: (8, 48, 3), 512: (16, 96, 6)}
+
+# The arch, per size, in that size's own device pixels, so that the ring lands
+# on whole pixels where there are few of them to land on. x0/x1 are the outer
+# faces of the piers, top is the crown of the extrados, base is the foot of the
+# piers, thick is the depth of the ring; the centre, the springing line and the
+# intrados follow. key is the amber keystone as (half-width at the extrados,
+# half-width at its foot, rise above the extrados, drop below the intrados) --
+# it always drops past the intrados, because that overhang is what the hand
+# grips. mortar is the width of the two joints flanking it, or None.
+ARCH = {
+    16: {"x0": 1, "x1": 15, "top": 2, "base": 15, "thick": 2,
+         "key": (2.25, 1.75, 1, 1.25), "mortar": None},
+    24: {"x0": 2, "x1": 22, "top": 2, "base": 22, "thick": 3,
+         "key": (3.25, 2.5, 1, 1.5), "mortar": None},
+    32: {"x0": 4, "x1": 28, "top": 4, "base": 26, "thick": 3.5,
+         "key": (4, 3, 2, 2), "mortar": None},
+    48: {"x0": 7, "x1": 41, "top": 6, "base": 39, "thick": 4.5,
+         "key": (5, 3.5, 2, 2.5), "mortar": None},
+    64: {"x0": 10, "x1": 54, "top": 8, "base": 52, "thick": 5.5,
+         "key": (6.5, 4.5, 2.5, 3), "mortar": None},
+    128: {"x0": 20, "x1": 108, "top": 15, "base": 105, "thick": 11,
+          "key": (13, 9, 5, 6), "mortar": 1},
+    256: {"x0": 40, "x1": 216, "top": 30, "base": 210, "thick": 22,
+          "key": (26, 18, 10, 12), "mortar": 2},
+    512: {"x0": 80, "x1": 432, "top": 60, "base": 420, "thick": 44,
+          "key": (52, 36, 20, 24), "mortar": 4},
+}
+
+# ---------------------------------------------------------------------------
+# The reduced animal, at 16 and 24 px: a head, two ears at eye level and a short
+# body, hanging straight under the keystone. Fractions of the tile side;
+# overlap is how far the head's crown goes up behind the keystone's foot, which
+# is the whole of what says "hanging" once the arm is gone. tail, when it is
+# there, is (centre dx, centre dy, start radius, end radius, start angle, end
+# angle, stroke) -- dx and dy from the body's centre, angles as in PIL, 0 east
+# and 90 south. face is the limestone patch as (dy, rx, ry), no eyes cut in it.
+REDUCED = {
+    0: {"overlap": 0.017, "head_r": 0.122,
+        "ear_r": 0.070, "ear_dx": 0.134, "ear_dy": -0.020,
+        "body_dy": 0.198, "body_rx": 0.134, "body_ry": 0.124,
+        "tail": None, "face": None},
+    1: {"overlap": 0.016, "head_r": 0.118,
+        "ear_r": 0.070, "ear_dx": 0.128, "ear_dy": -0.018,
+        "body_dy": 0.196, "body_rx": 0.120, "body_ry": 0.122,
+        "tail": (0.128, 0.056, 0.092, 0.055, 158.0, -52.0, 0.046),
+        "face": (0.020, 0.055, 0.052)},
+}
+
+# ---------------------------------------------------------------------------
+# The full animal, from 32 px up. Every offset is a fraction of the tile side,
+# and every one of them is measured from something else in the figure rather
+# than from the tile, so that the whole animal follows the keystone's foot --
+# which sits lower, relative to the tile, the smaller the tile gets.
+GRIP_DY = -0.014  # the gripping hand's centre, above the keystone's foot
+HAND_RX, HAND_RY = 0.044, 0.032
+HEAD_DX, HEAD_DY = -0.070, 0.212  # the head, from the grip
+HEAD_R = 0.098
+EAR_R, EAR_DX, EAR_DY = 0.058, 0.112, -0.016  # from the head: large, and low
+BODY_DX, BODY_DY = -0.002, 0.130  # from the head
+BODY_RX, BODY_RY = 0.070, 0.104  # narrower than the head is wide
+ARM_W = 0.052
+TAIL_DX, TAIL_DY = 0.185, -0.006  # the tail's spiral centre, from the body
+TAIL_R0, TAIL_A0, TAIL_W = 0.115, 158.0, 0.030
+
+# k grows the animal as the tile shrinks, or the arch swallows it. tail_sweep
+# and tail_r1 turn the tail from a hook into a hook that closes on a loop.
+FULL = {
+    2: {"k": 1.05, "tail_sweep": 300.0, "tail_r1": 0.048,
+        "face": 1, "legs": 0, "free_arm": False},
+    3: {"k": 1.00, "tail_sweep": 400.0, "tail_r1": 0.036,
+        "face": 2, "legs": 1, "free_arm": True},
+    4: {"k": 1.00, "tail_sweep": 430.0, "tail_r1": 0.032,
+        "face": 3, "legs": 2, "free_arm": True},
 }
 
 
-def _q(value: float) -> int:
-    """A device-pixel coordinate in the supersampled raster."""
-    return int(round(value * SS))
+class Canvas:
+    """A supersampled tile. All coordinates are fractions of the tile side."""
+
+    def __init__(self, size: int):
+        self.size = size
+        self.side = size * SS
+        # The canvas starts ink, not transparent, so the box filter never blends
+        # a colour with an unpainted pixel at the tile's rounded corners.
+        self.img = Image.new("RGB", (self.side, self.side), INK)
+        self.d = ImageDraw.Draw(self.img)
+
+    def q(self, u: float) -> int:
+        """A fraction of the tile side, in supersampled device pixels."""
+        return int(round(u * self.size * SS))
+
+    def w(self, u: float, floor_px: float = 1.0) -> int:
+        """A stroke width: never thinner than floor_px real pixels."""
+        return int(round(max(u * self.size, floor_px) * SS))
+
+    def rect(self, x0, y0, x1, y1, colour) -> None:
+        self.d.rectangle([self.q(x0), self.q(y0), self.q(x1) - 1,
+                          self.q(y1) - 1], fill=colour)
+
+    def disc(self, cx, cy, r, colour) -> None:
+        self.oval(cx, cy, r, r, colour)
+
+    def oval(self, cx, cy, rx, ry, colour) -> None:
+        self.d.ellipse([self.q(cx - rx), self.q(cy - ry), self.q(cx + rx) - 1,
+                        self.q(cy + ry) - 1], fill=colour)
+
+    def pie(self, cx, cy, r, a0, a1, colour) -> None:
+        self.d.pieslice([self.q(cx - r), self.q(cy - r), self.q(cx + r) - 1,
+                         self.q(cy + r) - 1], a0, a1, fill=colour)
+
+    def poly(self, points, colour) -> None:
+        self.d.polygon([(self.q(x), self.q(y)) for x, y in points], fill=colour)
+
+    def stroke(self, points, colour, width, floor_px=1.0, caps=True) -> None:
+        pts = [(self.q(x), self.q(y)) for x, y in points]
+        wide = self.w(width, floor_px)
+        self.d.line(pts, fill=colour, width=wide, joint="curve")
+        if caps:  # PIL rounds joints but not ends
+            for x, y in (pts[0], pts[-1]):
+                self.d.ellipse([x - wide // 2, y - wide // 2,
+                                x + wide // 2, y + wide // 2], fill=colour)
+
+    def finish(self) -> Image.Image:
+        margin, radius, _ = TILE[self.size]
+        n = float(self.size)
+        box = [self.q(margin / n), self.q(margin / n),
+               self.q((self.size - margin) / n) - 1,
+               self.q((self.size - margin) / n) - 1]
+        alpha = Image.new("L", (self.side, self.side), 0)
+        ImageDraw.Draw(alpha).rounded_rectangle(box, radius=self.q(radius / n),
+                                                fill=255)
+        icon = self.img.resize((self.size, self.size),
+                               Image.Resampling.BOX).convert("RGBA")
+        icon.putalpha(alpha.resize((self.size, self.size),
+                                   Image.Resampling.BOX))
+        return icon
 
 
-def _rect(draw: ImageDraw.ImageDraw, x0, y0, x1, y1, colour) -> None:
-    """Fill the half-open box [x0, x1) x [y0, y1) given in device pixels."""
-    draw.rectangle([_q(x0), _q(y0), _q(x1) - 1, _q(y1) - 1], fill=colour)
-
-
-def _upper_half_disc(draw: ImageDraw.ImageDraw, cx, cy, r, colour) -> None:
-    draw.pieslice(
-        [_q(cx - r), _q(cy - r), _q(cx + r) - 1, _q(cy + r) - 1],
-        180, 360, fill=colour,
+def _tile(c: Canvas) -> None:
+    margin, radius, rim_w = TILE[c.size]
+    n = float(c.size)
+    c.d.rounded_rectangle(
+        [c.q(margin / n), c.q(margin / n),
+         c.q((c.size - margin) / n) - 1, c.q((c.size - margin) / n) - 1],
+        radius=c.q(radius / n), fill=INK, outline=RIM, width=c.q(rim_w / n),
     )
+
+
+def _spiral(cx, cy, r0, r1, a0, a1, steps=112):
+    """A polyline whose radius shrinks as its angle sweeps: the tail's curl."""
+    points = []
+    for i in range(steps + 1):
+        t = i / steps
+        a = math.radians(a0 + (a1 - a0) * t)
+        r = r0 + (r1 - r0) * t
+        points.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return points
+
+
+def _face(c: Canvas, mode: int, hx: float, hy: float, hr: float) -> None:
+    """The limestone patch: two lobes over the eyes, tapering to the muzzle.
+
+    One shape, not a muzzle stuck under a mask -- an inverted teardrop with a
+    notch cut between the lobes, which is what stops the head reading as a bear.
+    It sits a little off the head's centre, so the animal looks slightly at you.
+
+    At mode 1 -- 32 px, where the whole head is seven pixels across -- the
+    patch is drawn a size smaller and no eyes are cut into it: two ink dots
+    two-thirds of a pixel wide come back from the box filter as one grey smear
+    across the middle of it, which costs the face more than it buys.
+    """
+    if mode <= 0:
+        return
+    scale = 0.90 if mode == 1 else 1.0
+    fx = hx + 0.10 * hr
+    lobe_r, lobe_dx = 0.42 * hr * scale, 0.33 * hr * scale
+    lobe_cy = hy - 0.17 * hr
+    muzzle_cy = lobe_cy + 0.50 * hr * scale
+    mrx, mry = 0.42 * hr * scale, 0.33 * hr * scale
+
+    c.poly([(fx - lobe_dx - lobe_r, lobe_cy),
+            (fx + lobe_dx + lobe_r, lobe_cy),
+            (fx + mrx, muzzle_cy), (fx - mrx, muzzle_cy)], STONE)
+    for side in (-1, 1):
+        c.disc(fx + side * lobe_dx, lobe_cy, lobe_r, STONE)
+    c.oval(fx, muzzle_cy, mrx, mry, STONE)
+
+    if mode >= 2:
+        for side in (-1, 1):
+            c.disc(fx + side * lobe_dx, lobe_cy, 0.175 * hr, INK)
+
+    if mode >= 3:
+        for side in (-1, 1):
+            c.disc(fx + side * 0.13 * hr, muzzle_cy - 0.06 * hr, 0.062 * hr, INK)
+        c.stroke([(fx - 0.17 * hr, muzzle_cy + 0.12 * hr),
+                  (fx, muzzle_cy + 0.19 * hr),
+                  (fx + 0.17 * hr, muzzle_cy + 0.12 * hr)], INK, 0.060 * hr)
+
+
+def _reduced_monkey(c: Canvas, level: int, cx: float, foot: float) -> None:
+    """16 and 24 px: the creature under the keystone, and nothing to spare."""
+    p = REDUCED[level]
+    hy = foot + p["head_r"] - p["overlap"]
+    by = hy + p["body_dy"]
+
+    if p["tail"] is not None:
+        dx, dy, r0, r1, a0, a1, width = p["tail"]
+        root = (cx + p["body_rx"] * 0.45, by + p["body_ry"] * 0.50)
+        c.stroke([root] + _spiral(cx + dx, by + dy, r0, r1, a0, a1),
+                 BROWN, width, 1.5)
+
+    c.oval(cx, by, p["body_rx"], p["body_ry"], BROWN)
+    for side in (-1, 1):
+        c.disc(cx + side * p["ear_dx"], hy + p["ear_dy"], p["ear_r"], BROWN)
+    c.disc(cx, hy, p["head_r"], BROWN)
+
+    if p["face"] is not None:
+        dy, rx, ry = p["face"]
+        c.oval(cx, hy + dy, rx, ry, STONE)
+
+
+def _full_monkey(c: Canvas, level: int, cx: float, foot: float,
+                 pier: float) -> None:
+    """32 px and up: hanging by one arm, the other hand out on the intrados."""
+    cfg = FULL[level]
+    k = cfg["k"]
+    hx, hy = cx + HEAD_DX * k, foot + HEAD_DY * k
+    hr = HEAD_R * k
+    bx, by = hx + BODY_DX * k, hy + BODY_DY * k
+
+    # The tail, behind everything: down off the rump, out to the right, up and
+    # over, and round into a loop small enough to keep a hole in it at 48 px.
+    root = (bx + 0.050 * k, by + 0.029 * k)
+    c.stroke([root] + _spiral(bx + TAIL_DX * k, by + TAIL_DY * k, TAIL_R0 * k,
+                              cfg["tail_r1"] * k, TAIL_A0,
+                              TAIL_A0 - cfg["tail_sweep"]),
+             BROWN, TAIL_W * k, 1.5)
+
+    if cfg["legs"] >= 1:
+        c.stroke([(bx - 0.026 * k, by + 0.108 * k),
+                  (bx - 0.070 * k, by + 0.155 * k),
+                  (bx - 0.026 * k, by + 0.175 * k)], BROWN, 0.040 * k, 1.5)
+    if cfg["legs"] >= 2:
+        c.stroke([(bx + 0.030 * k, by + 0.106 * k),
+                  (bx + 0.078 * k, by + 0.143 * k),
+                  (bx + 0.046 * k, by + 0.173 * k)], BROWN, 0.038 * k, 1.5)
+
+    if cfg["free_arm"]:
+        # The free hand, out on the inner face of the pier. It has to land on
+        # the stone and not near it: an arm that stops a hair short reads as a
+        # stump, and the whole point of the second hand is that the animal is
+        # holding the arch it is hanging in.
+        hand = (pier + 0.014 * k, by + 0.062 * k)
+        c.stroke([(bx - 0.055 * k, by - 0.010 * k),
+                  (bx - 0.125 * k, by + 0.040 * k), hand], BROWN, 0.040 * k, 1.5)
+        c.oval(hand[0], hand[1], 0.034 * k, 0.030 * k, BROWN)
+
+    # The gripping arm, straight up to the keystone. It runs behind the head and
+    # the far ear, which are the same brown, so the two read as one form.
+    c.stroke([(hx + 0.046 * k, hy + 0.088 * k), (hx + 0.060 * k, hy - 0.020 * k),
+              (cx - 0.002, foot + 0.004)], BROWN, ARM_W * k, 1.5)
+
+    c.oval(bx, by, BODY_RX * k, BODY_RY * k, BROWN)
+    for side in (-1, 1):
+        c.disc(hx + side * EAR_DX * k, hy + EAR_DY * k, EAR_R * k, BROWN)
+    c.disc(hx, hy, hr, BROWN)
+    _face(c, cfg["face"], hx, hy, hr)
+
+    # The hand last of all, over the amber: the one place the two halves of the
+    # mark touch, so it is the last thing drawn and nothing crosses it.
+    c.oval(cx, foot + GRIP_DY * k, HAND_RX * k, HAND_RY * k, BROWN)
 
 
 def render(size: int) -> Image.Image:
     """Draw one size of the icon as an RGBA image with transparent corners."""
-    spec = SPECS[size]
-    side = size * SS
+    level = LEVEL[size]
+    spec = ARCH[size]
+    n = float(size)
+    c = Canvas(size)
+    _tile(c)
 
-    x0, x1 = spec["x0"], spec["x1"]
-    top, base, thick = spec["top"], spec["base"], spec["thick"]
+    x0, x1 = spec["x0"] / n, spec["x1"] / n
+    top, base, thick = spec["top"] / n, spec["base"] / n, spec["thick"] / n
     cx = (x0 + x1) / 2
     radius = (x1 - x0) / 2
     springing = top + radius
     inner = radius - thick
 
-    # The whole canvas starts ink, not transparent, so that the box filter never
-    # blends a colour with an unpainted pixel at the tile's rounded corners.
-    art = Image.new("RGB", (side, side), INK)
-    draw = ImageDraw.Draw(art)
+    # The ring: the outer portal in stone, the opening carved back to ink. The
+    # one device pixel of overlap at the springing keeps the pie and the piers
+    # from leaving a seam between them.
+    c.pie(cx, springing, radius, 180, 360, STONE)
+    c.rect(x0, springing - 1.0 / n, x1, base, STONE)
+    c.pie(cx, springing, inner, 180, 360, INK)
+    c.rect(x0 + thick, springing - 1.0 / n, x1 - thick, base, INK)
 
-    margin = spec["margin"]
-    tile_box = [_q(margin), _q(margin), _q(size - margin) - 1, _q(size - margin) - 1]
-    tile_radius = _q(spec["radius"])
-    draw.rounded_rectangle(
-        tile_box, radius=tile_radius, fill=INK,
-        outline=RIM, width=_q(spec["rim"]),
-    )
+    wide, narrow, rise, drop = (v / n for v in spec["key"])
+    crown, foot = top - rise, top + thick + drop
+    c.poly([(cx - wide, crown), (cx + wide, crown),
+            (cx + narrow, foot), (cx - narrow, foot)], AMBER)
+    if spec["mortar"] is not None:
+        for side in (-1, 1):
+            c.stroke([(cx + side * wide, crown), (cx + side * narrow, foot)],
+                     INK, spec["mortar"] / n, caps=False)
 
-    # The arch ring: the outer portal in stone, the opening carved back to ink.
-    _upper_half_disc(draw, cx, springing, radius, STONE)
-    _rect(draw, x0, springing - 1, x1, base, STONE)
-    _upper_half_disc(draw, cx, springing, inner, INK)
-    _rect(draw, x0 + thick, springing - 1, x1 - thick, base, INK)
+    if level <= 1:
+        _reduced_monkey(c, level, cx, foot)
+    else:
+        _full_monkey(c, level, cx, foot, x0 + thick)
 
-    if spec["plinth"] is not None:
-        height, oversail = spec["plinth"]
-        _rect(draw, x0 - oversail, base, x1 + oversail, base + height, STONE)
-
-    if spec["impost"] is not None:
-        project, height = spec["impost"]
-        _rect(draw, x0 - project, springing - height / 2,
-              x0 + thick, springing + height / 2, STONE)
-        _rect(draw, x1 - thick, springing - height / 2,
-              x1 + project, springing + height / 2, STONE)
-
-    if spec["keystone"] is not None:
-        wide, narrow, rise, drop = spec["keystone"]
-        head = top - rise
-        foot = top + thick + drop
-        draw.polygon(
-            [(_q(cx - wide), _q(head)), (_q(cx + wide), _q(head)),
-             (_q(cx + narrow), _q(foot)), (_q(cx - narrow), _q(foot))],
-            fill=STONE,
-        )
-        if spec["mortar"] is not None:
-            joint = _q(spec["mortar"])
-            draw.line([(_q(cx - wide), _q(head)), (_q(cx - narrow), _q(foot))],
-                      fill=INK, width=joint)
-            draw.line([(_q(cx + wide), _q(head)), (_q(cx + narrow), _q(foot))],
-                      fill=INK, width=joint)
-
-    # The flow: one period of a sine across the opening, drawn long and then cut
-    # by the opening itself, so it meets the piers face-on instead of tapering.
-    centre, amplitude, stroke = spec["flow"]
-    opening = Image.new("L", (side, side), 0)
-    cut = ImageDraw.Draw(opening)
-    _upper_half_disc(cut, cx, springing, inner, 255)
-    _rect(cut, x0 + thick, springing - 1, x1 - thick, base, 255)
-
-    wave = Image.new("L", (side, side), 0)
-    pen = ImageDraw.Draw(wave)
-    span = (x1 - thick) - (x0 + thick)
-    steps = 128
-    points = []
-    for step in range(steps + 1):
-        x = x0 + (x1 - x0) * step / steps
-        y = centre - amplitude * math.sin(2 * math.pi * (x - (x0 + thick)) / span)
-        points.append((_q(x), _q(y)))
-    pen.line(points, fill=255, width=_q(stroke), joint="curve")
-
-    art.paste(FLOW, (0, 0, side, side), ImageChops.multiply(wave, opening))
-
-    alpha = Image.new("L", (side, side), 0)
-    ImageDraw.Draw(alpha).rounded_rectangle(tile_box, radius=tile_radius, fill=255)
-
-    icon = art.resize((size, size), Image.Resampling.BOX).convert("RGBA")
-    icon.putalpha(alpha.resize((size, size), Image.Resampling.BOX))
-    return icon
+    return c.finish()
 
 
 def main() -> None:
     here = Path(__file__).resolve().parent
-    ico_path = here / "archflow.ico"
-    png_path = here / "archflow-icon-512.png"
+    ico_path = here / "monkeyarch.ico"
+    png_path = here / "monkeyarch-icon-512.png"
 
     frames = [render(size) for size in ICO_SIZES]
     frames[-1].save(
