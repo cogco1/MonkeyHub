@@ -1546,6 +1546,12 @@ export type IntentRequestDto = {
      */
     camera?: CameraDto | null;
     /**
+     * Scope
+     *
+     * how far the change reaches, when the client settles it in a field rather than in words: this element, the stack that seats on it, or everything on its datum. The architect may say it instead (整个叠层 / the whole stack / 整条标高 / 只这个); either way the answer is the same slot
+     */
+    scope?: 'element' | 'stack' | 'datum' | null;
+    /**
      * Continuationtoken
      *
      * the token the server's last clarification answered with, when this request continues that exchange. It is the whole of the continuity: the pending intent it names carries the original utterance, the target resolved so far and what has been rejected, so no transcript is sent and none is read
@@ -1782,13 +1788,19 @@ export type PendingIntentDto = {
     /**
      * Missingslots
      *
-     * what is still open: target, property, value, orientation
+     * what is still open: target, property, value, orientation, scope
      */
     missingSlots: Array<string>;
     /**
      * Candidates
      */
     candidates: Array<CandidateOptionDto>;
+    /**
+     * Scopeoptions
+     *
+     * the readings of how far a change to the resolved element reaches, with the ids each covers; empty until one element resolves, and a single 'element' entry for one that carries nothing and shares no datum — where there is one reading there is no question
+     */
+    scopeOptions?: Array<ScopeOptionDto>;
     /**
      * Rejectedcandidates
      *
@@ -2181,6 +2193,10 @@ export type ProposalDto = {
      * Createdat
      */
     createdAt: string;
+    /**
+     * the scope the intent exchange settled, when it settled one; null for a proposal made straight from a selection, which asked nobody how far
+     */
+    scope?: ProposalScopeDto | null;
 };
 
 /**
@@ -2219,6 +2235,29 @@ export type ProposalRequestDto = {
      * the project the client believes it is proposing against; a different one is refused as PROJECT_MISMATCH
      */
     projectId?: string | null;
+};
+
+/**
+ * ProposalScopeDto
+ *
+ * How far the request said the change reaches, and what that covers.
+ *
+ * A *coverage*, not a mutation. The operator below still moves one scalar on
+ * one element; ``elementIds`` is what the architect agreed the change is
+ * about, so a client can show the whole stack as revalidated instead of
+ * discovering it in the closure afterwards.
+ */
+export type ProposalScopeDto = {
+    /**
+     * Scope
+     */
+    scope: 'element' | 'stack' | 'datum';
+    /**
+     * Elementids
+     *
+     * every element the settled scope covers, the target first
+     */
+    elementIds: Array<string>;
 };
 
 /**
@@ -2317,6 +2356,35 @@ export type RelationChecksDto = {
      * every declared relation was actually checked
      */
     fullyChecked: boolean;
+};
+
+/**
+ * ScopeOptionDto
+ *
+ * One reading of how far a change reaches, and exactly what it covers.
+ *
+ * A choice about coverage, not about identity: ``elementIds`` is what the
+ * reading names, so the question can say "these three" rather than asking the
+ * architect to imagine which. Nothing here promises a multi-element edit —
+ * the successor record still moves one scalar.
+ */
+export type ScopeOptionDto = {
+    /**
+     * Scope
+     */
+    scope: 'element' | 'stack' | 'datum';
+    /**
+     * Elementids
+     *
+     * the elements this reading covers
+     */
+    elementIds: Array<string>;
+    /**
+     * Label
+     *
+     * the reading as a person reads it
+     */
+    label: string;
 };
 
 /**

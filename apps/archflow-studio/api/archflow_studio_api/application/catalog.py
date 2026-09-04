@@ -14,7 +14,8 @@ model, missing from the catalog" without either word being a guess.
 Sources, in the record's own terms:
 
 - elements and their scalar params: the authored record (``source=authored``,
-  confidence 1.0);
+  confidence 1.0) — except a param a reference already pins, which is
+  ``status=derived`` with ``source=derived from <ref>`` naming what pins it;
 - objects: the reference run's ``seat-3dm-inspection`` records, joined to
   elements by the export's own naming (``obj-<elementId>[-…]`` under the
   claimed ``archflow:component``), through the same rule ``POST /api/pick/resolve``
@@ -31,6 +32,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Mapping, Sequence
 
 from archflow.state.state_record import StateRecord
@@ -50,6 +52,20 @@ EDITABLE = "editable"
 LOCKED = "locked"
 DERIVED_STATUS = "derived"
 MISSING = "missing"
+
+# How a derived capability's ``source`` names where its value comes from:
+# ``derived from entity:<id>``. The suffix is a kernel ref, so a reader looks
+# the thing up in the record rather than reading an identifier's spelling.
+DERIVED_FROM = "derived from "
+
+# A number a reference already pins is not a number anybody can move. An
+# element whose ``top`` names a level, another element's ``-top`` datum or a
+# grid role does not own its height — the top does, and a change typed against
+# the element is one the kernel refuses afterwards. Which reference pins which
+# param is declared here; *whether* an element carries that reference is read
+# from ``StateRecord.dependency_edges()``, the kernel's own reading of
+# ``references``, never from an identifier's spelling.
+PINNED_BY: Mapping[str, str] = MappingProxyType({"height": "top"})
 
 BOUND = "bound"
 MODEL_VISIBLE_CATALOG_MISSING = "MODEL_VISIBLE_CATALOG_MISSING"
@@ -75,6 +91,20 @@ class Capability:
     @property
     def capability_id(self) -> str:
         return f"entity:{self.element_id}#params.{self.key}"
+
+    @property
+    def derived_from(self) -> str | None:
+        """The kernel ref this value comes from, when it is derived; else ``None``.
+
+        The one reader of the ``source`` string, so nobody else has to know how
+        it is spelled. ``entity:level-eaves`` is a level's business and
+        ``entity:portico-capitals-west`` is another element's: which of the two
+        it is, is decided by looking the id up in the record, not here.
+        """
+
+        if self.status != DERIVED_STATUS or not self.source.startswith(DERIVED_FROM):
+            return None
+        return self.source[len(DERIVED_FROM) :] or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,23 +225,19 @@ def build_catalog(
 ) -> Catalog:
     record = projection.record
     validators = _validators_by_element(record)
+    pins = references_of(record)
     elements = tuple(
         CatalogElement(
             element_id=row.element_id,
             component_id=row.component_id,
             producer=row.producer,
             capabilities=tuple(
-                Capability(
+                _capability(
                     element_id=row.element_id,
                     key=key,
                     value=value,
-                    value_type="integer" if isinstance(value, int) else "number",
-                    unit=None,
-                    bounds=None,
-                    source=AUTHORED,
-                    confidence=1.0,
-                    status=EDITABLE,
                     validator_refs=validators.get(row.element_id, ()),
+                    pinned_to=pins.get(row.element_id, {}).get(PINNED_BY.get(key, "")),
                 )
                 for key, value in row.numeric_fields.items()
             ),
@@ -263,6 +289,64 @@ def build_catalog(
         inspection_run=inspection_run,
         honesty=tuple(lines),
     )
+
+
+def _capability(
+    *,
+    element_id: str,
+    key: str,
+    value: int | float,
+    validator_refs: tuple[str, ...],
+    pinned_to: str | None,
+) -> Capability:
+    """One param as a capability, editable unless a reference already pins it.
+
+    ``pinned_to`` is the kernel ref the pinning reference names — the level a
+    ``top`` sits on, or the element whose ``-top`` datum it takes. A capability
+    with one is *derived*: its number follows from that ref, and the honest
+    answer to a request that would move it is to name the source, not to type a
+    change the kernel refuses later.
+    """
+
+    return Capability(
+        element_id=element_id,
+        key=key,
+        value=value,
+        value_type="integer" if isinstance(value, int) else "number",
+        unit=None,
+        bounds=None,
+        source=AUTHORED if pinned_to is None else f"{DERIVED_FROM}{pinned_to}",
+        confidence=1.0,
+        status=EDITABLE if pinned_to is None else DERIVED_STATUS,
+        validator_refs=validator_refs,
+    )
+
+
+def references_of(record: StateRecord) -> Mapping[str, Mapping[str, str]]:
+    """For each entity, the ref each of its reference keys names.
+
+    ``StateRecord.dependency_edges()`` is the kernel's own reading of an
+    entity's ``references``: a ``base`` or ``top`` that names a level, another
+    element's ``-top`` datum, a host or a grid role arrives here as one edge
+    whose ``relation`` is that key and whose ``upstream_ref`` is what it names.
+    Reading it here is what keeps every caller off the identifiers' spelling —
+    ``-top`` is resolved by the kernel, once, and never by a pattern in the
+    studio.
+
+    Declared relations arrive on the same edges (``support`` and the rest of
+    the kernel's relation vocabulary, subject upstream of object), which is why
+    this one table answers both "what does this element sit on" and "what sits
+    on it".
+    """
+
+    out: dict[str, dict[str, str]] = defaultdict(dict)
+    for edge in record.dependency_edges():
+        if not edge.downstream_ref.startswith("entity:"):
+            continue
+        out[edge.downstream_ref[len("entity:") :]].setdefault(
+            edge.relation, edge.upstream_ref
+        )
+    return out
 
 
 def _validators_by_element(record: StateRecord) -> Mapping[str, tuple[str, ...]]:

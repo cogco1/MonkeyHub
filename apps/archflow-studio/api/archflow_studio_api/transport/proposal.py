@@ -105,6 +105,24 @@ class ProposalChangeDto(BaseModel):
     )
 
 
+class ProposalScopeDto(BaseModel):
+    """How far the request said the change reaches, and what that covers.
+
+    A *coverage*, not a mutation. The operator below still moves one scalar on
+    one element; ``elementIds`` is what the architect agreed the change is
+    about, so a client can show the whole stack as revalidated instead of
+    discovering it in the closure afterwards.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    scope: Literal["element", "stack", "datum"]
+    element_ids: list[str] = Field(
+        alias="elementIds",
+        description="every element the settled scope covers, the target first",
+    )
+
+
 class ProposalDto(BaseModel):
     """The wire form of ``POST /api/proposals`` and ``GET /api/proposals/{id}``."""
 
@@ -133,12 +151,24 @@ class ProposalDto(BaseModel):
         description="where this proposal lives; it is not version history",
     )
     created_at: str = Field(alias="createdAt")
+    scope: ProposalScopeDto | None = Field(
+        default=None,
+        description="the scope the intent exchange settled, when it settled "
+        "one; null for a proposal made straight from a selection, which asked "
+        "nobody how far",
+    )
 
 
-def to_dto(proposal: Proposal) -> ProposalDto:
-    """Shape one proposal for the wire; nothing here is recomputed."""
+def to_dto(proposal: Proposal, *, scope: ProposalScopeDto | None = None) -> ProposalDto:
+    """Shape one proposal for the wire; nothing here is recomputed.
+
+    ``scope`` belongs to the intent exchange, not to the proposal store: a
+    proposal is the same typed operator whether an exchange settled a coverage
+    or a click did. ``POST /api/proposals`` asks nobody how far and passes none.
+    """
 
     return ProposalDto(
+        scope=scope,
         proposal_id=proposal.proposal_id,
         # The application's two statuses are the DTO's two literals; a third
         # would fail here rather than reach a client.

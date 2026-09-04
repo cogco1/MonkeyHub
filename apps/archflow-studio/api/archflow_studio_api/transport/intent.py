@@ -18,6 +18,7 @@ from ..application.clarification import (
     AuthoredControlDraft,
     CandidateOption,
     PendingIntent,
+    ScopeOption,
 )
 from ..application.gestures import Gesture, GestureHit
 from ..application.intent_agent import Compilation
@@ -135,6 +136,14 @@ class IntentRequestDto(BaseModel):
         default=None,
         description="where the viewer stands: reads 'left' and 'right' against the project's compass (PROJECT.md)",
     )
+    scope: Literal["element", "stack", "datum"] | None = Field(
+        default=None,
+        description="how far the change reaches, when the client settles it in "
+        "a field rather than in words: this element, the stack that seats on "
+        "it, or everything on its datum. The architect may say it instead "
+        "(整个叠层 / the whole stack / 整条标高 / 只这个); either way the "
+        "answer is the same slot",
+    )
     continuation_token: str | None = Field(
         alias="continuationToken",
         default=None,
@@ -228,6 +237,24 @@ class CandidateOptionDto(BaseModel):
     label: str = Field(description="the option as a person reads it")
 
 
+class ScopeOptionDto(BaseModel):
+    """One reading of how far a change reaches, and exactly what it covers.
+
+    A choice about coverage, not about identity: ``elementIds`` is what the
+    reading names, so the question can say "these three" rather than asking the
+    architect to imagine which. Nothing here promises a multi-element edit —
+    the successor record still moves one scalar.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    scope: Literal["element", "stack", "datum"]
+    element_ids: list[str] = Field(
+        alias="elementIds", description="the elements this reading covers"
+    )
+    label: str = Field(description="the reading as a person reads it")
+
+
 class PendingIntentDto(BaseModel):
     """The one short-term structure a clarification chain is carried in.
 
@@ -258,9 +285,17 @@ class PendingIntentDto(BaseModel):
     known_slots: dict[str, str] = Field(alias="knownSlots")
     missing_slots: list[str] = Field(
         alias="missingSlots",
-        description="what is still open: target, property, value, orientation",
+        description="what is still open: target, property, value, orientation, scope",
     )
     candidates: list[CandidateOptionDto]
+    scope_options: list[ScopeOptionDto] = Field(
+        alias="scopeOptions",
+        default_factory=list,
+        description="the readings of how far a change to the resolved element "
+        "reaches, with the ids each covers; empty until one element resolves, "
+        "and a single 'element' entry for one that carries nothing and shares "
+        "no datum — where there is one reading there is no question",
+    )
     rejected_candidates: list[str] = Field(
         alias="rejectedCandidates",
         description="what the architect has refused; authoritative for the "
@@ -372,6 +407,14 @@ def candidate_dto(option: CandidateOption) -> CandidateOptionDto:
     )
 
 
+def scope_option_dto(option: ScopeOption) -> ScopeOptionDto:
+    return ScopeOptionDto(
+        scope=option.scope,
+        element_ids=list(option.element_ids),
+        label=option.label,
+    )
+
+
 def pending_dto(pending: PendingIntent) -> PendingIntentDto:
     """One pending intent for the wire; nothing here is recomputed."""
 
@@ -386,6 +429,7 @@ def pending_dto(pending: PendingIntent) -> PendingIntentDto:
         known_slots=dict(pending.known_slots),
         missing_slots=list(pending.missing_slots),
         candidates=[candidate_dto(option) for option in pending.candidates],
+        scope_options=[scope_option_dto(option) for option in pending.scope_options],
         rejected_candidates=list(pending.rejected_candidates),
         reason_code=pending.reason_code,
         continuation_token=pending.continuation_token,

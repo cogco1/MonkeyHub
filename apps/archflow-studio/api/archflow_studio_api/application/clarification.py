@@ -29,6 +29,19 @@ that changes none of those is not asked again: it terminates as ``UNSUPPORTED``
 with ``CLARIFICATION_MADE_NO_PROGRESS``, which says what the system is missing
 rather than repeating the question the architect has already answered twice.
 
+**A selection is not a scope, and a derived number is not a control.** Two
+things the seam settles before it compiles, and neither is a fifth outcome.
+A request that resolved to one element by its words has said *what*, not *how
+far*: where the record reads the change as reaching a stack that seats on the
+element, or everything on its datum, that is one more step
+(``SCOPE_UNRESOLVED``) with the covered ids in the question. And where the
+number the request named is one a reference pins — a height whose top is a
+level, a base that takes another element's published top — the control exists
+and is nobody's to move here: the answer names the source
+(``CONTROL_IS_DERIVED``) instead of compiling a change the kernel refuses
+afterwards. A wider scope is a *coverage*, not a mutation: the successor record
+still edits one scalar.
+
 Nothing here writes. ``AuthoredControlDraft`` is a *value*: it names a control
 somebody would have to author, where the suggestion was read from and how
 confident that reading is. No route retains it, and no record kind exists for
@@ -75,12 +88,23 @@ ACTION_KINDS: tuple[str, ...] = (
     UNSUPPORTED_ACTION,
 )
 
-# What a clarification can still be missing. Only these four; a slot outside
+# What a clarification can still be missing. Only these five; a slot outside
 # them would be a question nobody could answer in a sentence.
 SLOT_TARGET = "target"
 SLOT_PROPERTY = "property"
 SLOT_VALUE = "value"
 SLOT_ORIENTATION = "orientation"
+# How far the change reaches. A selection is not a scope: "raise the columns"
+# may mean this element, the vertical stack that seats on it, or everything on
+# the same datum, and only the architect knows which.
+SLOT_SCOPE = "scope"
+
+# The three readings of "how far". Closed, like the outcomes: a fourth would be
+# a coverage nothing in the record answers for.
+SCOPE_ELEMENT = "element"
+SCOPE_STACK = "stack"
+SCOPE_DATUM = "datum"
+SCOPES: tuple[str, ...] = (SCOPE_ELEMENT, SCOPE_STACK, SCOPE_DATUM)
 
 # Why an answer is what it is. A client may branch on these; they are part of
 # the wire and never rewritten for display.
@@ -91,6 +115,14 @@ CONTROL_MUST_BE_AUTHORED = "CONTROL_MUST_BE_AUTHORED"
 TARGET_UNRESOLVED = "TARGET_UNRESOLVED"
 TARGET_AMBIGUOUS = "TARGET_AMBIGUOUS"
 VALUE_UNRESOLVED = "VALUE_UNRESOLVED"
+# The target is one element and the change could reach further than it. Which
+# of the readings the record offers is the architect's to settle, so this is a
+# step in the exchange and not a guess made quietly.
+SCOPE_UNRESOLVED = "SCOPE_UNRESOLVED"
+# The number the request named is not the element's to move: a reference pins
+# it, and the honest answer names what pins it rather than compiling a change
+# the kernel refuses afterwards.
+CONTROL_IS_DERIVED = "CONTROL_IS_DERIVED"
 AGENT_ASKED = "AGENT_ASKED"
 CLARIFICATION_MADE_NO_PROGRESS = "CLARIFICATION_MADE_NO_PROGRESS"
 REQUEST_NOT_EXPRESSIBLE = "REQUEST_NOT_EXPRESSIBLE"
@@ -152,6 +184,24 @@ _VIEWER_WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("back", ("rear", "back", "后面", "后方", "后")),
 )
 
+# How far the change reaches, said in words. The architect answers the scope
+# question in a sentence — 整个叠层, the whole stack — and never by echoing an
+# internal name back at the studio.
+_SCOPE_WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        SCOPE_STACK,
+        ("整个叠层", "整条叠层", "整根柱子", "整套叠层", "叠层", "the whole stack", "whole stack", "the entire stack", "the stack"),
+    ),
+    (
+        SCOPE_DATUM,
+        ("整条标高", "同一标高", "整层", "整个标高", "the whole datum", "whole datum", "the entire datum", "the whole level", "the datum"),
+    ),
+    (
+        SCOPE_ELEMENT,
+        ("只这个", "只这一个", "仅这个", "就这一个", "就这个", "just this one", "only this one", "just this", "this one only"),
+    ),
+)
+
 # "No, the columns" — the architect is refusing what was offered, not adding to
 # it. Whatever was on the table goes into rejectedCandidates and never comes
 # back inside this pending intent.
@@ -193,6 +243,7 @@ _KINDS_BY_WORD = _longest_first(_KIND_WORDS)
 _PROPERTIES_BY_WORD = _longest_first(_PROPERTY_WORDS)
 _COMPASS_BY_WORD = _longest_first(_COMPASS_WORDS)
 _VIEWER_BY_WORD = _longest_first(_VIEWER_WORDS)
+_SCOPES_BY_WORD = _longest_first(_SCOPE_WORDS)
 
 _SEPARATORS = re.compile("[^0-9a-z一-鿿]+")
 
@@ -253,6 +304,27 @@ def viewer_side_in(text: str) -> str | None:
 
     names = _named(text, _VIEWER_BY_WORD)
     return names[0] if names else None
+
+
+def scope_in(text: str) -> tuple[str | None, str]:
+    """How far this text says the change reaches, and the text with that said.
+
+    The second half is not decoration. 整条标高 is a scope and 标高 is the
+    *property* table's word for an elevation: read in either order without
+    removing what was consumed, one answer to the scope question would silently
+    become a request about a different quality. So the scope word is taken out
+    of the sentence, and everything downstream reads what is left.
+    """
+
+    for word, name in _SCOPES_BY_WORD:
+        if word.isascii():
+            pattern = rf"(?<![0-9a-z]){re.escape(word)}(?![0-9a-z])"
+            if re.search(pattern, text.lower()) is None:
+                continue
+            return name, re.sub(pattern, " ", text, flags=re.IGNORECASE)
+        if word in text:
+            return name, text.replace(word, " ")
+    return None, text
 
 
 def compass_side(
@@ -337,16 +409,42 @@ class CandidateOption:
     unit: str | None
     orientation: str | None
     label: str
+    # A choice that is not a thing in the record writes its own ref. The scope
+    # options are the case: ``scope:stack`` is an answer about how far, not a
+    # second name for an element, and it must never be compared against one.
+    ref_override: str | None = None
 
     @property
     def ref(self) -> str:
         """How a rejected candidate is written down, and compared later."""
 
+        if self.ref_override is not None:
+            return self.ref_override
         if self.element_id is None:
             return f"component:{self.component_id}"
         if self.key is None:
             return f"element:{self.element_id}"
         return f"element:{self.element_id}.{self.key}"
+
+
+@dataclass(frozen=True, slots=True)
+class ScopeOption:
+    """One reading of how far a change reaches, and exactly what it covers.
+
+    ``element_ids`` is the whole of it: the option is what the record can name,
+    not a promise about what will be edited. Multi-element mutation is not in
+    this seam — the successor record still edits one scalar — so a scope wider
+    than ``element`` is a *coverage*: what the client shows as revalidated, and
+    what a later task would have to mutate together.
+    """
+
+    scope: str
+    element_ids: tuple[str, ...]
+    label: str
+
+    @property
+    def ref(self) -> str:
+        return f"scope:{self.scope}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -397,6 +495,11 @@ class PendingIntent:
     reason_code: str
     continuation_token: str | None
     turn: int
+    # The readings of "how far" the record offers for the resolved element.
+    # Empty until one element is resolved; a single ``element`` reading for a
+    # leaf that carries nothing and shares its datum with nobody — where there
+    # is one reading there is no question.
+    scope_options: tuple[ScopeOption, ...] = ()
 
     @property
     def advance_key(self) -> tuple[object, ...]:
@@ -816,6 +919,7 @@ def _pending(
     reason_code: str,
     terminal: bool,
     previous: PendingIntent | None,
+    scope_options: Sequence[ScopeOption] = (),
 ) -> PendingIntent:
     return PendingIntent(
         request_id=(
@@ -834,6 +938,7 @@ def _pending(
         reason_code=reason_code,
         continuation_token=None if terminal else f"pi-{uuid4().hex}",
         turn=1 if previous is None else previous.turn + 1,
+        scope_options=tuple(scope_options),
     )
 
 
@@ -844,6 +949,7 @@ def _draft(
     semantic_property: str | None,
     catalog_status: str | None = None,
     object_names: tuple[str, ...] = (),
+    suggested_action: str | None = None,
 ) -> AuthoredControlDraft:
     """A control this component would need, read off the elements around it.
 
@@ -917,7 +1023,9 @@ def _draft(
         confidence=confidence,
         dependency_requirements=tuple(requirements),
         suggested_action=(
-            f"author a control for {component_id} from the model that already "
+            suggested_action
+            if suggested_action is not None
+            else f"author a control for {component_id} from the model that already "
             "exists, then confirm it; nothing is written until somebody does"
         ),
         catalog_status=catalog_status,
@@ -1019,6 +1127,9 @@ def _missing_control(
     state_digest: str | None,
     neighbour: str | None,
     catalog: object | None = None,
+    detail: str | None = None,
+    suggested_action: str | None = None,
+    element_id: str | None = None,
 ) -> Resolution:
     """The terminal answer: it is in the model and it has no control.
 
@@ -1026,10 +1137,17 @@ def _missing_control(
     and, where a neighbouring element carries a field of the same name, says out
     loud that it is *not* a substitute. That neighbour is exactly what a
     resolver guessing from the nearest string would have proposed.
+
+    ``detail`` and ``suggested_action`` are for the one case whose sentence is
+    not about a component at all: a control the record *has* and nobody can
+    move, because a reference pins it. Naming the source is the answer there,
+    and "author a control" would be advice about a control that already exists.
     """
 
     property_said = semantic_property or "the property the request named"
-    if reason_code == CONTROL_MUST_BE_AUTHORED:
+    if detail is not None:
+        pass
+    elif reason_code == CONTROL_MUST_BE_AUTHORED:
         detail = (
             f"declaring a control on {component_id} is not a change of value "
             "and does not go through the intent grammar. What comes back is a "
@@ -1060,7 +1178,7 @@ def _missing_control(
         original_utterance=utterance,
         action_kind=action_kind,
         target_component_id=component_id,
-        element_id=None,
+        element_id=element_id,
         semantic_property=semantic_property,
         known=known,
         missing=(),
@@ -1082,6 +1200,7 @@ def _missing_control(
             semantic_property=semantic_property,
             catalog_status=catalog_status,
             object_names=object_names,
+            suggested_action=suggested_action,
         ),
     )
 
@@ -1159,6 +1278,372 @@ def _rejected_after(
     return tuple(rejected)
 
 
+# ---- how far the change reaches, and what it is not the element's to move ----
+
+
+def _entity_schemas(projection: StateProjection) -> Mapping[str, str]:
+    """Every entity the record declares, and its schema."""
+
+    return {entity.entity_id: entity.schema for entity in projection.record.entities}
+
+
+def _element_capabilities(catalog: object | None, element_id: str) -> tuple[object, ...]:
+    """The catalog's capabilities for one element; empty when it names none."""
+
+    if catalog is None:
+        return ()
+    try:
+        element = catalog.element(element_id)  # type: ignore[attr-defined]
+    except AttributeError:
+        return ()
+    return () if element is None else tuple(element.capabilities)
+
+
+def _capability_for(catalog: object | None, element_id: str, key: str | None):
+    """The capability an element declares for one key, or ``None``."""
+
+    if key is None:
+        return None
+    for capability in _element_capabilities(catalog, element_id):
+        if getattr(capability, "key", None) == key:
+            return capability
+    return None
+
+
+def _stack_above(projection: StateProjection, element_id: str) -> tuple[str, ...]:
+    """The elements that seat on this one, transitively, up to the top.
+
+    Two edges say "seats on", and both are the record's own: a declared
+    ``support`` relation whose subject is the element below, and a ``base``
+    reference whose datum the kernel has already resolved to the element it
+    names. ``StateRecord.dependency_edges()`` gives both in the same shape, so
+    nothing here reads a ``-top`` suffix or any other spelling.
+
+    The chain is then intersected with ``StateRecord.closure`` of the element:
+    a member of the stack is one a change at the element actually invalidates,
+    and an edge that propagates nothing is not a reason to widen a scope.
+    """
+
+    seats_on: dict[str, list[str]] = {}
+    for edge in projection.record.dependency_edges():
+        if not (
+            edge.upstream_ref.startswith("entity:")
+            and edge.downstream_ref.startswith("entity:")
+        ):
+            continue
+        if edge.relation not in ("base", "support"):
+            continue
+        below = edge.upstream_ref[len("entity:") :]
+        above = edge.downstream_ref[len("entity:") :]
+        if below != above:
+            seats_on.setdefault(below, []).append(above)
+    elements = {row.element_id for row in projection.elements}
+    downstream = set(projection.record.closure((f"entity:{element_id}",)))
+    found: list[str] = []
+    frontier = [element_id]
+    seen = {element_id}
+    while frontier:
+        current = frontier.pop(0)
+        for above in sorted(seats_on.get(current, ())):
+            if above in seen or above not in elements:
+                continue
+            if f"entity:{above}" not in downstream:
+                continue
+            seen.add(above)
+            found.append(above)
+            frontier.append(above)
+    return tuple(found)
+
+
+def _base_of(projection: StateProjection, element_id: str) -> str | None:
+    """What this element's base sits on, as a kernel ref, or ``None``.
+
+    A level (``entity:level-ground``) and another element's published top
+    (``entity:portico-columns-west``) arrive alike, because the kernel resolved
+    both. Two elements share a datum when this answer is the same string.
+    """
+
+    for edge in projection.record.dependency_edges():
+        if edge.relation == "base" and edge.downstream_ref == f"entity:{element_id}":
+            return edge.upstream_ref
+    return None
+
+
+def _scope_options(
+    projection: StateProjection,
+    catalog: object | None,
+    element_id: str,
+) -> tuple[ScopeOption, ...]:
+    """The readings of "how far" this element offers, widest coverage last.
+
+    ``element`` is always there. ``stack`` appears when something seats on it;
+    ``datum`` when another editable element's base names the same thing. Each
+    carries the ids it covers, and an option that covers exactly what a
+    narrower one covers is not a second reading and is left out — a question
+    with two identical answers is not a question.
+    """
+
+    editable = _editable_ids(projection, catalog)
+    options: list[ScopeOption] = [
+        ScopeOption(
+            scope=SCOPE_ELEMENT,
+            element_ids=(element_id,),
+            label=f"only {element_id}",
+        )
+    ]
+    stack = tuple(
+        item for item in _stack_above(projection, element_id) if item in editable
+    )
+    if stack:
+        ids = (element_id,) + stack
+        options.append(
+            ScopeOption(
+                scope=SCOPE_STACK,
+                element_ids=ids,
+                label=f"the stack it carries: {', '.join(ids)}",
+            )
+        )
+    base = _base_of(projection, element_id)
+    if base is not None:
+        same = tuple(
+            sorted(
+                row.element_id
+                for row in projection.elements
+                if row.element_id in editable
+                and _base_of(projection, row.element_id) == base
+            )
+        )
+        if len(same) > 1:
+            options.append(
+                ScopeOption(
+                    scope=SCOPE_DATUM,
+                    element_ids=same,
+                    label=(
+                        f"everything on {base[len('entity:'):]}: " + ", ".join(same)
+                    ),
+                )
+            )
+    seen: set[frozenset[str]] = set()
+    distinct: list[ScopeOption] = []
+    for option in options:
+        covers = frozenset(option.element_ids)
+        if covers in seen:
+            continue
+        seen.add(covers)
+        distinct.append(option)
+    return tuple(distinct)
+
+
+def _editable_ids(
+    projection: StateProjection, catalog: object | None
+) -> frozenset[str]:
+    """Every element with a number somebody can move, by the catalog when there is one."""
+
+    if catalog is not None:
+        try:
+            return frozenset(
+                element.element_id
+                for element in catalog.elements  # type: ignore[attr-defined]
+                if any(
+                    getattr(capability, "status", None) == "editable"
+                    for capability in element.capabilities
+                )
+            )
+        except AttributeError:
+            pass
+    return frozenset(row.element_id for row in projection.elements if row.numeric_fields)
+
+
+def _derived_answer(
+    projection: StateProjection,
+    *,
+    catalog: object | None,
+    component_id: str,
+    element_id: str | None,
+    semantic_property: str | None,
+    action_kind: str,
+    utterance: str,
+    known: Mapping[str, str],
+    missing: Sequence[str],
+    rejected: Sequence[str],
+    previous: PendingIntent | None,
+    state_digest: str | None,
+) -> Resolution | None:
+    """The request names a number a reference pins: name the source, compile nothing.
+
+    Reached before the editable filter on purpose. An element whose only
+    capability is derived has no editable one, and answering "this component
+    has no control" about a control the record plainly declares would be the
+    wrong sentence twice over: the control exists, and what is missing is not a
+    binding but the architect's agreement to move the thing above it.
+
+    Two branches, and the catalog decides which. Where the source is another
+    element whose own capability is editable, the source's controls are the
+    candidates and the exchange continues. Where it is a level — a level's
+    elevation is not an element capability in this record — there is nothing to
+    offer, and the answer is terminal: it says which level, and the draft's
+    suggested action says to move it.
+    """
+
+    if catalog is None or semantic_property is None:
+        return None
+    candidates_of = (
+        [element_id]
+        if element_id is not None
+        else sorted(
+            row.element_id
+            for row in projection.elements
+            if row.component_id == component_id
+        )
+    )
+    pinned = [
+        (item, capability)
+        for item in candidates_of
+        for capability in (_capability_for(catalog, item, semantic_property),)
+        if capability is not None
+    ]
+    if not pinned or any(
+        getattr(capability, "derived_from", None) is None for _, capability in pinned
+    ):
+        # Nothing pinned, or something in reach is still the element's own to
+        # move: the ordinary path answers, and this one says nothing.
+        return None
+    target_element, capability = pinned[0]
+    source = capability.derived_from
+    source_id = source[len("entity:") :] if source.startswith("entity:") else source
+    schemas = _entity_schemas(projection)
+    detail = (
+        f"{semantic_property} of {target_element} is derived from {source}; "
+        f"change {source_id} instead"
+    )
+    controls = [
+        _capability_option(projection, item)
+        for item in _element_capabilities(catalog, source_id)
+        if getattr(item, "status", None) == "editable"
+        and f"element:{source_id}.{getattr(item, 'key', '')}" not in rejected
+    ]
+    if controls:
+        pending = _pending(
+            state_digest=state_digest,
+            original_utterance=utterance,
+            action_kind=action_kind,
+            target_component_id=component_id,
+            element_id=target_element,
+            semantic_property=semantic_property,
+            known=known,
+            missing=(SLOT_TARGET,) + tuple(missing),
+            candidates=controls,
+            rejected=rejected,
+            reason_code=CONTROL_IS_DERIVED,
+            terminal=False,
+            previous=previous,
+        )
+        return _advance_or(
+            previous,
+            Resolution(
+                outcome=NEEDS_CLARIFICATION,
+                pending=pending,
+                selection=None,
+                question=(
+                    f"{semantic_property} of {target_element} follows {source_id}. "
+                    "Change it there instead? "
+                    + ", ".join(option.label for option in controls)
+                ),
+                detail=detail,
+            ),
+        )
+    kind = schemas.get(source_id, "the source")
+    return _missing_control(
+        projection,
+        component_id=component_id,
+        semantic_property=semantic_property,
+        action_kind=action_kind,
+        reason_code=CONTROL_IS_DERIVED,
+        utterance=utterance,
+        known=known,
+        rejected=rejected,
+        previous=previous,
+        state_digest=state_digest,
+        neighbour=None,
+        catalog=catalog,
+        element_id=target_element,
+        detail=(
+            detail
+            + f". {source_id} is a {kind} and declares no editable control in "
+            "this record, so there is nothing here to type a change against; "
+            "moving it is an edit of the authored record."
+        ),
+        suggested_action=f"move level {source_id}"
+        if kind == "Level@1"
+        else f"move {source_id}",
+    )
+
+
+def _capability_option(
+    projection: StateProjection, capability: object
+) -> CandidateOption:
+    """One editable capability of the source, as a choice with its number."""
+
+    element_id = str(getattr(capability, "element_id", ""))
+    key = str(getattr(capability, "key", ""))
+    value = getattr(capability, "value", None)
+    component_id = next(
+        (
+            row.component_id
+            for row in projection.elements
+            if row.element_id == element_id
+        ),
+        element_id,
+    )
+    return CandidateOption(
+        component_id=component_id,
+        element_id=element_id,
+        key=key,
+        current_value=value,
+        unit=getattr(capability, "unit", None),
+        orientation=compass_in(element_id),
+        label=f"{element_id} · {key} = {value}",
+    )
+
+
+def scope_of(pending: PendingIntent) -> tuple[str, tuple[str, ...]] | None:
+    """The coverage this exchange settled on: the reading, and the ids it covers.
+
+    ``None`` when no single element resolved — there is nothing for a coverage
+    to be about. A reading the options do not offer falls back to ``element``:
+    a client may send any of the three, and the record decides which of them
+    means more than the element itself.
+    """
+
+    if pending.element_id is None:
+        return None
+    name = pending.known_slots.get(SLOT_SCOPE, SCOPE_ELEMENT)
+    for option in pending.scope_options:
+        if option.scope == name:
+            return option.scope, option.element_ids
+    return SCOPE_ELEMENT, (pending.element_id,)
+
+
+def _scope_candidates(
+    component_id: str, options: Sequence[ScopeOption]
+) -> tuple[CandidateOption, ...]:
+    """The scope options as choices a person can make, each naming what it covers."""
+
+    return tuple(
+        CandidateOption(
+            component_id=component_id,
+            element_id=None,
+            key=None,
+            current_value=None,
+            unit=None,
+            orientation=None,
+            label=option.label,
+            ref_override=option.ref,
+        )
+        for option in options
+    )
+
+
 def resolve(
     projection: StateProjection,
     *,
@@ -1171,23 +1656,41 @@ def resolve(
     compass: Mapping[str, Sequence[float]] | None = None,
     aliases: Mapping[str, str] | None = None,
     catalog: object | None = None,
+    scope: str | None = None,
 ) -> Resolution:
     """What this request is, before anyone tries to compile it.
 
     ``camera`` (the request's) and ``compass`` (PROJECT.md's) read a viewer word
     into a side; ``aliases`` (PROJECT.md's names) name components outright;
     ``catalog`` (the studio's derived catalog) is the one directory of editable
-    elements and of what the model shows without a row.
+    elements and of what the model shows without a row. ``scope`` is how far
+    the client says the change reaches, when the request settled it in a field
+    rather than in words.
 
     Three of the four answers are reached here, without a model: an action no
     grammar expresses, a target the record cannot resolve, and a component whose
     control does not exist. Only a request that survives all three is handed to
     a compiler, and it is handed the *resolved* target — which is what makes a
     correction atomic rather than a suggestion the next round may ignore.
+
+    Two more things are settled here and neither is guessed. A number a
+    reference pins is not the element's to move, and saying so names the
+    source instead of compiling a change the kernel refuses later. And a
+    request that resolved to one element by its words has not yet said how far
+    it reaches: where the record offers more than one reading, that is a step
+    in the exchange. **Only the coverage is settled — the successor record
+    still edits one scalar.** A scope of ``stack`` or ``datum`` travels with
+    the proposal as what the client shows revalidated; multi-element mutation
+    is not in this seam.
     """
 
     rejected = _rejected_after(pending, utterance)
-    semantic_property = property_in(utterance) or (
+    # The scope word leaves the sentence before anything else reads it: 整条标高
+    # is an answer about how far, and 标高 is the property table's word for an
+    # elevation. Reading the second out of the first would turn a reply into a
+    # request about another quality.
+    said_scope, spoken = scope_in(utterance)
+    semantic_property = property_in(spoken) or (
         pending.requested_semantic_property if pending is not None else None
     )
     known, missing = _slots(
@@ -1197,6 +1700,15 @@ def resolve(
         camera=camera,
         compass_axes=compass,
     )
+    settled_scope = (
+        scope
+        if scope in SCOPES
+        else said_scope
+        if said_scope is not None
+        else (pending.known_slots.get(SLOT_SCOPE) if pending is not None else None)
+    )
+    if settled_scope is not None:
+        known[SLOT_SCOPE] = settled_scope
     target = _resolve_target(
         projection,
         utterance=utterance,
@@ -1256,6 +1768,27 @@ def resolve(
             ),
             catalog=catalog,
         )
+
+    # A number a reference already pins is not this element's to move, and the
+    # editable filter below would answer the wrong sentence about it: "this
+    # component has no control" is false when the control is right there and
+    # derived. So the source is named first.
+    derived = _derived_answer(
+        projection,
+        catalog=catalog,
+        component_id=target.component_id,
+        element_id=target.element_id,
+        semantic_property=semantic_property,
+        action_kind=action_kind,
+        utterance=(pending.original_utterance if pending is not None else utterance),
+        known=known,
+        missing=missing,
+        rejected=rejected,
+        previous=pending,
+        state_digest=projection.state_digest,
+    )
+    if derived is not None:
+        return derived
 
     editable = _editable_by_catalog(projection, target.component_id, catalog)
     if not editable:
@@ -1330,6 +1863,69 @@ def resolve(
         # selections rather than one narrower one.
         element_id = allowed[0].element_id
         component_id = allowed[0].component_id
+
+    # How far. The target is one element and the record may read the request as
+    # reaching further: the stack that seats on it, or everything on its datum.
+    # Where it offers more than one reading and the request settled none, that
+    # is the step — a question with the covered ids in it, never a quiet choice.
+    scope_options = (
+        _scope_options(projection, catalog, element_id)
+        if element_id is not None
+        else ()
+    )
+    if (
+        settled_scope is None
+        and len(scope_options) > 1
+        # The question is the *stack*. Something seats on this element and the
+        # record's own closure carries the change into it, so "how far" has two
+        # honest answers and the studio will not pick one. A datum is a
+        # grouping and not a propagation — raising the west columns invalidates
+        # nothing on the east ones — so a datum option travels in
+        # ``scopeOptions`` as a filter the architect may apply, and never stops
+        # a change on its own.
+        and any(option.scope == SCOPE_STACK for option in scope_options)
+        # An element the architect pointed at is a scope they already gave. The
+        # step is for the words: "raise the columns" names a kind, and a kind
+        # does not say whether what sits on them comes too.
+        and target.how not in ("picked", "gesture")
+    ):
+        asked = _pending(
+            state_digest=projection.state_digest,
+            original_utterance=(
+                pending.original_utterance if pending is not None else utterance
+            ),
+            action_kind=action_kind,
+            target_component_id=component_id,
+            element_id=element_id,
+            semantic_property=semantic_property,
+            known=known,
+            missing=(SLOT_SCOPE,) + tuple(missing),
+            candidates=_scope_candidates(component_id, scope_options),
+            rejected=rejected,
+            reason_code=SCOPE_UNRESOLVED,
+            terminal=False,
+            previous=pending,
+            scope_options=scope_options,
+        )
+        return _advance_or(
+            pending,
+            Resolution(
+                outcome=NEEDS_CLARIFICATION,
+                pending=asked,
+                selection=None,
+                question=(
+                    "How far does that reach? "
+                    + "; ".join(option.label for option in scope_options)
+                ),
+                detail=(
+                    f"{element_id} carries more than one reading of how far a "
+                    "change to it goes, and the studio will not pick one "
+                    "quietly. Say the scope in words, or send scope="
+                    + "/".join(option.scope for option in scope_options)
+                    + " with the continuation token."
+                ),
+            ),
+        )
     candidates = tuple(_option(element, semantic_property) for element in allowed)
     pending_now = _pending(
         state_digest=projection.state_digest,
@@ -1347,6 +1943,7 @@ def resolve(
         reason_code=COMPILED_CLEANLY,
         terminal=True,
         previous=pending,
+        scope_options=scope_options,
     )
     return Resolution(
         outcome=COMPILED,
@@ -1469,6 +2066,7 @@ def clarify(
         reason_code=reason_code,
         terminal=False,
         previous=pending,
+        scope_options=resolved.scope_options,
     )
     return _advance_or(
         pending,
@@ -1511,6 +2109,7 @@ def _advance_or(previous: PendingIntent | None, answer: Resolution) -> Resolutio
         reason_code=CLARIFICATION_MADE_NO_PROGRESS,
         continuation_token=None,
         turn=answer.pending.turn,
+        scope_options=answer.pending.scope_options,
     )
     still = ", ".join(stalled.missing_slots) or "the request itself"
     return Resolution(

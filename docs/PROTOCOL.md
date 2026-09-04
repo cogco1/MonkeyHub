@@ -166,7 +166,32 @@ which it is in an `outcome` field:
 Each carries a **`pendingIntent`**: `requestId`, `stateDigest`, `originalUtterance`, `actionKind`
 (`change_existing_value` / `declare_missing_control` / `clarify` / `unsupported`),
 `targetComponentId`, `elementId`, `requestedSemanticProperty`, `knownSlots`, `missingSlots`,
-`candidates`, `rejectedCandidates`, `reasonCode`, `continuationToken` and `turn`.
+`candidates`, `scopeOptions`, `rejectedCandidates`, `reasonCode`, `continuationToken` and `turn`.
+
+**A selection is not a scope.** A request that resolved to one element has said *what*, not *how
+far*. Where the record reads the change as reaching a stack that seats on the element — columns →
+capitals → entablature, along the `support` relations and the `base` references the kernel already
+resolves — that is one more step, `NEEDS_CLARIFICATION` with reason `SCOPE_UNRESOLVED` and
+`missingSlots: ["scope"]`. The options are on `pendingIntent.scopeOptions`
+(`{scope: element | stack | datum, elementIds, label}`) and repeated as `candidates` with refs
+`scope:<name>`, so the question names the ids rather than asking anyone to imagine them. The
+architect answers in words (`整个叠层` / `the whole stack` / `整条标高` / `只这个`) or the client
+sends `scope` on the request; either settles `knownSlots.scope`. A single reading is not a
+question and is never asked. **A wider scope is a coverage, not a mutation**: the settled scope
+travels on `proposal.scope` (`{scope, elementIds}`, `null` for a proposal made straight from a
+selection) as what the client shows revalidated, and the operator still moves one scalar on one
+element. A datum is a grouping and not a propagation — it is offered and never stops a change on
+its own.
+
+**A derived control is shown, never compiled.** Where the number the request named is one a
+reference already pins — a height whose `top` is a level, a base that takes another element's
+published top — the catalog marks that capability `status: "derived"` with
+`source: "derived from <ref>"`, and the answer names the source with reason `CONTROL_IS_DERIVED`
+rather than typing a change the kernel refuses afterwards. Where the source is another element
+whose own capability is editable, the answer is `NEEDS_CLARIFICATION` and its controls are the
+`candidates`; where it is a level — a level's elevation is not an element capability — the answer
+is the terminal `MISSING_EDITABLE_CONTROL`, naming the level, with the draft's `suggestedAction`
+saying to move it. Neither reaches the agent.
 
 **The continuation is the whole of the continuity.** A client that answers sends back
 `continuationToken` and nothing else — never a transcript, and never its own idea of the

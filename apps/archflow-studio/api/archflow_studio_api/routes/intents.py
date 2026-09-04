@@ -62,7 +62,7 @@ from ..transport.intent import (
     pending_body,
     pending_dto,
 )
-from ..transport.proposal import to_dto
+from ..transport.proposal import ProposalScopeDto, to_dto
 from .proposals import _require_bound_project
 
 router = APIRouter(tags=["intents"])
@@ -168,6 +168,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         compass=conventions.compass,
         aliases=conventions.aliases,
         catalog=catalog,
+        scope=body.scope,
     )
     if resolution.outcome != clarification.COMPILED:
         raise _refused(store, token=body.continuation_token, resolution=resolution)
@@ -179,6 +180,17 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     # is read here, deterministically, into the grammar; a qualitative word is not.
     message = body.utterance
     delta_sentence = clarification.grammar_sentence_for(body.utterance, resolution=resolution, projection=projection)
+    if delta_sentence is None and pending is not None:
+        # A reply that settles a slot restates nothing. "整个叠层" answers how
+        # far and says no number: the change this exchange is about is still
+        # the sentence that opened it, which is the whole reason the pending
+        # intent keeps ``originalUtterance``. The reading is the same
+        # deterministic one — a number, a unit and a direction word, or nothing.
+        delta_sentence = clarification.grammar_sentence_for(
+            resolution.pending.original_utterance,
+            resolution=resolution,
+            projection=projection,
+        )
     if delta_sentence is not None:
         message = delta_sentence
     compiler: IntentCompiler = (
@@ -250,10 +262,21 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     # The exchange is over: the token that got here is spent, and the pending
     # intent that comes back carries a null one.
     store.close(body.continuation_token)
+    # How far the exchange settled on, travelling with what it became. The
+    # operator moved one scalar whatever the scope says; the ids are what the
+    # client shows revalidated, so the closure is not a surprise afterwards.
+    settled = clarification.scope_of(resolution.pending)
     return IntentDto(
         outcome=clarification.COMPILED,
         agent=agent_dto(compilation),
-        proposal=to_dto(proposal),
+        proposal=to_dto(
+            proposal,
+            scope=(
+                None
+                if settled is None
+                else ProposalScopeDto(scope=settled[0], element_ids=list(settled[1]))
+            ),
+        ),
         timings=IntentTimingsDto(compile_ms=compile_ms, type_ms=type_ms),
         gestures=list(reading.facts),
         pending_intent=pending_dto(resolution.pending),
