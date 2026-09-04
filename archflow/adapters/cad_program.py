@@ -24,8 +24,20 @@ Some forms are not recoverable from the geometry they leave behind: a
 bounding box holds the same hull for a wedge rising along its run, one
 rising across it and one rising the other way, and a hollow drum and a
 solid one share a box entirely. Those producers therefore state their own
-defining numbers on the operation, and every object of such an operation
-carries them as user text beside its identity — keys and formats exactly:
+defining numbers on the operation, in ``GeometryOperation.statements``,
+and every object of such an operation carries each statement as user text
+beside its identity: the key verbatim under ``archflow:``, the value
+verbatim. The translator keeps no table of which producer states what and
+formats nothing — a statement is already the text it will be written as,
+so no geometry is measured or recomputed to produce a string, and an
+object whose operation states nothing carries nothing extra. What it does
+own is the identity namespace: a statement may not take a key the export
+already writes (``producer_op``, ``object_ref``, ``operation_ref``,
+``bindings``, ``component``, ``material``, ``commitments``, ``evidence``,
+``inspection_witness``), and one that tries fails ``CadTranslationError``
+rather than overwriting an object's identity.
+
+The producers on the spine state these today — keys and formats exactly:
 
 ===========================  ==========================================
 ``archflow:wedge_low``       metres above the row's base datum
@@ -41,12 +53,9 @@ carries them as user text beside its identity — keys and formats exactly:
 
 Metres are canonical decimal text (shortest round-trip repr: ``0.5``,
 ``2.0`` — no locale, no thousands separator), enumerated values their bare
-literal. ``_PRODUCER_USER_TEXT`` is the one table that decides this, read
-straight off ``GeometryOperation.parameters``: no geometry is measured or
-recomputed to write a string, and an object whose producer states none of
-them carries none of them. An older export that predates the strings is
-not repaired here — the re-index keeps such a row AMBIGUOUS and names what
-is missing.
+literal; the producer that states them writes them that way. An older
+export that predates the strings is not repaired here — the re-index keeps
+such a row AMBIGUOUS and names what is missing.
 """
 
 from __future__ import annotations
@@ -74,29 +83,23 @@ _SUPPORTED = {
 
 _ROOT_LAYER = "archflow"
 
-# The producer parameters an object carries as its own ``archflow:*`` user text.
-#
-# A bounding box cannot show a wedge's slope or a shell's wall, and a mirrored
-# wedge leaves the same box behind, so the forms whose defining numbers are
-# invisible in the saved geometry state them here instead. The key is
-# ``archflow:`` followed by the parameter's own name; the value is the parameter
-# exactly as the program states it — a number as canonical decimal metres
-# (repr-stable, locale-free), an enumerated value as its literal. Nothing is
-# measured or recomputed to write one, and an operation that does not state the
-# parameter carries no string for it.
-#
-#   archflow:wedge_low        metres above the row's base datum
-#   archflow:wedge_high       metres above the row's base datum, above low
-#   archflow:wedge_axis       "along" | "across" — the run, or the depth
-#   archflow:wedge_sense      "+x" | "-x" | "+z" | "-z" — the kernel-plan direction the top rises in
-#   archflow:shell_thickness  metres of wall
-#   archflow:shell_kind       "cylinder" | "dome"
-_PRODUCER_USER_TEXT: dict[str, tuple[str, ...]] = {
-    "wedge": ("wedge_low", "wedge_high", "wedge_axis", "wedge_sense"),
-    "shell": ("shell_thickness", "shell_kind"),
-}
-_PARAMETER_USER_TEXT: tuple[str, ...] = tuple(
-    sorted(name for names in _PRODUCER_USER_TEXT.values() for name in names)
+# The ``archflow:*`` user-text keys the export itself writes: an object's
+# identity, its layer semantics and its inspection role. They are the one
+# namespace an operation's statements may not enter — a statement is free
+# text the run declared, and no declaration may overwrite what identifies
+# the object it travels on.
+_RESERVED_USER_TEXT: frozenset[str] = frozenset(
+    {
+        "bindings",
+        "commitments",
+        "component",
+        "evidence",
+        "inspection_witness",
+        "material",
+        "object_ref",
+        "operation_ref",
+        "producer_op",
+    }
 )
 
 
@@ -163,24 +166,6 @@ def _params(operation) -> dict[str, object]:
     for parameter in operation.parameters:
         decoded[parameter.name] = json.loads(parameter.value_json)
     return decoded
-
-
-def _user_text_value(name: str, value: object) -> str:
-    """One stated parameter as the user string a reader parses back.
-
-    A number becomes canonical decimal text — Python's shortest round-trip
-    repr, which is locale-free and reparses to the same float — and an
-    enumerated value its own literal. Anything else is a parameter this map
-    cannot carry, and says so rather than writing a Python repr into the file.
-    """
-
-    if isinstance(value, str):
-        return value
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise CadTranslationError(
-            f"parameter {name!r} cannot travel as user text: {value!r}"
-        )
-    return repr(value)
 
 
 _LAYER_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _\-.]{0,63}$")
@@ -301,9 +286,11 @@ def expected_object_semantics(
     """The semantics each physical object must carry in the CAD document.
 
     Derived from the program alone: producer op, binding ids, component
-    id, commitment and evidence refs, the per-component layer path, and the
-    producer parameters ``_PRODUCER_USER_TEXT`` names — the numbers a saved
-    solid cannot show about itself. Objects the program leaves unbound stay
+    id, commitment and evidence refs, the per-component layer path, and
+    every one of the operation's own ``statements`` — what a saved solid
+    cannot show about itself — written through verbatim as
+    ``archflow:<key>``. A statement that names a reserved identity key
+    fails ``CadTranslationError``. Objects the program leaves unbound stay
     on the root layer with no invented component. Families report the block
     definitions arrays must create with their instance multiplicities.
     """
@@ -368,11 +355,13 @@ def expected_object_semantics(
                 user_text["archflow:commitments"] = ",".join(commitments)
             if evidence:
                 user_text["archflow:evidence"] = ",".join(evidence)
-            for parameter_name in _PARAMETER_USER_TEXT:
-                if parameter_name in parameters:
-                    user_text[f"archflow:{parameter_name}"] = _user_text_value(
-                        parameter_name, parameters[parameter_name]
+            for key, statement in sorted(operation.statements.items()):
+                if key in _RESERVED_USER_TEXT:
+                    raise CadTranslationError(
+                        f"statement {key!r} on {operation.op_id} would "
+                        "overwrite an identity string the export owns"
                     )
+                user_text[f"archflow:{key}"] = statement
             objects[object_id] = {
                 "name": object_id,
                 "layer": layer,

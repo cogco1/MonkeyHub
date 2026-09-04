@@ -13,7 +13,7 @@ import math
 import unittest
 from dataclasses import replace
 
-from archflow.adapters.cad_program import expected_object_bounds
+from archflow.adapters.cad_program import expected_object_bounds, expected_object_semantics
 from archflow.capabilities.element_producers import (
     ElementProducerError,
     ElementRow,
@@ -22,11 +22,12 @@ from archflow.capabilities.element_producers import (
     produce_rows,
     production_order,
 )
+from archflow.capabilities.geometry_proposal import GeometryProposalStatus
 from archflow.capabilities.reference_resolver import ReferenceContext
 from archflow.compilers.geometry import compile_geometry_program
 from archflow.state.geometry_program import GeometryOperationKind, ProjectGridAxis, ProjectGrids, ProjectLevel, ProjectLevels, SemanticBinding
 from archflow.state.state_record import project_grids_of, project_levels_of
-from tests.support import authored_record
+from tests.support import ProducerFixture, authored_record
 from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 
 BASIS = ("reading:plate",)
@@ -250,19 +251,31 @@ class StairTests(unittest.TestCase):
         self.assertEqual([r.element_id for r in production_order((landing, self._row()))], ["stair-north", "landing"])
 
 
+def _wedge_row(line=None, **params) -> ElementRow:
+    start, end = line or (_on("W", 0.0), _on("W", 4.0))
+    return ElementRow("abutment-north", "roof-abutments", "wedge",
+                      {"from": start, "to": end, "base": {"level": "level-ground"}},
+                      {"depth": 2.0, "low": 0.5, "high": 2.5, **params}, BASIS)
+
+
+def _shell_row(**params) -> ElementRow:
+    return ElementRow("rotunda-shell", "rotunda-wall", "shell",
+                      {"at": _on("W", 0.0), "base": {"level": "level-ground"}},
+                      {"outer_radius": 5.0, "thickness": 0.6, "height": 4.0, "kind": "cylinder", "segments": 8, **params}, BASIS)
+
+
 class WedgeTests(unittest.TestCase):
     """A five-face wedge: one loft through two end rectangles, the far one taller."""
 
     def _row(self, line=None, **params) -> ElementRow:
-        p = {"depth": 2.0, "low": 0.5, "high": 2.5}
-        p.update(params)
-        start, end = line or (_on("W", 0.0), _on("W", 4.0))
-        return ElementRow("abutment-north", "roof-abutments", "wedge",
-                          {"from": start, "to": end, "base": {"level": "level-ground"}}, p, BASIS)
+        return _wedge_row(line, **params)
 
     def _stated(self, line=None, **params) -> dict:
         (wedge,), _ = _produce((self._row(line, **params),))
-        return _op_params(wedge.operations[0])
+        operation = wedge.operations[0]
+        # what the box cannot show is declared, not smuggled in as a loft parameter
+        self.assertEqual(set(_op_params(operation)) & set(operation.statements), set())
+        return dict(operation.statements)
 
     def _sense(self, line, **params) -> str:
         return self._stated(line, **params)["wedge_sense"]
@@ -327,10 +340,7 @@ class ShellTests(unittest.TestCase):
     """A hollow revolved shell: one annulus extruded, or annuli lofted up a cap."""
 
     def _row(self, **params) -> ElementRow:
-        p = {"outer_radius": 5.0, "thickness": 0.6, "height": 4.0, "kind": "cylinder", "segments": 8}
-        p.update(params)
-        return ElementRow("rotunda-shell", "rotunda-wall", "shell",
-                          {"at": {"axis_point": {"axis": "W", "along": 0.0}}, "base": {"level": "level-ground"}}, p, BASIS)
+        return _shell_row(**params)
 
     def test_a_cylinder_shell_is_one_annulus_extruded_by_its_height(self) -> None:
         (shell,), context = _produce((self._row(),))
@@ -396,6 +406,79 @@ class AuthoredRecordTests(unittest.TestCase):
         # the wall's physical object is what the void was cut out of; it sits on the plinth's top face
         self.assertAlmostEqual(bounds["obj-plinth"]["bbox_max"][1], bounds["obj-wall-south-cut"]["bbox_min"][1])
         self.assertAlmostEqual(bounds["obj-wall-south-cut"]["bbox_max"][1] - bounds["obj-wall-south-cut"]["bbox_min"][1], 2.97)
+
+
+class StatedRowsThroughTheProposalTests(ProducerFixture):
+    """A wedge row and a shell row travel the whole way: producer, contract, export.
+
+    The two producers that declare facts a solid cannot show are the two
+    the function contract can refuse, because their statements used to ride
+    on ``parameters``: the loft contract named them ``extra`` and the seat
+    exhausted with nothing built. Nothing here is scripted around — the
+    real rows are produced, the real proposal producer decodes and checks
+    them, and the accepted program is asked for its export text.
+    """
+
+    def _accepted(self):
+        from archflow.capabilities.geometry_proposal import proposal_authoring_output
+        from tests.support import ScriptedProvider
+
+        context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
+        produced = produce_rows((_wedge_row(), _shell_row()), context)
+        binding = self.proposal.semantic_bindings[0]
+        stated = tuple(replace(op, semantic_binding_ids=(binding.binding_id,)) for e in produced for op in e.operations)
+        proposal = replace(
+            self.proposal,
+            operations=tuple(sorted(self.proposal.operations + stated, key=lambda op: op.op_id)),
+            semantic_bindings=(replace(binding, object_ids=tuple(sorted(binding.object_ids + tuple(o for op in stated for o in op.output_object_ids)))),),
+        )
+        provider = ScriptedProvider((proposal_authoring_output(proposal),))
+        return self.produce(
+            provider,
+            interface_datums=tuple(sorted(list(context.published.values()) + list(_levels().datums()), key=lambda d: d.datum_id)),
+            datum_bindings=tuple(b for e in produced for b in e.bindings),
+        )
+
+    async def test_the_contract_accepts_the_stated_rows_and_the_export_carries_the_strings(self) -> None:
+        result = await self._accepted()
+
+        self.assertIs(result.status, GeometryProposalStatus.ACCEPTED, [
+            (row["code"], row["detail"])
+            for ref in result.round_refs
+            for row in self.repository.load_json(ref).get("issues", [])
+        ])
+        assert result.program is not None
+        objects = expected_object_semantics(result.program)["objects"]
+        self.assertEqual(
+            {k: v for k, v in objects["obj-abutment-north"]["user_text"].items() if k.startswith("archflow:wedge_")},
+            {"archflow:wedge_axis": "along", "archflow:wedge_high": "2.5", "archflow:wedge_low": "0.5", "archflow:wedge_sense": "+x"},
+        )
+        self.assertEqual(
+            {k: v for k, v in objects["obj-rotunda-shell"]["user_text"].items() if k.startswith("archflow:shell_")},
+            {"archflow:shell_kind": "cylinder", "archflow:shell_thickness": "0.6"},
+        )
+
+    async def test_the_statements_survive_the_provider_payload_they_travelled_in(self) -> None:
+        """The proposal is encoded for the provider and decoded back; nothing declared is lost."""
+
+        result = await self._accepted()
+
+        assert result.program is not None
+        wedge = next(op for op in result.program.proposal.operations if op.op_id == "abutment-north")
+        self.assertEqual(sorted(wedge.statements), ["wedge_axis", "wedge_high", "wedge_low", "wedge_sense"])
+        self.assertEqual(set(wedge.statements) & {p.name for p in wedge.parameters}, set())
+
+    def test_a_blank_statement_is_refused_by_the_contract_not_exported_empty(self) -> None:
+        from archflow.capabilities.geometry_proposal import _validate_function_contracts
+
+        (wedge,), _ = _produce((_wedge_row(),))
+        blank = replace(wedge.operations[0], statements={**wedge.operations[0].statements, "wedge_axis": "  "})
+        issues: list = []
+
+        _validate_function_contracts(replace(self.proposal, operations=(blank,)), issues=issues)
+
+        self.assertEqual([issue.code for issue in issues], ["malformed_model_output"])
+        self.assertIn("wedge_axis", issues[0].detail)
 
 
 if __name__ == "__main__":

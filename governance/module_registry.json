@@ -152,7 +152,7 @@
         "the supported operation vocabulary and its rhinoscriptsyntax emission (solid, revolve, extrusion, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
         "the layer path and layer colour tables derived from components and material assignment",
         "the archflow:* object user text each physical object must carry (expected_object_semantics)",
-        "the one map from producer parameters to archflow:* user strings, and the canonical text a stated number or literal is written as",
+        "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
         "the analytic per-object bounds the realization must reproduce (expected_object_bounds)",
         "applying a datum-bound base_level to profile points (lift_to_base_level)",
         "the P103 partial emission of an operation subset"
@@ -203,7 +203,7 @@
         "the same program translates to the same script bytes - the emission is deterministic and self-contained",
         "coordinates pass through as the program states them; the translator performs no frame conversion",
         "every physical object is named and carries its archflow:* identity strings",
-        "an object carries its producer's parameters as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); geometry is never recomputed to write them"
+        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError"
       ],
       "status": "canonical",
       "tests": [
@@ -438,7 +438,7 @@
         "typed declination: a component owned, looked at, and left without geometry for a stated reason",
         "the building-local frame id and the +Y extrusion convention every producer emits",
         "a straight flight of steps (stair), a sloped-top wedge (wedge) and a hollow revolved shell (shell), each publishing <id>-top and seated by a support relation like prism",
-        "stating on the operation the row parameters the produced solid cannot show (a wedge's low/high/axis/sense, a shell's thickness/kind), for the export to carry; wedge_sense is the world-anchored rise direction +x|-x|+z|-z, derived from the row's declared from->to line and slope_across, never measured back off the geometry"
+        "declaring on the operation, as statements and never as parameters, the row facts the produced solid cannot show (a wedge's low/high/axis/sense, a shell's thickness/kind), already formatted as the text the export will carry; wedge_sense is the world-anchored rise direction +x|-x|+z|-z, derived from the row's declared from->to line and slope_across, never measured back off the geometry"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -493,7 +493,8 @@
         "elevations leave as (datum id, offset) bindings, never as literal numbers",
         "an element referencing another is produced after it; a reference cycle or a missing element fails ElementProducerError",
         "an unknown producer name fails typed rather than being skipped",
-        "an overlap into a support exists only as a declared ENGAGEMENT parameter, recorded on the relation"
+        "an overlap into a support exists only as a declared ENGAGEMENT parameter, recorded on the relation",
+        "a row fact the export needs but the geometry does not is a statement, never a parameter: the function contract for the operation's kind still sees exactly the parameters it names"
       ],
       "status": "canonical",
       "tests": [
@@ -508,6 +509,7 @@
       "purpose": "Author, compile and retain bounded rounds of a provider's neutral geometry proposal against one exact state, with no fallback and no acceptance authority.",
       "owns": [
         "the strict provider request and response contracts (the authoring output topology and its function contracts)",
+        "the function-contract check itself: parameters against the table for the operation's kind, statements only by shape - an operation's statements are never listed as missing or extra",
         "the bounded round loop, its policy knobs (round cap, bookkeeping completion, progress budget, partial acceptance, stall escalation) and its resume seam",
         "decoding a provider's full or edit-shaped answer into a typed GeometryProgramProposal without inventing geometry",
         "semantic coverage validation of a proposal against the state, commitments, seat scope and required component bindings",
@@ -583,6 +585,7 @@
         "archive/tests/test_geometry_proposal_producer.py",
         "archive/tests/test_geometry_proposal_contract.py",
         "tests/test_production_policy.py",
+        "tests/test_element_producers.py",
         "archive/tests/test_production_wiring.py",
         "archive/tests/test_component_templates.py",
         "tests/test_state_record.py"
@@ -592,13 +595,15 @@
         "the provider receipt's identity must match the declared GeometryProposalProviderIdentity",
         "the proposal is bound to one exact design-state digest and predecessor program digest",
         "a round is capped by policy; exhausting the cap deposits a deferral or escalation record, not a result",
-        "every round is retained before the next one is authored"
+        "every round is retained before the next one is authored",
+        "the function contract checks parameters by kind and statements by shape; an operation that declares nothing decodes and re-encodes to the same bytes it always did"
       ],
       "status": "canonical",
       "tests": [
         "archive/tests/test_geometry_proposal_producer.py",
         "archive/tests/test_geometry_proposal_contract.py",
         "tests/test_production_policy.py",
+        "tests/test_element_producers.py",
         "archive/tests/test_production_wiring.py",
         "archive/tests/test_component_templates.py"
       ],
@@ -2490,6 +2495,7 @@
       "purpose": "The typed, platform-neutral geometry program (operations, frames, assemblies, assets, datums) and the published project levels and grids.",
       "owns": [
         "the generic operation and parameter vocabularies (GeometryOperationKind, GeometryParameterKind, GeometryOperation, GeometryParameter)",
+        "GeometryOperation.statements: the declared, non-geometric facts an operation carries to the export as archflow:<key> user strings - identifier keys, text values, deterministic order",
         "units, tolerance, affine transforms and coordinate frames (LengthUnit, GeometryTolerance, AffineTransform, CoordinateFrame)",
         "semantic bindings from geometry objects back to components, commitments and evidence (SemanticBinding)",
         "hosted assemblies and the protocol roles each kind requires (HostedAssembly, AssemblyKind, AssemblyRole, AssemblyMember, required_assembly_roles, DetailMaturity)",
@@ -2573,6 +2579,8 @@
       ],
       "invariants": [
         "the operation vocabulary is generic: no project, style or external-tool routing authority",
+        "statements are declared facts for the export; parameters are geometry; the contract checks parameters by kind and statements by shape",
+        "an operation that states nothing serialises exactly as it did before statements existed, so no retained program's digest moves; a program that has them digests them",
         "every numeric field is finite and every collection is bounded",
         "a datum id namespace is unique across levels and grid axes (verify_project_datums)",
         "a proposal names the design-state digest it was produced from",

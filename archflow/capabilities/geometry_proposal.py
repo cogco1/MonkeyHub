@@ -345,12 +345,13 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
 def _strict_object(
     properties: Mapping[str, object],
     *,
+    optional: tuple[str, ...] = (),
     description: str | None = None,
 ) -> dict[str, object]:
     contract: dict[str, object] = {
         "type": "object",
         "additionalProperties": False,
-        "required": list(properties),
+        "required": [name for name in properties if name not in optional],
         "properties": dict(properties),
     }
     if description is not None:
@@ -771,9 +772,22 @@ def _authoring_output_contract(
                     "Semantic dependency subset of semantic_binding_ids."
                 ),
             ),
+            "statements": {
+                "type": "object",
+                "propertyNames": dict(identifier),
+                "additionalProperties": text,
+                "description": (
+                    "Optional declared facts about this operation that take no "
+                    "part in its geometry and are exported as archflow:<key> "
+                    "user strings. Values are already-formatted text. No "
+                    "function contract names them, so they are never "
+                    "parameters; omit the field when there are none."
+                ),
+            },
         },
+        optional=("statements",),
         description=(
-            "Use asset fields only for asset_instance. Parameter names and kinds must exactly follow geometry_function_contracts[kind]."
+            "Use asset fields only for asset_instance. Parameter names and kinds must exactly follow geometry_function_contracts[kind]; statements are declared facts for the export, not parameters."
         ),
     )
     member = _strict_object(
@@ -2784,12 +2798,26 @@ def _validate_function_contracts(
     *,
     issues: list[GeometryProposalIssue],
 ) -> None:
-    """Report every independent typed-but-unsupported function parameter."""
+    """Report every independent typed-but-unsupported function parameter.
+
+    ``parameters`` are checked against the contract for the operation's
+    kind: a required one missing, an unknown one present, a wrong kind,
+    unit or value. ``statements`` are not parameters and no kind names
+    them, so they never appear in ``missing`` or ``extra``; the contract
+    asks only that each one says something, since a blank statement would
+    export an ``archflow:<key>`` string with nothing in it.
+    """
 
     def report(detail: str) -> None:
         issues.append(GeometryProposalIssue("malformed_model_output", detail))
 
     for operation in proposal.operations:
+        for name, statement in operation.statements.items():
+            if not statement.strip():
+                report(
+                    f"{operation.op_id}.{name}: a statement must say "
+                    "something; received empty text"
+                )
         contract = _FUNCTION_CONTRACTS[operation.kind.value]
         raw_parameters = contract["parameters"]
         assert isinstance(raw_parameters, list)
@@ -3435,9 +3463,28 @@ def _asset(value: object) -> AssetReference:
     )
 
 
+def _statements(value: object) -> dict[str, str]:
+    """One operation's declared statements: identifier keys, text values.
+
+    Absent is empty — an operation that declares nothing writes no field,
+    which is what keeps every program authored before statements existed
+    byte-identical.
+    """
+
+    if value is None:
+        return {}
+    payload = _mapping(value, "operation statements")
+    for key, item in payload.items():
+        if not isinstance(item, str):
+            raise GeometryProposalProductionError(
+                f"operation statement {key!r} must be text"
+            )
+    return dict(payload)
+
+
 def _operation(value: object) -> GeometryOperation:
     payload = _mapping(value, "geometry operation")
-    _exact(payload, {"schema", "op_id", "kind", "output_object_ids", "input_object_ids", "frame_id", "parameters", "semantic_binding_ids", "asset_id", "asset_socket_id", "asset_scale", "responds_to_object_ids", "responds_to_frame_ids", "responds_to_binding_ids"}, "geometry operation")
+    _exact(payload, {"schema", "op_id", "kind", "output_object_ids", "input_object_ids", "frame_id", "parameters", "semantic_binding_ids", "asset_id", "asset_socket_id", "asset_scale", "responds_to_object_ids", "responds_to_frame_ids", "responds_to_binding_ids"}, "geometry operation", optional=frozenset({"statements"}))
     if payload["schema"] != GeometryOperation.SCHEMA:
         raise GeometryProposalProductionError("geometry operation schema changed")
     scale = payload["asset_scale"]
@@ -3458,6 +3505,7 @@ def _operation(value: object) -> GeometryOperation:
         responds_to_object_ids=_strings_from_json(payload["responds_to_object_ids"], "responds_to_object_ids"),
         responds_to_frame_ids=_strings_from_json(payload["responds_to_frame_ids"], "responds_to_frame_ids"),
         responds_to_binding_ids=_strings_from_json(payload["responds_to_binding_ids"], "responds_to_binding_ids"),
+        statements=_statements(payload.get("statements")),
     )
 
 
@@ -3797,11 +3845,17 @@ def _persist_lineage(
     )
 
 
-def _exact(value: Mapping[str, Any], fields: set[str], label: str) -> None:
+def _exact(
+    value: Mapping[str, Any],
+    fields: set[str],
+    label: str,
+    *,
+    optional: frozenset[str] = frozenset(),
+) -> None:
     actual = set(value)
-    if actual != fields:
+    if actual != fields | (actual & optional):
         missing = sorted(fields - actual)
-        unexpected = sorted(actual - fields)
+        unexpected = sorted(actual - fields - optional)
         raise GeometryProposalProductionError(
             f"{label}: field mismatch; missing={missing}; "
             f"unexpected={unexpected}"

@@ -218,5 +218,67 @@ class GeometryProgramContractTests(unittest.TestCase):
         self.assertFalse(proposal.to_dict()["canonical_write_authority"])
 
 
+class OperationStatementTests(unittest.TestCase):
+    """Statements are declared facts for the export; parameters are geometry."""
+
+    def _operation(self, **extra) -> GeometryOperation:
+        return GeometryOperation(
+            op_id="solid",
+            kind=GeometryOperationKind.SOLID,
+            output_object_ids=("solid",),
+            input_object_ids=(),
+            frame_id="world",
+            parameters=(_parameter(),),
+            semantic_binding_ids=("binding",),
+            **extra,
+        )
+
+    def test_an_operation_that_states_nothing_writes_the_bytes_it_always_wrote(
+        self,
+    ) -> None:
+        """No retained program's digest moves because statements now exist (ADR-004)."""
+
+        self.assertEqual(
+            self._operation().to_dict(),
+            {
+                "schema": "GeometryOperation@1",
+                "op_id": "solid",
+                "kind": "solid",
+                "output_object_ids": ["solid"],
+                "input_object_ids": [],
+                "frame_id": "world",
+                "parameters": [_parameter().to_dict()],
+                "semantic_binding_ids": ["binding"],
+                "asset_id": None,
+                "asset_socket_id": None,
+                "asset_scale": None,
+                "responds_to_object_ids": [],
+                "responds_to_frame_ids": [],
+                "responds_to_binding_ids": [],
+            },
+        )
+
+    def test_a_statement_is_part_of_what_the_run_declared_so_it_digests(self) -> None:
+        stated = self._operation(statements={"wedge_axis": "along"})
+
+        self.assertEqual(stated.to_dict()["statements"], {"wedge_axis": "along"})
+        self.assertNotEqual(stated.to_dict(), self._operation().to_dict())
+
+    def test_statements_are_identifier_keys_text_values_in_a_deterministic_order(
+        self,
+    ) -> None:
+        stated = self._operation(
+            statements={"wedge_low": "0.5", "shell_kind": "dome"}
+        )
+
+        self.assertEqual(list(stated.statements), ["shell_kind", "wedge_low"])
+        with self.assertRaises(ValueError):
+            self._operation(statements={"not an identifier": "x"})
+        with self.assertRaises(TypeError):
+            self._operation(statements={"wedge_low": 0.5})
+        with self.assertRaises(TypeError):
+            self._operation(statements=[("wedge_low", "0.5")])
+
+
 if __name__ == "__main__":
     unittest.main()

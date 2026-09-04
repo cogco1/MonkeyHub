@@ -168,26 +168,25 @@ def _bind(op_id: str, datum_id: str) -> DatumBinding:
     return DatumBinding(binding_id=f"bind-{op_id}", datum_id=datum_id, op_id=op_id, parameter_name="base_level")
 
 
-def _stating(operation: GeometryOperation, *parameters: GeometryParameter) -> GeometryOperation:
-    """The same operation, with row parameters the exported solid cannot show stated on it.
+def _stating(operation: GeometryOperation, **statements: str) -> GeometryOperation:
+    """The same operation, with row facts the exported solid cannot show stated on it.
 
     A bounding box holds the same hull for a wedge rising along its run and
     one rising across it, and shows nothing of a shell's wall thickness. So
     the row's own numbers travel on the operation - not a measurement of the
-    geometry, the parameter the producer read - and the CAD adapter writes
-    them as ``archflow:*`` user strings the re-index can read back. Names
-    stay sorted, which a GeometryOperation requires.
+    geometry, the value the producer read - and the CAD adapter writes them
+    as ``archflow:*`` user strings the re-index can read back. They are
+    statements, not parameters: they take no part in the geometry and no
+    function contract names them.
     """
 
-    return replace(operation, parameters=tuple(sorted((*operation.parameters, *parameters), key=lambda item: item.name)))
+    return replace(operation, statements={**operation.statements, **statements})
 
 
-def _text(name: str, value: str) -> GeometryParameter:
-    return GeometryParameter.create(name=name, kind=GeometryParameterKind.TEXT, value=value)
+def _metres(value: float) -> str:
+    """A stated length as canonical decimal text: shortest round-trip repr, locale-free."""
 
-
-def _metres(name: str, value: float) -> GeometryParameter:
-    return GeometryParameter.create(name=name, kind=GeometryParameterKind.NUMBER, value=round(value, 9), unit=_M)
+    return repr(round(float(value), 9))
 
 
 def _level_datum(datum_id: str, published_by: str, value: float, basis: tuple[str, ...]) -> InterfaceDatum:
@@ -629,9 +628,9 @@ def produce_wedge(row: ElementRow, context: ProductionContext) -> ProducedElemen
     not above ``low``: a wedge with a level top is a prism, and says so.
 
     The bounding box the export leaves behind holds the same hull whichever
-    way the top rises, so the row's own numbers travel on the operation:
-    ``wedge_low`` and ``wedge_high`` in metres, ``wedge_axis`` (``along`` |
-    ``across``), and ``wedge_sense`` — the rise direction in the kernel
+    way the top rises, so the row's own numbers travel as statements on the
+    operation: ``wedge_low`` and ``wedge_high`` in metres, ``wedge_axis``
+    (``along`` | ``across``), and ``wedge_sense`` — the rise direction in the kernel
     plan, ``+x`` | ``-x`` | ``+z`` | ``-z``, computed by ``_rise_sense``
     from the declared line and ``slope_across`` alone. It is world-anchored
     rather than named against the row's reference order, so a re-index that
@@ -661,8 +660,8 @@ def produce_wedge(row: ElementRow, context: ProductionContext) -> ProducedElemen
     # The solid keeps its own slope: low, high, the axis it tips on, and the direction it rises in.
     # This producer always seats low at the `from` end (along) or on the -normal side (across), so
     # the sense follows from the declared line; it is stated world-anchored, not measured back.
-    stated = _stating(produced.operations[0], _text("wedge_axis", "across" if across else "along"), _metres("wedge_high", high),
-                      _metres("wedge_low", low), _text("wedge_sense", _rise_sense(ux, uz, across)))
+    stated = _stating(produced.operations[0], wedge_axis="across" if across else "along", wedge_high=_metres(high),
+                      wedge_low=_metres(low), wedge_sense=_rise_sense(ux, uz, across))
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + high, row.basis_refs)
     context.published[top.datum_id] = top
     return ProducedElement((stated,), produced.bindings, (top,), produced.relations, None)
@@ -714,7 +713,7 @@ def produce_shell(row: ElementRow, context: ProductionContext) -> ProducedElemen
         operations, bindings = lofted.operations, lofted.bindings
     # The wall is nowhere in the hull: a solid drum and a hollow one share a box. The shell states
     # its own thickness and which revolved form it is, so the export can say what the box cannot.
-    operations = (_stating(operations[0], _text("shell_kind", kind), _metres("shell_thickness", thickness)),)
+    operations = (_stating(operations[0], shell_kind=kind, shell_thickness=_metres(thickness)),)
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
     context.published[top.datum_id] = top
     return ProducedElement(operations, bindings, (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)

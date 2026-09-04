@@ -13,6 +13,7 @@ import math
 import re
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from archflow.project.refs import ProjectVersionRef
@@ -119,6 +120,29 @@ def _ids(
             f"{field} requires unique deterministic identifiers"
         )
     return values
+
+
+def _statements(value: object) -> Mapping[str, str]:
+    """The declared, non-geometric statements of one operation, normalized.
+
+    Identifier keys, text values, deterministic order, bounded count. The
+    typed contract goes no further: whether a value says anything, and what
+    a particular key means, belong to whoever states it and to the function
+    contract that reads the operation.
+    """
+
+    if not isinstance(value, Mapping):
+        raise TypeError("statements must be a mapping")
+    if len(value) > _MAX_ITEMS:
+        raise GeometryProgramError("statements has an invalid item count")
+    normalized: dict[str, str] = {}
+    for key in value:
+        require_identifier(key, "statement key")
+        item = value[key]
+        if not isinstance(item, str):
+            raise TypeError(f"statement {key!r} must be text")
+        normalized[key] = item
+    return MappingProxyType(dict(sorted(normalized.items())))
 
 
 def _refs(
@@ -437,8 +461,28 @@ class AssetReference:
         }
 
 
+_NO_STATEMENTS: Mapping[str, str] = MappingProxyType({})
+
+
 @dataclass(frozen=True, slots=True)
 class GeometryOperation:
+    """One typed operation: its geometry, and what the run declared about it.
+
+    ``parameters`` are geometry — the typed arguments the function contract
+    for this ``kind`` names, and the only thing a kernel reads. ``statements``
+    are declared facts *about* the operation that take no part in geometry:
+    identifier keys, text values already formatted by whoever stated them.
+    They exist because a saved solid cannot show everything the run knew — a
+    bounding box holds the same hull for a wedge rising along its run and one
+    rising across it, and shows nothing of a shell's wall — so the adapter
+    carries each statement out as an ``archflow:<key>`` user string. Nothing
+    measures geometry to make one, and no function contract lists them.
+
+    They are part of what the run declared, so a program that has them
+    digests them; an operation that states nothing serialises exactly as it
+    did before ``statements`` existed, and its digest is unchanged.
+    """
+
     op_id: str
     kind: GeometryOperationKind
     output_object_ids: tuple[str, ...]
@@ -452,6 +496,7 @@ class GeometryOperation:
     responds_to_object_ids: tuple[str, ...] = ()
     responds_to_frame_ids: tuple[str, ...] = ()
     responds_to_binding_ids: tuple[str, ...] = ()
+    statements: Mapping[str, str] = _NO_STATEMENTS
 
     SCHEMA = "GeometryOperation@1"
 
@@ -480,6 +525,7 @@ class GeometryOperation:
             raise GeometryProgramError(
                 "parameters require unique deterministic names"
             )
+        object.__setattr__(self, "statements", _statements(self.statements))
         _ids(self.semantic_binding_ids, "operation semantic_binding_ids")
         _ids(
             self.responds_to_object_ids,
@@ -539,7 +585,7 @@ class GeometryOperation:
             )
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "schema": self.SCHEMA,
             "op_id": self.op_id,
             "kind": self.kind.value,
@@ -559,6 +605,11 @@ class GeometryOperation:
             "responds_to_frame_ids": list(self.responds_to_frame_ids),
             "responds_to_binding_ids": list(self.responds_to_binding_ids),
         }
+        # An operation that states nothing writes exactly the bytes it wrote
+        # before statements existed, so retained digests still bind (ADR-004).
+        if self.statements:
+            payload["statements"] = dict(self.statements)
+        return payload
 
 
 @dataclass(frozen=True, slots=True)

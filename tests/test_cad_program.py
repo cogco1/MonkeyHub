@@ -12,13 +12,14 @@ from archflow.adapters.cad_program import (
 )
 
 
-def op(op_id, kind, outputs, inputs=(), bindings=(), **params):
+def op(op_id, kind, outputs, inputs=(), bindings=(), statements=None, **params):
     return SimpleNamespace(
         op_id=op_id,
         kind=SimpleNamespace(value=kind),
         output_object_ids=tuple(outputs),
         input_object_ids=tuple(inputs),
         semantic_binding_ids=tuple(bindings),
+        statements=dict(statements or {}),
         parameters=tuple(
             SimpleNamespace(name=name, value_json=json.dumps(value))
             for name, value in sorted(params.items())
@@ -739,14 +740,15 @@ def _prism_row():
     )
 
 
-class ProducerParameterUserTextTests(unittest.TestCase):
+class ProducerStatementUserTextTests(unittest.TestCase):
     """W3-B: what a saved solid cannot show about itself, the object says in user text.
 
     A wedge's slope and a shell's wall are not in the bounding box, and the
     mirrored wedge leaves the box unchanged, so the re-index reads them off
     ``archflow:wedge_*`` / ``archflow:shell_*`` instead. The values here are
     the row's own numbers, carried through the real producers - the
-    translator reads the operation's parameters and never measures geometry.
+    translator writes the operation's statements through verbatim and never
+    measures geometry.
     """
 
     def _user_text(self, *rows):
@@ -841,26 +843,30 @@ class ProducerParameterUserTextTests(unittest.TestCase):
             self.assertIn(f'"{key}": "{value}"', script)
 
     def test_metres_are_canonical_decimal_text_not_a_locale_or_a_python_object(self):
-        """A stated length reparses to the same float; a value the map cannot carry fails closed."""
+        """A stated length reparses to the same float, in any locale."""
 
         text = self._user_text(_wedge_row(low=0.0, high=1.0 / 3.0))["obj-abutment-north"]
         self.assertEqual(text["archflow:wedge_low"], "0.0")
         self.assertEqual(float(text["archflow:wedge_high"]), round(1.0 / 3.0, 9))
         self.assertNotIn(",", text["archflow:wedge_high"])
 
-        with self.assertRaises(CadTranslationError):
-            expected_object_semantics(
-                program(
-                    op(
-                        "bad-shell",
-                        "extrusion",
-                        ["obj-bad-shell"],
-                        profile=[[0.0, 0.0, 0.0]],
-                        shell_kind=["cylinder"],
-                        vector=[0.0, 1.0, 0.0],
+    def test_a_statement_may_not_take_a_key_the_export_uses_for_identity(self):
+        """A declared fact never overwrites what names the object it travels on."""
+
+        for reserved in ("component", "object_ref", "producer_op"):
+            with self.subTest(reserved=reserved), self.assertRaises(CadTranslationError):
+                expected_object_semantics(
+                    program(
+                        op(
+                            "bad-shell",
+                            "extrusion",
+                            ["obj-bad-shell"],
+                            statements={reserved: "something else"},
+                            profile=[[0.0, 0.0, 0.0]],
+                            vector=[0.0, 1.0, 0.0],
+                        )
                     )
                 )
-            )
 
 
 if __name__ == "__main__":
