@@ -4156,6 +4156,84 @@
         "archive/tests/test_submission.py"
       ],
       "notes": "§2.2 names Finding/ValidationReceipt the one validation result; CheckFinding/CheckReceiptEnvelope in validation/contracts.py is the parallel scheduled for deletion."
+    },
+    {
+      "module_id": "capabilities.element_reindex",
+      "owner_path": "archflow/capabilities/element_reindex.py",
+      "purpose": "Recover Element@1 identity from an exported model without moving it: objects (3dm inspection) -> component/family/side -> element drafts with symbolic references where the geometry snaps to declared axes and levels, proven by re-producing the drafted rows and measuring the residual; ambiguity and source conflicts are named, never resolved by guessing.",
+      "owns": [
+        "reading SourceObjects off a ThreeDmInspectionSummary (named bboxes, archflow:component / archflow:producer_op strings, geometry digests)",
+        "family and side of an object from its producer op (column-west-3 -> column / west)",
+        "precedence between sources per (component, side): a patch supersedes the base, equal patches are ALTERNATE and the base stands",
+        "element drafts per (component, family, side): column-array, capitals, beam, prism from boxes; AMBIGUOUS for forms boxes cannot carry",
+        "drafting a GridAxis@1 the model needs and the record lacks (a column line), marked derived",
+        "the residual between produced and inspected boxes, by running the real producers on the drafted rows",
+        "derived support_contact relations from vertical contact within the stage-5 tolerance",
+        "the ComponentCatalog@1 payload and the successor record that adds axes, rows and relations and replaces nothing"
+      ],
+      "does_not_own": [
+        "producing geometry from a row - capabilities.element_producers",
+        "resolving a reference - capabilities.reference_resolver",
+        "writing any record - tools/reindex_project.py through project.repository",
+        "the studio's derived catalog of an authored record - studio.binding"
+      ],
+      "public_api": [
+        "reindex",
+        "ReindexResult",
+        "ElementDraft",
+        "SourceObject",
+        "objects_of",
+        "place_objects",
+        "family_of",
+        "side_of",
+        "Frame"
+      ],
+      "depends_on": [
+        "capabilities.element_producers",
+        "capabilities.reference_resolver",
+        "state.geometry_program",
+        "state.record"
+      ],
+      "files": [
+        "archflow/capabilities/element_reindex.py"
+      ],
+      "tests": [
+        "tests/test_element_reindex.py"
+      ],
+      "reason": "The studio's catalog (studio.binding) reads elements the record declares; a scripted project has none. Re-indexing is the one generic way to give such a project its tree: derived from the model the spine already inspected, checked by the producers the spine already runs. It extends the spine's Element@1 vocabulary; it adds no parallel geometry protocol."
+    },
+    {
+      "module_id": "tools.reindex_project",
+      "owner_path": "tools/reindex_project.py",
+      "purpose": "CLI: re-index a project's authored record against named inspection records and write a component-catalog and a draft state-record successor into a new run through the repository.",
+      "owns": [
+        "the --source <uri>@<precedence> vocabulary",
+        "writing component-catalog and state-record records into --out-run",
+        "the Markdown coverage summary"
+      ],
+      "does_not_own": [
+        "the derivation - capabilities.element_reindex",
+        "any write outside the named run"
+      ],
+      "public_api": [
+        "main",
+        "markdown"
+      ],
+      "depends_on": [
+        "capabilities.element_reindex",
+        "project.inputs",
+        "project.repository",
+        "project.record_kinds",
+        "project.refs",
+        "project.ports"
+      ],
+      "files": [
+        "tools/reindex_project.py"
+      ],
+      "tests": [
+        "tests/test_element_reindex.py"
+      ],
+      "reason": "The tool is the only writer of the re-index records; it writes them as run records of a new run and touches nothing the project already holds."
     }
   ]
 }

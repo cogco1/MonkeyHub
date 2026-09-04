@@ -97,6 +97,7 @@ INTENT_COMPILATION = "intent-compilation"
 
 COMPONENT_TEMPLATE = "component-template"
 CATALOG_CONFRONTATION = "catalog-confrontation"
+COMPONENT_CATALOG = "component-catalog"
 
 # ---- the issue's kind (archflow/project/issue.py)
 
@@ -314,6 +315,14 @@ _TABLE: tuple[RecordKind, ...] = (
         _RUN_RECORD,
         "which templates a catalog confrontation selected; capabilities."
         "geometry_proposal checks this schema by name, and writes none",
+    ),
+    RecordKind(
+        COMPONENT_CATALOG,
+        "ComponentCatalog@1",
+        _RUN_RECORD,
+        "what re-indexing an exported model against the record found: object "
+        "-> component -> element drafts with residuals, coverage per component, "
+        "ambiguities; written by tools/reindex_project.py through the repository",
     ),
     RecordKind(
         STAGE_RUN_ENVELOPE,
