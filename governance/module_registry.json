@@ -427,13 +427,14 @@
       "owner_path": "archflow/capabilities/element_producers.py",
       "purpose": "Turn a State Record's Element@1 rows into geometry operations, datum bindings, published datums and materialized relations, reading references rather than computing coordinates.",
       "owns": [
-        "the producer dispatch table PRODUCERS: column-array, capitals, beam, pediment, wall, prism, ring, loft, dome-cap, declined",
+        "the producer dispatch table PRODUCERS: column-array, capitals, beam, pediment, wall, prism, ring, loft, dome-cap, stair, wedge, shell, declined",
         "reading Element@1 entities off a StateRecord into ElementRow, in production order",
         "topological production order: an element that names another (or its published `<id>-top`) is produced after it",
         "publishing `<id>-top` interface datums an element grants to what it supports",
         "declaring the support relations that construction materializes (ProducedRelation), with engagement or rise",
         "typed declination: a component owned, looked at, and left without geometry for a stated reason",
-        "the building-local frame id and the +Y extrusion convention every producer emits"
+        "the building-local frame id and the +Y extrusion convention every producer emits",
+        "a straight flight of steps (stair), a sloped-top wedge (wedge) and a hollow revolved shell (shell), each publishing <id>-top and seated by a support relation like prism"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
