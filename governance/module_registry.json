@@ -3109,7 +3109,8 @@
         "the honesty lines stating what this projection cannot tell you",
         "the component catalog derived from the record and the reference run's inspection: per component its descendant elements, editable capabilities (value, type, source, confidence, status, validator refs), object coverage and closure; per exported object the element it binds to, or MODEL_VISIBLE_CATALOG_MISSING when no Element@1 row answers for it",
         "reading PROJECT.md at the project root for names (aliases -> declared components) and the compass; nothing else is read from it",
-        "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as element_reindex.axis_lines_of reads it), the elements whose own references name it, and the closure of changing it (GET /api/state/frame, POST /api/state/closure); read-only, no grammar rule for editing a level or an axis"
+        "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as element_reindex.axis_lines_of reads it), the elements whose own references name it, and the closure of changing it (GET /api/state/frame, POST /api/state/closure); read-only, no grammar rule for editing a level or an axis",
+        "a capability a reference pins (a height whose top names a level, another element's datum or a grid role) is status=derived with source='derived from <ref>', read from the record's own dependency edges; it is shown, never created"
       ],
       "does_not_own": [
         "writing, issuing or advancing anything - the binding is read-only; runtime.project_runner is the only writer and project.issue the only issuer",
@@ -3163,7 +3164,8 @@
         "GET /api/state/frame",
         "POST /api/state/closure",
         "frame_of",
-        "closure_of_refs"
+        "closure_of_refs",
+        "references_of"
       ],
       "depends_on": [
         "project.inputs",
@@ -3355,7 +3357,9 @@
         "the camera + compass level of the target resolver (a viewer word read into a side), PROJECT.md aliases as outright names, the catalog as the one directory of editable elements and of what the model shows without a row (MODEL_VISIBLE_CATALOG_MISSING on the authored-control draft)",
         "declared controls: a confirmed authored-control draft kept in process against its state (POST /api/controls), never a row of the record",
         "the DeliberationEpisode value: one judgement of the studio - the intent, the options on the table, the decision on each with its reason, and the run it produced",
-        "the in-process episode store, and the flush that writes judgements made before a run into the next run made against the same state; a judgement is retained only into a run that happened, an episode that met no run says so and is lost on restart; the payload states facts only (ADR-004)"
+        "the in-process episode store, and the flush that writes judgements made before a run into the next run made against the same state; a judgement is retained only into a run that happened, an episode that met no run says so and is lost on restart; the payload states facts only (ADR-004)",
+        "the scope step: which elements a change is agreed to reach - the element, the stack that seats on it (support relations and base references, intersected with the record's closure), or everything on its datum; asked (SCOPE_UNRESOLVED) only when a stack exists and the request did not say, never for an explicitly picked element",
+        "the derived-control answer: a capability a reference pins is named with its source (CONTROL_IS_DERIVED) and never compiled - the source's own editable controls when it is an element, the terminal authored-control answer when it is a level"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -3427,7 +3431,10 @@
         "GET /api/episodes",
         "GET /api/episodes/{episode_id}",
         "DeliberationEpisode",
-        "EpisodeStore"
+        "EpisodeStore",
+        "ScopeOption",
+        "scope_of",
+        "scope_in"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3466,7 +3473,9 @@
         "a proposal carries the authority id studio:proposal-only; it is proposal-only and never a commit",
         "an AuthoredControlDraft is a value: it is returned, never retained, and it invents no number",
         "identity comes from the export's archflow:* strings, not from an object's name alone",
-        "the proposal store and the pending-intent store are one process's dictionaries: not version history, lost on restart"
+        "the proposal store and the pending-intent store are one process's dictionaries: not version history, lost on restart",
+        "a scope is a coverage, not a mutation: whatever scope is settled, the proposal moves one scalar on one element",
+        "a derived capability is shown with its source and never compiled; the agent is not asked about one"
       ],
       "status": "canonical",
       "tests": [
@@ -3478,7 +3487,8 @@
         "apps/archflow-studio/api/tests/test_pick.py",
         "apps/archflow-studio/api/tests/test_proposals.py",
         "apps/archflow-studio/api/tests/test_clarification_catalog.py",
-        "apps/archflow-studio/api/tests/test_episodes.py"
+        "apps/archflow-studio/api/tests/test_episodes.py",
+        "apps/archflow-studio/api/tests/test_clarification_scope.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
