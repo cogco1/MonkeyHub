@@ -103,18 +103,11 @@ class DeterministicPassThroughTests(IntentTestCase):
         self.assertEqual(payload["proposal"]["change"]["new"], 0.8)
         self.assertEqual(payload["proposal"]["target"]["elementId"], "portico-base")
 
-    def test_an_abstract_sentence_with_no_agent_is_the_resolvers_question(self) -> None:
-        # "a little" is a question about the amount, with the current value in
-        # it - never a percentage the studio assumed - and the pending intent
-        # keeps the target and the direction for the reply.
+    def test_an_abstract_sentence_with_no_agent_is_the_grammars_question(self) -> None:
         status, payload = self.ask("make the portico a little taller", elementId="portico-base")
         self.assertEqual(status, 422, payload)
         self.assertEqual(payload["code"], "BLOCKED_NEEDS_HUMAN")
-        self.assertEqual(payload["pending"]["reasonCode"], "MISSING_AMOUNT")
-        self.assertEqual(payload["pending"]["targetElementId"], "portico-base")
-        self.assertEqual(payload["pending"]["slots"], {"direction": "increase"})
-        self.assertIn("0.6", payload["question"])
-        self.assertNotIn("10", payload["question"])
+        self.assertIn("acceptedForms", payload)
 
     def test_the_proposal_is_kept_for_a_later_get(self) -> None:
         _, payload = self.ask("set height to 0.8", elementId="portico-base")
@@ -131,10 +124,7 @@ class ScriptedAgentTests(IntentTestCase):
             why="a little = +10 %",
         )
         self.app.state.intent_compiler = compiler
-        # The portico has two editable elements, so the sentence is the
-        # agent's to place; the number is in the sentence, so the amount is not
-        # a question.
-        status, payload = self.ask("make the portico base 10 % taller")
+        status, payload = self.ask("make the portico base a little taller")
         self.assertEqual(status, 201, payload)
         self.assertEqual(payload["agent"]["provider"], "codex")
         self.assertEqual(payload["agent"]["why"], "a little = +10 %")
@@ -145,56 +135,24 @@ class ScriptedAgentTests(IntentTestCase):
         self.assertEqual(payload["proposal"]["change"]["old"], 0.6)
         self.assertAlmostEqual(payload["proposal"]["change"]["new"], 0.66)
         self.assertEqual(payload["proposal"]["utterance"], "increase height by 10 %")
-        self.assertEqual(compiler.calls[0]["message"], "make the portico base 10 % taller")
-        self.assertEqual(payload["resolution"]["kind"], "change_existing_value")
-        self.assertEqual(payload["resolution"]["capabilityId"], "entity:portico-base#params.height")
-
-    def test_a_qualitative_amount_is_a_question_even_with_an_agent(self) -> None:
-        compiler = scripted(
-            utterance="increase height by 10 %",
-            component_id="portico",
-            element_id="portico-base",
-            why="a little = +10 %",
-        )
-        self.app.state.intent_compiler = compiler
-        status, payload = self.ask("make the portico base a little taller")
-        self.assertEqual(status, 422, payload)
-        self.assertEqual(payload["pending"]["reasonCode"], "MISSING_AMOUNT")
-        self.assertNotIn("10", payload["question"])
+        self.assertEqual(compiler.calls[0]["message"], "make the portico base a little taller")
 
     def test_the_agent_may_move_the_selection_to_an_element_the_record_declares(self) -> None:
         self.app.state.intent_compiler = scripted(
             utterance="set height to 0.5", component_id="portico", element_id="portico-cornice"
         )
-        # No element picked: the portico's two elements are candidates and the
-        # agent may choose among them.
-        status, payload = self.ask("set the cornice to 0.5")
+        status, payload = self.ask("raise the cornice", elementId="portico-base")
         self.assertEqual(status, 201, payload)
         self.assertEqual(payload["proposal"]["target"]["elementId"], "portico-cornice")
         self.assertEqual(payload["proposal"]["change"]["old"], 0.3)
-
-    def test_an_explicit_element_is_not_the_agents_to_move(self) -> None:
-        compiler = scripted(
-            utterance="set height to 0.5", component_id="portico", element_id="portico-cornice"
-        )
-        self.app.state.intent_compiler = compiler
-        status, payload = self.ask("raise the cornice by 10 %", elementId="portico-base")
-        # The pick is explicit and the sentence carries its number: the record
-        # types it on the picked element without asking the agent.
-        self.assertEqual(status, 201, payload)
-        self.assertEqual(payload["proposal"]["target"]["elementId"], "portico-base")
-        self.assertEqual(compiler.calls, [])
 
     def test_an_agent_naming_an_element_the_record_lacks_is_the_grammars_question(self) -> None:
         self.app.state.intent_compiler = scripted(
             utterance="set height to 0.5", component_id="portico", element_id="portico-attic"
         )
-        status, payload = self.ask("raise the attic by 10 %")
+        status, payload = self.ask("raise the attic")
         self.assertEqual(status, 422, payload)
         self.assertEqual(payload["code"], "BLOCKED_NEEDS_HUMAN")
-        # The agent's element is not in the catalog: the answer is the
-        # resolver's question, naming what can be chosen.
-        self.assertEqual(payload["pending"]["reasonCode"], "AMBIGUOUS_TARGET")
         self.assertIn("portico-attic", payload["question"])
 
     def test_the_agents_question_is_asked_as_the_agents(self) -> None:
@@ -207,9 +165,9 @@ class ScriptedAgentTests(IntentTestCase):
         self.assertEqual(status, 422, payload)
         self.assertEqual(payload["code"], "BLOCKED_NEEDS_HUMAN")
         self.assertTrue(payload["question"].startswith("Which element"))
-        self.assertIn("codex said: the request names the portico", payload["detail"])
+        self.assertIn("the codex agent asked instead of compiling", payload["detail"])
+        self.assertIn("the request names the portico", payload["detail"])
         self.assertNotIn("acceptedForms", payload)
-        self.assertEqual(payload["pending"]["reasonCode"], "AMBIGUOUS_TARGET")
 
     def test_an_agent_that_claims_to_compile_but_does_not_gets_the_forms(self) -> None:
         self.app.state.intent_compiler = scripted(
@@ -218,7 +176,7 @@ class ScriptedAgentTests(IntentTestCase):
         status, payload = self.ask("lift it")
         self.assertEqual(status, 422, payload)
         self.assertIn("is not in the grammar", payload["detail"])
-        self.assertEqual(payload["pending"]["reasonCode"], "AMBIGUOUS_TARGET")
+        self.assertEqual(len(payload["acceptedForms"]), 4)
 
     def test_an_agent_that_fails_is_a_502_with_its_own_sentence(self) -> None:
         self.app.state.intent_compiler = Failing()
@@ -263,25 +221,24 @@ class RecordSheetTests(IntentTestCase):
 
 class AnswerParsingTests(unittest.TestCase):
     def test_a_fenced_json_answer_is_read(self) -> None:
-        raw = '```json\n{"kind":"command","capabilityId":"entity:portico-base#params.height","op":"set","value":0.8,"keep":[],"componentId":"portico","property":null,"missingSlots":[],"question":null,"reasonCode":null,"why":""}\n```'
+        raw = '```json\n{"status":"compiled","targetComponentId":"portico","elementId":"portico-base","utterance":"set height to 0.8","why":"","question":null}\n```'
         compilation = _parse_answer(raw, provider=CODEX, model=None, latency_ms=1, prompt_sha="00" * 32)
         self.assertEqual(compilation.utterance, "set height to 0.8")
         self.assertEqual(compilation.element_id, "portico-base")
-        self.assertEqual(compilation.answer["kind"], "command")
 
     def test_not_json_is_the_agents_failure(self) -> None:
         with self.assertRaises(StudioError) as caught:
             _parse_answer("I would raise it", provider=CODEX, model=None, latency_ms=1, prompt_sha="00" * 32)
         self.assertEqual(caught.exception.code, AGENT_FAILED)
 
-    def test_a_kind_outside_the_four_is_a_failure(self) -> None:
+    def test_a_status_outside_the_two_is_a_failure(self) -> None:
         with self.assertRaises(StudioError):
-            _parse_answer('{"kind":"done"}', provider=CODEX, model=None, latency_ms=1, prompt_sha="00" * 32)
+            _parse_answer('{"status":"done"}', provider=CODEX, model=None, latency_ms=1, prompt_sha="00" * 32)
 
-    def test_a_command_without_a_capability_is_a_failure(self) -> None:
+    def test_compiled_without_a_sentence_is_a_failure(self) -> None:
         with self.assertRaises(StudioError):
             _parse_answer(
-                '{"kind":"command","capabilityId":null,"op":null,"value":null,"keep":[],"componentId":null,"property":null,"missingSlots":[],"question":null,"reasonCode":null,"why":""}',
+                '{"status":"compiled","targetComponentId":null,"elementId":null,"utterance":null,"why":"","question":null}',
                 provider=CODEX, model=None, latency_ms=1, prompt_sha="00" * 32,
             )
 

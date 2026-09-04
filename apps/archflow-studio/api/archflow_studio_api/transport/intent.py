@@ -120,26 +120,6 @@ class IntentRequestDto(BaseModel):
         description="the project the client believes it is proposing against; "
         "a different one is refused as PROJECT_MISMATCH",
     )
-    continuation_token: str | None = Field(
-        alias="continuationToken",
-        default=None,
-        min_length=1,
-        description="the pending intent this sentence continues: the target, the "
-        "slots and the rejected candidates it already settled are kept",
-    )
-    picked_object: str | None = Field(
-        alias="pickedObject",
-        default=None,
-        min_length=1,
-        description="the exported object last picked in the model (its name), so a "
-        "pick that resolved to no element still names what was meant",
-    )
-    camera: CameraDto | None = Field(
-        default=None,
-        description="where the architect stands when the sentence is said, so "
-        "'left' and 'right' can be read against the project's compass; the "
-        "first gesture's camera answers when this is absent",
-    )
     gestures: list[GestureDto] = Field(
         default_factory=list,
         description="what the architect drew on the model with the words: "
@@ -197,21 +177,6 @@ class IntentTimingsDto(BaseModel):
     type_ms: int = Field(alias="typeMs")
 
 
-class ResolutionDto(BaseModel):
-    """How the target was found and what the sentence was read as."""
-
-    model_config = ConfigDict(populate_by_name=True, frozen=True)
-
-    kind: str = Field(description="change_existing_value for a proposal")
-    target_source: str | None = Field(
-        alias="targetSource",
-        description="element, object, gesture, component, alias or direction",
-    )
-    target_detail: str = Field(alias="targetDetail")
-    capability_id: str | None = Field(alias="capabilityId")
-    why: str
-
-
 class IntentDto(BaseModel):
     """The wire form of ``POST /api/intents``."""
 
@@ -224,10 +189,6 @@ class IntentDto(BaseModel):
         default_factory=list,
         description="the server's own reading of each gesture, in the record's "
         "names, as it was put on the sheet; empty when nothing was drawn",
-    )
-    resolution: ResolutionDto | None = Field(
-        default=None,
-        description="how the resolver found the target and read the sentence",
     )
 
 

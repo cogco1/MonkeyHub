@@ -3100,8 +3100,7 @@
         "answering project.inputs' refusals on the wire: 404 STATE_RECORD_NOT_FOUND and 422 STATE_RECORD_INVALID, each naming the file",
         "the projection: bound view, component tree, Element@1 rows with their numeric fields, parameters, dependency edges",
         "the honesty lines stating what this projection cannot tell you",
-        "the component catalog derived from the record and the reference run's inspection: per component its descendant elements, editable capabilities (value, type, source, confidence, status, validator refs), object coverage and closure; per exported object the element it binds to, or MODEL_VISIBLE_CATALOG_MISSING when no Element@1 row answers for it",
-        "the project conventions read from PROJECT.md at the project root: human names for components and the compass; names for undeclared components are ignored and said so; nothing in the markdown is a value, an edge, a lock or an authority"
+        "the component catalog derived from the record and the reference run's inspection: per component its descendant elements, editable capabilities (value, type, source, confidence, status, validator refs), object coverage and closure; per exported object the element it binds to, or MODEL_VISIBLE_CATALOG_MISSING when no Element@1 row answers for it"
       ],
       "does_not_own": [
         "writing, issuing or advancing anything - the binding is read-only; runtime.project_runner is the only writer and project.issue the only issuer",
@@ -3148,11 +3147,7 @@
         "CatalogComponent",
         "CatalogElement",
         "Capability",
-        "ObjectBinding",
-        "project_conventions",
-        "parse_conventions",
-        "ProjectConventions",
-        "length_unit_of"
+        "ObjectBinding"
       ],
       "depends_on": [
         "project.inputs",
@@ -3192,8 +3187,7 @@
         "apps/archflow-studio/api/tests/test_binding.py",
         "apps/archflow-studio/api/tests/test_projection.py",
         "apps/archflow-studio/api/tests/test_protocol.py",
-        "apps/archflow-studio/api/tests/test_catalog.py",
-        "apps/archflow-studio/api/tests/test_conventions.py"
+        "apps/archflow-studio/api/tests/test_catalog.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -3204,8 +3198,7 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/state.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/project.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/state.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/catalog.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/conventions.py"
+        "apps/archflow-studio/api/archflow_studio_api/application/catalog.py"
       ]
     },
     {
@@ -3330,10 +3323,7 @@
         "the receipt of a Studio model call: the request it was bound to, the provider's version and fingerprint, and how the call ended",
         "resolving a picked object to a component and element from its archflow:* user strings, and saying when it is unbound, unknown or stale",
         "reading circle / arrow / keep / remove gestures into facts the record can vouch for",
-        "the Proposal value, its closure, and the in-process store that holds it",
-        "the two-stage intent resolver: the target first (explicit element, then the picked or gestured object's binding, then the component tree's editable descendants, then a semantic alias, then a direction word only when a camera was recorded) and the action second, as one closed result - Command, Clarify, DeclareControl or Unsupported - re-validated against the catalog before anything is typed",
-        "the pending intent: the short-lived structured state a clarification keeps (state and artifact digests, the sentence, the resolved target, the property asked for, the missing slots, the rejected candidates, the reason code) under a continuation token, in process like the proposal store; a reply resumes it and never carries a rejected target forward",
-        "the declared-control proposal: an authored control (an Element@1 row draft with provenance and confidence) proposed for a component the model shows and the catalog lacks; never written to the authored record by the studio"
+        "the Proposal value, its closure, and the in-process store that holds it"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -3341,8 +3331,7 @@
         "writing to the record - runtime.project_runner, through studio.candidate",
         "the record and its projection - studio.binding",
         "the request and receipt contracts themselves - ports.model",
-        "the HTTP error body and the DTOs - studio.shell",
-        "guessing a target by string similarity across components, or inventing an amount for a qualitative word - both are questions"
+        "the HTTP error body and the DTOs - studio.shell"
       ],
       "inputs": [
         "utterance text",
@@ -3384,17 +3373,7 @@
         "proposal_from",
         "closure_of",
         "ProposalStore",
-        "element_of_object",
-        "resolve_target",
-        "ResolvedTarget",
-        "TargetCandidate",
-        "resolve_action",
-        "IntentResult",
-        "PendingIntent",
-        "PendingIntentStore",
-        "DeclaredControl",
-        "DeclaredControlStore",
-        "POST /api/controls"
+        "element_of_object"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3402,9 +3381,7 @@
         "project.layout",
         "state.decision_operator",
         "state.operational_state",
-        "state.record",
-        "semantics.registry",
-        "semantics.roles"
+        "state.record"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -3423,8 +3400,7 @@
         "a provider that cannot name its own version refuses to be built rather than signing receipts with 'unknown'",
         "a proposal carries the authority id studio:proposal-only; it is proposal-only and never a commit",
         "identity comes from the export's archflow:* strings, not from an object's name alone",
-        "the proposal store is one process's dictionary: not version history, lost on restart",
-        "a component with several editable descendants is a question naming them with their values and sides, one is a landing, none is a named gap (MODEL_VISIBLE_CATALOG_MISSING or MISSING_ELEMENT_DECLARATION) - never a neighbour's field"
+        "the proposal store is one process's dictionary: not version history, lost on restart"
       ],
       "status": "canonical",
       "tests": [
@@ -3433,9 +3409,7 @@
         "apps/archflow-studio/api/tests/test_intent_agent_timeout.py",
         "apps/archflow-studio/api/tests/test_gestures.py",
         "apps/archflow-studio/api/tests/test_pick.py",
-        "apps/archflow-studio/api/tests/test_proposals.py",
-        "apps/archflow-studio/api/tests/test_resolver.py",
-        "apps/archflow-studio/api/tests/test_pending.py"
+        "apps/archflow-studio/api/tests/test_proposals.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner.",
       "files": [
@@ -3449,11 +3423,7 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/pick.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/resolver.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/pending.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/controls.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/controls.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py"
       ]
     },
     {

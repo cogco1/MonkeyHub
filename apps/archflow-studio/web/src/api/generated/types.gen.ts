@@ -662,96 +662,6 @@ export type CoverageDto = {
 };
 
 /**
- * DeclareControlRequestDto
- *
- * Which pending intent the declaration answers.
- */
-export type DeclareControlRequestDto = {
-    /**
-     * Continuationtoken
-     *
-     * the pending intent whose reason was MODEL_VISIBLE_CATALOG_MISSING, MISSING_ELEMENT_DECLARATION or UNSUPPORTED_ADD_FIELD
-     */
-    continuationToken: string;
-    /**
-     * Projectid
-     */
-    projectId?: string | null;
-};
-
-/**
- * DeclaredControlDto
- */
-export type DeclaredControlDto = {
-    /**
-     * Controlid
-     */
-    controlId: string;
-    /**
-     * Status
-     *
-     * proposed: held in this process, written nowhere
-     */
-    status: string;
-    /**
-     * Statedigest
-     */
-    stateDigest: string;
-    /**
-     * Componentid
-     */
-    componentId: string;
-    /**
-     * Requestedproperty
-     */
-    requestedProperty: string | null;
-    /**
-     * Utterance
-     */
-    utterance: string;
-    /**
-     * Reasoncode
-     */
-    reasonCode: string;
-    /**
-     * Objectnames
-     */
-    objectNames: Array<string>;
-    /**
-     * Inspectionrun
-     */
-    inspectionRun: string | null;
-    /**
-     * Draft
-     *
-     * the Element@1 row shape the re-index would author, with what it reads; null when nothing can be drafted
-     */
-    draft: {
-        [key: string]: unknown;
-    } | null;
-    /**
-     * Confidence
-     */
-    confidence: number;
-    /**
-     * Provenance
-     */
-    provenance: Array<string>;
-    /**
-     * Createdat
-     */
-    createdAt: string;
-    /**
-     * Honesty
-     */
-    honesty: Array<string>;
-    /**
-     * Persistence
-     */
-    persistence: string;
-};
-
-/**
  * DependencyEdgeDto
  *
  * One kernel dependency edge, with the refs still prefixed.
@@ -1011,10 +921,6 @@ export type IntentDto = {
      * the server's own reading of each gesture, in the record's names, as it was put on the sheet; empty when nothing was drawn
      */
     gestures?: Array<string>;
-    /**
-     * how the resolver found the target and read the sentence
-     */
-    resolution?: ResolutionDto | null;
 };
 
 /**
@@ -1053,22 +959,6 @@ export type IntentRequestDto = {
      * the project the client believes it is proposing against; a different one is refused as PROJECT_MISMATCH
      */
     projectId?: string | null;
-    /**
-     * Continuationtoken
-     *
-     * the pending intent this sentence continues: the target, the slots and the rejected candidates it already settled are kept
-     */
-    continuationToken?: string | null;
-    /**
-     * Pickedobject
-     *
-     * the exported object last picked in the model (its name), so a pick that resolved to no element still names what was meant
-     */
-    pickedObject?: string | null;
-    /**
-     * where the architect stands when the sentence is said, so 'left' and 'right' can be read against the project's compass; the first gesture's camera answers when this is absent
-     */
-    camera?: CameraDto | null;
     /**
      * Gestures
      *
@@ -1714,38 +1604,6 @@ export type RelationChecksDto = {
      * every declared relation was actually checked
      */
     fullyChecked: boolean;
-};
-
-/**
- * ResolutionDto
- *
- * How the target was found and what the sentence was read as.
- */
-export type ResolutionDto = {
-    /**
-     * Kind
-     *
-     * change_existing_value for a proposal
-     */
-    kind: string;
-    /**
-     * Targetsource
-     *
-     * element, object, gesture, component, alias or direction
-     */
-    targetSource: string | null;
-    /**
-     * Targetdetail
-     */
-    targetDetail: string;
-    /**
-     * Capabilityid
-     */
-    capabilityId: string | null;
-    /**
-     * Why
-     */
-    why: string;
 };
 
 /**
@@ -2427,61 +2285,6 @@ export type CompileIntentApiIntentsPostResponses = {
 };
 
 export type CompileIntentApiIntentsPostResponse = CompileIntentApiIntentsPostResponses[keyof CompileIntentApiIntentsPostResponses];
-
-export type DeclareApiControlsPostData = {
-    body: DeclareControlRequestDto;
-    path?: never;
-    query?: never;
-    url: '/api/controls';
-};
-
-export type DeclareApiControlsPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type DeclareApiControlsPostError = DeclareApiControlsPostErrors[keyof DeclareApiControlsPostErrors];
-
-export type DeclareApiControlsPostResponses = {
-    /**
-     * Successful Response
-     */
-    201: DeclaredControlDto;
-};
-
-export type DeclareApiControlsPostResponse = DeclareApiControlsPostResponses[keyof DeclareApiControlsPostResponses];
-
-export type ReadControlApiControlsControlIdGetData = {
-    body?: never;
-    path: {
-        /**
-         * Control Id
-         */
-        control_id: string;
-    };
-    query?: never;
-    url: '/api/controls/{control_id}';
-};
-
-export type ReadControlApiControlsControlIdGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ReadControlApiControlsControlIdGetError = ReadControlApiControlsControlIdGetErrors[keyof ReadControlApiControlsControlIdGetErrors];
-
-export type ReadControlApiControlsControlIdGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: DeclaredControlDto;
-};
-
-export type ReadControlApiControlsControlIdGetResponse = ReadControlApiControlsControlIdGetResponses[keyof ReadControlApiControlsControlIdGetResponses];
 
 export type StartCandidateApiProposalsProposalIdCandidatePostData = {
     body?: never;
