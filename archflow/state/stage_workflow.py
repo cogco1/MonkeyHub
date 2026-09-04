@@ -5,7 +5,7 @@
 after stage zero, to the exact retained envelope and retained SATISFIED exit
 binding for the immediately previous stage.  These records are guards for
 orchestration; they never select design, accept a stage, mutate geometry,
-persist state, promote a candidate, or write canonical state.
+persist state, issue a run as the published design, or write canonical state.
 """
 
 from __future__ import annotations

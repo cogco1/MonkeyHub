@@ -15,7 +15,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from archflow.project.layout import AUTHORED_RECORD_PATH
 
 from ..application.projection import StateProjection
-from .project import HeadDto, ReferenceRunDto, head_dto, reference_run_dto
+from .project import (
+    ProjectVersionDto,
+    ReferenceRunDto,
+    project_version_dto,
+    reference_run_dto,
+)
 
 
 class ReferenceReceiptDto(BaseModel):
@@ -103,7 +108,9 @@ class StateProjectionDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     project_id: str = Field(alias="projectId")
-    head: HeadDto
+    published: ProjectVersionDto = Field(
+        description="the issued design this projection was read against",
+    )
     reference_run: ReferenceRunDto = Field(alias="referenceRun")
     reference_run_source: str = Field(alias="referenceRunSource")
     reference_receipt: ReferenceReceiptDto | None = Field(
@@ -145,7 +152,7 @@ def to_dto(projection: StateProjection) -> StateProjectionDto:
     record = projection.record
     return StateProjectionDto(
         project_id=projection.project_id,
-        head=head_dto(projection.head),
+        published=project_version_dto(projection.head),
         reference_run=reference_run_dto(projection.reference),
         reference_run_source=projection.reference.source,
         reference_receipt=_receipt_dto(

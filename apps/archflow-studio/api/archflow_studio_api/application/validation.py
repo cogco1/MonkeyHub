@@ -25,16 +25,16 @@ blocks the advance. It is vacuous only for a candidate no seat of which
 attempted an export, which is now something the records say rather than
 something an empty list was taken to mean.
 
-What the receipt could *not* prove is stated rather than implied. HEAD in a
-P036 project is a ref-based ``CanonicalProjectState@1``: it carries no facts,
-no commitments and no open obligations, so two of the three validators run over
-an empty state and find nothing to object to. That is not the same as passing
-them, and ``effective_checks`` and the validator note say which check the
-receipt actually stands on (kernel card P110).
+What the receipt could *not* prove is stated rather than implied. The published
+state of a P036 project is a ref-based ``CanonicalProjectState@1``: it carries
+no facts, no commitments and no open obligations, so two of the three
+validators run over an empty state and find nothing to object to. That is not
+the same as passing them, and ``effective_checks`` and the validator note say
+which check the receipt actually stands on (kernel card P110).
 
 Nothing here writes. A validation is a reading of records the run already
-retained; HEAD, ``canonical/`` and ``input/`` are untouched, and no candidate
-is promoted by having been validated.
+retained; the published position, ``canonical/`` and ``input/`` are untouched,
+and nothing is issued by having been validated.
 """
 
 from __future__ import annotations
@@ -101,7 +101,8 @@ MISSING_PROGRAM_DIGEST = (
 )
 
 CANONICAL_FACTS = (
-    "unavailable: HEAD is a ref-based CanonicalProjectState@1 (card P110)"
+    "unavailable: the published state is a ref-based "
+    "CanonicalProjectState@1 (card P110)"
 )
 
 VALIDATOR_NOTE = (
@@ -176,7 +177,8 @@ def _submission(
     ``ArtifactPresentValidator`` reports ``artifact.evidence_missing`` for an
     added artifact that is not also evidence.
 
-    The base is the candidate's own, never HEAD. A candidate stood on the
+    The base is the candidate's own, never the published version. A candidate
+    stood on the
     version it was created against; if the project has moved since, that is a
     fact the kernel states as ``state.base_mismatch``, and re-basing the
     submission to make it agree would be the studio answering a question it was
@@ -298,7 +300,7 @@ def validate_candidate(
     different one would be able to serve an answer about a version the project
     has left.
 
-    The state the submission is checked against is that HEAD as a
+    The state the submission is checked against is that published version as a
     ``CanonicalState`` carrying nothing but its ref: the canonical document a
     P036 project holds is not a facts-and-commitments state, and inventing
     facts to fill it would be inventing the very things the validators check.
@@ -423,23 +425,23 @@ def _status_of(cad: Mapping[str, Any] | None) -> str:
 def validation_key(
     candidate_id: str, head: ProjectVersionRef
 ) -> tuple[str, int, str | None]:
-    """What a remembered verdict is *about*: this candidate, at this HEAD.
+    """What a remembered verdict is *about*: this candidate, at this issue.
 
-    Both halves are load-bearing. The candidate is obvious. The HEAD is there
-    because the receipt names the state it checked and ``passed`` depends on
-    the submission's base matching it: a verdict kept under the candidate id
-    alone would go on saying ``advance: true`` after the project moved to a
-    version that candidate is no longer based on, which is exactly the stale
-    green this whole slice exists to prevent. Same HEAD, same key, so polling
-    still dedupes; a moved HEAD is a different question and gets a new answer
-    and a new event.
+    Both halves are load-bearing. The candidate is obvious. The published
+    version is there because the receipt names the state it checked and
+    ``passed`` depends on the submission's base matching it: a verdict kept
+    under the candidate id alone would go on saying ``advance: true`` after the
+    project issued a version that candidate is no longer based on, which is
+    exactly the stale green this whole slice exists to prevent. Same issue,
+    same key, so polling still dedupes; a new issue is a different question and
+    gets a new answer and a new event.
     """
 
     return (candidate_id, head.version, head.state_sha256)
 
 
 class ValidationStore:
-    """One validation per candidate-and-HEAD, computed once in this process.
+    """One validation per candidate-and-issue, computed once in this process.
 
     A finished candidate's records do not change, and neither does the verdict
     read off them while the project stands where it stood, so the second

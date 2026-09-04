@@ -1194,7 +1194,7 @@
         "reading or parsing an authored record or seat pack - project.inputs; only existence and the digest of the bytes are read here",
         "naming any path - project.layout",
         "retaining, digesting or verifying anything - project.repository; this module never writes",
-        "writing a stage closure or moving HEAD - the runner and the issue tool",
+        "writing a stage closure or issuing a run as the published design - the runner and project.issue",
         "the stage a run is in - state.stage_workflow"
       ],
       "inputs": [
@@ -1334,6 +1334,65 @@
         "tests/test_project_inputs.py"
       ],
       "notes": "The finding was never that the file is read by path - work in progress is read by path. It was that three readers did it and nobody owned it."
+    },
+    {
+      "module_id": "project.issue",
+      "owner_path": "archflow/project/issue.py",
+      "purpose": "Issuing a run as the published design (ADR-007 rule 5): the one act that moves a shared run to the published container.",
+      "owns": [
+        "the conditions of an issue: the run's base is the published version, its stage closed SATISFIED with an exit binding naming that closure, and its seats all executed",
+        "the typed refusals an issue can end in (IssueError, StaleBase, NoSatisfiedClosure, RunNotComplete)",
+        "building the replacement CanonicalProjectState@1 from what the run retained: the authored record as authoritative, the developed state and the closure as derived, the closed stage as the phase",
+        "minting the PromotionDecision@1 receipt prepare_transition demands, with the closure as its candidate_ref",
+        "IssueReceipt: the issue made, the one it replaced, and the records it stood on"
+      ],
+      "does_not_own": [
+        "moving the published position - project.repository, through prepare_transition and compare_and_swap",
+        "writing a stage closure or an exit binding - runtime.project_runner writes both from its own checks",
+        "the closure and exit-binding contracts - state.stage_workflow",
+        "naming a container or reading its suitability code - project.containers",
+        "the command line and what it prints - tools.issue_project"
+      ],
+      "inputs": [
+        "FilesystemProjectRepository",
+        "run id",
+        "decided_by",
+        "note"
+      ],
+      "outputs": [
+        "IssueReceipt"
+      ],
+      "public_api": [
+        "IssueError",
+        "IssueReceipt",
+        "NoSatisfiedClosure",
+        "RunNotComplete",
+        "StaleBase",
+        "issue_run"
+      ],
+      "depends_on": [
+        "project.ports",
+        "project.record_kinds",
+        "project.refs",
+        "project.repository",
+        "state.stage_workflow"
+      ],
+      "used_by": [
+        "tools/issue_project.py",
+        "tests/test_issue_project.py"
+      ],
+      "invariants": [
+        "nothing is written until every refusal has passed, so a refused issue leaves the project exactly as it was",
+        "there is no issue without exactly one SATISFIED stage closure and the exit binding derived from that same closure, checked by digest and stage",
+        "the published state names only records this run retains and the repository verified; the two content digests are not copied out of them (ADR-003)",
+        "the decision receipt carries exactly the six keys prepare_transition compares; decided_by and note are returned to the caller, never retained",
+        "HEAD, PromotionDecision@1, prepare_transition and compare_and_swap keep their names because retained digests and the format bind them (ADR-004)"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_issue_project.py"
+      ],
+      "notes": "Wave B / W8. Before this module nothing on the spine called prepare_transition or compare_and_swap; every project stood at issue 0."
     },
     {
       "module_id": "project.layout",
@@ -1549,7 +1608,7 @@
         "the name constant a writer or reader imports instead of spelling a kind as a literal",
         "the three computed kinds as patterns and their formatters (geometry_proposal_round, geometry_proposal_completion, stage_geometry_program)",
         "membership: is_registered and require_registered, exact or by pattern",
-        "the seven kinds no spine module writes, each saying so in its note: the ADR-007 stage envelope, exit binding and closure Wave C will write, the PromotionDecision@1 prepare_transition demands, the research bridge's ledger, and the component template and catalog confrontation the proposal producer still accepts"
+        "the six kinds no spine module writes, each saying so in its note: the ADR-007 stage envelope, exit binding and closure Wave C will write, the research bridge's ledger, and the component template and catalog confrontation the proposal producer still accepts"
       ],
       "does_not_own": [
         "the file name a record is stored under, and reading a kind back out of one - project.refs",
@@ -1578,6 +1637,7 @@
       "used_by": [
         "archflow/project/repository.py",
         "archflow/project/containers.py",
+        "archflow/project/issue.py",
         "archflow/runtime/project_runner.py",
         "archflow/capabilities/geometry_proposal.py",
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
@@ -1738,6 +1798,7 @@
       ],
       "used_by": [
         "archflow/project/inputs.py",
+        "archflow/project/issue.py",
         "archflow/project/location.py",
         "archflow/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
@@ -1745,7 +1806,8 @@
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "tools/run_project.py",
         "tools/verify_state_record.py",
-        "tools/freeze_project_stage_workflow.py"
+        "tools/freeze_project_stage_workflow.py",
+        "tools/issue_project.py"
       ],
       "invariants": [
         "an existing content path is never overwritten; new content is installed or the write fails",
@@ -3019,7 +3081,7 @@
         "the honesty lines stating what this projection cannot tell you"
       ],
       "does_not_own": [
-        "writing, promoting or advancing anything - the binding is read-only; runtime.project_runner is the only writer",
+        "writing, issuing or advancing anything - the binding is read-only; runtime.project_runner is the only writer and project.issue the only issuer",
         "parsing an utterance or making a proposal - studio.intent",
         "running a candidate - studio.candidate",
         "closure and impact - studio.validation, over archflow.state.state_record's one closure rule",
@@ -3036,6 +3098,7 @@
         "StateProjection",
         "ProjectedElement",
         "ProjectBindingDto",
+        "ProjectVersionDto",
         "StateProjectionDto"
       ],
       "public_api": [
@@ -3402,8 +3465,8 @@
       "owns": [
         "building the CandidateSubmission and asking archflow.validation.engine.validate_submission about it",
         "the five-clause advance verdict (receipt, seat execution, relations held, relations fully checked, exports available) and its blocked_by list",
-        "the honesty lines about what this receipt effectively proves on a ref-only canonical HEAD",
-        "memoizing one validation per candidate and HEAD, computed once in this process",
+        "the honesty lines about what this receipt effectively proves on a ref-only published state",
+        "memoizing one validation per candidate and issue, computed once in this process",
         "the impact arrangement around StateRecord.closure: direct, propagated, protected, conflicts, locks and unknown coverage",
         "the before/after/why comparison of two runs' exported objects, joined by name from retained seat-3dm-inspection records"
       ],
@@ -3411,7 +3474,7 @@
         "the validators themselves - archflow.validation.engine",
         "the one propagation rule - archflow.state.state_record's closure",
         "running the candidate or reading its receipt - studio.candidate",
-        "promoting anything: nothing here writes canonical state or advances a stage",
+        "issuing anything: nothing here writes canonical state or advances a stage - project.issue is the only issuer",
         "reading a .3dm - the comparison joins inspection records, never files"
       ],
       "inputs": [
@@ -3470,7 +3533,7 @@
       "invariants": [
         "the receipt and the verdict are deliberately two different answers and are never merged",
         "advance requires all five clauses; every refusal is named in blocked_by",
-        "a validation is about one candidate at one HEAD - the key includes the HEAD version",
+        "a validation is about one candidate at one issue - the key includes the published version",
         "impact adds no propagation rule of its own; it calls StateRecord.closure and arranges the answer",
         "the comparison is a join on retained records, with a stated tolerance, not browser or geometry inference"
       ],
@@ -3637,11 +3700,11 @@
     {
       "module_id": "tools.freeze_project_stage_workflow",
       "owner_path": "tools/freeze_project_stage_workflow.py",
-      "purpose": "Validate and retain a ProjectStageWorkflow@1 through the P036 repository, and prove canonical HEAD did not move.",
+      "purpose": "Validate and retain a ProjectStageWorkflow@1 through the P036 repository, and prove that freezing it issued nothing.",
       "owns": [
         "the freeze command line (project root, run id, workflow path, create-run)",
         "validating the workflow payload and storing the exact bytes as a record",
-        "the freeze receipt recording HEAD before and after"
+        "the freeze receipt recording the published version before and after"
       ],
       "does_not_own": [
         "opening stage 0 or accepting a stage - archflow.state.stage_workflow and runtime.project_runner",
@@ -3676,7 +3739,7 @@
       ],
       "invariants": [
         "the stored payload is exactly what was validated",
-        "canonical HEAD must be unchanged across the freeze, and the receipt says so",
+        "the published version must be unchanged across the freeze, and the receipt says so",
         "the record is authority-free"
       ],
       "status": "canonical",
@@ -3684,6 +3747,51 @@
         "tests/test_freeze_project_stage_workflow.py"
       ],
       "notes": "Deliberately small: the only way a workflow enters a project without acquiring a stage."
+    },
+    {
+      "module_id": "tools.issue_project",
+      "owner_path": "tools/issue_project.py",
+      "purpose": "The command that issues one run as the project's published design, and prints the issue it made or the typed reason it refused.",
+      "owns": [
+        "the issue command line (project root, run id, who decided, an optional note)",
+        "what an issue prints: the new issue number, the version it replaced, the state digest, and the run, stage, closure and decision refs",
+        "exit 1 with the typed reason on any refusal, and no traceback"
+      ],
+      "does_not_own": [
+        "deciding whether a run may be issued - project.issue",
+        "moving the published position - project.repository",
+        "closing a stage - runtime.project_runner"
+      ],
+      "inputs": [
+        "CLI arguments"
+      ],
+      "outputs": [
+        "IssueReceipt printed as lines",
+        "process exit code"
+      ],
+      "public_api": [
+        "build_parser",
+        "issue_project",
+        "main"
+      ],
+      "depends_on": [
+        "archflow.project.issue",
+        "archflow.project.repository",
+        "project.issue",
+        "project.repository"
+      ],
+      "used_by": [
+        "tests/test_issue_project.py"
+      ],
+      "invariants": [
+        "the command checks nothing itself; every refusal is project.issue's, printed with its type",
+        "decided_by and note are printed and not retained, because PromotionDecision@1's key set is frozen"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_issue_project.py"
+      ],
+      "notes": "Wave B / W8. The word HEAD does not appear in this command's help or output."
     },
     {
       "module_id": "tools.run_project",

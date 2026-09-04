@@ -24,11 +24,14 @@ relation checks                   archflow/capabilities/relation_checks.py — p
   ▼
 stage workflow                    archflow/state/stage_workflow.py + StageExecutionGuard (project_runner)
   ▼
-P036 repository                   archflow/project/repository.py — one HEAD, compare-and-swap, content-addressed records
+P036 repository                   archflow/project/repository.py — content-addressed records; one published design
+  │ issue                          archflow/project/issue.py — compare-and-swap from a satisfied closure (ADR-007)
+  ▼
+the published design              the one issue a project stands at; `HEAD` is the file's name and nothing else uses the word
 ```
 
 Entry points: `tools/run_project.py` (a run of one project), `tools/verify_state_record.py`
-(replay equivalence), `tools/freeze_project_stage_workflow.py`, and the Studio
+(replay equivalence), `tools/freeze_project_stage_workflow.py`, `tools/issue_project.py`, and the Studio
 (`apps/archflow-studio`: FastAPI `api/` as a thin shell over the kernel, `web/` as the client).
 
 Shared foundations: `archflow/project/refs.py` (the four references), `archflow/contracts/`

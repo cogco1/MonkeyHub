@@ -9,7 +9,7 @@
  *
  *  - it imports nothing from archflow and computes no geometry;
  *  - it derives no impact, no relation counts and no advance verdict;
- *  - it writes nothing to the project or to HEAD;
+ *  - it writes nothing to the project and issues nothing;
  *  - it keeps no version history: reloading the tab loses the view, not the
  *    work.
  *
@@ -214,7 +214,7 @@ export default function App() {
     append({
       kind: "system",
       text:
-        `Bound to ${project.projectId} at HEAD v${project.head.version} · ` +
+        `Bound to ${project.projectId} at issue ${project.published.version} · ` +
         `reference run ${projection.referenceRun.runId} (${projection.referenceRunSource})` +
         (projection.matchesReferenceReceipt === true
           ? " · receipt reproduced"
@@ -974,7 +974,9 @@ export default function App() {
         return {
           runId,
           label: "Reference",
-          title: `HEAD v${projection.referenceRun.baseVersion}`,
+          // The run's base, not the published position: a reference run can
+          // stand on an issue the project has already left.
+          title: `based on issue ${projection.referenceRun.baseVersion}`,
           detail: null,
           exports,
         };
@@ -1139,10 +1141,12 @@ export default function App() {
                 <span className="mono toolbar__item" title={project.projectDir}>
                   {project.projectId}
                 </span>
-                <span className="mono toolbar__item">HEAD v{project.head.version}</span>
+                <span className="mono toolbar__item">
+                  published · issue {project.published.version}
+                </span>
                 <span
                   className="pill pill--plain"
-                  title="proposal only · every run is a harness beside the project; nothing is written to HEAD"
+                  title="proposal only · every run is a harness beside the project; nothing is issued"
                 >
                   proposal only · nothing is written to the project
                 </span>

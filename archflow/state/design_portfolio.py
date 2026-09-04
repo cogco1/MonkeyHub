@@ -2,7 +2,7 @@
 
 The portfolio is a framework-owned ledger for project-authored answers.  It
 preserves alternatives and their lineage, but it does not rank them, evaluate
-hard usability, or promote canonical state.
+hard usability, or issue a published design.
 """
 
 from __future__ import annotations

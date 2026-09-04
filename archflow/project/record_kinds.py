@@ -13,14 +13,13 @@ retained runs from the archived lanes carry kinds the spine never writes, and
 they must stay readable (ADR-004).
 
 A kind belongs in this table when a spine module writes it, or when a spine
-module reads it as a retained record and names its contract. Seven entries are
+module reads it as a retained record and names its contract. Six entries are
 of the second sort and no spine module writes them; each says so in its note:
 the three stage records ADR-007 requires and Wave C will write (the envelope,
-the exit binding and the closure); the ``PromotionDecision@1`` that
-``prepare_transition`` demands before HEAD moves; the research bridge's
-ledger; and the component template and catalog confrontation that
-``produce_geometry_program_proposal`` still accepts, whose library was
-archived. A kind no spine module writes, reads or names is not in the table:
+the exit binding and the closure); the research bridge's ledger; and the
+component template and catalog confrontation that
+``produce_geometry_program_proposal`` still accepts, whose library was archived.
+A kind no spine module writes, reads or names is not in the table:
 the retired lanes' vocabulary stays where the retired lanes are.
 
 Three kinds are written with a computed suffix, so they are registered as
@@ -101,12 +100,15 @@ INTENT_COMPILATION = "intent-compilation"
 COMPONENT_TEMPLATE = "component-template"
 CATALOG_CONFRONTATION = "catalog-confrontation"
 
+# ---- the issue's kind (archflow/project/issue.py)
+
+PROMOTION_DECISION = "promotion-decision"
+
 # ---- reserved: named here before the module that will write them exists
 
 STAGE_RUN_ENVELOPE = "stage-run-envelope"
 STAGE_EXIT_BINDING = "stage-exit-binding"
 STAGE_CLOSURE = "stage-closure"
-PROMOTION_DECISION = "promotion-decision"
 RESEARCH_EVIDENCE_LEDGER = "research-evidence-ledger"
 
 
@@ -260,7 +262,7 @@ _TABLE: tuple[RecordKind, ...] = (
         PROJECT_STAGE_WORKFLOW_FREEZE_RECEIPT,
         "ProjectStageWorkflowFreezeReceipt@1",
         _RUN_RECORD,
-        "proof that freezing a workflow did not move canonical HEAD",
+        "proof that freezing a workflow issued no new published design",
     ),
     RecordKind(
         EQUIVALENCE_HARNESS_WORKFLOW,
@@ -338,8 +340,11 @@ _TABLE: tuple[RecordKind, ...] = (
         PROMOTION_DECISION,
         "PromotionDecision@1",
         PersistenceArea.RUN_REVIEW.value,
-        "reserved: the accepted exact-base decision prepare_transition demands "
-        "before HEAD moves. The repository reads one; no spine module mints one",
+        # The kind and the schema keep their names: prepare_transition compares
+        # the payload's key set literally and retained receipts bind it
+        # (ADR-004). The act it gates is an issue (ADR-007).
+        "the accepted exact-base decision prepare_transition demands before a "
+        "run is issued as the published design; project.issue mints one",
     ),
     RecordKind(
         RESEARCH_EVIDENCE_LEDGER,

@@ -12,7 +12,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..application.artifacts import ArtifactListing, ArtifactRecord
-from .project import HeadDto
+from .project import ProjectVersionDto
 
 
 class ProjectArtifactDto(BaseModel):
@@ -43,7 +43,7 @@ class ProjectArtifactDto(BaseModel):
     available: bool
     unavailable_reason: str | None = Field(alias="unavailableReason")
     # The canonical version the producing run was created against.
-    base: HeadDto | None
+    base: ProjectVersionDto | None
     branch_id: str | None = Field(alias="branchId")
     branch_epoch: int | None = Field(alias="branchEpoch")
     program_ref: str | None = Field(alias="programRef")
@@ -86,7 +86,7 @@ def artifact_dto(record: ArtifactRecord) -> ProjectArtifactDto:
         base=(
             None
             if record.base_version is None
-            else HeadDto(
+            else ProjectVersionDto(
                 version=record.base_version,
                 state_sha256=record.base_state_sha256,
             )

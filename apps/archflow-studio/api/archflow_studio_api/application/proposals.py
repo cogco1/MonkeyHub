@@ -2,7 +2,7 @@
 
 This is a dictionary in one process. It is **not** version history and it is
 not a design record: it holds nothing after a restart, it is not written to the
-project, and no promotion, comparison or audit may ever read from it. The
+project, and no issue, comparison or audit may ever read from it. The
 project's own history is P036's, retained by the kernel; a chat that
 accumulated its own parallel history would be a second story about the same
 building, and the two would drift the moment anybody restarted anything.

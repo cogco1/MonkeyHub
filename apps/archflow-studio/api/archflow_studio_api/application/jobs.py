@@ -9,7 +9,7 @@ intersect - the target, the kernel's direct and propagated impact and what
 the sentence protected - and a conflicting candidate waits for the one ahead
 of it, saying which one and why. Candidates whose closures are disjoint run
 side by side: each run writes only its own directory under the repository's
-lock, and a harness run never touches HEAD. Exports are the exception: a
+lock, and a harness run never issues anything. Exports are the exception: a
 Rhino export is one process on this machine, so a candidate that exports
 takes the exclusive lane and waits for any other exporting candidate,
 whatever their closures. The DAG is never drawn; it shows as behaviour.

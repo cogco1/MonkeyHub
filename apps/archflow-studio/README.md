@@ -38,7 +38,7 @@ The round-1 boundary, verbatim from the plan:
 > question.
 
 Nothing in round 1 commits. The chain ends at a validation receipt and a server verdict; no
-route writes `HEAD`, `canonical/` or `input/`, and no route calls `compare_and_swap`. The
+route issues anything, writes `canonical/` or `input/`, or calls `compare_and_swap`. The
 only writes the API performs are `repository.create_run(...)` and `repository.put_json(...)`
 into run areas of the bound project — which is what running a candidate is.
 
@@ -192,7 +192,7 @@ browser does not ask it: its own first question is stronger, and `GET /api/proje
 
 One chain, end to end, and every link is the kernel's answer shaped for the wire.
 
-**HEAD ↔ record.** The project is opened with `open_located_project()` /
+**Published design ↔ record.** The project is opened with `open_located_project()` /
 `FilesystemProjectRepository`; the authored State Record at `input/runner/state-record.json`
 is bound to a run through `StateRecord.bound_to(run)` and never by any other route.
 
@@ -319,11 +319,11 @@ artifact list was taken to mean.
 `blockedBy[]` names every clause that refused. The fourth clause is the point of the other
 three: `held` is true whenever nothing was **violated**, including when nothing was
 **checked**, so a candidate whose relations nobody could check is never green. The verdict is
-memoised per (candidate, HEAD) — a client polling the readout must not appear on the event
-stream as a server deciding over and over, and a moved HEAD is a different question that gets
+memoised per (candidate, issue) — a client polling the readout must not appear on the event
+stream as a server deciding over and over, and a new issue is a different question that gets
 a fresh answer and a fresh event.
 
-And `effectiveChecks` is narrower than `validators` on purpose: a P036 `HEAD` is a ref-based
+And `effectiveChecks` is narrower than `validators` on purpose: a P036 published state is a ref-based
 `CanonicalProjectState@1` carrying no facts, commitments or obligations, so two of the three
 validators run over an empty state and find nothing to object to. That is not the same as
 passing them, and the payload says so (kernel card **P110**).
@@ -334,7 +334,7 @@ passing them, and the payload says so (kernel card **P110**).
 | --- | --- | --- |
 | `stateDigest` | the authored record **bound to a run** — run- and base-scoped | "is this the state the client was just given?" Picks, proposals and candidates are all checked against it, and a mismatch is `409 STALE_BASE`. It is also the number a runner receipt cites, which is why `matchesReferenceReceipt` can compare the projection against the reference run's own `designStateDigest`. It is `null` when the kernel would not build the bound view (§4), and then there is nothing to compare. |
 | `recordDigest` | the record's **content**, invariant under binding | "is this the same authored record?" — the same content bound to two runs has two `stateDigest`s and one `recordDigest`. |
-| `head.stateSha256` | the project's canonical version | "has the project moved?" It is half of the validation memo key, with `head.version`. |
+| `published.stateSha256` | the project's published version | "has the project issued since?" It is half of the validation memo key, with `published.version`. |
 
 A client that confused the first two would compare a project against itself. They are named
 apart for that reason, and neither is ever abbreviated for anything but display: the shell
@@ -355,7 +355,7 @@ boolean and nothing else.
 **Browser law**, verbatim:
 
 > never import archflow; never infer impact client-side; never declare "validation passed"
-> client-side; chat is not version history; never write the project directory or HEAD; a
+> client-side; chat is not version history; never write the project directory, never issue; a
 > `.3dm` never implies success.
 
 Three consequences worth stating outright. Every gateway error renders as a **visible card**
@@ -373,7 +373,7 @@ project moved under you" in the transcript.
 
 - **P109** — typed operator on the State Record. Until the kernel offers a successor
   operation, a candidate's successor record is the K1 candidate-under-card: recomputed for the
-  candidate and said so on the wire, never promoted.
+  candidate and said so on the wire, never issued.
 - **P110** — CanonicalState projection. Why `effectiveChecks` is narrower than `validators`
   (section 4).
 - Kernel-card candidates relayed to Kaiwen from this slice, fixed nowhere in passing: typed

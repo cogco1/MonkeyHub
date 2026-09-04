@@ -73,9 +73,10 @@ export function HonestyTab({
           <dd>{projection.stateDigest ?? "none — the kernel refused the bound view"}</dd>
           <dt>record digest</dt>
           <dd>{projection.recordDigest}</dd>
-          <dt>head</dt>
+          <dt>published</dt>
           <dd>
-            v{projection.head.version} · {projection.head.stateSha256 ?? "—"}
+            issue {projection.published.version} ·{" "}
+            {projection.published.stateSha256 ?? "—"}
           </dd>
           <dt>reference run</dt>
           <dd>

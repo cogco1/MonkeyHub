@@ -100,7 +100,7 @@ class CandidateSubmission:
     def content_digest(self) -> str:
         """Canonical digest over the complete submission content.
 
-        Validation receipts bind to this digest so promotion can prove the
+        Validation receipts bind to this digest so an issue can prove the
         gates examined exactly the delta being committed, not merely a
         submission that reused the same id and base.
         """

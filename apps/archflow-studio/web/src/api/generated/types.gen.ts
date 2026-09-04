@@ -186,7 +186,7 @@ export type CandidateDto = {
      * Status
      */
     status: string;
-    base: HeadDto;
+    base: ProjectVersionDto;
     /**
      * Statedigest
      *
@@ -658,22 +658,6 @@ export type HttpValidationError = {
 };
 
 /**
- * HeadDto
- *
- * One canonical project version.
- */
-export type HeadDto = {
-    /**
-     * Version
-     */
-    version: number;
-    /**
-     * Statesha256
-     */
-    stateSha256: string | null;
-};
-
-/**
  * ImpactDto
  *
  * What the change reaches, in the kernel's own prefixed refs.
@@ -1057,7 +1041,7 @@ export type ProjectArtifactDto = {
      * Unavailablereason
      */
     unavailableReason: string | null;
-    base: HeadDto | null;
+    base: ProjectVersionDto | null;
     /**
      * Branchid
      */
@@ -1106,7 +1090,10 @@ export type ProjectBindingDto = {
      * Projectdir
      */
     projectDir: string;
-    head: HeadDto;
+    /**
+     * the issued design: the one version this project publishes
+     */
+    published: ProjectVersionDto;
     referenceRun: ReferenceRunDto;
     /**
      * Intentprovider
@@ -1120,6 +1107,22 @@ export type ProjectBindingDto = {
      * the model that provider runs, when it names one
      */
     intentModel: string | null;
+};
+
+/**
+ * ProjectVersionDto
+ *
+ * One canonical project version.
+ */
+export type ProjectVersionDto = {
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Statesha256
+     */
+    stateSha256: string | null;
 };
 
 /**
@@ -1361,7 +1364,10 @@ export type StateProjectionDto = {
      * Projectid
      */
     projectId: string;
-    head: HeadDto;
+    /**
+     * the issued design this projection was read against
+     */
+    published: ProjectVersionDto;
     referenceRun: ReferenceRunDto;
     /**
      * Referencerunsource
@@ -1557,7 +1563,7 @@ export type ValidationDto = {
     /**
      * Canonicalfacts
      *
-     * what the checked canonical state could supply; a ref-only HEAD supplies no facts, and this says so rather than letting an empty state read as a clean one
+     * what the checked canonical state could supply; a ref-only published state supplies no facts, and this says so rather than letting an empty state read as a clean one
      */
     canonicalFacts: string;
     /**
@@ -1679,7 +1685,7 @@ export type ValidationReceiptDto = {
     /**
      * the canonical version the submission was checked against
      */
-    checkedState: HeadDto;
+    checkedState: ProjectVersionDto;
     /**
      * Passed
      */

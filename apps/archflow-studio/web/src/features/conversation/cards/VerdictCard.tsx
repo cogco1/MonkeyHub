@@ -199,7 +199,7 @@ export function VerdictCard({
       </div>
       <div className="card__row actions">
         <span className="quiet">
-          the verdict is the server's, read once per candidate and HEAD
+          the verdict is the server's, read once per candidate and issue
         </span>
         <button
           type="button"

@@ -26,7 +26,7 @@ export interface VersionExport {
 export interface VersionGroup {
   readonly runId: string;
   readonly label: "Reference" | "Candidate" | "Run";
-  /** In the architect's words: the head version, the sentence, or the run. */
+  /** In the architect's words: the issue, the sentence, or the run. */
   readonly title: string;
   /** The verdict word, or what this tab knows about the run; null when nothing. */
   readonly detail: string | null;

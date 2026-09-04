@@ -34,7 +34,7 @@ router = APIRouter(tags=["validation"])
     response_model_by_alias=True,
 )
 def read_validation(request: Request, candidate_id: str) -> ValidationDto:
-    """Validate one finished candidate against the project's canonical HEAD."""
+    """Validate one finished candidate against the project's published design."""
 
     state = request.app.state
     job: Job = state.jobs.for_candidate(candidate_id)
@@ -53,11 +53,11 @@ def read_validation(request: Request, candidate_id: str) -> ValidationDto:
     # verdict and the key it is filed under name the same canonical version.
     head = binding.head()
     return validation_dto(
-        # Computed on the first request for this candidate at this HEAD and
+        # Computed on the first request for this candidate at this issue and
         # remembered: a finished run's records do not change, so a client
         # polling the readout must not appear on the event stream as a server
-        # deciding again. A HEAD that moved is a different question, and gets
-        # a fresh answer and a fresh event.
+        # deciding again. A new issue is a different question, and gets a
+        # fresh answer and a fresh event.
         state.validations.remembered(
             validation_key(candidate_id, head),
             lambda: validate_candidate(

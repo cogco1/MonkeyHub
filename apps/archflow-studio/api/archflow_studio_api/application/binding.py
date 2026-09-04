@@ -1,7 +1,7 @@
 """The one project this process answers for, and the run that answers for it.
 
 Binding is a kernel question: ``open_located_project`` finds the repository and
-``read_head`` states the exact canonical version. Choosing the *reference run*
+``read_head`` states the exact published version. Choosing the *reference run*
 is the only judgement here, and it is made in the open: the request may name a
 run, the operator may configure one, and otherwise the newest run that actually
 finished design work wins. The choice and its source both travel on the wire so
@@ -77,7 +77,7 @@ def record_kind(ref: ProjectRecordRef) -> str | None:
 
 
 class ProjectBinding:
-    """One opened P036 project. Read-only: it never writes and never promotes."""
+    """One opened P036 project. Read-only: it never writes and never issues."""
 
     def __init__(
         self,
@@ -125,7 +125,12 @@ class ProjectBinding:
         )
 
     def head(self) -> ProjectVersionRef:
-        """The exact canonical version this project is at right now."""
+        """The version this project publishes right now: its current issue.
+
+        Named after ``read_head`` and the repository file it reads, both of
+        which keep their names because the format owns them (ADR-004,
+        ADR-007). Everything a person reads calls this the published design.
+        """
 
         return self.repository.read_head()
 

@@ -494,6 +494,10 @@ class FilesystemProjectRepository:
         return current
 
     def read_head(self) -> ProjectVersionRef:
+        # The version this project publishes right now. ``read_head`` keeps
+        # its name after ADR-007 because it reads the file called ``HEAD``
+        # and the format owns that name; every caller that shows the answer
+        # to a person calls it the published design, or issue N.
         return self._read_head_document()[0]
 
     def load_current_state(self) -> dict[str, Any]:
@@ -753,6 +757,11 @@ class FilesystemProjectRepository:
         replacement_state: Mapping[str, Any],
         decision_receipt: ProjectRecordRef,
     ) -> PreparedTransition:
+        # ``prepare_transition``, ``compare_and_swap`` and
+        # ``PromotionDecision@1`` keep their names: the decision receipt's key
+        # set is compared literally below and retained receipts were written
+        # against it (ADR-004). The act these two perform is called an
+        # *issue* (ADR-007), and ``archflow.project.issue`` is its one caller.
         self._validate_run(run)
         self._require_project_version(expected, durable=True)
         if run.base != expected:
@@ -1141,6 +1150,11 @@ class FilesystemProjectRepository:
         snapshot: ProjectRecordRef,
         event: ProjectRecordRef,
     ) -> dict[str, Any]:
+        # ``ProjectHead@1``/``@2`` keep their names: every retained project
+        # document on disk declares one of them and readers match the literal
+        # (ADR-004). The design this points at is the *published* one, and
+        # putting it there is an *issue* (ADR-007); the schema string is not
+        # part of that vocabulary.
         return {
             "schema": (
                 "ProjectHead@1"

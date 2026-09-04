@@ -148,7 +148,7 @@ export const compareCandidateApiCandidatesCandidateIdCompareGet = <ThrowOnError 
 /**
  * Read Validation
  *
- * Validate one finished candidate against the project's canonical HEAD.
+ * Validate one finished candidate against the project's published design.
  */
 export const readValidationApiCandidatesCandidateIdValidationGet = <ThrowOnError extends boolean = false>(options: Options<ReadValidationApiCandidatesCandidateIdValidationGetData, ThrowOnError>): RequestResult<ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ThrowOnError> => (options.client ?? client).get<ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ThrowOnError>({ url: '/api/candidates/{candidate_id}/validation', ...options });
 

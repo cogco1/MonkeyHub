@@ -220,7 +220,7 @@ function CandidateReadout({
             .join(" · ")}
         </p>
         <p className="quiet" title={candidate.harness}>
-          a harness run beside the project; no stage advances, nothing is written to HEAD
+          a harness run beside the project; no stage advances, nothing is issued
         </p>
         {!candidate.seatExecutionComplete && (
           <p className="quiet">seat execution is not complete</p>

@@ -41,7 +41,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 const HARNESS_SENTENCE =
-  "a harness run beside the project; no stage advances, nothing is written to HEAD";
+  "a harness run beside the project; no stage advances, nothing is issued";
 
 /** A kernel ref without its prefix, for the eye; the ref itself is in the title attribute. */
 function shortRef(ref: string): string {

@@ -2,7 +2,7 @@
 
 The command is intentionally small: it validates ``ProjectStageWorkflow@1``,
 stores the exact payload through the P036 repository, and writes a freeze
-receipt proving that canonical HEAD did not move.  It does not open Stage 0,
+receipt proving that nothing was issued.  It does not open Stage 0,
 convert legacy runs into accepted evidence, or create geometry.
 
 Example::
@@ -67,7 +67,7 @@ def freeze_workflow(
         # not equivalent to an absent run and must never be silently replaced.
         run = repository.load_run(run_id)
     if run.base != before:
-        raise ValueError("workflow run is not based on the current canonical HEAD")
+        raise ValueError("workflow run is not based on the published version")
 
     destination = PersistenceDestination(
         PersistenceArea.RUN_RECORD,
@@ -93,6 +93,9 @@ def freeze_workflow(
         "stage_status": "NOT_STARTED",
         "next_required_stage": workflow.stages[0].stage_id,
         "legacy_basis_is_acceptance": False,
+        # Retained freeze receipts were written with this key and their
+        # digests bind it (ADR-004), so it keeps its name; in words it says
+        # that freezing issued nothing.
         "canonical_head_changed": False,
         **no_authority(_AUTHORITY),
     }
@@ -105,7 +108,7 @@ def freeze_workflow(
     repository.verify()
     after = repository.read_head()
     if after != before:
-        raise RuntimeError("freezing a workflow changed canonical HEAD")
+        raise RuntimeError("freezing a workflow issued a new published design")
     return {
         **receipt,
         "freeze_receipt_ref": receipt_ref.uri,

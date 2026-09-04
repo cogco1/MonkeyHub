@@ -32,7 +32,7 @@ from ..application.validation import (
 from archflow.validation.model import ValidationReceipt
 
 from .candidate import RelationChecksDto, relations_dto
-from .project import HeadDto
+from .project import ProjectVersionDto
 
 
 class ValidationFindingDto(BaseModel):
@@ -56,7 +56,7 @@ class ValidationReceiptDto(BaseModel):
         alias="submissionDigest",
         description="the exact submission content these gates examined",
     )
-    checked_state: HeadDto = Field(
+    checked_state: ProjectVersionDto = Field(
         alias="checkedState",
         description="the canonical version the submission was checked against",
     )
@@ -76,8 +76,8 @@ class ValidationDto(BaseModel):
     canonical_facts: str = Field(
         alias="canonicalFacts",
         description="what the checked canonical state could supply; a "
-        "ref-only HEAD supplies no facts, and this says so rather than "
-        "letting an empty state read as a clean one",
+        "ref-only published state supplies no facts, and this says so "
+        "rather than letting an empty state read as a clean one",
     )
     validators: list[str] = Field(
         description="every gate that ran, in the order it ran",
@@ -136,7 +136,7 @@ def _receipt_dto(receipt: ValidationReceipt) -> ValidationReceiptDto:
         receipt_id=receipt.receipt_id,
         submission_id=receipt.submission_id,
         submission_digest=receipt.submission_digest,
-        checked_state=HeadDto(
+        checked_state=ProjectVersionDto(
             version=receipt.checked_state.version,
             state_sha256=receipt.checked_state.state_sha256,
         ),

@@ -62,7 +62,7 @@ class BoundProjectTests(unittest.TestCase):
         self.client = TestClient(create_app(self.settings))
         self.addCleanup(self.client.close)
 
-    def test_project_route_reports_the_exact_head_and_reference_run(
+    def test_project_route_reports_the_exact_issue_and_reference_run(
         self,
     ) -> None:
         head = self.repository.read_head()
@@ -73,8 +73,8 @@ class BoundProjectTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["projectId"], PROJECT_ID)
         self.assertEqual(payload["projectDir"], str(self.root / PROJECT_ID))
-        self.assertEqual(payload["head"]["version"], 0)
-        self.assertEqual(payload["head"]["stateSha256"], head.state_sha256)
+        self.assertEqual(payload["published"]["version"], 0)
+        self.assertEqual(payload["published"]["stateSha256"], head.state_sha256)
         self.assertEqual(payload["referenceRun"]["runId"], REFERENCE_RUN_ID)
         self.assertEqual(payload["referenceRun"]["baseVersion"], 0)
         self.assertEqual(
@@ -174,7 +174,7 @@ class ProjectWithoutRunsTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["head"]["version"], 0)
+        self.assertEqual(payload["published"]["version"], 0)
         self.assertEqual(
             payload["referenceRun"]["runId"], "studio-projection"
         )

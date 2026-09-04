@@ -7,7 +7,7 @@ relation checking, geometry compilation and export are the runner's, and none
 of them is re-implemented, approximated or second-guessed here.
 
 Two things about the run are worth stating plainly. It is **detached**: the run
-is created under the project's ``runs/``, HEAD is never moved, ``canonical/``
+is created under the project's ``runs/``, nothing is issued, ``canonical/``
 and ``input/`` are never written, and the harness workflow it runs under is the
 same one the reference-run rule refuses to follow. And it is **content
 addressed**: the candidate is identified by its run id, and what it *is* comes

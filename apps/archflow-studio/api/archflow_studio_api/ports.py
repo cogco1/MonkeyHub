@@ -51,7 +51,7 @@ class ViewerAssetProvider(Protocol):
 
 
 class HumanReviewPort(Protocol):
-    """Record a human review decision; promotion remains a kernel concern."""
+    """Record a human review decision; issuing remains a kernel concern."""
 
     def record_review(
         self,

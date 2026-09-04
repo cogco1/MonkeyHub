@@ -19,7 +19,7 @@ from ..application.artifacts import _text, _whole
 from ..application.candidate import CandidateRun, RelationTotals, SeatOutcome
 from ..application.jobs import PERSISTENCE, Job
 from .artifacts import ProjectArtifactDto, artifact_dto
-from .project import HeadDto
+from .project import ProjectVersionDto
 
 
 class CandidateAcceptedDto(BaseModel):
@@ -165,7 +165,7 @@ class CandidateDto(BaseModel):
     proposal_id: str = Field(alias="proposalId")
     job_id: str = Field(alias="jobId")
     status: str
-    base: HeadDto
+    base: ProjectVersionDto
     state_digest: str | None = Field(
         alias="stateDigest",
         description="binding identity: this content bound to this run",
@@ -278,7 +278,7 @@ def to_dto(candidate: CandidateRun) -> CandidateDto:
         proposal_id=candidate.proposal_id,
         job_id=candidate.job_id,
         status=candidate.status,
-        base=HeadDto(
+        base=ProjectVersionDto(
             version=candidate.base.version,
             state_sha256=candidate.base.state_sha256,
         ),

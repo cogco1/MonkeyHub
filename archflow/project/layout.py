@@ -67,6 +67,10 @@ class ProjectLayout:
 
     @property
     def head(self) -> Path:
+        # The published container is called an *issue* everywhere a person
+        # reads it (ADR-007), but this file keeps the name ``HEAD``: the
+        # repository format owns it, every retained project on disk has one,
+        # and renaming it would strand them. "Do not rename the HEAD file."
         return self.root / "HEAD"
 
     @property

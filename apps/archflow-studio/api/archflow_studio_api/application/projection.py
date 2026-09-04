@@ -103,7 +103,7 @@ def project_state(
     *,
     require_view: bool = True,
 ) -> StateProjection:
-    """Project the authored record against one run and the project's exact HEAD.
+    """Project the authored record against one run and the published version.
 
     Everything after the record is parsed is still the record's own fault when
     it fails: the kernel validates no per-schema entity fields, so a record can
