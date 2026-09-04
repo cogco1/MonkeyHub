@@ -444,12 +444,16 @@ class StairTests(unittest.TestCase):
         self.assertLessEqual(flight.residual_m, 0.001, flight.notes)
         StateRecord.from_dict(result.successor(run_id="r", basis_refs=["record:base"]).to_dict())
 
-    def test_a_rotating_step_family_stays_ambiguous_and_names_the_invariant(self) -> None:
+    def test_a_rotating_step_family_falls_back_to_one_prism_per_step_and_names_the_invariant(self) -> None:
+        # not a flight the stair producer can carry: the boxes are still the model, so each step is
+        # a prism of its own and every piece says which flight invariant failed
         result = reindex(fixture_record(), [(inspection(spiral_flight()), "record:base", 0)])
-        spiral = {d.element_id: d for d in result.drafts}["main-block-spiral"]
-        self.assertEqual(spiral.status, AMBIGUOUS)
-        self.assertIsNone(spiral.producer)
-        self.assertTrue(any(n.startswith("collinear:") for n in spiral.notes), spiral.notes)
+        pieces = [d for d in result.drafts if d.family == "spiral"]
+        self.assertNotIn("main-block-spiral", {d.element_id for d in result.drafts})
+        self.assertEqual(len(pieces), len(spiral_flight()))
+        self.assertTrue(all(d.status == DRAFT and d.producer == "prism" for d in pieces), [d.notes for d in pieces])
+        self.assertTrue(all(any("is not a flight (" in n and "collinear:" in n for n in d.notes) for d in pieces), pieces[0].notes)
+        self.assertTrue(all(d.residual_m is not None and d.residual_m <= 0.001 for d in pieces))
 
 
 class WedgeTests(unittest.TestCase):

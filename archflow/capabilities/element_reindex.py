@@ -1174,6 +1174,20 @@ def is_shell_family(draft: ElementDraft) -> bool:
     return (obj.faces or 0) >= SHELL_FACES and abs(ex - ey) <= SNAP_M * 2
 
 
+def _split_into_prisms(draft: ElementDraft, frame: Frame, fam: str, side: str | None) -> list[ElementDraft]:
+    """One prism per box; the family identity stays in the shared id stem."""
+
+    out = []
+    ordered = sorted(draft.objects, key=lambda o: (index_of(o.op) if index_of(o.op) is not None else 1_000_000, o.name))
+    for k, obj in enumerate(ordered):
+        # the piece keeps its own op name (minus the side), so two families' pieces never share an id
+        piece = ElementDraft(_element_id(draft.component_id, _SIDE_TOKEN.sub("", obj.op.removeprefix("obj-")), side, 2), draft.component_id, side, fam, None, objects=(obj,), basis_refs=_refs([obj.ref]))
+        draft_prism(piece, frame)
+        piece.notes.insert(0, f"piece {k + 1} of {len(ordered)} of family {fam}")
+        out.append(piece)
+    return out
+
+
 def draft_family(draft: ElementDraft, frame: Frame, siblings: Mapping[tuple[str, str | None], ElementDraft], related: Sequence[SourceObject] = ()) -> list[ElementDraft]:
     """Choose the producer a family's boxes can carry, or name the ambiguity. A multi-box family may split into one prism per box."""
 
@@ -1187,6 +1201,15 @@ def draft_family(draft: ElementDraft, frame: Frame, siblings: Mapping[tuple[str,
         draft_beam(draft, frame, siblings.get(("abacus", side)))
     elif is_stair_family(draft):
         draft_stair(draft, frame)
+        if draft.status == AMBIGUOUS and all(_is_box(o) for o in draft.objects):
+            # not a flight the producer can carry (overlapping treads, a turn, uneven rises): the
+            # boxes are still the model - one prism per step keeps the geometry and the identity,
+            # and every piece says why the family is not a stair row
+            why = "; ".join(draft.notes)
+            pieces = _split_into_prisms(draft, frame, fam, side)
+            for piece in pieces:
+                piece.notes.append(f"family {fam} is not a flight ({why})")
+            return pieces
     elif is_shell_family(draft):
         draft_shell(draft, frame, related)
     elif is_wedge_family(draft):
@@ -1196,16 +1219,7 @@ def draft_family(draft: ElementDraft, frame: Frame, siblings: Mapping[tuple[str,
     elif draft_ring(draft, frame):
         pass
     elif all(_is_box(o) for o in draft.objects):
-        # one prism per box; the family identity stays in the shared id stem
-        out = []
-        ordered = sorted(draft.objects, key=lambda o: (index_of(o.op) if index_of(o.op) is not None else 1_000_000, o.name))
-        for k, obj in enumerate(ordered):
-            # the piece keeps its own op name (minus the side), so two families' pieces never share an id
-            piece = ElementDraft(_element_id(draft.component_id, _SIDE_TOKEN.sub("", obj.op.removeprefix("obj-")), side, 2), draft.component_id, side, fam, None, objects=(obj,), basis_refs=_refs([obj.ref]))
-            draft_prism(piece, frame)
-            piece.notes.insert(0, f"piece {k + 1} of {len(ordered)} of family {fam}")
-            out.append(piece)
-        return out
+        return _split_into_prisms(draft, frame, fam, side)
     else:
         draft.status = AMBIGUOUS
         kinds = sorted({f"{o.object_type or '?'}:{o.faces}" for o in draft.objects})
