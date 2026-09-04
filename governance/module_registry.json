@@ -864,7 +864,8 @@
       "tests": [
         "tests/test_element_producers.py",
         "archive/tests/test_wall_window_families.py",
-        "archive/tests/test_type_instance_propagation.py"
+        "archive/tests/test_type_instance_propagation.py",
+        "tests/test_wall_solver_contact.py"
       ],
       "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (tests/support.py)."
     },

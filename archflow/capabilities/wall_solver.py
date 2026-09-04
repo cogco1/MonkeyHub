@@ -328,8 +328,14 @@ def _void_bounds(wall: WallElement, opening: OpeningRequest, base_elevation: flo
     )
 
 
-def _overlaps(a: Bounds, b: Bounds) -> bool:
-    return all(a[0][i] < b[1][i] and b[0][i] < a[1][i] for i in range(3))
+# Contact is not intersection: a void whose sill sits on a landing's top shares a face with it.
+# The stage-5 convention counts an embed up to 25 mm as contact; only a deeper mutual
+# penetration on every axis is an overlap.
+CONTACT_TOLERANCE_M = 0.025
+
+
+def _overlaps(a: Bounds, b: Bounds, tolerance: float = CONTACT_TOLERANCE_M) -> bool:
+    return all(a[0][i] + tolerance < b[1][i] and b[0][i] + tolerance < a[1][i] for i in range(3))
 
 
 def solve_wall(

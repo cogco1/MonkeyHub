@@ -284,6 +284,16 @@ class PrecedenceTests(unittest.TestCase):
         self.assertEqual(placed["obj-column-west-0@record:base"].status, BOUND)
         self.assertIn("contend", placed["obj-column-west-0@record:base"].note)
 
+    def test_a_witness_object_is_identified_and_never_drafted(self) -> None:
+        record = fixture_record()
+        witness = box("obj-portal-witness", "main-block", "portal-witness", (0, 0, 0), (1, 1, 1))
+        witness["strings"]["attributes"].append({"key": "archflow:inspection_witness", "value": "portal"})
+        result = reindex(record, [(inspection(west_portico() + [witness]), "record:base", 0)])
+        catalog = result.catalog(run_id="r")
+        self.assertEqual({o["name"]: o["status"] for o in catalog["objects"]}["obj-portal-witness"], "witness")
+        self.assertFalse(any(o.name == "obj-portal-witness" for d in result.drafts for o in d.all_objects))
+        self.assertEqual(catalog["summary"]["witness"], 1)
+
     def test_an_undeclared_component_is_named_not_drafted(self) -> None:
         record = fixture_record()
         objs = west_portico() + [box("obj-tower-0", "tower", "tower-0", (0, 0, 0), (1, 1, 1))]

@@ -75,6 +75,7 @@ ERROR = "ERROR"                      # the producers refused the drafted row; th
 EXISTING = "EXISTING"                # the record already has this element; measured, not replaced
 
 BOUND = "bound"
+WITNESS = "witness"                  # an inspection witness: identified, never drafted
 SUPERSEDED = "superseded"            # a base object a patch re-realized
 ALTERNATE = "alternate"              # a patch object with no precedence over another patch
 UNKNOWN_COMPONENT = "UNKNOWN_COMPONENT"
@@ -112,6 +113,8 @@ class SourceObject:
     precedence: int
     faces: int | None
     object_type: str | None
+    # an inspection witness (archflow:inspection_witness): a marker the readback left, not a part of the building
+    witness: bool = False
 
     @property
     def op(self) -> str:
@@ -164,6 +167,7 @@ def objects_of(payload: Mapping[str, Any], source_ref: str, precedence: int) -> 
             precedence=precedence,
             faces=entry.get("mesh_face_count"),
             object_type=entry.get("type"),
+            witness=bool(attrs.get("archflow:inspection_witness")),
         ))
     return tuple(out)
 
@@ -243,6 +247,11 @@ def place_objects(objects: Sequence[SourceObject]) -> tuple[Placement, ...]:
     extent = {ref: union_box(objs) for ref, objs in by_ref.items()}
     out: list[Placement] = []
     for (component, side), items in groups.items():
+        witnesses = [obj for obj in items if obj.witness]
+        out.extend(Placement(obj, WITNESS, "inspection witness: a readback marker, not building geometry") for obj in witnesses)
+        items = [obj for obj in items if not obj.witness]
+        if not items:
+            continue
         by_source: dict[str, list[SourceObject]] = defaultdict(list)
         for obj in items:
             by_source[obj.source_ref].append(obj)
@@ -976,7 +985,7 @@ class ReindexResult:
         objects = [{"name": p.obj.name, "source_ref": p.obj.source_ref, "component_id": p.obj.component_id, "producer_op": p.obj.producer_op, "family": p.obj.family, "side": p.obj.side, "status": p.status if (p.obj.component_id or "") in components else UNKNOWN_COMPONENT, "element_id": element_of_object.get(p.obj.name) if p.status == BOUND else None, "geometry_sha256": p.obj.geometry_sha256, "bbox": {"min": list(p.obj.lo), "max": list(p.obj.hi)}, "note": p.note} for p in self.placements]
         drafts = [d.to_dict() for d in self.drafts]
         counts = {
-            "objects": len(self.placements), "bound": sum(1 for p in self.placements if p.status == BOUND), "superseded": sum(1 for p in self.placements if p.status == SUPERSEDED), "alternate": sum(1 for p in self.placements if p.status == ALTERNATE),
+            "objects": len(self.placements), "bound": sum(1 for p in self.placements if p.status == BOUND), "superseded": sum(1 for p in self.placements if p.status == SUPERSEDED), "alternate": sum(1 for p in self.placements if p.status == ALTERNATE), "witness": sum(1 for p in self.placements if p.status == WITNESS),
             "bound_with_element": sum(1 for p in self.placements if p.status == BOUND and p.obj.name in element_of_object),
             "elements_draft": sum(1 for d in self.drafts if d.status == DRAFT), "elements_existing": sum(1 for d in self.drafts if d.status == EXISTING), "elements_ambiguous": sum(1 for d in self.drafts if d.status == AMBIGUOUS), "elements_error": sum(1 for d in self.drafts if d.status == ERROR),
             "axes_drafted": len(self.frame.drafted), "relations_derived": len(self.relations),
