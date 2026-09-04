@@ -1893,7 +1893,8 @@ button.chip:hover {
     opacity: 0;
   }
 
-  .boot__reel .boot__frame:nth-child(3) {
+  /* the strike frame (frame-02): the one still picture that says what the animation says */
+  .boot__reel .boot__frame:nth-child(2) {
     opacity: 1;
   }
 }

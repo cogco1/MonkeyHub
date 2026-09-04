@@ -98,8 +98,9 @@ shortcut written before the MonkeyArch icon arrived names the retired `archflow.
 to be written again with `make-desktop-shortcut.ps1`. The loading
 animation is four frames in `assets/loading/` (`frame-01.png` … `frame-04.png`), cycled at 8 fps
 by the splash window and, in the browser, by the same overlay while the client waits for the API
-and while the viewport parses exports. `assets/loading/make_frames.py` draws the placeholder
-set; the storyboard replaces those four files in place, and `web/scripts/sync-loading.mjs`
+and while the viewport parses exports. `assets/loading/make_frames.py` draws the four
+frames with the icon's own monkey (it imports the figure from `make_icon.py`, so the icon and the
+animation cannot drift apart), and `web/scripts/sync-loading.mjs`
 copies them into the served public directory at `npm run dev` and `npm run build` — the same way
 the rhino3dm runtime is synced, so `assets/loading/` stays the one source.
 
