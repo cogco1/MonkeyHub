@@ -12,11 +12,15 @@ from archflow.project.refs import (
     require_project_relative_path,
 )
 
-# The two files the designer authors: the work-in-progress container (ADR-007).
+# The files the designer authors: the work-in-progress container (ADR-007).
 # They are named here because the layout owns a project's on-disk names, and
 # read in exactly one place, ``archflow.project.inputs``.
 AUTHORED_RECORD_PATH = "input/runner/state-record.json"
 SEAT_PACK_PATH = "input/runner/seats.json"
+# The architect's program: departments, spaces and the adjacencies they
+# demand. Work in progress like the other two — it is the brief being written,
+# not a product of a run — and the only one of the three the studio may write.
+PROGRAM_SHEET_PATH = "input/runner/program-sheet.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +92,12 @@ class ProjectLayout:
         """The seats the designer authored, beside the record."""
 
         return self.resolve_relative(SEAT_PACK_PATH)
+
+    @property
+    def program_sheet(self) -> Path:
+        """The architect's ``ProgramSheet@1``, beside the record."""
+
+        return self.resolve_relative(PROGRAM_SHEET_PATH)
 
     @property
     def objects(self) -> Path:

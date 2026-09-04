@@ -18,12 +18,17 @@ from archflow.project.inputs import (
     AuthoredRecordInvalid,
     AuthoredRecordMissing,
     InputsError,
+    ProgramSheetInvalid,
+    ProgramSheetMissing,
     SeatPackInvalid,
     SeatPackMissing,
     load_authored_record,
+    load_program_sheet_file,
     load_seat_pack_file,
+    write_program_sheet_file,
 )
 from archflow.project.repository import FilesystemProjectRepository
+from archflow.state.program_sheet import PROGRAM_SHEET_SCHEMA
 from archflow.state.state_record import Entity, StateRecord
 
 RECORD = StateRecord(
@@ -50,6 +55,35 @@ SEATS = {
 }
 
 
+SHEET = {
+    "schema": PROGRAM_SHEET_SCHEMA,
+    "project_id": "demo",
+    "state_digest": None,
+    "departments": [
+        {
+            "department_id": "public",
+            "name": "对外",
+            "spaces": [
+                {
+                    "space_id": "hall",
+                    "name": "Hall",
+                    "function": "principal-use",
+                    "target_area_m2": 24.0,
+                    "count": 1,
+                    "clear_height_m": None,
+                    "level_ids": [],
+                    "zone_id": None,
+                    "mapped_area_m2": None,
+                }
+            ],
+        }
+    ],
+    "adjacencies": [],
+    "totals": {"target_area_m2": 24.0, "mapped_area_m2": 0.0, "unmapped_spaces": ["hall"]},
+    "honesty": [],
+}
+
+
 class ProjectInputsTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -65,7 +99,7 @@ class ProjectInputsTests(unittest.TestCase):
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return path
 
-    # ---- the layout names the two files, and nothing else may move them
+    # ---- the layout names the three files, and nothing else may move them
     def test_the_layout_owns_both_paths(self) -> None:
         self.assertEqual(
             self.layout.authored_record,
@@ -74,6 +108,10 @@ class ProjectInputsTests(unittest.TestCase):
         self.assertEqual(
             self.layout.seat_pack,
             self.layout.root / "input" / "runner" / "seats.json",
+        )
+        self.assertEqual(
+            self.layout.program_sheet,
+            self.layout.root / "input" / "runner" / "program-sheet.json",
         )
 
     # ---- the authored record
@@ -180,6 +218,76 @@ class ProjectInputsTests(unittest.TestCase):
             load_seat_pack_file(self.repository)
 
         self.assertIn("JSON object", str(caught.exception))
+
+    # ---- the program sheet: the one authored file the studio may write
+    def test_an_absent_program_sheet_names_the_file_it_wanted(self) -> None:
+        with self.assertRaises(ProgramSheetMissing) as caught:
+            load_program_sheet_file(self.repository)
+
+        self.assertIsInstance(caught.exception, InputsError)
+        self.assertEqual(caught.exception.path, self.layout.program_sheet)
+        self.assertIn("input/runner/program-sheet.json", str(caught.exception))
+
+    def test_a_program_sheet_claiming_another_schema_is_refused(self) -> None:
+        self.write(self.layout.program_sheet, {**SHEET, "schema": "SeatPack@1"})
+
+        with self.assertRaises(ProgramSheetInvalid) as caught:
+            load_program_sheet_file(self.repository)
+
+        self.assertIn(PROGRAM_SHEET_SCHEMA, str(caught.exception))
+        self.assertIn("SeatPack@1", str(caught.exception))
+
+    def test_a_program_sheet_that_is_not_an_object_is_invalid(self) -> None:
+        self.write(self.layout.program_sheet, [SHEET])
+
+        with self.assertRaises(ProgramSheetInvalid) as caught:
+            load_program_sheet_file(self.repository)
+
+        self.assertIn("JSON object", str(caught.exception))
+
+    def test_writing_a_payload_of_another_schema_is_refused_before_the_file(
+        self,
+    ) -> None:
+        with self.assertRaises(ProgramSheetInvalid):
+            write_program_sheet_file(self.repository, {"schema": "SeatPack@1"})
+
+        self.assertFalse(self.layout.program_sheet.exists())
+
+    def test_the_written_sheet_reads_back_as_itself_with_lf_endings(self) -> None:
+        written = write_program_sheet_file(self.repository, SHEET)
+
+        raw = self.layout.program_sheet.read_bytes()
+        self.assertNotIn(b"\r", raw)
+        self.assertEqual(written.sha256, hashlib.sha256(raw).hexdigest())
+        read = load_program_sheet_file(self.repository)
+        self.assertEqual(read.payload, SHEET)
+        self.assertEqual(read.sha256, written.sha256)
+
+    def test_writing_the_same_sheet_twice_leaves_the_same_bytes(self) -> None:
+        first = write_program_sheet_file(self.repository, SHEET)
+        second = write_program_sheet_file(
+            self.repository, dict(reversed(list(SHEET.items())))
+        )
+
+        self.assertEqual(second.sha256, first.sha256)
+
+    def test_writing_the_sheet_touches_nothing_outside_input(self) -> None:
+        """A work-in-progress write is not a project write."""
+
+        before = sorted(
+            p.relative_to(self.root).as_posix()
+            for p in self.root.rglob("*")
+            if p.is_file() and "input" not in p.parts
+        )
+
+        write_program_sheet_file(self.repository, SHEET)
+
+        after = sorted(
+            p.relative_to(self.root).as_posix()
+            for p in self.root.rglob("*")
+            if p.is_file() and "input" not in p.parts
+        )
+        self.assertEqual(after, before)
 
     def test_reading_neither_file_writes_anything_into_the_project(self) -> None:
         """Work in progress is not retained: reading it leaves no record."""
