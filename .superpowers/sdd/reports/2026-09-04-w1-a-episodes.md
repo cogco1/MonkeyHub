@@ -88,9 +88,11 @@ judgement is retained" is three sentences after the verdict step.
 
 ## Commits
 
-- `6cb18b4` — Deliberation episodes: the judgement the studio made is retained
-
-(one commit; the report is committed with it)
+- `638e99a` — Deliberation episodes: the judgement the studio made is retained
+  (all code, tests, generated client, docs, and this report)
+- a second, report-only commit follows it, correcting the hash written above:
+  a report that names its own commit cannot know the hash before that commit
+  exists, and amending would only produce a third hash.
 
 ## Tests
 
