@@ -95,13 +95,13 @@
     },
     {
       "path": "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
-      "function": "execute_candidate",
+      "function": "_run_successor",
       "operations": [
         "mkdir"
       ],
       "kind": "cli_workspace",
       "owner": "studio.candidate",
-      "reason": "Creates the per-seat export workspace under the layout's run root, the same way tools/run_project.py does."
+      "reason": "Creates the per-seat export workspace under the layout's run root, the same way tools/run_project.py does. It is one function so that a proposal's candidate and a selected massing option's run under the same harness; execute_candidate and execute_option_candidate both reach the workspace through it."
     },
     {
       "path": "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",

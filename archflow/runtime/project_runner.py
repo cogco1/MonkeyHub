@@ -122,7 +122,7 @@ from archflow.state.geometry_program import (
     SemanticBinding,
 )
 from archflow.state.spatial import SiteBounds
-from archflow.state.state_record import Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, developed_design_view, project_grids_of, project_levels_of
+from archflow.state.state_record import Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, developed_design_view, project_grids_of, project_levels_of, volume_boxes_of
 from archflow.state.stage_workflow import (
     HARNESS_WORKFLOW_IDS,
     ProjectStageWorkflow,
@@ -808,14 +808,14 @@ def _check_produced_relations(record: StateRecord, rows, elements, produced: Pro
     datum_values = {d.datum_id: float(_json.loads(d.value_json)) for d in produced.datums}
     datum_values.update({l.level_id: l.elevation for l in levels.levels})
     bounds = {oid: (list(low), list(high)) for oid, (low, high) in realized.items()}
-    volumes = {e.entity_id: e for e in record.entities_of("Volume@1")}
+    volumes = volume_boxes_of(record)   # one reader of the Volume@1 box, in state.record
     for zone in record.entities_of("Space@1"):
         zone_objects = []
         for volume_id in zone.fields.get("volume_ids", ()):
-            volume = volumes.get(volume_id)
-            if volume is None:
+            box = volumes.get(volume_id)
+            if box is None:
                 continue
-            bounds.setdefault(volume_id, ([float(v) for v in volume.fields["min"]], [float(v) for v in volume.fields["max"]]))
+            bounds.setdefault(volume_id, ([*box[0]], [*box[1]]))
             zone_objects.append(volume_id)
         if zone_objects:
             objects.setdefault(zone.entity_id, zone_objects)

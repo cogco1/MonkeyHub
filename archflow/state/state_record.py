@@ -586,6 +586,32 @@ def project_levels_of(record: StateRecord, *, published_by: str = "seat-coordina
     return ProjectLevels(project_id=record.project_id, published_by=published_by, levels=levels)
 
 
+def volume_boxes_of(record: StateRecord) -> dict[str, tuple[tuple[float, float, float], tuple[float, float, float]]]:
+    """Every ``Volume@1``'s declared box, keyed by volume id: ``(min, max)``.
+
+    The kernel's massing frame, stated once here because more than one reader
+    needs it: a box is two coordinate triples in the voxel lattice
+    ``state.spatial.SiteBounds`` defines, **x and z are plan and y is up**, and
+    both ends are *inclusive* cells — ``SiteBounds.volume`` multiplies
+    ``max - min + 1`` per axis, and ``SpatialLevel.top_y`` is
+    ``base_y + height - 1`` for the same reason. One plan cell is one square
+    metre: ``schematic_proposal`` declares
+    ``SpatialGridBasis(horizontal_area_per_cell=1.0, area_unit="square_metres")``.
+
+    Floats, because that is the reading ``project_runner`` hands to the
+    relation checker. A measurement that needs whole cells says so itself
+    rather than rounding here.
+    """
+
+    return {
+        entity.entity_id: (
+            tuple(float(v) for v in entity.fields["min"]),   # type: ignore[misc]
+            tuple(float(v) for v in entity.fields["max"]),   # type: ignore[misc]
+        )
+        for entity in record.entities_of("Volume@1")
+    }
+
+
 def project_grids_of(record: StateRecord, *, published_by: str = "seat-coordination"):
     """The record's GridAxis@1 entities as the published project grids (P098); None when there are none."""
 
@@ -657,6 +683,45 @@ def schematic_proposal(pack: SchematicPack) -> SpatialOptionProposal:
         typology_hypothesis=pack.typology, palette_refs=(), rationale=pack.rationale, responds_to_refs=ev, expert_advice_refs=(), evidence_refs=ev,
     )
 
+def schematic_pack_of(record: StateRecord, *, option_id: str | None = None, evidence_refs: tuple[str, ...] | None = None) -> SchematicPack | None:
+    """The massing the record declares, as a ``SchematicPack@1``; ``None`` if it declares none.
+
+    The one reader of ``MassingLevel@1`` / ``Volume@1`` / ``Space@1`` /
+    ``Connection@1`` *as a spatial option*. ``developed_design_view`` builds its
+    view from this, and so does anything that measures the massing
+    (``state.massing_metrics``) or offers a variant of it. A record is said to
+    declare massing when it carries volumes, zones and massing levels together;
+    with any of the three absent the view falls back to one block and this
+    answers ``None`` rather than half a pack.
+
+    ``option_id`` and ``evidence_refs`` are the caller's when the caller has
+    already resolved them — that is how the view keeps its own sentences for a
+    record that names neither — and resolved here the same way otherwise.
+    """
+
+    option = dict(record.option)
+    option_id = option_id or option.get("option_id") or (record.decision_ref or "").split(":", 1)[-1] or None
+    if not option_id:
+        raise StateRecordError("a schematic pack needs an option id (record.option, record.decision_ref, or the caller)")
+    evidence = tuple(sorted(set(record.evidence_refs if evidence_refs is None else evidence_refs)))
+    if not evidence:
+        raise StateRecordError("a schematic pack needs at least one evidence ref")
+    volumes, zones, massing_levels, connections = (record.entities_of(s) for s in ("Volume@1", "Space@1", "MassingLevel@1", "Connection@1"))
+    if not (volumes and zones and massing_levels):
+        return None
+    return SchematicPack(
+        project_id=record.project_id, option_id=option_id, label=str(option.get("label", option_id)), typology=str(option.get("typology", "declared")),
+        rationale=str(option.get("rationale", "declared from the state record")), evidence_refs=evidence,
+        levels=tuple({"level_id": e.entity_id, "base_y": e.fields["base_y"], "height": e.fields["height"]} for e in massing_levels),
+        volumes=tuple({"volume_id": e.entity_id, "min": list(e.fields["min"]), "max": list(e.fields["max"]), "level_ids": list(e.fields["level_ids"])} for e in volumes),
+        zones=tuple({"zone_id": e.entity_id, "program_node_refs": list(e.fields["program_node_refs"]), "level_ids": list(e.fields["level_ids"]), "volume_ids": list(e.fields["volume_ids"])} for e in zones),
+        connections=tuple({"connection_id": e.entity_id, "source_zone_id": e.fields["source_zone_id"], "target_zone_id": e.fields["target_zone_id"],
+                           "relationship_refs": list(e.fields["relationship_refs"]), "directed": bool(e.fields.get("directed", False))} for e in connections),
+        components=design_components_of(record, source_ref=evidence[0]), footprint_cells=tuple((int(x), int(z)) for x, z in option.get("footprint_cells", ((0, 0),))),
+        assumption_refs=tuple(option.get("assumption_refs", ())),
+    )
+
+
 def bootstrap_developed_state(pack: SchematicPack, *, run: RunRef, portfolio_id: str, branch_id: str, selection_decision_ref: str) -> DevelopedDesignState:
     """A developed-design state whose selected schematic is the pack.
 
@@ -710,20 +775,8 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
     option_id = option_id or option.get("option_id") or (record.decision_ref or "").split(":", 1)[-1] or None
     if not option_id:
         raise StateRecordError("a developed-design view needs an option id (record.option, record.decision_ref, or the caller)")
-    volumes, zones, massing_levels, connections = (record.entities_of(s) for s in ("Volume@1", "Space@1", "MassingLevel@1", "Connection@1"))
-    if volumes and zones and massing_levels:
-        design_components = design_components_of(record, source_ref=evidence[0])
-        pack = SchematicPack(
-            project_id=record.project_id, option_id=option_id, label=str(option.get("label", option_id)), typology=str(option.get("typology", "declared")),
-            rationale=str(option.get("rationale", "declared from the state record")), evidence_refs=evidence,
-            levels=tuple({"level_id": e.entity_id, "base_y": e.fields["base_y"], "height": e.fields["height"]} for e in massing_levels),
-            volumes=tuple({"volume_id": e.entity_id, "min": list(e.fields["min"]), "max": list(e.fields["max"]), "level_ids": list(e.fields["level_ids"])} for e in volumes),
-            zones=tuple({"zone_id": e.entity_id, "program_node_refs": list(e.fields["program_node_refs"]), "level_ids": list(e.fields["level_ids"]), "volume_ids": list(e.fields["volume_ids"])} for e in zones),
-            connections=tuple({"connection_id": e.entity_id, "source_zone_id": e.fields["source_zone_id"], "target_zone_id": e.fields["target_zone_id"],
-                               "relationship_refs": list(e.fields["relationship_refs"]), "directed": bool(e.fields.get("directed", False))} for e in connections),
-            components=design_components, footprint_cells=tuple((int(x), int(z)) for x, z in option.get("footprint_cells", ((0, 0),))),
-            assumption_refs=tuple(option.get("assumption_refs", ())),
-        )
+    pack = schematic_pack_of(record, option_id=option_id, evidence_refs=evidence)
+    if pack is not None:
         return bootstrap_developed_state(pack, run=run, portfolio_id=portfolio_id, branch_id=branch_id, selection_decision_ref=selection_decision_ref)
     evidence_ref = evidence[0]
     levels = record.entities_of("Level@1")

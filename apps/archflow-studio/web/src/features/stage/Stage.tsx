@@ -78,6 +78,9 @@ export function Stage({
   framePanel,
   frameOpen,
   onToggleFrame,
+  optionsPanel,
+  optionsOpen,
+  onToggleOptions,
   tool,
   gestures,
   onTool,
@@ -119,6 +122,9 @@ export function Stage({
   framePanel: ReactNode;
   frameOpen: boolean;
   onToggleFrame(): void;
+  optionsPanel: ReactNode;
+  optionsOpen: boolean;
+  onToggleOptions(): void;
   /** The armed drawing tool; null is the orbit. */
   tool: GestureTool | null;
   /** The marks made on this picture, not yet sent with a sentence. */
@@ -266,6 +272,17 @@ export function Stage({
           >
             {t("frame.open")}
           </button>
+          {/* The massing beside the frame: what the building *is*, next to
+              what it is placed against. Both are panels over the same
+              picture, and an architect reads them together. */}
+          <button
+            type="button"
+            aria-pressed={optionsOpen}
+            title={t("options.openTitle")}
+            onClick={onToggleOptions}
+          >
+            {t("options.open")}
+          </button>
           <span className="viewtools__sep" aria-hidden="true" />
           {/* One button, home: the reference run's exports when it left
               any, else the export the stage actually opened on — named for
@@ -344,6 +361,7 @@ export function Stage({
       </div>
 
       {framePanel}
+      {optionsPanel}
       {drawer}
     </section>
   );

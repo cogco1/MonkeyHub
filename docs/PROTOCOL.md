@@ -114,15 +114,21 @@ tolerate it.
 | GET | `/api/controls/{controlId}` | one declared control | server memory | provisional |
 | GET | `/api/state/frame` | the record's frame: each `Level@1` and `GridAxis@1` with its role, its value, the elements whose own references name it, and the closure of changing it; `honesty[]` | reads work in progress + shared + published | provisional |
 | POST | `/api/state/closure` | what changing `changedRefs` would move, and the propagating edges that carried it. Reads only; the POST carries the list and the `stateDigest` it is asked against | reads work in progress + shared + published | provisional |
+| GET | `/api/state/volumes` | the record's `Volume@1` boxes with their levels and their own plan area, and what the massing as a whole measures (§5.3) | reads work in progress + shared + published | provisional |
+| POST | `/api/options` → 201 | one massing option: a deterministic transform of the record's own pack, measured, with the findings of the envelope the request carried (§5.3) | server memory, pack **written into shared** as its own `option-NNN` run | provisional |
+| GET | `/api/options` | the record's massing as the baseline and every option this process holds beside it, measured the same way | server memory + reads shared | provisional |
+| POST | `/api/options/{optionId}/select` → 202 | run that option as a candidate, through the same candidate path a proposal takes; answers a job id, never a run | writes a **detached run** | provisional |
 
-Twenty-five resources: fifteen stable, ten provisional. `/api/intents` is provisional because who
+Twenty-nine resources: fifteen stable, fourteen provisional. `/api/intents` is provisional because who
 signs an agent's compilation receipt is still moving; the three deliberation resources because a
 judgement not yet met by a run is still one process's memory; `/api/controls` because a declared
 control has not entered the authored record; `/api/compare` because its `why` comes from one
 process's memory of a proposal; `/api/events` because its event types are not a closed set and
 authenticated streams have no answer yet (§7); `/api/state/frame` and `/api/state/closure` because
 levels and axes are not yet editable — the grammar has no sentence for them — so what an
-architect can do with the frame is still moving.
+architect can do with the frame is still moving; and the four massing resources because an
+option's metrics are held in the server's memory — there is no retained record kind whose payload
+is a set of measurements, so only the option's pack survives a restart, in its own run.
 
 **Server memory.** Proposals, jobs and events live in the process and are lost on restart. A
 client treats `PROPOSAL_NOT_FOUND` and `JOB_NOT_FOUND` as ordinary and never uses the event
@@ -242,6 +248,33 @@ modifications this process was holding for that state. A judgement made before a
 no run to be written into and says so — `producedRun` is `null` and `persistence` reads
 `in-memory (not version history)` until a candidate meets it, after which `persistence` is
 `run:<id>`, exactly as for a proposal.
+
+### 5.3 Massing options
+
+A record's massing is its `MassingLevel@1`, `Volume@1`, `Space@1` and `Connection@1` entities
+together with the declared `option`. `GET /api/state/volumes` shows the boxes, and every option is
+one **deterministic transform** of the record's own `SchematicPack@1`: `add_floor`, `remove_floor`,
+`shift_volume`, `scale_volume`, `split_volume`, or `pack` — a whole pack the client sends, which is
+the socket a generative massing agent plugs into and the only transform that takes free-form
+geometry. The vocabulary is closed and `GET /api/options` carries it in `transforms[]`, so a client
+offers no button the server would refuse.
+
+**The frame the numbers are in.** A volume box is two coordinate triples in the kernel's voxel
+lattice — x and z are plan, y is up, both ends inclusive cells — and one plan cell is one square
+metre (`SpatialGridBasis(horizontal_area_per_cell=1.0)`). `footprintM2` is the union of every
+volume's plan rectangle, counted once where they overlap; `grossFloorAreaM2` is the sum of the
+per-level footprints; `heightM` is the top face of the highest massing level less the base of the
+lowest; and `efficiency` is the program targets as a share of the floor area, or `null` when the
+request carried no target. Whatever could not be measured is a line in `metrics.honesty[]` and
+never a zero.
+
+**What is retained.** Each option is written into a run of its own, `option-NNN`, as the kernel's
+own `SpatialOptionProposal@2` under the existing `selected-spatial-option` kind — the same record
+the runner writes for the option a run executes. The metrics are not retained: no record kind's
+payload is a set of measurements, so they live in the server's memory, and `persistence` on every
+option says so. Selecting an option runs it as a candidate through the same path a proposal takes;
+the run the runner leaves retains that massing as its own `selected-spatial-option`, and the
+authored record is never written.
 
 ---
 

@@ -1,9 +1,11 @@
 """``GET /api/state``: the authored State Record, bound and projected.
 
-Two more read-only resources hang off it. ``GET /api/state/frame`` is the
+Three more read-only resources hang off it. ``GET /api/state/frame`` is the
 record's frame — the levels and axes every element is positioned against —
-and ``POST /api/state/closure`` answers what changing a named ref would move.
-Neither writes; both are the kernel's own answers, arranged.
+``GET /api/state/volumes`` is its massing, which is positioned against neither
+and declares its own boxes, and ``POST /api/state/closure`` answers what
+changing a named ref would move. None writes; all are the kernel's own
+answers, arranged.
 """
 
 from __future__ import annotations
@@ -14,8 +16,10 @@ from starlette.requests import Request
 from ..application.binding import bound_project
 from ..application.catalog import catalog_of
 from ..application.frame import closure_of_refs, frame_of
+from ..application.options import record_massing
 from ..application.projection import project_state
 from ..transport.errors import StudioError
+from ..transport.options import VolumesDto, volumes_dto
 from ..transport.state import (
     ClosureDto,
     ClosureRequestDto,
@@ -82,6 +86,29 @@ def read_frame(request: Request) -> FrameDto:
     binding = bound_project(request.app.state)
     projection = project_state(binding, require_view=False)
     return frame_dto(frame_of(projection.record))
+
+
+@router.get(
+    "/state/volumes",
+    response_model=VolumesDto,
+    response_model_by_alias=True,
+)
+def read_volumes(request: Request) -> VolumesDto:
+    """The record's massing volumes, and what the massing as a whole measures.
+
+    Separate from the frame rather than another field of it: the frame is what
+    an *element* is positioned against — a level, a grid axis — and a
+    ``Volume@1`` is positioned against neither. It declares its own box in the
+    massing lattice, so it is its own resource.
+
+    ``require_view=False`` for the same reason the frame reads that way: a
+    record the kernel would not build a bound view for still declares its own
+    volumes.
+    """
+
+    binding = bound_project(request.app.state)
+    projection = project_state(binding, require_view=False)
+    return volumes_dto(record_massing(projection.record))
 
 
 @router.post(

@@ -42,7 +42,11 @@ import {
   readProposalApiProposalsProposalIdGet,
   readClosureApiStateClosurePost,
   readFrameApiStateFrameGet,
+  readOptionsApiOptionsGet,
   readStateApiStateGet,
+  readVolumesApiStateVolumesGet,
+  makeMassingOptionApiOptionsPost,
+  selectOptionApiOptionsOptionIdSelectPost,
   readValidationApiCandidatesCandidateIdValidationGet,
   compareCandidateApiCandidatesCandidateIdCompareGet,
   resolveApiPickResolvePost,
@@ -59,6 +63,9 @@ import type {
   IntentDto,
   IntentRequestDto,
   JobDto,
+  MassingOptionDto,
+  MassingOptionRequestDto,
+  OptionsDto,
   PickRequestDto,
   PickResolutionDto,
   ProjectBindingDto,
@@ -67,6 +74,7 @@ import type {
   ProposalRequestDto,
   StateProjectionDto,
   ValidationDto,
+  VolumesDto,
 } from "./generated";
 
 // The error type and its codes are defined in `error.ts` so that the
@@ -129,6 +137,36 @@ export const studio = {
     return call(
       "POST /api/state/closure",
       readClosureApiStateClosurePost({ body }),
+    );
+  },
+
+  /**
+   * The record's massing volumes and what the massing measures. Separate from
+   * the frame because a volume is positioned against no level and no axis: it
+   * declares its own box.
+   */
+  volumes(): Promise<VolumesDto> {
+    return call("GET /api/state/volumes", readVolumesApiStateVolumesGet());
+  },
+
+  /** The baseline and every massing option this server process holds. */
+  options(): Promise<OptionsDto> {
+    return call("GET /api/options", readOptionsApiOptionsGet());
+  },
+
+  /** One deterministic transform of the record's massing, measured. */
+  makeOption(body: MassingOptionRequestDto): Promise<MassingOptionDto> {
+    return call("POST /api/options", makeMassingOptionApiOptionsPost({ body }));
+  },
+
+  /**
+   * Run one option as a candidate. A 202 and a job, like every other candidate:
+   * selecting a massing is a geometry run, not a note.
+   */
+  selectOption(optionId: string): Promise<CandidateAcceptedDto> {
+    return call(
+      `POST /api/options/${optionId}/select`,
+      selectOptionApiOptionsOptionIdSelectPost({ path: { option_id: optionId } }),
     );
   },
 

@@ -36,7 +36,12 @@ from archflow.project.record_kinds import (
 )
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef
 from archflow.runtime.project_runner import RunOptions, run_project
-from archflow.state.state_record import StateRecord, developed_design_view
+from archflow.state.state_record import (
+    Entity,
+    SchematicPack,
+    StateRecord,
+    developed_design_view,
+)
 
 from ..adapters.harness import STAGE_ID, harness_guard
 from ..adapters.seats import load_seat_pack, seats_of
@@ -114,6 +119,129 @@ def successor_record(record: StateRecord, proposal: Proposal) -> StateRecord:
     return replace(record, parameters=parameters)
 
 
+# The four entity schemas that are a record's massing. A massing successor
+# replaces exactly these and the declared ``option``; everything else in the
+# record — its levels, axes, elements, parameters and relations — is the
+# authored record's and is carried through untouched.
+MASSING_SCHEMAS = ("MassingLevel@1", "Volume@1", "Space@1", "Connection@1")
+
+
+def massing_successor(record: StateRecord, pack: SchematicPack) -> StateRecord:
+    """The authored record with its massing replaced by one option's pack.
+
+    The studio's second successor operation, beside ``successor_record``. A
+    proposal edits one authored scalar; a selected massing option replaces the
+    four massing schemas together, because a volume, the level it stands on
+    and the zone that owns it are one statement and half of it is not a
+    building.
+
+    Two things are carried rather than rewritten. An entity whose id survives
+    keeps its own ``basis_refs`` and any field the pack does not carry, so a
+    pack that says exactly what the record already said produces the same
+    record — same order, same fields, same digest. And ``Component@1``
+    ``volume_ids`` are updated from the pack's components, because the kernel
+    requires every massing volume to have exactly one semantic owner
+    (``SpatialOptionProposal``) and a transform that adds or drops a volume
+    without saying who owns it would be refused by the runner rather than
+    here.
+    """
+
+    existing = {entity.entity_id: entity for entity in record.entities}
+    evidence = tuple(sorted(set(record.evidence_refs)))
+
+    def entity(entity_id: str, schema: str, fields: Mapping[str, Any]) -> Entity:
+        previous = existing.get(entity_id)
+        if previous is not None and previous.schema == schema:
+            return replace(previous, fields={**previous.fields, **fields})
+        return Entity(entity_id, schema, dict(fields), basis_refs=evidence)
+
+    replacements = {
+        **{
+            level["level_id"]: entity(
+                level["level_id"],
+                "MassingLevel@1",
+                {"base_y": level["base_y"], "height": level["height"]},
+            )
+            for level in pack.levels
+        },
+        **{
+            volume["volume_id"]: entity(
+                volume["volume_id"],
+                "Volume@1",
+                {
+                    "min": list(volume["min"]),
+                    "max": list(volume["max"]),
+                    "level_ids": list(volume["level_ids"]),
+                },
+            )
+            for volume in pack.volumes
+        },
+        **{
+            zone["zone_id"]: entity(
+                zone["zone_id"],
+                "Space@1",
+                {
+                    "program_node_refs": list(zone["program_node_refs"]),
+                    "level_ids": list(zone["level_ids"]),
+                    "volume_ids": list(zone["volume_ids"]),
+                },
+            )
+            for zone in pack.zones
+        },
+        **{
+            connection["connection_id"]: entity(
+                connection["connection_id"],
+                "Connection@1",
+                {
+                    "source_zone_id": connection["source_zone_id"],
+                    "target_zone_id": connection["target_zone_id"],
+                    "relationship_refs": list(connection["relationship_refs"]),
+                    "directed": bool(connection.get("directed", False)),
+                },
+            )
+            for connection in pack.connections
+        },
+    }
+    owned = {
+        component.component_id: list(component.volume_ids)
+        for component in pack.components
+    }
+    kept: list[Entity] = []
+    seen: set[str] = set()
+    for item in record.entities:
+        if item.schema == "Component@1" and item.entity_id in owned:
+            volume_ids = owned[item.entity_id]
+            kept.append(
+                item
+                if list(item.fields.get("volume_ids", ())) == volume_ids
+                else replace(item, fields={**item.fields, "volume_ids": volume_ids})
+            )
+            continue
+        if item.schema not in MASSING_SCHEMAS:
+            kept.append(item)
+            continue
+        successor = replacements.get(item.entity_id)
+        if successor is not None:
+            kept.append(successor)
+            seen.add(item.entity_id)
+    kept.extend(
+        item for entity_id, item in replacements.items() if entity_id not in seen
+    )
+    return replace(
+        record,
+        entities=tuple(kept),
+        option={
+            **dict(record.option),
+            "option_id": pack.option_id,
+            "label": pack.label,
+            "typology": pack.typology,
+            "rationale": pack.rationale,
+            "footprint_cells": [list(cell) for cell in pack.footprint_cells],
+            "assumption_refs": list(pack.assumption_refs),
+        },
+    )
+
+
 def execute_candidate(
     binding: ProjectBinding,
     settings: StudioSettings,
@@ -132,41 +260,109 @@ def execute_candidate(
     leaves no run directory behind for somebody to wonder about later.
     """
 
-    repository = binding.repository
-    seat_pack = load_seat_pack(repository)
-    seats = seats_of(seat_pack)
-    # The base is checked here, where the record is actually read. The route
-    # checked it too, but that was before this job reached the front of the
-    # queue: in between, the authored record may have been rewritten, and
-    # running the change against a state nobody was shown is the one failure
-    # that would look like a success.
-    live = project_state(binding).state_digest
-    if live != proposal.base_state_digest:
-        raise StaleBaseError(
-            "STALE_BASE: the authored record changed after the proposal was "
-            f"made ({proposal.base_state_digest[:8]} -> {live[:8]})"
-        )
+    seat_pack = _seat_pack(binding, proposal.base_state_digest)
     successor = successor_record(_load_authored_record(binding), proposal)
-    run = repository.create_run(run_id)
+    retain: tuple[tuple[str, Mapping[str, Any]], ...] = ()
     if proposal.compilation_receipt is not None:
         # A chat turn is work in progress; a run is shared (ADR-007). The receipt of
         # the model call that compiled the words is retained here, and only here,
         # because this is where those words became a run somebody can cite. The
         # deterministic compiler reads no model and returns no receipt, so a proposal
         # made from a sentence already in the grammar retains nothing.
+        retain = (
+            (
+                INTENT_COMPILATION,
+                {
+                    "schema": "IntentCompilation@1",
+                    "proposal_id": proposal.proposal_id,
+                    "utterance": proposal.utterance,
+                    "base_state_digest": proposal.base_state_digest,
+                    "receipt": dict(proposal.compilation_receipt),
+                },
+            ),
+        )
+    return _run_successor(
+        binding, settings, seat_pack, successor, run_id, retain=retain
+    )
+
+
+def execute_option_candidate(
+    binding: ProjectBinding,
+    settings: StudioSettings,
+    pack: SchematicPack,
+    run_id: str,
+    *,
+    base_state_digest: str,
+) -> Mapping[str, Any]:
+    """Run one selected massing option as a candidate, by the same arrangement.
+
+    The only difference from a proposal's candidate is which successor is run:
+    the authored record with its massing replaced by this option's pack rather
+    than with one scalar replaced. Everything after that — the base check, the
+    run, the harness stage, the seats — is the same code, so an option that
+    cannot run fails for the reasons a proposal would.
+
+    Nothing is written here about the selection itself. The runner retains the
+    option it executed as ``selected-spatial-option``, from the record's own
+    massing, and a record the studio wrote a second time would be a second
+    statement of the same fact.
+    """
+
+    seat_pack = _seat_pack(binding, base_state_digest)
+    successor = massing_successor(_load_authored_record(binding), pack)
+    return _run_successor(binding, settings, seat_pack, successor, run_id)
+
+
+def _seat_pack(
+    binding: ProjectBinding, base_state_digest: str
+) -> Mapping[str, Any]:
+    """The seat pack, and the base check made where the record is actually read.
+
+    The route checked the base too, but that was before this job reached the
+    front of the queue: in between, the authored record may have been
+    rewritten, and running the change against a state nobody was shown is the
+    one failure that would look like a success. The seat pack is loaded first,
+    so a candidate that cannot run leaves no run directory behind.
+    """
+
+    seat_pack = load_seat_pack(binding.repository)
+    live = project_state(binding).state_digest
+    if live != base_state_digest:
+        raise StaleBaseError(
+            "STALE_BASE: the authored record changed after the proposal was "
+            f"made ({base_state_digest[:8]} -> {(live or 'none')[:8]})"
+        )
+    return seat_pack
+
+
+def _run_successor(
+    binding: ProjectBinding,
+    settings: StudioSettings,
+    seat_pack: Mapping[str, Any],
+    successor: StateRecord,
+    run_id: str,
+    *,
+    retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
+) -> Mapping[str, Any]:
+    """Create the run, retain what belongs to it, and hand the record to the runner.
+
+    The whole of this is arrangement, and it is one function so that every
+    kind of candidate runs under the same harness stage, the same seats and
+    the same options. ``retain`` is what the studio knows and the run records
+    do not — a compilation receipt, so far — written before the run starts.
+    """
+
+    repository = binding.repository
+    seats = seats_of(seat_pack)
+    run = repository.create_run(run_id)
+    for record_kind_, payload in retain:
         repository.put_json(
             run=run,
             destination=PersistenceDestination(
                 PersistenceArea.RUN_RECORD, run_id=run_id
             ),
-            record_kind=INTENT_COMPILATION,
-            payload={
-                "schema": "IntentCompilation@1",
-                "proposal_id": proposal.proposal_id,
-                "utterance": proposal.utterance,
-                "base_state_digest": proposal.base_state_digest,
-                "receipt": dict(proposal.compilation_receipt),
-            },
+            record_kind=record_kind_,
+            payload=payload,
         )
     # The one sanctioned binding: the record attaches itself to this run.
     bound = successor.bound_to(run)
@@ -279,11 +475,12 @@ class CandidateRun:
 
 def describe(
     binding: ProjectBinding,
-    proposal: Proposal,
+    proposal: Proposal | None,
     *,
     candidate_id: str,
     job_id: str,
     status: str,
+    proposal_id: str | None = None,
 ) -> CandidateRun:
     """Read one candidate run back out of the project, or refuse by name.
 
@@ -292,6 +489,11 @@ def describe(
     candidate reported here is one the project can still account for. The
     proposal is here for one thing only — the honesty lines, which are about
     what the *change* did not do rather than about what the run produced.
+
+    ``proposal`` is ``None`` for a candidate this process did not make from a
+    sentence — a selected massing option, or any candidate whose proposal was
+    lost with a restart — and ``proposal_id`` then names what the job was
+    submitted for. The run's own facts are unaffected: they are the records'.
     """
 
     if status in (QUEUED, RUNNING):
@@ -326,7 +528,11 @@ def describe(
     listing = list_artifacts(binding)
     return CandidateRun(
         candidate_id=candidate_id,
-        proposal_id=proposal.proposal_id,
+        proposal_id=(
+            proposal.proposal_id
+            if proposal is not None
+            else (proposal_id or job_id)
+        ),
         job_id=job_id,
         status=status,
         base=binding.load_run(candidate_id).base,
@@ -368,7 +574,7 @@ def describe(
 
 
 def _honesty(
-    proposal: Proposal, projection: StateProjection
+    proposal: Proposal | None, projection: StateProjection
 ) -> tuple[str, ...]:
     """What this candidate did not do, said out loud.
 
@@ -380,6 +586,16 @@ def _honesty(
     difference has to be on the wire, not in a design note somebody read once.
     """
 
+    if proposal is None:
+        # A selected massing option, or a proposal this process no longer
+        # holds. Either way the sentence that would say what the change
+        # reached is not here, and guessing one from the run records would be
+        # a claim about an intent nothing retained.
+        return (
+            "this candidate was not made from a proposal this process holds: "
+            "what it changed is stated by the records its run retained, not "
+            "by this readout",
+        )
     if proposal.impact.propagated:
         return (
             f"derived values downstream of {proposal.target_ref} were not "

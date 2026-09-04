@@ -36,12 +36,15 @@ import type {
   CandidateDto,
   CompareDto,
   GestureDto,
+  MassingOptionRequestDto,
+  OptionsDto,
   PendingIntentDto,
   FrameDto,
   ProjectArtifactDto,
   ProposalDto,
   StateProjectionDto,
   ValidationDto,
+  VolumesDto,
 } from "../api/generated";
 import type { GestureTool } from "../features/stage/Annotate";
 import {
@@ -55,6 +58,7 @@ import { Conversation } from "../features/conversation/Conversation";
 import type { Choice } from "../features/conversation/cards/QuestionCard";
 import type { Selection } from "../features/conversation/Composer";
 import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
+import { OptionsPanel } from "../features/options/OptionsPanel";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { FrameEditor } from "../features/stage/FrameEditor";
@@ -242,6 +246,15 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [frame, setFrame] = useState<Loadable<FrameDto>>(idle);
   const [frameOpen, setFrameOpen] = useState(false);
 
+  // The massing on the table: the record's own volumes, and the options this
+  // server process is holding beside them. Read on demand like the frame, and
+  // read again whenever the record underneath moves — a card measuring a
+  // record the tab has left is a number about a different building.
+  const [optionsTable, setOptionsTable] = useState<Loadable<OptionsDto>>(idle);
+  const [volumes, setVolumes] = useState<Loadable<VolumesDto>>(idle);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [optionsBusy, setOptionsBusy] = useState(false);
+
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [evidencePinned, setEvidencePinned] = useState(readPinned);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>("honesty");
@@ -316,6 +329,26 @@ export default function App({ server }: { server: ServerIdentity }) {
     if (!frameOpen || projection === null) return;
     void loadFrame();
   }, [frameOpen, projection?.recordDigest, loadFrame]);
+
+  const loadOptions = useCallback(async () => {
+    setOptionsTable(loading);
+    setVolumes(loading);
+    try {
+      setOptionsTable(ready(await studio.options()));
+    } catch (cause) {
+      setOptionsTable(failed(asStudioApiError(cause)));
+    }
+    try {
+      setVolumes(ready(await studio.volumes()));
+    } catch (cause) {
+      setVolumes(failed(asStudioApiError(cause)));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!optionsOpen || projection === null) return;
+    void loadOptions();
+  }, [optionsOpen, projection?.recordDigest, loadOptions]);
 
   const openLocalFile = useCallback((file: File) => {
     void viewportRef.current?.openFile(file);
@@ -1097,6 +1130,65 @@ export default function App({ server }: { server: ServerIdentity }) {
     [append, recoverFromStaleBase],
   );
 
+  /**
+   * One massing option, made by the server and put on the table.
+   *
+   * The browser computes nothing here: the transform and its parameters go to
+   * the server, which applies it to the record's own pack, measures the
+   * result, and refuses a massing the kernel would not build. A refusal is
+   * shown as itself.
+   */
+  const makeOption = useCallback(
+    async (body: MassingOptionRequestDto) => {
+      setOptionsBusy(true);
+      try {
+        await studio.makeOption(body);
+        setOptionsTable(ready(await studio.options()));
+      } catch (cause) {
+        const error = asStudioApiError(cause);
+        recoverFromStaleBase(error);
+        append({ kind: "refusal", error, what: "POST /api/options" });
+      } finally {
+        setOptionsBusy(false);
+      }
+    },
+    [append, recoverFromStaleBase],
+  );
+
+  /**
+   * Run one option as a candidate. It joins the transcript as the candidate
+   * card every other run gets — same job, same polling, same verdict — because
+   * a selected massing *is* a candidate run and a second kind of card for it
+   * would be a second vocabulary for one thing.
+   */
+  const selectOption = useCallback(
+    async (optionId: string) => {
+      setOptionsBusy(true);
+      manualLoadRef.current = false;
+      try {
+        const accepted = await studio.selectOption(optionId);
+        append({
+          kind: "candidate",
+          candidateId: accepted.candidateId,
+          jobId: accepted.jobId,
+          proposalId: optionId,
+          status: accepted.status,
+        });
+      } catch (cause) {
+        const error = asStudioApiError(cause);
+        recoverFromStaleBase(error);
+        append({
+          kind: "refusal",
+          error,
+          what: `POST /api/options/${optionId}/select`,
+        });
+      } finally {
+        setOptionsBusy(false);
+      }
+    },
+    [append, recoverFromStaleBase],
+  );
+
   // The transcript as of the last render, for callbacks that must stay
   // stable: a card's poll restarts whenever its reporter changes identity,
   // so the reporter reads the entries through a ref instead of closing over
@@ -1641,6 +1733,21 @@ export default function App({ server }: { server: ServerIdentity }) {
                   // is the architect's act and the refusal is the grammar's.
                   onPrefill={setDraft}
                   onClose={() => setFrameOpen(false)}
+                />
+              ) : null
+            }
+            optionsOpen={optionsOpen}
+            onToggleOptions={() => setOptionsOpen((open) => !open)}
+            optionsPanel={
+              optionsOpen ? (
+                <OptionsPanel
+                  table={optionsTable}
+                  volumes={volumes}
+                  stateDigest={projection?.stateDigest ?? null}
+                  busy={optionsBusy}
+                  onMake={(body) => void makeOption(body)}
+                  onSelect={(optionId) => void selectOption(optionId)}
+                  onClose={() => setOptionsOpen(false)}
                 />
               ) : null
             }

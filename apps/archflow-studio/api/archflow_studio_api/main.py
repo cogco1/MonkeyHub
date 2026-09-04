@@ -29,6 +29,7 @@ from .application.episodes import EpisodeStore
 from .application.events import StudioEvents
 from .application.intent_agent import compiler_from_settings
 from .application.jobs import JobRegistry
+from .application.options import OptionStore
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
 from .protocol import SERVER_VERSION
@@ -188,6 +189,11 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # it is one process's memory and is lost on restart.
     app.state.pending_intents = PendingIntentStore()
     app.state.controls = DeclaredControlStore()
+    # The massing options on the table. The option itself — its transform, its
+    # metrics, the state it was measured against — is this process's memory
+    # like the proposals above it; the pack each one carries is retained in a
+    # run of its own, so the shapes outlive the restart and the table does not.
+    app.state.options = OptionStore()
     # The judgements this process has made: which proposal was accepted,
     # rejected or modified, and why. Unlike everything above it, this one does
     # not stay in memory — a judgement is written into the candidate run it

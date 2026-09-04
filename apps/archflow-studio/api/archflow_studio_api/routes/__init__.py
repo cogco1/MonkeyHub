@@ -11,6 +11,7 @@ from . import (
     events,
     health,
     intents,
+    options,
     pick,
     project,
     projects,
@@ -32,6 +33,7 @@ router.include_router(pick.router)
 router.include_router(proposals.router)
 router.include_router(intents.router)
 router.include_router(controls.router)
+router.include_router(options.router)
 router.include_router(candidates.router)
 router.include_router(episodes.router)
 router.include_router(validation.router)

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, DecideProposalApiProposalsProposalIdDecisionPostData, DecideProposalApiProposalsProposalIdDecisionPostErrors, DecideProposalApiProposalsProposalIdDecisionPostResponses, DeclareApiControlsPostData, DeclareApiControlsPostErrors, DeclareApiControlsPostResponses, ListEpisodesApiEpisodesGetData, ListEpisodesApiEpisodesGetErrors, ListEpisodesApiEpisodesGetResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadControlApiControlsControlIdGetData, ReadControlApiControlsControlIdGetErrors, ReadControlApiControlsControlIdGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetData, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
+import type { CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, DecideProposalApiProposalsProposalIdDecisionPostData, DecideProposalApiProposalsProposalIdDecisionPostErrors, DecideProposalApiProposalsProposalIdDecisionPostResponses, DeclareApiControlsPostData, DeclareApiControlsPostErrors, DeclareApiControlsPostResponses, ListEpisodesApiEpisodesGetData, ListEpisodesApiEpisodesGetErrors, ListEpisodesApiEpisodesGetResponses, MakeMassingOptionApiOptionsPostData, MakeMassingOptionApiOptionsPostErrors, MakeMassingOptionApiOptionsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadControlApiControlsControlIdGetData, ReadControlApiControlsControlIdGetErrors, ReadControlApiControlsControlIdGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetData, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadOptionsApiOptionsGetData, ReadOptionsApiOptionsGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadVolumesApiStateVolumesGetData, ReadVolumesApiStateVolumesGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, SelectOptionApiOptionsOptionIdSelectPostData, SelectOptionApiOptionsOptionIdSelectPostErrors, SelectOptionApiOptionsOptionIdSelectPostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -81,6 +81,22 @@ export const readStateApiStateGet = <ThrowOnError extends boolean = false>(optio
  * and axes it declares.
  */
 export const readFrameApiStateFrameGet = <ThrowOnError extends boolean = false>(options?: Options<ReadFrameApiStateFrameGetData, ThrowOnError>): RequestResult<ReadFrameApiStateFrameGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadFrameApiStateFrameGetResponses, unknown, ThrowOnError>({ url: '/api/state/frame', ...options });
+
+/**
+ * Read Volumes
+ *
+ * The record's massing volumes, and what the massing as a whole measures.
+ *
+ * Separate from the frame rather than another field of it: the frame is what
+ * an *element* is positioned against — a level, a grid axis — and a
+ * ``Volume@1`` is positioned against neither. It declares its own box in the
+ * massing lattice, so it is its own resource.
+ *
+ * ``require_view=False`` for the same reason the frame reads that way: a
+ * record the kernel would not build a bound view for still declares its own
+ * volumes.
+ */
+export const readVolumesApiStateVolumesGet = <ThrowOnError extends boolean = false>(options?: Options<ReadVolumesApiStateVolumesGetData, ThrowOnError>): RequestResult<ReadVolumesApiStateVolumesGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadVolumesApiStateVolumesGetResponses, unknown, ThrowOnError>({ url: '/api/state/volumes', ...options });
 
 /**
  * Read Closure
@@ -197,6 +213,43 @@ export const declareApiControlsPost = <ThrowOnError extends boolean = false>(opt
  * Read Control
  */
 export const readControlApiControlsControlIdGet = <ThrowOnError extends boolean = false>(options: Options<ReadControlApiControlsControlIdGetData, ThrowOnError>): RequestResult<ReadControlApiControlsControlIdGetResponses, ReadControlApiControlsControlIdGetErrors, ThrowOnError> => (options.client ?? client).get<ReadControlApiControlsControlIdGetResponses, ReadControlApiControlsControlIdGetErrors, ThrowOnError>({ url: '/api/controls/{control_id}', ...options });
+
+/**
+ * Read Options
+ *
+ * The current record's massing as the baseline, and every option beside it.
+ *
+ * Options made against an older state stay on the table and keep saying
+ * which state they were made against: what an architect looked at an hour
+ * ago is not deleted because the record moved, and ``stateDigest`` per
+ * option is how a client greys one out rather than the server hiding it.
+ */
+export const readOptionsApiOptionsGet = <ThrowOnError extends boolean = false>(options?: Options<ReadOptionsApiOptionsGetData, ThrowOnError>): RequestResult<ReadOptionsApiOptionsGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadOptionsApiOptionsGetResponses, unknown, ThrowOnError>({ url: '/api/options', ...options });
+
+/**
+ * Make Massing Option
+ *
+ * Apply one deterministic transform to the record's massing and measure it.
+ */
+export const makeMassingOptionApiOptionsPost = <ThrowOnError extends boolean = false>(options: Options<MakeMassingOptionApiOptionsPostData, ThrowOnError>): RequestResult<MakeMassingOptionApiOptionsPostResponses, MakeMassingOptionApiOptionsPostErrors, ThrowOnError> => (options.client ?? client).post<MakeMassingOptionApiOptionsPostResponses, MakeMassingOptionApiOptionsPostErrors, ThrowOnError>({
+    url: '/api/options',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Select Option
+ *
+ * Run the selected option as a candidate; it does not become the record.
+ *
+ * The base is checked here, before the job is queued, for the same reason a
+ * proposal's is: running a massing against a state nobody was shown is the
+ * one failure that would look like a success.
+ */
+export const selectOptionApiOptionsOptionIdSelectPost = <ThrowOnError extends boolean = false>(options: Options<SelectOptionApiOptionsOptionIdSelectPostData, ThrowOnError>): RequestResult<SelectOptionApiOptionsOptionIdSelectPostResponses, SelectOptionApiOptionsOptionIdSelectPostErrors, ThrowOnError> => (options.client ?? client).post<SelectOptionApiOptionsOptionIdSelectPostResponses, SelectOptionApiOptionsOptionIdSelectPostErrors, ThrowOnError>({ url: '/api/options/{option_id}/select', ...options });
 
 /**
  * Start Candidate

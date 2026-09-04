@@ -143,16 +143,24 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
 
     state = request.app.state
     job: Job = state.jobs.for_candidate(candidate_id)
+    try:
+        # The proposal that was executed, for the honesty lines: what the
+        # change reached is a fact about the change, and the run records
+        # cannot answer it.
+        proposal = state.proposals.get(job.proposal_id)
+    except StudioError:
+        # Not a sentence: a selected massing option, whose job names the
+        # option rather than a proposal. The run's own facts are unchanged —
+        # they are the records' — and the readout says which it is.
+        proposal = None
     return candidate_dto(
         describe(
             bound_project(state),
-            # The proposal that was executed, for the honesty lines: what the
-            # change reached is a fact about the change, and the run records
-            # cannot answer it.
-            state.proposals.get(job.proposal_id),
+            proposal,
             candidate_id=candidate_id,
             job_id=job.job_id,
             status=job.status,
+            proposal_id=job.proposal_id,
         )
     )
 

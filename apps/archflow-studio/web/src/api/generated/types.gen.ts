@@ -986,6 +986,84 @@ export type ElementDto = {
 };
 
 /**
+ * EnvelopeDto
+ *
+ * The buildable envelope an option is measured against; every field optional.
+ *
+ * A field that is absent makes no finding: an envelope that says nothing
+ * about height cannot be exceeded in height, and the studio does not invent
+ * a limit the site did not state.
+ */
+export type EnvelopeDto = {
+    /**
+     * Min
+     *
+     * the buildable box's low corner, in the massing lattice (x and z are plan, y is up)
+     */
+    min?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Max
+     *
+     * the buildable box's high corner
+     */
+    max?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Maxheightm
+     */
+    maxHeightM?: number | null;
+    /**
+     * Far
+     *
+     * plot ratio; checked only with siteAreaM2
+     */
+    far?: number | null;
+    /**
+     * Siteaream2
+     */
+    siteAreaM2?: number | null;
+};
+
+/**
+ * EnvelopeFindingDto
+ *
+ * One way a massing leaves its envelope, with both numbers.
+ */
+export type EnvelopeFindingDto = {
+    /**
+     * Code
+     *
+     * volume_outside_envelope | height_exceeded | far_exceeded
+     */
+    code: string;
+    /**
+     * Subject
+     *
+     * the volume this is about; null for the massing as a whole
+     */
+    subject: string | null;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Measured
+     */
+    measured: number;
+    /**
+     * Limit
+     */
+    limit: number;
+};
+
+/**
  * EpisodeChangeDto
  *
  * The number the record had, and the number the option proposed.
@@ -1652,6 +1730,214 @@ export type JobDto = {
 };
 
 /**
+ * LevelFootprintDto
+ *
+ * One massing level and the plan area the volumes on it cover.
+ */
+export type LevelFootprintDto = {
+    /**
+     * Levelid
+     */
+    levelId: string;
+    /**
+     * Basey
+     */
+    baseY: number;
+    /**
+     * Height
+     */
+    height: number;
+    /**
+     * Footprintm2
+     */
+    footprintM2: number;
+};
+
+/**
+ * MassingMetricsDto
+ *
+ * What one massing measures, and what could not be measured.
+ */
+export type MassingMetricsDto = {
+    /**
+     * Footprintm2
+     *
+     * the ground the whole massing covers, counted once where volumes overlap
+     */
+    footprintM2: number;
+    /**
+     * Grossflooraream2
+     *
+     * the sum of the per-level footprints
+     */
+    grossFloorAreaM2: number;
+    /**
+     * Floorcount
+     */
+    floorCount: number;
+    /**
+     * Heightm
+     */
+    heightM: number;
+    /**
+     * Efficiency
+     *
+     * the program targets as a share of the floor area; null when no target was given
+     */
+    efficiency: number | null;
+    /**
+     * Perlevel
+     */
+    perLevel: Array<LevelFootprintDto>;
+    /**
+     * Honesty
+     */
+    honesty: Array<string>;
+};
+
+/**
+ * MassingOptionDto
+ *
+ * One option on the table.
+ */
+export type MassingOptionDto = {
+    /**
+     * Optionid
+     */
+    optionId: string;
+    /**
+     * Runid
+     *
+     * the run this option's pack is retained in
+     */
+    runId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Transform
+     */
+    transform: string;
+    /**
+     * Parameters
+     *
+     * what the transform was given, as it was given
+     */
+    parameters: {
+        [key: string]: unknown;
+    };
+    /**
+     * Statedigest
+     *
+     * the state this option was made against
+     */
+    stateDigest: string;
+    metrics: MassingMetricsDto;
+    /**
+     * Envelopefindings
+     */
+    envelopeFindings: Array<EnvelopeFindingDto>;
+    /**
+     * Recordref
+     *
+     * the retained selected-spatial-option this option is
+     */
+    recordRef: string;
+    /**
+     * Persistence
+     */
+    persistence: string;
+    /**
+     * Honesty
+     */
+    honesty: Array<string>;
+};
+
+/**
+ * MassingOptionRequestDto
+ *
+ * Ask for one option: which transform, on what, measured against what.
+ *
+ * The parameter fields are flat and optional because each transform reads
+ * only its own: ``shift_volume`` reads ``volumeId``, ``dx`` and ``dz``,
+ * ``split_volume`` reads ``volumeId``, ``along`` and ``at``, and ``pack``
+ * reads ``pack``. A parameter the named transform does not read is ignored;
+ * one it needs and does not get is a 422 that says which.
+ */
+export type MassingOptionRequestDto = {
+    /**
+     * Statedigest
+     *
+     * the stateDigest GET /api/state answered; an option made against another state is refused
+     */
+    stateDigest: string;
+    /**
+     * Transform
+     */
+    transform: 'add_floor' | 'remove_floor' | 'shift_volume' | 'scale_volume' | 'split_volume' | 'pack';
+    /**
+     * Label
+     */
+    label?: string | null;
+    /**
+     * Volumeid
+     */
+    volumeId?: string | null;
+    /**
+     * Dx
+     *
+     * whole plan cells on x
+     */
+    dx?: number | null;
+    /**
+     * Dz
+     *
+     * whole plan cells on z
+     */
+    dz?: number | null;
+    /**
+     * Sx
+     *
+     * plan scale on x, about the centre
+     */
+    sx?: number | null;
+    /**
+     * Sz
+     *
+     * plan scale on z, about the centre
+     */
+    sz?: number | null;
+    /**
+     * Along
+     */
+    along?: 'x' | 'z' | null;
+    /**
+     * At
+     *
+     * the first cell of the far part of a split
+     */
+    at?: number | null;
+    /**
+     * Pack
+     *
+     * a whole SchematicPack@1, for the pack transform
+     */
+    pack?: {
+        [key: string]: unknown;
+    } | null;
+    envelope?: EnvelopeDto | null;
+    /**
+     * Programtargets
+     *
+     * program node id to target area in m2; given, efficiency is their share of the gross floor area
+     */
+    programTargets?: {
+        [key: string]: number;
+    } | null;
+};
+
+/**
  * ModifiedToDto
  *
  * What the architect said instead, when the decision was ``modified``.
@@ -1697,6 +1983,32 @@ export type ObjectBindingDto = {
      * Detail
      */
     detail: string;
+};
+
+/**
+ * OptionsDto
+ *
+ * The wire form of ``GET /api/options``: the baseline and every option.
+ */
+export type OptionsDto = {
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * the current record's own massing, measured the same way
+     */
+    baseline: MassingMetricsDto;
+    /**
+     * Options
+     */
+    options: Array<MassingOptionDto>;
+    /**
+     * Transforms
+     *
+     * the whole transform vocabulary, so a client offers no button the server would refuse
+     */
+    transforms: Array<string>;
 };
 
 /**
@@ -2792,6 +3104,65 @@ export type ValidationReceiptDto = {
     findings: Array<ValidationFindingDto>;
 };
 
+/**
+ * VolumeDto
+ *
+ * One ``Volume@1`` a transform can name.
+ */
+export type VolumeDto = {
+    /**
+     * Volumeid
+     */
+    volumeId: string;
+    /**
+     * Min
+     */
+    min: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Max
+     */
+    max: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Levelids
+     */
+    levelIds: Array<string>;
+    /**
+     * Footprintm2
+     *
+     * this volume's own plan area
+     */
+    footprintM2: number;
+};
+
+/**
+ * VolumesDto
+ *
+ * The wire form of ``GET /api/state/volumes``.
+ *
+ * Separate from ``GET /api/state/frame`` on purpose: the frame is what an
+ * *element* is positioned against — levels and axes — and a massing volume
+ * is positioned against neither. It declares its own box.
+ */
+export type VolumesDto = {
+    /**
+     * Volumes
+     */
+    volumes: Array<VolumeDto>;
+    metrics: MassingMetricsDto;
+    /**
+     * Honesty
+     */
+    honesty: Array<string>;
+};
+
 export type ReadHealthApiHealthGetData = {
     body?: never;
     path?: never;
@@ -2933,6 +3304,22 @@ export type ReadFrameApiStateFrameGetResponses = {
 };
 
 export type ReadFrameApiStateFrameGetResponse = ReadFrameApiStateFrameGetResponses[keyof ReadFrameApiStateFrameGetResponses];
+
+export type ReadVolumesApiStateVolumesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/state/volumes';
+};
+
+export type ReadVolumesApiStateVolumesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: VolumesDto;
+};
+
+export type ReadVolumesApiStateVolumesGetResponse = ReadVolumesApiStateVolumesGetResponses[keyof ReadVolumesApiStateVolumesGetResponses];
 
 export type ReadClosureApiStateClosurePostData = {
     body: ClosureRequestDto;
@@ -3192,6 +3579,77 @@ export type ReadControlApiControlsControlIdGetResponses = {
 };
 
 export type ReadControlApiControlsControlIdGetResponse = ReadControlApiControlsControlIdGetResponses[keyof ReadControlApiControlsControlIdGetResponses];
+
+export type ReadOptionsApiOptionsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/options';
+};
+
+export type ReadOptionsApiOptionsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: OptionsDto;
+};
+
+export type ReadOptionsApiOptionsGetResponse = ReadOptionsApiOptionsGetResponses[keyof ReadOptionsApiOptionsGetResponses];
+
+export type MakeMassingOptionApiOptionsPostData = {
+    body: MassingOptionRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/options';
+};
+
+export type MakeMassingOptionApiOptionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MakeMassingOptionApiOptionsPostError = MakeMassingOptionApiOptionsPostErrors[keyof MakeMassingOptionApiOptionsPostErrors];
+
+export type MakeMassingOptionApiOptionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: MassingOptionDto;
+};
+
+export type MakeMassingOptionApiOptionsPostResponse = MakeMassingOptionApiOptionsPostResponses[keyof MakeMassingOptionApiOptionsPostResponses];
+
+export type SelectOptionApiOptionsOptionIdSelectPostData = {
+    body?: never;
+    path: {
+        /**
+         * Option Id
+         */
+        option_id: string;
+    };
+    query?: never;
+    url: '/api/options/{option_id}/select';
+};
+
+export type SelectOptionApiOptionsOptionIdSelectPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SelectOptionApiOptionsOptionIdSelectPostError = SelectOptionApiOptionsOptionIdSelectPostErrors[keyof SelectOptionApiOptionsOptionIdSelectPostErrors];
+
+export type SelectOptionApiOptionsOptionIdSelectPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: CandidateAcceptedDto;
+};
+
+export type SelectOptionApiOptionsOptionIdSelectPostResponse = SelectOptionApiOptionsOptionIdSelectPostResponses[keyof SelectOptionApiOptionsOptionIdSelectPostResponses];
 
 export type StartCandidateApiProposalsProposalIdCandidatePostData = {
     body?: never;
