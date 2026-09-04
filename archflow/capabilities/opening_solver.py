@@ -8,6 +8,12 @@ a project coordinate. Every member binds ``base_level`` to the storey
 datum and rides its own seat height as ``base_offset``; the wall's cut
 result is the assembly's HOST_CUT member, so the compiler sees the void,
 the frame and the infill as one hosted assembly at ENVELOPE maturity.
+
+An opening id is unique inside its wall, not inside the building: three
+facades may each call their opening ``window``. Every id this module
+mints — member operations, the objects they output, the assembly and its
+socket — is therefore scoped by the hosting wall's element id, the same
+way the wall solver names its own ``<wall>-void-<opening>`` tools.
 """
 from __future__ import annotations
 
@@ -126,6 +132,26 @@ class OpeningSolution:
         return tuple(sorted(o for op in self.operations for o in op.output_object_ids))
 
 
+def _scoped(void: HostedVoid) -> str:
+    """The opening id under the wall that hosts it: ``<wall>-<opening>``.
+
+    A record whose three walls each carry an opening called ``window``
+    would otherwise mint the same member operation id three times. A
+    record that already named the opening under its wall is not doubled.
+    """
+
+    wall_id = void.wall.wall_id
+    opening_id = void.opening_id
+    if opening_id == wall_id or opening_id.startswith(f"{wall_id}-"):
+        return opening_id
+    scoped = f"{wall_id}-{opening_id}"
+    try:
+        require_identifier(scoped, f"opening {opening_id} scoped by wall {wall_id}")
+    except ValueError as exc:
+        raise OpeningSolverError(str(exc)) from exc
+    return scoped
+
+
 def _box(void: HostedVoid, op_id: str, binding_id: str, along0: float, along1: float,
          across0: float, across1: float, seat: float, height: float) -> GeometryOperation:
     if along1 <= along0 or across1 <= across0 or height <= 0.0:
@@ -182,13 +208,13 @@ def _bind(op: GeometryOperation, datum_id: str) -> DatumBinding:
     return DatumBinding(binding_id=f"bind-{op.op_id}", datum_id=datum_id, op_id=op.op_id, parameter_name="base_level")
 
 
-def _assembly(void: HostedVoid, kind: AssemblyKind, members: dict[AssemblyRole, tuple[str, ...]], binding_id: str, interface_ref: str) -> HostedAssembly:
+def _assembly(void: HostedVoid, scoped: str, kind: AssemblyKind, members: dict[AssemblyRole, tuple[str, ...]], binding_id: str, interface_ref: str) -> HostedAssembly:
     members[AssemblyRole.HOST_CUT] = tuple(void.aperture_object_ids)
     return HostedAssembly(
-        assembly_id=f"{void.opening_id}-assembly",
+        assembly_id=f"{scoped}-assembly",
         kind=kind,
         host_object_id=void.host_object_id,
-        host_socket_id=f"void-{void.opening_id}",
+        host_socket_id=f"void-{scoped}",
         members=tuple(AssemblyMember(role, ids) for role, ids in sorted(members.items(), key=lambda item: item[0].value)),
         interface_refs=(interface_ref,),
         semantic_binding_ids=(binding_id,),
@@ -216,7 +242,7 @@ def solve_window(void: HostedVoid, window: WindowType, *, binding_id: str, inter
         )
     a0, a1, sill, head = void.along0, void.along1, void.sill, void.head
     f0, f1 = -window.frame_projection, -window.frame_projection + window.frame_depth
-    oid = void.opening_id
+    oid = _scoped(void)
     frame = (
         _box(void, f"frame-{oid}-bottom", binding_id, a0, a1, f0, f1, sill, fw),
         _box(void, f"frame-{oid}-left", binding_id, a0, a0 + fw, f0, f1, sill, head - sill),
@@ -229,12 +255,12 @@ def solve_window(void: HostedVoid, window: WindowType, *, binding_id: str, inter
     members = (*frame, pane)
     operations = tuple(sorted(members + _arrayed(void, members, binding_id), key=lambda o: o.op_id))
     datum = void.wall.base_level_datum_id
-    assembly = _assembly(void, AssemblyKind.WINDOW, {
+    assembly = _assembly(void, oid, AssemblyKind.WINDOW, {
         AssemblyRole.FRAME: tuple(sorted(_placed(o, void) for o in frame)),
         AssemblyRole.GLAZING: (_placed(pane, void),),
     }, binding_id, interface_ref)
     return OpeningSolution(
-        opening_id=oid, operations=operations,
+        opening_id=void.opening_id, operations=operations,
         datum_bindings=tuple(sorted((_bind(o, datum) for o in members), key=lambda b: b.binding_id)),
         assembly=assembly,
     )
@@ -256,7 +282,7 @@ def solve_door(void: HostedVoid, door: DoorType, *, binding_id: str, interface_r
         )
     a0, a1, sill, head = void.along0, void.along1, void.sill, void.head
     f0, f1 = -door.frame_projection, -door.frame_projection + door.frame_depth
-    oid = void.opening_id
+    oid = _scoped(void)
     frame = (
         _box(void, f"door-frame-{oid}-left", binding_id, a0, a0 + fw, f0, f1, sill, head - sill),
         _box(void, f"door-frame-{oid}-right", binding_id, a1 - fw, a1, f0, f1, sill, head - sill),
@@ -277,12 +303,12 @@ def solve_door(void: HostedVoid, door: DoorType, *, binding_id: str, interface_r
     members = (*frame, *leaves)
     operations = tuple(sorted(members + _arrayed(void, members, binding_id), key=lambda o: o.op_id))
     datum = void.wall.base_level_datum_id
-    assembly = _assembly(void, AssemblyKind.DOOR, {
+    assembly = _assembly(void, oid, AssemblyKind.DOOR, {
         AssemblyRole.FRAME: tuple(sorted(_placed(o, void) for o in frame)),
         AssemblyRole.LEAF: tuple(sorted(_placed(o, void) for o in leaves)),
     }, binding_id, interface_ref)
     return OpeningSolution(
-        opening_id=oid, operations=operations,
+        opening_id=void.opening_id, operations=operations,
         datum_bindings=tuple(sorted((_bind(o, datum) for o in members), key=lambda b: b.binding_id)),
         assembly=assembly,
     )

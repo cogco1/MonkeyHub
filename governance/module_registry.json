@@ -607,7 +607,8 @@
         "WindowType and DoorType: the proportions of one opening family (frame width/depth/projection, glazing or leaf thickness, offsets, leaf count and clearances)",
         "solving a void into frame members, a pane, or jambs/head plus one or two leaves",
         "the arrayed form: one member definition placed void.count times along the wall",
-        "assembling the members into a HostedAssembly with its roles and interface reference"
+        "assembling the members into a HostedAssembly with its roles and interface reference",
+        "naming what it mints under the wall that hosts the opening: member operations, their objects, the assembly and its socket"
       ],
       "does_not_own": [
         "where the opening is, how big it is, or which storey it belongs to - capabilities.wall_solver's HostedVoid says",
@@ -648,16 +649,19 @@
       ],
       "used_by": [
         "archflow/capabilities/element_producers.py",
+        "tests/test_element_producers.py",
         "archive/tests/test_wall_window_families.py",
         "archive/tests/test_type_instance_propagation.py"
       ],
       "invariants": [
         "a type carries proportions only - no position, no level, no absolute size",
         "every member is placed relative to the void the wall granted",
-        "a void whose opening id has no type fails OpeningSolverError rather than being left empty"
+        "a void whose opening id has no type fails OpeningSolverError rather than being left empty",
+        "member operation ids are scoped by the hosting wall: an opening id is unique inside its wall, not inside the building, and a wall id already prefixing the opening id is not doubled"
       ],
       "status": "canonical",
       "tests": [
+        "tests/test_element_producers.py",
         "archive/tests/test_wall_window_families.py",
         "archive/tests/test_type_instance_propagation.py"
       ],

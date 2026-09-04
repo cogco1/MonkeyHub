@@ -126,6 +126,58 @@ class VerticalSliceTests(unittest.TestCase):
             self.assertAlmostEqual(b[oid]["bbox_min"][1] - a[oid]["bbox_min"][1], 7.0 - 6.426)                     # the chain moved as one
 
 
+WINDOW_TYPE = {"schema": "WindowType@1", "type_id": "window-type-1", "frame_width": 0.09, "frame_depth": 0.18,
+               "frame_projection": 0.1, "glazing_thickness": 0.025, "glazing_offset": 0.01}
+
+
+def _wall_row(element_id: str, axis_from: str, axis_to: str, opening_id: str = "window") -> ElementRow:
+    """A wall on the west facade line carrying one typed opening of its own."""
+
+    return ElementRow(
+        element_id, "envelope", "wall",
+        {"base": {"level": PN}, "line": {"from": {"grid": [axis_from, "W"]}, "to": {"grid": [axis_to, "W"]}}},
+        {"thickness": 0.3, "height": 3.0, "types": [WINDOW_TYPE],
+         "openings": [{"opening_id": opening_id, "kind": "window", "along": 0.8, "width": 1.2,
+                       "sill": 0.9, "head": 2.4, "type_id": "window-type-1"}]},
+        BASIS,
+    )
+
+
+class OpeningIdScopeTests(unittest.TestCase):
+    """An opening id is unique inside its wall; the operation id says which wall."""
+
+    def test_one_wall_names_its_opening_members_under_the_wall(self) -> None:
+        produced, _ = _produce((_wall_row("wall-south", "1", "2"),))
+        ops = {op.op_id for op in produced[0].operations}
+        self.assertLessEqual(
+            {"frame-wall-south-window-bottom", "frame-wall-south-window-left", "frame-wall-south-window-right",
+             "frame-wall-south-window-top", "glazing-wall-south-window"}, ops)
+        self.assertEqual([a.assembly_id for a in produced[0].assemblies], ["wall-south-window-assembly"])
+        self.assertEqual(produced[0].assemblies[0].host_socket_id, "void-wall-south-window")
+        self.assertEqual({op.output_object_ids[0] for op in produced[0].operations if op.op_id.startswith("glazing-")},
+                         {"obj-glazing-wall-south-window"})
+        # the wall's own operations are untouched by the scoping
+        self.assertLessEqual({"wall-south", "wall-south-void-window", "wall-south-aperture-window", "wall-south-cut"}, ops)
+
+    def test_three_walls_may_each_carry_an_opening_called_window(self) -> None:
+        rows = (_wall_row("wall-south", "1", "2"), _wall_row("wall-middle", "3", "4"), _wall_row("wall-north", "5", "6"))
+        produced, _ = _produce(rows)
+        op_ids = [op.op_id for element in produced for op in element.operations]
+        object_ids = [oid for element in produced for op in element.operations for oid in op.output_object_ids]
+        self.assertEqual(len(op_ids), len(set(op_ids)))                          # what element_producers refused before
+        self.assertEqual(len(object_ids), len(set(object_ids)))
+        self.assertEqual(sorted(a.assembly_id for e in produced for a in e.assemblies),
+                         ["wall-middle-window-assembly", "wall-north-window-assembly", "wall-south-window-assembly"])
+        for wall in ("wall-south", "wall-middle", "wall-north"):
+            self.assertIn(f"glazing-{wall}-window", op_ids)
+
+    def test_a_wall_that_already_prefixes_its_opening_is_not_doubled(self) -> None:
+        produced, _ = _produce((_wall_row("wall-south", "1", "2", opening_id="wall-south-window"),))
+        op_ids = {op.op_id for op in produced[0].operations}
+        self.assertIn("glazing-wall-south-window", op_ids)
+        self.assertNotIn("glazing-wall-south-wall-south-window", op_ids)
+
+
 class AuthoredRecordTests(unittest.TestCase):
     """A record is producible from its own levels, grids and references."""
 
