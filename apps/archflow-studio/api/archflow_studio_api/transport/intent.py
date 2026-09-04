@@ -131,6 +131,10 @@ class IntentRequestDto(BaseModel):
         "circles, arrows, keep and remove marks, with the objects under them; "
         "the server resolves them and reads them beside the sentence",
     )
+    camera: CameraDto | None = Field(
+        default=None,
+        description="where the viewer stands: reads 'left' and 'right' against the project's compass (PROJECT.md)",
+    )
     continuation_token: str | None = Field(
         alias="continuationToken",
         default=None,
@@ -299,6 +303,14 @@ class AuthoredControlDraftDto(BaseModel):
     confidence: str = Field(description="how much those readings agreed: high, medium, low")
     dependency_requirements: list[str] = Field(alias="dependencyRequirements")
     suggested_action: str = Field(alias="suggestedAction")
+    catalog_status: str | None = Field(
+        alias="catalogStatus",
+        default=None,
+        description="MODEL_VISIBLE_CATALOG_MISSING: the model shows objects of the component that no Element@1 row produced; DECLARED_ONLY: no objects either",
+    )
+    object_names: list[str] = Field(
+        alias="objectNames", default_factory=list, description="the model's objects of the component, as the catalog binds them"
+    )
 
 
 class IntentBlockedDto(BaseModel):
@@ -383,6 +395,8 @@ def pending_dto(pending: PendingIntent) -> PendingIntentDto:
 
 def draft_dto(draft: AuthoredControlDraft) -> AuthoredControlDraftDto:
     return AuthoredControlDraftDto(
+        catalog_status=draft.catalog_status,
+        object_names=list(draft.object_names),
         target_component_id=draft.target_component_id,
         suggested_element_id=draft.suggested_element_id,
         semantic_property=draft.semantic_property,

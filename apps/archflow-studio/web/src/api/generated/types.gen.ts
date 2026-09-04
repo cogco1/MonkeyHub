@@ -140,6 +140,18 @@ export type AuthoredControlDraftDto = {
      * Suggestedaction
      */
     suggestedAction: string;
+    /**
+     * Catalogstatus
+     *
+     * MODEL_VISIBLE_CATALOG_MISSING: the model shows objects of the component that no Element@1 row produced; DECLARED_ONLY: no objects either
+     */
+    catalogStatus?: string | null;
+    /**
+     * Objectnames
+     *
+     * the model's objects of the component, as the catalog binds them
+     */
+    objectNames?: Array<string>;
 };
 
 /**
@@ -778,6 +790,113 @@ export type CoverageDto = {
 };
 
 /**
+ * DeclareControlRequestDto
+ *
+ * The draft the architect confirms, against the state it was drafted for.
+ */
+export type DeclareControlRequestDto = {
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Utterance
+     *
+     * the request that ended in MISSING_EDITABLE_CONTROL
+     */
+    utterance: string;
+    draft: AuthoredControlDraftDto;
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+};
+
+/**
+ * DeclaredControlDto
+ */
+export type DeclaredControlDto = {
+    /**
+     * Controlid
+     */
+    controlId: string;
+    /**
+     * Status
+     *
+     * proposed: held in this process, written nowhere
+     */
+    status: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Requestedproperty
+     */
+    requestedProperty: string | null;
+    /**
+     * Utterance
+     */
+    utterance: string;
+    /**
+     * Suggestedelementid
+     */
+    suggestedElementId: string;
+    /**
+     * Producer
+     */
+    producer: string | null;
+    /**
+     * Binding
+     */
+    binding: string | null;
+    /**
+     * Unit
+     */
+    unit: string | null;
+    /**
+     * Provenance
+     */
+    provenance: Array<string>;
+    /**
+     * Confidence
+     */
+    confidence: string;
+    /**
+     * Dependencyrequirements
+     */
+    dependencyRequirements: Array<string>;
+    /**
+     * Suggestedaction
+     */
+    suggestedAction: string;
+    /**
+     * Catalogstatus
+     */
+    catalogStatus: string | null;
+    /**
+     * Objectnames
+     */
+    objectNames: Array<string>;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Honesty
+     */
+    honesty: Array<string>;
+    /**
+     * Persistence
+     */
+    persistence: string;
+};
+
+/**
  * DependencyEdgeDto
  *
  * One kernel dependency edge, with the refs still prefixed.
@@ -1125,6 +1244,10 @@ export type IntentRequestDto = {
      * what the architect drew on the model with the words: circles, arrows, keep and remove marks, with the objects under them; the server resolves them and reads them beside the sentence
      */
     gestures?: Array<GestureDto>;
+    /**
+     * where the viewer stands: reads 'left' and 'right' against the project's compass (PROJECT.md)
+     */
+    camera?: CameraDto | null;
     /**
      * Continuationtoken
      *
@@ -2535,6 +2658,61 @@ export type CompileIntentApiIntentsPostResponses = {
 };
 
 export type CompileIntentApiIntentsPostResponse = CompileIntentApiIntentsPostResponses[keyof CompileIntentApiIntentsPostResponses];
+
+export type DeclareApiControlsPostData = {
+    body: DeclareControlRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/controls';
+};
+
+export type DeclareApiControlsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeclareApiControlsPostError = DeclareApiControlsPostErrors[keyof DeclareApiControlsPostErrors];
+
+export type DeclareApiControlsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DeclaredControlDto;
+};
+
+export type DeclareApiControlsPostResponse = DeclareApiControlsPostResponses[keyof DeclareApiControlsPostResponses];
+
+export type ReadControlApiControlsControlIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Control Id
+         */
+        control_id: string;
+    };
+    query?: never;
+    url: '/api/controls/{control_id}';
+};
+
+export type ReadControlApiControlsControlIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadControlApiControlsControlIdGetError = ReadControlApiControlsControlIdGetErrors[keyof ReadControlApiControlsControlIdGetErrors];
+
+export type ReadControlApiControlsControlIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeclaredControlDto;
+};
+
+export type ReadControlApiControlsControlIdGetResponse = ReadControlApiControlsControlIdGetResponses[keyof ReadControlApiControlsControlIdGetResponses];
 
 export type StartCandidateApiProposalsProposalIdCandidatePostData = {
     body?: never;

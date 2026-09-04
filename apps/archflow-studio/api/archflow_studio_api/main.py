@@ -24,6 +24,7 @@ import uvicorn
 
 from . import routes
 from .application.clarification import PendingIntentStore
+from .application.controls import DeclaredControlStore
 from .application.events import StudioEvents
 from .application.intent_agent import compiler_from_settings
 from .application.jobs import JobRegistry
@@ -185,6 +186,7 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # the truth about what was asked; this is, and like everything above it,
     # it is one process's memory and is lost on restart.
     app.state.pending_intents = PendingIntentStore()
+    app.state.controls = DeclaredControlStore()
     # Who compiles an architect's sentence into the grammar: nobody (the
     # deterministic pass-through), a local codex process, or the Anthropic
     # API — chosen by the settings this app was built with, held here so a

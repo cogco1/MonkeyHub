@@ -37,6 +37,8 @@ it.
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass
 import re
 from typing import Mapping, Sequence
@@ -253,6 +255,55 @@ def viewer_side_in(text: str) -> str | None:
     return names[0] if names else None
 
 
+def compass_side(
+    relative: str, camera: Mapping[str, object] | None, compass: Mapping[str, Sequence[float]] | None
+) -> str | None:
+    """Which compass side "left" (etc.) is from where the camera stands.
+
+    Needs both the request's camera and the project's compass (PROJECT.md: which
+    world direction is north). Without either the word cannot be read and stays
+    a slot the architect fills.
+    """
+
+    if camera is None or compass is None:
+        return None
+    try:
+        position = camera["position"]  # type: ignore[index]
+        target = camera["target"]  # type: ignore[index]
+        view = (float(target[0]) - float(position[0]), float(target[1]) - float(position[1]))  # type: ignore[index]
+    except (KeyError, TypeError, ValueError, IndexError):
+        return None
+    length = math.hypot(*view)
+    if length == 0:
+        return None
+    view = (view[0] / length, view[1] / length)
+    vectors = {
+        "front": view,
+        "back": (-view[0], -view[1]),
+        "left": (-view[1], view[0]),
+        "right": (view[1], -view[0]),
+    }
+    wanted = vectors.get(relative)
+    if wanted is None:
+        return None
+    best: tuple[float, str] | None = None
+    for side in ("north", "east", "south", "west"):
+        axis = compass.get(side)
+        if axis is None:
+            continue
+        try:
+            ax = (float(axis[0]), float(axis[1]))
+        except (TypeError, ValueError, IndexError):
+            continue
+        norm = math.hypot(*ax)
+        if norm == 0:
+            continue
+        score = (ax[0] * wanted[0] + ax[1] * wanted[1]) / norm
+        if best is None or score > best[0]:
+            best = (score, side)
+    return best[1] if best is not None and best[0] > 0.5 else None
+
+
 def is_correction(text: str) -> bool:
     """Whether this reply refuses what was offered rather than adding to it."""
 
@@ -317,6 +368,11 @@ class AuthoredControlDraft:
     confidence: str
     dependency_requirements: tuple[str, ...]
     suggested_action: str
+    # What the catalog (GET /api/state.catalog) says about the component: MODEL_VISIBLE_CATALOG_MISSING
+    # when the model shows objects of it that no Element@1 row produced, DECLARED_ONLY when it has
+    # no objects either; the objects are named so the declaration has its provenance.
+    catalog_status: str | None = None
+    object_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -565,15 +621,23 @@ def _refused(element_id: str | None, rejected: Sequence[str]) -> bool:
     return any(ref.startswith(f"element:{element_id}") for ref in rejected)
 
 
-def _match_by_id(projection: StateProjection, utterance: str) -> tuple[str, ...]:
-    """Components the request names outright, longest identifier first."""
+def _match_by_id(
+    projection: StateProjection, utterance: str, aliases: Mapping[str, str] | None = None
+) -> tuple[str, ...]:
+    """Components the request names outright - by identifier, or by a name the
+    project's PROJECT.md declares for one - longest identifier first."""
 
     haystack = _normalised(utterance)
+    parents = _component_parents(projection)
     named = [
         component_id
-        for component_id in _component_parents(projection)
+        for component_id in parents
         if f" {_normalised(component_id).strip()} " in haystack
     ]
+    lowered = utterance.lower()
+    for phrase, component_id in (aliases or {}).items():
+        if component_id in parents and component_id not in named and phrase and phrase.lower() in lowered:
+            named.append(component_id)
     named.sort(key=len, reverse=True)
     return tuple(named)
 
@@ -628,6 +692,7 @@ def _resolve_target(
     picked: Selection | None,
     pending: PendingIntent | None,
     rejected: Sequence[str],
+    aliases: Mapping[str, str] | None = None,
 ) -> _Target:
     """Which thing the request is about, from the tree and an explicit choice.
 
@@ -648,7 +713,7 @@ def _resolve_target(
     thing they replaced is written into ``rejectedCandidates``.
     """
 
-    named_ids = _match_by_id(projection, utterance)
+    named_ids = _match_by_id(projection, utterance, aliases)
     by_kind = _match_by_kind(projection, utterance, rejected)
     correcting = pending is not None and is_correction(utterance)
 
@@ -705,6 +770,8 @@ def _slots(
     utterance: str,
     semantic_property: str | None,
     has_camera: bool,
+    camera: Mapping[str, object] | None = None,
+    compass_axes: Mapping[str, Sequence[float]] | None = None,
 ) -> tuple[dict[str, str], list[str]]:
     """What the request already says, and what it still leaves open."""
 
@@ -716,6 +783,15 @@ def _slots(
     side = viewer_side_in(utterance)
     if compass is not None:
         known[SLOT_ORIENTATION] = compass
+    elif side is not None and camera is not None and compass_axes is not None:
+        # "Left" read from where the camera stands, against the project's compass:
+        # it becomes a side the record can carry. Undecidable (the camera looks
+        # along the axis) stays a slot.
+        cardinal = compass_side(side, camera, compass_axes)
+        if cardinal is not None:
+            known[SLOT_ORIENTATION] = cardinal
+        else:
+            missing.append(SLOT_ORIENTATION)
     elif side is not None and has_camera:
         known[SLOT_ORIENTATION] = side
     elif side is not None:
@@ -766,6 +842,8 @@ def _draft(
     *,
     component_id: str,
     semantic_property: str | None,
+    catalog_status: str | None = None,
+    object_names: tuple[str, ...] = (),
 ) -> AuthoredControlDraft:
     """A control this component would need, read off the elements around it.
 
@@ -801,7 +879,7 @@ def _draft(
     provenance = tuple(
         f"element:{element.element_id} (producer {element.producer})"
         for element in read_from
-    )
+    ) + tuple(f"object:{name}" for name in object_names[:12])
     requirements: list[str] = [
         f"an Element@1 under component {component_id}, with a producer and a base reference",
     ]
@@ -842,7 +920,89 @@ def _draft(
             f"author a control for {component_id} from the model that already "
             "exists, then confirm it; nothing is written until somebody does"
         ),
+        catalog_status=catalog_status,
+        object_names=object_names,
     )
+
+
+_INCREASE_WORDS = ("提高", "升高", "加高", "抬高", "增高", "加大", "增加", "raise", "increase", "taller", "higher", "up by", "longer", "wider", "thicker")
+_DECREASE_WORDS = ("降低", "减低", "压低", "缩短", "减小", "减少", "lower", "decrease", "shorter", "reduce", "down by", "thinner", "narrower")
+_DELTA = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*(mm|cm|m|毫米|厘米|米)(?![a-z])", re.I)
+_UNIT_TO_M = {"mm": 0.001, "毫米": 0.001, "cm": 0.01, "厘米": 0.01, "m": 1.0, "米": 1.0}
+
+
+def grammar_sentence_for(utterance: str, *, resolution: Resolution, projection: StateProjection) -> str | None:
+    """The grammar sentence an absolute delta means, when the request already resolved to one
+    element and one numeric field: "提高 0.1m" on a height of 9.798 is ``set height to 9.898``.
+
+    Only a number with a length unit and a direction word is read; "略微" or a bare "提高" is
+    not a number and stays the value slot the architect fills. Element params are bare numbers
+    in metres (the record's unit), so mm and cm are converted and a bare "m" is taken as is.
+    """
+
+    pending = resolution.pending
+    element_id = pending.element_id
+    key = pending.requested_semantic_property
+    if element_id is None or key is None:
+        return None
+    match = _DELTA.search(utterance)
+    if match is None:
+        return None
+    lowered = utterance.lower()
+    if any(w in lowered for w in _INCREASE_WORDS):
+        sign = 1.0
+    elif any(w in lowered for w in _DECREASE_WORDS):
+        sign = -1.0
+    else:
+        return None
+    element = next((e for e in projection.elements if e.element_id == element_id), None)
+    if element is None or key not in element.numeric_fields:
+        return None
+    old = element.numeric_fields[key]
+    delta = float(match.group(1)) * _UNIT_TO_M[match.group(2).lower()]
+    new = round(float(old) + sign * delta, 6)
+    return f"set {key} to {new}"
+
+
+def _editable_by_catalog(projection: StateProjection, component_id: str, catalog: object | None):
+    """The editable descendants of a component: the catalog's when one is given (the one
+    directory), else the projection's own reading."""
+
+    if catalog is None:
+        return editable_descendants(projection, component_id)
+    try:
+        ids = {element.element_id for element in catalog.editable_descendants(component_id)}  # type: ignore[attr-defined]
+    except AttributeError:
+        return editable_descendants(projection, component_id)
+    return [element for element in projection.elements if element.element_id in ids]
+
+
+def _catalog_says(catalog: object | None, component_id: str) -> tuple[str | None, tuple[str, ...]]:
+    """What the catalog shows for a component with no editable element: the objects the model
+    has of it (MODEL_VISIBLE_CATALOG_MISSING) or nothing at all (DECLARED_ONLY)."""
+
+    if catalog is None:
+        return None, ()
+    try:
+        component = catalog.component(component_id)  # type: ignore[attr-defined]
+        if component is None:
+            return None, ()
+        subtree = {component_id}
+        frontier = list(component.children)
+        while frontier:
+            child = frontier.pop()
+            if child in subtree:
+                continue
+            subtree.add(child)
+            node = catalog.component(child)  # type: ignore[attr-defined]
+            if node is not None:
+                frontier.extend(node.children)
+        names = tuple(sorted(o.name for o in catalog.objects if o.component_id in subtree))  # type: ignore[attr-defined]
+    except AttributeError:
+        return None, ()
+    if names:
+        return "MODEL_VISIBLE_CATALOG_MISSING", names
+    return "DECLARED_ONLY", ()
 
 
 def _missing_control(
@@ -858,6 +1018,7 @@ def _missing_control(
     previous: PendingIntent | None,
     state_digest: str | None,
     neighbour: str | None,
+    catalog: object | None = None,
 ) -> Resolution:
     """The terminal answer: it is in the model and it has no control.
 
@@ -887,6 +1048,13 @@ def _missing_control(
             f" {neighbour} carries a field of that name and belongs to another "
             "component; it is not a substitute and this seam will not offer it."
         )
+    catalog_status, object_names = _catalog_says(catalog, component_id)
+    if catalog_status == "MODEL_VISIBLE_CATALOG_MISSING":
+        detail += (
+            f" The model shows {len(object_names)} object(s) of {component_id} that no "
+            "Element@1 row produced (MODEL_VISIBLE_CATALOG_MISSING): re-index the model "
+            "or author the control."
+        )
     pending = _pending(
         state_digest=state_digest,
         original_utterance=utterance,
@@ -909,7 +1077,11 @@ def _missing_control(
         question=None,
         detail=detail,
         draft=_draft(
-            projection, component_id=component_id, semantic_property=semantic_property
+            projection,
+            component_id=component_id,
+            semantic_property=semantic_property,
+            catalog_status=catalog_status,
+            object_names=object_names,
         ),
     )
 
@@ -995,8 +1167,17 @@ def resolve(
     picked: Selection | None = None,
     has_camera: bool = False,
     pending: PendingIntent | None = None,
+    camera: Mapping[str, object] | None = None,
+    compass: Mapping[str, Sequence[float]] | None = None,
+    aliases: Mapping[str, str] | None = None,
+    catalog: object | None = None,
 ) -> Resolution:
     """What this request is, before anyone tries to compile it.
+
+    ``camera`` (the request's) and ``compass`` (PROJECT.md's) read a viewer word
+    into a side; ``aliases`` (PROJECT.md's names) name components outright;
+    ``catalog`` (the studio's derived catalog) is the one directory of editable
+    elements and of what the model shows without a row.
 
     Three of the four answers are reached here, without a model: an action no
     grammar expresses, a target the record cannot resolve, and a component whose
@@ -1010,7 +1191,11 @@ def resolve(
         pending.requested_semantic_property if pending is not None else None
     )
     known, missing = _slots(
-        utterance=utterance, semantic_property=semantic_property, has_camera=has_camera
+        utterance=utterance,
+        semantic_property=semantic_property,
+        has_camera=has_camera or camera is not None,
+        camera=camera,
+        compass_axes=compass,
     )
     target = _resolve_target(
         projection,
@@ -1019,6 +1204,7 @@ def resolve(
         picked=picked,
         pending=pending,
         rejected=rejected,
+        aliases=aliases,
     )
     declaring = declares_a_control(utterance) or (
         pending is not None and pending.action_kind == DECLARE_MISSING_CONTROL
@@ -1068,9 +1254,10 @@ def resolve(
                 semantic_property=semantic_property,
                 rejected=rejected,
             ),
+            catalog=catalog,
         )
 
-    editable = editable_descendants(projection, target.component_id)
+    editable = _editable_by_catalog(projection, target.component_id, catalog)
     if not editable:
         return _advance_or(
             pending,
@@ -1093,6 +1280,7 @@ def resolve(
                     semantic_property=semantic_property,
                     rejected=rejected,
                 ),
+                catalog=catalog,
             ),
         )
 
@@ -1104,6 +1292,13 @@ def resolve(
             ref.startswith(f"element:{element.element_id}.") for ref in rejected
         )
     ]
+    # An orientation the request settled narrows the candidates to the elements
+    # that carry that side in their own identity; it never introduces one.
+    wanted_side = known.get(SLOT_ORIENTATION)
+    if wanted_side in ("north", "east", "south", "west") and len(allowed) > 1:
+        sided = [element for element in allowed if compass_in(element.element_id) == wanted_side]
+        if sided:
+            allowed = sided
     if not allowed:
         return _advance_or(
             pending,
@@ -1121,6 +1316,7 @@ def resolve(
                 previous=pending,
                 state_digest=projection.state_digest,
                 neighbour=None,
+                catalog=catalog,
             ),
         )
 

@@ -28,6 +28,8 @@ from dataclasses import replace
 
 from ..application import clarification
 from ..application.binding import bound_project
+from ..application.catalog import catalog_of
+from ..application.conventions import project_conventions
 from ..application.clarification import PendingIntentStore, Resolution
 from ..application.gestures import read_gestures
 from ..application.intent import (
@@ -143,13 +145,29 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     # that has no editable control. The last of those is why the agent is not
     # asked at all in that case — an agent shown the whole record sheet would
     # offer the nearest element whose field happens to share a name.
+    # The project's conventions (PROJECT.md: names for people, the compass) and
+    # the request's camera let a viewer word become a side; the catalog is the
+    # one directory of editable elements and of what the model shows without a row.
+    conventions = project_conventions(binding)
+    camera = (
+        body.camera.model_dump()
+        if body.camera is not None
+        else body.gestures[0].camera.model_dump()
+        if body.gestures
+        else None
+    )
+    catalog = catalog_of(binding, projection) if getattr(projection, "state", None) is not None else None
     resolution = clarification.resolve(
         projection,
         utterance=body.utterance,
         selection=selection,
         picked=reading.target,
-        has_camera=bool(body.gestures),
+        has_camera=bool(body.gestures) or camera is not None,
         pending=pending,
+        camera=camera,
+        compass=conventions.compass,
+        aliases=conventions.aliases,
+        catalog=catalog,
     )
     if resolution.outcome != clarification.COMPILED:
         raise _refused(store, token=body.continuation_token, resolution=resolution)
@@ -157,14 +175,20 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     # A sentence already in the grammar is not read by the agent: the grammar
     # is the truth about it, and the architect who typed an exact sentence gets
     # the same answer, in the same time, as before there was an agent at all.
+    # An absolute delta against the one field the request resolved to ("提高 0.1m")
+    # is read here, deterministically, into the grammar; a qualitative word is not.
+    message = body.utterance
+    delta_sentence = clarification.grammar_sentence_for(body.utterance, resolution=resolution, projection=projection)
+    if delta_sentence is not None:
+        message = delta_sentence
     compiler: IntentCompiler = (
         DeterministicCompiler()
-        if parse_utterance(body.utterance) is not None
+        if parse_utterance(message) is not None
         else request.app.state.intent_compiler
     )
     compiled_at = time.perf_counter()
     compilation = compiler.compile(
-        message=body.utterance,
+        message=message,
         selection=resolution.selection,
         projection=projection,
     )
