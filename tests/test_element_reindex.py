@@ -475,20 +475,16 @@ class WedgeTests(unittest.TestCase):
         self.assertLessEqual(wedge.residual_m, 0.001, wedge.notes)
         self.assertTrue(any("archflow:wedge_* strings" in n for n in wedge.notes), wedge.notes)
 
-    def test_a_wedge_off_a_level_is_drafted_and_the_producers_refusal_becomes_the_error(self) -> None:
-        # A wedge whose base is an offset from a level is a well-formed row that the producers
-        # currently refuse: `_loft` appends its `base_offset` parameter after `profiles`, and a
-        # GeometryOperation requires its parameter names sorted (`_extrusion` inserts it at 0
-        # instead). The re-index does not hide that - the row is drafted, the refusal is measured,
-        # and the draft carries it as its note. Tighten this to DRAFT / residual <= 1 mm when
-        # element_producers._loft inserts the parameter the way _extrusion does.
+    def test_a_wedge_off_a_level_is_drafted_and_produced(self) -> None:
+        # A wedge whose base is an offset from a level: _loft puts its base_offset parameter
+        # first (609379c), so the row produces and the residual is measured like any other.
         objs = roof_sector(z0=12.0, wedge_low="0.3", wedge_high="1.78", wedge_axis="along")
         result = reindex(fixture_record(), [(inspection(objs), "record:base", 0)])
         wedge = {d.element_id: d for d in result.drafts}["portico-roof-abutments-west"]
         self.assertEqual(wedge.producer, "wedge")
         self.assertEqual(wedge.references["base"], {"offset_from": {"level": "level-cornice", "offset": 0.665}})
-        self.assertEqual(wedge.status, ERROR)
-        self.assertIn("producer refused: parameters require unique deterministic names", wedge.notes)
+        self.assertEqual(wedge.status, DRAFT, wedge.notes)
+        self.assertLessEqual(wedge.residual_m, 0.001, wedge.notes)
 
     def test_a_slope_across_the_run_is_the_axis_string_and_a_bad_string_is_named(self) -> None:
         across = reindex(fixture_record(), [(inspection(roof_sector(wedge_low="0.3", wedge_high="1.78", wedge_axis="across")), "record:base", 0)])
