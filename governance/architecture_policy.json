@@ -112,6 +112,17 @@
       "kind": "provider_tempdir",
       "owner": "studio.intent",
       "reason": "Writes the response schema into a TemporaryDirectory handed to codex exec; nothing under the project is touched."
+    },
+    {
+      "path": "archflow/project/inputs.py",
+      "function": "write_program_sheet_file",
+      "operations": [
+        "mkdir",
+        "write_bytes"
+      ],
+      "kind": "wip_input",
+      "owner": "project.inputs",
+      "reason": "writes input/runner/program-sheet.json only when POST /api/program carries saveInput=true in local mode; never writes state-record.json"
     }
   ],
   "forbidden_layer_imports": [

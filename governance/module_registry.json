@@ -1294,18 +1294,23 @@
     {
       "module_id": "project.inputs",
       "owner_path": "archflow/project/inputs.py",
-      "purpose": "The one reader of a project's work-in-progress inputs: the designer's authored State Record and seat pack, at the two paths the layout owns (ADR-007).",
+      "purpose": "The one reader of a project's work-in-progress inputs: the designer's authored State Record and seat pack, at the two paths the layout owns (ADR-007); and the program sheet, the third authored file, which it alone reads and writes.",
       "owns": [
         "reading the work-in-progress inputs at the layout's authored_record and seat_pack paths",
         "the typed refusals for those two files - absent, unreadable, undecodable, not JSON, not a State Record - each carrying the path it wanted (InputsError and its four kinds)",
-        "how each file is identified on the way out: the record's own content digest, and the sha-256 of the seat pack's bytes"
+        "how each file is identified on the way out: the record's own content digest, and the sha-256 of the seat pack's bytes",
+        "reading the program sheet at the layout's program_sheet path, and the schema literal check that says a file at that path is a ProgramSheet@1 at all",
+        "writing that one file: the single writer of input/runner/program-sheet.json, UTF-8, LF, sorted keys, refusing a payload of another schema before it writes"
       ],
       "does_not_own": [
         "naming the two paths (project.layout)",
         "parsing SeatPack@1 (tools.run_project, the Studio's adapters/seats.py)",
         "retaining anything; nothing read here is indexed, digested or verified by the repository (project.repository)",
         "deciding which run uses the record (runtime.project_runner, studio.candidate)",
-        "the meaning of the record it parsed (state.record)"
+        "the meaning of the record it parsed (state.record)",
+        "the meaning of the sheet it read or wrote (state.program_sheet)",
+        "writing the authored record or the seat pack: those are a person's files",
+        "deciding when a sheet may be written (studio: local mode only, on request)"
       ],
       "inputs": [
         "FilesystemProjectRepository",
@@ -1325,11 +1330,17 @@
         "AuthoredRecordMissing",
         "AuthoredRecordInvalid",
         "SeatPackMissing",
-        "SeatPackInvalid"
+        "SeatPackInvalid",
+        "ProgramSheetFile",
+        "load_program_sheet_file",
+        "write_program_sheet_file",
+        "ProgramSheetMissing",
+        "ProgramSheetInvalid"
       ],
       "depends_on": [
         "project.repository",
-        "state.record"
+        "state.record",
+        "state.program_sheet"
       ],
       "used_by": [
         "tools/run_project.py",
@@ -1338,11 +1349,13 @@
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py"
       ],
       "invariants": [
-        "never writes: the work-in-progress container is read, and nothing about it is retained until a run uses it",
         "absent and unreadable are different refusals, and each names the file it wanted",
         "the record's content digest is taken from the record, never recomputed here (ADR-003)",
         "both files are decoded as strict UTF-8; another encoding is invalid, not absent",
-        "the seat pack comes back as the mapping the project authored; no seat is parsed, defaulted or invented"
+        "the seat pack comes back as the mapping the project authored; no seat is parsed, defaulted or invented",
+        "writes exactly one of the three authored files, the program sheet, and only where a caller asks; the record and the seat pack are read and never written",
+        "a work-in-progress write touches nothing under runs/, canonical/ or objects/, and nothing about the file is retained until a run uses it",
+        "the schema literal is checked on the way in and on the way out, so a file at that path always claims to be what its path says"
       ],
       "status": "canonical",
       "tests": [
@@ -1417,7 +1430,8 @@
         "the on-disk names of a project's areas (project.json, HEAD, objects/sha256, events, canonical, runs, exports, input)",
         "the run subdirectory names (RunLayout: run.json, records, branches, candidates, reviews, workspaces, recovery)",
         "resolving a project-relative path or a record/artifact ref to an absolute path inside the root",
-        "the names of the two authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json)"
+        "the names of the two authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json)",
+        "the names of the three authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json, input/runner/program-sheet.json)"
       ],
       "does_not_own": [
         "creating directories or writing files (project.repository)",
@@ -1440,7 +1454,8 @@
       "public_api": [
         "ProjectLayout",
         "AUTHORED_RECORD_PATH",
-        "SEAT_PACK_PATH"
+        "SEAT_PACK_PATH",
+        "PROGRAM_SHEET_PATH"
       ],
       "depends_on": [
         "project.refs"
@@ -3247,7 +3262,8 @@
         "the bounded in-process event log, its replay and its live subscribers",
         "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines",
         "the massing successor: the authored record with its four massing schemas and its declared option replaced by one option's pack (massing_successor)",
-        "one arrangement for every kind of candidate - the base check, the run, the harness stage and the seats (_seat_pack, _run_successor)"
+        "one arrangement for every kind of candidate - the base check, the run, the harness stage and the seats (_seat_pack, _run_successor)",
+        "running one successor record as a detached candidate, whatever produced the successor (run_successor over _run_successor: seats, harness stage, binding, export workspaces, run_project)"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -3295,7 +3311,8 @@
         "JobRegistry.candidates_of",
         "execute_option_candidate",
         "massing_successor",
-        "MASSING_SCHEMAS"
+        "MASSING_SCHEMAS",
+        "run_successor"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -4441,6 +4458,120 @@
         "apps/archflow-studio/api/tests/test_options.py"
       ],
       "reason": "Design step 4 (stacking and massing): several masses side by side with their metrics, the architect choosing; the generative provider plugs into the pack transform later."
+    },
+    {
+      "module_id": "state.program_sheet",
+      "owner_path": "archflow/state/program_sheet.py",
+      "purpose": "The architect's program sheet and the two directions between it and a record's spatial option: one sheet row per Space@1, and a new record carrying what a sheet adds.",
+      "owns": [
+        "the ProgramSheet@1 payload shape and its refusals (ProgramSheetError)",
+        "reading a sheet out of a record: department and space id from a zone's program:<department>/<space> ref, area from the union of its Volume@1 plan boxes on its own levels, function from the component the zone names, adjacency rows from Connection@1 plus the relation kind",
+        "the four program requirements and the kernel relation kind each becomes (adjacent -> adjacent, apart -> clearance; near and visual have none and are refused with the vocabulary named)",
+        "applying a sheet as additions only: a Space@1 per unmapped space, a Relation plus its Connection@1 per undeclared adjacency, and a program_node_refs entry on a mapped zone that lacks one",
+        "the sheet's totals (target x count, mapped, unmapped ids)"
+      ],
+      "does_not_own": [
+        "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
+        "the semantic vocabulary a function names (semantics.registry, semantics.roles)",
+        "the entity schemas and their referential integrity (state.record)",
+        "where the sheet is kept (project.layout) or its reading and writing (project.inputs)",
+        "deciding which run applies it (studio.*); it creates no run and writes nothing"
+      ],
+      "inputs": [
+        "StateRecord",
+        "ProgramSheet@1 mapping",
+        "optional state digest"
+      ],
+      "outputs": [
+        "ProgramSheet@1 dict",
+        "StateRecord"
+      ],
+      "public_api": [
+        "sheet_from_record",
+        "apply_sheet",
+        "totals_of",
+        "validate_sheet",
+        "PROGRAM_SHEET_SCHEMA",
+        "REQUIREMENT_KINDS",
+        "REQUIREMENTS",
+        "PROGRAM_REF_PREFIX",
+        "ProgramSheetError"
+      ],
+      "depends_on": [
+        "state.record",
+        "relations.contracts",
+        "semantics.registry",
+        "project.refs"
+      ],
+      "used_by": [
+        "archflow/project/inputs.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/program.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/program.py"
+      ],
+      "invariants": [
+        "pure: no I/O, no run, no record written",
+        "never deletes an entity or a relation, and changes no field of an existing entity except a program_node_refs entry it lacks",
+        "no area is invented: a zone with no readable Volume@1 box has null, not zero",
+        "no relation kind is invented: a requirement the kernel has no kind for is refused with the whole vocabulary named",
+        "a function is resolved by semantics.registry or refused with the nearest ids"
+      ],
+      "status": "canonical",
+      "files": [
+        "archflow/state/program_sheet.py"
+      ],
+      "tests": [
+        "tests/test_program_sheet.py"
+      ],
+      "reason": "Design step 2 (programming): the architect's sheet is a document of its own, two-way with the record's zones the way Snaptrude keeps its program table two-way with the model - here with the record as the truth and additions only."
+    },
+    {
+      "module_id": "studio.program",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/program.py",
+      "purpose": "Serve the program sheet both ways: which sheet a reader gets, and how one becomes a candidate run without touching the authored record.",
+      "owns": [
+        "choosing between the architect's input sheet and the record's derivation, and saying which, and whether the input sheet's state digest still matches",
+        "the pre-flight design view of the successor, so a sheet the kernel will not view is a refusal now rather than a failed job later",
+        "the local-mode-only rule for writing the authored sheet (WIP_WRITE_REMOTE)",
+        "the sheet's queue closure and its candidate run id",
+        "GET /api/program, POST /api/program, GET /api/semantics"
+      ],
+      "does_not_own": [
+        "deriving or applying a sheet (state.program_sheet)",
+        "reading or writing the input file (project.inputs)",
+        "running the successor (studio.candidate.run_successor)"
+      ],
+      "public_api": [
+        "ProgramView",
+        "ProgramCandidate",
+        "read_program",
+        "successor_for",
+        "save_input_sheet",
+        "closure_of_sheet",
+        "candidate_run_id",
+        "candidate_honesty",
+        "semantic_terms"
+      ],
+      "depends_on": [
+        "state.program_sheet",
+        "project.inputs",
+        "project.layout",
+        "semantics.roles",
+        "semantics.conditions",
+        "studio.binding",
+        "studio.candidate",
+        "state.record"
+      ],
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/program.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/program.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/program.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/semantics.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_program.py"
+      ],
+      "status": "provisional",
+      "reason": "The studio's side of design step 2: the panel edits the sheet, applying it is a candidate, saving it is a local-mode write of the architect's own file."
     }
   ]
 }
