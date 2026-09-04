@@ -8,9 +8,12 @@ const source = join(
   "node_modules",
   "rhino3dm",
 );
-const destination = join(appRoot, ".generated", "public", "rhino3dm");
+// Rhino is the web client's only generated public asset. Clear the public root so a
+// checkout that once generated the retired raster loading reel cannot keep shipping it.
+const publicRoot = join(appRoot, ".generated", "public");
+const destination = join(publicRoot, "rhino3dm");
 
-await rm(destination, { recursive: true, force: true });
+await rm(publicRoot, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });
 await Promise.all(
   ["rhino3dm.js", "rhino3dm.wasm"].map((name) =>

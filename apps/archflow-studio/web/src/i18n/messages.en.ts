@@ -123,8 +123,7 @@ export const messagesEn = {
   "shell.askAgain": "Ask again",
   "shell.client": "client shell",
   "shell.reloadPage": "Reload the page",
-  "shell.wordmarkTitle":
-    "Professional modeling environment · Powered by the open ArchFlow protocol.",
+  "shell.wordmarkTitle": "ArchFlow modeling workspace",
   "shell.publishedIssue": "published · issue {version}",
   "shell.proposalOnlyTitle":
     "proposal only · every run is a harness beside the project; nothing is issued",
@@ -137,9 +136,6 @@ export const messagesEn = {
     "the kernel refused this record's bound view; fix the record before proposing",
   "shell.pickFirst": "pick something in the model first, or choose a component",
 
-  "loading.tagline": "Professional modeling environment",
-  "loading.protocol": "Powered by the open ArchFlow protocol.",
-  "loading.working": "Monkey is working hard on OCCT in the background",
   "loading.startingSession": "starting the session",
   "loading.readingBinding": "reading the binding",
   "loading.askingServer": "asking the server",

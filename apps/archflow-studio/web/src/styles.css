@@ -1,8 +1,9 @@
 /* ---------------------------------------------------------------------------
-   Tokens. Graphite is the content surface; mineral indigo marks interaction,
-   never "AI" as a separate visual world. Stable panels use standard material
-   and only transient controls use the glass tokens. The bare :root is dark;
-   the light set answers an explicit light choice or a light OS.
+   Tokens. Workshop graphite is the content surface; drafting blue marks
+   interaction, never "AI" as a separate visual world. Stable panels use a
+   matte material and transient controls use a denser version of that same
+   surface. The bare :root is dark; the light set answers an explicit light
+   choice or a light OS.
    ------------------------------------------------------------------------ */
 
 :root {
@@ -14,97 +15,94 @@
     BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
   --font-mono: "Cascadia Mono", "SFMono-Regular", "Roboto Mono", Consolas,
     ui-monospace, monospace;
-  --ground: #171918;
-  --panel: #202321;
-  --panel-2: #292d2a;
+  --ground: #191b19;
+  --panel: #1f221f;
+  --panel-2: #272b27;
   --surface-2: var(--panel-2);
-  --ink: #f0f1ed;
-  --ink-2: #d1d5cf;
-  --muted: #b4b9b3;
-  --faint: #848a84;
-  --line: rgba(240, 241, 237, 0.12);
-  --line-2: rgba(240, 241, 237, 0.07);
-  --accent: #7388f2;
-  --accent-ink: #0f1323;
-  --accent-soft: rgba(115, 136, 242, 0.16);
-  --held: #6ba77a;
-  --violated: #d36e68;
-  --unchecked: #c89952;
-  --viewport: #1a1c1b;
-  --grid-major: #383d39;
-  --grid-minor: #2a2e2b;
-  --overlay: rgba(32, 35, 33, 0.92);
-  --glass: rgba(32, 35, 33, 0.76);
-  --glass-strong: rgba(32, 35, 33, 0.88);
-  --surface-hover: rgba(240, 241, 237, 0.06);
-  --shadow: 0 16px 42px rgba(0, 0, 0, 0.34),
-    0 2px 8px rgba(0, 0, 0, 0.24);
-  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.2);
-  --radius: 8px;
-  --radius-sm: 6px;
-  --radius-lg: 12px;
+  --ink: #f0f1ec;
+  --ink-2: #d3d6d0;
+  --muted: #b3b8b1;
+  --faint: #8d938c;
+  --line: rgba(240, 241, 236, 0.11);
+  --line-2: rgba(240, 241, 236, 0.06);
+  --accent: #7fa6d2;
+  --accent-ink: #0e1b28;
+  --accent-soft: rgba(127, 166, 210, 0.15);
+  --held: #75a986;
+  --violated: #d27b72;
+  --unchecked: #c49a5a;
+  --processing: #a2adb3;
+  --viewport: #141614;
+  --grid-major: #343934;
+  --grid-minor: #252925;
+  --overlay: rgba(31, 34, 31, 0.96);
+  --surface-hover: #303530;
+  --shadow: 0 10px 26px rgba(0, 0, 0, 0.28),
+    0 1px 3px rgba(0, 0, 0, 0.22);
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.18);
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-lg: 8px;
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --ground: #f2f1ec;
-    --panel: #faf9f5;
-    --panel-2: #e8e7e1;
+    --ground: #ecede8;
+    --panel: #f4f5f0;
+    --panel-2: #fbfcf8;
     --surface-2: var(--panel-2);
-    --ink: #1d211e;
+    --ink: #20231f;
     --ink-2: #3d443e;
-    --muted: #5d645e;
-    --faint: #777d77;
-    --line: rgba(29, 33, 30, 0.14);
-    --line-2: rgba(29, 33, 30, 0.08);
-    --accent: #465fcf;
+    --muted: #59615a;
+    --faint: #687069;
+    --line: rgba(32, 35, 31, 0.13);
+    --line-2: rgba(32, 35, 31, 0.07);
+    --accent: #356b9e;
     --accent-ink: #ffffff;
-    --accent-soft: rgba(70, 95, 207, 0.13);
-    --held: #3d754d;
-    --violated: #a94e49;
-    --unchecked: #8d642a;
-    --viewport: #e8e7e1;
-    --grid-major: #c5c6bf;
-    --grid-minor: #d7d7d1;
-    --overlay: rgba(250, 249, 245, 0.93);
-    --glass: rgba(250, 249, 245, 0.76);
-    --glass-strong: rgba(250, 249, 245, 0.88);
-    --surface-hover: rgba(29, 33, 30, 0.055);
-    --shadow: 0 16px 42px rgba(39, 43, 39, 0.14),
-      0 2px 8px rgba(39, 43, 39, 0.08);
-    --shadow-soft: 0 8px 24px rgba(39, 43, 39, 0.1);
+    --accent-soft: rgba(53, 107, 158, 0.13);
+    --held: #3d7754;
+    --violated: #a64e47;
+    --unchecked: #8a6123;
+    --processing: #56656e;
+    --viewport: #e3e5e0;
+    --grid-major: #bfc4bd;
+    --grid-minor: #d5d8d2;
+    --overlay: rgba(244, 245, 240, 0.97);
+    --surface-hover: #ffffff;
+    --shadow: 0 10px 26px rgba(41, 46, 41, 0.13),
+      0 1px 3px rgba(41, 46, 41, 0.08);
+    --shadow-soft: 0 4px 12px rgba(41, 46, 41, 0.09);
   }
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --ground: #f2f1ec;
-  --panel: #faf9f5;
-  --panel-2: #e8e7e1;
+  --ground: #ecede8;
+  --panel: #f4f5f0;
+  --panel-2: #fbfcf8;
   --surface-2: var(--panel-2);
-  --ink: #1d211e;
+  --ink: #20231f;
   --ink-2: #3d443e;
-  --muted: #5d645e;
-  --faint: #777d77;
-  --line: rgba(29, 33, 30, 0.14);
-  --line-2: rgba(29, 33, 30, 0.08);
-  --accent: #465fcf;
+  --muted: #59615a;
+  --faint: #687069;
+  --line: rgba(32, 35, 31, 0.13);
+  --line-2: rgba(32, 35, 31, 0.07);
+  --accent: #356b9e;
   --accent-ink: #ffffff;
-  --accent-soft: rgba(70, 95, 207, 0.13);
-  --held: #3d754d;
-  --violated: #a94e49;
-  --unchecked: #8d642a;
-  --viewport: #e8e7e1;
-  --grid-major: #c5c6bf;
-  --grid-minor: #d7d7d1;
-  --overlay: rgba(250, 249, 245, 0.93);
-  --glass: rgba(250, 249, 245, 0.76);
-  --glass-strong: rgba(250, 249, 245, 0.88);
-  --surface-hover: rgba(29, 33, 30, 0.055);
-  --shadow: 0 16px 42px rgba(39, 43, 39, 0.14),
-    0 2px 8px rgba(39, 43, 39, 0.08);
-  --shadow-soft: 0 8px 24px rgba(39, 43, 39, 0.1);
+  --accent-soft: rgba(53, 107, 158, 0.13);
+  --held: #3d7754;
+  --violated: #a64e47;
+  --unchecked: #8a6123;
+  --processing: #56656e;
+  --viewport: #e3e5e0;
+  --grid-major: #bfc4bd;
+  --grid-minor: #d5d8d2;
+  --overlay: rgba(244, 245, 240, 0.97);
+  --surface-hover: #ffffff;
+  --shadow: 0 10px 26px rgba(41, 46, 41, 0.13),
+    0 1px 3px rgba(41, 46, 41, 0.08);
+  --shadow-soft: 0 4px 12px rgba(41, 46, 41, 0.09);
 }
 
 /* ---------------------------------------------------------------------------
@@ -438,9 +436,7 @@ button.chip:hover {
   min-width: 0;
   padding: 0 14px;
   border-bottom: 1px solid var(--line);
-  background: var(--glass-strong);
-  box-shadow: var(--shadow-soft);
-  backdrop-filter: blur(18px) saturate(1.08);
+  background: var(--panel);
   font-size: calc(12px * var(--font-scale, 1));
   overflow: hidden;
   white-space: nowrap;
@@ -676,7 +672,7 @@ button.chip:hover {
 
 .status--queued,
 .status--running {
-  color: var(--unchecked);
+  color: var(--processing);
 }
 
 .findings {
@@ -965,19 +961,31 @@ button.chip:hover {
   font-weight: 700;
 }
 
-.spinner {
-  width: 24px;
-  height: 24px;
-  border: 2px solid var(--line);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 800ms linear infinite;
+.activity-rail {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 2px;
+  overflow: hidden;
+  background: var(--line);
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.activity-rail::after {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 28%;
+  background: var(--accent);
+  content: "";
+  animation: activity-traverse 1400ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.activity-rail--compact {
+  width: 144px;
+}
+
+@keyframes activity-traverse {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(370%); }
 }
 
 .hud {
@@ -1014,9 +1022,7 @@ button.chip:hover {
   padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--glass-strong);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(18px) saturate(1.08);
+  background: var(--overlay);
   font-size: calc(12px * var(--font-scale, 1));
 }
 
@@ -1050,9 +1056,7 @@ button.chip:hover {
   padding: 6px 10px;
   border: 1px solid color-mix(in srgb, var(--accent) 74%, transparent);
   border-radius: 10px;
-  background: var(--glass-strong);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(18px) saturate(1.08);
+  background: var(--overlay);
   font-size: calc(12px * var(--font-scale, 1));
 }
 
@@ -1070,9 +1074,7 @@ button.chip:hover {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--glass-strong);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(18px) saturate(1.08);
+  background: var(--overlay);
 }
 
 .viewtools button {
@@ -1131,8 +1133,7 @@ button.chip:hover {
   padding: 7px 11px;
   border: 1px dashed var(--line);
   border-radius: var(--radius);
-  background: var(--glass-strong);
-  backdrop-filter: blur(18px) saturate(1.08);
+  background: var(--overlay);
   color: var(--muted);
   font-size: calc(11px * var(--font-scale, 1));
   white-space: nowrap;
@@ -1151,9 +1152,7 @@ button.chip:hover {
   max-width: 260px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--glass-strong);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(18px) saturate(1.08);
+  background: var(--overlay);
   text-align: left;
 }
 
@@ -1185,7 +1184,7 @@ button.chip:hover {
 
 .vcard--loaded {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .vcard__compare {
@@ -1220,9 +1219,7 @@ button.chip:hover {
   padding: 7px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--glass-strong);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(18px) saturate(1.08);
+  background: var(--overlay);
   font-size: calc(12.5px * var(--font-scale, 1));
 }
 
@@ -1553,8 +1550,8 @@ button.chip:hover {
 }
 
 .source__state--ghost {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: transparent;
+  color: var(--ink);
   border: 1px dashed var(--accent);
 }
 
@@ -1664,7 +1661,7 @@ button.chip:hover {
 .viewtools button[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .marks {
@@ -1751,9 +1748,7 @@ button.chip:hover {
   padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--glass-strong);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(18px) saturate(1.08);
+  background: var(--overlay);
 }
 
 .blend__slider {
@@ -1856,132 +1851,122 @@ button.chip:hover {
   color: var(--ink);
 }
 
-/* Loading, in the launcher's words ----------------------------------------- */
+/* Loading ------------------------------------------------------------------ */
 
-/* MonkeyArch's own three colours rather than the shell's tokens. This is the
-   surface the splash window was already showing on an ink ground while the two
-   servers came up, and a boot screen that changed colour with the OS theme
-   would not read as that same window carrying on into the tab. Two modes, one
-   component: `boot` covers the window until the API has answered for the
-   binding, `stage` covers the model while the viewport parses. */
+/* Boot resembles the first work surface instead of becoming a separate brand
+   scene. The only moving piece is an indeterminate job rail; callers provide
+   the real operation text, so the client never fabricates a percentage. Stage
+   parsing keeps the model visible beneath a compact, matte readout. */
 
 .boot {
-  --boot-ink: #171918;
-  --boot-panel: #202321;
-  --boot-stone: #f0f1ed;
-  --boot-stone-dim: #b4b9b3;
-  --boot-faint: #848a84;
-  --boot-amber: #7388f2;
-
   position: fixed;
   inset: 0;
   z-index: 9;
   display: grid;
   place-items: center;
-  background: var(--boot-ink);
-  color: var(--boot-stone);
+  overflow: hidden;
+  background: var(--ground);
+  color: var(--ink);
   user-select: none;
 }
 
 .boot[data-mode="stage"] {
   position: absolute;
-  background: rgba(23, 25, 24, 0.92);
-  backdrop-filter: blur(10px);
+  place-items: end start;
+  padding: 14px;
+  background: color-mix(in srgb, var(--viewport) 34%, transparent);
 }
 
-.boot__card {
-  padding: 0 24px;
-  text-align: center;
+.boot__workspace {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, 30%) minmax(0, 1fr);
+  grid-template-rows: 44px minmax(0, 1fr);
+  opacity: 0.64;
+}
+
+.boot__chrome,
+.boot__sidebar,
+.boot__viewport {
+  display: block;
+}
+
+.boot__chrome {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.boot__sidebar {
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.boot__viewport {
+  background-color: var(--viewport);
+  background-image:
+    linear-gradient(var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.boot__readout {
+  position: relative;
+  z-index: 1;
+  width: min(340px, calc(100% - 32px));
+  padding: 15px 16px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-soft);
 }
 
 .boot__title {
-  margin: 0;
-  font-size: calc(34px * var(--font-scale, 1));
+  margin: 0 0 14px;
   font-family: var(--font-display);
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-}
-
-.boot__glyph {
-  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
-}
-
-.boot__tagline {
-  margin: 10px 0 0;
-  color: var(--boot-stone-dim);
   font-size: calc(14px * var(--font-scale, 1));
-}
-
-.boot__protocol {
-  margin: 3px 0 0;
-  color: var(--boot-faint);
-  font-size: calc(11.5px * var(--font-scale, 1));
-}
-
-.boot__reel {
-  position: relative;
-  width: 300px;
-  height: 150px;
-  margin: 22px auto 0;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--boot-panel);
-}
-
-/* Every frame is in the document and one of them is opaque: the swap is a
-   change of opacity rather than of `src`, so the first cycle is not four
-   blanks while four files are fetched. */
-
-.boot__frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  opacity: 0;
-}
-
-.boot__frame[data-on="true"] {
-  opacity: 1;
-}
-
-.boot__working {
-  margin: 20px 0 0;
-  color: var(--boot-amber);
-  font-size: calc(15px * var(--font-scale, 1));
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
 .boot__status {
-  margin: 8px 0 0;
-  color: var(--boot-stone-dim);
+  margin: 10px 0 0;
+  color: var(--muted);
   font-size: calc(11.5px * var(--font-scale, 1));
+  line-height: 1.45;
 }
 
-.boot[data-mode="stage"] .boot__title {
-  font-size: calc(24px * var(--font-scale, 1));
+.boot[data-mode="stage"] .boot__readout {
+  width: min(360px, calc(100% - 28px));
+  padding: 11px 12px 10px;
+  background: var(--overlay);
+  box-shadow: none;
 }
 
-.boot[data-mode="stage"] .boot__reel {
-  width: 220px;
-  height: 110px;
-  margin-top: 16px;
+.boot[data-mode="stage"] .activity-rail {
+  width: 144px;
 }
 
-/* A reader who asked for less motion gets the strike frame and no loop; the
-   status line is what tells them the wait is still going. */
+.stage:has(.boot[data-mode="stage"]) .viewport-state--loading {
+  visibility: hidden;
+}
 
-@media (prefers-reduced-motion: reduce) {
-  .boot__frame[data-on="true"] {
-    opacity: 0;
+@media (max-width: 700px) {
+  .boot__workspace {
+    grid-template-columns: 1fr;
   }
 
-  /* the strike frame (frame-02): the one still picture that says what the animation says */
-  .boot__reel .boot__frame:nth-child(2) {
-    opacity: 1;
+  .boot__sidebar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-rail::after {
+    width: 8px;
+    animation: none;
+    transform: none;
   }
 }
 
@@ -2002,10 +1987,10 @@ button.chip:hover {
 .tree__chip--warn { color: var(--unchecked); }
 .tree__chip--missing { color: var(--violated); }
 .tree__chip--locked { color: var(--muted); }
-.tree__chip--derived { color: var(--accent); background: var(--accent-soft); }
+.tree__chip--derived { border-left: 2px solid var(--accent); background: var(--panel-2); color: var(--ink-2); }
 
 /* capability panel (CapabilityPanel.tsx), on the picker's frame, tree chips reused */
-.tree__chip--editable { color: var(--held); }
+.tree__chip--editable { color: var(--ink-2); }
 .capability {
   display: grid;
   gap: 6px;

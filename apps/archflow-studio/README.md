@@ -50,9 +50,9 @@ runs are still ArchFlow. `OPEN_MONKEYARCH.bat` — or the Desktop shortcut
 browser at the web client. **There is no console.** The .bat starts Windows PowerShell hidden
 (`powershell.exe` and not `pwsh`: a WinForms message loop needs an STA thread, and pwsh runs
 MTA on Windows), and the shortcut is saved with window style 7 so the cmd window that hands
-over is never painted. What you see instead is a splash window in the icon's three colours —
-the wordmark, a monkey hammering at a wireframe box, and a progress line that follows the real
-steps: validating runtime.json, python and fastapi, web dependencies, starting the API,
+over is never painted. What you see instead is a matte launch surface — the wordmark and a
+two-pixel progress rail that follows the real eight steps: validating runtime.json, python and
+fastapi, web dependencies, starting the API,
 `/api/health`, starting the web client, its first answer, opening the browser. **A refusal turns
 that same window red**, with the launcher's own sentence in it and a Close button; nothing waits
 in a console for a keypress.
@@ -95,14 +95,13 @@ goes too. `assets/monkeyarch-icon-512.png` is the same drawing at 512 px, for an
 `py -3.12 apps/archflow-studio/assets/make_icon.py`; the shortcut points at the `.ico` by
 absolute path, so an existing shortcut picks up a redraw without being rewritten, but a
 shortcut written before the MonkeyArch icon arrived names the retired `archflow.ico` and has
-to be written again with `make-desktop-shortcut.ps1`. The loading
-animation is four frames in `assets/loading/` (`frame-01.png` … `frame-04.png`), cycled at 8 fps
-by the splash window and, in the browser, by the same overlay while the client waits for the API
-and while the viewport parses exports. `assets/loading/make_frames.py` draws the four
-frames with the icon's own monkey (it imports the figure from `make_icon.py`, so the icon and the
-animation cannot drift apart), and `web/scripts/sync-loading.mjs`
-copies them into the served public directory at `npm run dev` and `npm run build` — the same way
-the rhino3dm runtime is synced, so `assets/loading/` stays the one source.
+to be written again with `make-desktop-shortcut.ps1`. Loading is intentionally not another
+brand scene. The Windows launch surface reports its real eight startup steps on a determinate
+two-pixel rail. The browser keeps the same wordmark, workshop-graphite palette and exact caller
+status, but uses a CSS-only indeterminate rail because API and local 3DM waits do not expose an
+honest percentage. Reduced-motion mode freezes that rail to a static status mark, and stage
+loading leaves the viewport visible under a compact matte readout. No raster loading assets or
+React animation timer are involved.
 
 **Install** (from the repo root):
 
@@ -180,8 +179,8 @@ The other scripts:
 | `npm run api:generate` | dumps, then regenerates `src/api/generated/` from that schema |
 | `npm run api:check` | regenerates into a temp directory and diffs; exit 1 on drift |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run sync` | copies the rhino3dm runtime and the four loading frames into `.generated/public/`; `dev` and `build` run it first |
-| `npm run build` | syncs those assets, typechecks, then `vite build` |
+| `npm run sync` | copies the rhino3dm runtime into `.generated/public/`; `dev` and `build` run it first |
+| `npm run build` | syncs that runtime, typechecks, then `vite build` |
 
 `@hey-api/openapi-ts` crashes under TypeScript 7, so the generator lives in
 `web/tools/openapi-ts/` with its own `package.json`, its own `node_modules` and its own

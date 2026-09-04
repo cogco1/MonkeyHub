@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "sync:rhino3dm": "node scripts/sync-rhino3dm.mjs",
-    "sync:loading": "node scripts/sync-loading.mjs",
-    "sync": "npm run sync:rhino3dm && npm run sync:loading",
+    "sync": "npm run sync:rhino3dm",
     "dev": "npm run sync && vite",
     "typecheck": "tsc --noEmit",
     "build": "npm run sync && tsc --noEmit && vite build",

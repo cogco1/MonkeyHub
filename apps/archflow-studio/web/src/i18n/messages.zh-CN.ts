@@ -119,7 +119,7 @@ export const messagesZhCN = {
   "shell.askAgain": "重新连接",
   "shell.client": "客户端外壳",
   "shell.reloadPage": "重新加载页面",
-  "shell.wordmarkTitle": "专业建模环境 · 由开放的 ArchFlow 协议驱动。",
+  "shell.wordmarkTitle": "ArchFlow 建模工作区",
   "shell.publishedIssue": "已发布 · 第 {version} 版",
   "shell.proposalOnlyTitle":
     "仅生成提案 · 每次运行都是项目旁的试验框架；不会发布任何内容",
@@ -131,9 +131,6 @@ export const messagesZhCN = {
   "shell.boundViewRefused": "内核拒绝了此记录的绑定视图；请先修复记录再提出改动",
   "shell.pickFirst": "请先在模型中选择对象，或选择一个构件",
 
-  "loading.tagline": "专业建模环境",
-  "loading.protocol": "由开放的 ArchFlow 协议驱动。",
-  "loading.working": "猴子正在后台狠狠干 OCCT",
   "loading.startingSession": "正在启动会话",
   "loading.readingBinding": "正在读取绑定",
   "loading.askingServer": "正在询问服务器",

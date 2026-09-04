@@ -185,8 +185,8 @@ export function Stage({
         gestures={gestures}
         onGesture={onGesture}
       />
-      {/* Parsing a run's exports is the longest wait in the app after the launch itself, and
-          it is the same wait: the viewport's own status line is what the overlay says. */}
+      {/* The shield preserves the stage's loading boundary while the translucent matte
+          backing leaves the previous picture legible as context. */}
       {status === "loading" && <LoadingOverlay mode="stage" status={message} />}
 
       <div className="hud">

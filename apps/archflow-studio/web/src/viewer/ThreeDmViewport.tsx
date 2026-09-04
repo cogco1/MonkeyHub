@@ -316,15 +316,15 @@ function isUnder(object: Object3D, root: Object3D): boolean {
 }
 
 /**
- * The material a picked object wears: its own, cloned once, glowing in the
- * accent and a little less see-through. No post-processing and no second pass
- * — the same forward render, one material deep.
+ * The material a picked object wears: its own, cloned once, with a restrained
+ * drafting-blue lift and a little less transparency. No post-processing glow
+ * and no second pass — the same forward render, one material deep.
  */
 function highlightMaterial(material: Material, accent: Color): Material {
   const copy = material.clone();
   if (copy instanceof MeshStandardMaterial) {
     copy.emissive = new Color(accent);
-    copy.emissiveIntensity = 0.85;
+    copy.emissiveIntensity = 0.22;
   }
   copy.opacity = Math.min(1, material.opacity + 0.2);
   copy.transparent = copy.opacity < 1;
@@ -1244,7 +1244,9 @@ export const ThreeDmViewport = forwardRef<
     >
       {visualStatus !== "ready" && (
         <div className={`viewport-state viewport-state--${visualStatus}`}>
-          {visualStatus === "loading" && <span className="spinner" aria-hidden="true" />}
+          {visualStatus === "loading" && (
+            <span className="activity-rail activity-rail--compact" aria-hidden="true" />
+          )}
           <p aria-live="polite">{visualMessage}</p>
           {(visualStatus === "idle" || visualStatus === "error") && (
             <button className="button" type="button" onClick={onRequestFile}>

@@ -53,7 +53,7 @@
 }
 
 .bilingual-text__toggle:hover {
-  background: var(--accent-soft);
+  background: var(--surface-hover);
 }
 
 .bilingual-text__toggle:focus-visible {

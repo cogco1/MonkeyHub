@@ -1614,9 +1614,9 @@ export default function App({ server }: { server: ServerIdentity }) {
     />
   );
 
-  // The tab is still starting up until the API has answered for the binding. The launcher's
-  // splash said the same three things while the servers came up; this is the second half of
-  // that wait, and it is over when the shell has a project to name.
+  // The tab is still starting up until the API has answered for the binding. This carries
+  // the launcher's exact-status convention into the browser and ends when the shell has a
+  // project to name.
   const booting = session.status === "idle" || session.status === "loading";
 
   return (

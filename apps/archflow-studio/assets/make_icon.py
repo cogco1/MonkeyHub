@@ -38,11 +38,9 @@ there at every size, and it is the monkey that is spent down:
 Each size is rasterised at 8x and box-filtered down -- exact area averaging over
 the supersamples -- so two runs of this script write the same bytes.
 
-The animal itself is not private to the icon. `draw_monkey(pen, pose)` draws it
-in whatever units the pen works in, and `Pose` says where its parts are, so the
-loading frames in loading/make_frames.py stand the same figure on a ground line
-and put a hammer in its hand rather than drawing a second monkey that would
-drift away from this one. The icon's own pose is `_hanging_pose`.
+`draw_monkey(pen, pose)` and `Pose` keep the figure's geometry separate from the
+icon's hanging pose. The application icon is the only UI surface that uses the
+figure; operational progress is expressed by status and progress controls.
 """
 
 from __future__ import annotations
@@ -150,12 +148,9 @@ FULL = {
 class Pen:
     """Draws onto a supersampled raster in whatever unit the caller works in.
 
-    `scale` is how many device pixels one of those units is worth: the icon
-    works in fractions of the tile side and hands over the tile's size, the
-    loading frames work in frame pixels and hand over 1. Everything drawn
-    through a pen -- the arch, and every part of the animal -- is written in the
-    caller's units, which is what lets one monkey be drawn into a 24 px tile and
-    into a 600x360 frame from the same routine.
+    `scale` is how many device pixels one of those units is worth. The icon
+    works in fractions of the tile side and hands over the tile's size, so the
+    same geometry can be drawn deliberately at every icon resolution.
     """
 
     def __init__(self, draw: ImageDraw.ImageDraw, scale: float, ss: int = SS):
@@ -279,12 +274,9 @@ class Limb:
 class Pose:
     """Where the animal's parts are, in the caller's units.
 
-    The figure is the same in the icon and in the loading frames -- head, two
-    ears level with the eyes, the limestone inverted-teardrop face patch, a body
-    narrower than the head is wide, and the spiral tail -- and what changes
-    between them is only this: where the limbs go, how far the tail curls, and
-    which way the head is turned. Everything is absolute in the caller's units,
-    so the pose carries the scale rather than the routine carrying a factor.
+    The pose carries the head, ears, limestone face patch, body, limbs and
+    spiral tail in the caller's units, so it carries the scale rather than the
+    drawing routine carrying a factor.
 
     The order the parts are drawn in is the order they overlap in: the tail
     behind everything, then the limbs, then the body over where they join it,

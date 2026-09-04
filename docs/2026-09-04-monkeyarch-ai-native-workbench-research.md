@@ -340,34 +340,34 @@ certified 3DM object
 
 设计依据：[Linear 2026 visual refresh](https://linear.app/now/behind-the-latest-design-refresh)、[Framer 3](https://www.framer.com/updates/framer-3)、[Spline V2](https://blog.spline.design/spline-v2)、[The New Raycast](https://www.raycast.com/blog/the-new-raycast)、[Raycast technical deep dive](https://www.raycast.com/blog/a-technical-deep-dive-into-the-new-raycast)、Apple [Materials](https://developer.apple.com/design/human-interface-guidelines/materials)、[Color](https://developer.apple.com/design/human-interface-guidelines/color)、[AppKit new design](https://developer.apple.com/videos/play/wwdc2025/310/)、[Toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars)、[Sidebars](https://developer.apple.com/design/human-interface-guidelines/sidebars)、[Split views](https://developer.apple.com/design/human-interface-guidelines/split-views)。
 
-## 12. 推荐方向：Graphite + Mineral Indigo
+## 12. 推荐方向：Workshop Graphite + Drafting Blue
 
 ### 12.1 一句话
 
-**像建筑模型台，而不是 AI dashboard：略暖的石墨工作面承载模型，矿物靛蓝只标记“我正在操作的对象或下一步动作”，验证状态使用低饱和材料色，玻璃只属于短时工具层。**
+**像建筑制图台，而不是 AI dashboard：暖石墨工作面承载模型，低饱和制图蓝只标记“当前选择、键盘焦点或唯一主操作”，验证状态使用独立材料色；Agent 本身不拥有颜色、头像或动画。**
 
-这比现有 `#1b1b1b / #242424 / #2f80ed` 更适合 MonkeyArch：现有组合有明显“通用深色开发工具 / 游戏引擎”味道，蓝色过于独立；新方案通过微暖中性色降低 chrome 的存在感，同时保留足够清晰的选择和专业精度。
+这一轮把第一阶段偏饱和的 `#7388F2` 再收敛为 `#7FA6D2 / #356B9E`，同时取消常驻毛玻璃和选中物体的强 emissive。目的不是“换一种蓝”，而是让 chrome、模型语义色、selection 和 validation 各自只承担一种含义。
 
-### 12.2 三层材质，不是一层毛玻璃
+### 12.2 三层表面，不复制 Liquid Glass
 
 ```text
 L2  Transient functional layer
-    command palette / compact toolbar / selection HUD / popover
-    regular glass, short-lived, adaptive backing
+    command palette / modal / popover
+    matte raised surface, only this layer may cast a restrained shadow
 
 L1  Standard work surfaces
-    Inspector / Review Rail / Flow / System
-    nearly opaque graphite or limestone, stable numeric legibility
+    toolbar / Inspector / Review Rail / Flow / System / HUD
+    flat graphite or vellum, hard edge, no backdrop blur
 
 L0  Content layer
     3DM viewport / drawing / compare
     matte, color-managed, no blur; model and annotations own the attention
 ```
 
-- L0 不使用 `backdrop-filter`；任何 blur 都会损害模型边线、材质判断和屏幕录制清晰度。
-- L2 在亮模型背景上自动使用更硬、更不透明的 backing；不能假设 viewport 永远是暗色。
-- Inspector 虽然可浮在画布边缘，仍以 standard material 为主；大量文字、数值和 validation evidence 不适合 clear glass。
-- 玻璃层不负责表达 canonical / candidate / blocked。状态必须由文字、图标和语义色共同表达。
+- L0、L1 均不使用 `backdrop-filter`；结构依靠明度、间距和 1px 分隔，不靠模糊与阴影墙。
+- L2 在复杂模型背景上使用不透明 backing；Windows/Web 不模拟 macOS 的折射、vibrancy 或高光追踪。
+- Inspector、Evidence、Version Card 即使覆盖画布也仍是 standard surface；它们承载数值与判断，不是装饰层。
+- `current / candidate / blocked` 必须由文字、线型和语义色共同表达，绝不由玻璃材质表达。
 
 ## 13. 可落地的颜色系统
 
@@ -375,36 +375,38 @@ L0  Content layer
 
 | 语义 | Dark | Light | 用途 |
 | --- | --- | --- | --- |
-| `canvas-ground` | `#171918` | `#F2F1EC` | 应用与 viewport 外围的主底色；略暖、中性。 |
-| `viewport` | `#1A1C1B` | `#E8E7E1` | 3DM 空场；与 panel 有细微但稳定的层级差。 |
-| `surface-1` | `#202321` | `#FAF9F5` | Inspector、Review Rail、常规面板。 |
-| `surface-2` | `#292D2A` | `#E8E7E1` | 输入框、选中 row、嵌套区。 |
-| `glass` | `rgba(32,35,33,.78)` | `rgba(250,249,245,.82)` | 仅 toolbar、command palette、HUD。 |
-| `border-soft` | `rgba(240,241,237,.10)` | `rgba(29,33,30,.12)` | 必需的分隔；不依赖边框建立全部结构。 |
-| `text-primary` | `#F0F1ED` | `#1D211E` | 正文、值、当前状态。 |
-| `text-secondary` | `#B4B9B3` | `#5D645E` | 标签和辅助说明。 |
-| `text-tertiary` | `#848A84` | `#777D77` | 非关键元数据；不用于关键小字号。 |
-| `accent` | `#7388F2` | `#465FCF` | selection、focus ring、唯一 primary action。 |
-| `on-accent` | `#0F1323` | `#FFFFFF` | 强调按钮文字/图标。 |
+| `ground` | `#191B19` | `#ECEDE8` | 应用外围主底色；略暖、中性。 |
+| `viewport` | `#141614` | `#E3E5E0` | 3DM 空场；比 chrome 更安静。 |
+| `panel` | `#1F221F` | `#F4F5F0` | toolbar、Inspector、Review Rail、常规面板。 |
+| `raised-surface` | `#272B27` | `#FBFCF8` | 输入、嵌套区和短时浮层。 |
+| `hover` | `#303530` | `#FFFFFF` | 只在可交互项 hover / pressed 时出现。 |
+| `overlay` | `rgba(31,34,31,.96)` | `rgba(244,245,240,.97)` | 复杂模型上方的硬边 matte backing。 |
+| `border-soft` | `rgba(240,241,236,.11)` | `rgba(32,35,31,.13)` | 必需分隔；不依赖边框建立全部结构。 |
+| `text-primary` | `#F0F1EC` | `#20231F` | 正文、值、当前状态。 |
+| `text-secondary` | `#B3B8B1` | `#59615A` | 标签和辅助说明。 |
+| `text-tertiary` | `#8D938C` | `#687069` | 非关键元数据，仍满足小字最低对比。 |
+| `accent` | `#7FA6D2` | `#356B9E` | selection、focus ring、唯一 primary action。 |
+| `on-accent` | `#0E1B28` | `#FFFFFF` | 强调按钮文字/图标。 |
 
-实测对比度：Dark primary / secondary / tertiary 对 `canvas-ground` 约为 `15.57:1 / 8.86:1 / 5.01:1`；Dark `on-accent` 对 accent 为 `5.74:1`；Light primary / secondary 对背景为 `14.41:1 / 5.38:1`，白字对 Light accent 为 `5.53:1`。这些值可支持常规文字，但正式实现仍需对真实字号、透明叠层、viewport 背景和 increased-contrast 模式逐态检查。
+实测最不利组合：Dark tertiary / raised-surface `4.58:1`，Dark violated / raised-surface `4.67:1`，Dark on-accent `6.87:1`；Light tertiary / raised-surface `4.96:1`，Light accent / raised-surface `5.44:1`，Light on-accent `5.60:1`。这消除了第一阶段 faint / accent / status 小字落到 4.5:1 以下的问题；viewport 上的实际叠层仍需逐态检查。
 
 ### 13.2 状态色
 
 | 语义 | Dark | Light | UI 语言 |
 | --- | --- | --- | --- |
-| `held / ready` | `#6BA77A` | `#3D754D` | muted jade；勾选图标 + `Held` / `Ready`。 |
-| `unchecked / caution` | `#C89952` | `#8D642A` | oxide amber；空心状态图标 + 原因。 |
-| `violated / blocked` | `#D36E68` | `#A94E49` | clay red；阻塞图标 + clause，不只红边。 |
-| `candidate ghost` | `#91A0FA` | `#5268D9` | 只用于轮廓、差异填充和 chip；不冒充 published。 |
+| `held / ready` | `#75A986` | `#3D7754` | muted jade；勾选图标 + `Held` / `Ready`。 |
+| `unchecked / caution` | `#C49A5A` | `#8A6123` | oxide amber；空心状态图标 + 原因。 |
+| `violated / blocked` | `#D27B72` | `#A64E47` | clay red；阻塞图标 + clause，不只红边。 |
+| `queued / running` | `#A2ADB3` | `#56656E` | neutral steel；只表示普通后台任务，不借用 warning 或 Agent 专色。 |
+| `candidate ghost` | `accent` 虚线 + 正常文字 | `accent` 虚线 + 正常文字 | 不在 accent-soft 上叠 accent 小字，也不冒充 published。 |
 | `published/current` | 中性文字 + 实心圆点 | 中性文字 + 实心圆点 | 不使用绿色；published 是身份，不是“成功消息”。 |
 
 一个 accent 只表达 interaction / selection。绿、黄、红只表达验证语义；紫色不被单独分配给 Agent，避免把同一真实编辑路径分裂成人和 AI 两套视觉系统。
 
 ### 13.3 3D viewport 专用色
 
-- minor grid：Dark `#2A2E2B` / Light `#D7D7D1`；major grid：Dark `#383D39` / Light `#C5C6BF`。
-- selection outline：accent 100%；selection fill：accent 12–16%；不要发光。
+- minor grid：Dark `#252925` / Light `#D5D8D2`；major grid：Dark `#343934` / Light `#BFC4BD`。
+- selection：accent 的定位线或双描边；当前 fallback 只保留 `0.22` 的 emissive lift，不使用 `0.85` 强发光。
 - approximate ghost：accent 18% 面 + 65% 轮廓 + `APPROXIMATE` 标签；exact candidate 才能用稳定实线。
 - changed / affected / unchanged：changed 用 accent，affected 用 amber，unchanged 用中性灰；不要同时再叠一套彩虹构件类别色。
 - 建筑模型自身的材质、分析图或 semantic colors 优先级高于应用 chrome；工具栏应自动提高 backing，而不是修改模型颜色以迁就 UI。
@@ -428,7 +430,7 @@ L0  Content layer
 
 ### 14.2 圆角和密度
 
-- 浮动 toolbar / command palette：10–12px；Inspector / Review Rail：10px；内部 control：6–8px。
+- control 4px；docked panel 6px；modal / floating surface 8px。圆角表达层级，不表达“友好 AI”。
 - pill 仅用于 status、selection chip、紧凑的 mode group；普通按钮保持圆角矩形，避免“每个控件都是胶囊”。
 - 桌面控件最小可点区域 32px；top functional bar 44px；面板行高 30–32px。
 - 默认 Inspector 320–360px，可拖拽且可完全隐藏；viewport 仍是主面积。
@@ -444,7 +446,7 @@ L0  Content layer
 
 | 组件 | 建议形态 | 禁止 |
 | --- | --- | --- |
-| Top bar | 44px、最多三组、轻玻璃或不透明 backing 自适应；HEAD 与 Ready 是低对比文字状态。 | 一排常驻 viewtools、多个彩色 CTA、把整条 title bar 染成 accent。 |
+| Top bar | 44px、最多三组、平接 matte surface；HEAD 与 Ready 是低对比文字状态。 | 一排常驻 viewtools、多个彩色 CTA、把整条 title bar 染成 accent。 |
 | Command composer | 闲置时是一条低存在感输入；有 selection 时显示 chip；执行后原位变成简短进度/下一动作。 | 永久聊天 column、彩色 AI 光晕、伪造百分比。 |
 | Inspector | selection-scoped、近乎不透明；label/value 两列，source/locked/derived 有明确小状态。 | clear glass 长文本、用 disabled 灰掩盖值来源、所有字段都有边框。 |
 | Review Rail | proposal → candidate → validation → decision 一条纵向链；唯一 primary action 按状态更换。 | 同时出现 Apply / Commit / Publish 三个近义按钮。 |
@@ -455,26 +457,33 @@ L0  Content layer
 
 ## 16. 动效与平台适配
 
-- surface 进入：160–200ms ease-out；退出：100–140ms；selection outline 80–120ms。动效只解释对象从哪里出现、依附哪个 selection。
+- surface 进入：140–180ms ease-out；退出：100–120ms ease-in；selection outline 80–120ms。动效只解释对象从哪里出现、依附哪个 selection。
 - 不使用持续漂浮、呼吸光、折射追踪鼠标或 3D parallax。复杂场景下它们会同时损害性能和判断精度。
-- `prefers-reduced-motion` 下取消位移和 scale，只保留即时 opacity / outline 状态。
-- macOS 可使用更接近系统的 vibrancy、菜单和键位；Windows 保持同一信息架构，但使用 Segoe、Windows 窗口约定和相对更实的 surface。共同点是语义 token 与交互路径，不是像素级皮肤一致。
+- 持续循环只允许真实 indeterminate activity rail。启动器知道 8 个步骤，因此显示 determinate rail；API、session、3DM 本地解析不知道百分比，因此只显示准确动作文字与 indeterminate rail。
+- `prefers-reduced-motion` 下 rail 变成静态 8px 状态标记；不保留后台 React timer，也不使用 shimmer。
+- 原生 macOS wrapper 将来可以调用系统材质、菜单和键位；Windows/Web 保持同一信息架构，但不自行模拟 vibrancy、折射和高光。共同点是语义 token 与交互路径，不是像素级皮肤一致。
 - toolbar actions 同时进入 menu / command palette；context menu 只放当前 selection 的少量高频动作。这样在 toolbar 隐藏或紧凑模式下，能力仍可达。
+
+依据：Apple [Loading](https://developer.apple.com/design/human-interface-guidelines/loading)、[Progress indicators](https://developer.apple.com/design/human-interface-guidelines/progress-indicators)、[Motion](https://developer.apple.com/design/human-interface-guidelines/motion)；Linear 对 [ProKit 与 Liquid Glass](https://linear.app/now/linear-liquid-glass) 的比较；Blender [Status Bar](https://docs.blender.org/manual/en/4.3/interface/window_system/status_bar.html)。
 
 ## 17. 最小视觉改造顺序
 
-1. **先换 token，不动信息架构：** 在现有壳中验证 Graphite / Limestone 深浅模式、文字对比度、模型材质与 selection 状态；保留可一键切回旧 palette 的开发开关。
-2. **再统一状态语言：** `Current / Approximate / Candidate / Validated / Blocked / Published` 的文字、图标、颜色和轮廓先稳定，避免壳重构后继续返工。
-3. **纵切 Review Rail：** 只为已定义的 selection → proposal → candidate → decision 路径建立新视觉组件。
-4. **最后退役 permanent chrome：** 纵切可用后，把 Conversation / Tree / Evidence / Versions 迁入 Peek、Inspector、Review 和 System；再启用轻玻璃 toolbar。
-5. **验收：** 1440px 下 viewport 至少 80%；亮/暗模型背景都能读清 toolbar；键盘路径完整；200% 缩放不截断；reduced transparency / increased contrast / reduced motion 可用；状态无需颜色也可辨识。
+1. **已完成 — token 与表面：** Workshop Graphite / Drafting Blue 深浅模式、可读小字、平接 toolbar/HUD、低阴影浮层。
+2. **已完成 — loading：** 退役 raster 吉祥物循环；启动器使用真实 8 步 rail，Web 使用无图片、无 JS timer 的 activity rail；stage 保留模型上下文。
+3. **下一步 — 状态语言：** 收敛 `Current / Approximate / Candidate / Validated / Blocked / Published` 的文字、图标、颜色和线型，避免普通 processing 借用 warning。
+4. **再纵切 Review Rail：** 只为已定义的 selection → proposal → candidate → decision 路径建立新视觉组件。
+5. **最后退役 permanent chrome：** 纵切可用后，把 Conversation / Tree / Evidence / Versions 迁入 Peek、Inspector、Review 和 System。
+6. **验收：** 1440px 下 viewport 至少 80%；亮/暗模型背景都能读清 toolbar；键盘路径完整；200% 缩放不截断；increased contrast / reduced motion 可用；状态无需颜色也可辨识。
 
 不建议先做整站换肤。Linear 的公开复盘说明，小步 feature flag、可实时调整 hue/chroma/lightness 的 token 工具，比在静态稿与代码之间反复抄色更有效。MonkeyArch 可以复用这一方法，但它只是开发调试入口，不成为新的产品状态或持久化体系。
 
-## 18. 第一阶段实现记录
+## 18. 两轮实现记录
 
-- 已在现有 `styles.css` token 机制内替换 Graphite / Limestone 深浅主题；three.js viewport 继续从同一组 CSS variables 读取背景、网格与 selection 色。
-- 已把 toolbar、viewport HUD、版本卡和 evidence 入口限定为轻量 functional material；Conversation、Inspector 类面板继续使用更实的 standard surfaces。
+- 第一轮在现有 `styles.css` token 机制内建立 Graphite / Limestone 深浅主题；第二轮收敛为本文件的 Workshop Graphite / Drafting Blue，three.js viewport 继续读取同一组 CSS variables。
+- toolbar、viewport HUD、版本卡、evidence 入口已取消持续 blur 与重阴影；modal 等真正浮层仍保留有限 elevation。
 - Conversation 可从 toolbar 收起并恢复；收起后 viewport 占据全部主工作区，不新增持久状态或第二套导航。
-- 已统一圆角、状态 pill、focus ring、输入框与面板层级，并修复 Options / Program 原有未闭合 CSS 规则。
-- 已在真实浏览器中核验 Dark / Light、Conversation 展开 / 收起和 Settings 浮层；构建仍使用原 React 19 + Vite + three.js 路径。
+- Web loading 已删除 emoji、口号、拟人化文案、四帧 PNG 和 125ms React timer；boot 第一帧直接展示工作区骨架，stage 用 compact matte readout 保留模型上下文。
+- WinForms launcher 保留真实 `1/8…8/8` 步骤、错误转红、消息泵和 watchdog，只把装饰性动画替换为与步骤绑定的 determinate rail。
+- 选中对象的 emissive 从 `0.85` 降至 `0.22` 作为过渡；下一轮应以 edge / corner 定位框替代材质发光。
+- 已统一 4 / 6 / 8px 圆角、状态 pill、focus ring、输入框与面板层级；应用图标仍保留 MonkeyArch 品牌图形，本轮没有扩大为 rebrand。
+- 已在真实浏览器检查 Dark / Light boot、主工作区和 Settings，并检查页面内 `backdrop-filter = 0`、loading image = 0；WinForms 5.1 的 `5/8` 启动状态也以真实控件渲染核验。
