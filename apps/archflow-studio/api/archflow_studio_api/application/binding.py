@@ -401,6 +401,28 @@ def bound_project(state: State) -> ProjectBinding:
     return binding
 
 
+def resolve_project(state: State, project_id: str) -> ProjectBinding:
+    """The binding a project-scoped path names, or a 404 that repeats the name.
+
+    ``/api/projects/{project_id}/…`` is the general form of every resource in
+    the protocol, and this is where that path segment turns into a project.
+    One process binds one project today, so exactly one id resolves and every
+    other is ``PROJECT_NOT_FOUND``. A server that binds several implements this
+    function differently and changes no route and no client.
+    """
+
+    binding = bound_project(state)
+    if project_id == binding.project_id:
+        return binding
+    raise StudioError(
+        404,
+        "PROJECT_NOT_FOUND",
+        f"this server binds no project {project_id!r}. It binds "
+        f"{binding.project_id}, which is also the project the unscoped paths "
+        "answer for; GET /api/projects lists what there is.",
+    )
+
+
 def _is_complete(receipt: Mapping[str, Any]) -> bool:
     """Whether the run this receipt describes actually finished its seats."""
 

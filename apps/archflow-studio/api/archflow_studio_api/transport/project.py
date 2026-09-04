@@ -1,4 +1,5 @@
-"""What the API says about the project it is bound to.
+"""What the API says about the project it is bound to, and about the list of
+projects it binds at all.
 
 The two references it publishes are different facts and both are needed: the
 project's exact **published** version - the design that has been issued - and
@@ -11,6 +12,11 @@ run's base and a validation's checked state, neither of which is published.
 The repository file is still named ``HEAD`` and ``read_head`` still reads it -
 the format owns those names (ADR-004, ADR-007) - but nothing a client reads
 says the word.
+
+``ProjectSummaryDto`` is deliberately thinner than ``ProjectBindingDto``: a
+listing says which projects exist and which one the unscoped paths mean, and it
+carries no filesystem path. Where this server keeps a project on disk is an
+operator's question, answered by ``projectDir`` on the binding itself.
 """
 
 from __future__ import annotations
@@ -61,6 +67,46 @@ class ProjectBindingDto(BaseModel):
     intent_model: str | None = Field(
         alias="intentModel",
         description="the model that provider runs, when it names one",
+    )
+
+
+class ProjectSummaryDto(BaseModel):
+    """One project a server binds, as a listing row."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    project_id: str = Field(alias="projectId")
+    name: str = Field(
+        description="what a person calls this project. P036 gives a project "
+        "no display name, so this server sends the project id; a server that "
+        "has one sends that instead",
+    )
+    is_default: bool = Field(
+        alias="isDefault",
+        description="whether the unscoped paths (/api/project, /api/state, …) "
+        "answer for this project",
+    )
+
+
+class ProjectListDto(BaseModel):
+    """The wire form of ``GET /api/projects``."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    projects: list[ProjectSummaryDto]
+
+
+def project_list_dto(binding: ProjectBinding) -> ProjectListDto:
+    """Every project this server binds: today exactly one, and it is the default."""
+
+    return ProjectListDto(
+        projects=[
+            ProjectSummaryDto(
+                project_id=binding.project_id,
+                name=binding.project_id,
+                is_default=True,
+            )
+        ]
     )
 
 

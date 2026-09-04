@@ -10,13 +10,16 @@ import argparse
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+import secrets
 from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
+from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
 from . import routes
@@ -25,12 +28,20 @@ from .application.intent_agent import compiler_from_settings
 from .application.jobs import JobRegistry
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
-from .settings import PROJECT_DIR_ENV, StudioSettings
+from .protocol import SERVER_VERSION
+from .settings import PROJECT_DIR_ENV, REMOTE_MODE, StudioSettings
 from .transport.errors import StudioError
 
-DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 _HTTP_ERROR_CODES = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}
+
+# The prefix every protocol resource lives under, and the two routes inside it
+# that answer before a client has been asked for anything. A client that could
+# not read the handshake could not learn that it needs a token, and a liveness
+# probe is not a client.
+_API_PREFIX = "/api"
+_OPEN_PATHS = frozenset({"/api/health", "/api/protocol"})
+_BEARER = "Bearer "
 
 
 def _error(status: int, code: str, detail: str, headers=None) -> JSONResponse:
@@ -79,6 +90,62 @@ async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResp
     )
 
 
+class BearerTokenMiddleware:
+    """In remote mode, every ``/api`` route but health and protocol needs the token.
+
+    Written as a plain ASGI middleware rather than a route dependency for two
+    reasons. It runs before routing, so an unknown path on an authenticated
+    server answers 401 rather than telling an anonymous caller which paths
+    exist; and it leaves the event stream alone, which a request/response
+    middleware would sit in the middle of for the life of the connection.
+
+    ``OPTIONS`` passes through: a browser's CORS preflight carries no
+    ``Authorization`` header by definition, and refusing it would refuse the
+    request that follows it.
+    """
+
+    def __init__(self, app: ASGIApp, *, token: str) -> None:
+        self.app = app
+        self.token = token
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or self._allowed(scope):
+            await self.app(scope, receive, send)
+            return
+        response = _error(
+            401,
+            "UNAUTHENTICATED",
+            "this server runs in remote mode and answers only a request "
+            "carrying Authorization: Bearer <token>. GET /api/protocol says "
+            "which server this is and that it is in remote mode; it and "
+            "GET /api/health are the two routes that need no token.",
+            {"WWW-Authenticate": "Bearer"},
+        )
+        await response(scope, receive, send)
+
+    def _allowed(self, scope: Scope) -> bool:
+        path = scope.get("path", "")
+        if not path.startswith(_API_PREFIX) or path in _OPEN_PATHS:
+            return True
+        if scope.get("method") == "OPTIONS":
+            return True
+        header = _authorization(scope)
+        if not header.startswith(_BEARER):
+            return False
+        # Constant time: a token compared with == leaks its own prefix to
+        # anyone who can measure how long the refusal took.
+        return secrets.compare_digest(header[len(_BEARER):].strip(), self.token)
+
+
+def _authorization(scope: Scope) -> str:
+    """The request's ``Authorization`` header, decoded, or the empty string."""
+
+    for name, value in scope.get("headers", ()):
+        if name == b"authorization":
+            return value.decode("latin-1")
+    return ""
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Let a candidate that is already running finish before the process ends.
@@ -95,7 +162,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app(settings: StudioSettings) -> FastAPI:
     app = FastAPI(
-        title="ArchFlow Studio API", version="0.1.0", lifespan=_lifespan
+        title="ArchFlow Studio API", version=SERVER_VERSION, lifespan=_lifespan
     )
     app.state.settings = settings
     # Proposals live in this process and nowhere else. The store is created
@@ -124,6 +191,24 @@ def create_app(settings: StudioSettings) -> FastAPI:
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
     app.add_exception_handler(Exception, _handle_unexpected_error)
     app.include_router(routes.router)
+    # Remote mode, and only remote mode, adds the two middlewares below.
+    # ``StudioSettings`` has already refused a remote process with no token and
+    # no origins, so there is nothing left to check here. CORS is added last
+    # and therefore sits outermost, which is what lets a browser read the 401
+    # the token gate answers with instead of a bare network failure.
+    if settings.mode == REMOTE_MODE:
+        assert settings.api_token is not None
+        app.add_middleware(BearerTokenMiddleware, token=settings.api_token)
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.origins),
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "Last-Event-ID"],
+            # The two headers the artifact-bytes route answers with that a
+            # browser cannot read unless they are named here.
+            expose_headers=["ETag", "Content-Disposition"],
+        )
     return app
 
 
@@ -131,7 +216,12 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="archflow-studio-api", description="Serve the ArchFlow Studio API."
     )
-    parser.add_argument("--host", default=DEFAULT_HOST)
+    parser.add_argument(
+        "--host",
+        default=None,
+        help="Interface to bind; overrides ARCHFLOW_STUDIO_BIND. Left out, "
+        "the settings decide, and they default to loopback.",
+    )
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument(
         "--project-dir",
@@ -142,7 +232,12 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.project_dir is not None:
         os.environ[PROJECT_DIR_ENV] = str(args.project_dir)
-    uvicorn.run(create_app(StudioSettings.from_env()), host=args.host, port=args.port)
+    settings = StudioSettings.from_env()
+    uvicorn.run(
+        create_app(settings),
+        host=args.host if args.host is not None else settings.bind_host,
+        port=args.port,
+    )
 
 
 if __name__ == "__main__":

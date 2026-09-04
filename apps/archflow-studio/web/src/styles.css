@@ -1296,6 +1296,53 @@ button.chip:hover {
   font-size: 12px;
 }
 
+/* The handshake refusal: what stands in for the shell when the server is not
+   one this client speaks to. ------------------------------------------------ */
+
+.refusal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--ground);
+}
+
+.refusal__card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 620px;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.refusal__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.refusal__lead {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.refusal__where {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  word-break: break-all;
+}
+
+.refusal .btn {
+  align-self: flex-start;
+}
+
 /* Error panel (kept from the previous shell; rendered inside cards) --------- */
 
 .error-panel {

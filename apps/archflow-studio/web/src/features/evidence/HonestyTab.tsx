@@ -2,8 +2,13 @@
  * Every honesty line the server has said in this tab, and the identities it
  * said them about. Nothing is summarised; an empty list says so, because an
  * empty answer is a real one.
+ *
+ * The first line is which server said all of it. This is the quiet place for
+ * it: an operator debugging "why does this say that" needs to know which
+ * server and which mode answered, and everyone else never has to look.
  */
 
+import { connection, connectionLine, type ServerIdentity } from "../../api/connection";
 import type {
   CandidateDto,
   StateProjectionDto,
@@ -40,19 +45,37 @@ export function honestyCount(
 }
 
 export function HonestyTab({
+  server,
   projection,
   candidate,
   validation,
 }: {
+  server: ServerIdentity;
   projection: StateProjectionDto | null;
   candidate: CandidateDto | null;
   validation: ValidationDto | null;
 }) {
+  const connected = (
+    <div className="ev">
+      <p className="label">Connection</p>
+      <p className="verbatim-line">{connectionLine(server, connection.baseUrl)}</p>
+      <p className="ev__none">
+        {server.capabilities.length} capabilities ·{" "}
+        {server.capabilities.join(", ")}
+      </p>
+    </div>
+  );
   if (projection === null) {
-    return <p className="ev__none">no projection has been read in this tab</p>;
+    return (
+      <>
+        {connected}
+        <p className="ev__none">no projection has been read in this tab</p>
+      </>
+    );
   }
   return (
     <>
+      {connected}
       <Lines label="Record honesty · projection" lines={projection.honesty} />
       {candidate && (
         <Lines

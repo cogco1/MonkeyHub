@@ -1110,6 +1110,42 @@ export type ProjectBindingDto = {
 };
 
 /**
+ * ProjectListDto
+ *
+ * The wire form of ``GET /api/projects``.
+ */
+export type ProjectListDto = {
+    /**
+     * Projects
+     */
+    projects: Array<ProjectSummaryDto>;
+};
+
+/**
+ * ProjectSummaryDto
+ *
+ * One project a server binds, as a listing row.
+ */
+export type ProjectSummaryDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Name
+     *
+     * what a person calls this project. P036 gives a project no display name, so this server sends the project id; a server that has one sends that instead
+     */
+    name: string;
+    /**
+     * Isdefault
+     *
+     * whether the unscoped paths (/api/project, /api/state, …) answer for this project
+     */
+    isDefault: boolean;
+};
+
+/**
  * ProjectVersionDto
  *
  * One canonical project version.
@@ -1352,6 +1388,49 @@ export type SeatTimingDto = {
      * Walltimes
      */
     wallTimeS: number | null;
+};
+
+/**
+ * ServerIdentityDto
+ *
+ * The wire form of ``GET /api/protocol``.
+ *
+ * Four facts and a list. The first three are what a client needs before it
+ * trusts anything else this server says; ``mode`` is why a request may be
+ * refused with ``UNAUTHENTICATED``; ``capabilities`` is what the client may
+ * ask for without discovering the answer as a 404.
+ */
+export type ServerIdentityDto = {
+    /**
+     * Protocol
+     *
+     * the protocol and its major version, 'archflow/1'
+     */
+    protocol: string;
+    /**
+     * Server
+     *
+     * which implementation is answering, e.g. monkeyarch-api
+     */
+    server: string;
+    /**
+     * Serverversion
+     *
+     * the version of that implementation, not of the protocol
+     */
+    serverVersion: string;
+    /**
+     * Mode
+     *
+     * local (unauthenticated, one machine) or remote (every route but health and protocol requires a bearer token)
+     */
+    mode: string;
+    /**
+     * Capabilities
+     *
+     * the feature names this process actually serves now
+     */
+    capabilities: Array<string>;
 };
 
 /**
@@ -1713,6 +1792,68 @@ export type ReadHealthApiHealthGetResponses = {
 };
 
 export type ReadHealthApiHealthGetResponse = ReadHealthApiHealthGetResponses[keyof ReadHealthApiHealthGetResponses];
+
+export type ReadProtocolApiProtocolGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/protocol';
+};
+
+export type ReadProtocolApiProtocolGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ServerIdentityDto;
+};
+
+export type ReadProtocolApiProtocolGetResponse = ReadProtocolApiProtocolGetResponses[keyof ReadProtocolApiProtocolGetResponses];
+
+export type ReadProjectsApiProjectsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/projects';
+};
+
+export type ReadProjectsApiProjectsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectListDto;
+};
+
+export type ReadProjectsApiProjectsGetResponse = ReadProjectsApiProjectsGetResponses[keyof ReadProjectsApiProjectsGetResponses];
+
+export type ReadProjectByIdApiProjectsProjectIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: never;
+    url: '/api/projects/{project_id}';
+};
+
+export type ReadProjectByIdApiProjectsProjectIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectByIdApiProjectsProjectIdGetError = ReadProjectByIdApiProjectsProjectIdGetErrors[keyof ReadProjectByIdApiProjectsProjectIdGetErrors];
+
+export type ReadProjectByIdApiProjectsProjectIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectBindingDto;
+};
+
+export type ReadProjectByIdApiProjectsProjectIdGetResponse = ReadProjectByIdApiProjectsProjectIdGetResponses[keyof ReadProjectByIdApiProjectsProjectIdGetResponses];
 
 export type ReadProjectApiProjectGetData = {
     body?: never;

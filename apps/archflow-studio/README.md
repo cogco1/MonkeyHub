@@ -94,6 +94,30 @@ chooses: the newest **complete, non-harness** runner receipt in the project. A p
 no such run binds to the run id `studio-projection`, which claims nothing. A request may
 override both with `GET /api/state?run=<runId>`, and a run named explicitly must exist.
 
+**Local mode and remote mode.** The API serves a named, versioned boundary — the open ArchFlow
+protocol (`docs/PROTOCOL.md`), stated at `GET /api/protocol`. Which side of it this process is
+on is `ARCHFLOW_STUDIO_MODE`:
+
+| variable | default | what it does |
+| --- | --- | --- |
+| `ARCHFLOW_STUDIO_MODE` | `local` | `local` is the pair the launcher starts here: one user, no token, no CORS — nothing about it changes. `remote` is the same API reached over a network. |
+| `ARCHFLOW_STUDIO_BIND` | `127.0.0.1` | the interface the listener binds. `--host` overrides it; left out, these settings decide. |
+| `ARCHFLOW_STUDIO_TOKEN` | *(unset)* | the bearer token remote mode requires. Never read in local mode. |
+| `ARCHFLOW_STUDIO_ORIGINS` | *(unset)* | comma-separated list of the origins a browser client is served from; the CORS policy remote mode adds. |
+
+In `remote` mode the process **refuses to start** without either of the last two — a remote
+server with no token would answer anyone who found the port, and one that guessed which sites
+may call it would be guessing about a browser's security. `StudioSettings` will not construct
+such a process at all. With both, every `/api` route except `GET /api/health`
+and `GET /api/protocol` requires `Authorization: Bearer <token>` and answers
+`401 UNAUTHENTICATED` without it, unknown paths included, so an anonymous caller learns nothing
+about which paths exist. Local mode is unchanged in every respect.
+
+The web client picks its server up the same way: `VITE_ARCHFLOW_API_URL` at build time (else the
+origin it was served from), an optional `?token=` on the first load which it reads once and
+removes from the address bar, and `GET /api/protocol` before anything else — a server whose
+protocol major is not 1 gets a refusal screen, not a blank stage.
+
 Exported candidates (optional, slow — roughly 37 s per seat, and it drives Rhino):
 
 ```powershell
@@ -165,7 +189,10 @@ Three groups of refusal are **shared**, and the table below does not repeat them
 | method | path | response DTO | errors beyond the shared ones |
 | --- | --- | --- | --- |
 | GET | `/api/health` | `StudioHealth` | none — `projectBound` is a boolean, not a refusal |
-| GET | `/api/project` | `ProjectBindingDto` | — |
+| GET | `/api/protocol` | `ServerIdentityDto` | none — it opens no project, so a foreign server and an unbound one are different answers |
+| GET | `/api/projects` | `ProjectListDto` | — |
+| GET | `/api/projects/{projectId}` | `ProjectBindingDto` — the general form | 404 `PROJECT_NOT_FOUND` |
+| GET | `/api/project` | `ProjectBindingDto` — the default-project shortcut | — |
 | GET | `/api/state?run=` | `StateProjectionDto` | — |
 | GET | `/api/artifacts` | `ArtifactListDto` | — (a run it cannot read is named in `skippedRuns`, never a refusal) |
 | GET | `/api/artifacts/{sha256}/bytes` | binary (`ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store`) | 404 `ARTIFACT_NOT_FOUND`, 409 `ARTIFACT_UNREADABLE`, 409 `ARTIFACT_DIGEST_MISMATCH` |

@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import App from "./app/App";
+import { Connected } from "./app/Connected";
 import { ErrorBoundary } from "./app/ErrorBoundary";
 import "./styles.css";
 
@@ -11,7 +11,7 @@ if (!root) throw new Error("ArchFlow Studio root element is missing.");
 createRoot(root).render(
   <StrictMode>
     <ErrorBoundary label="shell">
-      <App />
+      <Connected />
     </ErrorBoundary>
   </StrictMode>,
 );

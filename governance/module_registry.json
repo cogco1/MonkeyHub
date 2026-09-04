@@ -3087,9 +3087,11 @@
     {
       "module_id": "studio.binding",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-      "purpose": "Bind the process to one P036 project and one reference run, and project the authored State Record into what a screen can read.",
+      "purpose": "Bind the process to one P036 project and one reference run, resolve which project a scoped path names, and project the authored State Record into what a screen can read.",
       "owns": [
         "opening the located project on first use and holding that one binding for the process",
+        "resolving the project segment of /api/projects/{project_id}: today only the bound project resolves, and every other id is 404 PROJECT_NOT_FOUND",
+        "listing the projects this server binds, and which of them the unscoped default-project shortcut answers for",
         "choosing the reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping the harness workflows state.stage_workflow names",
         "reading the P036 record-name convention (kind plus sha256) and listing a run's record refs",
         "answering project.inputs' refusals on the wire: 404 STATE_RECORD_NOT_FOUND and 422 STATE_RECORD_INVALID, each naming the file",
@@ -3115,14 +3117,20 @@
         "ProjectedElement",
         "ProjectBindingDto",
         "ProjectVersionDto",
-        "StateProjectionDto"
+        "StateProjectionDto",
+        "ProjectListDto"
       ],
       "public_api": [
         "GET /api/project",
+        "GET /api/projects",
+        "GET /api/projects/{project_id}",
         "GET /api/state",
         "ProjectBinding",
         "ProjectBinding.open",
         "bound_project",
+        "resolve_project",
+        "binding_answer",
+        "project_list_dto",
         "record_kind",
         "ReferenceRun",
         "project_state",
@@ -3150,25 +3158,29 @@
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/health.py",
         "apps/archflow-studio/api/tests/test_binding.py",
-        "apps/archflow-studio/api/tests/test_projection.py"
+        "apps/archflow-studio/api/tests/test_projection.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/projects.py"
       ],
       "invariants": [
         "the project root is never defaulted in code - it comes from the environment or --project-dir",
         "binding happens on the first request that needs it, not at import or app creation",
         "every fact on the projection is the kernel's answer: the record is parsed by StateRecord.from_dict and attached by bound_to",
         "a harness run is never chosen as the reference run",
-        "the projection is read-only and states, in honesty lines, what it could not compute"
+        "the projection is read-only and states, in honesty lines, what it could not compute",
+        "one process answers for one project: the scoped and the unscoped path resolve to the same binding and are shaped by the same function"
       ],
       "status": "canonical",
       "tests": [
         "apps/archflow-studio/api/tests/test_binding.py",
-        "apps/archflow-studio/api/tests/test_projection.py"
+        "apps/archflow-studio/api/tests/test_projection.py",
+        "apps/archflow-studio/api/tests/test_protocol.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/project.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/projects.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/state.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/project.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/state.py"
@@ -3401,18 +3413,22 @@
     {
       "module_id": "studio.shell",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/main.py",
-      "purpose": "Assemble the FastAPI application: settings in, routes mounted under /api, one error body out, and the reserved application ports.",
+      "purpose": "Assemble the FastAPI application: settings in, routes mounted under /api, one error body out, the named protocol boundary the API serves, and the reserved application ports.",
       "owns": [
         "create_app and the uvicorn entry point, and the lifespan that lets a running candidate finish",
-        "StudioSettings and every environment variable the process reads (project dir, rhino export, workers, powershell, reference run)",
+        "StudioSettings and every environment variable the process reads (project dir, rhino export, workers, powershell, reference run, mode, bind host, token, origins)",
+        "the two modes of the boundary: local is unauthenticated, and a remote process without a token and without allowed origins is refused at construction",
+        "the protocol identity the server answers with - archflow/<major>, the server name, the one server version constant - and the capability list computed from settings",
+        "the bearer token gate over /api, exempting only health and protocol, and the CORS policy added in remote mode",
         "the one error body {code, detail} plus question and acceptedForms, and the handlers that force every failure - including a bug - into it",
         "the reserved application Protocols (IntentProvider, RetrievalProvider, PreviewBackend, ViewerAssetProvider, HumanReviewPort, StudioEventSink)",
         "every wire DTO and its camelCase aliases, and the router mounting order",
-        "GET /api/health"
+        "GET /api/health and GET /api/protocol"
       ],
       "does_not_own": [
         "any design question or kernel call",
         "binding the project - studio.binding does that on first use, never at app creation",
+        "resolving which project a project-scoped path names, and listing the projects this server binds - studio.binding",
         "application behaviour behind any route - studio.binding, studio.intent, studio.candidate, studio.validation, studio.artifacts",
         "implementations of the reserved ports: no port may waive validation or write canonical state"
       ],
@@ -3424,25 +3440,35 @@
       "outputs": [
         "FastAPI app",
         "StudioSettings",
+        "ServerIdentityDto",
         "JSON error bodies",
         "DTOs"
       ],
       "public_api": [
         "GET /api/health",
+        "GET /api/protocol",
         "create_app",
         "main",
         "StudioSettings",
         "SettingsError",
         "StudioError",
         "BlockedNeedsHuman",
+        "BearerTokenMiddleware",
         "error_sentence",
+        "PROTOCOL",
+        "PROTOCOL_MAJOR",
+        "SERVER_NAME",
+        "SERVER_VERSION",
+        "server_capabilities",
         "IntentProvider",
         "RetrievalProvider",
         "PreviewBackend",
         "ViewerAssetProvider",
         "HumanReviewPort",
         "StudioEventSink",
-        "StudioHealth"
+        "StudioHealth",
+        "ServerIdentityDto",
+        "server_identity_dto"
       ],
       "depends_on": [],
       "used_by": [
@@ -3454,6 +3480,9 @@
       "invariants": [
         "create_app touches no filesystem and binds no project - a wrong project root is discovered by the request that needs it",
         "the project root is never defaulted in code",
+        "GET /api/protocol opens no project, so a client can tell a foreign server from an unbound one",
+        "a remote-mode StudioSettings without a token and without origins cannot be constructed, so no path can start one",
+        "in remote mode every /api route but health and protocol answers 401 UNAUTHENTICATED without a matching bearer token, unknown paths included",
         "every failure answers in the same body shape, and an unexpected error says nothing about itself",
         "ports.py holds Protocols only: there are deliberately no implementations here",
         "projectBound in health is whether the binding opens, not a claim about what it contains"
@@ -3462,17 +3491,21 @@
       "tests": [
         "apps/archflow-studio/api/tests/test_health.py",
         "apps/archflow-studio/api/tests/test_settings.py",
-        "apps/archflow-studio/api/tests/test_errors.py"
+        "apps/archflow-studio/api/tests/test_errors.py",
+        "apps/archflow-studio/api/tests/test_protocol.py"
       ],
-      "notes": "transport/* carries the wire shapes for all six concerns, so a DTO change is a shell change, not an application one.",
+      "notes": "transport/* carries the wire shapes for all six concerns, so a DTO change is a shell change, not an application one. docs/PROTOCOL.md is the written form of what protocol.py names; the client half of the seam is apps/archflow-studio/web/src/api/connection.ts, which this registry does not list because it lists Python modules only.",
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/main.py",
         "apps/archflow-studio/api/archflow_studio_api/settings.py",
+        "apps/archflow-studio/api/archflow_studio_api/protocol.py",
         "apps/archflow-studio/api/archflow_studio_api/ports.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/health.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/protocol.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/errors.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/health.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/health.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/protocol.py"
       ]
     },
     {

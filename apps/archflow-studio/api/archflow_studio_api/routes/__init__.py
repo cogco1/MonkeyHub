@@ -12,6 +12,8 @@ from . import (
     intents,
     pick,
     project,
+    projects,
+    protocol,
     proposals,
     state,
     validation,
@@ -19,6 +21,8 @@ from . import (
 
 router = APIRouter(prefix="/api")
 router.include_router(health.router)
+router.include_router(protocol.router)
+router.include_router(projects.router)
 router.include_router(project.router)
 router.include_router(state.router)
 router.include_router(artifacts.router)

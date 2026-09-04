@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { asStudioApiError, studio, type StudioApiError } from "../api/client";
+import type { ServerIdentity } from "../api/connection";
 import type {
   ArtifactListDto,
   CandidateDto,
@@ -113,7 +114,7 @@ function ghostSpecFor(
   return { target, factor, scaleAxis: isHeight ? "z" : null, affected };
 }
 
-export default function App() {
+export default function App({ server }: { server: ServerIdentity }) {
   const transcript = useTranscript();
   const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
   const pushNotice = useCallback(
@@ -1106,6 +1107,7 @@ export default function App() {
       pinned={evidencePinned}
       tab={evidenceTab}
       counts={evidenceCounts}
+      server={server}
       projection={projection}
       candidate={selectedCandidate}
       validation={selectedValidation}

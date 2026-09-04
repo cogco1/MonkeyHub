@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
+import type { CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -24,6 +24,27 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  * ``projectBound`` is whether the binding opens, not a claim about it.
  */
 export const readHealthApiHealthGet = <ThrowOnError extends boolean = false>(options?: Options<ReadHealthApiHealthGetData, ThrowOnError>): RequestResult<ReadHealthApiHealthGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadHealthApiHealthGetResponses, unknown, ThrowOnError>({ url: '/api/health', ...options });
+
+/**
+ * Read Protocol
+ *
+ * Name the protocol, the server, its version, its mode and what it does.
+ */
+export const readProtocolApiProtocolGet = <ThrowOnError extends boolean = false>(options?: Options<ReadProtocolApiProtocolGetData, ThrowOnError>): RequestResult<ReadProtocolApiProtocolGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadProtocolApiProtocolGetResponses, unknown, ThrowOnError>({ url: '/api/protocol', ...options });
+
+/**
+ * Read Projects
+ *
+ * Which projects this server binds, and which one the shortcut means.
+ */
+export const readProjectsApiProjectsGet = <ThrowOnError extends boolean = false>(options?: Options<ReadProjectsApiProjectsGetData, ThrowOnError>): RequestResult<ReadProjectsApiProjectsGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadProjectsApiProjectsGetResponses, unknown, ThrowOnError>({ url: '/api/projects', ...options });
+
+/**
+ * Read Project By Id
+ *
+ * One named project's binding: the same answer ``GET /api/project`` gives.
+ */
+export const readProjectByIdApiProjectsProjectIdGet = <ThrowOnError extends boolean = false>(options: Options<ReadProjectByIdApiProjectsProjectIdGetData, ThrowOnError>): RequestResult<ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectByIdApiProjectsProjectIdGetErrors, ThrowOnError> => (options.client ?? client).get<ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectByIdApiProjectsProjectIdGetErrors, ThrowOnError>({ url: '/api/projects/{project_id}', ...options });
 
 /**
  * Read Project

@@ -12,6 +12,7 @@ import type {
   StateProjectionDto,
   ValidationDto,
 } from "../../api/generated";
+import type { ServerIdentity } from "../../api/connection";
 import type { EvidenceTab } from "../../app/evidence";
 import { EventStream } from "../events/EventStream";
 import { HonestyTab } from "./HonestyTab";
@@ -28,6 +29,7 @@ export function EvidenceDrawer({
   pinned,
   tab,
   counts,
+  server,
   projection,
   candidate,
   validation,
@@ -42,6 +44,8 @@ export function EvidenceDrawer({
   pinned: boolean;
   tab: EvidenceTab;
   counts: { honesty: number; receipts: number; events: number };
+  /** The server this tab is connected to, as it named itself at the handshake. */
+  server: ServerIdentity;
   projection: StateProjectionDto | null;
   candidate: CandidateDto | null;
   validation: ValidationDto | null;
@@ -104,6 +108,7 @@ export function EvidenceDrawer({
       <div className="drawer__body">
         <div hidden={tab !== "honesty"}>
           <HonestyTab
+            server={server}
             projection={projection}
             candidate={candidate}
             validation={validation}
