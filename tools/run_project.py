@@ -138,7 +138,10 @@ def main() -> int:
     record = load_authored_record(repository).record
     seats_payload = load_seat_pack_file(repository).payload
     seats = tuple(_seat(s) for s in seats_payload["seats"])
-    identity = GeometryProposalProviderIdentity(**seats_payload["provider_identity"])
+    # The pack's provider identity is what a live provider would have to present. The
+    # runner records its own proposals, so a pack that declares none still runs.
+    declared = seats_payload.get("provider_identity")
+    identity = None if declared is None else GeometryProposalProviderIdentity(**declared)
     if not repository.layout.run(args.run).manifest.exists():
         raise ValueError(
             "stage run does not exist; create and retain its envelope before invoking the runner"
@@ -152,7 +155,7 @@ def main() -> int:
         workflow_uri=args.workflow_ref,
         envelope_uri=args.stage_envelope_ref,
     )
-    options = RunOptions(commitment_ref=seats_payload["commitment_ref"], provider_identity=identity, strict_coverage=not args.relaxed_coverage, export=args.export,
+    options = RunOptions(commitment_ref=seats_payload["commitment_ref"], live_provider_identity=identity, strict_coverage=not args.relaxed_coverage, export=args.export,
                          workspace_root=Path(args.workspace).resolve() if args.workspace else repository.layout.run(args.run).root / "workspaces", powershell=Path(args.powershell),
                          branch_id=stage_guard.envelope.branch_id, branch_epoch=stage_guard.envelope.branch_epoch, patch_oracle=args.patch_oracle)
     if options.export:

@@ -95,14 +95,17 @@ def main() -> int:
     record = load_authored_record(repository).record
     seats_payload = load_seat_pack_file(repository).payload
     seats = tuple(_seat(s) for s in seats_payload["seats"])
-    identity = GeometryProposalProviderIdentity(**seats_payload["provider_identity"])
+    # What a live provider would have to present; the runner records its own proposals,
+    # so a pack that declares no provider identity still runs.
+    declared = seats_payload.get("provider_identity")
+    identity = None if declared is None else GeometryProposalProviderIdentity(**declared)
     reference = repository.load_run(args.reference_run)
     reference_records = Path(repository.layout.run(reference.run_id).records)
     reference_receipt = json.loads(_latest(reference_records, "runner-run-receipt").read_text(encoding="utf-8"))
-    options = RunOptions(commitment_ref=seats_payload["commitment_ref"], provider_identity=identity, branch_id=seats_payload.get("branch_id", "runner-v1"))
+    options = RunOptions(commitment_ref=seats_payload["commitment_ref"], live_provider_identity=identity, branch_id=seats_payload.get("branch_id", "runner-v1"))
     if args.export:
         workspace_root = Path(args.project).resolve() / "runs" / args.run / "workspaces"
-        options = RunOptions(commitment_ref=options.commitment_ref, provider_identity=identity, branch_id=options.branch_id, export=True, workspace_root=workspace_root, powershell=Path(args.powershell),
+        options = RunOptions(commitment_ref=options.commitment_ref, live_provider_identity=identity, branch_id=options.branch_id, export=True, workspace_root=workspace_root, powershell=Path(args.powershell),
                              patch_oracle=args.patch_oracle)
         for seat in seats:
             if not seat.reviewer:

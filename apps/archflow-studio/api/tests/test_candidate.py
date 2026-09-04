@@ -20,6 +20,8 @@ the real project is never written to by a test.
 
 from __future__ import annotations
 
+from dataclasses import replace
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -37,6 +39,13 @@ from archflow_studio_api.application.candidate import execute_candidate
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
+from archflow.contracts.canonical import canonical_json
+from archflow.ports.model import (
+    ModelInvocationReceipt,
+    ModelInvocationRequest,
+    ModelInvocationStatus,
+    ModelPhase,
+)
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.repository import FilesystemProjectRepository
 
@@ -47,9 +56,11 @@ from .support import (
     REFERENCE_RUN_ID,
     RUNNER_RECORD_PATH,
     RUNNER_SEATS_PATH,
+    SEATS_PAYLOAD,
     add_unreadable_run,
     make_project,
     runner_state_digest,
+    write_runner_seats,
 )
 
 VILLA_INPUTS_ENV = "ARCHFLOW_STUDIO_VILLA_INPUTS"
@@ -594,6 +605,91 @@ class CandidateFailureTests(CandidateTestCase):
         )
         self.assertFalse((self.repository.layout.runs / run_id).exists())
 
+    def test_what_compiled_the_words_is_retained_with_the_run_they_became(
+        self,
+    ) -> None:
+        """A chat turn is work in progress; a run is shared, so the receipt lands.
+
+        The receipt of the model call that compiled the utterance is retained
+        in the candidate run and nowhere earlier: the proposal it belongs to
+        may never become a run at all.
+        """
+
+        proposal = self.app.state.proposals.get(
+            self.propose("set height to 2.2", elementId="portico-base")[
+                "proposalId"
+            ]
+        )
+        compiled = replace(
+            proposal,
+            compilation_receipt=_compilation_receipt(
+                proposal.base_state_digest
+            ),
+        )
+        run_id = "studio-cand-intent-receipt"
+
+        execute_candidate(
+            bound_project(self.app.state),
+            self.app.state.settings,
+            compiled,
+            run_id,
+        )
+
+        self.assertEqual(self.records_of(run_id).get("intent-compilation"), 1)
+        retained = _load_kind(self.repository, run_id, "intent-compilation")
+        self.assertEqual(retained["schema"], "IntentCompilation@1")
+        self.assertEqual(retained["proposal_id"], compiled.proposal_id)
+        self.assertEqual(retained["utterance"], compiled.utterance)
+        self.assertEqual(
+            retained["base_state_digest"], compiled.base_state_digest
+        )
+        self.assertEqual(
+            retained["receipt"]["schema"], "ModelInvocationReceipt@2"
+        )
+        self.assertEqual(
+            retained["receipt"]["provider_id"], "intent-test-provider"
+        )
+
+    def test_a_sentence_no_model_read_retains_no_compilation(self) -> None:
+        """The deterministic compiler calls nothing, so there is nothing to keep."""
+
+        proposal = self.app.state.proposals.get(
+            self.propose("set height to 2.2", elementId="portico-base")[
+                "proposalId"
+            ]
+        )
+        self.assertIsNone(proposal.compilation_receipt)
+        run_id = "studio-cand-no-intent-receipt"
+
+        execute_candidate(
+            bound_project(self.app.state),
+            self.app.state.settings,
+            proposal,
+            run_id,
+        )
+
+        self.assertNotIn("intent-compilation", self.records_of(run_id))
+        # The run itself is a real one; only the compilation record is absent.
+        self.assertIn("runner-run-receipt", self.records_of(run_id))
+
+    def test_a_seat_pack_that_declares_no_provider_still_runs(self) -> None:
+        """The runner records its own proposals; a declared live provider is optional."""
+
+        write_runner_seats(
+            self.repository,
+            {
+                key: value
+                for key, value in SEATS_PAYLOAD.items()
+                if key != "provider_identity"
+            },
+        )
+
+        _, job = self.run_candidate(
+            "set height to 2.2", elementId="portico-base"
+        )
+
+        self.assertEqual(job["status"], "succeeded", job)
+
     def test_unknown_ids_are_named_not_guessed(self) -> None:
         for path, code in (
             ("/api/proposals/studio-nope/candidate", "PROPOSAL_NOT_FOUND"),
@@ -746,6 +842,35 @@ class VillaCopyTests(unittest.TestCase):
             ),
             candidate["seatResults"],
         )
+
+
+def _compilation_receipt(base_state_digest: str) -> dict:
+    """One ``ModelInvocationReceipt@2``, shaped as the intent compilers write it."""
+
+    request = ModelInvocationRequest.create(
+        request_id="intent-test-request",
+        phase=ModelPhase.INTENT_COMPILATION,
+        checkpoint_digest=base_state_digest,
+        context_digest=hashlib.sha256(b"intent-test-context").hexdigest(),
+        payload={"utterance": "set height to 2.2"},
+    )
+    answer = canonical_json(
+        {"utterance": "set height of portico-base to 2.2"}, ascii=False
+    )
+    return ModelInvocationReceipt(
+        receipt_id="intent-test-receipt",
+        status=ModelInvocationStatus.SUCCESS,
+        request=request,
+        provider_id="intent-test-provider",
+        model_id="intent-test-model",
+        provider_version="1",
+        provider_fingerprint=hashlib.sha256(b"intent-test-provider").hexdigest(),
+        input_bytes=len(request.payload_json.encode("utf-8")),
+        output_bytes=len(answer.encode("utf-8")),
+        output_sha256=hashlib.sha256(answer.encode("utf-8")).hexdigest(),
+        duration_ms=7,
+        output_json=answer,
+    ).to_dict()
 
 
 def _run_records(run_id: str) -> PersistenceDestination:

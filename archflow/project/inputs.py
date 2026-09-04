@@ -105,7 +105,7 @@ def load_seat_pack_file(
     """The project's authored seat pack, whole, with the digest of its bytes.
 
     The pack carries more than the seats — the commitment the run is made under
-    and the provider identity that answers for its geometry — so it is returned
+    and the identity a live provider would have to present — so it is returned
     as authored and the caller reads what it needs from it.
     """
 

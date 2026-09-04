@@ -14,8 +14,11 @@ A project enters as one ``StateRecord@1`` plus the discipline seats:
   beams, pediments, and typed declinations. Heights are differences of
   project levels or the element's own dimensions, never a restated
   elevation; a plan position is a grid, axis or host reference.
-* ``SeatPack@1`` — the discipline seats (P095) and the provider identity —
-  stays a separate input: seats are people, not state.
+* ``SeatPack@1`` — the discipline seats (P095) and the identity a live
+  provider would have to present — stays a separate input: seats are people,
+  not state.  While the runner records proposals nothing invokes that
+  provider, so its identity is carried as ``declared_live_identity`` and the
+  receipts name ``RECORDED_PROPOSAL_IDENTITY`` as what actually answered.
 
 The runner owns orchestration only: seat rounds from ``schedule_seats``,
 producers in reference order, one proposal per seat through the real
@@ -124,12 +127,29 @@ class ProjectRunnerError(ValueError):
 
 
 # ---------------------------------------------------------------- provider: the proposal, recorded
+# No model is invoked here.  The deterministic element producers build the proposal and
+# ``RecordedProposalProvider`` hands it back as a receipt, so the identity on that receipt
+# names the producers and nothing else.  A seat pack's declared ``provider_identity`` is a
+# live provider's identity; stamping it on a fabricated receipt would make every retained
+# ``geometry-proposal-round`` record claim a model call that never happened.
+RECORDED_PROPOSAL_IDENTITY = GeometryProposalProviderIdentity(
+    provider_id="runner-recorded-proposal",
+    model_id="element-producers",
+    provider_version="1",
+    provider_fingerprint=canonical_digest({
+        "provider_id": "runner-recorded-proposal",
+        "model_id": "element-producers",
+        "provider_version": "1",
+    }),
+)
+
+
 class RecordedProposalProvider:
     """Returns one authored proposal as a provider receipt; nothing is invented."""
 
-    def __init__(self, output: Mapping[str, object], identity: GeometryProposalProviderIdentity) -> None:
+    def __init__(self, output: Mapping[str, object]) -> None:
         self._output = output
-        self.identity = identity
+        self.identity = RECORDED_PROPOSAL_IDENTITY
         self.requests: list = []
 
     async def invoke(self, request):
@@ -171,7 +191,9 @@ class SeatResult:
 @dataclass(frozen=True, slots=True)
 class RunOptions:
     commitment_ref: str
-    provider_identity: GeometryProposalProviderIdentity
+    # The identity a live provider must present; unused while the runner records
+    # proposals; None means no live provider is declared.
+    live_provider_identity: GeometryProposalProviderIdentity | None = None
     portfolio_id: str = "declared-schematic"
     branch_id: str = "runner-v1"
     branch_epoch: int = 1
@@ -454,6 +476,15 @@ def run_project(
     branch = BranchRef(run=run, branch_id=options.branch_id, epoch=options.branch_epoch)
     branch_destination = PersistenceDestination(PersistenceArea.RUN_BRANCH, run_id=run.run_id, branch_id=options.branch_id)
     put = lambda kind, payload: repository.put_json(run=run, destination=destination, record_kind=kind, payload=payload)
+    # what produced the proposals, and what the seat pack declared beside it: the record
+    # says both, so nobody has to infer from a seat pack whether a model was called
+    provider_block = {
+        "kind": "recorded",
+        "identity": RECORDED_PROPOSAL_IDENTITY.to_dict(),
+        "declared_live_identity": (
+            None if options.live_provider_identity is None else options.live_provider_identity.to_dict()
+        ),
+    }
     # Compute and admit the exact state before the first write.  This prevents
     # a raw create_run or a copied pack from acquiring a stage by side effect.
     if record.project_id != run.project_id:
@@ -532,10 +563,13 @@ def run_project(
                     design_state_digest=state.state_digest, predecessor_program_digest=None, length_unit=_M, tolerance=GeometryTolerance(0.001, 0.001),
                     frames=(frame,), assets=(), semantic_bindings=bindings, operations=produced.operations, assemblies=produced.assemblies)
                 datums = tuple(sorted({d.datum_id: d for d in project_datums + tuple(d for h in handovers for d in h.datums) + produced.datums}.values(), key=lambda d: d.datum_id))
-                provider = RecordedProposalProvider(proposal_authoring_output(proposal), options.provider_identity)
+                provider = RecordedProposalProvider(proposal_authoring_output(proposal))
+                # the identity checked against the receipt is the one the provider actually
+                # presents, so a silent substitution is still refused and no retained round
+                # says a model answered
                 result = asyncio.run(produce_geometry_program_proposal(
                     repository, provider, run=run, destination=destination, spatial_option_ref=spatial_ref, design_state=state,
-                    required_commitment_refs=(options.commitment_ref,), provider_identity=options.provider_identity, policy=GeometryProposalPolicy(1),
+                    required_commitment_refs=(options.commitment_ref,), provider_identity=RECORDED_PROPOSAL_IDENTITY, policy=GeometryProposalPolicy(1),
                     seat_scope=subtree, interface_datums=datums, datum_bindings=produced.bindings))
                 issues = tuple(row for r in result.round_refs for row in repository.load_json(r).get("issues", []))
                 if result.status is not GeometryProposalStatus.ACCEPTED:
@@ -556,7 +590,7 @@ def run_project(
                     violations = [{"code": "relation_violated", "relation_id": c.relation_id, "detail": c.detail} for c in relation_report.checks if c.status == "violated"]
                     seat_result = SeatResult(seat_id, round_index, "proposal_accepted", program_ref.uri, program.program_digest, len(program.objects), covered, undeclared,
                                              tuple(issues) + tuple(violations), time.perf_counter() - t0, relation_check_ref=relation_check_ref)
-                    receipt_ref = put("seat-round-receipt", {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], **no_authority(_AUTH)})
+                    receipt_ref = put("seat-round-receipt", {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], "provider": provider_block, **no_authority(_AUTH)})
                     results.append(replace(seat_result, receipt_ref=receipt_ref.uri))
                     continue
                 digests = {o.object_id: o.object_digest for o in program.objects}
@@ -573,7 +607,7 @@ def run_project(
                 seat_status = "proposal_accepted" if cad is None or cad.get("status") == "succeeded" else "export_failed"
                 seat_result = SeatResult(seat_id, round_index, seat_status, program_ref.uri, program.program_digest, len(program.objects), covered, undeclared, issues, time.perf_counter() - t0, cad, declined=declined,
                                          declination_reasons={e.component_id: str(e.params.get("reason")) for e in own if e.producer == "declined"}, relation_check_ref=relation_check_ref)
-                receipt_ref = put("seat-round-receipt", {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], **no_authority(_AUTH)})
+                receipt_ref = put("seat-round-receipt", {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], "provider": provider_block, **no_authority(_AUTH)})
                 results.append(replace(seat_result, receipt_ref=receipt_ref.uri))
             else:
                 continue
@@ -604,6 +638,7 @@ def run_project(
             "status": "OPEN",
             "close_obligation_id": stage_guard.envelope.close_obligation.obligation_id,
         },
+        "provider": provider_block,
         "rounds": [list(r) for r in rounds], "seat_results": [_seat_dict(s) for s in results],
         "seat_execution_complete": all(s.status in ("proposal_accepted", "empty") for s in results) and any(s.status == "proposal_accepted" for s in results),
         "wall_time_s": round(time.perf_counter() - started, 3), **no_authority(_AUTH),

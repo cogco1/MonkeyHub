@@ -749,7 +749,7 @@
         "the report's three-state counts, held / fully_checked flags and its digest"
       ],
       "does_not_own": [
-        "which relations reach the check - runtime.project_runner filters the record to kind `support` before calling",
+        "which relations reach the check - runtime.project_runner passes the record's own declared relations plus the `support` relations the producers built",
         "producing the geometry or the analytic bounds it measures - capabilities.element_producers and compilers.geometry",
         "declaring the relation in the first place - archflow.state.state_record",
         "turning a violation into a stage or run verdict - runtime.project_runner",
@@ -1761,12 +1761,13 @@
       "owns": [
         "run_project: binding the record to the run, projecting the developed-design view, and the seat round loop",
         "StageExecutionGuard: the retained workflow, envelope, predecessor exit and predecessor closure required before any seat record is written",
-        "RunOptions: commitment, provider identity, branch, coverage strictness, export, workspace and patch-oracle switches",
+        "RunOptions: commitment, the declared live provider identity, branch, coverage strictness, export, workspace and patch-oracle switches",
+        "the recorded-proposal provider and its identity",
         "per-seat orchestration: scope, exclusions, production context, proposal authoring, program retention, handover compilation",
         "component coverage: what counts as covered, what is declined, what is undeclared and when that is fatal",
-        "filtering the record's relations to the `support` kind and binding the support_contact validator before checking",
+        "assembling what reaches the relation check: the record's own declared relations plus the `support` relations the producers built, each with its validator binding",
         "the export decision: reuse an identical prior export, patch a different one, or rebuild",
-        "the retained record kinds (state-record, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, RunnerRunReceipt@3)"
+        "the retained record kinds (state-record, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, runner-run-failure, RunnerRunReceipt@3)"
       ],
       "does_not_own": [
         "producing geometry - capabilities.element_producers",
@@ -1798,6 +1799,7 @@
         "StageExecutionGuard",
         "ProjectRunnerError",
         "RecordedProposalProvider",
+        "RECORDED_PROPOSAL_IDENTITY",
         "SeatResult"
       ],
       "depends_on": [
@@ -1861,6 +1863,7 @@
         "a seat may not publish a datum over a project level or grid axis",
         "with strict_coverage, a seat owning a component with neither an element nor a declination fails",
         "the receipt is authority-free: no canonical write, design or stage-acceptance authority is claimed",
+        "a receipt names the provider that produced the proposal, never a declared one",
         "one seat failing to get an accepted proposal ends the round loop rather than continuing"
       ],
       "status": "canonical",
@@ -3020,6 +3023,7 @@
       "owns": [
         "the successor record: the authored record with exactly the one value the proposal names replaced",
         "arranging the run - new run id, harness stage guard, seat pack, RunOptions - and calling run_project",
+        "retaining the intent compilation receipt in the candidate run as intent-compilation",
         "the studio candidate harness workflow and stage, explicitly not a project stage advance",
         "turning the authored seat pack project.inputs read onto SeatSpec, and refusing a pack that declares no seat",
         "the worker pool and queue: closure-based conflicts, the exclusive Rhino export lane, and per-job lifecycle state",

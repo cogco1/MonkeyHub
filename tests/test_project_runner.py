@@ -10,6 +10,7 @@ against the compiled bounds; receipts report wall time; gaps fail typed.
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,6 +22,7 @@ from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClo
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.runtime.project_runner import (
+    RECORDED_PROPOSAL_IDENTITY,
     ProjectRunnerError,
     RunOptions,
     StageExecutionGuard,
@@ -40,6 +42,13 @@ from archflow.project.refs import BranchRef
 
 EVIDENCE = "evidence:demo-survey"
 BASIS = (EVIDENCE,)
+
+# What a seat pack declares a live provider would have to present. Nothing in a
+# recorded run invokes it, and no record may say it answered. The ids are the
+# villa pack's own, because that is exactly the claim the receipts used to make.
+DECLARED_LIVE_IDENTITY = GeometryProposalProviderIdentity(
+    provider_id="claude-fable-5-1-live-seat", model_id="claude-fable-5-1", provider_version="1",
+    provider_fingerprint=hashlib.sha256(b"claude-fable-5-1-live-seat").hexdigest())
 
 
 def _component(cid, parent, kind, intent, volumes=()):
@@ -91,8 +100,7 @@ def _seats(phase: DesignPhase):
 
 
 def _options(**overrides) -> RunOptions:
-    fields = dict(commitment_ref="commitment:demo-survey", provider_identity=GeometryProposalProviderIdentity(
-        provider_id="runner-test", model_id="scripted", provider_version="1", provider_fingerprint=hashlib.sha256(b"runner-test").hexdigest()))
+    fields = dict(commitment_ref="commitment:demo-survey", live_provider_identity=DECLARED_LIVE_IDENTITY)
     fields.update(overrides)
     return RunOptions(**fields)
 
@@ -222,6 +230,40 @@ class RunTests(unittest.TestCase):
         checks = repository.load_json(_ref(seats["seat-structure"]["relation_check_ref"]))
         self.assertTrue(checks["held"])                                                        # columns stand on the piano nobile by construction
         self.assertEqual(checks["counts"]["violated"], 0)
+
+    def test_every_record_names_the_provider_that_actually_produced_the_proposal(self) -> None:
+        """No run says a model was invoked that was not.
+
+        The round receipt carries the identity the provider presented, and the
+        seat pack's declared live identity appears in the run under one key —
+        ``declared_live_identity`` — and nowhere else at all.
+        """
+
+        repository, receipt = self._run(_record())
+        records = repository.layout.run("run-1").records
+
+        rounds = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(records.glob("geometry-proposal-round-*.json"))]
+        self.assertTrue(rounds)
+        for payload in rounds:
+            self.assertEqual(payload["model_receipt"]["provider_id"], "runner-recorded-proposal")
+            self.assertEqual(payload["model_receipt"]["model_id"], "element-producers")
+        expected = {"kind": "recorded", "identity": RECORDED_PROPOSAL_IDENTITY.to_dict(),
+                    "declared_live_identity": DECLARED_LIVE_IDENTITY.to_dict()}
+        self.assertEqual(receipt["provider"], expected)
+        for name in sorted(records.glob("seat-round-receipt-*.json")):
+            self.assertEqual(json.loads(name.read_text(encoding="utf-8"))["provider"], expected)
+        for path in sorted(records.glob("*.json")):
+            elsewhere = json.dumps(_without_declared_live(json.loads(path.read_text(encoding="utf-8"))))
+            self.assertNotIn(DECLARED_LIVE_IDENTITY.provider_id, elsewhere, path.name)
+            self.assertNotIn(DECLARED_LIVE_IDENTITY.model_id, elsewhere, path.name)
+
+    def test_a_run_with_no_declared_live_provider_still_runs(self) -> None:
+        """A seat pack that names no provider is not a broken pack any more."""
+
+        repository, receipt = self._run(_record(), live_provider_identity=None)
+        self.assertTrue(receipt["seat_execution_complete"], receipt["seat_results"])
+        self.assertIsNone(receipt["provider"]["declared_live_identity"])
+        self.assertEqual(receipt["provider"]["identity"]["provider_id"], "runner-recorded-proposal")
 
     def test_realized_bounds_of_an_earlier_seat_exclude_a_later_opening(self) -> None:
         with self.assertRaises(ProjectRunnerError) as caught:
@@ -398,6 +440,16 @@ class PriorExportTests(unittest.TestCase):
             same = _prior_export(records, workspace, "stage-x", "d1")
             self.assertIn("_reused_path", same[0])                                                        # identical program: reuse
             self.assertIsNone(_prior_export(records, workspace, "stage-z", "d1"))
+
+
+def _without_declared_live(value):
+    """The payload with every ``declared_live_identity`` block removed."""
+
+    if isinstance(value, dict):
+        return {k: _without_declared_live(v) for k, v in value.items() if k != "declared_live_identity"}
+    if isinstance(value, list):
+        return [_without_declared_live(item) for item in value]
+    return value
 
 
 def _ref(uri: str):

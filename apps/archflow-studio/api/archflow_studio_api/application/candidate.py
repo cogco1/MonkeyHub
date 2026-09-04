@@ -28,6 +28,7 @@ from typing import Any, Mapping
 from archflow.capabilities.geometry_proposal import (
     GeometryProposalProviderIdentity,
 )
+from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef
 from archflow.runtime.project_runner import RunOptions, run_project
 from archflow.state.state_record import StateRecord, developed_design_view
@@ -144,6 +145,26 @@ def execute_candidate(
         )
     successor = successor_record(_load_authored_record(binding), proposal)
     run = repository.create_run(run_id)
+    if proposal.compilation_receipt is not None:
+        # A chat turn is work in progress; a run is shared (ADR-007). The receipt of
+        # the model call that compiled the words is retained here, and only here,
+        # because this is where those words became a run somebody can cite. The
+        # deterministic compiler reads no model and returns no receipt, so a proposal
+        # made from a sentence already in the grammar retains nothing.
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_RECORD, run_id=run_id
+            ),
+            record_kind="intent-compilation",
+            payload={
+                "schema": "IntentCompilation@1",
+                "proposal_id": proposal.proposal_id,
+                "utterance": proposal.utterance,
+                "base_state_digest": proposal.base_state_digest,
+                "receipt": dict(proposal.compilation_receipt),
+            },
+        )
     # The one sanctioned binding: the record attaches itself to this run.
     bound = successor.bound_to(run)
     state = developed_design_view(
@@ -154,10 +175,15 @@ def execute_candidate(
         selection_decision_ref=SELECTION_DECISION_REF,
     )
     guard = harness_guard(repository, run, state)
+    # What a live provider would have to present. The runner records its own
+    # proposals, so a pack that declares no provider identity still runs.
+    declared_provider = seat_pack.get("provider_identity")
     options = RunOptions(
         commitment_ref=seat_pack["commitment_ref"],
-        provider_identity=GeometryProposalProviderIdentity(
-            **seat_pack["provider_identity"]
+        live_provider_identity=(
+            None
+            if declared_provider is None
+            else GeometryProposalProviderIdentity(**declared_provider)
         ),
         branch_id=seat_pack.get("branch_id", BRANCH_ID),
         export=settings.rhino_export,
