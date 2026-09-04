@@ -395,8 +395,10 @@ class ElementDraft:
     basis_refs: tuple[str, ...] = ()
     # objects folded in from other components (a wall's frames and glass): they bind to this element
     hosted: tuple[SourceObject, ...] = ()
-    # relations the draft's rows name and the record lacks (an opening's hosts_void interface), derived
+    # relations the draft's rows name and the record lacks (an opening's hosts_void interface), derived,
+    # and the Connection@1 entities that make them available to a spatial option
     relations: list[Relation] = field(default_factory=list)
+    entities: list[Entity] = field(default_factory=list)
 
     @property
     def union(self) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
@@ -671,30 +673,57 @@ def wall_types_of(rows: Sequence[ElementRow]) -> WallTypes:
     return WallTypes((), {}, None)
 
 
-def interface_for(types: WallTypes, component: str, side: str | None, record: StateRecord) -> tuple[str | None, Relation | None, str | None]:
+@dataclass(frozen=True, slots=True)
+class MirroredInterface:
+    """An interface a drafted opening names: the relation id, and what the record must gain for it
+    to be available - a derived hosts_void relation and the Connection@1 that carries it."""
+
+    relation_id: str
+    relation: Relation | None = None
+    connection: Entity | None = None
+
+
+def _swap_side(text: str, taught: str, side: str) -> str:
+    return text.replace(f"-{taught}-", f"-{side}-").replace(f"-{taught}", f"-{side}") if text.endswith(f"-{taught}") else text.replace(f"-{taught}-", f"-{side}-")
+
+
+def interface_for(types: WallTypes, component: str, side: str | None, record: StateRecord) -> tuple[MirroredInterface | None, str | None]:
     """The interface relation a drafted opening should name on this side: the record's own when it
-    declares it, else a derived one mirrored from the teaching side (same kind, the side substituted
-    in id, subject and object, every named zone existing), else nothing and a note."""
+    declares it, else one mirrored from the teaching side (the relation with the side substituted in
+    id, subject and object, and the Connection@1 naming it, every zone existing), else a note.
+
+    A proposal may only name interfaces the spatial option lists, and the option lists them off its
+    Connection@1 entities: a mirrored relation without its connection would be refused as absent."""
 
     template = types.interface_of_component.get(component)
     if template is None or side is None or types.taught_side is None:
-        return None, None, f"no interface relation is taught for {component}"
-    wanted = template.replace(f"-{types.taught_side}-", f"-{side}-")
-    if wanted == template and side != types.taught_side:
-        return None, None, f"interface {template} carries no side to substitute"
+        return None, f"no interface relation is taught for {component}"
+    taught = types.taught_side
+    wanted = _swap_side(template, taught, side)
+    if wanted == template and side != taught:
+        return None, f"interface {template} carries no side to substitute"
     declared = {r.relation_id: r for r in record.relations}
-    if wanted in declared:
-        return wanted, None, None
+    connections = [e for e in record.entities_of("Connection@1") if f"relation:{wanted}" in tuple(e.fields.get("relationship_refs", ()))]
+    if wanted in declared and connections:
+        return MirroredInterface(wanted), None
     source = declared.get(template)
     if source is None:
-        return None, None, f"the taught interface {template} is not a relation of the record"
+        return None, f"the taught interface {template} is not a relation of the record"
+    carrier = next((e for e in record.entities_of("Connection@1") if f"relation:{template}" in tuple(e.fields.get("relationship_refs", ()))), None)
+    if carrier is None:
+        return None, f"no Connection@1 of the record names the taught interface {template}"
     ids = {e.entity_id for e in record.entities}
-    subject = source.subject.replace(f"-{types.taught_side}-", f"-{side}-")
-    obj = source.object.replace(f"-{types.taught_side}-", f"-{side}-")
-    if subject not in ids or obj not in ids:
-        return None, None, f"mirroring {template} to {side} names a zone the record lacks ({subject} / {obj})"
-    derived = Relation(relation_id=wanted, kind=source.kind, subject=subject, object=obj, datum_role=source.datum_role, propagation=source.propagation, parameters=dict(source.parameters), epistemic_status="derived", basis_refs=())
-    return wanted, derived, None
+    subject = _swap_side(source.subject, taught, side)
+    obj = _swap_side(source.object, taught, side)
+    src_zone = _swap_side(str(carrier.fields["source_zone_id"]), taught, side)
+    dst_zone = _swap_side(str(carrier.fields["target_zone_id"]), taught, side)
+    for zone in (subject, obj, src_zone, dst_zone):
+        if zone not in ids:
+            return None, f"mirroring {template} to {side} names a zone the record lacks ({zone})"
+    relation = None if wanted in declared else Relation(relation_id=wanted, kind=source.kind, subject=subject, object=obj, datum_role=source.datum_role, propagation=source.propagation, parameters=dict(source.parameters), epistemic_status="derived", basis_refs=())
+    connection_id = _ident(_swap_side(carrier.entity_id, taught, side))
+    connection = None if connections else Entity(connection_id, "Connection@1", {"source_zone_id": src_zone, "target_zone_id": dst_zone, "relationship_refs": [f"relation:{wanted}"], "directed": bool(carrier.fields.get("directed", False)), "epistemic_status": "derived", "note": f"mirrored from {carrier.entity_id} by element_reindex"}, carrier.parent_id, ())
+    return MirroredInterface(wanted, relation, connection), None
 
 
 def draft_wall(draft: ElementDraft, frame: Frame, openings: Sequence[SourceObject], types: WallTypes, centroid: tuple[float, float], record: StateRecord | None = None) -> None:
@@ -792,11 +821,14 @@ def draft_wall(draft: ElementDraft, frame: Frame, openings: Sequence[SourceObjec
         else:
             untyped.append(key)
         if record is not None:
-            relation_id, derived, why = interface_for(types, component, draft.side, record)
-            if relation_id is not None:
-                row["interface_ref"] = f"relation:{relation_id}"
-                if derived is not None and all(r.relation_id != derived.relation_id for r in draft.relations):
-                    draft.relations.append(replace(derived, basis_refs=_refs(o.ref for o in fr)))
+            mirrored, why = interface_for(types, component, draft.side, record)
+            if mirrored is not None:
+                row["interface_ref"] = f"relation:{mirrored.relation_id}"
+                basis = _refs(o.ref for o in fr)
+                if mirrored.relation is not None and all(r.relation_id != mirrored.relation.relation_id for r in draft.relations):
+                    draft.relations.append(replace(mirrored.relation, basis_refs=basis))
+                if mirrored.connection is not None and all(e.entity_id != mirrored.connection.entity_id for e in draft.entities):
+                    draft.entities.append(replace(mirrored.connection, basis_refs=basis))
             else:
                 uninterfaced.append(f"{key}: {why}")
         opening_rows.append(row)
@@ -813,8 +845,8 @@ def draft_wall(draft: ElementDraft, frame: Frame, openings: Sequence[SourceObjec
         draft.notes.append(f"openings without a taught type (void only): {', '.join(untyped)}")
     if uninterfaced:
         draft.notes.append("openings without an interface relation: " + "; ".join(uninterfaced))
-    if draft.relations:
-        draft.notes.append(f"{len(draft.relations)} hosts_void relation(s) mirrored from {types.taught_by} for this side")
+    if draft.relations or draft.entities:
+        draft.notes.append(f"{len(draft.relations)} hosts_void relation(s) and {len(draft.entities)} connection(s) mirrored from {types.taught_by} for this side")
 
 
 def grid_centre(frame: Frame, objects: Sequence[SourceObject]) -> tuple[float, float]:
@@ -999,11 +1031,22 @@ class ReindexResult:
                 d.notes.append(f"id {d.element_id} is already an entity of the record; the row was not added")
             if d.status == DRAFT and d.producer and d.element_id not in known:
                 rows.append(Entity(d.element_id, "Element@1", {"component_id": d.component_id, "producer": d.producer, "references": d.references, "params": d.params, "epistemic_status": "derived", "confidence": d.confidence, "residual_m": d.residual_m, "objects": [o.name for o in d.all_objects]}, d.component_id, _refs(basis_refs, d.basis_refs)))
-        record = _with_axes(self.record, self.frame, tuple(rows))
-        ids = {e.entity_id for e in record.entities}
-        relation_ids = {r.relation_id for r in record.relations}
+        extra_entities: list[Entity] = []
+        seen_extra = set(known)
+        for d in self.drafts:
+            if d.status in (DRAFT, EXISTING):
+                for e in d.entities:
+                    if e.entity_id not in seen_extra:
+                        extra_entities.append(e)
+                        seen_extra.add(e.entity_id)
+        # entities and relations go in together: a mirrored connection names a mirrored relation,
+        # and the record validates both at once
+        axes = tuple(a for a in self.frame.axis_entities(self.record.basis_refs[:1]) if a.entity_id not in known)
+        entities = self.record.entities + axes + tuple(extra_entities) + tuple(rows)
+        ids = {e.entity_id for e in entities}
+        relation_ids = {r.relation_id for r in self.record.relations}
         relations = tuple(r for r in self.relations if r.subject in ids and r.object in ids and r.relation_id not in relation_ids)
-        return replace(record, run_id=run_id, relations=record.relations + relations, basis_refs=_refs(record.basis_refs, basis_refs), predecessor_ref=f"record:{self.record.digest}")
+        return replace(self.record, run_id=run_id, entities=entities, relations=self.record.relations + relations, basis_refs=_refs(self.record.basis_refs, basis_refs), predecessor_ref=f"record:{self.record.digest}")
 
     def catalog(self, *, run_id: str) -> dict[str, Any]:
         components = {e.entity_id: e for e in self.record.entities_of("Component@1")}

@@ -122,7 +122,8 @@ def record_with_edges() -> StateRecord:
     )
     from archflow.state.state_record import Relation
     relation = Relation(relation_id="pediment-west-window-host-void", kind="hosts_void", subject="upper-zone", object="portico-west-zone", basis_refs=(EVIDENCE,))
-    return replace(base, entities=base.entities + extra, relations=(relation,))
+    connection = Entity("pediments-west-to-portico", "Connection@1", {"source_zone_id": "upper-zone", "target_zone_id": "portico-west-zone", "relationship_refs": ["relation:pediment-west-window-host-void"], "directed": False}, None, (EVIDENCE,))
+    return replace(base, entities=base.entities + extra + (connection,), relations=(relation,))
 
 
 class RingAndWallTests(unittest.TestCase):
@@ -167,6 +168,10 @@ class RingAndWallTests(unittest.TestCase):
         self.assertNotIn("interface_ref", openings["east-door"])   # the door's component names no interface in the teaching row
         successor = result.successor(run_id="r", basis_refs=["record:base"])
         self.assertIn("pediment-east-window-host-void", {r.relation_id for r in successor.relations})
+        # and the connection that makes the mirrored interface available to a spatial option
+        connection = {e.entity_id: e for e in successor.entities_of("Connection@1")}["pediments-east-to-portico"]
+        self.assertEqual((connection.fields["source_zone_id"], connection.fields["target_zone_id"], connection.fields["relationship_refs"]), ("upper-zone", "portico-east-zone", ["relation:pediment-east-window-host-void"]))
+        self.assertEqual(connection.fields["epistemic_status"], "derived")
         self.assertEqual(openings["east-window-left"]["component_id"], "portico-pediments")
         self.assertAlmostEqual(openings["east-door"]["width"], 2.5, places=6)
         self.assertAlmostEqual(openings["east-door"]["at"]["host"]["along"], 10.71, places=6)
