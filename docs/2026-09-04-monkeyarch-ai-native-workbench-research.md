@@ -442,6 +442,18 @@ L0  Content layer
 - 借鉴 SF Symbols 的一致性和状态切换原则，但 Web/Windows 实现采用仓库可许可的跨平台 icon set 或现有 SVG，不直接复制 Apple 资源。
 - 图标只服务高频、可识别动作；低频动作保留文字。Linear 的教训不是“图标越少越好”，而是每一个图标都要赢得视觉重量。
 
+### 14.4 Draft Monkey / 绘图猴
+
+猴子是 MonkeyArch 的梗和识别资产，不应被去除；需要退役的是它作为循环表演的方式。冷启动采用“拱心石吊猴印记”：拱券、蓝色拱心石、单臂悬挂、耳和卷尾被压成无面部的几何线稿，像建筑师留在图纸边缘的制图签名。
+
+- 完整彩色插画只留在应用、快捷方式和托盘图标；Web cold boot 与 Windows launch surface 使用同源的线稿层级。
+- 猴身使用 `ink-2`，拱券退到 `faint`，拱心石使用 Drafting Blue；不恢复棕色卡通角色、琥珀 warning 色、锤子、火花或表情。
+- 猴子本身静止，真实 activity rail 是唯一持续动效；启动器仍按真实 `1/8…8/8` 填充，Web 未知时长仍不伪造百分比。
+- 只在 cold boot 出现。Stage/local 3DM loading 继续使用 compact status readout，不让品牌图形反复遮挡模型。
+- SVG 是装饰图形并从无障碍树隐藏；准确状态仍由 `role=status` 与 `aria-live=polite` 的文字承担。Reduced Motion 下 rail 冻结，印记无需额外处理。
+
+这一分级保留了品牌个性，同时遵循 Apple 对 app icon 与界面 glyph 视觉重量分开的做法；线稿的曲线、负空间与对齐借鉴 [Icons](https://developer.apple.com/design/human-interface-guidelines/icons) 和 [SF Symbols](https://developer.apple.com/design/human-interface-guidelines/sf-symbols)，但不复制系统符号。
+
 ## 15. 组件级视觉规则
 
 | 组件 | 建议形态 | 禁止 |
@@ -469,7 +481,7 @@ L0  Content layer
 ## 17. 最小视觉改造顺序
 
 1. **已完成 — token 与表面：** Workshop Graphite / Drafting Blue 深浅模式、可读小字、平接 toolbar/HUD、低阴影浮层。
-2. **已完成 — loading：** 退役 raster 吉祥物循环；启动器使用真实 8 步 rail，Web 使用无图片、无 JS timer 的 activity rail；stage 保留模型上下文。
+2. **已完成 — loading：** 退役 raster 吉祥物循环，保留静态 Draft Monkey 制图印记；启动器使用真实 8 步 rail，Web 使用无图片、无 JS timer 的 activity rail；stage 保留模型上下文。
 3. **下一步 — 状态语言：** 收敛 `Current / Approximate / Candidate / Validated / Blocked / Published` 的文字、图标、颜色和线型，避免普通 processing 借用 warning。
 4. **再纵切 Review Rail：** 只为已定义的 selection → proposal → candidate → decision 路径建立新视觉组件。
 5. **最后退役 permanent chrome：** 纵切可用后，把 Conversation / Tree / Evidence / Versions 迁入 Peek、Inspector、Review 和 System。
@@ -482,8 +494,8 @@ L0  Content layer
 - 第一轮在现有 `styles.css` token 机制内建立 Graphite / Limestone 深浅主题；第二轮收敛为本文件的 Workshop Graphite / Drafting Blue，three.js viewport 继续读取同一组 CSS variables。
 - toolbar、viewport HUD、版本卡、evidence 入口已取消持续 blur 与重阴影；modal 等真正浮层仍保留有限 elevation。
 - Conversation 可从 toolbar 收起并恢复；收起后 viewport 占据全部主工作区，不新增持久状态或第二套导航。
-- Web loading 已删除 emoji、口号、拟人化文案、四帧 PNG 和 125ms React timer；boot 第一帧直接展示工作区骨架，stage 用 compact matte readout 保留模型上下文。
-- WinForms launcher 保留真实 `1/8…8/8` 步骤、错误转红、消息泵和 watchdog，只把装饰性动画替换为与步骤绑定的 determinate rail。
+- Web loading 已删除 emoji、口号、拟人化文案、四帧 PNG 和 125ms React timer；boot 第一帧展示工作区骨架和静态 Draft Monkey 线稿印记，stage 用 compact matte readout 保留模型上下文。
+- WinForms launcher 原生绘制同源静态印记，并保留真实 `1/8…8/8` 步骤、错误转红、消息泵和 watchdog；与步骤绑定的 determinate rail 仍是唯一运动。
 - 选中对象的 emissive 从 `0.85` 降至 `0.22` 作为过渡；下一轮应以 edge / corner 定位框替代材质发光。
-- 已统一 4 / 6 / 8px 圆角、状态 pill、focus ring、输入框与面板层级；应用图标仍保留 MonkeyArch 品牌图形，本轮没有扩大为 rebrand。
+- 已统一 4 / 6 / 8px 圆角、状态 pill、focus ring、输入框与面板层级；完整应用图标与冷启动线稿形成同一品牌的“印章版 / 制图版”两级表达，不改变产品名称或功能边界。
 - 已在真实浏览器检查 Dark / Light boot、主工作区和 Settings，并检查页面内 `backdrop-filter = 0`、loading image = 0；WinForms 5.1 的 `5/8` 启动状态也以真实控件渲染核验。

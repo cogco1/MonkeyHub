@@ -39,8 +39,9 @@ Each size is rasterised at 8x and box-filtered down -- exact area averaging over
 the supersamples -- so two runs of this script write the same bytes.
 
 `draw_monkey(pen, pose)` and `Pose` keep the figure's geometry separate from the
-icon's hanging pose. The application icon is the only UI surface that uses the
-figure; operational progress is expressed by status and progress controls.
+icon's hanging pose. This is the full-colour application seal; cold-start UI
+reduces the same arch / keystone / hanging monkey idea to static native linework.
+Operational progress is still expressed by status and progress controls.
 """
 
 from __future__ import annotations

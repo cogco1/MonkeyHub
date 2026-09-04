@@ -71,6 +71,7 @@ $StepCount = 8
 
 $Ink = [System.Drawing.Color]::FromArgb(25, 27, 25)
 $Stone = [System.Drawing.Color]::FromArgb(240, 241, 236)
+$StoneInk = [System.Drawing.Color]::FromArgb(211, 214, 208)
 $StoneDim = [System.Drawing.Color]::FromArgb(179, 184, 177)
 $Accent = [System.Drawing.Color]::FromArgb(127, 166, 210)
 $AccentInk = [System.Drawing.Color]::FromArgb(14, 27, 40)
@@ -121,6 +122,69 @@ function New-Splash {
         $pen = New-Object System.Drawing.Pen($script:Splash.Rim, 1)
         $eventArgs.Graphics.DrawRectangle($pen, 0, 0, $sender.ClientSize.Width - 1, $sender.ClientSize.Height - 1)
         $pen.Dispose()
+
+        # A static maker's mark, not a second progress animation: the arch, its
+        # keystone, and the hanging monkey are the same reduced drawing used by
+        # the browser boot surface. The real eight-step rail remains the only
+        # thing that moves.
+        if ($script:Splash.ProgressTrack.Visible) {
+            $graphics = $eventArgs.Graphics
+            $graphicsState = $graphics.Save()
+            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $graphics.TranslateTransform(64, 48)
+            $graphics.ScaleTransform(0.92, 0.92)
+
+            $archPen = New-Object System.Drawing.Pen($script:Splash.MarkArch, 1.6)
+            $figurePen = New-Object System.Drawing.Pen($script:Splash.MarkFigure, 2.1)
+            foreach ($markPen in @($archPen, $figurePen)) {
+                $markPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+                $markPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+                $markPen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
+            }
+            $keyBrush = New-Object System.Drawing.SolidBrush($script:Splash.MarkKeystone)
+            $groundBrush = New-Object System.Drawing.SolidBrush($script:Splash.MarkGround)
+
+            $graphics.DrawArc($archPen, 6, 7, 44, 44, 180, 180)
+            $graphics.DrawLine($archPen, 6, 29, 6, 52)
+            $graphics.DrawLine($archPen, 50, 29, 50, 52)
+
+            [System.Drawing.PointF[]]$keyPoints = @(
+                (New-Object System.Drawing.PointF -ArgumentList 23, 3),
+                (New-Object System.Drawing.PointF -ArgumentList 33, 3),
+                (New-Object System.Drawing.PointF -ArgumentList 31, 17),
+                (New-Object System.Drawing.PointF -ArgumentList 25, 17)
+            )
+            $graphics.FillPolygon($keyBrush, $keyPoints)
+
+            $graphics.DrawLine($figurePen, 28, 16, 26, 25)
+            $graphics.FillEllipse($groundBrush, 13, 26.5, 7, 7)
+            $graphics.DrawEllipse($figurePen, 13, 26.5, 7, 7)
+            $graphics.FillEllipse($groundBrush, 26, 26, 7, 7)
+            $graphics.DrawEllipse($figurePen, 26, 26, 7, 7)
+            $graphics.FillEllipse($groundBrush, 16, 22, 14, 14)
+            $graphics.DrawEllipse($figurePen, 16, 22, 14, 14)
+
+            $bodyPath = New-Object System.Drawing.Drawing2D.GraphicsPath
+            $bodyPath.AddBezier(20.5, 35.5, 18.3, 39, 18.9, 44.1, 22.5, 47.2)
+            $bodyPath.AddLine(22.5, 47.2, 29, 46.5)
+            $bodyPath.AddBezier(29, 46.5, 31.8, 43.1, 31.7, 38.7, 28.8, 35.3)
+            $graphics.DrawPath($figurePen, $bodyPath)
+            $graphics.DrawLine($figurePen, 21, 38, 13, 43)
+            $graphics.DrawLine($figurePen, 23, 47, 18, 52)
+            $graphics.DrawLine($figurePen, 28, 46.5, 32, 50.7)
+            $graphics.DrawBezier($figurePen, 29, 38.5, 39, 33.5, 49, 39.5, 49, 47.5)
+            $graphics.DrawBezier($figurePen, 49, 47.5, 49, 53.5, 44, 56.5, 39, 55.5)
+            $graphics.DrawBezier($figurePen, 39, 55.5, 34, 54.5, 32, 50.5, 34, 46.5)
+            $graphics.DrawBezier($figurePen, 34, 46.5, 36, 43.5, 41, 43.5, 43, 46.5)
+            $graphics.DrawBezier($figurePen, 43, 46.5, 44, 48.5, 43, 50.5, 41, 50.5)
+
+            $bodyPath.Dispose()
+            $groundBrush.Dispose()
+            $keyBrush.Dispose()
+            $figurePen.Dispose()
+            $archPen.Dispose()
+            $graphics.Restore($graphicsState)
+        }
     })
 
     $strip = New-Object System.Windows.Forms.Panel
@@ -176,14 +240,16 @@ function New-Splash {
         if ($eventArgs.KeyCode -eq [System.Windows.Forms.Keys]::Escape -and $script:FaultOpen) { $script:FaultOpen = $false }
     })
 
-    $title.Top = 96
-    $tagline.Top = 132
+    $title.Top = 55
+    $tagline.Top = 87
     $progress.Top = 208
 
     $script:Splash = @{
         Form = $form; Title = $title; Tagline = $tagline; Progress = $progress
         ProgressTrack = $progressTrack; ProgressFill = $progressFill
         Fault = $fault; Close = $close; Rim = $Rim
+        MarkArch = $StoneDim; MarkFigure = $StoneInk; MarkKeystone = $Accent
+        MarkGround = $Ink
     }
 
     Set-SplashLayout
@@ -194,9 +260,14 @@ function New-Splash {
 
 function Set-SplashLayout {
     $splash = $script:Splash
-    foreach ($label in @($splash.Title, $splash.Tagline, $splash.Progress)) {
-        $label.Left = 64
+    if ($splash.Fault.Visible) {
+        $splash.Title.Left = 44
+        $splash.Tagline.Left = 44
+    } else {
+        $splash.Title.Left = 124
+        $splash.Tagline.Left = 124
     }
+    $splash.Progress.Left = 64
 }
 
 function Set-SplashStep([int]$Index, [string]$Text) {

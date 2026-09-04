@@ -50,8 +50,9 @@ runs are still ArchFlow. `OPEN_MONKEYARCH.bat` — or the Desktop shortcut
 browser at the web client. **There is no console.** The .bat starts Windows PowerShell hidden
 (`powershell.exe` and not `pwsh`: a WinForms message loop needs an STA thread, and pwsh runs
 MTA on Windows), and the shortcut is saved with window style 7 so the cmd window that hands
-over is never painted. What you see instead is a matte launch surface — the wordmark and a
-two-pixel progress rail that follows the real eight steps: validating runtime.json, python and
+over is never painted. What you see instead is a matte launch surface — a static, line-drawn
+monkey hanging from its keystone like a maker's mark, the wordmark, and a two-pixel progress
+rail that follows the real eight steps: validating runtime.json, python and
 fastapi, web dependencies, starting the API,
 `/api/health`, starting the web client, its first answer, opening the browser. **A refusal turns
 that same window red**, with the launcher's own sentence in it and a Close button; nothing waits
@@ -95,13 +96,16 @@ goes too. `assets/monkeyarch-icon-512.png` is the same drawing at 512 px, for an
 `py -3.12 apps/archflow-studio/assets/make_icon.py`; the shortcut points at the `.ico` by
 absolute path, so an existing shortcut picks up a redraw without being rewritten, but a
 shortcut written before the MonkeyArch icon arrived names the retired `archflow.ico` and has
-to be written again with `make-desktop-shortcut.ps1`. Loading is intentionally not another
-brand scene. The Windows launch surface reports its real eight startup steps on a determinate
-two-pixel rail. The browser keeps the same wordmark, workshop-graphite palette and exact caller
-status, but uses a CSS-only indeterminate rail because API and local 3DM waits do not expose an
-honest percentage. Reduced-motion mode freezes that rail to a static status mark, and stage
-loading leaves the viewport visible under a compact matte readout. No raster loading assets or
-React animation timer are involved.
+to be written again with `make-desktop-shortcut.ps1`. Cold loading uses a reduced **Draft
+Monkey** rather than another full illustration: one quiet geometric line mark keeps the arch,
+keystone, hanging arm, ears and curled tail, with no face, hammer, sparks or character loop.
+The Windows launch surface draws it natively and reports its real eight startup steps on a
+determinate two-pixel rail. The browser draws the same mark as inline SVG, keeps the
+workshop-graphite palette and exact caller status, and uses a CSS-only indeterminate rail because
+API and local 3DM waits do not expose an honest percentage. The mark stays still; the rail is the
+only continuous motion. Reduced-motion mode freezes that rail to a static status mark, and stage
+loading leaves the viewport visible under a compact matte readout without repeating the brand.
+No raster loading assets or React animation timer are involved.
 
 **Install** (from the repo root):
 

@@ -1922,10 +1922,51 @@ button.chip:hover {
   box-shadow: var(--shadow-soft);
 }
 
+.boot__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+
+.draft-monkey {
+  display: block;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  overflow: visible;
+}
+
+.draft-monkey__arch,
+.draft-monkey__figure {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.draft-monkey__arch {
+  stroke: var(--faint);
+  stroke-width: 1.6;
+}
+
+.draft-monkey__figure {
+  stroke: var(--ink-2);
+  stroke-width: 2.1;
+}
+
+.draft-monkey__node {
+  fill: var(--panel);
+}
+
+.draft-monkey__keystone {
+  fill: var(--accent);
+}
+
 .boot__title {
-  margin: 0 0 14px;
+  margin: 0;
   font-family: var(--font-display);
-  font-size: calc(14px * var(--font-scale, 1));
+  font-size: calc(15px * var(--font-scale, 1));
   font-weight: 650;
   letter-spacing: -0.01em;
 }
