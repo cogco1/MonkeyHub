@@ -365,13 +365,47 @@ def _run_successor(
             record_kind=record_kind_,
             payload=payload,
         )
-
-    return run_successor(
-        binding,
-        settings,
-        successor,
-        run_id,
-        retain_before_run=retain_compilation,
+    # The one sanctioned binding: the record attaches itself to this run.
+    bound = successor.bound_to(run)
+    state = developed_design_view(
+        bound,
+        run=run,
+        portfolio_id=PORTFOLIO_ID,
+        branch_id=BRANCH_ID,
+        selection_decision_ref=SELECTION_DECISION_REF,
+    )
+    guard = harness_guard(repository, run, state)
+    # What a live provider would have to present. The runner records its own
+    # proposals, so a pack that declares no provider identity still runs.
+    declared_provider = seat_pack.get("provider_identity")
+    options = RunOptions(
+        commitment_ref=seat_pack["commitment_ref"],
+        live_provider_identity=(
+            None
+            if declared_provider is None
+            else GeometryProposalProviderIdentity(**declared_provider)
+        ),
+        branch_id=seat_pack.get("branch_id", BRANCH_ID),
+        export=settings.rhino_export,
+        workspace_root=repository.layout.run(run_id).root / "workspaces",
+        powershell=settings.powershell,
+    )
+    if options.export:
+        # The exporter writes into a directory per seat and expects it to be
+        # there; production's own entry point creates them the same way.
+        for seat in seats:
+            if not seat.reviewer:
+                (
+                    options.workspace_root
+                    / f"cad-{STAGE_ID}-{seat.seat_id}"
+                ).mkdir(parents=True, exist_ok=True)
+    return run_project(
+        repository,
+        run=run,
+        stage_guard=guard,
+        record=bound,
+        seats=seats,
+        options=options,
     )
 
 

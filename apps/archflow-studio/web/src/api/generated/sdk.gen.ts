@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, DecideProposalApiProposalsProposalIdDecisionPostData, DecideProposalApiProposalsProposalIdDecisionPostErrors, DecideProposalApiProposalsProposalIdDecisionPostResponses, DeclareApiControlsPostData, DeclareApiControlsPostErrors, DeclareApiControlsPostResponses, ListEpisodesApiEpisodesGetData, ListEpisodesApiEpisodesGetErrors, ListEpisodesApiEpisodesGetResponses, MakeMassingOptionApiOptionsPostData, MakeMassingOptionApiOptionsPostErrors, MakeMassingOptionApiOptionsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadControlApiControlsControlIdGetData, ReadControlApiControlsControlIdGetErrors, ReadControlApiControlsControlIdGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetData, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadOptionsApiOptionsGetData, ReadOptionsApiOptionsGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadVolumesApiStateVolumesGetData, ReadVolumesApiStateVolumesGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, SelectOptionApiOptionsOptionIdSelectPostData, SelectOptionApiOptionsOptionIdSelectPostErrors, SelectOptionApiOptionsOptionIdSelectPostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
+import type { ApplyProgramApiProgramPostData, ApplyProgramApiProgramPostErrors, ApplyProgramApiProgramPostResponses, CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, DecideProposalApiProposalsProposalIdDecisionPostData, DecideProposalApiProposalsProposalIdDecisionPostErrors, DecideProposalApiProposalsProposalIdDecisionPostResponses, DeclareApiControlsPostData, DeclareApiControlsPostErrors, DeclareApiControlsPostResponses, ListEpisodesApiEpisodesGetData, ListEpisodesApiEpisodesGetErrors, ListEpisodesApiEpisodesGetResponses, MakeMassingOptionApiOptionsPostData, MakeMassingOptionApiOptionsPostErrors, MakeMassingOptionApiOptionsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadControlApiControlsControlIdGetData, ReadControlApiControlsControlIdGetErrors, ReadControlApiControlsControlIdGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetData, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadOptionsApiOptionsGetData, ReadOptionsApiOptionsGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadSemanticsApiSemanticsGetData, ReadSemanticsApiSemanticsGetResponses, ReadSheetApiProgramGetData, ReadSheetApiProgramGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadVolumesApiStateVolumesGetData, ReadVolumesApiStateVolumesGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, SelectOptionApiOptionsOptionIdSelectPostData, SelectOptionApiOptionsOptionIdSelectPostErrors, SelectOptionApiOptionsOptionIdSelectPostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -116,6 +116,50 @@ export const readClosureApiStateClosurePost = <ThrowOnError extends boolean = fa
         ...options.headers
     }
 });
+
+/**
+ * Read Sheet
+ *
+ * The project's program sheet: the authored one, or the derived one.
+ */
+export const readSheetApiProgramGet = <ThrowOnError extends boolean = false>(options?: Options<ReadSheetApiProgramGetData, ThrowOnError>): RequestResult<ReadSheetApiProgramGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadSheetApiProgramGetResponses, unknown, ThrowOnError>({ url: '/api/program', ...options });
+
+/**
+ * Apply Program
+ *
+ * Queue this sheet as a candidate run, and name the run it will make.
+ *
+ * The order is deliberate. The state is checked first, because a sheet
+ * applied to a record the architect was not looking at is the one failure
+ * that looks like a success. The successor is built next, so a sheet the
+ * kernel refuses is a 422 now rather than a failed job later. Only then is
+ * the run queued — and only after that is the authored file written.
+ *
+ * That last step is the one that can refuse on its own. Running a sheet is a
+ * read of the record and needs no owner; *keeping* one does, and a remote
+ * server has none yet. So a remote request that asked to save gets the run it
+ * asked for and a ``409 WIP_WRITE_REMOTE`` naming that run, rather than a
+ * silent save that overwrote somebody else's brief.
+ */
+export const applyProgramApiProgramPost = <ThrowOnError extends boolean = false>(options: Options<ApplyProgramApiProgramPostData, ThrowOnError>): RequestResult<ApplyProgramApiProgramPostResponses, ApplyProgramApiProgramPostErrors, ThrowOnError> => (options.client ?? client).post<ApplyProgramApiProgramPostResponses, ApplyProgramApiProgramPostErrors, ThrowOnError>({
+    url: '/api/program',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read Semantics
+ *
+ * Every role and condition canonical state may name.
+ *
+ * It reads no project: the vocabulary is the framework's, the same for every
+ * project this server binds, and asking for it must not fail because a
+ * project root is wrong.
+ */
+export const readSemanticsApiSemanticsGet = <ThrowOnError extends boolean = false>(options?: Options<ReadSemanticsApiSemanticsGetData, ThrowOnError>): RequestResult<ReadSemanticsApiSemanticsGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadSemanticsApiSemanticsGetResponses, unknown, ThrowOnError>({ url: '/api/semantics', ...options });
 
 /**
  * Read Artifacts

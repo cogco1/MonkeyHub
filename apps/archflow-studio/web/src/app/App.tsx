@@ -361,6 +361,9 @@ export default function App({ server }: { server: ServerIdentity }) {
       setVolumes(ready(await studio.volumes()));
     } catch (cause) {
       setVolumes(failed(asStudioApiError(cause)));
+    }
+  }, []);
+
   const loadProgram = useCallback(async () => {
     setProgram(loading);
     try {
@@ -379,6 +382,8 @@ export default function App({ server }: { server: ServerIdentity }) {
     if (!optionsOpen || projection === null) return;
     void loadOptions();
   }, [optionsOpen, projection?.recordDigest, loadOptions]);
+
+  useEffect(() => {
     if (!programOpen || projection === null) return;
     void loadProgram();
   }, [programOpen, projection?.recordDigest, loadProgram]);
@@ -1838,6 +1843,9 @@ export default function App({ server }: { server: ServerIdentity }) {
                   onMake={(body) => void makeOption(body)}
                   onSelect={(optionId) => void selectOption(optionId)}
                   onClose={() => setOptionsOpen(false)}
+                />
+              ) : null
+            }
             programOpen={programOpen}
             onToggleProgram={() => setProgramOpen((open) => !open)}
             programPanel={

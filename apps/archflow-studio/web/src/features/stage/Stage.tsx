@@ -289,6 +289,7 @@ export function Stage({
             onClick={onToggleOptions}
           >
             {t("options.open")}
+          </button>
           {/* The brief, beside the frame: the two documents an architect
               reads the model against. */}
           <button

@@ -175,6 +175,9 @@ export const studio = {
       `POST /api/options/${optionId}/select`,
       selectOptionApiOptionsOptionIdSelectPost({ path: { option_id: optionId } }),
     );
+  },
+
+  /**
    * The project's program sheet: the architect's own where one is authored,
    * else the record's own reading of its zones. `source` says which.
    */
