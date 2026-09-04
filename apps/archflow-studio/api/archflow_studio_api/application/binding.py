@@ -29,6 +29,7 @@ from archflow.project.repository import (
     FilesystemProjectRepository,
     ProjectRepositoryError,
 )
+from archflow.state.stage_workflow import HARNESS_WORKFLOW_IDS
 
 from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
 from ..transport.errors import StudioError, error_sentence
@@ -36,12 +37,12 @@ from ..transport.errors import StudioError, error_sentence
 STAGE_WORKFLOW_SCHEMA = "ProjectStageWorkflow@1"
 RUNNER_RECEIPT_V3 = "RunnerRunReceipt@3"
 
-# Runs whose workflow says they exist to compare or to answer the Studio, not
-# to carry the design forward. They may be the newest complete runs in the
-# project and they must still never become its reference.
-HARNESS_WORKFLOW_IDS = frozenset(
-    {"equivalence-harness", "studio-candidate-harness"}
-)
+# ``HARNESS_WORKFLOW_IDS`` (imported above) names the runs whose workflow says
+# they exist to compare or to answer the Studio, not to carry the design
+# forward. They may be the newest complete runs in the project and must still
+# never become its reference. The set lives in archflow.state.stage_workflow
+# because the runner reads the same one to say, on the receipt of the closure
+# it wrote, whether that closure belongs to a harness (ADR-007 rule 4).
 
 # The run id a projection is bound to when the project holds no run that can
 # answer for it. It names no run on disk, and the projection says so.

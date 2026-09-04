@@ -6,6 +6,7 @@ from dataclasses import replace
 from archflow.contracts.authority import DEFAULT_AUTHORITY_FIELDS, no_authority
 from archflow.state.stage_workflow import DESIGN_PHASES, DesignPhase
 from archflow.state.operational_state import DesignObligation, ObligationStatus
+from archflow.state.state_record import CHECK_KINDS
 from archflow.state.stage_workflow import (
     LOD_LEVELS,
     PHASE_LADDER,
@@ -17,6 +18,7 @@ from archflow.state.stage_workflow import (
     StageRunEnvelope,
     StageWorkflowError,
     open_stage_run_envelope,
+    require_measurable,
     require_stage_exit_binding,
     require_stage_run_envelope,
 )
@@ -39,7 +41,9 @@ def stage(
         stage_index=index,
         phase=phase,
         required_roles=(f"role-{index}-a", f"role-{index}-b"),
-        required_checks=(f"check-{index}-a", f"check-{index}-b"),
+        # Checks the spine can measure: a workflow may require nothing else,
+        # and every envelope opened below goes through require_measurable.
+        required_checks=("aperture_exists", "support_contact"),
         close_obligation_id=(
             close_obligation_id or f"close-stage-{index}"
         ),
@@ -192,6 +196,83 @@ class ProjectStageWorkflowTests(unittest.TestCase):
                     stage(1, close_obligation_id="same-close"),
                 ),
             )
+
+
+class MeasurableRequirementTests(unittest.TestCase):
+    """A workflow may require only checks the spine can measure (ADR-007 r3)."""
+
+    def unmeasurable(self) -> ProjectStageWorkflow:
+        return ProjectStageWorkflow(
+            project_id="demo",
+            workflow_id="villa-rotonda-as-built-stage-0-5-v1",
+            stages=(
+                replace(
+                    stage(0),
+                    required_checks=("frame-glazing-separation",),
+                ),
+            ),
+        )
+
+    def test_a_required_check_outside_the_checker_table_is_refused(
+        self,
+    ) -> None:
+        with self.assertRaises(StageWorkflowError) as caught:
+            require_measurable(self.unmeasurable())
+        message = str(caught.exception)
+        self.assertIn("'frame-glazing-separation'", message)
+        for registered in CHECK_KINDS:
+            self.assertIn(registered, message)
+
+    def test_every_registered_check_kind_is_accepted(self) -> None:
+        for kind in CHECK_KINDS:
+            with self.subTest(kind=kind):
+                accepted = ProjectStageWorkflow(
+                    project_id="demo",
+                    workflow_id="measurable",
+                    stages=(replace(stage(0), required_checks=(kind,)),),
+                )
+                self.assertIs(require_measurable(accepted), accepted)
+
+    def test_opening_a_stage_against_it_is_refused_too(self) -> None:
+        with self.assertRaisesRegex(StageWorkflowError, "cannot measure"):
+            open_envelope(self.unmeasurable(), 0)
+
+    def test_a_retained_workflow_with_an_old_check_id_still_loads(self) -> None:
+        """Reading is not re-validating (ADR-004).
+
+        The harnesses and the villa's frozen v1 retained free check ids before
+        the rule existed. ``from_dict`` is the path the runner's guard and the
+        Studio read a retained workflow through, so it must still return them;
+        the refusal belongs where a workflow is frozen or a stage is opened.
+        """
+
+        retained = {
+            "schema": "ProjectStageWorkflow@1",
+            "project_id": "demo",
+            "workflow_id": "equivalence-harness",
+            "stages": [
+                {
+                    "stage_id": "equivalence-check",
+                    "stage_index": 0,
+                    "phase": "design_development",
+                    "required_roles": ["geometry-program"],
+                    "required_checks": ["state-record-equivalence"],
+                    "close_obligation_id": "close-equivalence-check",
+                }
+            ],
+            "basis_refs": ["decision:state-record-equivalence-harness"],
+            **no_authority(DEFAULT_AUTHORITY_FIELDS),
+        }
+
+        loaded = ProjectStageWorkflow.from_dict(retained)
+
+        self.assertEqual(
+            loaded.stages[0].required_checks,
+            ("state-record-equivalence",),
+        )
+        self.assertEqual(loaded.to_dict(), retained)
+        with self.assertRaises(StageWorkflowError):
+            require_measurable(loaded)
 
 
 class StageRunEnvelopeTests(unittest.TestCase):
@@ -590,7 +671,7 @@ class StageLadderTests(unittest.TestCase):
                         "stage_index": 0,
                         "phase": "schematic_design",
                         "required_roles": ["role-0-a", "role-0-b"],
-                        "required_checks": ["check-0-a", "check-0-b"],
+                        "required_checks": ["aperture_exists", "support_contact"],
                         "close_obligation_id": "close-stage-0",
                     },
                     {
@@ -598,7 +679,7 @@ class StageLadderTests(unittest.TestCase):
                         "stage_index": 1,
                         "phase": "design_development",
                         "required_roles": ["role-1-a", "role-1-b"],
-                        "required_checks": ["check-1-a", "check-1-b"],
+                        "required_checks": ["aperture_exists", "support_contact"],
                         "close_obligation_id": "close-stage-1",
                     },
                     {
@@ -606,7 +687,7 @@ class StageLadderTests(unittest.TestCase):
                         "stage_index": 2,
                         "phase": "candidate_coordination",
                         "required_roles": ["role-2-a", "role-2-b"],
-                        "required_checks": ["check-2-a", "check-2-b"],
+                        "required_checks": ["aperture_exists", "support_contact"],
                         "close_obligation_id": "close-stage-2",
                     },
                 ],

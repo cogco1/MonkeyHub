@@ -27,10 +27,17 @@ bounds, handovers to consuming seats (published datums and realized bounds
 as exclusions), optional CAD export that reuses, restamps, patches or
 rebuilds (P103), and receipts with per-seat wall time.  It will not run
 without a retained ``ProjectStageWorkflow@1`` and exact
-``StageRunEnvelope@1``.  A successful seat proposal is never reported as
-stage acceptance: the stage close obligation remains OPEN until the
-independent stage-artifact/check/closure path satisfies it.  Every record
-written here remains authority-free.
+``StageRunEnvelope@1``.
+
+At the end of the run the runner closes the stage, because it is the only
+thing that measured anything (ADR-007 rule 3): a
+``CompositeStageClosureReceipt`` compiled from the run's own relation checks
+and seat results, retained as ``stage-closure``, and — only when that closure
+carries no finding — the ``StageExitBinding`` a successor stage may open
+against, retained as ``stage-exit-binding``.  A successful seat proposal is
+still never stage acceptance: the close obligation the envelope retained stays
+OPEN, the closure is a separate statement about the checks the stage required,
+and every record written here remains authority-free.
 """
 from __future__ import annotations
 
@@ -79,13 +86,20 @@ from archflow.project.record_kinds import (
     SEAT_RHINO_EXECUTION,
     SEAT_ROUND_RECEIPT,
     SELECTED_SPATIAL_OPTION,
+    STAGE_CLOSURE,
+    STAGE_EXIT_BINDING,
     STATE_RECORD,
     stage_geometry_program,
 )
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef, record_ref_from_uri
-from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
+from archflow.state.stage_workflow import (
+    CompositeStageClosureReceipt,
+    StageClosureFinding,
+    StageClosureFindingCode,
+    StageClosureStatus,
+)
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.design_portfolio import BranchRevisionRef
 from archflow.state.developed_design import (
@@ -110,6 +124,7 @@ from archflow.state.geometry_program import (
 from archflow.state.spatial import SiteBounds
 from archflow.state.state_record import Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, developed_design_view, project_grids_of, project_levels_of
 from archflow.state.stage_workflow import (
+    HARNESS_WORKFLOW_IDS,
     ProjectStageWorkflow,
     StageExitBinding,
     StageRunEnvelope,
@@ -537,6 +552,10 @@ def run_project(
     programs: dict[str, Any] = {}
     handovers_for: dict[str, list] = {s.seat_id: [] for s in seats}
     results: list[SeatResult] = []
+    # What the stage closure is compiled from: the reports themselves, and the
+    # digests of the records they were retained as.
+    relation_reports: list[Any] = []
+    check_receipt_digests: list[str] = []
     frame = CoordinateFrame(frame_id=FRAME_ID, parent_frame_id=None, transform_from_parent=AffineTransform.identity(), source_refs=tuple(record.evidence_refs[:1]) or (record_ref.uri,))
     try:
         for round_index, round_seats in enumerate(rounds):
@@ -600,7 +619,10 @@ def run_project(
                 realized = {oid: (tuple(row["bbox_min"]), tuple(row["bbox_max"])) for oid, row in bounds.items()}
                 # the relations the producers materialized are checked against the compiled bounds; nothing is healed
                 relation_report = _check_produced_relations(record, own, elements_produced, produced, realized, levels)
-                relation_check_ref = put(SEAT_RELATION_CHECK, {**relation_report.to_dict(), "seat_id": seat_id, "program_ref": program_ref.uri, **no_authority(_AUTH)}).uri
+                relation_check_record = put(SEAT_RELATION_CHECK, {**relation_report.to_dict(), "seat_id": seat_id, "program_ref": program_ref.uri, **no_authority(_AUTH)})
+                relation_check_ref = relation_check_record.uri
+                relation_reports.append(relation_report)
+                check_receipt_digests.append(relation_check_record.sha256)
                 if not relation_report.held:
                     # a violated relation is a result, not a crash: program, report and seat are retained with
                     # its issues, nothing is handed over or exported, and the relation report (held / violated /
@@ -640,6 +662,19 @@ def run_project(
     for seat in seats:
         owned_any.update(owned_subtree(proposal_tree, seat.owned_component_ids))
     unowned = tuple(sorted(c for c in _subtree_leaves(proposal_tree, tuple(c.component_id for c in proposal_tree.components)) if c not in owned_any))
+    # The stage closes here or not at all (ADR-007 rule 3). The closure is
+    # written either way, because a stage that did not close still owes the
+    # project the statement of why; only a SATISFIED one yields an exit
+    # binding, and only that binding lets a successor stage open.
+    seat_execution_complete = all(s.status in ("proposal_accepted", "empty") for s in results) and any(s.status == "proposal_accepted" for s in results)
+    closure = _stage_closure(stage_guard, branch=branch, results=results, relation_reports=tuple(relation_reports),
+                             check_receipt_digests=tuple(check_receipt_digests), seat_execution_complete=seat_execution_complete)
+    closure_ref = put(STAGE_CLOSURE, closure.to_dict())
+    exit_binding_ref = None
+    if closure.status is StageClosureStatus.SATISFIED:
+        exit_binding = StageExitBinding.bind(stage_guard.envelope, envelope_ref=stage_guard.envelope_record_ref.uri,
+                                             closure_ref=closure_ref.uri, closure_digest=closure.receipt_digest)
+        exit_binding_ref = put(STAGE_EXIT_BINDING, exit_binding.to_dict()).uri
     payload = {
         "schema": "RunnerRunReceipt@3", "project_id": run.project_id, "run_id": run.run_id, "state_record_ref": record_ref.uri, "state_record_digest": record.digest,
         "unowned_components": list(unowned),
@@ -653,16 +688,76 @@ def run_project(
             "stage_id": stage_guard.envelope.stage_id,
             "stage_index": stage_guard.envelope.stage_index,
             "phase": stage_guard.envelope.phase.value,
+            # The close obligation retained in the envelope is OPEN and stays
+            # OPEN; whether it was satisfied is what the closure says, below.
             "status": "OPEN",
             "close_obligation_id": stage_guard.envelope.close_obligation.obligation_id,
         },
+        "closure_ref": closure_ref.uri,
+        "closure_status": closure.status.value,
+        "exit_binding_ref": exit_binding_ref,
+        # A harness closes its own container, never a project stage (ADR-007
+        # rule 4), so a reader never has to infer that from the workflow id.
+        "workflow_is_harness": stage_guard.workflow.workflow_id in HARNESS_WORKFLOW_IDS,
         "provider": provider_block,
         "rounds": [list(r) for r in rounds], "seat_results": [_seat_dict(s) for s in results],
-        "seat_execution_complete": all(s.status in ("proposal_accepted", "empty") for s in results) and any(s.status == "proposal_accepted" for s in results),
+        "seat_execution_complete": seat_execution_complete,
         "wall_time_s": round(time.perf_counter() - started, 3), **no_authority(_AUTH),
     }
     payload["receipt_ref"] = put(RUNNER_RUN_RECEIPT, payload).uri
     return payload
+
+
+def _stage_closure(stage_guard: StageExecutionGuard, *, branch: BranchRef, results, relation_reports, check_receipt_digests, seat_execution_complete: bool) -> CompositeStageClosureReceipt:
+    """The stage's closure, compiled from this run's own checks (ADR-007 r3).
+
+    One finding per problem and nothing else: a required check kind no
+    relation measured, a relation of a required kind that did not hold, and a
+    seat that did not finish. No finding is SATISFIED, and only a SATISFIED
+    closure may become a ``StageExitBinding``.
+
+    A relation the record declares is measured by every seat, so the same
+    problem arrives more than once; findings are therefore kept by identity,
+    not by arrival.
+    """
+
+    envelope = stage_guard.envelope
+    findings: dict[tuple, StageClosureFinding] = {}
+
+    def note(finding: StageClosureFinding) -> None:
+        findings.setdefault(finding.identity, finding)
+
+    measured: dict[str, list] = {}
+    for report in relation_reports:
+        for check in report.checks:
+            if check.status != "unchecked":                 # unchecked is not a measurement
+                measured.setdefault(check.check_kind, []).append(check)
+    for required in envelope.required_checks:
+        checks = measured.get(required, ())
+        if not checks:
+            note(StageClosureFinding(code=StageClosureFindingCode.MISSING_CHECK, requirement_id=required))
+            continue
+        for check in checks:
+            if check.status == "violated":
+                note(StageClosureFinding(code=StageClosureFindingCode.CHECK_FAILED, requirement_id=required, receipt_id=check.relation_id))
+    incomplete = tuple(r for r in results if r.status not in ("proposal_accepted", "empty"))
+    for result in incomplete:
+        note(StageClosureFinding(code=StageClosureFindingCode.SEAT_INCOMPLETE, requirement_id=result.seat_id))
+    if not seat_execution_complete and not incomplete:
+        # Every seat was admitted and none produced a program: no seat failed,
+        # and the stage still has nothing to close over.
+        note(StageClosureFinding(code=StageClosureFindingCode.SEAT_INCOMPLETE, requirement_id="seat-execution-complete"))
+    return CompositeStageClosureReceipt(
+        profile_id=stage_guard.workflow.workflow_id,
+        profile_digest=stage_guard.workflow.workflow_digest,
+        stage_id=envelope.stage_id,
+        branch=branch,
+        stage_subject_ref=envelope.subject_ref,
+        subject_digest=envelope.state_digest,
+        check_receipt_digests=tuple(sorted(set(check_receipt_digests))),
+        findings=tuple(findings.values()),
+        status=StageClosureStatus.SATISFIED if not findings else StageClosureStatus.OPEN,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -685,7 +780,17 @@ def _gather(elements) -> Produced:
 
 
 def _check_produced_relations(record: StateRecord, rows, elements, produced: Produced, realized, levels: ProjectLevels):
-    """Support relations the producers built, measured against the compiled bounds (RelationCheck@1)."""
+    """Support relations the producers built, measured against the compiled bounds (RelationCheck@1).
+
+    A zone is measured too. The record's declared relations are largely between
+    ``Space@1`` zones — corridor to hall clearance, a portico's voids — and a
+    zone produces no geometry of its own, so a checker had nothing to measure
+    and every such relation reported ``unchecked``. A zone's objects are its
+    volumes: each ``Space@1`` enters ``objects_by_element`` under its own
+    entity id, with one synthetic bound per ``volume_ids`` entry taken from
+    that ``Volume@1``'s declared ``min`` / ``max``. Realized geometry always
+    wins — a produced object with the same id is never overwritten.
+    """
 
     import json as _json
 
@@ -703,6 +808,17 @@ def _check_produced_relations(record: StateRecord, rows, elements, produced: Pro
     datum_values = {d.datum_id: float(_json.loads(d.value_json)) for d in produced.datums}
     datum_values.update({l.level_id: l.elevation for l in levels.levels})
     bounds = {oid: (list(low), list(high)) for oid, (low, high) in realized.items()}
+    volumes = {e.entity_id: e for e in record.entities_of("Volume@1")}
+    for zone in record.entities_of("Space@1"):
+        zone_objects = []
+        for volume_id in zone.fields.get("volume_ids", ()):
+            volume = volumes.get(volume_id)
+            if volume is None:
+                continue
+            bounds.setdefault(volume_id, ([float(v) for v in volume.fields["min"]], [float(v) for v in volume.fields["max"]]))
+            zone_objects.append(volume_id)
+        if zone_objects:
+            objects.setdefault(zone.entity_id, zone_objects)
     return check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datum_values, relations=tuple(relations))
 
 

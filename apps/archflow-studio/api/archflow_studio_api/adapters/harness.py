@@ -56,6 +56,12 @@ def harness_guard(
     is called, because the guard checks that the payloads it was handed are
     exactly what P036 retained — equivalent-looking objects without their refs
     are intentionally not enough.
+
+    The stage requires no check, and the harness closes nothing. A workflow
+    may require only checks the spine can measure (ADR-007 rule 3), and the
+    candidate's relations are reported per seat as ``seat-relation-check``
+    rather than required by this stage: requiring one here would state a
+    project stage requirement that the candidate is expressly not making.
     """
 
     workflow = ProjectStageWorkflow(
@@ -67,7 +73,7 @@ def harness_guard(
                 stage_index=0,
                 phase=DesignPhase.DESIGN_DEVELOPMENT,
                 required_roles=("geometry-program",),
-                required_checks=("studio-candidate-relations",),
+                required_checks=(),
                 close_obligation_id=CLOSE_OBLIGATION_ID,
             ),
         ),

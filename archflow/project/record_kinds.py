@@ -13,14 +13,12 @@ retained runs from the archived lanes carry kinds the spine never writes, and
 they must stay readable (ADR-004).
 
 A kind belongs in this table when a spine module writes it, or when a spine
-module reads it as a retained record and names its contract. Six entries are
+module reads it as a retained record and names its contract. Three entries are
 of the second sort and no spine module writes them; each says so in its note:
-the three stage records ADR-007 requires and Wave C will write (the envelope,
-the exit binding and the closure); the research bridge's ledger; and the
-component template and catalog confrontation that
-``produce_geometry_program_proposal`` still accepts, whose library was archived.
-A kind no spine module writes, reads or names is not in the table:
-the retired lanes' vocabulary stays where the retired lanes are.
+the research bridge's ledger, and the component template and catalog
+confrontation that ``produce_geometry_program_proposal`` still accepts, whose
+library was archived. A kind no spine module writes, reads or names is not in
+the table: the retired lanes' vocabulary stays where the retired lanes are.
 
 Three kinds are written with a computed suffix, so they are registered as
 patterns rather than as exact strings. Their table key is the shape a person
@@ -104,11 +102,14 @@ CATALOG_CONFRONTATION = "catalog-confrontation"
 
 PROMOTION_DECISION = "promotion-decision"
 
-# ---- reserved: named here before the module that will write them exists
+# ---- the stage ladder's own records (ADR-007)
 
 STAGE_RUN_ENVELOPE = "stage-run-envelope"
 STAGE_EXIT_BINDING = "stage-exit-binding"
 STAGE_CLOSURE = "stage-closure"
+
+# ---- reserved: named here before the module that will write them exists
+
 RESEARCH_EVIDENCE_LEDGER = "research-evidence-ledger"
 
 
@@ -318,23 +319,23 @@ _TABLE: tuple[RecordKind, ...] = (
         STAGE_RUN_ENVELOPE,
         "StageRunEnvelope@1",
         _RUN_RECORD,
-        "reserved (Wave C): the project's own stage a run opened against. The "
-        "guard reads one today; only the two harnesses write one, under their "
-        "own kinds",
+        "the project's own stage a run opened against, written by "
+        "tools/open_stage_run.py; the two harnesses write their own under "
+        "their own kinds",
     ),
     RecordKind(
         STAGE_EXIT_BINDING,
         "StageExitBinding@1",
         _RUN_RECORD,
-        "reserved (Wave C): the SATISFIED exit a successor stage cites. The "
-        "guard reads one today; nothing writes it yet",
+        "the SATISFIED exit a successor stage cites, derived by the runner "
+        "from the closure it just wrote",
     ),
     RecordKind(
         STAGE_CLOSURE,
         "CompositeStageClosureReceipt@1",
         _RUN_RECORD,
-        "reserved (Wave C): the closure the runner will write from its own "
-        "checks; the guard reads one today, nothing writes it yet",
+        "the closure the runner writes from its own checks: SATISFIED, or the "
+        "findings saying why the stage did not close",
     ),
     RecordKind(
         PROMOTION_DECISION,

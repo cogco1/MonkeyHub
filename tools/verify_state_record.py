@@ -75,10 +75,20 @@ def _latest(records_dir: Path, record_kind: str) -> Path:
 
 
 def _harness_guard(repository, run, state, options) -> StageExecutionGuard:
+    """The harness stage this comparison runs under; it closes nothing.
+
+    The stage requires no check. A workflow may only require checks the spine
+    can measure (ADR-007 rule 3), and the equivalence claim this tool makes is
+    not one of them: it is a comparison against a reference run, written here
+    as ``state-record-equivalence``, not a relation the runner measured. So
+    the harness names no requirement and its closure states only that the
+    seats ran — which is all a harness ever closes.
+    """
+
     workflow = ProjectStageWorkflow(
         project_id=run.project_id, workflow_id="equivalence-harness",
         stages=(ProjectStage(stage_id="equivalence-check", stage_index=0, phase=DesignPhase.DESIGN_DEVELOPMENT, required_roles=("geometry-program",),
-                             required_checks=("state-record-equivalence",), close_obligation_id="close-equivalence-check"),),
+                             required_checks=(), close_obligation_id="close-equivalence-check"),),
         basis_refs=("decision:state-record-equivalence-harness",))
     destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
     workflow_ref = repository.put_json(run=run, destination=destination, record_kind=EQUIVALENCE_HARNESS_WORKFLOW, payload=workflow.to_dict())

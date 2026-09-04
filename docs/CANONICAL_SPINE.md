@@ -29,7 +29,8 @@ StateRecord@1  (archflow/state/state_record.py)
 ```
 
 Entry points: `tools/run_project.py`, `tools/verify_state_record.py`,
-`tools/freeze_project_stage_workflow.py`, `apps/archflow-studio/api` (and `web/`).
+`tools/freeze_project_stage_workflow.py`, `tools/open_stage_run.py`,
+`apps/archflow-studio/api` (and `web/`).
 Shared foundations: `archflow/project/refs.py`, `archflow/contracts/{canonical,fields}.py`,
 `archflow/validation/{model,engine}.py` (`validate_submission`, `Finding`,
 `ValidationReceipt`), `archflow/ports/model.py` (model invocation: one request, one receipt,

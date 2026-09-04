@@ -11,8 +11,13 @@ levels and grid axes, element rows with references) and ``input/runner/seats.jso
 at the paths the layout owns. There is no pack directory to point elsewhere: the
 run executes the record the project holds (ADR-007). The run's records are the
 receipt; this tool prints a summary only. The run must already exist and the
-exact workflow and envelope must already be retained in P036; this CLI never
-turns a raw run into a stage by side effect.
+exact workflow and envelope must already be retained in P036 —
+``tools/open_stage_run.py`` is what creates them; this CLI never turns a raw
+run into a stage by side effect.
+
+The runner closes the stage at the end of the run: it writes the closure from
+its own checks and, when that closure is SATISFIED, the exit binding a
+successor stage may open against. Both refs are printed with the summary.
 """
 from __future__ import annotations
 
@@ -150,6 +155,11 @@ def main() -> int:
             print("    ", issue.get("code"), "|", str(issue.get("detail"))[:200])
     print(f"unowned components: {receipt.get('unowned_components')}")
     print(f"seat_execution_complete={receipt['seat_execution_complete']} stage_status={receipt['stage']['status']} wall_time={receipt['wall_time_s']}s receipt={receipt['receipt_ref']}")
+    print(f"closure={receipt['closure_status']} {receipt['closure_ref']}")
+    if receipt["exit_binding_ref"] is None:
+        print("no exit binding: this stage did not close, so no successor stage may open against this run")
+    else:
+        print(f"exit_binding={receipt['exit_binding_ref']}")
     return 0 if receipt["seat_execution_complete"] else 1
 
 

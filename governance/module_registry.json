@@ -6,6 +6,7 @@
       "tools/run_project.py",
       "tools/verify_state_record.py",
       "tools/freeze_project_stage_workflow.py",
+      "tools/open_stage_run.py",
       "apps/archflow-studio/api/archflow_studio_api/main.py"
     ],
     "rule": "One owner per capability. EXTEND the owner; CREATE only with a written reason; a second implementation exists only behind an interface declared here."
@@ -754,7 +755,8 @@
         "producing the geometry or the analytic bounds it measures - capabilities.element_producers and compilers.geometry",
         "declaring the relation in the first place - archflow.state.state_record",
         "turning a violation into a stage or run verdict - runtime.project_runner",
-        "any repair or healing of geometry that fails a check - nothing on the spine does this"
+        "any repair or healing of geometry that fails a check - nothing on the spine does this",
+        "giving a zone extent to measure - runtime.project_runner puts each Space@1 in objects_by_element with its volumes' declared bounds"
       ],
       "inputs": [
         "StateRecord",
@@ -1904,7 +1906,9 @@
         "component coverage: what counts as covered, what is declined, what is undeclared and when that is fatal",
         "assembling what reaches the relation check: the record's own declared relations plus the `support` relations the producers built, each with its validator binding",
         "the export decision: reuse an identical prior export, patch a different one, or rebuild",
-        "the retained record kinds (state-record, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, runner-run-failure, RunnerRunReceipt@3)"
+        "the retained record kinds (state-record, stage-closure, stage-exit-binding, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, runner-run-failure, RunnerRunReceipt@3)",
+        "the stage closure and exit binding of a run: the CompositeStageClosureReceipt compiled from the run's own relation checks and seat results, and the StageExitBinding derived from a SATISFIED one",
+        "the synthetic bounds that make a Space@1 zone measurable: its volumes' declared min/max, entered in objects_by_element under the zone's entity id"
       ],
       "does_not_own": [
         "producing geometry - capabilities.element_producers",
@@ -1928,7 +1932,9 @@
         "RunnerRunReceipt@3 dict",
         "SeatResult rows",
         "retained P036 records",
-        "RhinoCadExecutionReceipt (when exporting)"
+        "RhinoCadExecutionReceipt (when exporting)",
+        "CompositeStageClosureReceipt@1 (retained as `stage-closure`)",
+        "StageExitBinding@1 (retained as `stage-exit-binding`, only when the closure is SATISFIED)"
       ],
       "public_api": [
         "run_project",
@@ -1992,7 +1998,8 @@
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "tests/test_project_runner.py",
-        "archive/tests/test_state_record.py"
+        "archive/tests/test_state_record.py",
+        "tools/open_stage_run.py"
       ],
       "invariants": [
         "the record is the only design input; seats arrive beside it and are never part of state",
@@ -2002,7 +2009,9 @@
         "with strict_coverage, a seat owning a component with neither an element nor a declination fails",
         "the receipt is authority-free: no canonical write, design or stage-acceptance authority is claimed",
         "a receipt names the provider that produced the proposal, never a declared one",
-        "one seat failing to get an accepted proposal ends the round loop rather than continuing"
+        "one seat failing to get an accepted proposal ends the round loop rather than continuing",
+        "a closure is written for every completed run; an exit binding only for a SATISFIED closure",
+        "the closure states one finding per problem: a required check kind nothing measured, a relation of a required kind that did not hold, and a seat that did not finish"
       ],
       "status": "canonical",
       "tests": [
@@ -2934,7 +2943,9 @@
         "carrying the exact retained predecessor envelope and exit into a successor (StageRunPredecessor)",
         "the fail-closed guards callers use before running or closing a stage (require_stage_run_envelope, require_stage_exit_binding)",
         "the design-phase ladder and what each phase is called in RIBA 2020, the AIA phases and the Chinese design stages, with the LOD range it admits (DesignPhase, DESIGN_PHASES, PhaseLadder, PHASE_LADDER, LOD_LEVELS)",
-        "the stage-exit record the guard reads (CompositeStageClosureReceipt, StageClosureFinding, StageClosureStatus)"
+        "the stage-exit record the guard reads (CompositeStageClosureReceipt, StageClosureFinding, StageClosureStatus)",
+        "the two harness workflow ids of ADR-007 rule 4 (HARNESS_WORKFLOW_IDS), read by the Studio's reference-run rule and by the runner's receipt",
+        "the rule that a workflow may require only checks the spine can measure (require_measurable), applied where a workflow is frozen and where a stage is opened, never on read"
       ],
       "does_not_own": [
         "running a stage or producing its closure record (runtime/project_runner.py)",
@@ -2958,6 +2969,7 @@
         "CompositeStageClosureReceipt",
         "DESIGN_PHASES",
         "DesignPhase",
+        "HARNESS_WORKFLOW_IDS",
         "LOD_LEVELS",
         "PHASE_LADDER",
         "PhaseLadder",
@@ -2972,6 +2984,7 @@
         "StageRunEnvelope",
         "StageWorkflowError",
         "open_stage_run_envelope",
+        "require_measurable",
         "require_stage_exit_binding",
         "require_stage_run_envelope"
       ],
@@ -2981,14 +2994,16 @@
         "contracts.fields",
         "project.refs",
         "state.design_maturity",
-        "state.operational_state"
+        "state.operational_state",
+        "state.record"
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "tools/run_project.py",
         "tools/freeze_project_stage_workflow.py",
-        "tools/verify_state_record.py"
+        "tools/verify_state_record.py",
+        "tools/open_stage_run.py"
       ],
       "invariants": [
         "these records are guards only: they never select design, accept a stage, mutate geometry, persist state, promote a candidate or write canonical state",
@@ -2996,7 +3011,8 @@
         "SATISFIED is the only exit status the vocabulary admits",
         "record key sets are exact; a drifted payload is refused, never coerced",
         "never writes the filesystem",
-        "lod is optional, non-decreasing across stages, and inside the range its phase admits; an absent lod serialises to nothing, so a workflow frozen before the ladder keeps its digest"
+        "lod is optional, non-decreasing across stages, and inside the range its phase admits; an absent lod serialises to nothing, so a workflow frozen before the ladder keeps its digest",
+        "required_checks name ids in state.record CHECK_KINDS; require_measurable refuses anything else, and from_dict does not, so a retained workflow with a free check id still loads (ADR-004)"
       ],
       "status": "canonical",
       "tests": [
@@ -3004,7 +3020,7 @@
         "tests/test_freeze_project_stage_workflow.py",
         "tests/test_project_runner.py"
       ],
-      "notes": "Depends on the fold target state/design_maturity only for DesignPhase/DESIGN_PHASES; StageRunPredecessor is nested inside the envelope and never imported by name. Phase gates, entry proofs and backward revision (design_maturity) are archived with the controller lane. The closure compile pipeline (requirement profiles, check receipt envelopes, claim applicability) is archived; the runner writes the exit record from its own checks."
+      "notes": "Depends on the fold target state/design_maturity only for DesignPhase/DESIGN_PHASES; StageRunPredecessor is nested inside the envelope and never imported by name. Phase gates, entry proofs and backward revision (design_maturity) are archived with the controller lane. The closure compile pipeline (requirement profiles, check receipt envelopes, claim applicability) is archived; the runner writes the exit record from its own checks. CHECK_KINDS is imported inside require_measurable because state.record imports DesignPhase from here; the measurable set is read when a workflow is checked, not when the module loads."
     },
     {
       "module_id": "studio.artifacts",
@@ -3074,7 +3090,7 @@
       "purpose": "Bind the process to one P036 project and one reference run, and project the authored State Record into what a screen can read.",
       "owns": [
         "opening the located project on first use and holding that one binding for the process",
-        "choosing the reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping harness workflows",
+        "choosing the reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping the harness workflows state.stage_workflow names",
         "reading the P036 record-name convention (kind plus sha256) and listing a run's record refs",
         "answering project.inputs' refusals on the wire: 404 STATE_RECORD_NOT_FOUND and 422 STATE_RECORD_INVALID, each naming the file",
         "the projection: bound view, component tree, Element@1 rows with their numeric fields, parameters, dependency edges",
@@ -3124,7 +3140,8 @@
         "state.developed_design",
         "state.operational_state",
         "state.record",
-        "state.spatial"
+        "state.spatial",
+        "state.stage_workflow"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -3704,7 +3721,8 @@
       "owns": [
         "the freeze command line (project root, run id, workflow path, create-run)",
         "validating the workflow payload and storing the exact bytes as a record",
-        "the freeze receipt recording the published version before and after"
+        "the freeze receipt recording the published version before and after",
+        "refusing a workflow whose required_checks name anything outside the checker table, before the run is created and before anything is written"
       ],
       "does_not_own": [
         "opening stage 0 or accepting a stage - archflow.state.stage_workflow and runtime.project_runner",
@@ -3740,7 +3758,8 @@
       "invariants": [
         "the stored payload is exactly what was validated",
         "the published version must be unchanged across the freeze, and the receipt says so",
-        "the record is authority-free"
+        "the record is authority-free",
+        "a workflow naming a check the spine cannot measure never enters the project (ADR-007 rule 3)"
       ],
       "status": "canonical",
       "tests": [
@@ -3794,6 +3813,65 @@
       "notes": "Wave B / W8. The word HEAD does not appear in this command's help or output."
     },
     {
+      "module_id": "tools.open_stage_run",
+      "owner_path": "tools/open_stage_run.py",
+      "purpose": "Create a run and retain the StageRunEnvelope@1 that binds it to one stage of the project's frozen workflow (ADR-007 rule 2).",
+      "owns": [
+        "the open-stage command line (project root, workflow ref, stage index, run id, predecessor run)",
+        "creating the run against canonical HEAD and computing the state digest its envelope binds, from the work-in-progress record with the three constants RunOptions declares",
+        "finding the one retained stage-exit-binding of a predecessor run, and refusing a stage N>0 that names none or names a run holding more than one",
+        "refusing to open a project stage against a harness workflow",
+        "the close obligation the envelope carries: OPEN, naming the stage the runner's closure will answer"
+      ],
+      "does_not_own": [
+        "running the stage or writing its closure - runtime.project_runner",
+        "freezing the workflow - tools.freeze_project_stage_workflow",
+        "the envelope and predecessor rules themselves - state.stage_workflow",
+        "reading the authored record - project.inputs",
+        "accepting or issuing anything: opening a stage grants no authority"
+      ],
+      "inputs": [
+        "CLI arguments",
+        "the retained project-stage-workflow record",
+        "the project's authored State Record",
+        "the predecessor run's retained stage-exit-binding"
+      ],
+      "outputs": [
+        "retained stage-run-envelope record",
+        "an opened-stage summary dict"
+      ],
+      "public_api": [
+        "open_stage_run",
+        "StageRunError",
+        "main"
+      ],
+      "depends_on": [
+        "project.inputs",
+        "project.ports",
+        "project.record_kinds",
+        "project.refs",
+        "project.repository",
+        "runtime.project_runner",
+        "state.operational_state",
+        "state.record",
+        "state.stage_workflow"
+      ],
+      "used_by": [
+        "tests/test_project_runner.py"
+      ],
+      "invariants": [
+        "stage 0 opens with no predecessor; stage N>0 opens only against the retained SATISFIED exit binding of the run that closed stage N-1, and refuses before the run is created",
+        "a workflow naming a check the spine cannot measure is refused (require_measurable)",
+        "the state digest the envelope binds is the one the runner recomputes, so the guard admits the run it opened",
+        "nothing is closed, accepted or issued here"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_project_runner.py"
+      ],
+      "notes": "The missing half of ADR-007 rule 2: the guard could always refuse a stage, and until now nothing on the spine could open one past stage 0."
+    },
+    {
       "module_id": "tools.run_project",
       "owner_path": "tools/run_project.py",
       "purpose": "The spine's entry point: open a project, take its authored State Record and seat pack from project.inputs with the retained workflow and envelope, and hand them to run_project.",
@@ -3808,7 +3886,8 @@
         "seat semantics - capabilities.discipline_seats",
         "creating or freezing a workflow - tools.freeze_project_stage_workflow",
         "proving equivalence against a reference run - tools.verify_state_record",
-        "reading the authored record and seat pack - project.inputs; there is no pack directory to point elsewhere"
+        "reading the authored record and seat pack - project.inputs; there is no pack directory to point elsewhere",
+        "creating the run and retaining its stage envelope - tools.open_stage_run"
       ],
       "inputs": [
         "CLI arguments",

@@ -20,7 +20,7 @@ def _workflow(project_id: str = "demo") -> ProjectStageWorkflow:
                 stage_index=0,
                 phase=DesignPhase.RESEARCH_BRIEF,
                 required_roles=("branch-policy", "evidence-denominator"),
-                required_checks=("evidence-coverage",),
+                required_checks=("support_contact",),
                 close_obligation_id="close-stage-0",
             ),
         ),
@@ -99,6 +99,40 @@ class FreezeProjectStageWorkflowTests(unittest.TestCase):
                     workflow_path=source,
                     create_run=True,
                 )
+
+    def test_a_workflow_naming_an_unmeasurable_check_is_refused(self) -> None:
+        """ADR-007 rule 3, at the only door a workflow enters through.
+
+        Nothing is created and nothing is written: the refusal happens before
+        the run exists, so a rejected freeze leaves no run behind to explain.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "demo"
+            repository = FilesystemProjectRepository.initialize(
+                root,
+                project_id="demo",
+                initial_state={"schema": "TestState@1"},
+            )
+            payload = _workflow().to_dict()
+            payload["stages"][0]["required_checks"] = ["visual-deduplication"]
+            source = Path(temporary) / "workflow.json"
+            source.write_text(
+                __import__("json").dumps(payload),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "cannot measure") as caught:
+                freeze_workflow(
+                    project_root=root,
+                    run_id="workflow-001",
+                    workflow_path=source,
+                    create_run=True,
+                )
+
+            self.assertIn("'visual-deduplication'", str(caught.exception))
+            self.assertIn("support_contact", str(caught.exception))
+            self.assertFalse(repository.layout.run("workflow-001").manifest.exists())
 
     def test_corrupt_existing_run_is_not_reclassified_or_recreated(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -233,6 +233,12 @@ def check_relations(record: StateRecord, *, bounds: Mapping[str, Bounds], object
     ``relations`` defaults to the record's own; a caller that materialised more (the runner's
     producers) passes the full set, and the report still cites the record that was retained.
 
+    ``objects_by_element`` is keyed by whatever has extent to measure, not only by ``Element@1``:
+    the runner also puts each ``Space@1`` zone in it under its own entity id, whose "objects" are
+    the ``Volume@1`` entities its ``volume_ids`` name, with those volumes' declared ``min`` /
+    ``max`` in ``bounds``. A zone relation — corridor to hall clearance, a portico's voids — is
+    therefore measured exactly like an element relation, by the same checkers.
+
     Every kind a ``ValidatorBinding`` can name is in ``CHECKERS``, so a bound
     relation is always measured: ``unchecked`` now means no validator, or no
     realized geometry to measure — never a check nobody implemented.

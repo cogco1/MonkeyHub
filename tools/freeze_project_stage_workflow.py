@@ -1,9 +1,11 @@
 """Retain an authority-free project stage workflow without accepting a stage.
 
 The command is intentionally small: it validates ``ProjectStageWorkflow@1``,
-stores the exact payload through the P036 repository, and writes a freeze
-receipt proving that nothing was issued.  It does not open Stage 0,
-convert legacy runs into accepted evidence, or create geometry.
+refuses a workflow whose ``required_checks`` name anything the spine cannot
+measure (ADR-007 rule 3), stores the exact payload through the P036
+repository, and writes a freeze receipt proving that nothing was issued.  It
+does not open Stage 0, convert legacy runs into accepted evidence, or create
+geometry.
 
 Example::
 
@@ -35,7 +37,10 @@ from archflow.project.record_kinds import (  # noqa: E402
 )
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.state.stage_workflow import ProjectStageWorkflow  # noqa: E402
+from archflow.state.stage_workflow import (  # noqa: E402
+    ProjectStageWorkflow,
+    require_measurable,
+)
 
 
 _AUTHORITY = DEFAULT_AUTHORITY_FIELDS
@@ -52,6 +57,9 @@ def freeze_workflow(
     workflow = ProjectStageWorkflow.from_dict(
         json.loads(workflow_path.read_text(encoding="utf-8"))
     )
+    # A workflow that names a check the spine cannot measure is refused here,
+    # before the run is created and before anything is written (ADR-007 r3).
+    require_measurable(workflow)
     if workflow.project_id != repository.load_manifest().project_id:
         raise ValueError("workflow belongs to another project")
     before = repository.read_head()

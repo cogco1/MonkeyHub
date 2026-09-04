@@ -17,6 +17,7 @@ from pathlib import Path
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
+    COMPONENT_TEMPLATE,
     RECORD_KINDS,
     RESEARCH_EVIDENCE_LEDGER,
     STAGE_CLOSURE,
@@ -86,10 +87,21 @@ class RecordKindTableTests(unittest.TestCase):
         self.assertIsNone(entry.kind_pattern)
 
     def test_the_reserved_kinds_are_accepted_and_say_they_are_reserved(self) -> None:
-        for kind in (STAGE_CLOSURE, RESEARCH_EVIDENCE_LEDGER):
+        for kind in (RESEARCH_EVIDENCE_LEDGER, COMPONENT_TEMPLATE):
             with self.subTest(kind=kind):
                 self.assertTrue(is_registered(kind))
-                self.assertIn("reserved", require_registered(kind).note)
+                note = require_registered(kind).note
+                self.assertTrue(
+                    "reserved" in note or "no spine module writes one" in note,
+                    note,
+                )
+
+    def test_the_stage_closure_kind_no_longer_says_it_is_reserved(self) -> None:
+        """The runner writes it now (ADR-007 rule 3), so the note says so."""
+
+        note = require_registered(STAGE_CLOSURE).note
+        self.assertNotIn("reserved", note)
+        self.assertIn("the runner writes", note)
 
     def test_an_unregistered_kind_is_refused_and_the_table_is_named(self) -> None:
         self.assertFalse(is_registered("architectural-usability-receipt"))

@@ -152,6 +152,16 @@ class StageWorkflowError(ValueError):
     """A workflow or run envelope is incomplete, stale, or cross-scoped."""
 
 
+# The two harness workflows of ADR-007 rule 4: shared containers for
+# coordination and review. They open a stage zero of their own so that a run
+# has an envelope at all, they require no check, and they never become a
+# project's workflow, close a project stage, or answer as its reference run.
+# The Studio's reference-run rule and the runner's receipt read this one set.
+HARNESS_WORKFLOW_IDS: frozenset[str] = frozenset(
+    {"equivalence-harness", "studio-candidate-harness"}
+)
+
+
 class StageExitStatus(StrEnum):
     """Only a completed independent close may feed the next stage."""
 
@@ -222,6 +232,10 @@ class StageClosureFindingCode(StrEnum):
     CHECK_UNKNOWN = "check_unknown"
     NOT_APPLICABLE_FORBIDDEN = "not_applicable_forbidden"
     REVALIDATION_OPEN = "revalidation_open"
+    # A seat that did not finish its round is a reason a stage did not close,
+    # and none of the codes above says it: the rest of this vocabulary is
+    # about checks and their bindings, not about who was still working.
+    SEAT_INCOMPLETE = "seat_incomplete"
 
 @dataclass(frozen=True, slots=True)
 class StageClosureFinding:
@@ -603,6 +617,40 @@ class ProjectStageWorkflow:
             stages=tuple(ProjectStage.from_dict(item) for item in stages),
             basis_refs=string_tuple(payload["basis_refs"], "basis_refs"),
         )
+
+
+def require_measurable(workflow: ProjectStageWorkflow) -> ProjectStageWorkflow:
+    """A workflow may require only checks the spine can measure (ADR-007 r3).
+
+    ``required_checks`` name ids in ``state_record.CHECK_KINDS`` — the ids
+    ``capabilities.relation_checks.CHECKERS`` is keyed by — because the runner
+    writes the closure from its own measurements: a required kind nothing can
+    measure is a stage that never closes, and the closure could only ever say
+    ``missing_check`` about it. So the workflow is refused where it is frozen
+    and where a stage is opened against it, before either writes anything.
+
+    This is deliberately not on ``from_dict``. Retained workflows — the two
+    harnesses' own, the villa's frozen v1 — name free identifiers, and a
+    retained record is read, not re-validated (ADR-004): a reader that refused
+    them would make old runs unloadable without making any of them closable.
+    """
+
+    if not isinstance(workflow, ProjectStageWorkflow):
+        raise TypeError("workflow must be a ProjectStageWorkflow")
+    # state_record imports DesignPhase from this module, so the measurable set
+    # is taken when a workflow is checked rather than when this module loads.
+    from archflow.state.state_record import CHECK_KINDS
+
+    for stage in workflow.stages:
+        for check in stage.required_checks:
+            if check not in CHECK_KINDS:
+                raise StageWorkflowError(
+                    f"workflow {workflow.workflow_id!r} stage "
+                    f"{stage.stage_id!r} requires check {check!r}, which the "
+                    "spine cannot measure; the registered check kinds are "
+                    f"{', '.join(sorted(CHECK_KINDS))}"
+                )
+    return workflow
 
 
 @dataclass(frozen=True, slots=True)
@@ -1331,8 +1379,13 @@ def require_stage_run_envelope(
     predecessor must equal a fresh digest/ref binding of the supplied Stage
     N-1 envelope and its retained exit record; naming only the previous index
     or embedding an unretained exit payload is insufficient.
+
+    This is the one gate both ``open_stage_run_envelope`` and the runner's
+    ``StageExecutionGuard`` pass through, so it is where a workflow that names
+    an unmeasurable check is refused before any record of the run is written.
     """
 
+    require_measurable(workflow)
     _require_workflow_binding(
         workflow,
         envelope,
@@ -1471,6 +1524,7 @@ def open_stage_run_envelope(
 
 
 __all__ = [
+    "HARNESS_WORKFLOW_IDS",
     "ProjectStage",
     "ProjectStageWorkflow",
     "StageExitBinding",
@@ -1479,6 +1533,7 @@ __all__ = [
     "StageRunPredecessor",
     "StageWorkflowError",
     "open_stage_run_envelope",
+    "require_measurable",
     "require_stage_exit_binding",
     "require_stage_run_envelope",
 ]
