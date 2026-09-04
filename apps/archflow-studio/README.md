@@ -2,14 +2,18 @@
 
 ## 1. What it is
 
-MonkeyArch is the professional modeling environment used to test ArchFlow's
-research into continuing design deliberation. Its long-term product goal is
-**Continue**: retain an open question, inspect alternatives, carry a person's
-judgment into revision, and resume the same project in another session.
-See the [vision](../../docs/VISION.md) and the
-[P111 development cycle](../../docs/mapping/planning/P111-continuing-design-cycle.md).
-The round-one implementation described below remains a candidate and review
-workflow; P111's recovery and acceptance criteria are planned work.
+MonkeyArch is the modeling environment used to test how people and AI can carry
+a design task through modeling, related changes and checking. People should be able
+to work directly on a model, inspect what the machine understood, see what remains
+to be addressed, and take over when necessary. An independent interface does not
+require a new geometry engine; the environment must demonstrate what it adds to
+existing tools.
+
+**Continue** supports further work across candidates and sessions. Continuing a
+candidate, endorsing a design direction and formally issuing a project version
+are distinct actions. The round-one implementation described below remains a
+candidate and review workflow. See the [vision](../../docs/VISION.md) for the
+long-term direction and the [dynamic map](../../docs/DYNAMIC_MAP.md) for development.
 
 ArchFlow Studio is the product shell for ArchFlow. It is two programs:
 

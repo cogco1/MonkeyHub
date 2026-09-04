@@ -5,18 +5,19 @@ instructions.
 
 ## Long-term direction
 
-`docs/VISION.md` defines the research, technical and product vision: represent
-unfinished design as a continuing process of deliberation. MonkeyArch tests
-that idea in architectural practice; its product goal is to help people continue
-a design across proposals, judgments and sessions. The current development
-cycle is P111, indexed by `governance/work_registry.json`.
+`docs/VISION.md` defines the direction: help people and AI carry architectural
+design tasks through modeling, related changes, representation and checking.
+Start from concrete work the architect still has to do, including setup,
+handoffs and correction. Existing parametric tools and ArchFlow already propagate
+defined dependencies; neither AI-authored operations nor retained explanations
+alone establish an additional capability to complete the work.
 
-Questions, commitments, alternatives, judgments, evidence and uncertainty are
-research concerns, not an instruction to add one schema or module per noun.
-Extend existing owners for demonstrated needs. Keep human judgment attributable,
-unresolved questions open, and project understanding recoverable independently
-of a model's context. Vision is direction; current contracts and acceptance
-checks determine what the implementation can claim.
+MonkeyArch tests representation and interaction. An independent application or
+geometry engine needs a demonstrated reason. Extend existing owners for concrete
+needs, not one schema or module per vision term. Keep human judgments attributable
+and distinguish continuing a candidate, endorsing a direction and formally issuing
+a project version. Live development is indexed by `governance/work_registry.json`;
+the vision and `docs/RESEARCH_POSITIONING.md` do not themselves authorize new mechanisms.
 
 ## Framework versus project data
 

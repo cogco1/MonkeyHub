@@ -1,10 +1,10 @@
 # ArchFlow V4 architecture
 
-This document describes the implemented spine. [VISION.md](VISION.md) defines
-the longer-term representation of unfinished design and the role of human
-judgment. [P111](mapping/planning/P111-continuing-design-cycle.md) turns that
-direction into a development cycle around recovery, comparison, revision and
-explicit acceptance. Its planned capabilities are not implied by this diagram.
+This document describes the implemented spine. [VISION.md](VISION.md) asks how
+people and AI can carry a design task through modeling, related changes and checking,
+while keeping the work understandable and editable. [DYNAMIC_MAP.md](DYNAMIC_MAP.md)
+tracks development. The diagram below does not imply that the broader research
+aims have been demonstrated.
 
 One production spine. Who owns what is in [SYSTEM_MAP.md](SYSTEM_MAP.md) (generated from
 `governance/module_registry.json`); why it is one spine is in
