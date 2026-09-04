@@ -24,7 +24,7 @@ from archflow.state.operational_state import (
     PORTABLE_LOGICAL_REF_PATTERN,
     require_logical_ref,
 )
-from archive.tests.test_geometry_compiler import COMMITMENT, EVIDENCE
+from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from archive.tests.test_geometry_proposal_producer import (
     IDENTITY,
     _ScriptedProvider,

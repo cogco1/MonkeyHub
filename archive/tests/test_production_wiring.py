@@ -41,7 +41,7 @@ from archflow.state.geometry_program import (
     LengthUnit,
 )
 from archive.tests.test_component_templates import _stair_template
-from archive.tests.test_geometry_compiler import COMMITMENT
+from tests.test_geometry_compiler import COMMITMENT
 from archive.tests.test_geometry_proposal_producer import (
     IDENTITY,
     _ScriptedProvider,

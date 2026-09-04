@@ -32,8 +32,8 @@ from archflow.state.geometry_program import (
     verify_project_datums,
 )
 from archive.tests.test_assembly_template import BASIS, _template
-from archive.tests.test_discipline_seats import _seats
-from archive.tests.test_geometry_compiler import COMMITMENT
+from tests.test_discipline_seats import _seats
+from tests.test_geometry_compiler import COMMITMENT
 from archive.tests.test_sandbox_realization import compiled_room
 
 EVIDENCE = ("evidence:survey-section-aa",)

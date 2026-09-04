@@ -43,7 +43,8 @@ from archflow.state.geometry_program import (
     LengthUnit,
     required_assembly_roles,
 )
-from archive.tests.test_geometry_compiler import COMMITMENT, _proposal, _state
+from archive.tests.lane_state import _state
+from tests.test_geometry_compiler import COMMITMENT, _proposal
 
 BINDING = "building-binding"
 LEVEL = "level-piano-nobile"

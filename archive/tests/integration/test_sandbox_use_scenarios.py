@@ -27,7 +27,8 @@ from archive.archflow.validation.use_scenarios import (
     VerticalCirculationEvidence,
 )
 from archive.archflow.validation.usability import UseZoneEvidence
-from archive.tests.test_geometry_compiler import COMMITMENT, EVIDENCE, _state
+from archive.tests.lane_state import _state
+from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from archive.tests.test_sandbox_realization import _boolean, _curve, _solid
 from archive.tests.test_usability_validation import program_with
 

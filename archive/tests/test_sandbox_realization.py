@@ -23,10 +23,10 @@ from archflow.state.geometry_program import (
     SemanticBinding,
 )
 from archive.archflow.realization.sandbox import DerivedVoxelView, HybridScene, RealizationStatus, SandboxArchiveDisposition, SandboxArchiveRecord, SandboxAssetPayload, SandboxRealizationError, SandboxRealizationReceipt, VoxelizationPolicy, derive_voxel_view, realize_geometry
-from archive.tests.test_geometry_compiler import (
+from archive.tests.lane_state import _state
+from tests.test_geometry_compiler import (
     COMMITMENT,
     EVIDENCE,
-    _state,
 )
 
 

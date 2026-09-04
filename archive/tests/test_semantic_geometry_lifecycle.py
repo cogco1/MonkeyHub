@@ -18,11 +18,11 @@ from archflow.state.geometry_program import (
     SemanticBinding,
 )
 from tests.test_design_portfolio import EVIDENCE
-from archive.tests.test_geometry_compiler import (
+from archive.tests.lane_state import _state
+from tests.test_geometry_compiler import (
     COMMITMENT,
     _operation,
     _proposal,
-    _state,
 )
 
 

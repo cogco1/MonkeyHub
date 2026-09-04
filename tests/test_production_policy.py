@@ -22,16 +22,19 @@ from archflow.capabilities.geometry_proposal import (
     resume_geometry_program_proposal,
 )
 from archflow.state.geometry_program import GeometryParameter
-from archive.tests.test_geometry_compiler import COMMITMENT
-from archive.tests.test_geometry_proposal_producer import IDENTITY, _ScriptedProvider
-from archive.tests.test_production_wiring import _ProducerFixture
-from archive.tests.test_sandbox_realization import compiled_room
+from tests.support import (
+    COMMITMENT,
+    IDENTITY,
+    ProducerFixture,
+    ScriptedProvider,
+    compiled_room,
+)
 
 
-class _PolicyFixture(_ProducerFixture):
+class _PolicyFixture(ProducerFixture):
     def setUp(self) -> None:
         super().setUp()
-        _, self.prior_program, _ = compiled_room()
+        _, self.prior_program = compiled_room()
         self.floor = next(op for op in self.proposal.operations if op.op_id == "floor")
 
     async def _run(self, provider, policy, **extra):
@@ -39,7 +42,7 @@ class _PolicyFixture(_ProducerFixture):
             self.repository, provider, run=self.run, destination=self.destination,
             spatial_option_ref=self.option_ref, design_state=self.design_state,
             required_commitment_refs=(COMMITMENT,), provider_identity=IDENTITY, policy=policy,
-            template_refs=(self.template_ref,), **extra,
+            **extra,
         )
 
     def _issue_codes(self, result) -> set[str]:
@@ -94,14 +97,14 @@ class BookkeepingCompletionTests(_PolicyFixture):
 
     async def test_off_refuses_on_restated_bookkeeping(self) -> None:
         revision = self._edit_changing_inner()
-        provider = _ScriptedProvider((proposal_edit_authoring_output(self.prior_program, revision),))
+        provider = ScriptedProvider((proposal_edit_authoring_output(self.prior_program, revision),))
         result = await self._run(provider, GeometryProposalPolicy(1), prior_program=self.prior_program)
         self.assertIs(result.status, GeometryProposalStatus.EXHAUSTED)
         self.assertIn("compiler.missing_revision_precondition", self._issue_codes(result))
 
     async def test_on_completes_from_records_and_records_it(self) -> None:
         revision = self._edit_changing_inner()
-        provider = _ScriptedProvider((proposal_edit_authoring_output(self.prior_program, revision),))
+        provider = ScriptedProvider((proposal_edit_authoring_output(self.prior_program, revision),))
         result = await self._run(
             provider, GeometryProposalPolicy(1, complete_bookkeeping=True), prior_program=self.prior_program
         )
@@ -121,7 +124,7 @@ class BookkeepingCompletionTests(_PolicyFixture):
 
 class ProgressBudgetTests(_PolicyFixture):
     async def test_shrinking_issues_continue_past_the_bounded_budget(self) -> None:
-        provider = _ScriptedProvider((
+        provider = ScriptedProvider((
             proposal_authoring_output(self._with_bad_ops(2)),
             proposal_authoring_output(self._with_bad_ops(1)),
             proposal_authoring_output(self.proposal),
@@ -131,7 +134,7 @@ class ProgressBudgetTests(_PolicyFixture):
         self.assertEqual(len(result.round_refs), 3)
 
     async def test_without_budget_the_same_provider_is_exhausted(self) -> None:
-        provider = _ScriptedProvider((
+        provider = ScriptedProvider((
             proposal_authoring_output(self._with_bad_ops(2)),
             proposal_authoring_output(self._with_bad_ops(1)),
             proposal_authoring_output(self.proposal),
@@ -141,7 +144,7 @@ class ProgressBudgetTests(_PolicyFixture):
         self.assertEqual(len(result.round_refs), 1)
 
     async def test_stall_stops_and_escalates(self) -> None:
-        provider = _ScriptedProvider((
+        provider = ScriptedProvider((
             proposal_authoring_output(self._with_bad_ops(2)),
             proposal_authoring_output(self._with_bad_ops(2)),
             proposal_authoring_output(self.proposal),
@@ -158,7 +161,7 @@ class ProgressBudgetTests(_PolicyFixture):
 
 class PartialAcceptanceTests(_PolicyFixture):
     async def test_object_scoped_failures_are_deferred(self) -> None:
-        provider = _ScriptedProvider((proposal_authoring_output(self._with_bad_ops(1)),))
+        provider = ScriptedProvider((proposal_authoring_output(self._with_bad_ops(1)),))
         result = await self._run(provider, GeometryProposalPolicy(1, partial_acceptance=True))
         self.assertIs(result.status, GeometryProposalStatus.ACCEPTED)
         assert result.program is not None and result.deferral_ref is not None
@@ -173,7 +176,7 @@ class PartialAcceptanceTests(_PolicyFixture):
         # compiler runs: nothing is object-scoped, so nothing may be deferred
         binding = self.proposal.semantic_bindings[0]
         uncommitted = replace(self.proposal, semantic_bindings=(replace(binding, commitment_refs=("commitment:other",)),))
-        provider = _ScriptedProvider((proposal_authoring_output(uncommitted),))
+        provider = ScriptedProvider((proposal_authoring_output(uncommitted),))
         result = await self._run(provider, GeometryProposalPolicy(1, partial_acceptance=True))
         self.assertIsNot(result.status, GeometryProposalStatus.ACCEPTED)
         self.assertIsNone(result.deferral_ref)
@@ -181,16 +184,15 @@ class PartialAcceptanceTests(_PolicyFixture):
 
 class ResumeTests(_PolicyFixture):
     async def test_resume_continues_from_the_escalated_round(self) -> None:
-        bad = _ScriptedProvider((proposal_authoring_output(self._with_bad_ops(1)),))
+        bad = ScriptedProvider((proposal_authoring_output(self._with_bad_ops(1)),))
         first = await self._run(bad, GeometryProposalPolicy(1, escalate_on_stall=True))
         self.assertIs(first.status, GeometryProposalStatus.EXHAUSTED)
         assert first.escalation_ref is not None
-        good = _ScriptedProvider((proposal_authoring_output(self.proposal),))
+        good = ScriptedProvider((proposal_authoring_output(self.proposal),))
         second = await resume_geometry_program_proposal(
             self.repository, good, escalation_ref=first.escalation_ref, run=self.run,
             destination=self.destination, spatial_option_ref=self.option_ref, design_state=self.design_state,
             required_commitment_refs=(COMMITMENT,), provider_identity=IDENTITY, policy=GeometryProposalPolicy(1),
-            template_refs=(self.template_ref,),
         )
         self.assertIs(second.status, GeometryProposalStatus.ACCEPTED)
         # continuity lives on the record: the resumed round's request carries the

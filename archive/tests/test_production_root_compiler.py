@@ -65,7 +65,7 @@ from archflow.state.developed_design import DevelopedDesignState
 from archive.tools.projects.monument_common.context import (
     rebase_authoring_context as _rebase_context,
 )
-from archive.tests.test_geometry_compiler import COMMITMENT, EVIDENCE
+from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from archive.tests.test_sandbox_realization import compiled_room
 from archive.tests.test_semantic_spatial_authoring import _ScriptedProvider
 from archive.tests.test_spatial_proposals import _inputs, _proposal as _spatial

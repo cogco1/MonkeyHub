@@ -26,7 +26,7 @@ from archflow.project.record_kinds import SELECTED_SPATIAL_OPTION
 from archive.archflow.realization.sandbox import realize_geometry
 from archflow.state.spatial import ComponentMaturity, DesignComponent, MassingVolume, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialConnection, SpatialZone
 from archflow.state.spatial import SiteBounds
-from archive.tests.test_geometry_compiler import COMMITMENT, EVIDENCE
+from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from archive.tests.test_sandbox_realization import compiled_room
 
 

@@ -32,7 +32,7 @@ from archive.tests.test_component_family_protocol import (
     _mesh_fixture,
     _parametric_fixture,
 )
-from archive.tests.test_geometry_compiler import COMMITMENT
+from tests.test_geometry_compiler import COMMITMENT
 from archive.tests.test_semantic_geometry_lifecycle import (
     _design_state,
     _geometry_proposal,

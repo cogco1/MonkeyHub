@@ -29,7 +29,8 @@ from archive.archflow.validation.architectural import (
     compile_architectural_usability_contract,
     evaluate_architectural_usability,
 )
-from archive.tests.test_geometry_compiler import COMMITMENT, _state
+from archive.tests.lane_state import _state
+from tests.test_geometry_compiler import COMMITMENT
 from archive.tests.test_sandbox_realization import compiled_room
 
 

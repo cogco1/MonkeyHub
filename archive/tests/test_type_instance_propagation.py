@@ -41,7 +41,8 @@ from archflow.state.geometry_program import (
 )
 from archflow.state.operational_state import DependencyEdge, DependencyEffect
 from archive.tests.test_component_templates import _stair_template as _template
-from archive.tests.test_geometry_compiler import COMMITMENT, _proposal, _state
+from archive.tests.lane_state import _state
+from tests.test_geometry_compiler import COMMITMENT, _proposal
 from archive.tests.test_wall_window_families import BASE, BINDING, LEVEL, WINDOW_TYPE, _only, _wall
 
 

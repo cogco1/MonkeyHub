@@ -1,12 +1,15 @@
+"""P089: the geometry compiler over the spine's own design state.
+
+The state is the projection of an authored ``StateRecord@1``
+(``tests/support.py``), which is what ``runtime.project_runner`` hands the
+compiler. The frozen digests below are that state's, computed once.
+"""
 from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
 import unittest
 
-import archive.archflow.compilers as compiler_api
-import archflow.compilers.geometry as canonical_geometry_compiler
-import archflow.compilers.geometry as runtime_geometry_compiler
 from archflow.compilers.geometry import (
     AssetSubstitutionReceipt,
     GeometryCompileStatus,
@@ -33,15 +36,18 @@ from archflow.state.geometry_program import (
     ObjectRevisionPrecondition,
     SemanticBinding,
 )
-
-
-EVIDENCE = "evidence:geometry-compiler"
-COMMITMENT = "commitment:maintain-egress"
-from archive.tests.test_design_development import _coordinated_state
+from tests.support import COMMITMENT, EVIDENCE, shared_bound_state
 
 
 def _state(*, width: float = 6.0) -> DevelopedDesignState:
-    state = _coordinated_state()[3]
+    """The fixture state; ``width`` re-authors the building component.
+
+    A different width is a different design decision on the same
+    component, so the component's revision advances and its intent says
+    why: that is what the compiler must notice as a semantic change.
+    """
+
+    state = shared_bound_state()[3]
     if width == 6.0:
         return state
     proposal = state.selected_schematic.option.proposal
@@ -242,14 +248,30 @@ def _proposal(
     )
 
 
+def _only(proposal, operations, assemblies):
+    """The fixture proposal reduced to the caller's own operations.
+
+    A caller that brings real element operations does not want the
+    fixture's hand-built door beside them: keep the one semantic binding,
+    re-home it onto the supplied objects, and drop the rest.
+    """
+
+    ids = tuple(sorted(o for op in operations for o in op.output_object_ids))
+    binding = replace(proposal.semantic_bindings[0], object_ids=ids)
+    return replace(
+        proposal,
+        operations=tuple(sorted(operations, key=lambda o: o.op_id)),
+        semantic_bindings=(binding,),
+        assemblies=tuple(sorted(assemblies, key=lambda a: a.assembly_id)),
+    )
+
+
 def _codes(result) -> set[GeometryIssueCode]:
     return {item.code for item in result.receipt.issues}
 
 
 class GeometryCompilerTests(unittest.TestCase):
-    def test_canonical_owner_freezes_payload_digest_and_facade_identity(
-        self,
-    ) -> None:
+    def test_canonical_owner_freezes_the_payload_digest(self) -> None:
         state = _state()
         result = compile_geometry_program(
             state,
@@ -259,22 +281,22 @@ class GeometryCompilerTests(unittest.TestCase):
         assert result.program is not None
 
         self.assertEqual(
-            "39fc0581cc23010aee7ce3781d087e79d0115b844a0c7cc99f625b05dc704fe6",
+            "bb6d0daf925f94521d2af6bd62b1b8047086a89177fb2bf6fcb690f2235f5ed0",
             result.program.program_digest,
         )
         self.assertEqual(
-            "f731496b9fbc2b455d1ec20566d6aafeb6f875e67906eb529305c1ca6dadc836",
+            "854e5225c219ac1cce02422aad8463af5ebce080eb54ccf1d0a43c8879f161fe",
             result.receipt.receipt_digest,
         )
         self.assertEqual(
             {
                 "schema": "GeometryCompilationReceipt@1",
                 "proposal_digest": (
-                    "e9a07293fb9be4a326e1171a18cc3c3985e8254f2aabf461f3618967f460a309"
+                    "ba917964badd5253d9050c209cfe004ed8dea318e8adaacdf4e35b6ea6c3b874"
                 ),
                 "status": "compiled",
                 "compiled_program_digest": (
-                    "39fc0581cc23010aee7ce3781d087e79d0115b844a0c7cc99f625b05dc704fe6"
+                    "bb6d0daf925f94521d2af6bd62b1b8047086a89177fb2bf6fcb690f2235f5ed0"
                 ),
                 "operation_order": [
                     "opening-tool",
@@ -300,26 +322,11 @@ class GeometryCompilerTests(unittest.TestCase):
                 "object_id": "clearance",
                 "producer_op_id": "clearance",
                 "object_digest": (
-                    "a72e184cf3747fd89684b624e369e977c9291bd5617e2e981edc58266f6230c3"
+                    "ab2d44fbffe1e86dfc505ef81ab316233527ab8126b34ebb9f10c052c02306f5"
                 ),
             },
             result.program.objects[0].to_dict(),
         )
-        self.assertEqual(
-            canonical_geometry_compiler.__all__,
-            runtime_geometry_compiler.__all__,
-        )
-        for symbol in canonical_geometry_compiler.__all__:
-            self.assertIs(
-                getattr(canonical_geometry_compiler, symbol),
-                getattr(runtime_geometry_compiler, symbol),
-                symbol,
-            )
-            self.assertIs(
-                getattr(canonical_geometry_compiler, symbol),
-                getattr(compiler_api, symbol),
-                symbol,
-            )
 
     def test_graph_compiles_in_dependency_order_with_stable_objects(self) -> None:
         state = _state()

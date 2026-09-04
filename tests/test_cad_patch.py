@@ -13,9 +13,8 @@ from archflow.capabilities.element_producers import ProductionContext, produce_r
 from archflow.capabilities.reference_resolver import ReferenceContext
 from archflow.compilers.geometry import compile_geometry_program
 from tests.test_cad_execution import _binding
-from archive.tests.test_element_producers import _grids, _levels, _rows
-from archive.tests.test_geometry_compiler import COMMITMENT, _proposal, _state
-from archive.tests.test_wall_window_families import _only
+from tests.test_element_producers import _grids, _levels, _rows
+from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 
 
 def _compile(rows, *, array_seed: str | None = None):

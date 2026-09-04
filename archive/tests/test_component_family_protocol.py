@@ -26,7 +26,8 @@ from archive.archflow.runtime.semantic_geometry_lifecycle import (
 from archive.archflow.state.component_family import ComponentFamilyError, ComponentFamilyInstance, ComponentFamilyKind, ComponentFamilySet, FamilyAnchorBinding, FamilyParameterRef, FamilySocket
 from archflow.state.geometry_program import AffineTransform, AssetReference, CoordinateFrame, GeometryOperation, GeometryOperationKind, GeometryParameter, GeometryParameterKind, GeometryProgramProposal, GeometryTolerance, LengthUnit, SemanticBinding
 from archflow.contracts.canonical import canonical_digest
-from archive.tests.test_geometry_compiler import COMMITMENT, EVIDENCE, _state
+from archive.tests.lane_state import _state
+from tests.test_geometry_compiler import COMMITMENT, EVIDENCE
 from archive.tests.test_sandbox_realization import _asset_payload, compiled_room
 from archive.tests.test_semantic_geometry_lifecycle import (
     _design_state,

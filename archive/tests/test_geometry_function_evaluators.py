@@ -20,7 +20,7 @@ from archflow.state.geometry_program import (
     GeometryParameterKind,
     LengthUnit,
 )
-from archive.tests.test_geometry_compiler import COMMITMENT
+from tests.test_geometry_compiler import COMMITMENT
 from archive.tests.test_sandbox_realization import compiled_room
 
 

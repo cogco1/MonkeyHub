@@ -16,8 +16,8 @@ import unittest
 from archflow.adapters.cad_program import expected_object_bounds
 from archflow.capabilities.relation_checks import CHECKERS, RelationCheckError, check_relations
 from archflow.state.state_record import CHECK_KINDS, Entity, Relation, StateRecord, StateRecordError, ValidatorBinding
-from archive.tests.test_cad_patch import _compile
-from archive.tests.test_element_producers import _levels, _produce, _rows
+from tests.test_cad_patch import _compile
+from tests.test_element_producers import _levels, _produce, _rows
 
 
 def _record_and_bounds(rows=None, *, program_rows=None):

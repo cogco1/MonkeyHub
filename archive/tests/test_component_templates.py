@@ -42,7 +42,7 @@ from archflow.state.geometry_program import (
     InterfaceDatumKind,
     LengthUnit,
 )
-from archive.tests.test_geometry_compiler import COMMITMENT
+from tests.test_geometry_compiler import COMMITMENT
 from archive.tests.test_geometry_proposal_producer import (
     IDENTITY,
     _ScriptedProvider,

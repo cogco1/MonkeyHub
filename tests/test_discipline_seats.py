@@ -40,10 +40,13 @@ from archflow.state.geometry_program import (
     InterfaceDatumKind,
     LengthUnit,
 )
-from archive.tests.test_geometry_compiler import COMMITMENT
-from archive.tests.test_geometry_proposal_producer import _ScriptedProvider
-from archive.tests.test_production_wiring import _ProducerFixture
-from archive.tests.test_sandbox_realization import compiled_room
+from tests.support import (
+    COMMITMENT,
+    ProducerFixture,
+    ScriptedProvider,
+    compiled_room,
+    coordination_obligations,
+)
 
 
 def _seats(phase: DesignPhase) -> dict[str, SeatSpec]:
@@ -87,7 +90,7 @@ def _seats(phase: DesignPhase) -> dict[str, SeatSpec]:
 
 class SeatSpecTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.state, self.program, _ = compiled_room()
+        self.state, self.program = compiled_room()
         self.proposal = self.state.selected_schematic.option.proposal
 
     def test_reviewer_owns_nothing_and_authors_own_something(self) -> None:
@@ -122,7 +125,12 @@ class SeatSpecTests(unittest.TestCase):
 
 class HandoverTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.state, self.program, _ = compiled_room()
+        state, self.program = compiled_room()
+        # What crosses a handover is the duties the receiving discipline
+        # still owes. The record's projection carries none of its own, so
+        # this test states them: every one discharged, until a case opens
+        # exactly the one it is about.
+        self.state = replace(state, obligations=coordination_obligations())
         self.seats = _seats(self.state.active_phase)
         binding = self.program.proposal.semantic_bindings[0]
         self.bindings = (
@@ -203,7 +211,7 @@ class HandoverTests(unittest.TestCase):
 
 class ProjectionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.state, self.program, _ = compiled_room()
+        self.state, self.program = compiled_room()
         self.seats = _seats(self.state.active_phase)
 
     def test_sibling_subtree_does_not_leak(self) -> None:
@@ -275,7 +283,7 @@ class ScheduleTests(unittest.TestCase):
             schedule_seats((a,))
 
 
-class ThreeSeatDemonstrationTests(_ProducerFixture):
+class ThreeSeatDemonstrationTests(ProducerFixture):
     """Structure -> envelope -> detail through the real producer."""
 
     def setUp(self) -> None:
@@ -299,8 +307,8 @@ class ThreeSeatDemonstrationTests(_ProducerFixture):
 
     async def test_out_of_scope_binding_is_refused(self) -> None:
         scope = owned_subtree(self.tree, self.seats["envelope"].owned_component_ids)
-        provider = _ScriptedProvider((proposal_authoring_output(self.proposal),))
-        result = await self._produce(provider, seat_scope=scope)
+        provider = ScriptedProvider((proposal_authoring_output(self.proposal),))
+        result = await self.produce(provider, seat_scope=scope)
         self.assertIsNot(result.status, GeometryProposalStatus.ACCEPTED)
         codes = {row["code"] for row in self._issues(result)}
         self.assertIn("seat_scope_violation", codes)
@@ -314,8 +322,8 @@ class ThreeSeatDemonstrationTests(_ProducerFixture):
         structure_scope = owned_subtree(
             self.tree, self.seats["structure"].owned_component_ids
         )
-        structure = await self._produce(
-            _ScriptedProvider(
+        structure = await self.produce(
+            ScriptedProvider(
                 (proposal_authoring_output(
                     self._proposal_for("primary-support", "structure-binding")
                 ),)
@@ -359,8 +367,8 @@ class ThreeSeatDemonstrationTests(_ProducerFixture):
         envelope_scope = owned_subtree(
             self.tree, self.seats["envelope"].owned_component_ids
         )
-        envelope = await self._produce(
-            _ScriptedProvider(
+        envelope = await self.produce(
+            ScriptedProvider(
                 (proposal_authoring_output(
                     self._proposal_for("primary-surface", "envelope-binding")
                 ),)
@@ -386,8 +394,8 @@ class ThreeSeatDemonstrationTests(_ProducerFixture):
         detail_scope = owned_subtree(
             self.tree, self.seats["detail"].owned_component_ids
         )
-        detail = await self._produce(
-            _ScriptedProvider(
+        detail = await self.produce(
+            ScriptedProvider(
                 (proposal_authoring_output(
                     self._proposal_for("primary-surface", "detail-binding")
                 ),)
@@ -408,7 +416,7 @@ class ExclusionEnforcementTests(unittest.TestCase):
     """M097: exclusion bounds carried by a handover are checked, not just carried."""
 
     def setUp(self) -> None:
-        self.state, self.program, _ = compiled_room()
+        self.state, self.program = compiled_room()
         self.seats = _seats(self.state.active_phase)
         binding = self.program.proposal.semantic_bindings[0]
         structure_bindings = (replace(binding, binding_id="structure-binding", component_id="primary-support", object_ids=("floor",)),)

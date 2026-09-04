@@ -181,7 +181,7 @@ class StateRecordTests(unittest.TestCase):
 
         from dataclasses import replace
         from archflow.compilers.geometry import compile_geometry_program
-        from archive.tests.test_geometry_compiler import COMMITMENT, _proposal, _state
+        from tests.test_geometry_compiler import COMMITMENT, _proposal, _state
 
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})

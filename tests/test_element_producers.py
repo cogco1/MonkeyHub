@@ -17,13 +17,15 @@ from archflow.capabilities.element_producers import (
     ElementProducerError,
     ElementRow,
     ProductionContext,
+    element_rows_of,
     produce_rows,
 )
 from archflow.capabilities.reference_resolver import ReferenceContext
 from archflow.compilers.geometry import compile_geometry_program
 from archflow.state.geometry_program import GeometryOperationKind, ProjectGridAxis, ProjectGrids, ProjectLevel, ProjectLevels, SemanticBinding
-from archive.tests.test_geometry_compiler import COMMITMENT, _proposal, _state
-from archive.tests.test_wall_window_families import _only
+from archflow.state.state_record import project_grids_of, project_levels_of
+from tests.support import authored_record
+from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 
 BASIS = ("reading:plate",)
 PN = "level-piano-nobile"
@@ -122,6 +124,34 @@ class VerticalSliceTests(unittest.TestCase):
         b = compile_slice(7.0)
         for oid in ("obj-capitals-west-0", "obj-entablature-west", "obj-pediment-west"):
             self.assertAlmostEqual(b[oid]["bbox_min"][1] - a[oid]["bbox_min"][1], 7.0 - 6.426)                     # the chain moved as one
+
+
+class AuthoredRecordTests(unittest.TestCase):
+    """A record is producible from its own levels, grids and references."""
+
+    def test_the_record_orders_its_rows_and_makes_the_support_it_declares(self) -> None:
+        record = authored_record()
+        context = ProductionContext(references=ReferenceContext(grids=project_grids_of(record), levels=project_levels_of(record)), published={}, frame_id="world")
+        produced = produce_rows(element_rows_of(record), context)
+        plinth, wall = produced
+        self.assertEqual([r.element_id for r in element_rows_of(record)], ["plinth", "wall-south"])   # the wall stands on a datum the plinth has yet to publish
+        self.assertEqual(plinth.datums[0].datum_id, "plinth-top")
+        self.assertAlmostEqual(context.datum_value("plinth-top"), 0.6)
+        self.assertEqual(wall.bindings[0].datum_id, "plinth-top")                                    # the wall reads the datum, not a number
+        self.assertEqual([(r.kind, r.subject, r.object) for r in wall.relations], [("hosts_void", "wall-south", "window-south")])
+        declared = record.relations[0]
+        self.assertEqual((declared.kind, declared.subject, declared.object, declared.datum_role), ("support", "plinth", "wall-south", "plinth-top"))
+        self.assertEqual(declared.validator.check_kind, "support_contact")
+        state = _state()
+        operations = tuple(replace(op, semantic_binding_ids=("building-binding",)) for e in produced for op in e.operations)
+        datums = tuple(sorted(list(context.published.values()) + list(project_levels_of(record).datums()), key=lambda d: d.datum_id))
+        result = compile_geometry_program(state, _only(_proposal(state, extra_operations=operations), operations, ()), active_commitment_refs=(COMMITMENT,),
+                                          interface_datums=datums, datum_bindings=tuple(b for e in produced for b in e.bindings))
+        self.assertIsNotNone(result.program, [(i.code.value, i.subject_id, i.detail) for i in result.receipt.issues])
+        bounds = expected_object_bounds(result.program)
+        # the wall's physical object is what the void was cut out of; it sits on the plinth's top face
+        self.assertAlmostEqual(bounds["obj-plinth"]["bbox_max"][1], bounds["obj-wall-south-cut"]["bbox_min"][1])
+        self.assertAlmostEqual(bounds["obj-wall-south-cut"]["bbox_max"][1] - bounds["obj-wall-south-cut"]["bbox_min"][1], 2.97)
 
 
 if __name__ == "__main__":

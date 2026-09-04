@@ -21,7 +21,7 @@ from archflow.state.geometry_program import (
     LengthUnit,
     verify_datum_directions,
 )
-from archive.tests.test_geometry_compiler import COMMITMENT, _codes, _proposal, _state
+from tests.test_geometry_compiler import COMMITMENT, _codes, _proposal, _state
 
 
 def _level(datum_id: str = "wall-bearing-level", value: float = 3.33):
