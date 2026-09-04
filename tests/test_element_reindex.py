@@ -10,8 +10,11 @@ from archflow.capabilities.element_reindex import (
     BOUND,
     COVERED,
     DRAFT,
+    ERROR,
     MODEL_VISIBLE_CATALOG_MISSING,
+    SHELL_THICKNESS_NOTE,
     SUPERSEDED,
+    WEDGE_NOTE,
     family_of,
     opening_group_of,
     place_objects,
@@ -100,6 +103,68 @@ def east_wall():
         box("obj-door-frame-east-right", "main-block", "door-frame-east-right", (10.63, 1.13, 3.57), (10.81, 1.25, 8.1)),
         box("obj-door-frame-east-top", "main-block", "door-frame-east-top", (10.63, -1.25, 7.98), (10.81, 1.25, 8.1)),
     ]
+
+
+def strung(obj: dict, **attributes: str) -> dict:
+    """The same fixture object with extra ``archflow:*`` user strings on it."""
+
+    obj["strings"]["attributes"].extend({"key": f"archflow:{key}", "value": value} for key, value in attributes.items())
+    return obj
+
+
+RISE, GOING, TREAD_WIDTH, STAIR_X0, STEPS = 0.4, 0.6, 3.0, 2.0, 5
+
+
+def straight_flight(count: int = STEPS, thickness: float | None = None):
+    """Solid steps climbing +x from x=2.0 on level-ground, centred across on axis B (y=0)."""
+
+    step_height = RISE if thickness is None else thickness
+    return [box(f"obj-stair-west-{k:02d}", "main-block", f"stair-west-{k:02d}",
+                (STAIR_X0 + k * GOING, -TREAD_WIDTH / 2, k * RISE),
+                (STAIR_X0 + (k + 1) * GOING, TREAD_WIDTH / 2, k * RISE + step_height)) for k in range(count)]
+
+
+def landing():
+    """A slab standing exactly on the flight's top."""
+
+    return [box("obj-landing", "main-block", "landing", (STAIR_X0, -TREAD_WIDTH / 2, STEPS * RISE), (STAIR_X0 + STEPS * GOING, TREAD_WIDTH / 2, STEPS * RISE + 0.3))]
+
+
+def spiral_flight(count: int = STEPS):
+    """Steps of one rise that rotate about the origin: a flight with no run line."""
+
+    import math
+    objs = []
+    for k in range(count):
+        a0, a1 = math.pi * k / 12.0, math.pi * (k + 1) / 12.0
+        pts = [(r * math.cos(a), r * math.sin(a)) for r in (0.4, 2.8) for a in (a0, (a0 + a1) / 2, a1)]
+        lo = (min(x for x, _ in pts), min(y for _, y in pts), k * RISE)
+        hi = (max(x for x, _ in pts), max(y for _, y in pts), (k + 1) * RISE)
+        objs.append(box(f"obj-spiral-{k:02d}", "main-block", f"spiral-{k:02d}", [round(v, 6) for v in lo], [round(v, 6) for v in hi]))
+    return objs
+
+
+def roof_sector(z0: float = 11.335, **strings: str):
+    """A five-face solid 12 m along x, 6 m deep, 1.78 m tall, standing at ``z0`` (level-cornice by default)."""
+
+    obj = box("obj-roof-sector-west", "portico-roof-abutments", "roof-sector-west", (-6.0, -3.0, z0), (6.0, 3.0, z0 + 1.78), faces=5)
+    return [strung(obj, **strings) if strings else obj]
+
+
+DRUM_OUTER, DRUM_THICKNESS, DRUM_BASE, DRUM_HEIGHT = 5.55, 0.65, 11.335, 6.06
+
+
+def drum(thickness: str | None = None, inner: bool = False, **strings: str):
+    """A revolved drum wall on level-cornice; its thickness stated, modelled or missing."""
+
+    obj = box("obj-drum", "main-block", "drum", (-DRUM_OUTER, -DRUM_OUTER, DRUM_BASE), (DRUM_OUTER, DRUM_OUTER, DRUM_BASE + DRUM_HEIGHT), faces=40)
+    if thickness is not None:
+        strings["shell_thickness"] = thickness
+    objs = [strung(obj, **strings) if strings else obj]
+    if inner:
+        r = DRUM_OUTER - DRUM_THICKNESS
+        objs.append(box("obj-drum-inner", "main-block", "drum-inner", (-r, -r, DRUM_BASE), (r, r, DRUM_BASE + DRUM_HEIGHT), faces=40))
+    return objs
 
 
 WEST_WALL_ROW = Entity("wall-west", "Element@1", {"component_id": "main-block", "producer": "wall",
@@ -246,7 +311,7 @@ class DraftTests(unittest.TestCase):
         pediment = self.drafts["portico-pediments-west"]
         self.assertEqual(pediment.status, AMBIGUOUS)
         self.assertIsNone(pediment.producer)
-        self.assertTrue(any("no producer carries this form" in n for n in pediment.notes))
+        self.assertIn(WEDGE_NOTE, pediment.notes)
 
     def test_support_relations_follow_contact(self) -> None:
         ids = {r.relation_id for r in self.result.relations}
@@ -318,6 +383,167 @@ class PrecedenceTests(unittest.TestCase):
         self.assertEqual(catalog["unknown_components"], ["tower"])
         self.assertEqual({o["name"]: o["status"] for o in catalog["objects"]}["obj-tower-0"], "UNKNOWN_COMPONENT")
         self.assertFalse(any(d.component_id == "tower" for d in result.drafts))
+
+
+class StairTests(unittest.TestCase):
+    def test_a_straight_flight_becomes_a_stair_row_and_the_landing_binds_its_top(self) -> None:
+        result = reindex(fixture_record(), [(inspection(straight_flight() + landing()), "record:base", 0)])
+        drafts = {d.element_id: d for d in result.drafts}
+        flight = drafts["main-block-stair-west"]
+        self.assertEqual((flight.status, flight.producer), (DRAFT, "stair"), flight.notes)
+        self.assertEqual(flight.params["count"], STEPS)
+        self.assertAlmostEqual(flight.params["rise"], RISE, places=6)
+        self.assertAlmostEqual(flight.params["going"], GOING, places=6)
+        self.assertAlmostEqual(flight.params["width"], TREAD_WIDTH, places=6)
+        self.assertEqual(flight.params["thickness"], 0.0)   # the box fills the rise: solid steps
+        # the ends are on no declared axis, so they are points along axis B, which the run line lies on
+        self.assertEqual(flight.references["from"], {"axis_point": {"axis": "B", "along": STAIR_X0}})
+        self.assertEqual(flight.references["to"], {"axis_point": {"axis": "B", "along": STAIR_X0 + STEPS * GOING}})
+        self.assertEqual(flight.references["base"], {"level": "level-ground"})
+        self.assertLessEqual(flight.residual_m, 0.001, flight.notes)
+        # the landing binds the flight's published top, not a level: change the rise and it follows
+        landing_draft = drafts["main-block-landing"]
+        self.assertEqual(landing_draft.producer, "prism")
+        self.assertEqual(landing_draft.references["base"], {"datum": "main-block-stair-west-top"})
+        self.assertLessEqual(landing_draft.residual_m, 0.001, landing_draft.notes)
+        self.assertIn("main-block-stair-west-supports-main-block-landing", {r.relation_id for r in result.relations})
+        successor = result.successor(run_id="r", basis_refs=["record:base"])
+        self.assertEqual({e.entity_id for e in successor.entities_of("Element@1")}, {"main-block-stair-west", "main-block-landing"})
+        StateRecord.from_dict(successor.to_dict())
+
+    def test_slab_steps_carry_their_thickness_under_the_rise(self) -> None:
+        result = reindex(fixture_record(), [(inspection(straight_flight(thickness=0.15)), "record:base", 0)])
+        flight, = [d for d in result.drafts if d.family == "stair"]
+        self.assertEqual((flight.status, flight.producer), (DRAFT, "stair"), flight.notes)
+        self.assertAlmostEqual(flight.params["thickness"], 0.15, places=6)
+        self.assertAlmostEqual(flight.params["rise"], RISE, places=6)
+        self.assertLessEqual(flight.residual_m, 0.001, flight.notes)
+
+    def test_a_flight_whose_ends_snap_to_declared_axes_names_the_intersections(self) -> None:
+        steps = [box(f"obj-stair-{k:02d}", "main-block", f"stair-{k:02d}", (-11.0, -10.71 + k * 3.57, k * RISE), (-9.0, -10.71 + (k + 1) * 3.57, (k + 1) * RISE)) for k in range(6)]
+        result = reindex(record_with_edges(), [(inspection(steps), "record:base", 0)])
+        flight, = [d for d in result.drafts if d.family == "stair"]
+        self.assertEqual((flight.status, flight.producer), (DRAFT, "stair"), flight.notes)
+        self.assertEqual(flight.references["from"], {"grid": ["SE", "WF"]})
+        self.assertEqual(flight.references["to"], {"grid": ["NE", "WF"]})
+        self.assertAlmostEqual(flight.params["going"], 3.57, places=6)
+        self.assertAlmostEqual(flight.params["width"], 2.0, places=6)
+        self.assertEqual(flight.confidence, 0.9)   # every reference is a declared name
+        self.assertLessEqual(flight.residual_m, 0.001, flight.notes)
+        self.assertEqual(result.frame.drafted, [])
+
+    def test_a_flight_on_no_declared_axis_drafts_the_run_axis_and_says_so(self) -> None:
+        steps = [box(f"obj-stair-{k:02d}", "main-block", f"stair-{k:02d}", (STAIR_X0 + k * GOING, 5.0 - TREAD_WIDTH / 2, k * RISE), (STAIR_X0 + (k + 1) * GOING, 5.0 + TREAD_WIDTH / 2, (k + 1) * RISE)) for k in range(STEPS)]
+        result = reindex(fixture_record(), [(inspection(steps), "record:base", 0)])
+        flight, = [d for d in result.drafts if d.family == "stair"]
+        self.assertEqual((flight.status, flight.producer), (DRAFT, "stair"), flight.notes)
+        drafted, = result.frame.drafted
+        self.assertEqual((drafted.const, drafted.value), ("y", 5.0))
+        self.assertEqual(flight.references["from"], {"axis_point": {"axis": drafted.role, "along": STAIR_X0}})
+        self.assertTrue(any(f"run axis {drafted.role} drafted" in n for n in flight.notes), flight.notes)
+        self.assertLessEqual(flight.residual_m, 0.001, flight.notes)
+        StateRecord.from_dict(result.successor(run_id="r", basis_refs=["record:base"]).to_dict())
+
+    def test_a_rotating_step_family_stays_ambiguous_and_names_the_invariant(self) -> None:
+        result = reindex(fixture_record(), [(inspection(spiral_flight()), "record:base", 0)])
+        spiral = {d.element_id: d for d in result.drafts}["main-block-spiral"]
+        self.assertEqual(spiral.status, AMBIGUOUS)
+        self.assertIsNone(spiral.producer)
+        self.assertTrue(any(n.startswith("collinear:") for n in spiral.notes), spiral.notes)
+
+
+class WedgeTests(unittest.TestCase):
+    def test_a_five_face_solid_without_strings_stays_ambiguous_with_the_note_the_cad_side_reads(self) -> None:
+        result = reindex(fixture_record(), [(inspection(roof_sector()), "record:base", 0)])
+        wedge = {d.element_id: d for d in result.drafts}["portico-roof-abutments-west"]
+        self.assertEqual(wedge.status, AMBIGUOUS)
+        self.assertIsNone(wedge.producer)
+        self.assertEqual(wedge.notes, [WEDGE_NOTE])
+
+    def test_wedge_strings_draft_a_wedge_that_re_produces_the_box(self) -> None:
+        objs = roof_sector(wedge_low="0.3", wedge_high="1.78", wedge_axis="along")
+        result = reindex(fixture_record(), [(inspection(objs), "record:base", 0)])
+        wedge = {d.element_id: d for d in result.drafts}["portico-roof-abutments-west"]
+        self.assertEqual((wedge.status, wedge.producer), (DRAFT, "wedge"), wedge.notes)
+        self.assertAlmostEqual(wedge.params["depth"], 6.0, places=6)
+        self.assertAlmostEqual(wedge.params["low"], 0.3, places=6)
+        self.assertAlmostEqual(wedge.params["high"], 1.78, places=6)
+        self.assertNotIn("slope_across", wedge.params)
+        self.assertEqual(wedge.references["from"], {"axis_point": {"axis": "B", "along": -6.0}})
+        self.assertEqual(wedge.references["to"], {"axis_point": {"axis": "B", "along": 6.0}})
+        self.assertEqual(wedge.references["base"], {"level": "level-cornice"})
+        self.assertLessEqual(wedge.residual_m, 0.001, wedge.notes)
+        self.assertTrue(any("archflow:wedge_* strings" in n for n in wedge.notes), wedge.notes)
+
+    def test_a_wedge_off_a_level_is_drafted_and_the_producers_refusal_becomes_the_error(self) -> None:
+        # A wedge whose base is an offset from a level is a well-formed row that the producers
+        # currently refuse: `_loft` appends its `base_offset` parameter after `profiles`, and a
+        # GeometryOperation requires its parameter names sorted (`_extrusion` inserts it at 0
+        # instead). The re-index does not hide that - the row is drafted, the refusal is measured,
+        # and the draft carries it as its note. Tighten this to DRAFT / residual <= 1 mm when
+        # element_producers._loft inserts the parameter the way _extrusion does.
+        objs = roof_sector(z0=12.0, wedge_low="0.3", wedge_high="1.78", wedge_axis="along")
+        result = reindex(fixture_record(), [(inspection(objs), "record:base", 0)])
+        wedge = {d.element_id: d for d in result.drafts}["portico-roof-abutments-west"]
+        self.assertEqual(wedge.producer, "wedge")
+        self.assertEqual(wedge.references["base"], {"offset_from": {"level": "level-cornice", "offset": 0.665}})
+        self.assertEqual(wedge.status, ERROR)
+        self.assertIn("producer refused: parameters require unique deterministic names", wedge.notes)
+
+    def test_a_slope_across_the_run_is_the_axis_string_and_a_bad_string_is_named(self) -> None:
+        across = reindex(fixture_record(), [(inspection(roof_sector(wedge_low="0.3", wedge_high="1.78", wedge_axis="across")), "record:base", 0)])
+        wedge = {d.element_id: d for d in across.drafts}["portico-roof-abutments-west"]
+        self.assertEqual((wedge.status, wedge.producer), (DRAFT, "wedge"), wedge.notes)
+        self.assertTrue(wedge.params["slope_across"])
+        self.assertLessEqual(wedge.residual_m, 0.001, wedge.notes)
+        bad = reindex(fixture_record(), [(inspection(roof_sector(wedge_low="0.3", wedge_high="tall", wedge_axis="along")), "record:base", 0)])
+        refused = {d.element_id: d for d in bad.drafts}["portico-roof-abutments-west"]
+        self.assertEqual(refused.status, AMBIGUOUS)
+        self.assertIn("archflow:wedge_high is 'tall', not a number of metres", refused.notes)
+
+
+class ShellTests(unittest.TestCase):
+    def test_a_drum_with_a_thickness_string_becomes_a_cylinder_shell_around_drafted_centre_axes(self) -> None:
+        result = reindex(fixture_record(), [(inspection(drum(thickness=str(DRUM_THICKNESS))), "record:base", 0)])
+        shell = {d.element_id: d for d in result.drafts}["main-block-drum"]
+        self.assertEqual((shell.status, shell.producer), (DRAFT, "shell"), shell.notes)
+        self.assertEqual(shell.params["kind"], "cylinder")
+        self.assertAlmostEqual(shell.params["outer_radius"], DRUM_OUTER, places=6)
+        self.assertAlmostEqual(shell.params["thickness"], DRUM_THICKNESS, places=6)
+        self.assertAlmostEqual(shell.params["height"], DRUM_HEIGHT, places=6)
+        self.assertEqual(shell.references["at"], {"grid": ["CENTRE-X", "B"]})   # y=0 is axis B already
+        self.assertEqual(shell.references["base"], {"level": "level-cornice"})
+        self.assertLessEqual(shell.residual_m, 0.001, shell.notes)
+        self.assertEqual({a.role for a in result.frame.drafted}, {"CENTRE-X"})
+
+    def test_a_drum_reads_its_thickness_from_the_inner_surface_object(self) -> None:
+        result = reindex(fixture_record(), [(inspection(drum(inner=True)), "record:base", 0)])
+        drafts = {d.element_id: d for d in result.drafts}
+        shell = drafts["main-block-drum"]
+        self.assertEqual((shell.status, shell.producer), (DRAFT, "shell"), shell.notes)
+        self.assertAlmostEqual(shell.params["thickness"], DRUM_THICKNESS, places=6)
+        self.assertTrue(any("obj-drum-inner" in n for n in shell.notes), shell.notes)
+        self.assertLessEqual(shell.residual_m, 0.001, shell.notes)
+        # the inner surface object keeps its identity and gets no row of its own
+        self.assertEqual(drafts["main-block-drum-inner"].status, AMBIGUOUS)
+
+    def test_only_a_shell_kind_string_makes_a_dome_the_box_cannot_say_it_is(self) -> None:
+        result = reindex(fixture_record(), [(inspection(drum(thickness=str(DRUM_THICKNESS), shell_kind="dome")), "record:base", 0)])
+        shell = {d.element_id: d for d in result.drafts}["main-block-drum"]
+        self.assertEqual((shell.status, shell.producer), (DRAFT, "shell"), shell.notes)
+        self.assertEqual(shell.params["kind"], "dome")
+        self.assertLessEqual(shell.residual_m, 0.001, shell.notes)
+        lantern = box("obj-lantern-cap", "main-block", "lantern-cap", (-1.0, -1.0, 20.0), (1.0, 1.0, 21.0), faces=40)
+        cap = {d.family: d for d in reindex(fixture_record(), [(inspection([lantern]), "record:base", 0)]).drafts}["lantern-cap"]
+        self.assertEqual(cap.status, AMBIGUOUS)
+        self.assertTrue(any("archflow:shell_kind" in n for n in cap.notes), cap.notes)
+
+    def test_a_drum_without_a_thickness_stays_ambiguous_with_the_note_the_cad_side_reads(self) -> None:
+        result = reindex(fixture_record(), [(inspection(drum()), "record:base", 0)])
+        shell = {d.element_id: d for d in result.drafts}["main-block-drum"]
+        self.assertEqual(shell.status, AMBIGUOUS)
+        self.assertIsNone(shell.producer)
+        self.assertEqual(shell.notes, [SHELL_THICKNESS_NOTE])
 
 
 if __name__ == "__main__":

@@ -24,18 +24,26 @@ the record lacks it); abaci over columns are capitals seated on the columns'
 published top; a box spanning two axis intersections (with a symmetric
 overhang) is a beam seated on the capitals' top; a box is a prism with its
 literal footprint; a ring of sectors is a ring around the drafted centre
-axes; wall pieces of a side, with the frame, glass and leaf objects of that
-side, are one wall hosting openings whose width, sill, head and position
-are read off the frame groups and whose types come from a wall row the
-record already carries.
+axes; boxes that climb in a straight line by one rise and one going are a
+stair, and a prism standing on its top binds the flight's published datum
+instead of a level; wall pieces of a side, with the frame, glass and leaf
+objects of that side, are one wall hosting openings whose width, sill, head
+and position are read off the frame groups and whose types come from a wall
+row the record already carries.
 
 Nothing here is guessed silently. A family whose form the boxes cannot
-carry (a wedge, a shell, a stair) is AMBIGUOUS: it keeps its identity in the
-catalog (object -> component -> family) and gets no row. A source that
-contradicts another for the same component and side is resolved by the
-declared precedence or reported ALTERNATE; the base keeps the objects then.
-Existing rows are never replaced: a component that already has an element
-for that side keeps it, and the draft is measured against it.
+carry is AMBIGUOUS: it keeps its identity in the catalog (object ->
+component -> family) and gets no row. Two such forms are drafted only when
+the export says what a bounding box cannot: a five-face solid is a wedge
+only where ``archflow:wedge_low`` / ``archflow:wedge_high`` /
+``archflow:wedge_axis`` name the sloped top, and a revolved solid is a
+shell only where the family is a drum (a cylinder wall) and its thickness
+comes from ``archflow:shell_thickness`` or from a sibling inner-surface
+object. A source that contradicts another for the same component and side
+is resolved by the declared precedence or reported ALTERNATE; the base
+keeps the objects then. Existing rows are never replaced: a component that
+already has an element for that side keeps it, and the draft is measured
+against it.
 
 The output is data: a ``ComponentCatalog@1`` payload and, optionally, a
 successor StateRecord holding the drafted axes, rows and derived relations.
@@ -92,6 +100,12 @@ CONTACT_M = 0.025                    # stage-5 convention: an embed up to 25 mm 
 HIGH, MEDIUM, LOW = 0.9, 0.6, 0.3
 SLOPE_HINTS = ("sector", "pediment", "hip", "vault", "portico-roof")   # a 6-face solid so named may be sloped; the box hull is a reading
 OPENING_PIECES = ("bottom", "left", "right", "top")
+STAIR_HINTS = ("stair", "step", "flight", "spiral")     # a family so named is read as a flight before it is split into prisms
+WEDGE_HINTS = ("pediment", "abutment", "sector", "wedge")
+SHELL_HINTS = ("drum", "dome", "shell", "lantern-cap")
+SHELL_FACES = 20                     # a revolved solid: too many faces for a box, square in plan
+WEDGE_NOTE = "five-face solid: the top edge is not readable from a box; a wedge row needs low/high/axis — author it or re-export with archflow:wedge_* strings"
+SHELL_THICKNESS_NOTE = "a shell needs its thickness: no inner surface object; author `thickness` or re-export with archflow:shell_thickness"
 
 
 class ReindexError(ValueError):
@@ -115,6 +129,15 @@ class SourceObject:
     object_type: str | None
     # an inspection witness (archflow:inspection_witness): a marker the readback left, not a part of the building
     witness: bool = False
+    # what a bounding box cannot say and the export may: the sloped top of a five-face solid
+    # (archflow:wedge_low / wedge_high in metres, wedge_axis "along" | "across") and the wall
+    # of a revolved shell (archflow:shell_thickness in metres, shell_kind "cylinder" | "dome").
+    # Kept as written so a value that is not a number can be named rather than dropped.
+    wedge_low: str | None = None
+    wedge_high: str | None = None
+    wedge_axis: str | None = None
+    shell_thickness: str | None = None
+    shell_kind: str | None = None
 
     @property
     def op(self) -> str:
@@ -149,6 +172,11 @@ def objects_of(payload: Mapping[str, Any], source_ref: str, precedence: int) -> 
         raise ReindexError(f"{source_ref}: no named_object_bboxes; it is not a 3dm inspection")
     strings = {u.get("name"): {a.get("key"): a.get("value") for a in (u.get("attributes") or [])} for u in payload.get("object_user_strings") or []}
     digests = {s.get("name"): s.get("geometry_sha256") for s in payload.get("object_geometry_sha256") or []}
+
+    def written(attrs: Mapping[str, Any], key: str) -> str | None:
+        value = attrs.get(key)
+        return None if value is None else str(value)
+
     out = []
     for entry in boxes:
         name = entry.get("name")
@@ -168,6 +196,11 @@ def objects_of(payload: Mapping[str, Any], source_ref: str, precedence: int) -> 
             faces=entry.get("mesh_face_count"),
             object_type=entry.get("type"),
             witness=bool(attrs.get("archflow:inspection_witness")),
+            wedge_low=written(attrs, "archflow:wedge_low"),
+            wedge_high=written(attrs, "archflow:wedge_high"),
+            wedge_axis=written(attrs, "archflow:wedge_axis"),
+            shell_thickness=written(attrs, "archflow:shell_thickness"),
+            shell_kind=written(attrs, "archflow:shell_kind"),
         ))
     return tuple(out)
 
@@ -296,6 +329,10 @@ class AxisLine:
     value: float
     drafted: bool = False
     basis: tuple[str, ...] = ()     # what a drafted axis was read from: the objects whose centres lie on it
+    # an axis_point's ``along`` is measured from the axis origin in the axis direction, not from the
+    # world origin: where the origin sits on the line, and which way the line runs
+    origin_at: float = 0.0
+    dir_sign: float = 1.0
 
 
 def axis_lines_of(record: StateRecord) -> tuple[AxisLine, ...]:
@@ -307,9 +344,9 @@ def axis_lines_of(record: StateRecord) -> tuple[AxisLine, ...]:
         direction = tuple(float(v) for v in e.fields["direction"])
         dx, _, dz = direction
         if abs(dx) < 1e-9 and abs(dz) > 0:
-            lines.append(AxisLine(e.entity_id, str(e.fields["role"]), "x", origin[0]))
+            lines.append(AxisLine(e.entity_id, str(e.fields["role"]), "x", origin[0], origin_at=origin[2], dir_sign=1.0 if dz > 0 else -1.0))
         elif abs(dz) < 1e-9 and abs(dx) > 0:
-            lines.append(AxisLine(e.entity_id, str(e.fields["role"]), "y", origin[2]))
+            lines.append(AxisLine(e.entity_id, str(e.fields["role"]), "y", origin[2], origin_at=origin[0], dir_sign=1.0 if dx > 0 else -1.0))
     return tuple(lines)
 
 
@@ -652,6 +689,262 @@ def draft_ring(draft: ElementDraft, frame: Frame) -> bool:
     return True
 
 
+# ---- the three families a box alone cannot carry: a flight, a wedge, a shell
+
+
+def _metres(text: str, key: str) -> float:
+    """A user string the export wrote as a length; a value that is not one is named, never dropped."""
+
+    try:
+        value = float(str(text).strip())
+    except (TypeError, ValueError):
+        raise ReindexError(f"{key} is {text!r}, not a number of metres") from None
+    if not math.isfinite(value):
+        raise ReindexError(f"{key} is {text!r}, not a finite number of metres")
+    return value
+
+
+def _axis_point(line: AxisLine, coordinate: float) -> dict[str, Any]:
+    """A point on a declared axis: ``along`` metres from the axis origin, in the axis direction."""
+
+    return {"axis_point": {"axis": line.role, "along": _r((coordinate - line.origin_at) * line.dir_sign)}}
+
+
+def _run_references(draft: ElementDraft, frame: Frame, run: str, start: float, end: float, across: float, *, draft_id: str) -> tuple[dict[str, Any], dict[str, Any], float, float, float, float]:
+    """The two ends of a run line as references, and where they actually land.
+
+    Preferred: both ends on declared axis intersections. Failing that, points
+    along the declared axis the run line lies on. Failing that, the run axis
+    is drafted the way ``draft_column_array`` drafts a facade line, and the
+    note says so. Returned with the resolved start, end and across values, so
+    the parameters that follow are measured against the references the row
+    will actually carry and not against the boxes.
+    """
+
+    across_const = "y" if run == "x" else "x"
+    line = frame.snap_axis(across_const, across)
+    end_a, end_b = frame.snap_axis(run, start), frame.snap_axis(run, end)
+    if line is not None and end_a is not None and end_b is not None:
+        draft.notes.append(f"ends on the declared axes {end_a.role} and {end_b.role}, across {line.role}")
+        return {"grid": [end_a.role, line.role]}, {"grid": [end_b.role, line.role]}, end_a.value, end_b.value, line.value, HIGH
+    if line is not None:
+        draft.notes.append(f"the ends are on no declared axis (2 mm); they are drafted as points along {line.role}, which the run line lies on")
+        return _axis_point(line, start), _axis_point(line, end), start, end, line.value, MEDIUM
+    line = frame.axis_for(across_const, across, basis=tuple(o.ref for o in draft.objects), draft_id=draft_id)
+    draft.notes.append(f"run axis {line.role} drafted at {across_const}={line.value}; the ends are points along it")
+    return _axis_point(line, start), _axis_point(line, end), start, end, line.value, MEDIUM
+
+
+def draft_stair(draft: ElementDraft, frame: Frame) -> None:
+    """Boxes that climb in a straight line -> a flight of ``count`` steps of one rise and one going.
+
+    Solid steps fill their whole rise; slab steps are thinner and the
+    difference is the row's ``thickness``. The invariants a flight must hold
+    are named one by one - ``collinear``, ``going``, ``rise``, ``width`` -
+    so a family that is not one (a spiral, whose steps rotate) says which
+    reading failed instead of being split into unrelated prisms.
+    """
+
+    objs = list(draft.objects)
+    if len(objs) < 2 or not all(_is_box(o) for o in objs):
+        draft.status = AMBIGUOUS
+        kinds = sorted({f"{o.object_type or '?'}:{o.faces}" for o in objs})
+        draft.notes.append(f"a flight is two or more 6-face boxes; this family has {len(objs)} object(s) of form {kinds}")
+        return
+    spread_x = max(o.centre[0] for o in objs) - min(o.centre[0] for o in objs)
+    spread_y = max(o.centre[1] for o in objs) - min(o.centre[1] for o in objs)
+    if min(spread_x, spread_y) > SNAP_M or max(spread_x, spread_y) <= SNAP_M:
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"collinear: the step centres do not advance along one plan axis (they spread {_r(spread_x)} m in x and {_r(spread_y)} m in y)")
+        return
+    run = "x" if spread_x > spread_y else "y"
+    i, j = (0, 1) if run == "x" else (1, 0)
+    objs.sort(key=lambda o: (o.lo[2], o.lo[i]))
+    count = len(objs)
+    rises = [objs[k + 1].lo[2] - objs[k].lo[2] for k in range(count - 1)]
+    if min(rises) <= 0.0 or max(rises) - min(rises) > SNAP_M:
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"rise: the steps do not climb by one rise (base to base {_r(min(rises))}..{_r(max(rises))} m)")
+        return
+    rise = sum(rises) / len(rises)
+    widths = [o.hi[j] - o.lo[j] for o in objs]
+    if max(widths) - min(widths) > SNAP_M:
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"width: the steps are not one width ({_r(min(widths))}..{_r(max(widths))} m across the run)")
+        return
+    goings = [o.hi[i] - o.lo[i] for o in objs]
+    if max(goings) - min(goings) > SNAP_M:
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"going: the steps are not one going ({_r(min(goings))}..{_r(max(goings))} m along the run)")
+        return
+    going = sum(goings) / len(goings)
+    sign = 1.0 if objs[-1].lo[i] > objs[0].lo[i] else -1.0
+    lead = [o.lo[i] if sign > 0 else o.hi[i] for o in objs]
+    if max(abs(lead[k] - lead[0] - k * going * sign) for k in range(count)) > SNAP_M:
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"going: the steps do not advance by one going along {run}; a flight has no gap between treads")
+        return
+    heights = [o.hi[2] - o.lo[2] for o in objs]
+    if max(heights) - min(heights) > SNAP_M:
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"rise: the steps are not one height ({_r(min(heights))}..{_r(max(heights))} m)")
+        return
+    height = sum(heights) / len(heights)
+    if height > rise + SNAP_M:
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"rise: a step {_r(height)} m tall over a {_r(rise)} m rise overlaps the one below; a flight's steps do not")
+        return
+    thickness = 0.0 if abs(height - rise) <= SNAP_M else height
+    across = (objs[0].lo[j] + objs[0].hi[j]) / 2.0
+    start, end = lead[0], lead[-1] + going * sign
+    from_ref, to_ref, start_at, end_at, across_at, conf = _run_references(draft, frame, run, start, end, across, draft_id=f"{draft.element_id}-run")
+    base, base_conf, base_note = frame.base_reference(objs[0].lo[2])
+    draft.producer = "stair"
+    draft.references = {"from": from_ref, "to": to_ref, "base": base}
+    draft.params = {"count": count, "rise": _r(rise), "going": _r(abs(end_at - start_at) / count), "width": _r(sum(widths) / len(widths)), "thickness": _r(thickness)}
+    draft.confidence = min(conf, base_conf)
+    draft.notes.append(base_note)
+    draft.notes.append(f"{count} steps up {run} by {_r(rise)} m, centred on {'y' if run == 'x' else 'x'}={_r(across_at)}; " + ("solid steps (the box fills the rise)" if not thickness else f"slab steps {_r(thickness)} m thick under a {_r(rise)} m rise"))
+
+
+def draft_wedge(draft: ElementDraft, frame: Frame) -> None:
+    """A five-face solid -> a wedge, but only where the export says which edge is low and which is high.
+
+    A bounding box holds the same hull for a wedge rising along its length,
+    one rising across it, and one rising the other way; nothing in the box
+    chooses between them. So the low and high edges and the slope's axis are
+    read from the object's ``archflow:wedge_*`` strings or the family stays
+    AMBIGUOUS. The run is the longer plan extent and the depth the shorter -
+    the reading ``draft_beam`` already makes of a box - and the low edge is
+    taken at the ``from`` end, which is the one thing here that is a
+    convention rather than a measurement; the note says so.
+    """
+
+    obj = draft.objects[0]
+    if obj.wedge_low is None or obj.wedge_high is None or obj.wedge_axis is None:
+        draft.status = AMBIGUOUS
+        draft.notes.append(WEDGE_NOTE)
+        return
+    try:
+        low = _metres(obj.wedge_low, "archflow:wedge_low")
+        high = _metres(obj.wedge_high, "archflow:wedge_high")
+    except ReindexError as exc:
+        draft.status = AMBIGUOUS
+        draft.notes.append(str(exc))
+        return
+    axis = obj.wedge_axis.strip().lower()
+    if axis not in ("along", "across"):
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"archflow:wedge_axis is {obj.wedge_axis!r}; a wedge slopes 'along' its run or 'across' it")
+        return
+    if high <= low or low < 0.0:
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"archflow:wedge_low {low} m and wedge_high {high} m are not a slope above the base")
+        return
+    lo, hi = obj.lo, obj.hi
+    ex, ey = hi[0] - lo[0], hi[1] - lo[1]
+    run = "x" if ex >= ey else "y"
+    i, j = (0, 1) if run == "x" else (1, 0)
+    depth = hi[j] - lo[j]
+    from_ref, to_ref, _start, _end, across_at, conf = _run_references(draft, frame, run, lo[i], hi[i], (lo[j] + hi[j]) / 2.0, draft_id=f"{draft.element_id}-line")
+    base, base_conf, base_note = frame.base_reference(lo[2])
+    draft.producer = "wedge"
+    draft.references = {"from": from_ref, "to": to_ref, "base": base}
+    draft.params = {"depth": _r(depth), "low": _r(low), "high": _r(high)}
+    if axis == "across":
+        draft.params["slope_across"] = True
+    draft.confidence = min(conf, base_conf)
+    draft.notes.append(base_note)
+    draft.notes.append(f"low {_r(low)} m, high {_r(high)} m and the slope {axis} the run come from the object's archflow:wedge_* strings; the run is the longer plan extent ({run}), the depth ({_r(depth)} m) the shorter, and the low edge is taken at the from end - the strings do not carry the sense")
+    box_height = hi[2] - lo[2]
+    if abs(high - box_height) > SNAP_M:
+        draft.confidence = LOW
+        draft.notes.append(f"archflow:wedge_high {_r(high)} m is not the box height {_r(box_height)} m; the string is used and the residual reports the difference")
+
+
+def draft_shell(draft: ElementDraft, frame: Frame, related: Sequence[SourceObject] = ()) -> None:
+    """A revolved solid -> a hollow shell, but only a drum: a cylinder wall whose thickness is stated.
+
+    The outer radius and the height are the box's own extents. The thickness
+    is not in the box at all: it comes from ``archflow:shell_thickness`` or
+    from a sibling inner-surface object named ``<family>-inner*``, and
+    without either the family stays AMBIGUOUS. The kind is ``cylinder``
+    unless ``archflow:shell_kind`` says otherwise - a dome's rise is no more
+    readable from a box than a wedge's slope.
+    """
+
+    obj = draft.objects[0]
+    lo, hi = obj.lo, obj.hi
+    outer = ((hi[0] - lo[0]) + (hi[1] - lo[1])) / 4.0
+    kind = (obj.shell_kind or "").strip().lower() or ("cylinder" if "drum" in draft.family else "")
+    if kind not in ("cylinder", "dome"):
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"a shell's kind is not readable from a box: {'archflow:shell_kind is ' + repr(obj.shell_kind) if obj.shell_kind else 'only a drum is read as a cylinder wall'}; author the row or re-export with archflow:shell_kind")
+        return
+    inner = [o for o in related if o.component_id == obj.component_id and o.side == obj.side and o.op.removeprefix("obj-").startswith(f"{draft.family}-inner")]
+    if obj.shell_thickness is not None:
+        try:
+            thickness = _metres(obj.shell_thickness, "archflow:shell_thickness")
+        except ReindexError as exc:
+            draft.status = AMBIGUOUS
+            draft.notes.append(str(exc))
+            return
+        source = "archflow:shell_thickness"
+    elif inner:
+        ilo, ihi = union_box(inner)
+        thickness = outer - ((ihi[0] - ilo[0]) + (ihi[1] - ilo[1])) / 4.0
+        source = f"the inner surface object(s) {', '.join(sorted(o.name for o in inner))}"
+    else:
+        draft.status = AMBIGUOUS
+        draft.notes.append(SHELL_THICKNESS_NOTE)
+        return
+    if not 0.0 < thickness < outer:
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"a thickness of {_r(thickness)} m does not sit inside the outer radius {_r(outer)} m ({source})")
+        return
+    cx, cy = (lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0
+    basis = tuple(o.ref for o in draft.objects)
+    ax = frame.axis_for("x", cx, draft_id="centre-x", basis=basis)
+    ay = frame.axis_for("y", cy, draft_id="centre-y", basis=basis)
+    base, base_conf, base_note = frame.base_reference(lo[2])
+    draft.producer = "shell"
+    draft.references = {"at": {"grid": [ax.role, ay.role]}, "base": base}
+    draft.params = {"outer_radius": _r(outer), "thickness": _r(thickness), "height": _r(hi[2] - lo[2]), "kind": kind}
+    draft.confidence = min(base_conf, MEDIUM if (ax.drafted or ay.drafted) else HIGH)
+    draft.notes.append(base_note)
+    draft.notes.append(f"outer radius and height are the box's extents around ({_r(cx)}, {_r(cy)}); the thickness {_r(thickness)} m comes from {source}; the segment count is the producer's default, which the box cannot say")
+
+
+def seat_on_stairs(drafts: Sequence[ElementDraft]) -> None:
+    """A prism standing on a drafted flight binds the flight's published top instead of a level.
+
+    That is the whole point of ``<id>-top``: change the rise and the landing
+    moves with the flight. A landing left on a level would silently stay
+    behind. Only a contact within the snapping tolerance is re-seated, and a
+    residual gap is declared as the base reference's offset, never absorbed.
+    """
+
+    flights = [d for d in drafts if d.producer == "stair" and d.status == DRAFT and d.objects]
+    for d in drafts:
+        if d.producer != "prism" or d.status != DRAFT or not d.objects:
+            continue
+        blo, bhi = union_box(d.objects)
+        for flight in flights:
+            flo, fhi = union_box(flight.objects)
+            gap = _r(blo[2] - fhi[2])
+            if abs(gap) > SNAP_M:
+                continue
+            if bhi[0] < flo[0] - SNAP_M or blo[0] > fhi[0] + SNAP_M or bhi[1] < flo[1] - SNAP_M or blo[1] > fhi[1] + SNAP_M:
+                continue
+            base: dict[str, Any] = {"datum": f"{flight.element_id}-top"}
+            if gap:
+                base["offset"] = gap
+            d.references["base"] = base
+            d.confidence = HIGH
+            d.notes.append(f"seated on {flight.element_id}-top rather than the level above: the flight publishes what it carries" + (f" ({gap:+.4f} m off it)" if gap else ""))
+            break
+
+
 @dataclass(frozen=True, slots=True)
 class WallTypes:
     """What an existing wall row of the record teaches: its ``types``, which component takes which
@@ -859,7 +1152,29 @@ def grid_centre(frame: Frame, objects: Sequence[SourceObject]) -> tuple[float, f
     return 0.0, 0.0
 
 
-def draft_family(draft: ElementDraft, frame: Frame, siblings: Mapping[tuple[str, str | None], ElementDraft]) -> list[ElementDraft]:
+def is_stair_family(draft: ElementDraft) -> bool:
+    """A family the model names as a flight; the invariants then say whether it is one."""
+
+    return len(draft.objects) >= 2 and any(hint in draft.family for hint in STAIR_HINTS)
+
+
+def is_wedge_family(draft: ElementDraft) -> bool:
+    """One five-face solid the model names as a sloped-top piece: a pediment, an abutment, a sector."""
+
+    return len(draft.objects) == 1 and draft.objects[0].faces == 5 and any(hint in draft.family for hint in WEDGE_HINTS)
+
+
+def is_shell_family(draft: ElementDraft) -> bool:
+    """One revolved solid, square in plan, the model names as a drum, a dome, a shell or a lantern cap."""
+
+    if len(draft.objects) != 1 or "-inner" in draft.family or not any(hint in draft.family for hint in SHELL_HINTS):
+        return False
+    obj = draft.objects[0]
+    ex, ey, _ = obj.extent
+    return (obj.faces or 0) >= SHELL_FACES and abs(ex - ey) <= SNAP_M * 2
+
+
+def draft_family(draft: ElementDraft, frame: Frame, siblings: Mapping[tuple[str, str | None], ElementDraft], related: Sequence[SourceObject] = ()) -> list[ElementDraft]:
     """Choose the producer a family's boxes can carry, or name the ambiguity. A multi-box family may split into one prism per box."""
 
     fam = draft.family
@@ -870,6 +1185,12 @@ def draft_family(draft: ElementDraft, frame: Frame, siblings: Mapping[tuple[str,
         draft_capitals(draft, frame, siblings.get(("column", side)))
     elif fam.startswith("entablature-front") or fam.startswith("entablature-return"):
         draft_beam(draft, frame, siblings.get(("abacus", side)))
+    elif is_stair_family(draft):
+        draft_stair(draft, frame)
+    elif is_shell_family(draft):
+        draft_shell(draft, frame, related)
+    elif is_wedge_family(draft):
+        draft_wedge(draft, frame)
     elif len(draft.objects) == 1 and _is_box(draft.objects[0]):
         draft_prism(draft, frame)
     elif draft_ring(draft, frame):
@@ -1159,7 +1480,7 @@ def reindex(record: StateRecord, sources: Sequence[tuple[Mapping[str, Any], str,
             draft_wall(draft, frame, openings_by_side.get(side, ()), types, centroid, record)
             made = [draft]
         else:
-            made = draft_family(draft, frame, siblings)
+            made = draft_family(draft, frame, siblings, bound)
         siblings[(fam, side)] = made[0]
         drafts.extend(made)
     # openings on a side whose wall row the record carries but whose pieces no bound object realizes
@@ -1176,6 +1497,7 @@ def reindex(record: StateRecord, sources: Sequence[tuple[Mapping[str, Any], str,
         if n:
             d.notes.append(f"id {d.element_id} was taken; numbered")
             d.element_id = _ident(f"{d.element_id}-{n + 1}")
+    seat_on_stairs(drafts)
     measure(drafts, record, frame, existing_rows)
     needed = tuple(r for d in drafts if d.status in (DRAFT, EXISTING) for r in d.relations)
     relations = needed + derive_support(drafts)
