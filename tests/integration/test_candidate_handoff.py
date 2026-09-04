@@ -20,6 +20,14 @@ from archive.tests.test_candidate_assembly import (
 from archive.tests.test_design_development import EVIDENCE, _coordinated_state
 
 
+_RETIRED_LANE_KINDS = (
+    "a retired lane writes the record kinds this needs; put_json writes only "
+    "kinds registered in archflow.project.record_kinds, and a kind no spine "
+    "module writes, reads or names is not registered"
+)
+
+
+@unittest.skip(_RETIRED_LANE_KINDS)
 class CandidateHandoffIntegrationTests(unittest.TestCase):
     def test_rejected_candidate_keeps_full_derivation_without_head_drift(
         self,

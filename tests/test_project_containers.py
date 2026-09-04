@@ -23,6 +23,7 @@ from archflow.project.containers import (
     work_in_progress,
 )
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import PROMOTION_DECISION
 from archflow.project.refs import RunRef
 from archflow.project.repository import FilesystemProjectRepository
 
@@ -236,7 +237,7 @@ class ProjectContainersTests(unittest.TestCase):
             destination=PersistenceDestination(
                 PersistenceArea.RUN_REVIEW, run_id=run.run_id
             ),
-            record_kind="decision-accepted",
+            record_kind=PROMOTION_DECISION,
             payload={
                 "schema": "PromotionDecision@1",
                 "status": "accepted",

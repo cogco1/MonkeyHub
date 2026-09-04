@@ -7,7 +7,9 @@ import unittest
 from pathlib import Path
 
 from archflow.project.location import ProjectLocationError, ProjectLocationKind, locate_project, open_located_project
-from archive.archflow.project.bootstrap import bootstrap_raw_request_project
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STATE_RECORD
+from archflow.project.repository import FilesystemProjectRepository
 
 
 class ProjectLocationTests(unittest.TestCase):
@@ -21,13 +23,25 @@ class ProjectLocationTests(unittest.TestCase):
         self._temporary.cleanup()
 
     def _bootstrap(self, root: Path, project_id: str) -> Path:
+        """One real P036 project with one run and one retained record."""
+
         project = root / project_id
-        bootstrap_raw_request_project(
+        repository = FilesystemProjectRepository.initialize(
             project,
             project_id=project_id,
-            prompt=f"Bootstrap {project_id}.",
-            run_id="run-001",
-            synthetic_test=True,
+            initial_state={
+                "schema": "CanonicalProjectState@1",
+                "phase": "project_initialized",
+            },
+        )
+        run = repository.create_run("run-001")
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_RECORD, run_id=run.run_id
+            ),
+            record_kind=STATE_RECORD,
+            payload={"schema": "StateRecord@1", "project_id": project_id},
         )
         return project
 

@@ -23,11 +23,13 @@ from archflow.project.digests import project_state_sha256
 from archflow.project.layout import ProjectLayout
 from archflow.project.manifest import ProjectManifest, ProjectManifestError
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import require_registered
 from archflow.project.refs import (
     ProjectArtifactRef,
     ProjectRecordRef,
     ProjectVersionRef,
     RunRef,
+    record_file_name,
     require_identifier,
 )
 
@@ -655,6 +657,13 @@ class FilesystemProjectRepository:
     ) -> ProjectRecordRef:
         self._validate_run(run)
         require_identifier(record_kind, "record_kind")
+        # The kind is the only word a reader has for what a retained file is,
+        # so it comes from one table. Reads stay unrestricted: retained runs
+        # from the archived lanes carry kinds the spine never writes.
+        try:
+            require_registered(record_kind)
+        except ValueError as exc:
+            raise ProjectRepositoryError(str(exc)) from exc
         directory = self._destination_directory(run, destination)
         if destination.area in {
             PersistenceArea.EVENT,
@@ -666,7 +675,7 @@ class FilesystemProjectRepository:
             )
         data = _json_bytes(payload)
         digest = _sha256(data)
-        path = directory / f"{record_kind}-{digest}.json"
+        path = directory / record_file_name(record_kind, digest)
         with self._lock:
             _write_immutable(path, data)
         return self._record_ref(path, digest, "application/json")
@@ -1226,7 +1235,7 @@ class FilesystemProjectRepository:
         require_identifier(record_kind, "record_kind")
         data = _json_bytes(payload)
         digest = _sha256(data)
-        path = directory / f"{record_kind}-{digest}.json"
+        path = directory / record_file_name(record_kind, digest)
         _write_immutable(path, data)
         return self._record_ref(path, digest, "application/json")
 

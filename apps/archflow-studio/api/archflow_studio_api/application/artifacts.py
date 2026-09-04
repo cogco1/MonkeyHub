@@ -29,15 +29,12 @@ from pathlib import Path
 import re
 from typing import Any, Mapping, NamedTuple
 
+from archflow.project.record_kinds import SEAT_RHINO_EXECUTION
 from archflow.project.refs import ProjectRecordRef
 from archflow.project.repository import ProjectRepositoryError
 
 from ..transport.errors import StudioError, error_sentence
 from .binding import ProjectBinding, record_kind
-
-# The one record kind that certifies an exported model. Compared by equality:
-# a prefix test would let a summary record answer as an execution receipt.
-RHINO_EXECUTION_KIND = "seat-rhino-execution"
 
 # A file digest, as it travels in a path parameter. Lowercase because that is
 # what the kernel writes; anything else names no artifact here.
@@ -169,7 +166,7 @@ def artifact_bytes(
         raise StudioError(
             404,
             "ARTIFACT_NOT_FOUND",
-            f"{binding.project_id}: no retained {RHINO_EXECUTION_KIND} receipt "
+            f"{binding.project_id}: no retained {SEAT_RHINO_EXECUTION} receipt "
             f"claims an artifact with sha256 {sha256}"
             # "Not found" is only true of what was searched. Runs the listing
             # could not read were not searched, so they are named here rather
@@ -262,7 +259,7 @@ def _receipt_refs(
     return tuple(
         ref
         for ref in binding.record_refs(run_id)
-        if record_kind(ref) == RHINO_EXECUTION_KIND
+        if record_kind(ref) == SEAT_RHINO_EXECUTION
     )
 
 

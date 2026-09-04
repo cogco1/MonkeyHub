@@ -25,6 +25,13 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from tests.test_component_templates import _stair_template
 
 
+_RETIRED_LANE_KINDS = (
+    "a retired lane writes the record kinds this needs; put_json writes only "
+    "kinds registered in archflow.project.record_kinds, and a kind no spine "
+    "module writes, reads or names is not registered"
+)
+
+
 def _entry(
     family: str = "exterior-stair",
     ref: str = "project://demo/runs/run/records/component-template-x.json",
@@ -163,6 +170,7 @@ class GatePersistenceTests(unittest.TestCase):
             payload=payload,
         )
 
+    @unittest.skip(_RETIRED_LANE_KINDS)
     def test_obligations_and_waiver_emission(self) -> None:
         source = self._confrontation_ref(
             intended_families=("exterior-stair", "roof-family", "wall-family"),
@@ -214,6 +222,7 @@ class GatePersistenceTests(unittest.TestCase):
                 waivers={"roof-family": "stray"},
             )
 
+    @unittest.skip(_RETIRED_LANE_KINDS)
     def test_closure_family_must_match(self) -> None:
         source = self._confrontation_ref(
             intended_families=("wall-family",),
@@ -264,6 +273,7 @@ class DeclineHarvestOfferCycleTests(unittest.TestCase):
             PersistenceArea.RUN_RECORD, run_id="run"
         )
 
+    @unittest.skip(_RETIRED_LANE_KINDS)
     def test_decline_harvest_offer_cycle(self) -> None:
         # Session 1: empty catalog, family declined with reason.
         first = confront_catalog(

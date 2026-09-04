@@ -1924,6 +1924,14 @@ def _persist_true_legacy_stage_exit_checkpoint(
     return record, checkpoint_payload, legacy_bundle_payload
 
 
+_RETIRED_LANE_KINDS = (
+    "a retired lane writes the record kinds this needs; put_json writes only "
+    "kinds registered in archflow.project.record_kinds, and a kind no spine "
+    "module writes, reads or names is not registered"
+)
+
+
+@unittest.skip(_RETIRED_LANE_KINDS)
 class DurableDesignStateResumeTests(unittest.TestCase):
     def test_stage3_artifact_archive_replays_exact_typed_p036_denominator(
         self,

@@ -12,15 +12,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import re
 from typing import Any, Mapping
-from urllib.parse import unquote, urlparse
 
 from starlette.datastructures import State
 
 from archflow.project.location import open_located_project
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
+from archflow.project.record_kinds import RUNNER_RUN_RECEIPT
+from archflow.project.refs import (
+    ProjectRecordRef,
+    ProjectVersionRef,
+    RunRef,
+    record_ref_from_uri,
+)
 from archflow.project.repository import (
     FilesystemProjectRepository,
     ProjectRepositoryError,
@@ -29,11 +33,6 @@ from archflow.project.repository import (
 from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
 from ..transport.errors import StudioError, error_sentence
 
-# ``<kind>-<64 hex>.json``. The kind is compared by equality: a prefix test
-# would let ``runner-run-receipt-summary`` answer as a run receipt.
-RECORD_NAME = re.compile(r"^(?P<kind>.+)-(?P<sha>[0-9a-f]{64})\.json$")
-
-RUNNER_RECEIPT_KIND = "runner-run-receipt"
 STAGE_WORKFLOW_SCHEMA = "ProjectStageWorkflow@1"
 RUNNER_RECEIPT_V3 = "RunnerRunReceipt@3"
 
@@ -65,10 +64,16 @@ class ReferenceRun:
 
 
 def record_kind(ref: ProjectRecordRef) -> str | None:
-    """The record kind in a P036 record name, or None if it is not one."""
+    """The record kind in a P036 record name, or None if it is not one.
 
-    match = RECORD_NAME.match(ref.relative_path.rsplit("/", 1)[-1])
-    return None if match is None else match.group("kind")
+    The kind is compared by equality wherever this is used: a prefix test
+    would let ``runner-run-receipt-summary`` answer as a run receipt.
+    """
+
+    try:
+        return ref.record_kind
+    except ValueError:
+        return None
 
 
 class ProjectBinding:
@@ -320,7 +325,7 @@ class ProjectBinding:
         return tuple(
             (ref, self.repository.load_json(ref))
             for ref in self.record_refs(run_id)
-            if record_kind(ref) == RUNNER_RECEIPT_KIND
+            if record_kind(ref) == RUNNER_RUN_RECEIPT
         )
 
     def _newest_receipt_of(self, run_id: str) -> Mapping[str, Any] | None:
@@ -366,23 +371,12 @@ class ProjectBinding:
     def _load_uri(self, uri: object) -> Mapping[str, Any] | None:
         """Load a ``project://`` record reference, or None if it does not resolve."""
 
-        if not isinstance(uri, str):
-            return None
-        parsed = urlparse(uri)
-        if parsed.scheme != "project" or unquote(parsed.netloc) != self.project_id:
-            return None
-        relative = unquote(parsed.path).lstrip("/")
-        match = RECORD_NAME.match(relative.rsplit("/", 1)[-1])
-        if match is None:
+        try:
+            ref = record_ref_from_uri(uri, self.project_id)
+        except (TypeError, ValueError):
             return None
         try:
-            return self.repository.load_json(
-                ProjectRecordRef(
-                    project_id=self.project_id,
-                    relative_path=relative,
-                    sha256=match.group("sha"),
-                )
-            )
+            return self.repository.load_json(ref)
         except Exception:
             return None
 

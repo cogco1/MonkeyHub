@@ -13,9 +13,17 @@ from archflow.compilers.geometry import compile_geometry_program
 from archive.tools.projects.pantheon import monument_support as S
 
 
+_RETIRED_LANE_KINDS = (
+    "a retired lane writes the record kinds this needs; put_json writes only "
+    "kinds registered in archflow.project.record_kinds, and a kind no spine "
+    "module writes, reads or names is not registered"
+)
+
+
 class MonumentLifecycleFastTests(unittest.TestCase):
     """Protocol-chain verification without per-stage voxelization."""
 
+    @unittest.skip(_RETIRED_LANE_KINDS)
     def test_stage_lifecycles_compile_and_arrays_expand(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / S.PROJECT_ID

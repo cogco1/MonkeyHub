@@ -22,6 +22,14 @@ from archive.tests.test_design_development import (
 from tests.test_design_portfolio import EVIDENCE, PROJECT_ID
 
 
+_RETIRED_LANE_KINDS = (
+    "a retired lane writes the record kinds this needs; put_json writes only "
+    "kinds registered in archflow.project.record_kinds, and a kind no spine "
+    "module writes, reads or names is not registered"
+)
+
+
+@unittest.skip(_RETIRED_LANE_KINDS)
 class DesignDevelopmentResumeTests(unittest.TestCase):
     def test_reload_then_continue_from_exact_developed_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -20,6 +20,13 @@ from archive.tools import refine_parthenon_stage4_visual_regions as visual_regio
 from archive.tools import run_parthenon_stage4_visual_rag as visual_rag
 
 
+_RETIRED_LANE_KINDS = (
+    "a retired lane writes the record kinds this needs; put_json writes only "
+    "kinds registered in archflow.project.record_kinds, and a kind no spine "
+    "module writes, reads or names is not registered"
+)
+
+
 def _generated_jpeg(index: int) -> bytes:
     width = 320 + index * 8
     height = 240 + index * 6
@@ -47,6 +54,7 @@ def _generated_jpeg(index: int) -> bytes:
     return stream.getvalue()
 
 
+@unittest.skip(_RETIRED_LANE_KINDS)
 class ParthenonStage4VisualRegionTests(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()

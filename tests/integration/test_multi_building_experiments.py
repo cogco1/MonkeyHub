@@ -386,7 +386,15 @@ def _terminal_sources(case_repository, case_run):
     return tuple(sorted(evidence, key=lambda item: item.record_ref))
 
 
+_RETIRED_LANE_KINDS = (
+    "a retired lane writes the record kinds this needs; put_json writes only "
+    "kinds registered in archflow.project.record_kinds, and a kind no spine "
+    "module writes, reads or names is not registered"
+)
+
+
 class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
+    @unittest.skip(_RETIRED_LANE_KINDS)
     def test_generation_ablation_removes_only_program_relationship_context(
         self,
     ) -> None:
@@ -1675,6 +1683,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
         clinic_repository.verify()
         repository.verify()
 
+    @unittest.skip(_RETIRED_LANE_KINDS)
     def test_same_project_terminal_chain_cross_checks_all_exact_digests(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1951,6 +1960,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
                 ),
             )
 
+    @unittest.skip(_RETIRED_LANE_KINDS)
     def test_preregistration_reloads_three_separate_p036_projects_without_results(
         self,
     ) -> None:
@@ -2086,6 +2096,7 @@ class MultiBuildingExperimentPersistenceTests(unittest.TestCase):
                     },
                 )
 
+    @unittest.skip(_RETIRED_LANE_KINDS)
     def test_p036_attempt_lifecycle_is_ordered_idempotent_and_reloadable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

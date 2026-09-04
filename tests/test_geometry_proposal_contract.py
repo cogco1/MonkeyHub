@@ -18,6 +18,7 @@ from archflow.capabilities.geometry_proposal import (
 )
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import SELECTED_SPATIAL_OPTION
 from archflow.project.refs import ProjectRecordRef
 from archflow.state.operational_state import (
     PORTABLE_LOGICAL_REF_PATTERN,
@@ -94,7 +95,7 @@ class _ProducerHarness(unittest.IsolatedAsyncioTestCase):
         self.option_ref = self.repository.put_json(
             run=self.run,
             destination=self.destination,
-            record_kind="spatial-option",
+            record_kind=SELECTED_SPATIAL_OPTION,
             payload=self.option.to_dict(),
         )
         original_state, original_program, _ = compiled_room()

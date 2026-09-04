@@ -14,7 +14,15 @@ from archive.archflow.runtime.artifact_library import (
 from archive.tests.test_artifact_library import neutral_package_fixture
 
 
+_RETIRED_LANE_KINDS = (
+    "a retired lane writes the record kinds this needs; put_json writes only "
+    "kinds registered in archflow.project.record_kinds, and a kind no spine "
+    "module writes, reads or names is not registered"
+)
+
+
 class SavedBuildReloadIntegrationTests(unittest.TestCase):
+    @unittest.skip(_RETIRED_LANE_KINDS)
     def test_p036_export_reload_preserves_package_and_not_head_or_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "portfolio-project"

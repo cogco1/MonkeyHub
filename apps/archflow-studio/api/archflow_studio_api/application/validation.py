@@ -53,10 +53,9 @@ from archflow.validation.engine import (
 )
 from archflow.validation.model import ValidationReceipt
 
-from archflow.project.refs import ProjectVersionRef
+from archflow.project.refs import ProjectVersionRef, parse_record_file_name
 
 from ..ports import StudioEventSink
-from .binding import RECORD_NAME
 from .candidate import CandidateRun, RelationTotals, SeatOutcome
 from .proposals import Proposal
 
@@ -504,5 +503,7 @@ def _record_sha(uri: str | None) -> str | None:
 
     if uri is None:
         return None
-    match = RECORD_NAME.match(uri.rsplit("/", 1)[-1])
-    return None if match is None else match.group("sha")
+    try:
+        return parse_record_file_name(uri.rsplit("/", 1)[-1])[1]
+    except (TypeError, ValueError):
+        return None

@@ -17,10 +17,8 @@ turns a raw run into a stage by side effect.
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -32,7 +30,7 @@ from archflow.capabilities.geometry_proposal import GeometryProposalProviderIden
 from archflow.state.stage_workflow import CompositeStageClosureReceipt
 from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
-from archflow.project.refs import ProjectRecordRef  # noqa: E402
+from archflow.project.refs import record_ref_from_uri  # noqa: E402
 from archflow.runtime.project_runner import (  # noqa: E402
     RunOptions,
     StageExecutionGuard,
@@ -47,28 +45,9 @@ from archflow.state.stage_workflow import (  # noqa: E402
 )
 
 
-_RECORD_SHA = re.compile(r"-([0-9a-f]{64})\.json$")
-
-
-def _record_ref(uri: str, *, project_id: str) -> ProjectRecordRef:
-    parsed = urlsplit(uri)
-    if parsed.scheme != "project" or unquote(parsed.netloc) != project_id:
-        raise ValueError("record URI belongs to another project")
-    relative_path = unquote(parsed.path.lstrip("/"))
-    match = _RECORD_SHA.search(relative_path)
-    if match is None:
-        raise ValueError("record URI does not name a content-addressed JSON record")
-    return ProjectRecordRef(
-        project_id=project_id,
-        relative_path=relative_path,
-        sha256=match.group(1),
-        media_type="application/json",
-    )
-
-
 def _stage_guard(repository, run, *, workflow_uri: str, envelope_uri: str) -> StageExecutionGuard:
-    workflow_ref = _record_ref(workflow_uri, project_id=run.project_id)
-    envelope_ref = _record_ref(envelope_uri, project_id=run.project_id)
+    workflow_ref = record_ref_from_uri(workflow_uri, run.project_id)
+    envelope_ref = record_ref_from_uri(envelope_uri, run.project_id)
     workflow = ProjectStageWorkflow.from_dict(repository.load_json(workflow_ref))
     envelope = StageRunEnvelope.from_dict(repository.load_json(envelope_ref))
     if envelope.predecessor is None:
@@ -78,17 +57,17 @@ def _stage_guard(repository, run, *, workflow_uri: str, envelope_uri: str) -> St
             envelope=envelope,
             envelope_record_ref=envelope_ref,
         )
-    predecessor_ref = _record_ref(
+    predecessor_ref = record_ref_from_uri(
         envelope.predecessor.envelope_ref,
-        project_id=run.project_id,
+        run.project_id,
     )
-    exit_ref = _record_ref(
+    exit_ref = record_ref_from_uri(
         envelope.predecessor.exit_binding_ref,
-        project_id=run.project_id,
+        run.project_id,
     )
-    closure_ref = _record_ref(
+    closure_ref = record_ref_from_uri(
         envelope.predecessor.exit_binding.closure_ref,
-        project_id=run.project_id,
+        run.project_id,
     )
     predecessor = StageRunEnvelope.from_dict(repository.load_json(predecessor_ref))
     exit_binding = StageExitBinding.from_dict(repository.load_json(exit_ref))

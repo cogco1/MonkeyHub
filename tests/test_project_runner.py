@@ -21,6 +21,12 @@ from archflow.capabilities.geometry_proposal import GeometryProposalProviderIden
 from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import (
+    PROJECT_STAGE_WORKFLOW,
+    STAGE_CLOSURE,
+    STAGE_EXIT_BINDING,
+    STAGE_RUN_ENVELOPE,
+)
 from archflow.runtime.project_runner import (
     RECORDED_PROPOSAL_IDENTITY,
     ProjectRunnerError,
@@ -133,7 +139,7 @@ def _stage_guard(repository, run, record, options) -> StageExecutionGuard:
     workflow_ref = repository.put_json(
         run=run,
         destination=destination,
-        record_kind="project-stage-workflow",
+        record_kind=PROJECT_STAGE_WORKFLOW,
         payload=workflow.to_dict(),
     )
     envelope = open_stage_run_envelope(
@@ -158,7 +164,7 @@ def _stage_guard(repository, run, record, options) -> StageExecutionGuard:
     envelope_ref = repository.put_json(
         run=run,
         destination=destination,
-        record_kind="stage-run-envelope",
+        record_kind=STAGE_RUN_ENVELOPE,
         payload=envelope.to_dict(),
     )
     return StageExecutionGuard(
@@ -326,7 +332,7 @@ class RunTests(unittest.TestCase):
                 basis_refs=("decision:cross-run-test",),
             )
             destination0 = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=predecessor_run.run_id)
-            workflow_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind="project-stage-workflow", payload=workflow.to_dict())
+            workflow_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind=PROJECT_STAGE_WORKFLOW, payload=workflow.to_dict())
             predecessor = open_stage_run_envelope(
                 workflow,
                 workflow_ref=workflow_ref.uri,
@@ -346,7 +352,7 @@ class RunTests(unittest.TestCase):
                     validator_ref="validator:composite-stage-closure",
                 ),
             )
-            predecessor_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind="stage-run-envelope", payload=predecessor.to_dict())
+            predecessor_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind=STAGE_RUN_ENVELOPE, payload=predecessor.to_dict())
             closure = CompositeStageClosureReceipt(
                 profile_id="stage-0-profile",
                 profile_digest="1" * 64,
@@ -358,14 +364,14 @@ class RunTests(unittest.TestCase):
                 findings=(),
                 status=StageClosureStatus.SATISFIED,
             )
-            closure_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind="composite-stage-closure", payload=closure.to_dict())
+            closure_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind=STAGE_CLOSURE, payload=closure.to_dict())
             exit_binding = StageExitBinding.bind(
                 predecessor,
                 envelope_ref=predecessor_ref.uri,
                 closure_ref=closure_ref.uri,
                 closure_digest=closure.receipt_digest,
             )
-            exit_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind="stage-exit-binding", payload=exit_binding.to_dict())
+            exit_ref = repository.put_json(run=predecessor_run, destination=destination0, record_kind=STAGE_EXIT_BINDING, payload=exit_binding.to_dict())
             successor = open_stage_run_envelope(
                 workflow,
                 workflow_ref=workflow_ref.uri,
@@ -390,7 +396,7 @@ class RunTests(unittest.TestCase):
                 predecessor_exit_ref=exit_ref.uri,
             )
             destination1 = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
-            successor_ref = repository.put_json(run=run, destination=destination1, record_kind="stage-run-envelope", payload=successor.to_dict())
+            successor_ref = repository.put_json(run=run, destination=destination1, record_kind=STAGE_RUN_ENVELOPE, payload=successor.to_dict())
             guard = StageExecutionGuard(
                 workflow,
                 workflow_ref,

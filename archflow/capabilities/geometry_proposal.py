@@ -22,6 +22,14 @@ from archflow.ports.model import (
     ModelPhase,
 )
 from archflow.project.ports import PersistenceArea, PersistenceDestination, RecordSink, require_destination
+from archflow.project.record_kinds import (
+    GEOMETRY_PROGRAM_PROPOSAL,
+    GEOMETRY_PROPOSAL_DEFERRAL,
+    GEOMETRY_PROPOSAL_ESCALATION,
+    GEOMETRY_PROPOSAL_LINEAGE,
+    geometry_proposal_completion,
+    geometry_proposal_round,
+)
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.contracts.authority import no_authority
 from archflow.compilers.geometry import (
@@ -1966,7 +1974,7 @@ async def produce_geometry_program_proposal(
                                     repository.put_json(
                                         run=run,
                                         destination=destination,
-                                        record_kind=f"geometry-proposal-completion-{round_index:02d}",
+                                        record_kind=geometry_proposal_completion(round_index),
                                         payload={
                                             **completion_summary,
                                             "round_index": round_index,
@@ -1989,7 +1997,7 @@ async def produce_geometry_program_proposal(
             issues = tuple(collected)
 
         round_receipt = GeometryProposalRoundReceipt(
-            round_id=f"geometry-proposal-round-{round_index:02d}",
+            round_id=geometry_proposal_round(round_index),
             round_index=round_index,
             status=round_status,
             spatial_option_ref=spatial_option_ref,
@@ -2006,7 +2014,7 @@ async def produce_geometry_program_proposal(
         round_ref = repository.put_json(
             run=run,
             destination=destination,
-            record_kind=f"geometry-proposal-round-{round_index:02d}",
+            record_kind=geometry_proposal_round(round_index),
             payload=round_receipt.to_dict(),
         )
         round_refs.append(round_ref)
@@ -2016,7 +2024,7 @@ async def produce_geometry_program_proposal(
             proposal_ref = repository.put_json(
                 run=run,
                 destination=destination,
-                record_kind="geometry-program-proposal",
+                record_kind=GEOMETRY_PROGRAM_PROPOSAL,
                 payload=_proposal_record(
                     proposal,
                     spatial_option_ref,
@@ -2115,7 +2123,7 @@ async def produce_geometry_program_proposal(
                 deferral_ref = repository.put_json(
                     run=run,
                     destination=destination,
-                    record_kind="geometry-proposal-deferral",
+                    record_kind=GEOMETRY_PROPOSAL_DEFERRAL,
                     payload={
                         **deferral_summary,
                         "round_refs": [item.uri for item in round_refs],
@@ -2125,7 +2133,7 @@ async def produce_geometry_program_proposal(
                 proposal_ref = repository.put_json(
                     run=run,
                     destination=destination,
-                    record_kind="geometry-program-proposal",
+                    record_kind=GEOMETRY_PROGRAM_PROPOSAL,
                     payload=_proposal_record(
                         reduced_proposal,
                         spatial_option_ref,
@@ -2167,7 +2175,7 @@ async def produce_geometry_program_proposal(
         escalation_ref = repository.put_json(
             run=run,
             destination=destination,
-            record_kind="geometry-proposal-escalation",
+            record_kind=GEOMETRY_PROPOSAL_ESCALATION,
             payload={
                 "schema": "GeometryProposalEscalation@1",
                 "spatial_option_ref": spatial_option_ref.uri,
@@ -3784,7 +3792,7 @@ def _persist_lineage(
     return repository.put_json(
         run=run,
         destination=destination,
-        record_kind="geometry-proposal-lineage",
+        record_kind=GEOMETRY_PROPOSAL_LINEAGE,
         payload=lineage.to_dict(),
     )
 

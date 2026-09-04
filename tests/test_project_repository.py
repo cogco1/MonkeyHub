@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from archflow.project.repository import FilesystemProjectRepository, ProjectAlreadyExists, ProjectHeadLocked, ProjectIntegrityError, PromotionAuthorityError, StaleProjectHead
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import PROMOTION_DECISION, STATE_RECORD
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.project.digests import project_state_sha256
 
@@ -54,7 +55,7 @@ def _decision(
             PersistenceArea.RUN_REVIEW,
             run_id=run.run_id,
         ),
-        record_kind=f"decision-{status}",
+        record_kind=PROMOTION_DECISION,
         payload={
             "schema": "PromotionDecision@1",
             "status": status,
@@ -149,14 +150,14 @@ class ProjectRepositoryTests(unittest.TestCase):
         first = self.repository.put_json(
             run=run,
             destination=destination,
-            record_kind="observation",
-            payload={"schema": "Observation@1", "value": 1},
+            record_kind=STATE_RECORD,
+            payload={"schema": "StateRecord@1", "value": 1},
         )
         duplicate = self.repository.put_json(
             run=run,
             destination=destination,
-            record_kind="observation",
-            payload={"schema": "Observation@1", "value": 1},
+            record_kind=STATE_RECORD,
+            payload={"schema": "StateRecord@1", "value": 1},
         )
         artifact = self.repository.ingest(
             run=run,
@@ -236,7 +237,7 @@ class ProjectRepositoryTests(unittest.TestCase):
                     PersistenceArea.RUN_RECORD,
                     run_id="run-001",
                 ),
-                record_kind="record",
+                record_kind=STATE_RECORD,
                 payload={},
             )
         with self.assertRaises(ValueError):
@@ -255,7 +256,7 @@ class ProjectRepositoryTests(unittest.TestCase):
             self.repository.put_json(
                 run=run,
                 destination=PersistenceDestination(PersistenceArea.EVENT),
-                record_kind="fake-event",
+                record_kind=STATE_RECORD,
                 payload={},
             )
 

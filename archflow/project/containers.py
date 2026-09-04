@@ -45,6 +45,7 @@ from archflow.project.layout import (
     ProjectLayout,
 )
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, STAGE_CLOSURE
 from archflow.project.refs import (
     ProjectRecordRef,
     RunRef,
@@ -56,8 +57,6 @@ from archflow.project.repository import (
 )
 
 
-RUNNER_RECEIPT_KIND = "runner-run-receipt"
-STAGE_CLOSURE_KIND = "stage-closure"
 SATISFIED = "SATISFIED"
 
 _DEFAULT_AUTHOR = "runner"
@@ -284,7 +283,7 @@ def _shared_run(
             _unreadable(layout.project_id, run_id, ref, "run records unreadable"),
         )
     receipts = tuple(
-        payload for kind, payload in records if kind == RUNNER_RECEIPT_KIND
+        payload for kind, payload in records if kind == RUNNER_RUN_RECEIPT
     )
     if branch_id is not None:
         receipts = tuple(
@@ -295,7 +294,7 @@ def _shared_run(
         if not receipts:
             return ()
     closures = tuple(
-        payload for kind, payload in records if kind == STAGE_CLOSURE_KIND
+        payload for kind, payload in records if kind == STAGE_CLOSURE
     )
     seats_done = any(
         bool(payload.get("seat_execution_complete")) for payload in receipts
@@ -368,12 +367,13 @@ def _closure_phrase(
 def _run_records(
     repository: FilesystemProjectRepository,
     run: RunRef,
-) -> tuple[tuple[str, Mapping[str, Any]], ...]:
+) -> tuple[tuple[str | None, Mapping[str, Any]], ...]:
     """Every retained record of one run as (record kind, payload).
 
     The kind is the name the writer gave ``put_json``: the repository puts it
     in front of the content digest in the file name, and that name is the only
-    place a record's kind survives.
+    place a record's kind survives. A file whose name is not that shape has no
+    kind, and comes back as ``None`` rather than as a guess.
     """
 
     refs = repository.list_json(
@@ -387,9 +387,13 @@ def _run_records(
     )
 
 
-def _record_kind(ref: ProjectRecordRef) -> str:
-    name = ref.relative_path.rsplit("/", 1)[-1]
-    return name.removesuffix(".json").rsplit("-", 1)[0]
+def _record_kind(ref: ProjectRecordRef) -> str | None:
+    """This record's kind, or None for a file that is not a P036 record."""
+
+    try:
+        return ref.record_kind
+    except ValueError:
+        return None
 
 
 def _run_ids(layout: ProjectLayout) -> tuple[str, ...]:

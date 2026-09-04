@@ -29,6 +29,11 @@ from archflow.capabilities.geometry_proposal import (
     GeometryProposalProviderIdentity,
 )
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import (
+    INTENT_COMPILATION,
+    RUNNER_RUN_RECEIPT,
+    SEAT_RELATION_CHECK,
+)
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef
 from archflow.runtime.project_runner import RunOptions, run_project
 from archflow.state.state_record import StateRecord, developed_design_view
@@ -38,7 +43,7 @@ from ..adapters.seats import load_seat_pack, seats_of
 from ..settings import StudioSettings
 from ..transport.errors import StudioError
 from .artifacts import ArtifactRecord, _text, _whole, list_artifacts
-from .binding import RUNNER_RECEIPT_KIND, ProjectBinding, record_kind
+from .binding import ProjectBinding, record_kind
 from .jobs import FAILED, QUEUED, RUNNING
 from .projection import (
     BRANCH_ID,
@@ -54,8 +59,6 @@ from .projection import (
     project_state,
 )
 from .proposals import Proposal
-
-RELATION_CHECK_KIND = "seat-relation-check"
 
 
 class StaleBaseError(ValueError):
@@ -156,7 +159,7 @@ def execute_candidate(
             destination=PersistenceDestination(
                 PersistenceArea.RUN_RECORD, run_id=run_id
             ),
-            record_kind="intent-compilation",
+            record_kind=INTENT_COMPILATION,
             payload={
                 "schema": "IntentCompilation@1",
                 "proposal_id": proposal.proposal_id,
@@ -409,7 +412,7 @@ def _receipt(
             404,
             "CANDIDATE_NOT_FOUND",
             f"{binding.project_id}: run {run_id} retained no "
-            f"{RUNNER_RECEIPT_KIND}, so there is no candidate to read. A run "
+            f"{RUNNER_RUN_RECEIPT}, so there is no candidate to read. A run "
             "that failed leaves its reason on its job, not a candidate.",
         )
     return newest
@@ -425,7 +428,7 @@ def _relation_totals(
     all_held = True
     all_checked = True
     for ref in binding.record_refs(run_id):
-        if record_kind(ref) != RELATION_CHECK_KIND:
+        if record_kind(ref) != SEAT_RELATION_CHECK:
             continue
         payload = binding.repository.load_json(ref)
         counts = payload.get("counts")

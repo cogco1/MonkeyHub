@@ -64,6 +64,24 @@ from archflow.capabilities.relation_checks import check_relations
 from archflow.contracts.authority import no_authority
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus
+from archflow.project.record_kinds import (
+    DEVELOPED_DESIGN_STATE,
+    DISCIPLINE_SEAT,
+    PROJECT_GRIDS,
+    PROJECT_LEVELS,
+    RUNNER_RUN_FAILURE,
+    RUNNER_RUN_RECEIPT,
+    SEAT_3DM_INSPECTION,
+    SEAT_AUTHORING_CONTEXT,
+    SEAT_GEOMETRY_PROGRAM,
+    SEAT_HANDOVER,
+    SEAT_RELATION_CHECK,
+    SEAT_RHINO_EXECUTION,
+    SEAT_ROUND_RECEIPT,
+    SELECTED_SPATIAL_OPTION,
+    STATE_RECORD,
+    stage_geometry_program,
+)
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef, record_ref_from_uri
@@ -404,7 +422,7 @@ def _export(repository, run, branch, branch_destination, program, stage_id: str,
         payload, model = prior
         return {"execution_ref": f"project://{run.project_id}/runs/{run.run_id}/records/{payload['_reused_path'].name}", "status": "succeeded",
                 "readback_verified": payload.get("readback_verified"), "failures": [], "model": str(model), "path": "reused"}
-    program_ref = repository.put_json(run=run, destination=branch_destination, record_kind=f"{stage_id}-geometry-program", payload=program.to_dict())
+    program_ref = repository.put_json(run=run, destination=branch_destination, record_kind=stage_geometry_program(stage_id), payload=program.to_dict())
     binding = RhinoCadProgramBinding(program_ref=program_ref, branch=branch, stage_id=stage_id, program_digest=program.program_digest,
                                      design_state_digest=program.proposal.design_state_digest, predecessor_program_digest=None)
     stem = f"{stage_id}@{program.program_digest[:12]}"
@@ -415,7 +433,7 @@ def _export(repository, run, branch, branch_destination, program, stage_id: str,
                                              provenance={**provenance, "export_path": label}, patch=patch)
         execution = execute_rhino_three_dm_export(plan, powershell_executable=options.powershell, timeout_seconds=900)
         seconds = round(time.perf_counter() - t0, 3)
-        execution_ref = repository.put_json(run=run, destination=destination, record_kind="seat-rhino-execution", payload={**execution.to_dict(), "export_path": label, "seconds": seconds})
+        execution_ref = repository.put_json(run=run, destination=destination, record_kind=SEAT_RHINO_EXECUTION, payload={**execution.to_dict(), "export_path": label, "seconds": seconds})
         out = {"execution_ref": execution_ref.uri, "status": execution.status.value, "readback_verified": execution.readback_verified,
                "failures": [dict(f) if isinstance(f, dict) else str(f) for f in execution.failures], "model": str(plan.model_path), "path": label, "seconds": seconds}
         if plan.patch:
@@ -423,7 +441,7 @@ def _export(repository, run, branch, branch_destination, program, stage_id: str,
             out["prior_model"] = plan.patch["prior_model_path"]; out["rebuilt_objects"] = len(plan.patch["rebuilt_op_ids"]); out["kept_objects"] = len(plan.patch["kept_object_ids"])
         if execution.status.value == "succeeded":
             inspection = inspect_three_dm(plan.model_path)
-            out["inspection_ref"] = repository.put_json(run=run, destination=destination, record_kind="seat-3dm-inspection", payload=inspection.to_dict()).uri
+            out["inspection_ref"] = repository.put_json(run=run, destination=destination, record_kind=SEAT_3DM_INSPECTION, payload=inspection.to_dict()).uri
             out["_bboxes"] = {str(r["name"]): (list(r["bbox"]["min"]), list(r["bbox"]["max"])) for r in inspection.named_object_bboxes}
         return out
 
@@ -506,14 +524,14 @@ def run_project(
         rows = element_rows_of(record)
     except ElementProducerError as exc:
         raise ProjectRunnerError(str(exc)) from exc
-    record_ref = put("state-record", {**record.to_dict(), **no_authority(_AUTH)})
-    levels_ref = put("project-levels", {**levels.to_dict(), **no_authority(_AUTH)})
-    grids_ref = put("project-grids", {**grids.to_dict(), **no_authority(_AUTH)}).uri if grids is not None else None
+    record_ref = put(STATE_RECORD, {**record.to_dict(), **no_authority(_AUTH)})
+    levels_ref = put(PROJECT_LEVELS, {**levels.to_dict(), **no_authority(_AUTH)})
+    grids_ref = put(PROJECT_GRIDS, {**grids.to_dict(), **no_authority(_AUTH)}).uri if grids is not None else None
     proposal_tree = state.selected_schematic.option.proposal
-    spatial_ref = put("selected-spatial-option", proposal_tree.to_dict())
-    state_ref = put("developed-design-state", {**state.to_dict(), **no_authority(_AUTH)}) if hasattr(state, "to_dict") else None
+    spatial_ref = put(SELECTED_SPATIAL_OPTION, proposal_tree.to_dict())
+    state_ref = put(DEVELOPED_DESIGN_STATE, {**state.to_dict(), **no_authority(_AUTH)}) if hasattr(state, "to_dict") else None
     seat_by_id = {s.seat_id: s for s in seats}
-    seat_refs = {s.seat_id: put("discipline-seat", s.to_dict()).uri for s in seats}
+    seat_refs = {s.seat_id: put(DISCIPLINE_SEAT, s.to_dict()).uri for s in seats}
     rounds = schedule_seats(seats)
     project_datums = tuple(sorted(levels.datums() + (grids.datums() if grids is not None else ()), key=lambda d: d.datum_id))
     programs: dict[str, Any] = {}
@@ -533,7 +551,7 @@ def run_project(
                 handovers = tuple(handovers_for[seat_id])
                 context = project_seat_context(seat=seat, design_state=state, inherited_commitment_refs=(options.commitment_ref,), handovers=handovers,
                                                project_levels=levels, project_grids=grids)
-                context_ref = put("seat-authoring-context", context.to_dict())
+                context_ref = put(SEAT_AUTHORING_CONTEXT, context.to_dict())
                 exclusions = tuple(b for h in handovers for b in _exclusion_bounds(h))
                 production = ProductionContext(references=ReferenceContext(grids=grids, levels=levels), published={d.datum_id: d for h in handovers for d in h.datums}, exclusions=exclusions)
                 try:
@@ -576,13 +594,13 @@ def run_project(
                     results.append(SeatResult(seat_id, round_index, result.status.value, None, None, 0, covered, undeclared, issues, time.perf_counter() - t0))
                     break
                 program = result.program
-                program_ref = put("seat-geometry-program", program.to_dict())
+                program_ref = put(SEAT_GEOMETRY_PROGRAM, program.to_dict())
                 programs[seat_id] = program
                 bounds = expected_object_bounds(program)
                 realized = {oid: (tuple(row["bbox_min"]), tuple(row["bbox_max"])) for oid, row in bounds.items()}
                 # the relations the producers materialized are checked against the compiled bounds; nothing is healed
                 relation_report = _check_produced_relations(record, own, elements_produced, produced, realized, levels)
-                relation_check_ref = put("seat-relation-check", {**relation_report.to_dict(), "seat_id": seat_id, "program_ref": program_ref.uri, **no_authority(_AUTH)}).uri
+                relation_check_ref = put(SEAT_RELATION_CHECK, {**relation_report.to_dict(), "seat_id": seat_id, "program_ref": program_ref.uri, **no_authority(_AUTH)}).uri
                 if not relation_report.held:
                     # a violated relation is a result, not a crash: program, report and seat are retained with
                     # its issues, nothing is handed over or exported, and the relation report (held / violated /
@@ -590,7 +608,7 @@ def run_project(
                     violations = [{"code": "relation_violated", "relation_id": c.relation_id, "detail": c.detail} for c in relation_report.checks if c.status == "violated"]
                     seat_result = SeatResult(seat_id, round_index, "proposal_accepted", program_ref.uri, program.program_digest, len(program.objects), covered, undeclared,
                                              tuple(issues) + tuple(violations), time.perf_counter() - t0, relation_check_ref=relation_check_ref)
-                    receipt_ref = put("seat-round-receipt", {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], "provider": provider_block, **no_authority(_AUTH)})
+                    receipt_ref = put(SEAT_ROUND_RECEIPT, {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], "provider": provider_block, **no_authority(_AUTH)})
                     results.append(replace(seat_result, receipt_ref=receipt_ref.uri))
                     continue
                 digests = {o.object_id: o.object_digest for o in program.objects}
@@ -598,7 +616,7 @@ def run_project(
                     if seat_id in consumer.consumes and not consumer.reviewer:
                         handover = compile_handover(from_seat=seat, to_seat=consumer, design_state=state, published_datums=program.interface_datums,
                                                     program_bindings=program.proposal.semantic_bindings, realized_bounds=realized, object_digests=digests)
-                        put("seat-handover", handover.to_dict())
+                        put(SEAT_HANDOVER, handover.to_dict())
                         handovers_for[consumer.seat_id].append(handover)
                 cad = None
                 if options.export:
@@ -607,13 +625,13 @@ def run_project(
                 seat_status = "proposal_accepted" if cad is None or cad.get("status") == "succeeded" else "export_failed"
                 seat_result = SeatResult(seat_id, round_index, seat_status, program_ref.uri, program.program_digest, len(program.objects), covered, undeclared, issues, time.perf_counter() - t0, cad, declined=declined,
                                          declination_reasons={e.component_id: str(e.params.get("reason")) for e in own if e.producer == "declined"}, relation_check_ref=relation_check_ref)
-                receipt_ref = put("seat-round-receipt", {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], "provider": provider_block, **no_authority(_AUTH)})
+                receipt_ref = put(SEAT_ROUND_RECEIPT, {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], "provider": provider_block, **no_authority(_AUTH)})
                 results.append(replace(seat_result, receipt_ref=receipt_ref.uri))
             else:
                 continue
             break
     except Exception as exc:  # retained records stay; the run says why it stopped
-        put("runner-run-failure", {"schema": "RunnerRunFailure@1", "project_id": run.project_id, "run_id": run.run_id,
+        put(RUNNER_RUN_FAILURE, {"schema": "RunnerRunFailure@1", "project_id": run.project_id, "run_id": run.run_id,
                                    "state_record_ref": record_ref.uri, "stage_id": stage_guard.envelope.stage_id,
                                    "error": type(exc).__name__, "detail": str(exc)[:2000],
                                    "seat_results": [_seat_dict(r) for r in results], "wall_time_s": round(time.perf_counter() - started, 3)})
@@ -643,7 +661,7 @@ def run_project(
         "seat_execution_complete": all(s.status in ("proposal_accepted", "empty") for s in results) and any(s.status == "proposal_accepted" for s in results),
         "wall_time_s": round(time.perf_counter() - started, 3), **no_authority(_AUTH),
     }
-    payload["receipt_ref"] = put("runner-run-receipt", payload).uri
+    payload["receipt_ref"] = put(RUNNER_RUN_RECEIPT, payload).uri
     return payload
 
 

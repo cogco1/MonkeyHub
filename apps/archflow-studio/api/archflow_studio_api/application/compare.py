@@ -23,12 +23,11 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, SEAT_3DM_INSPECTION
 from archflow.project.refs import ProjectRecordRef
 
 from ..transport.errors import StudioError
-from .binding import RUNNER_RECEIPT_KIND, ProjectBinding, record_kind
-
-INSPECTION_KIND = "seat-3dm-inspection"
+from .binding import ProjectBinding, record_kind
 
 UNCHANGED = "unchanged"
 CHANGED = "changed"
@@ -107,13 +106,13 @@ def shapes_of(binding: ProjectBinding, run_id: str) -> tuple[Shape, ...]:
             404,
             "RUN_NOT_FOUND",
             f"{binding.project_id}: run {run_id} retained no "
-            f"{RUNNER_RECEIPT_KIND}, so there is nothing of it to compare.",
+            f"{RUNNER_RUN_RECEIPT}, so there is nothing of it to compare.",
         )
     _, receipt = newest
     by_sha: dict[str, ProjectRecordRef] = {
         ref.sha256: ref
         for ref in binding.record_refs(run_id)
-        if record_kind(ref) == INSPECTION_KIND
+        if record_kind(ref) == SEAT_3DM_INSPECTION
     }
     shapes: list[Shape] = []
     seats_with_inspection = 0
@@ -129,7 +128,7 @@ def shapes_of(binding: ProjectBinding, run_id: str) -> tuple[Shape, ...]:
                 404,
                 "INSPECTION_NOT_FOUND",
                 f"{binding.project_id}: run {run_id} names {uri} for seat "
-                f"{seat_id}, but no such {INSPECTION_KIND} record is retained.",
+                f"{seat_id}, but no such {SEAT_3DM_INSPECTION} record is retained.",
             )
         seats_with_inspection += 1
         shapes.extend(_shapes_in(binding.repository.load_json(ref), seat_id))

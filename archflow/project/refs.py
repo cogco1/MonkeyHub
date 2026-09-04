@@ -6,12 +6,43 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlsplit
 
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 _PATH_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
 _HEX = frozenset("0123456789abcdef")
+
+# The one shape of a retained record's file name: ``<kind>-<64 hex>.json``.
+# ``kind`` is greedy, so the longest kind before the digest wins; a name is
+# not a record unless it ends in a digest, and no reader invents a second
+# rule for reading one back.
+RECORD_FILE_NAME = re.compile(r"^(?P<kind>.+)-(?P<sha256>[0-9a-f]{64})\.json$")
+
+
+def record_file_name(record_kind: str, sha256: str) -> str:
+    """The file name a record of this kind and digest is stored under."""
+
+    return f"{record_kind}-{sha256}.json"
+
+
+def parse_record_file_name(name: str) -> tuple[str, str]:
+    """Read a record file name back as ``(record_kind, sha256)``.
+
+    The kind is everything before the digest, so a name whose kind itself
+    ends in a hyphenated word comes back whole; whether that word is a kind
+    the spine writes is the record-kind table's question, not this one's.
+    """
+
+    if not isinstance(name, str):
+        raise TypeError("record file name must be text")
+    match = RECORD_FILE_NAME.fullmatch(name)
+    if match is None:
+        raise ValueError(
+            "record file name must be <kind>-<64 hex sha256>.json; "
+            f"{name!r} is not one"
+        )
+    return match.group("kind"), match.group("sha256")
 
 
 def require_identifier(value: str, field_name: str) -> str:
@@ -292,6 +323,12 @@ class ProjectRecordRef:
         )
 
     @property
+    def record_kind(self) -> str:
+        """The kind in this record's file name; refuses any other shape."""
+
+        return parse_record_file_name(self.relative_path.rsplit("/", 1)[-1])[0]
+
+    @property
     def uri(self) -> str:
         return (
             f"project://{quote(self.project_id, safe='')}/"
@@ -353,13 +390,23 @@ def require_same_branch(
 
 
 def record_ref_from_uri(uri: str, project_id: str) -> ProjectRecordRef:
-    """Read back the record reference a ``project://`` record URI names."""
+    """Read back the record reference a ``project://`` record URI names.
 
-    name = uri.rsplit("/", 1)[1]
-    relative = uri.split(f"project://{project_id}/", 1)[1]
+    The one parser: the scheme and the project have to be this project's, and
+    the last path segment has to be a record file name. Anything else is a
+    ``ValueError`` rather than a reference to something that is not a record.
+    """
+
+    if not isinstance(uri, str):
+        raise TypeError("record URI must be text")
+    parsed = urlsplit(uri)
+    if parsed.scheme != "project" or unquote(parsed.netloc) != project_id:
+        raise ValueError("record URI belongs to another project")
+    relative = unquote(parsed.path).lstrip("/")
+    _, sha256 = parse_record_file_name(relative.rsplit("/", 1)[-1])
     return ProjectRecordRef(
         project_id=project_id,
         relative_path=relative,
-        sha256=name.rsplit("-", 1)[1].split(".json")[0],
+        sha256=sha256,
         media_type="application/json",
     )

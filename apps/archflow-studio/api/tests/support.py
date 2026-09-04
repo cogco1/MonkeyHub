@@ -19,6 +19,13 @@ import sys
 import archflow_studio_api  # noqa: F401
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import (
+    PROJECT_STAGE_WORKFLOW,
+    PROMOTION_DECISION,
+    RUNNER_RUN_RECEIPT,
+    SEAT_RHINO_EXECUTION,
+    STATE_RECORD,
+)
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.stage_workflow import DesignPhase
@@ -61,7 +68,6 @@ SEATS_PAYLOAD: dict[str, object] = {
 # What a Rhino seat's receipt carries about the program it executed. These are
 # opaque identifiers on the wire: the tests assert they travel, not what they
 # mean.
-RHINO_RECEIPT_KIND = "seat-rhino-execution"
 RHINO_RECEIPT_SCHEMA = "RhinoCadExecutionReceipt@4"
 RHINO_BRANCH_ID = "runner-v1"
 RHINO_BRANCH_EPOCH = 1
@@ -298,7 +304,7 @@ def retain_runner_receipt(
     return repository.put_json(
         run=run,
         destination=run_records(run.run_id),
-        record_kind="runner-run-receipt",
+        record_kind=RUNNER_RUN_RECEIPT,
         payload=payload,
     )
 
@@ -390,7 +396,7 @@ def retain_rhino_receipt(
     return repository.put_json(
         run=run,
         destination=run_records(run.run_id),
-        record_kind=RHINO_RECEIPT_KIND,
+        record_kind=SEAT_RHINO_EXECUTION,
         payload=payload,
     )
 
@@ -417,7 +423,7 @@ def make_project(
     record_ref = repository.put_json(
         run=run,
         destination=run_records(REFERENCE_RUN_ID),
-        record_kind="state-record",
+        record_kind=STATE_RECORD,
         payload=RECORD_PAYLOAD,
     )
     write_runner_record(repository)
@@ -483,7 +489,7 @@ def add_later_run(
         workflow_ref = repository.put_json(
             run=run,
             destination=run_records(run_id),
-            record_kind="project-stage-workflow",
+            record_kind=PROJECT_STAGE_WORKFLOW,
             payload=workflow.to_dict(),
         ).uri
     receipt_ref = retain_runner_receipt(
@@ -532,7 +538,7 @@ def advance_head(
         destination=PersistenceDestination(
             PersistenceArea.RUN_REVIEW, run_id=run_id
         ),
-        record_kind="decision",
+        record_kind=PROMOTION_DECISION,
         payload={
             "schema": "PromotionDecision@1",
             "status": "accepted",

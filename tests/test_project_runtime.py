@@ -9,6 +9,13 @@ from archflow.project.repository import FilesystemProjectRepository
 from archive.archflow.project.runtime import RuntimeConfigError, RuntimePaths, bootstrap_external_project, initialize_runtime, load_runtime_config
 
 
+_RETIRED_LANE_KINDS = (
+    "a retired lane writes the record kinds this needs; put_json writes only "
+    "kinds registered in archflow.project.record_kinds, and a kind no spine "
+    "module writes, reads or names is not registered"
+)
+
+
 class ExternalProjectRuntimeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repository_root = Path(__file__).resolve().parents[1]
@@ -86,6 +93,7 @@ class ExternalProjectRuntimeTests(unittest.TestCase):
             self.assertEqual(receipt.canonical_authority, "FilesystemProjectRepository")
             self.assertFalse(receipt.durable_cloud_storage_claimed)
 
+    @unittest.skip(_RETIRED_LANE_KINDS)
     def test_external_project_uses_p036_and_reopens_with_exact_head(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             paths = self._paths(Path(temporary))

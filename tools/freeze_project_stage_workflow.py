@@ -29,6 +29,10 @@ from archflow.contracts.authority import (  # noqa: E402
     DEFAULT_AUTHORITY_FIELDS,
     no_authority,
 )
+from archflow.project.record_kinds import (  # noqa: E402
+    PROJECT_STAGE_WORKFLOW,
+    PROJECT_STAGE_WORKFLOW_FREEZE_RECEIPT,
+)
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.state.stage_workflow import ProjectStageWorkflow  # noqa: E402
@@ -72,7 +76,7 @@ def freeze_workflow(
     workflow_ref = repository.put_json(
         run=run,
         destination=destination,
-        record_kind="project-stage-workflow",
+        record_kind=PROJECT_STAGE_WORKFLOW,
         payload=workflow.to_dict(),
     )
     receipt = {
@@ -95,7 +99,7 @@ def freeze_workflow(
     receipt_ref = repository.put_json(
         run=run,
         destination=destination,
-        record_kind="project-stage-workflow-freeze-receipt",
+        record_kind=PROJECT_STAGE_WORKFLOW_FREEZE_RECEIPT,
         payload=receipt,
     )
     repository.verify()

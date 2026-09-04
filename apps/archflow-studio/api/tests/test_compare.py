@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
+from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, SEAT_3DM_INSPECTION
 
 from .support import (
     PROJECT_ID,
@@ -82,7 +83,7 @@ class CompareTestCase(unittest.TestCase):
                 ref = self.repository.put_json(
                     run=run,
                     destination=run_records(run_id),
-                    record_kind="seat-3dm-inspection",
+                    record_kind=SEAT_3DM_INSPECTION,
                     payload=inspection_payload(objects),
                 )
                 cad["inspection_ref"] = ref.uri
@@ -90,7 +91,7 @@ class CompareTestCase(unittest.TestCase):
         self.repository.put_json(
             run=run,
             destination=run_records(run_id),
-            record_kind="runner-run-receipt",
+            record_kind=RUNNER_RUN_RECEIPT,
             payload={
                 "schema": "RunnerRunReceipt@3",
                 "project_id": PROJECT_ID,

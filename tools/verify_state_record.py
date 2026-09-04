@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -40,7 +39,13 @@ from archflow.contracts.authority import no_authority  # noqa: E402
 from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.refs import record_ref_from_uri  # noqa: E402
+from archflow.project.record_kinds import (  # noqa: E402
+    EQUIVALENCE_HARNESS_ENVELOPE,
+    EQUIVALENCE_HARNESS_WORKFLOW,
+    RUNNER_RUN_RECEIPT,
+    STATE_RECORD_EQUIVALENCE,
+)
+from archflow.project.refs import parse_record_file_name, record_ref_from_uri  # noqa: E402
 from archflow.runtime.project_runner import RunOptions, StageExecutionGuard, run_project  # noqa: E402
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import DesignObligation  # noqa: E402
@@ -51,11 +56,21 @@ from tools.run_project import _seat  # noqa: E402
 _AUTH = ("canonical_write_authority", "design_authority", "stage_acceptance_authority")
 
 
-def _latest(records_dir: Path, prefix: str) -> Path:
-    shape = re.compile(rf"^{re.escape(prefix)}-[0-9a-f]{{64}}\.json$")  # exact kind, never a prefix match
-    paths = sorted((p for p in records_dir.glob(f"{prefix}-*.json") if shape.match(p.name)), key=lambda p: p.stat().st_mtime)
+def _latest(records_dir: Path, record_kind: str) -> Path:
+    # The record file-name rule lives in archflow.project.refs; the kind it
+    # reads back is compared by equality, never as a prefix, so a longer kind
+    # that happens to start with this one is not this one.
+    paths = []
+    for path in records_dir.glob(f"{record_kind}-*.json"):
+        try:
+            name_kind, _ = parse_record_file_name(path.name)
+        except ValueError:
+            continue
+        if name_kind == record_kind:
+            paths.append(path)
+    paths.sort(key=lambda path: path.stat().st_mtime)
     if not paths:
-        raise SystemExit(f"no {prefix} record in {records_dir}")
+        raise SystemExit(f"no {record_kind} record in {records_dir}")
     return paths[-1]
 
 
@@ -66,13 +81,13 @@ def _harness_guard(repository, run, state, options) -> StageExecutionGuard:
                              required_checks=("state-record-equivalence",), close_obligation_id="close-equivalence-check"),),
         basis_refs=("decision:state-record-equivalence-harness",))
     destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
-    workflow_ref = repository.put_json(run=run, destination=destination, record_kind="equivalence-harness-workflow", payload=workflow.to_dict())
+    workflow_ref = repository.put_json(run=run, destination=destination, record_kind=EQUIVALENCE_HARNESS_WORKFLOW, payload=workflow.to_dict())
     envelope = open_stage_run_envelope(
         workflow, workflow_ref=workflow_ref.uri, run_id=run.run_id, base_version=run.base.version, base_state_sha256=run.base.require_digest(),
         branch_id=options.branch_id, branch_epoch=options.branch_epoch, subject_ref="state:developed-design-state", state_digest=state.state_digest, stage_index=0,
         close_obligation=DesignObligation(obligation_id="close-equivalence-check", statement="An equivalence harness stage; it closes nothing in the project's own workflow.",
                                           source_ref="workflow:equivalence-harness/stage-0", subject_refs=("state:developed-design-state",), validator_ref="validator:composite-stage-closure"))
-    envelope_ref = repository.put_json(run=run, destination=destination, record_kind="equivalence-harness-envelope", payload=envelope.to_dict())
+    envelope_ref = repository.put_json(run=run, destination=destination, record_kind=EQUIVALENCE_HARNESS_ENVELOPE, payload=envelope.to_dict())
     return StageExecutionGuard(workflow=workflow, workflow_record_ref=workflow_ref, envelope=envelope, envelope_record_ref=envelope_ref)
 
 
@@ -101,7 +116,7 @@ def main() -> int:
     identity = None if declared is None else GeometryProposalProviderIdentity(**declared)
     reference = repository.load_run(args.reference_run)
     reference_records = Path(repository.layout.run(reference.run_id).records)
-    reference_receipt = json.loads(_latest(reference_records, "runner-run-receipt").read_text(encoding="utf-8"))
+    reference_receipt = json.loads(_latest(reference_records, RUNNER_RUN_RECEIPT).read_text(encoding="utf-8"))
     options = RunOptions(commitment_ref=seats_payload["commitment_ref"], live_provider_identity=identity, branch_id=seats_payload.get("branch_id", "runner-v1"))
     if args.export:
         workspace_root = Path(args.project).resolve() / "runs" / args.run / "workspaces"
@@ -121,7 +136,7 @@ def main() -> int:
     except Exception:
         run = repository.create_run(args.run)
     if args.compare_only:
-        receipt = json.loads(_latest(Path(repository.layout.run(run.run_id).records), "runner-run-receipt").read_text(encoding="utf-8"))
+        receipt = json.loads(_latest(Path(repository.layout.run(run.run_id).records), RUNNER_RUN_RECEIPT).read_text(encoding="utf-8"))
     else:
         state = developed_design_view(record, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
         guard = _harness_guard(repository, run, state, options)
@@ -160,7 +175,7 @@ def main() -> int:
                "state_digest_equal": state_equal, "state_digest": reference_state.state_digest, "reference_state_digest": reference_receipt.get("design_state_digest"),
                "geometry_equal": geometry_equal, "worst_m": round(worst, 9), "seats": comparisons, "runner_receipt_ref": receipt.get("receipt_ref"),
                "harness": "equivalence-harness workflow frozen in this run; grants no stage authority", **no_authority(_AUTH)}
-    ref = repository.put_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id), record_kind="state-record-equivalence", payload=payload)
+    ref = repository.put_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id), record_kind=STATE_RECORD_EQUIVALENCE, payload=payload)
     print(json.dumps({k: payload[k] for k in ("state_digest_equal", "geometry_equal", "worst_m")}), ref.uri)
     for c in comparisons:
         print(" ", c["seat_id"], c["status"], "compared", c.get("compared"), "equal", c.get("all_equal"), "worst", c.get("worst_m"), "missing", c.get("missing_in_record"), "extra", c.get("extra_in_record"))

@@ -561,6 +561,7 @@
         "contracts.fields",
         "ports.model",
         "project.ports",
+        "project.record_kinds",
         "project.refs",
         "state.developed_design",
         "state.geometry_program",
@@ -1217,6 +1218,7 @@
       "depends_on": [
         "project.layout",
         "project.ports",
+        "project.record_kinds",
         "project.refs",
         "project.repository"
       ],
@@ -1538,6 +1540,68 @@
       "notes": "ArtifactSink, CanonicalRepository and ProjectLoader are declared but no module imports them by name; only PersistenceArea/PersistenceDestination/require_destination/RecordSink are actually used."
     },
     {
+      "module_id": "project.record_kinds",
+      "owner_path": "archflow/project/record_kinds.py",
+      "purpose": "The table of retained record kinds: every kind the spine writes or reads as a retained record, with the schema its payload declares and what it is for.",
+      "owns": [
+        "RECORD_KINDS: the one table of retained record kinds, keyed by kind",
+        "RecordKind: one kind as a value - kind, schema literal, persistence area, note, and the pattern a computed kind matches",
+        "the name constant a writer or reader imports instead of spelling a kind as a literal",
+        "the three computed kinds as patterns and their formatters (geometry_proposal_round, geometry_proposal_completion, stage_geometry_program)",
+        "membership: is_registered and require_registered, exact or by pattern",
+        "the seven kinds no spine module writes, each saying so in its note: the ADR-007 stage envelope, exit binding and closure Wave C will write, the PromotionDecision@1 prepare_transition demands, the research bridge's ledger, and the component template and catalog confrontation the proposal producer still accepts"
+      ],
+      "does_not_own": [
+        "the file name a record is stored under, and reading a kind back out of one - project.refs",
+        "writing or reading a record - project.repository, which asks this table only on write",
+        "validating a payload; the schema literal here says what the writer sets, it checks nothing",
+        "what a record means to the design - the module that writes it"
+      ],
+      "inputs": [
+        "record kind text"
+      ],
+      "outputs": [
+        "RecordKind"
+      ],
+      "public_api": [
+        "RECORD_KINDS",
+        "RecordKind",
+        "geometry_proposal_completion",
+        "geometry_proposal_round",
+        "is_registered",
+        "require_registered",
+        "stage_geometry_program"
+      ],
+      "depends_on": [
+        "project.ports"
+      ],
+      "used_by": [
+        "archflow/project/repository.py",
+        "archflow/project/containers.py",
+        "archflow/runtime/project_runner.py",
+        "archflow/capabilities/geometry_proposal.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/compare.py",
+        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
+        "tools/freeze_project_stage_workflow.py",
+        "tools/verify_state_record.py",
+        "tests/test_record_kinds.py"
+      ],
+      "invariants": [
+        "a kind is matched exactly, or by its declared pattern; never as a prefix",
+        "a kind is in the table only when a spine module writes it, or reads it as a retained record and names its contract; a retired lane's vocabulary is not",
+        "schema is the literal the writer's payload actually carries, or null where the payload declares none",
+        "this module imports nothing above archflow.project; it reads no state, capability or repository code"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_record_kinds.py"
+      ],
+      "notes": "Wave B / W5. Retained runs from the archived lanes carry kinds this table does not hold; reads stay unrestricted so they remain readable (ADR-004), and the lane tests that write one are skipped, naming that rule."
+    },
+    {
       "module_id": "project.refs",
       "owner_path": "archflow/project/refs.py",
       "purpose": "Defines the four stable identity types (project version, run, branch, record, artifact) and the portable identifier and path validators the whole spine reuses.",
@@ -1549,7 +1613,8 @@
         "project version identity with its optional canonical state digest (ProjectVersionRef, require_digest)",
         "project-relative path syntax, normalization and escape refusal (require_project_relative_path)",
         "run identity bound to its base version (RunRef)",
-        "serialising and parsing the four references (to_dict/from_dict, record_ref_from_uri)"
+        "serialising and parsing the four references (to_dict/from_dict, record_ref_from_uri)",
+        "the one record file-name rule, <kind>-<64 hex>.json, and reading it back (RECORD_FILE_NAME, record_file_name, parse_record_file_name, ProjectRecordRef.record_kind)"
       ],
       "does_not_own": [
         "serializing a BranchRef to and from a dict (contracts.branch)",
@@ -1575,8 +1640,11 @@
         "BranchRef",
         "ProjectArtifactRef",
         "ProjectRecordRef",
+        "ProjectRecordRef.record_kind",
         "ProjectVersionRef",
         "RunRef",
+        "parse_record_file_name",
+        "record_file_name",
         "record_ref_from_uri",
         "require_exact_branch",
         "require_identifier",
@@ -1585,26 +1653,30 @@
       ],
       "depends_on": [],
       "used_by": [
-        "archflow/project/repository.py",
-        "archflow/project/ports.py",
-        "archflow/project/layout.py",
-        "archflow/contracts/fields.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
         "archflow/contracts/branch.py",
-        "archflow/state/state_record.py",
+        "archflow/contracts/fields.py",
+        "archflow/project/containers.py",
+        "archflow/project/layout.py",
+        "archflow/project/ports.py",
+        "archflow/project/repository.py",
+        "archflow/relations/contracts.py",
+        "archflow/runtime/project_runner.py",
         "archflow/state/geometry_program.py",
         "archflow/state/operational_state.py",
-        "archflow/runtime/project_runner.py",
-        "archflow/relations/contracts.py",
+        "archflow/state/state_record.py",
+        "tests/test_project_repository.py",
         "tools/run_project.py",
-        "tools/verify_state_record.py",
-        "tests/test_project_repository.py"
+        "tools/verify_state_record.py"
       ],
       "invariants": [
         "never touches the filesystem; PurePosixPath only",
         "every ref is frozen, slotted and fully validated at construction",
         "a RunRef's base, and a record or artifact ref, belong to the same project_id as their owner",
         "relative_path is already-normalized portable POSIX text with no '..' segment and no drive/backslash",
-        "state_sha256, when present, is lowercase 64-hex; require_digest() refuses a ref that lacks one"
+        "state_sha256, when present, is lowercase 64-hex; require_digest() refuses a ref that lacks one",
+        "one parser: a record uri and a record file name are read back here and nowhere else; a name that is not <kind>-<64 hex>.json is refused, not guessed at"
       ],
       "status": "canonical",
       "tests": [
@@ -1661,6 +1733,7 @@
         "project.layout",
         "project.manifest",
         "project.ports",
+        "project.record_kinds",
         "project.refs"
       ],
       "used_by": [
@@ -1679,14 +1752,16 @@
         "HEAD moves only through compare_and_swap; a mismatch with the expected version raises StaleProjectHead",
         "a stored record whose bytes disagree with its ref sha256 raises ProjectIntegrityError",
         "only an accepted PromotionDecision@1 naming the exact expected version may prepare a canonical transition",
-        "a record lands in the area its PersistenceDestination names; events/ and canonical/ areas are re-checked on swap"
+        "a record lands in the area its PersistenceDestination names; events/ and canonical/ areas are re-checked on swap",
+        "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable"
       ],
       "status": "canonical",
       "tests": [
+        "tests/integration/test_project_restart.py",
+        "tests/test_freeze_project_stage_workflow.py",
         "tests/test_project_repository.py",
         "tests/test_project_runtime.py",
-        "tests/test_freeze_project_stage_workflow.py",
-        "tests/integration/test_project_restart.py"
+        "tests/test_record_kinds.py"
       ],
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
     },
@@ -1838,6 +1913,7 @@
         "contracts.canonical",
         "ports.model",
         "project.ports",
+        "project.record_kinds",
         "project.refs",
         "project.repository",
         "state.design_portfolio",
@@ -2905,6 +2981,7 @@
       "depends_on": [
         "archflow.project.refs",
         "archflow.project.repository",
+        "project.record_kinds",
         "project.refs",
         "project.repository"
       ],
@@ -2978,6 +3055,7 @@
         "project.layout",
         "project.location",
         "project.ports",
+        "project.record_kinds",
         "project.refs",
         "project.repository",
         "state.developed_design",
@@ -3080,6 +3158,7 @@
         "project.inputs",
         "project.layout",
         "project.ports",
+        "project.record_kinds",
         "project.refs",
         "project.repository",
         "runtime.project_runner",
@@ -3373,6 +3452,7 @@
         "archflow.submission.model",
         "archflow.validation.engine",
         "archflow.validation.model",
+        "project.record_kinds",
         "project.refs",
         "state.model",
         "submission.model",
@@ -3587,6 +3667,7 @@
         "archflow.state.stage_workflow",
         "contracts.authority",
         "project.ports",
+        "project.record_kinds",
         "project.repository",
         "state.stage_workflow"
       ],
@@ -3690,6 +3771,7 @@
         "contracts.authority",
         "project.inputs",
         "project.ports",
+        "project.record_kinds",
         "project.refs",
         "project.repository",
         "runtime.project_runner",

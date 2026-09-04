@@ -18,6 +18,10 @@ projection answers for — the two halves of one promise, on purpose.
 from __future__ import annotations
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import (
+    STUDIO_CANDIDATE_ENVELOPE,
+    STUDIO_CANDIDATE_WORKFLOW,
+)
 from archflow.project.refs import RunRef
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.runtime.project_runner import StageExecutionGuard
@@ -75,7 +79,7 @@ def harness_guard(
     workflow_ref = repository.put_json(
         run=run,
         destination=destination,
-        record_kind="studio-candidate-workflow",
+        record_kind=STUDIO_CANDIDATE_WORKFLOW,
         payload=workflow.to_dict(),
     )
     envelope = open_stage_run_envelope(
@@ -103,7 +107,7 @@ def harness_guard(
     envelope_ref = repository.put_json(
         run=run,
         destination=destination,
-        record_kind="studio-candidate-envelope",
+        record_kind=STUDIO_CANDIDATE_ENVELOPE,
         payload=envelope.to_dict(),
     )
     return StageExecutionGuard(
