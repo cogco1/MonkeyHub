@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from archflow.project.layout import AUTHORED_RECORD_PATH
 
 from ..application.catalog import Catalog
+from ..application.frame import ClosureAnswer, RecordFrame
 from ..application.projection import StateProjection
 from .project import (
     ProjectVersionDto,
@@ -388,6 +389,129 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
         ],
         honesty=list(projection.honesty),
         catalog=None if catalog is None else catalog_dto(catalog),
+    )
+
+
+# ---- the frame: levels and axes, and what changing one would move
+
+
+class FrameLevelDto(BaseModel):
+    """One ``Level@1`` row of the frame."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    level_id: str = Field(alias="levelId")
+    role: str
+    elevation: float = Field(description="metres, as the record declares it")
+    elements_on: list[str] = Field(
+        alias="elementsOn",
+        description="elements whose own references name this level",
+    )
+    closure: list[str] = Field(
+        description="what changing this level would reach, refs still prefixed",
+    )
+
+
+class FrameAxisDto(BaseModel):
+    """One ``GridAxis@1`` row of the frame, read as a plan line where it is one."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    axis_id: str = Field(alias="axisId")
+    role: str = Field(description="the name an element's reference uses")
+    const: str | None = Field(
+        description="x or y when the axis is parallel to a world axis; null "
+        "when it is parallel to neither and has no single constant",
+    )
+    value: float | None = Field(
+        description="the constant, in metres; null with const",
+    )
+    origin: tuple[float, float, float]
+    direction: tuple[float, float, float]
+    elements_on: list[str] = Field(alias="elementsOn")
+    closure: list[str]
+
+
+class FrameDto(BaseModel):
+    """The wire form of ``GET /api/state/frame``."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    levels: list[FrameLevelDto]
+    axes: list[FrameAxisDto]
+    honesty: list[str]
+
+
+class ClosureRequestDto(BaseModel):
+    """Ask what changing these refs would move, against the state that answers."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    state_digest: str = Field(alias="stateDigest", min_length=1)
+    changed_refs: list[str] = Field(
+        alias="changedRefs",
+        min_length=1,
+        description="entity:<entityId> or parameter:<key>, as GET /api/state "
+        "and GET /api/state/frame name them",
+    )
+
+
+class ClosureDto(BaseModel):
+    """One closure and the edges that carried it.
+
+    The edges are ``DependencyEdgeDto`` — the same shape ``GET /api/state``
+    already puts a kernel ``DependencyEdge`` on the wire in. A second edge
+    vocabulary for the same kernel value would give a client two names for one
+    thing, so this reuses the one that exists.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    closure: list[str]
+    edges: list[DependencyEdgeDto]
+
+
+def frame_dto(frame: RecordFrame) -> FrameDto:
+    return FrameDto(
+        levels=[
+            FrameLevelDto(
+                level_id=level.level_id,
+                role=level.role,
+                elevation=level.elevation,
+                elements_on=list(level.elements_on),
+                closure=list(level.closure),
+            )
+            for level in frame.levels
+        ],
+        axes=[
+            FrameAxisDto(
+                axis_id=axis.axis_id,
+                role=axis.role,
+                const=axis.const,
+                value=axis.value,
+                origin=axis.origin,
+                direction=axis.direction,
+                elements_on=list(axis.elements_on),
+                closure=list(axis.closure),
+            )
+            for axis in frame.axes
+        ],
+        honesty=list(frame.honesty),
+    )
+
+
+def closure_dto(answer: ClosureAnswer) -> ClosureDto:
+    return ClosureDto(
+        closure=list(answer.closure),
+        edges=[
+            DependencyEdgeDto(
+                upstream_ref=edge.upstream_ref,
+                downstream_ref=edge.downstream_ref,
+                relation=edge.relation,
+                effect=edge.effect.value,
+            )
+            for edge in answer.edges
+        ],
     )
 
 

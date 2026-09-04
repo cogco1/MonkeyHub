@@ -504,6 +504,30 @@ export const messagesEn = {
   "settings.badges.browser": "Browser",
   "settings.badges.server": "Server",
   "settings.badges.unavailable": "Unavailable",
+
+  "frame.open": "Frame",
+  "frame.openTitle": "The levels and axes everything is placed against",
+  "frame.ariaLabel": "Levels and axes",
+  "frame.title": "Frame",
+  "frame.subtitle": "Nothing carries a coordinate; everything names one of these",
+  "frame.loading": "Reading the frame…",
+  "frame.levels": "Levels",
+  "frame.axes": "Axes",
+  "frame.noLevels": "This record declares no level.",
+  "frame.noAxes": "This record declares no grid axis.",
+  "frame.metres": "m",
+  "frame.constant": "m · constant {const}",
+  "frame.noValue": "no constant",
+  "frame.noValueTitle":
+    "This axis is parallel to neither world axis, so there is no single number to write into a sentence.",
+  "frame.elementsOn": "{n} on it",
+  "frame.whatMoves": "What would move · {n}",
+  "frame.hideMove": "Hide what would move",
+  "frame.closureEmpty": "Nothing downstream of it.",
+  "frame.selectTitle": "Talk about {id}",
+  "frame.prefill": "Prefill",
+  "frame.notYetEditable":
+    "Puts the sentence in the composer. Levels and axes are not element parameters, so the grammar has no rule for this yet and will answer with its refusal.",
 } as const;
 
 export type MessageKey = keyof typeof messagesEn;

@@ -40,6 +40,8 @@ import {
   readProjectApiProjectGet,
   readProjectsApiProjectsGet,
   readProposalApiProposalsProposalIdGet,
+  readClosureApiStateClosurePost,
+  readFrameApiStateFrameGet,
   readStateApiStateGet,
   readValidationApiCandidatesCandidateIdValidationGet,
   compareCandidateApiCandidatesCandidateIdCompareGet,
@@ -50,7 +52,10 @@ import type {
   ArtifactListDto,
   CandidateAcceptedDto,
   CandidateDto,
+  ClosureDto,
+  ClosureRequestDto,
   CompareDto,
+  FrameDto,
   IntentDto,
   IntentRequestDto,
   JobDto,
@@ -105,6 +110,25 @@ export const studio = {
     return call(
       "GET /api/state",
       readStateApiStateGet(run === undefined ? {} : { query: { run } }),
+    );
+  },
+
+  /**
+   * The record's frame: the levels and axes every element is positioned
+   * against, each with what stands on it and what changing it would move.
+   */
+  frame(): Promise<FrameDto> {
+    return call("GET /api/state/frame", readFrameApiStateFrameGet());
+  },
+
+  /**
+   * What changing these refs would move. Read-only despite the POST: the
+   * question carries a list and the state it is asked against.
+   */
+  closure(body: ClosureRequestDto): Promise<ClosureDto> {
+    return call(
+      "POST /api/state/closure",
+      readClosureApiStateClosurePost({ body }),
     );
   },
 

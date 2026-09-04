@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, DeclareApiControlsPostData, DeclareApiControlsPostErrors, DeclareApiControlsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadControlApiControlsControlIdGetData, ReadControlApiControlsControlIdGetErrors, ReadControlApiControlsControlIdGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
+import type { CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, DeclareApiControlsPostData, DeclareApiControlsPostErrors, DeclareApiControlsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadControlApiControlsControlIdGetData, ReadControlApiControlsControlIdGetErrors, ReadControlApiControlsControlIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -65,6 +65,41 @@ export const readProjectApiProjectGet = <ThrowOnError extends boolean = false>(o
  * refuses instead.
  */
 export const readStateApiStateGet = <ThrowOnError extends boolean = false>(options?: Options<ReadStateApiStateGetData, ThrowOnError>): RequestResult<ReadStateApiStateGetResponses, ReadStateApiStateGetErrors, ThrowOnError> => (options?.client ?? client).get<ReadStateApiStateGetResponses, ReadStateApiStateGetErrors, ThrowOnError>({ url: '/api/state', ...options });
+
+/**
+ * Read Frame
+ *
+ * The levels and axes this record positions everything against.
+ *
+ * Read off ``projection.record`` and nothing else, so it asks with
+ * ``require_view=False`` for the same reason ``GET /api/state`` does: a
+ * record the kernel would not build a bound view for still declares its own
+ * frame, and refusing to name it would withhold an answer the record gives.
+ *
+ * There is no ``?run=`` here on purpose. The frame is the authored record's,
+ * and a run changes only what the record is bound to — never which levels
+ * and axes it declares.
+ */
+export const readFrameApiStateFrameGet = <ThrowOnError extends boolean = false>(options?: Options<ReadFrameApiStateFrameGetData, ThrowOnError>): RequestResult<ReadFrameApiStateFrameGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadFrameApiStateFrameGetResponses, unknown, ThrowOnError>({ url: '/api/state/frame', ...options });
+
+/**
+ * Read Closure
+ *
+ * What changing these refs would move, against the state that answers now.
+ *
+ * A POST because the question carries a list and the state it was asked
+ * against; it writes nothing. The ``stateDigest`` is checked the way every
+ * other state-bound request checks it — an answer computed against a record
+ * the client was not looking at is worse than a refusal.
+ */
+export const readClosureApiStateClosurePost = <ThrowOnError extends boolean = false>(options: Options<ReadClosureApiStateClosurePostData, ThrowOnError>): RequestResult<ReadClosureApiStateClosurePostResponses, ReadClosureApiStateClosurePostErrors, ThrowOnError> => (options.client ?? client).post<ReadClosureApiStateClosurePostResponses, ReadClosureApiStateClosurePostErrors, ThrowOnError>({
+    url: '/api/state/closure',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Read Artifacts

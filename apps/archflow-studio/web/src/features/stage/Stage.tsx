@@ -75,6 +75,9 @@ export function Stage({
   evidenceCounts,
   review,
   drawer,
+  framePanel,
+  frameOpen,
+  onToggleFrame,
   tool,
   gestures,
   onTool,
@@ -112,6 +115,10 @@ export function Stage({
   review: ReviewSummary;
   /** The drawer, when it overlays the stage rather than standing beside it. */
   drawer: ReactNode;
+  /** The frame panel, mounted over the stage while the toolbar button is on. */
+  framePanel: ReactNode;
+  frameOpen: boolean;
+  onToggleFrame(): void;
   /** The armed drawing tool; null is the orbit. */
   tool: GestureTool | null;
   /** The marks made on this picture, not yet sent with a sentence. */
@@ -248,6 +255,18 @@ export function Stage({
             </span>
           )}
           <span className="viewtools__sep" aria-hidden="true" />
+          {/* The frame: what every element on this picture is placed
+              against. A panel, not a camera tool, but this is the row an
+              architect reaches for when the model is the question. */}
+          <button
+            type="button"
+            aria-pressed={frameOpen}
+            title={t("frame.openTitle")}
+            onClick={onToggleFrame}
+          >
+            {t("frame.open")}
+          </button>
+          <span className="viewtools__sep" aria-hidden="true" />
           {/* One button, home: the reference run's exports when it left
               any, else the export the stage actually opened on — named for
               what it brings back, disabled only when there is nothing. */}
@@ -324,6 +343,7 @@ export function Stage({
         </button>
       </div>
 
+      {framePanel}
       {drawer}
     </section>
   );

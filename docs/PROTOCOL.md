@@ -109,11 +109,15 @@ tolerate it.
 | GET | `/api/events` | the server-sent event stream (§7) | server memory | provisional |
 | POST | `/api/controls` → 201 | keep a confirmed authored-control draft (the terminal MISSING_EDITABLE_CONTROL answer) as a declared control: component, property, provenance, what the catalog showed | server memory | provisional |
 | GET | `/api/controls/{controlId}` | one declared control | server memory | provisional |
+| GET | `/api/state/frame` | the record's frame: each `Level@1` and `GridAxis@1` with its role, its value, the elements whose own references name it, and the closure of changing it; `honesty[]` | reads work in progress + shared + published | provisional |
+| POST | `/api/state/closure` | what changing `changedRefs` would move, and the propagating edges that carried it. Reads only; the POST carries the list and the `stateDigest` it is asked against | reads work in progress + shared + published | provisional |
 
-Twenty resources: fifteen stable, five provisional. `/api/intents` is provisional because who
+Twenty-two resources: fifteen stable, seven provisional. `/api/intents` is provisional because who
 signs an agent's compilation receipt is still moving; `/api/compare` because its `why` comes from
 one process's memory of a proposal; `/api/events` because its event types are not a closed set and
-authenticated streams have no answer yet (§7).
+authenticated streams have no answer yet (§7); `/api/state/frame` and `/api/state/closure` because
+levels and axes are not yet editable — the grammar has no sentence for them — so what an
+architect can do with the frame is still moving.
 
 **Server memory.** Proposals, jobs and events live in the process and are lost on restart. A
 client treats `PROPOSAL_NOT_FOUND` and `JOB_NOT_FOUND` as ordinary and never uses the event

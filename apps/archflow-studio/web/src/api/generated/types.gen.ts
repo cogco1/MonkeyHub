@@ -580,6 +580,45 @@ export type CatalogElementDto = {
 };
 
 /**
+ * ClosureDto
+ *
+ * One closure and the edges that carried it.
+ *
+ * The edges are ``DependencyEdgeDto`` — the same shape ``GET /api/state``
+ * already puts a kernel ``DependencyEdge`` on the wire in. A second edge
+ * vocabulary for the same kernel value would give a client two names for one
+ * thing, so this reuses the one that exists.
+ */
+export type ClosureDto = {
+    /**
+     * Closure
+     */
+    closure: Array<string>;
+    /**
+     * Edges
+     */
+    edges: Array<DependencyEdgeDto>;
+};
+
+/**
+ * ClosureRequestDto
+ *
+ * Ask what changing these refs would move, against the state that answers.
+ */
+export type ClosureRequestDto = {
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Changedrefs
+     *
+     * entity:<entityId> or parameter:<key>, as GET /api/state and GET /api/state/frame name them
+     */
+    changedRefs: Array<string>;
+};
+
+/**
  * CompareComponentDto
  *
  * A component's objects, counted by what happened to them.
@@ -989,6 +1028,114 @@ export type ExportTimingDto = {
      * Rebuildratio
      */
     rebuildRatio: number | null;
+};
+
+/**
+ * FrameAxisDto
+ *
+ * One ``GridAxis@1`` row of the frame, read as a plan line where it is one.
+ */
+export type FrameAxisDto = {
+    /**
+     * Axisid
+     */
+    axisId: string;
+    /**
+     * Role
+     *
+     * the name an element's reference uses
+     */
+    role: string;
+    /**
+     * Const
+     *
+     * x or y when the axis is parallel to a world axis; null when it is parallel to neither and has no single constant
+     */
+    const: string | null;
+    /**
+     * Value
+     *
+     * the constant, in metres; null with const
+     */
+    value: number | null;
+    /**
+     * Origin
+     */
+    origin: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Direction
+     */
+    direction: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Elementson
+     */
+    elementsOn: Array<string>;
+    /**
+     * Closure
+     */
+    closure: Array<string>;
+};
+
+/**
+ * FrameDto
+ *
+ * The wire form of ``GET /api/state/frame``.
+ */
+export type FrameDto = {
+    /**
+     * Levels
+     */
+    levels: Array<FrameLevelDto>;
+    /**
+     * Axes
+     */
+    axes: Array<FrameAxisDto>;
+    /**
+     * Honesty
+     */
+    honesty: Array<string>;
+};
+
+/**
+ * FrameLevelDto
+ *
+ * One ``Level@1`` row of the frame.
+ */
+export type FrameLevelDto = {
+    /**
+     * Levelid
+     */
+    levelId: string;
+    /**
+     * Role
+     */
+    role: string;
+    /**
+     * Elevation
+     *
+     * metres, as the record declares it
+     */
+    elevation: number;
+    /**
+     * Elementson
+     *
+     * elements whose own references name this level
+     */
+    elementsOn: Array<string>;
+    /**
+     * Closure
+     *
+     * what changing this level would reach, refs still prefixed
+     */
+    closure: Array<string>;
 };
 
 /**
@@ -2509,6 +2656,47 @@ export type ReadStateApiStateGetResponses = {
 };
 
 export type ReadStateApiStateGetResponse = ReadStateApiStateGetResponses[keyof ReadStateApiStateGetResponses];
+
+export type ReadFrameApiStateFrameGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/state/frame';
+};
+
+export type ReadFrameApiStateFrameGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: FrameDto;
+};
+
+export type ReadFrameApiStateFrameGetResponse = ReadFrameApiStateFrameGetResponses[keyof ReadFrameApiStateFrameGetResponses];
+
+export type ReadClosureApiStateClosurePostData = {
+    body: ClosureRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/state/closure';
+};
+
+export type ReadClosureApiStateClosurePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadClosureApiStateClosurePostError = ReadClosureApiStateClosurePostErrors[keyof ReadClosureApiStateClosurePostErrors];
+
+export type ReadClosureApiStateClosurePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ClosureDto;
+};
+
+export type ReadClosureApiStateClosurePostResponse = ReadClosureApiStateClosurePostResponses[keyof ReadClosureApiStateClosurePostResponses];
 
 export type ReadArtifactsApiArtifactsGetData = {
     body?: never;

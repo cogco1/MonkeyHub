@@ -37,6 +37,7 @@ import type {
   CompareDto,
   GestureDto,
   PendingIntentDto,
+  FrameDto,
   ProjectArtifactDto,
   ProposalDto,
   StateProjectionDto,
@@ -56,6 +57,7 @@ import type { Selection } from "../features/conversation/Composer";
 import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
+import { FrameEditor } from "../features/stage/FrameEditor";
 import type { ViewState } from "../features/stage/SourceChip";
 import { Stage, type HomeModel, type PickedFacts } from "../features/stage/Stage";
 import type { VersionExport, VersionGroup } from "../features/stage/VersionsStrip";
@@ -234,6 +236,12 @@ export default function App({ server }: { server: ServerIdentity }) {
   // never reads a stale transcript.
   const verdictsRef = useRef<Set<string>>(new Set());
 
+  // The record's frame — its levels and axes — read once per projection while
+  // the panel is open. It is a read of the record, not of the picture, so it
+  // is fetched on demand rather than at boot.
+  const [frame, setFrame] = useState<Loadable<FrameDto>>(idle);
+  const [frameOpen, setFrameOpen] = useState(false);
+
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [evidencePinned, setEvidencePinned] = useState(readPinned);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>("honesty");
@@ -291,6 +299,23 @@ export default function App({ server }: { server: ServerIdentity }) {
   useEffect(() => {
     if (session.status === "ready") void loadArtifacts();
   }, [session.status, loadArtifacts]);
+
+  const loadFrame = useCallback(async () => {
+    setFrame(loading);
+    try {
+      setFrame(ready(await studio.frame()));
+    } catch (cause) {
+      setFrame(failed(asStudioApiError(cause)));
+    }
+  }, []);
+
+  // Read while the panel is open, and read again when the record underneath it
+  // changes: a frame from a record the tab has left is a picture of a building
+  // that is no longer the one on screen.
+  useEffect(() => {
+    if (!frameOpen || projection === null) return;
+    void loadFrame();
+  }, [frameOpen, projection?.recordDigest, loadFrame]);
 
   const openLocalFile = useCallback((file: File) => {
     void viewportRef.current?.openFile(file);
@@ -1590,6 +1615,35 @@ export default function App({ server }: { server: ServerIdentity }) {
             evidenceCounts={evidenceCounts}
             review={review}
             drawer={evidencePinned ? null : drawer}
+            frameOpen={frameOpen}
+            onToggleFrame={() => setFrameOpen((open) => !open)}
+            framePanel={
+              frameOpen ? (
+                <FrameEditor
+                  frame={frame}
+                  projection={projection}
+                  onPick={(componentId, elementId) => {
+                    setSelection({ componentId, elementId });
+                    append({
+                      kind: "system",
+                      ...systemText([
+                        { kind: "prose", text: "Talking about " },
+                        { kind: "technical", text: elementId ?? componentId },
+                        {
+                          kind: "prose",
+                          text: " · chosen from the frame's closure",
+                        },
+                      ]),
+                    });
+                  }}
+                  // The sentence goes into the composer and no further. The
+                  // grammar has no rule for a level or an axis, so sending it
+                  // is the architect's act and the refusal is the grammar's.
+                  onPrefill={setDraft}
+                  onClose={() => setFrameOpen(false)}
+                />
+              ) : null
+            }
             onInspection={setInspection}
             onStatus={(status, message) => {
               setViewerStatus(status);
