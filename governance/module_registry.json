@@ -2780,7 +2780,8 @@
         "CHECK_KINDS: the check_kind vocabulary a validator may name, one line of meaning each, and the field each kind takes",
         "the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of)",
         "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)",
-        "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1"
+        "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1",
+        "the one reading of a Volume@1 box in the kernel's voxel lattice - x and z plan, y up, inclusive cells (volume_boxes_of); the schematic pack read out of the record (schematic_pack_of), which developed_design_view and the massing metrics both use"
       ],
       "does_not_own": [
         "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
@@ -2820,7 +2821,9 @@
         "developed_design_view",
         "project_grids_of",
         "project_levels_of",
-        "schematic_proposal"
+        "schematic_proposal",
+        "schematic_pack_of",
+        "volume_boxes_of"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -2859,7 +2862,8 @@
       "tests": [
         "tests/test_state_record.py",
         "tests/test_project_runner.py",
-        "apps/archflow-studio/api/tests/test_projection.py"
+        "apps/archflow-studio/api/tests/test_projection.py",
+        "tests/test_massing_metrics.py"
       ],
       "notes": "The projection is built here; state no longer imports runtime."
     },
@@ -3241,7 +3245,9 @@
         "turning the authored seat pack project.inputs read onto SeatSpec, and refusing a pack that declares no seat",
         "the worker pool and queue: closure-based conflicts, the exclusive Rhino export lane, and per-job lifecycle state",
         "the bounded in-process event log, its replay and its live subscribers",
-        "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines"
+        "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines",
+        "the massing successor: the authored record with its four massing schemas and its declared option replaced by one option's pack (massing_successor)",
+        "one arrangement for every kind of candidate - the base check, the run, the harness stage and the seats (_seat_pack, _run_successor)"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -3286,7 +3292,10 @@
         "load_seat_pack",
         "seats_of",
         "seat_from",
-        "JobRegistry.candidates_of"
+        "JobRegistry.candidates_of",
+        "execute_option_candidate",
+        "massing_successor",
+        "MASSING_SCHEMAS"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -3327,7 +3336,8 @@
         "apps/archflow-studio/api/tests/test_queue.py",
         "apps/archflow-studio/api/tests/test_events.py",
         "apps/archflow-studio/api/tests/test_sse.py",
-        "apps/archflow-studio/api/tests/test_timings.py"
+        "apps/archflow-studio/api/tests/test_timings.py",
+        "apps/archflow-studio/api/tests/test_options.py"
       ],
       "notes": "The whole module is arrangement: the kernel runner does the work, this decides when and with what.",
       "files": [
@@ -4305,6 +4315,132 @@
         "tests/test_element_reindex.py"
       ],
       "reason": "The tool is the only writer of the re-index records; it writes them as run records of a new run and touches nothing the project already holds."
+    },
+    {
+      "module_id": "state.massing_metrics",
+      "owner_path": "archflow/state/massing_metrics.py",
+      "purpose": "What a massing option measures - footprint, gross floor area, floor count, height, program share - and how it stands in a buildable envelope, read from the record's own Volume@1 / MassingLevel@1 entities in the kernel's voxel lattice.",
+      "owns": [
+        "the massing quantities and their frame (MassingMetrics, LevelFootprint, massing_metrics)",
+        "CELL_AREA_M2: one plan cell is one square metre, as schematic_proposal's SpatialGridBasis declares",
+        "the union-of-plan-rectangles footprint, counted once where volumes overlap",
+        "the three envelope findings and their whole vocabulary (EnvelopeFinding, envelope_check, VOLUME_OUTSIDE_ENVELOPE, HEIGHT_EXCEEDED, FAR_EXCEEDED)",
+        "saying what could not be measured rather than measuring zero (MassingMetrics.honesty)",
+        "the typed refusal of a record or envelope that makes a measurement impossible (MassingMetricsError)"
+      ],
+      "does_not_own": [
+        "reading a Volume@1 box (state.record.volume_boxes_of)",
+        "the massing entity vocabulary (state.record)",
+        "the SiteBounds/SpatialLevel shapes the lattice comes from (state.spatial)",
+        "transforming a massing or holding options beside one another (studio.options)",
+        "compiling geometry from a massing (compilers/geometry.py)"
+      ],
+      "inputs": [
+        "StateRecord",
+        "a program-sheet-shaped mapping of node id to target area",
+        "an envelope mapping"
+      ],
+      "outputs": [
+        "MassingMetrics",
+        "EnvelopeFinding tuple"
+      ],
+      "public_api": [
+        "CELL_AREA_M2",
+        "EnvelopeFinding",
+        "FAR_EXCEEDED",
+        "FINDING_CODES",
+        "HEIGHT_EXCEEDED",
+        "LevelFootprint",
+        "MassingMetrics",
+        "MassingMetricsError",
+        "VOLUME_OUTSIDE_ENVELOPE",
+        "envelope_check",
+        "massing_metrics"
+      ],
+      "depends_on": [
+        "state.record"
+      ],
+      "used_by": [
+        "apps/archflow-studio/api/archflow_studio_api/application/options.py"
+      ],
+      "invariants": [
+        "never writes the filesystem and decides nothing",
+        "a plan bound that is not a whole cell is reported in honesty, never rounded",
+        "an absent envelope key makes no finding",
+        "efficiency is null, never zero, when no program target was given or there is no floor area"
+      ],
+      "status": "canonical",
+      "files": [
+        "archflow/state/massing_metrics.py"
+      ],
+      "tests": [
+        "tests/test_massing_metrics.py"
+      ],
+      "reason": "Snaptrude shows GFA, floor count and efficiency beside every massing option; here they are read from the record's own massing entities, once, by one module, so the studio's options and any later provider measure the same thing."
+    },
+    {
+      "module_id": "studio.options",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/options.py",
+      "purpose": "Hold several massing options beside the record's own, each one deterministic transform of its SchematicPack@1, each measured, each retained in a run of its own.",
+      "owns": [
+        "the closed transform vocabulary (TRANSFORMS: add_floor, remove_floor, shift_volume, scale_volume, split_volume, pack)",
+        "each transform's arithmetic on the pack and its typed refusals",
+        "the in-process option table and its ids and run ids (OptionStore, MassingOption, OptionsTable, RUN_PREFIX, PERSISTENCE)",
+        "retaining one option as selected-spatial-option in its own option-NNN run",
+        "the record's volumes as the panel reads them (RecordMassing, RecordVolume, record_massing, baseline_pack)",
+        "POST /api/options, GET /api/options, POST /api/options/{option_id}/select, GET /api/state/volumes"
+      ],
+      "does_not_own": [
+        "measuring a massing (state.massing_metrics)",
+        "reading the record's massing as a pack (state.record.schematic_pack_of)",
+        "the successor record a selection runs (studio.candidate.massing_successor)",
+        "running a candidate (studio.candidate)",
+        "the record kind vocabulary (project.record_kinds)"
+      ],
+      "public_api": [
+        "ADD_FLOOR",
+        "MassingOption",
+        "OptionStore",
+        "OptionsTable",
+        "PACK",
+        "PERSISTENCE",
+        "RecordMassing",
+        "RecordVolume",
+        "REMOVE_FLOOR",
+        "RUN_PREFIX",
+        "SCALE_VOLUME",
+        "SHIFT_VOLUME",
+        "SPLIT_VOLUME",
+        "TRANSFORMS",
+        "baseline_pack",
+        "make_option",
+        "record_massing"
+      ],
+      "depends_on": [
+        "state.massing_metrics",
+        "state.record",
+        "state.spatial",
+        "project.ports",
+        "project.record_kinds",
+        "studio.candidate",
+        "studio.binding"
+      ],
+      "invariants": [
+        "never writes the authored record and never touches canonical",
+        "an option is measured on the successor record selecting it would run, not on an approximation",
+        "a massing the kernel would refuse is refused at make time, with the request that made it",
+        "the metrics are this process's memory; only the pack is retained"
+      ],
+      "status": "provisional",
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/options.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/options.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/options.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_options.py"
+      ],
+      "reason": "Design step 4 (stacking and massing): several masses side by side with their metrics, the architect choosing; the generative provider plugs into the pack transform later."
     }
   ]
 }
