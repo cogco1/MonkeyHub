@@ -32,6 +32,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import threading
 import tempfile
 import time
 from typing import Any, Mapping, Protocol, Sequence
@@ -778,8 +779,14 @@ def _run_bounded(
     blocks until it exits, so the route would sit far past the timeout it
     promised. Here the process starts in its own group (session on POSIX) and
     a timeout ends the whole tree — ``taskkill /T`` on Windows, ``killpg``
-    elsewhere — before the pipes are drained. The ``TimeoutExpired`` is
-    re-raised so the caller answers as before; nothing here reads the answer.
+    elsewhere — before the pipes are drained.
+
+    The prompt is fed from its own thread. ``communicate(input=...)`` writes
+    stdin on the calling thread on Windows, and a sheet larger than the pipe
+    buffer (the catalog made it so) blocks that write until the child reads or
+    dies - the timeout was never consulted. Readers run on threads too, so a
+    child that fills stdout cannot wedge the wait. The ``TimeoutExpired`` is
+    raised so the caller answers as before; nothing here reads the answer.
     """
 
     popen_kwargs: dict[str, Any] = {}
@@ -798,19 +805,44 @@ def _run_bounded(
         shell=False,
         **popen_kwargs,
     )
+    assert process.stdin is not None and process.stdout is not None and process.stderr is not None
+    captured: dict[str, str] = {"stdout": "", "stderr": ""}
+
+    def feed() -> None:
+        try:
+            process.stdin.write(prompt)
+            process.stdin.close()
+        except (BrokenPipeError, OSError, ValueError):
+            pass
+
+    def drain(name: str, stream: Any) -> None:
+        try:
+            captured[name] = stream.read()
+        except (OSError, ValueError):
+            pass
+
+    threads = [
+        threading.Thread(target=feed, name="agent-stdin", daemon=True),
+        threading.Thread(target=drain, args=("stdout", process.stdout), name="agent-stdout", daemon=True),
+        threading.Thread(target=drain, args=("stderr", process.stderr), name="agent-stderr", daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
     try:
-        stdout, stderr = process.communicate(input=prompt, timeout=timeout_s)
+        process.wait(timeout=timeout_s)
     except subprocess.TimeoutExpired:
         _kill_tree(process)
-        # The writers are dead, so this returns as soon as the pipes close; the
-        # bound is for a child the kill could not reach, and then the pipes
-        # are abandoned rather than waited on.
+        # The tree is dead, so this returns at once; the bound is for a child
+        # the kill could not reach, and then the pipes are abandoned to their
+        # daemon threads rather than waited on.
         try:
-            process.communicate(timeout=5.0)
+            process.wait(timeout=5.0)
         except subprocess.TimeoutExpired:
             pass
-        raise
-    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+        raise subprocess.TimeoutExpired(command, timeout_s)
+    for thread in threads:
+        thread.join(timeout=5.0)
+    return subprocess.CompletedProcess(command, process.returncode, captured["stdout"], captured["stderr"])
 
 
 def _kill_tree(process: subprocess.Popen[str]) -> None:
