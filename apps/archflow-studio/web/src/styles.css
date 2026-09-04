@@ -1898,3 +1898,22 @@ button.chip:hover {
     opacity: 1;
   }
 }
+
+/* the nested component tree (ComponentTree.tsx), on the picker's frame */
+.tree__list { list-style: none; margin: 0; padding: 0; }
+.tree__children { list-style: none; margin: 0; padding: 0; }
+.tree__item { margin: 0; }
+.tree__row { display: flex; align-items: center; gap: 6px; padding: 2px 6px; border-radius: 4px; }
+.tree__row:hover { background: var(--surface-2, rgba(127, 127, 127, 0.12)); }
+.tree__row--selected { background: var(--accent-soft, rgba(90, 140, 255, 0.18)); }
+.tree__row--element .tree__name { opacity: 0.9; }
+.tree__fold { width: 18px; border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0; font-size: 12px; }
+.tree__fold:disabled { cursor: default; opacity: 0.5; }
+.tree__name { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0; text-align: left; }
+.tree__name--missing { text-decoration: underline dotted; }
+.tree__meta { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; font-size: 11px; opacity: 0.85; }
+.tree__chip { padding: 0 6px; border-radius: 999px; background: var(--surface-2, rgba(127, 127, 127, 0.15)); white-space: nowrap; }
+.tree__chip--warn { background: rgba(230, 160, 40, 0.25); }
+.tree__chip--missing { background: rgba(220, 70, 70, 0.22); }
+.tree__chip--locked { background: rgba(120, 120, 120, 0.3); }
+.tree__chip--derived { background: rgba(90, 140, 255, 0.18); }

@@ -9,7 +9,7 @@ import { useState, type FormEvent } from "react";
 
 import type { GestureDto, StateProjectionDto } from "../../api/generated";
 import { useT, type TFunction } from "../../i18n/useT";
-import { SelectionPicker } from "./SelectionPicker";
+import { ComponentTree } from "./ComponentTree";
 
 const MARK_GLYPH: Record<GestureDto["kind"], string> = {
   circle: "◯",
@@ -107,7 +107,7 @@ export function Composer({
         </button>
       </div>
       {pickerOpen && projection && (
-        <SelectionPicker
+        <ComponentTree
           projection={projection}
           onPick={(componentId, elementId) => {
             onSelect(componentId, elementId);
