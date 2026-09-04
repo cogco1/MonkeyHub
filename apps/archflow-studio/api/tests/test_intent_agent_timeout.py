@@ -55,6 +55,15 @@ SELECTION = Selection(component_id="portico", element_id=None)
 # What the shim answers with: one object in ``RESPONSE_SCHEMA``, compiled.
 ANSWER = json.dumps(
     {
+        "kind": "command",
+        "capabilityId": "entity:portico-base#params.height",
+        "op": "increase",
+        "value": 10,
+        "keep": [],
+        "componentId": "portico",
+        "property": "height",
+        "missingSlots": [],
+        "reasonCode": None,
         "status": "compiled",
         "targetComponentId": "portico",
         "elementId": "portico-base",
@@ -188,7 +197,7 @@ class CodexSuccessTests(CodexReceiptTestCase):
         self.assertIn("elements", request.payload["record_sheet"])
         # What the agent said, decoded, is what the receipt's output carries.
         self.assertEqual(receipt.output["utterance"], "increase height by 10 %")
-        self.assertEqual(receipt.output["status"], "compiled")
+        self.assertEqual(receipt.output["kind"], "command")
 
     def test_the_fingerprint_is_the_configurations_and_the_models(self) -> None:
         first = CodexCompiler(executable=str(self.shim), timeout_s=TIMEOUT_S)

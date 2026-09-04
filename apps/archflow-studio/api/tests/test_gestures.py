@@ -172,43 +172,44 @@ class CircleTests(GestureTestCase):
         compiler = Scripted("set height to 0.8", element_id="portico-cornice")
         self.app.state.intent_compiler = compiler
         status, payload = self.ask(
-            "raise the cornice",
+            "raise the cornice by 10 %",
             [gesture("circle", hit("obj-portico-base"))],
             targetComponentId="portico",
             elementId="portico-cornice",
         )
+        # The explicit pick wins over the circle, the number is in the sentence:
+        # no agent is asked, and the circle is still read back as a fact.
         self.assertEqual(status, 201, payload)
-        selection = compiler.calls[-1]["selection"]
-        self.assertEqual(selection.element_id, "portico-cornice")
-        self.assertEqual(
-            selection.gestures, ("circle covering portico (1 element: portico-base)",)
-        )
+        self.assertEqual(payload["proposal"]["target"]["elementId"], "portico-cornice")
+        self.assertEqual(compiler.calls, [])
+        self.assertEqual(payload["gestures"], ["circle covering portico (1 element: portico-base)"])
 
 
 class ArrowTests(GestureTestCase):
     def test_an_arrow_is_a_sentence_on_the_agent_s_sheet(self) -> None:
         compiler = Scripted("increase height by 10 %", element_id="portico-base")
         self.app.state.intent_compiler = compiler
-        status, payload = self.ask(
-            "a little more, like this",
-            [
-                gesture(
-                    "arrow",
-                    hit("obj-portico-base"),
-                    worldStart=[1, 2, 0],
-                    worldEnd=[1, 2, 0.4],
-                    worldDirection=[0, 0, 1],
-                    lengthModelUnits=0.4,
-                )
-            ],
-            targetComponentId="portico",
-            elementId="portico-base",
+        arrow = gesture(
+            "arrow",
+            hit("obj-portico-base"),
+            worldStart=[1, 2, 0],
+            worldEnd=[1, 2, 0.4],
+            worldDirection=[0, 0, 1],
+            lengthModelUnits=0.4,
         )
-        self.assertEqual(status, 201, payload)
         fact = (
             "arrow on portico-base (portico) · world direction +Z (up) "
             "(0.00, 0.00, 1.00) · length ≈ 0.4 model units"
         )
+        # "a little more" is an amount question; the fact still travels on it.
+        status, payload = self.ask("a little more, like this", [arrow], targetComponentId="portico", elementId="portico-base")
+        self.assertEqual(status, 422, payload)
+        self.assertEqual(payload["pending"]["reasonCode"], "MISSING_AMOUNT")
+        self.assertEqual(payload["pending"]["gestures"], [fact])
+        # With the portico alone selected the two elements are candidates, so
+        # the agent is asked - and the arrow is on its sheet.
+        status, payload = self.ask("10 % more, like this", [arrow], targetComponentId="portico")
+        self.assertEqual(status, 201, payload)
         self.assertEqual(payload["gestures"], [fact])
         selection = compiler.calls[-1]["selection"]
         self.assertEqual(selection.gestures, (fact,))
@@ -221,7 +222,7 @@ class ArrowTests(GestureTestCase):
         compiler = Scripted("increase height by 10 %", element_id="portico-base")
         self.app.state.intent_compiler = compiler
         status, payload = self.ask(
-            "up a bit",
+            "up by 10 %",
             [gesture("arrow", worldDirection=[0, 0, -1])],
             targetComponentId="portico",
             elementId="portico-base",

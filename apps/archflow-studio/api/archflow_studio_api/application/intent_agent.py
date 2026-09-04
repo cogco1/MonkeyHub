@@ -94,18 +94,33 @@ VERSION_PROBE_TIMEOUT_S = 30.0
 RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["status", "targetComponentId", "elementId", "utterance", "why", "question"],
+    "required": ["kind", "capabilityId", "op", "value", "keep", "componentId", "property", "missingSlots", "question", "reasonCode", "why"],
     "properties": {
-        "status": {"type": "string", "enum": ["compiled", "question"]},
-        "targetComponentId": {"type": ["string", "null"]},
-        "elementId": {"type": ["string", "null"]},
-        "utterance": {"type": ["string", "null"]},
-        "why": {"type": "string"},
+        "kind": {"type": "string", "enum": ["command", "clarify", "declare_control", "unsupported"]},
+        "capabilityId": {"type": ["string", "null"]},
+        "op": {"type": ["string", "null"], "enum": ["set", "increase", "decrease", None]},
+        "value": {"type": ["number", "null"]},
+        "keep": {"type": "array", "items": {"type": "string"}},
+        "componentId": {"type": ["string", "null"]},
+        "property": {"type": ["string", "null"]},
+        "missingSlots": {"type": "array", "items": {"type": "string", "enum": ["target", "property", "amount", "direction"]}},
         "question": {"type": ["string", "null"]},
+        "reasonCode": {"type": ["string", "null"]},
+        "why": {"type": "string"},
     },
 }
 
-SYSTEM_PROMPT = """You compile an architect's request into ArchFlow's intent grammar.
+SYSTEM_PROMPT = """You read an architect's request against a design record and answer with ONE closed result. You decide nothing about the building; you name what the sheet holds.
+
+The RECORD SHEET carries a CATALOG: the component tree, and under each component its editable elements with their capabilities (an id like entity:<elementId>#params.<key>, the current value, the unit) and their side (west/east/north/south) when the element has one. It also names components that are visible in the model but have no editable element (MODEL_VISIBLE_CATALOG_MISSING) and components with no realization at all (MISSING_ELEMENT_DECLARATION).
+
+Answer exactly one of:
+- {"kind":"command","capabilityId":"entity:<elementId>#params.<key>","op":"set"|"increase"|"decrease","value":<number>,"keep":[...],"why":"..."}  — only when the request names, or the selection is, an element whose capability is on the sheet AND the request carries a number. op set takes the new value in the record's units; increase/decrease take a percentage.
+- {"kind":"clarify","missingSlots":["target"|"property"|"amount"|"direction"...],"question":"...","why":"..."}  — when the target is one of several candidates on the sheet, when the property is not clear, or when the amount is qualitative ("a little", "略微", "slightly"): NEVER turn a qualitative word into a number or a percentage; ask.
+- {"kind":"declare_control","componentId":"<componentId>","property":"<key or null>","why":"..."}  — when the request is about a component the sheet marks MODEL_VISIBLE_CATALOG_MISSING or MISSING_ELEMENT_DECLARATION. Never substitute a neighbouring component's element (a roof abutment is not a column).
+- {"kind":"unsupported","reasonCode":"...","question":"...","why":"..."}  — for anything the record cannot take (adding, removing, moving things, materials).
+
+Fill every key: unused ones are null (keep and missingSlots: []). Answer with the JSON object only. The old grammar, for reference:
 
 You are given a RECORD SHEET: the components, elements, numeric fields, parameters and honesty lines a design record declares. You may only name components, elements and fields that appear on the sheet, spelled exactly as they appear. You never invent a field, a component, or a coordinate.
 
@@ -139,6 +154,10 @@ class Selection:
     component_id: str | None
     element_id: str | None
     gestures: tuple[str, ...] = ()
+    # The catalog summary the resolver hands the agent: components with their
+    # editable elements and capabilities, and the named gaps. Derived facts,
+    # never the conversation.
+    catalog: Mapping[str, Any] | None = None
 
 
 class IntentAgentFailed(StudioError):
@@ -192,6 +211,11 @@ class Compilation:
     # ``ModelInvocationReceipt@2`` contract. ``None`` when no model was
     # called, which is the deterministic compiler's whole case.
     receipt: ModelInvocationReceipt | None = None
+    # The closed answer exactly as the agent gave it (kind, capabilityId, op,
+    # value, keep, componentId, property, missingSlots, question, reasonCode,
+    # why), for the resolver to validate against the catalog. None for the
+    # deterministic compiler and for scripted test compilers.
+    answer: Mapping[str, Any] | None = None
 
 
 class IntentCompiler(Protocol):
@@ -252,6 +276,7 @@ def record_sheet(projection: StateProjection, selection: Selection) -> dict[str,
             "elementId": selection.element_id,
         },
         "gestures": list(selection.gestures),
+        "catalog": dict(selection.catalog) if selection.catalog is not None else None,
         "components": components,
         "elements": elements,
         "parameters": parameters,
@@ -308,6 +333,11 @@ def _invocation_request(
 
 
 def _answer_object(compilation: Compilation) -> dict[str, Any]:
+    """The answer as the provider gave it: the closed result when it spoke it,
+    else the legacy fields a scripted compiler filled."""
+
+    if compilation.answer is not None:
+        return dict(compilation.answer)
     """The agent's answer as the schema's own object, after the field checks."""
 
     return {
@@ -430,9 +460,25 @@ def _parse_answer(
         ) from exc
     if not isinstance(payload, dict):
         raise StudioError(502, AGENT_FAILED, f"the {provider} agent answered a JSON {type(payload).__name__}, not an object")
-    status = payload.get("status")
-    if status not in ("compiled", "question"):
-        raise StudioError(502, AGENT_FAILED, f"the {provider} agent answered status {status!r}; only compiled or question are answers")
+    kind = payload.get("kind")
+    if kind not in ("command", "clarify", "declare_control", "unsupported"):
+        raise StudioError(502, AGENT_FAILED, f"the {provider} agent answered kind {kind!r}; only command, clarify, declare_control and unsupported are answers")
+    # The legacy two-word status the rest of the compiler reads: a command is
+    # "compiled" (its sentence is built by the resolver from the catalog), the
+    # other three are questions until the resolver says otherwise.
+    status = "compiled" if kind == "command" else "question"
+    payload = dict(payload)
+    payload.setdefault("utterance", None)
+    payload.setdefault("targetComponentId", payload.get("componentId"))
+    payload.setdefault("elementId", None)
+    capability = payload.get("capabilityId")
+    if isinstance(capability, str) and capability.startswith("entity:") and "#params." in capability:
+        element, _, key = capability[len("entity:") :].partition("#params.")
+        payload["elementId"] = element
+        op, value = payload.get("op"), payload.get("value")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            number = str(int(value)) if float(value).is_integer() else str(value)
+            payload["utterance"] = f"set {key} to {number}" if op == "set" else f"{op} {key} by {number} %"
 
     def text_or_none(key: str) -> str | None:
         value = payload.get(key)
@@ -452,6 +498,7 @@ def _parse_answer(
         element_id=text_or_none("elementId"),
         why=why.strip() if isinstance(why, str) else "",
         question=text_or_none("question"),
+        answer=payload,
         latency_ms=latency_ms,
         prompt_sha256=prompt_sha,
         raw=raw,

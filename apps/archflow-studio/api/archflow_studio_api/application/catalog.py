@@ -37,6 +37,9 @@ from archflow.state.state_record import StateRecord
 
 from ..transport.errors import StudioError
 from .binding import ProjectBinding
+from archflow.project.record_kinds import SEAT_3DM_INSPECTION
+
+from .binding import record_kind
 from .compare import Shape, shapes_of
 from .pick import element_of_object
 from .projection import StateProjection
@@ -398,3 +401,31 @@ def _components(
             )
         )
     return tuple(out)
+
+
+_LENGTH_UNITS = {"meter": "m", "meters": "m", "metre": "m", "metres": "m", "m": "m", "millimeter": "mm", "millimeters": "mm", "mm": "mm", "centimeter": "cm", "cm": "cm"}
+
+
+def length_unit_of(binding: ProjectBinding, projection: StateProjection) -> str | None:
+    """The length unit the reference run's export declares (``archflow:length_unit``), or None.
+
+    The record keeps element params bare; the export's document strings are
+    the one place that says what a bare height is measured in.
+    """
+
+    run_id = projection.reference.run.run_id
+    try:
+        refs = [ref for ref in binding.record_refs(run_id) if record_kind(ref) == SEAT_3DM_INSPECTION]
+    except StudioError:
+        return None
+    for ref in refs:
+        try:
+            payload = binding.repository.load_json(ref)
+        except Exception:  # noqa: BLE001 - one unreadable record is not the catalog's failure
+            continue
+        record = payload.get("payload") if isinstance(payload.get("payload"), Mapping) else payload
+        for row in record.get("document_user_strings") or []:
+            if isinstance(row, Mapping) and row.get("key") == "archflow:length_unit":
+                value = str(row.get("value", "")).strip().lower()
+                return _LENGTH_UNITS.get(value)
+    return None

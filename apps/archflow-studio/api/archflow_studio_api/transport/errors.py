@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from typing import Mapping
+
 
 def error_sentence(exc: BaseException) -> str:
     """One exception's own sentence, without this server's filesystem in it.
@@ -48,14 +50,20 @@ class BlockedNeedsHuman(StudioError):
         detail: str,
         question: str,
         accepted_forms: tuple[str, ...] = (),
+        pending: Mapping[str, object] | None = None,
     ) -> None:
         super().__init__(422, "BLOCKED_NEEDS_HUMAN", detail)
         self.question = question
         self.accepted_forms = accepted_forms
+        # The structured state a clarification keeps, when the intent
+        # resolver opened one: the client resumes it by its token.
+        self.pending = pending
 
     def body(self) -> dict[str, object]:
         body = super().body()
         body["question"] = self.question
         if self.accepted_forms:
             body["acceptedForms"] = list(self.accepted_forms)
+        if self.pending is not None:
+            body["pending"] = dict(self.pending)
         return body

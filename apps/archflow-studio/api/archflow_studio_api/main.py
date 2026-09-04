@@ -26,6 +26,8 @@ from . import routes
 from .application.events import StudioEvents
 from .application.intent_agent import compiler_from_settings
 from .application.jobs import JobRegistry
+from .application.controls import DeclaredControlStore
+from .application.pending import PendingIntentStore
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
 from .protocol import SERVER_VERSION
@@ -169,6 +171,8 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # here so that fact is visible at the top of the application rather than
     # accumulating quietly at the bottom of a route.
     app.state.proposals = ProposalStore()
+    app.state.pending = PendingIntentStore()
+    app.state.controls = DeclaredControlStore()
     # The event sink is the reserved ``StudioEventSink`` port, and the job
     # registry owns the one worker thread candidates run on. Both are created
     # here for the same reason as the store: what this process holds in memory,
