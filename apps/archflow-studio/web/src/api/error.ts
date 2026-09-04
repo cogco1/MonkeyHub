@@ -12,11 +12,19 @@
  * and it refuses them in the same shape. One error type, read by one panel.
  */
 
+import type { AuthoredControlDraftDto, PendingIntentDto } from "./generated";
+
 /** A failure this client could not read as the API's error body. */
 export const TRANSPORT_ERROR = "TRANSPORT_ERROR";
 
 /** A request that never reached the API at all. */
 export const NETWORK_ERROR = "NETWORK_ERROR";
+
+/** The codes an intent's three refusing outcomes arrive under. */
+export const BLOCKED_NEEDS_HUMAN = "BLOCKED_NEEDS_HUMAN";
+export const MISSING_EDITABLE_CONTROL = "MISSING_EDITABLE_CONTROL";
+export const UNSUPPORTED_REQUEST = "UNSUPPORTED_REQUEST";
+export const STALE_CLARIFICATION = "STALE_CLARIFICATION";
 
 /** The one error every call in this app throws. */
 export class StudioApiError extends Error {
@@ -25,6 +33,20 @@ export class StudioApiError extends Error {
   readonly detail: string;
   readonly question: string | null;
   readonly acceptedForms: string[];
+  /**
+   * Which of the four closed answers this refusal is, when the server said.
+   * Not every refusal belongs to an intent, so it can be null.
+   */
+  readonly outcome: string | null;
+  /**
+   * The exchange this refusal belongs to. Its `continuationToken` is the whole
+   * of the continuity — the next request carries it back and nothing else, so
+   * no transcript is sent — and a null token means the answer was terminal and
+   * there is nothing left to ask.
+   */
+  readonly pendingIntent: PendingIntentDto | null;
+  /** What would have to be authored, when the answer is that nothing can be. */
+  readonly authoredControlDraft: AuthoredControlDraftDto | null;
 
   constructor(init: {
     status: number;
@@ -32,6 +54,9 @@ export class StudioApiError extends Error {
     detail: string;
     question?: string | null;
     acceptedForms?: string[] | null;
+    outcome?: string | null;
+    pendingIntent?: PendingIntentDto | null;
+    authoredControlDraft?: AuthoredControlDraftDto | null;
   }) {
     super(`${init.code}: ${init.detail}`);
     this.name = "StudioApiError";
@@ -40,6 +65,14 @@ export class StudioApiError extends Error {
     this.detail = init.detail;
     this.question = init.question ?? null;
     this.acceptedForms = init.acceptedForms ?? [];
+    this.outcome = init.outcome ?? null;
+    this.pendingIntent = init.pendingIntent ?? null;
+    this.authoredControlDraft = init.authoredControlDraft ?? null;
+  }
+
+  /** Whether this refusal can still be answered, or has ended the exchange. */
+  get continuationToken(): string | null {
+    return this.pendingIntent?.continuationToken ?? null;
   }
 }
 
@@ -70,6 +103,31 @@ function stringList(value: unknown): string[] | null {
 }
 
 /**
+ * The pending intent out of an error body, or null.
+ *
+ * The shape is the server's — `PendingIntentDto` is generated from its schema
+ * and nothing here declares it — but an error body arrives as JSON the SDK does
+ * not type, so the fields this client actually branches on are checked before
+ * it is read as one. A body missing them is treated as carrying no pending
+ * intent at all rather than as a half-read one.
+ */
+function pendingIntent(value: unknown): PendingIntentDto | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.requestId !== "string") return null;
+  if (typeof value.reasonCode !== "string") return null;
+  if (!Array.isArray(value.missingSlots) || !Array.isArray(value.candidates)) {
+    return null;
+  }
+  return value as unknown as PendingIntentDto;
+}
+
+function authoredControlDraft(value: unknown): AuthoredControlDraftDto | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.targetComponentId !== "string") return null;
+  return value as unknown as AuthoredControlDraftDto;
+}
+
+/**
  * The API's error body, or an honest admission that this was not one.
  *
  * A gateway, a proxy or a crash can answer with HTML or with nothing at all.
@@ -93,6 +151,9 @@ export function toStudioApiError(
       detail: body.detail,
       question: typeof body.question === "string" ? body.question : null,
       acceptedForms: stringList(body.acceptedForms),
+      outcome: typeof body.outcome === "string" ? body.outcome : null,
+      pendingIntent: pendingIntent(body.pendingIntent),
+      authoredControlDraft: authoredControlDraft(body.authoredControlDraft),
     });
   }
   const said =

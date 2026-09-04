@@ -219,6 +219,76 @@ STRIPPED_RECORD_PAYLOAD: dict[str, object] = {
 }
 
 
+# The villa's shape, in the small: a portico with two sub-components under it —
+# one whose element carries ``height``, and one that has no element at all.
+# That asymmetry is the whole reproduction. ``portico-columns`` is what the
+# architect means and what the record has no control for; the west abutment
+# under ``portico-roofs`` is the neighbour whose ``height`` a resolver scoring
+# on field names would have changed instead.
+#
+# It is a second payload rather than an edit of ``RECORD_PAYLOAD`` because the
+# projection tests count that record's components and elements: a fixture that
+# quietly moved those numbers would leave those tests measuring a different
+# building than the one they describe.
+PORTICO_RECORD_PAYLOAD: dict[str, object] = {
+    **{key: value for key, value in RECORD_PAYLOAD.items() if key != "entities"},
+    "entities": [
+        *RECORD_PAYLOAD["entities"],  # type: ignore[misc]
+        {
+            "entity_id": "portico-roofs",
+            "schema": "Component@1",
+            "parent_id": "portico",
+            "fields": {
+                # Registered aliases, like every other component here: the
+                # record refuses a semantic term the registry does not declare
+                # (ADR-006), and a fixture may not invent one either.
+                "semantic_kind": "roof",
+                "intent": "the portico roofs and their abutments",
+                "source_refs": [EVIDENCE],
+            },
+        },
+        {
+            "entity_id": "portico-columns",
+            "schema": "Component@1",
+            "parent_id": "portico",
+            "fields": {
+                "semantic_kind": "support",
+                "intent": "the portico columns, drawn but not yet controlled",
+                "source_refs": [EVIDENCE],
+            },
+        },
+        {
+            "entity_id": "portico-roof-abutment-west",
+            "schema": "Element@1",
+            "parent_id": "portico-roofs",
+            "fields": {
+                "component_id": "portico-roofs",
+                "producer": "prism",
+                "references": {"base": {"datum": "portico-base-top"}},
+                "params": {
+                    "profile": [[0, 0], [1, 0], [1, 1], [0, 1]],
+                    "height": 0.45,
+                },
+            },
+            "basis_refs": [EVIDENCE],
+        },
+    ],
+}
+
+
+# The seat pack for that record: the same one seat, owning the portico and the
+# two components under it, so the runner can still compile a program for it.
+PORTICO_SEATS_PAYLOAD: dict[str, object] = {
+    **{key: value for key, value in SEATS_PAYLOAD.items() if key != "seats"},
+    "seats": [
+        {
+            **SEATS_PAYLOAD["seats"][0],  # type: ignore[index]
+            "owned_component_ids": ["portico", "portico-roofs", "portico-columns"],
+        }
+    ],
+}
+
+
 def run_records(run_id: str) -> PersistenceDestination:
     """The run-record area of one run."""
 
@@ -237,16 +307,19 @@ def missing_workflow_ref(run_id: str) -> str:
 def runner_state_digest(
     repository: FilesystemProjectRepository,
     run_id: str,
+    payload: object = RECORD_PAYLOAD,
 ) -> str:
     """The ``design_state_digest`` the runner would write for that run.
 
     Computed straight from the kernel, with the runner's own view kwargs, so a
     test comparing the API against it is comparing against production, not
-    against the API repeating itself.
+    against the API repeating itself. ``payload`` names which record the
+    project authored, for a fixture that authored something other than the
+    default one.
     """
 
     run = RunRef(PROJECT_ID, run_id, repository.read_head())
-    record = StateRecord.from_dict(RECORD_PAYLOAD).bound_to(run)
+    record = StateRecord.from_dict(payload).bound_to(run)
     return developed_design_view(record, run=run, **VIEW_KWARGS).state_digest
 
 
@@ -438,6 +511,37 @@ def make_project(
         ),
     )
     return repository, record_ref
+
+
+def make_portico_project(root: Path) -> tuple[FilesystemProjectRepository, str]:
+    """The reproduction's project: the portico, its roofs and its columns.
+
+    The same shape ``make_project`` builds — a real P036 project, one authored
+    record, one finished run and the receipt it left — authored with the record
+    that has a component nothing under it can edit. Answers the repository and
+    the ``stateDigest`` every request against it has to carry.
+    """
+
+    project_dir = Path(root) / PROJECT_ID
+    repository = FilesystemProjectRepository.initialize(
+        project_dir,
+        project_id=PROJECT_ID,
+        initial_state={"project_id": PROJECT_ID, "version": 0},
+    )
+    run = repository.create_run(REFERENCE_RUN_ID)
+    repository.put_json(
+        run=run,
+        destination=run_records(REFERENCE_RUN_ID),
+        record_kind=STATE_RECORD,
+        payload=PORTICO_RECORD_PAYLOAD,
+    )
+    write_runner_record(repository, PORTICO_RECORD_PAYLOAD)
+    write_runner_seats(repository, PORTICO_SEATS_PAYLOAD)
+    digest = runner_state_digest(
+        repository, REFERENCE_RUN_ID, PORTICO_RECORD_PAYLOAD
+    )
+    retain_runner_receipt(repository, run, design_state_digest=digest)
+    return repository, digest
 
 
 def make_empty_project(root: Path) -> FilesystemProjectRepository:

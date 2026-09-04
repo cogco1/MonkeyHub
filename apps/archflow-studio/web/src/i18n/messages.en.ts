@@ -241,6 +241,21 @@ export const messagesEn = {
     "each move asks the record again — the number in Change is always the record's",
 
   "question.title": "A question first",
+  "question.stillOpen": "Still open: {slots}",
+  "question.ruledOut": "Ruled out: {refs}",
+  "terminal.missingControl": "This has no control to change",
+  "terminal.unsupported": "This cannot be asked here",
+  "terminal.identity": "{target} · {reason}",
+  "terminal.draft.title": "The control that would have to be authored",
+  "terminal.draft.control": "Control",
+  "terminal.draft.producer": "Producer",
+  "terminal.draft.binding": "Binding",
+  "terminal.draft.unit": "Unit",
+  "terminal.draft.confidence": "Confidence",
+  "terminal.draft.provenance": "Read from",
+  "terminal.draft.requires": "Requires",
+  "terminal.draft.notWritten":
+    "A draft, not a change: nothing was written and no number was invented.",
   "refusal.title": "The server refused",
 
   "reading.deterministic":

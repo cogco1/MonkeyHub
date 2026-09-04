@@ -47,8 +47,8 @@ from archflow.ports.model import (
 )
 
 from ..settings import INTENT_PROVIDER_ENV, SettingsError, StudioSettings
-from ..transport.errors import BlockedNeedsHuman, StudioError
-from .intent import ACCEPTED_FORMS, KEEP_SENTENCE, parse_utterance
+from ..transport.errors import StudioError
+from .intent import ACCEPTED_FORMS, KEEP_SENTENCE
 from .projection import StateProjection
 
 DETERMINISTIC = "deterministic"
@@ -946,32 +946,14 @@ def compiler_from_settings(settings: StudioSettings) -> IntentCompiler:
     )
 
 
-# ---- the check the seam keeps for itself -----------------------------------
+# ---- the selection the seam hands on ---------------------------------------
 
-
-def require_grammatical(compilation: Compilation) -> None:
-    """A compiled sentence must parse; an agent that claims it compiled and did
-    not is answered like any ungrammatical utterance, with the agent's reading
-    kept in the detail so the reader knows who said what."""
-
-    if compilation.status != "compiled":
-        raise BlockedNeedsHuman(
-            f"the {compilation.provider} agent asked instead of compiling"
-            + (f": {compilation.why}" if compilation.why else ""),
-            question=compilation.question or "the agent asked a question it did not state",
-        )
-    assert compilation.utterance is not None
-    if parse_utterance(compilation.utterance) is None:
-        raise BlockedNeedsHuman(
-            f"the {compilation.provider} agent compiled {compilation.utterance!r}, "
-            "which is not in the grammar"
-            + (f"; it said: {compilation.why}" if compilation.why else ""),
-            question=(
-                "The agent's sentence could not be typed. Say the change in one of the "
-                "four forms, or rephrase the request."
-            ),
-            accepted_forms=ACCEPTED_FORMS,
-        )
+# ``require_grammatical`` used to live here. It raised a bare
+# ``BLOCKED_NEEDS_HUMAN`` and threw away the two things the agent had just
+# worked out — which component and which element it was talking about — so the
+# next request began from nothing and asked the same question again.
+# ``clarification.read_compilation`` replaces it: the same two refusals, in the
+# same words, with the target kept and the exchange it belongs to named.
 
 
 def context_refs(

@@ -104,7 +104,7 @@ tolerate it.
 | GET | `/api/jobs/{jobId}` | that job as the server last saw it, failures included | server memory | stable |
 | GET | `/api/candidates/{candidateId}` | the finished candidate, read back out of the records its run retained | reads shared | stable |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's verdict (§5) | reads shared + published | stable |
-| POST | `/api/intents` → 201 | an agent's reading of one sentence, and the proposal it became (§5) | reads work in progress + shared | provisional |
+| POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
 | GET | `/api/candidates/{candidateId}/compare?against=` | before / after / why, from the inspection records both runs retained | reads shared | provisional |
 | GET | `/api/events` | the server-sent event stream (§7) | server memory | provisional |
 
@@ -126,11 +126,49 @@ One chain, and each arrow is a route.
 1. **Read the state.** `GET /api/state` answers `stateDigest`. Every request that would change
    something carries it back.
 2. **Propose.** `POST /api/proposals` (a sentence already in the grammar) or `POST /api/intents`
-   (any words; the server's agent compiles them into the grammar and the grammar types them).
-   Either way the answer is the *record's* proposal: a typed `DecisionOperator` with the change,
-   the closure it propagates through, and the conflicts it reaches. Nothing has run.
-   A sentence the grammar cannot type is `422 BLOCKED_NEEDS_HUMAN` carrying a concrete
-   `question` and the `acceptedForms`, never a guess.
+   (any words; the server resolves what they are about, its agent compiles them into the grammar
+   and the grammar types them). Either way the answer is the *record's* proposal: a typed
+   `DecisionOperator` with the change, the closure it propagates through, and the conflicts it
+   reaches. Nothing has run. `POST /api/intents` ends in exactly one of four outcomes (§5.1),
+   and only the first is a proposal.
+
+### 5.1 The four outcomes of an intent
+
+An intent is not a free exchange. It ends in one of four named answers, every one of which says
+which it is in an `outcome` field:
+
+| `outcome` | status and `code` | what it means |
+| --- | --- | --- |
+| `COMPILED` | `201` | the words became a proposal |
+| `NEEDS_CLARIFICATION` | `422 BLOCKED_NEEDS_HUMAN` | something only a person can settle, with a concrete `question` and the `acceptedForms` |
+| `MISSING_EDITABLE_CONTROL` | `422 MISSING_EDITABLE_CONTROL` | it is in the model and the record declares no control for it — a missing *system binding*, not a missing answer. Terminal |
+| `UNSUPPORTED` | `422 UNSUPPORTED_REQUEST` | no action can express the request, or the clarification stopped advancing. Terminal |
+
+Each carries a **`pendingIntent`**: `requestId`, `stateDigest`, `originalUtterance`, `actionKind`
+(`change_existing_value` / `declare_missing_control` / `clarify` / `unsupported`),
+`targetComponentId`, `elementId`, `requestedSemanticProperty`, `knownSlots`, `missingSlots`,
+`candidates`, `rejectedCandidates`, `reasonCode`, `continuationToken` and `turn`.
+
+**The continuation is the whole of the continuity.** A client that answers sends back
+`continuationToken` and nothing else — never a transcript, and never its own idea of the
+selection. The token is single-use: the server closes it and issues a new one, so a reply cannot
+be replayed against a round that has moved on. A `continuationToken` of `null` means the answer
+was terminal and there is nothing left to ask; a client that renders an input box against one is
+building the loop this outcome exists to end.
+
+Two rules bind the server. **A pending intent is bound to a `stateDigest`**: one opened against a
+state the project has left is void and answers `409 STALE_CLARIFICATION` rather than being
+applied to the state that answers now. And **a clarification advances or terminates**: every
+reply must shrink `missingSlots`, correct the target, narrow `candidates`, compile, or terminate.
+A round that changes none of them is answered `UNSUPPORTED` with reason
+`CLARIFICATION_MADE_NO_PROGRESS` — the server says what it is missing instead of asking the same
+question again.
+
+`MISSING_EDITABLE_CONTROL` may carry an **`authoredControlDraft`**: the control somebody would
+have to author (`targetComponentId`, `suggestedElementId`, `semanticProperty`, `producer`,
+`binding`, `unit`, `provenance`, `confidence`, `dependencyRequirements`, `suggestedAction`). It is
+a value the server returns and never retains; no route writes it, it invents no number, and a
+neighbouring element whose field shares a name is named there only to be refused.
 3. **Run it as a candidate.** `POST /api/proposals/{id}/candidate` answers `202` and a job id.
    This is the one write: a **harness run** in the shared container. It never closes a stage and
    never becomes the reference run. Two refusals come before the job starts — the proposal
@@ -207,7 +245,9 @@ Every failure, without exception, is one body:
 {"code": "STALE_BASE", "detail": "…"}
 ```
 
-plus `question` and — when non-empty — `acceptedForms` for `BLOCKED_NEEDS_HUMAN`. That includes
+plus `question` and — when non-empty — `acceptedForms` for `BLOCKED_NEEDS_HUMAN`, and `outcome`,
+`pendingIntent` and `authoredControlDraft` for a refusal that belongs to a clarification chain
+(§5.1). That includes
 unknown paths (`404 NOT_FOUND`), wrong methods (`405 METHOD_NOT_ALLOWED`), unreadable requests
 (`422 REQUEST_INVALID`) and server bugs (`500 INTERNAL_ERROR`, which says nothing about itself).
 Anything the framework refuses before a route runs keeps its own status under `HTTP_ERROR`.

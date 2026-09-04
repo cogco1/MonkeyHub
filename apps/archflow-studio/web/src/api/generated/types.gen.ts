@@ -81,6 +81,68 @@ export type ArtifactListDto = {
 };
 
 /**
+ * AuthoredControlDraftDto
+ *
+ * A control somebody would have to author, and where it was read from.
+ *
+ * Never written. It is returned so a person can see what the system is
+ * missing and decide; a later confirm step would turn it into an edit of the
+ * authored record, and nothing in this round does.
+ */
+export type AuthoredControlDraftDto = {
+    /**
+     * Targetcomponentid
+     */
+    targetComponentId: string;
+    /**
+     * Suggestedelementid
+     */
+    suggestedElementId: string;
+    /**
+     * Semanticproperty
+     */
+    semanticProperty: string | null;
+    /**
+     * Producer
+     *
+     * the producer the elements around it use, when they agree
+     */
+    producer: string | null;
+    /**
+     * Binding
+     *
+     * where its base reference would come from
+     */
+    binding: string | null;
+    /**
+     * Unit
+     *
+     * element params are bare numbers in the record; this seam converts nothing and states no unit the record does not
+     */
+    unit: string | null;
+    /**
+     * Provenance
+     *
+     * exactly which elements and producers this was read from
+     */
+    provenance: Array<string>;
+    /**
+     * Confidence
+     *
+     * how much those readings agreed: high, medium, low
+     */
+    confidence: string;
+    /**
+     * Dependencyrequirements
+     */
+    dependencyRequirements: Array<string>;
+    /**
+     * Suggestedaction
+     */
+    suggestedAction: string;
+};
+
+/**
  * BoxDto
  */
 export type BoxDto = {
@@ -247,6 +309,60 @@ export type CandidateDto = {
      * what this candidate cannot tell you, in lines the UI shows verbatim; empty is a real answer, not a missing one
      */
     honesty: Array<string>;
+};
+
+/**
+ * CandidateOptionDto
+ *
+ * One thing the architect could have meant, as the record has it now.
+ *
+ * A choice a person can make: what it is, what its number is, and where it
+ * sits. A list of bare identifiers would be the studio asking somebody else to
+ * do its resolution.
+ */
+export type CandidateOptionDto = {
+    /**
+     * Ref
+     *
+     * how this candidate is written in rejectedCandidates
+     */
+    ref: string;
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Elementid
+     */
+    elementId: string | null;
+    /**
+     * Key
+     *
+     * the numeric field this option would change
+     */
+    key: string | null;
+    /**
+     * Currentvalue
+     *
+     * what the record holds for it now
+     */
+    currentValue: number | number | null;
+    /**
+     * Unit
+     */
+    unit: string | null;
+    /**
+     * Orientation
+     *
+     * the compass identity the record's own name carries, or null
+     */
+    orientation: string | null;
+    /**
+     * Label
+     *
+     * the option as a person reads it
+     */
+    label: string;
 };
 
 /**
@@ -907,11 +1023,51 @@ export type ImpactLockDto = {
 };
 
 /**
+ * IntentBlockedDto
+ *
+ * The body every refusing outcome of ``POST /api/intents`` answers with.
+ *
+ * The same ``{code, detail}`` every failure has, plus the pending intent it
+ * belongs to. It is declared here so a client reads the shape from the
+ * server's own schema rather than hand-writing a mirror of it.
+ */
+export type IntentBlockedDto = {
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Outcome
+     */
+    outcome: 'COMPILED' | 'NEEDS_CLARIFICATION' | 'MISSING_EDITABLE_CONTROL' | 'UNSUPPORTED';
+    pendingIntent?: PendingIntentDto | null;
+    authoredControlDraft?: AuthoredControlDraftDto | null;
+    /**
+     * Question
+     */
+    question?: string | null;
+    /**
+     * Acceptedforms
+     */
+    acceptedForms?: Array<string> | null;
+};
+
+/**
  * IntentDto
  *
  * The wire form of ``POST /api/intents``.
  */
 export type IntentDto = {
+    /**
+     * Outcome
+     *
+     * which of the four closed answers this is; a 201 is always COMPILED, and the other three arrive as the refusal body
+     */
+    outcome: 'COMPILED' | 'NEEDS_CLARIFICATION' | 'MISSING_EDITABLE_CONTROL' | 'UNSUPPORTED';
     agent: AgentReadingDto;
     proposal: ProposalDto;
     timings: IntentTimingsDto;
@@ -921,6 +1077,10 @@ export type IntentDto = {
      * the server's own reading of each gesture, in the record's names, as it was put on the sheet; empty when nothing was drawn
      */
     gestures?: Array<string>;
+    /**
+     * how the request was resolved: the target the proposal was made against, what was rejected on the way, and a null continuationToken, because a compiled request has nothing left to ask
+     */
+    pendingIntent: PendingIntentDto;
 };
 
 /**
@@ -965,6 +1125,12 @@ export type IntentRequestDto = {
      * what the architect drew on the model with the words: circles, arrows, keep and remove marks, with the objects under them; the server resolves them and reads them beside the sentence
      */
     gestures?: Array<GestureDto>;
+    /**
+     * Continuationtoken
+     *
+     * the token the server's last clarification answered with, when this request continues that exchange. It is the whole of the continuity: the pending intent it names carries the original utterance, the target resolved so far and what has been rejected, so no transcript is sent and none is read
+     */
+    continuationToken?: string | null;
 };
 
 /**
@@ -1127,6 +1293,90 @@ export type ParameterDto = {
      * Lockauthority
      */
     lockAuthority: string | null;
+};
+
+/**
+ * PendingIntentDto
+ *
+ * The one short-term structure a clarification chain is carried in.
+ *
+ * It is server-side state keyed by ``continuationToken`` and bound to one
+ * ``stateDigest``. A client sends the token back and nothing else: no
+ * transcript, no re-derived selection. A ``continuationToken`` of ``null``
+ * means the exchange is over — the answer is terminal and there is nothing
+ * left to ask.
+ */
+export type PendingIntentDto = {
+    /**
+     * Requestid
+     */
+    requestId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Originalutterance
+     *
+     * what the architect said when the exchange began; every later reply is read against it
+     */
+    originalUtterance: string;
+    /**
+     * Actionkind
+     */
+    actionKind: 'change_existing_value' | 'declare_missing_control' | 'clarify' | 'unsupported';
+    /**
+     * Targetcomponentid
+     */
+    targetComponentId: string | null;
+    /**
+     * Elementid
+     */
+    elementId: string | null;
+    /**
+     * Requestedsemanticproperty
+     *
+     * the quality the request is about — height, thickness — read from the words, not from a field name
+     */
+    requestedSemanticProperty: string | null;
+    /**
+     * Knownslots
+     */
+    knownSlots: {
+        [key: string]: string;
+    };
+    /**
+     * Missingslots
+     *
+     * what is still open: target, property, value, orientation
+     */
+    missingSlots: Array<string>;
+    /**
+     * Candidates
+     */
+    candidates: Array<CandidateOptionDto>;
+    /**
+     * Rejectedcandidates
+     *
+     * what the architect has refused; authoritative for the life of this pending intent and never offered again inside it
+     */
+    rejectedCandidates: Array<string>;
+    /**
+     * Reasoncode
+     */
+    reasonCode: string;
+    /**
+     * Continuationtoken
+     *
+     * send this back to continue; null means terminal
+     */
+    continuationToken: string | null;
+    /**
+     * Turn
+     *
+     * which round of this exchange this answer is
+     */
+    turn: number;
 };
 
 /**
@@ -2270,9 +2520,9 @@ export type CompileIntentApiIntentsPostData = {
 
 export type CompileIntentApiIntentsPostErrors = {
     /**
-     * Validation Error
+     * Unprocessable Entity
      */
-    422: HttpValidationError;
+    422: IntentBlockedDto;
 };
 
 export type CompileIntentApiIntentsPostError = CompileIntentApiIntentsPostErrors[keyof CompileIntentApiIntentsPostErrors];

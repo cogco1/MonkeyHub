@@ -58,6 +58,10 @@ class ErrorShapeTests(unittest.TestCase):
             {
                 "code": "BLOCKED_NEEDS_HUMAN",
                 "detail": "the span cannot be resolved without a decision",
+                # Every refusal a person answers is one of the four outcomes,
+                # and says which. A refusal raised outside a clarification
+                # chain carries no pendingIntent, because there is none.
+                "outcome": "NEEDS_CLARIFICATION",
                 "question": "Which structural depth applies to the long span?",
                 "acceptedForms": ["400mm", "600mm"],
             },

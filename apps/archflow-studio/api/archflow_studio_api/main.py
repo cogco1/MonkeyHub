@@ -23,6 +23,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
 from . import routes
+from .application.clarification import PendingIntentStore
 from .application.events import StudioEvents
 from .application.intent_agent import compiler_from_settings
 from .application.jobs import JobRegistry
@@ -179,6 +180,11 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # is one verdict and one event rather than two of each. In memory, like
     # everything above it, and lost on restart for the same reason.
     app.state.validations = ValidationStore()
+    # One pending clarification per exchange, keyed by its continuation token
+    # and bound to the stateDigest it was opened against. The chat log is not
+    # the truth about what was asked; this is, and like everything above it,
+    # it is one process's memory and is lost on restart.
+    app.state.pending_intents = PendingIntentStore()
     # Who compiles an architect's sentence into the grammar: nobody (the
     # deterministic pass-through), a local codex process, or the Anthropic
     # API — chosen by the settings this app was built with, held here so a

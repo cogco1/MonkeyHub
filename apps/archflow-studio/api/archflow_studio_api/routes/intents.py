@@ -1,13 +1,20 @@
-"""``/api/intents``: the architect's sentence, compiled by an agent, typed by
-the grammar.
+"""``/api/intents``: the architect's sentence, resolved against the record,
+compiled by an agent, typed by the grammar.
 
-The route does three things in order and nothing else: it asks the process's
-intent compiler what the request means against the record sheet; it insists
-the answer is a sentence in the grammar (or turns the agent's question into
-the same ``BLOCKED_NEEDS_HUMAN`` a human would get); and it hands that
-sentence to the deterministic seam exactly as ``POST /api/proposals`` would.
-The proposal that comes back is the record's — the agent chose the words, the
-grammar and the record chose the number's meaning and the closure.
+The route does four things in order and nothing else. It resumes the pending
+intent the request's ``continuationToken`` names, if there is one — that token
+is the *whole* of the continuity, and no chat transcript is sent or read. It
+asks the resolver what the request is about, which settles the target from the
+component tree and an explicit choice rather than from the nearest similar
+string. It hands the *resolved* target to the process's intent compiler and
+insists the answer is a sentence in the grammar. And it hands that sentence to
+the deterministic seam exactly as ``POST /api/proposals`` would.
+
+Four answers and no fifth. ``COMPILED`` is the 201 below; the other three are
+refusals carrying the pending intent they belong to, so the next request
+continues the same exchange instead of starting a new one that has forgotten
+everything. The rule that ends the loop lives in the resolver: a round that
+narrows nothing terminates rather than asking again.
 """
 
 from __future__ import annotations
@@ -19,7 +26,9 @@ from starlette.requests import Request
 
 from dataclasses import replace
 
+from ..application import clarification
 from ..application.binding import bound_project
+from ..application.clarification import PendingIntentStore, Resolution
 from ..application.gestures import read_gestures
 from ..application.intent import (
     DeterministicIntentProvider,
@@ -31,17 +40,25 @@ from ..application.intent_agent import (
     IntentCompiler,
     Selection,
     context_refs,
-    require_grammatical,
 )
 from ..application.projection import project_state
 from ..application.proposals import proposal_from
-from ..transport.errors import StudioError
+from ..transport.errors import (
+    BlockedNeedsHuman,
+    MissingEditableControl,
+    StudioError,
+    UnsupportedRequest,
+)
 from ..transport.intent import (
+    IntentBlockedDto,
     IntentDto,
     IntentRequestDto,
     IntentTimingsDto,
     agent_dto,
+    draft_body,
     gesture_from,
+    pending_body,
+    pending_dto,
 )
 from ..transport.proposal import to_dto
 from .proposals import _require_bound_project
@@ -49,14 +66,47 @@ from .proposals import _require_bound_project
 router = APIRouter(tags=["intents"])
 
 
+def _refused(
+    store: PendingIntentStore, *, token: str | None, resolution: Resolution
+) -> StudioError:
+    """One of the three refusing outcomes, as the error the route raises.
+
+    The old token is closed whatever happens: a continuation is used once, so a
+    reply cannot be replayed against a round that has already moved on. A
+    non-terminal answer opens a new one; a terminal answer opens none, and its
+    ``continuationToken`` is ``null`` — which is how the client knows to stop
+    offering an input box.
+    """
+
+    store.close(token)
+    if not resolution.terminal:
+        store.open(resolution.pending)
+    pending = pending_body(resolution.pending)
+    if resolution.outcome == clarification.MISSING_EDITABLE_CONTROL:
+        return MissingEditableControl(
+            resolution.detail,
+            pending=pending,
+            draft=None if resolution.draft is None else draft_body(resolution.draft),
+        )
+    if resolution.outcome == clarification.UNSUPPORTED:
+        return UnsupportedRequest(resolution.detail, pending=pending)
+    return BlockedNeedsHuman(
+        resolution.detail,
+        question=resolution.question or "",
+        accepted_forms=resolution.accepted_forms,
+        pending=pending,
+    )
+
+
 @router.post(
     "/intents",
     response_model=IntentDto,
     response_model_by_alias=True,
     status_code=201,
+    responses={422: {"model": IntentBlockedDto}},
 )
 def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
-    """Compile one request against the current selection, then propose it."""
+    """Compile one request against the resolved target, then propose it."""
 
     binding = bound_project(request.app.state)
     _require_bound_project(binding, body.project_id)
@@ -69,17 +119,18 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             f"{binding.project_id} is at {projection.state_digest}. Read "
             "/api/state again and ask against the state that answers now.",
         )
-    # A sentence already in the grammar is not read by the agent: the grammar
-    # is the truth about it, the agent could only re-target it, and the
-    # architect who typed an exact sentence gets the same answer, in the same
-    # time, as before there was an agent at all.
-    compiler: IntentCompiler = (
-        DeterministicCompiler()
-        if parse_utterance(body.utterance) is not None
-        else request.app.state.intent_compiler
+    store: PendingIntentStore = request.app.state.pending_intents
+    # A pending intent is bound to a stateDigest. One opened against a state
+    # the project has left is void and is never applied to the state that
+    # answers now — the client is told so rather than being answered about a
+    # record it was not looking at.
+    pending = (
+        None
+        if body.continuation_token is None
+        else store.resume(body.continuation_token, projection.state_digest)
     )
     # What was drawn, read into the record's names before anyone reads the
-    # words: a circle with no pick is the selection; a keep mark is a keep
+    # words: a circle with no pick is the selection, a keep mark is a keep
     # clause. Both are the server's, and both are printed back as facts.
     reading = read_gestures(projection, [gesture_from(dto) for dto in body.gestures])
     selection = Selection(
@@ -87,18 +138,45 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         element_id=body.element_id,
         gestures=reading.facts,
     )
-    if selection.component_id is None and reading.target is not None:
-        selection = replace(
-            selection,
-            component_id=reading.target.component_id,
-            element_id=reading.target.element_id,
-        )
+    # Three of the four outcomes are reached here, without a model: an action
+    # no grammar expresses, a target the record cannot resolve, and a component
+    # that has no editable control. The last of those is why the agent is not
+    # asked at all in that case — an agent shown the whole record sheet would
+    # offer the nearest element whose field happens to share a name.
+    resolution = clarification.resolve(
+        projection,
+        utterance=body.utterance,
+        selection=selection,
+        picked=reading.target,
+        has_camera=bool(body.gestures),
+        pending=pending,
+    )
+    if resolution.outcome != clarification.COMPILED:
+        raise _refused(store, token=body.continuation_token, resolution=resolution)
+    assert resolution.selection is not None
+    # A sentence already in the grammar is not read by the agent: the grammar
+    # is the truth about it, and the architect who typed an exact sentence gets
+    # the same answer, in the same time, as before there was an agent at all.
+    compiler: IntentCompiler = (
+        DeterministicCompiler()
+        if parse_utterance(body.utterance) is not None
+        else request.app.state.intent_compiler
+    )
     compiled_at = time.perf_counter()
     compilation = compiler.compile(
-        message=body.utterance, selection=selection, projection=projection
+        message=body.utterance,
+        selection=resolution.selection,
+        projection=projection,
     )
     compile_ms = int((time.perf_counter() - compiled_at) * 1000)
-    require_grammatical(compilation)
+    # What the compiler answered, in the same four outcomes. An agent that asks
+    # still names a target, and that target is kept: losing it is what made the
+    # next round start from nothing.
+    resolution = clarification.read_compilation(
+        projection, compilation=compilation, resolution=resolution, pending=pending
+    )
+    if resolution.outcome != clarification.COMPILED:
+        raise _refused(store, token=body.continuation_token, resolution=resolution)
     assert compilation.utterance is not None
     if reading.keep_refs:
         compilation = replace(
@@ -106,13 +184,31 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             utterance=merge_keep(compilation.utterance, reading.keep_refs),
         )
     typed_at = time.perf_counter()
-    proposal = proposal_from(
-        DeterministicIntentProvider(projection).propose(
+    try:
+        parts = DeterministicIntentProvider(projection).propose(
             session_ref=f"project:{binding.project_id}",
             message=compilation.utterance,
-            context_refs=context_refs(body.state_digest, compilation, selection),
+            context_refs=context_refs(
+                body.state_digest, compilation, resolution.selection
+            ),
         )
-    )
+    except BlockedNeedsHuman as exc:
+        # The grammar refuses for reasons only it knows — a locked parameter, a
+        # unit it will not convert, an element of another component. Its
+        # sentence is the record's and travels verbatim; what it was missing
+        # was the exchange it belongs to and whether that is still advancing.
+        raise _refused(
+            store,
+            token=body.continuation_token,
+            resolution=clarification.blocked(
+                exc.detail,
+                question=exc.question,
+                resolution=resolution,
+                pending=pending,
+                accepted_forms=exc.accepted_forms,
+            ),
+        ) from exc
+    proposal = proposal_from(parts)
     # What compiled the words travels with what they became. A sentence
     # already in the grammar was read by no model and carries no receipt.
     proposal = replace(
@@ -123,9 +219,14 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     )
     request.app.state.proposals.put(proposal)
     type_ms = int((time.perf_counter() - typed_at) * 1000)
+    # The exchange is over: the token that got here is spent, and the pending
+    # intent that comes back carries a null one.
+    store.close(body.continuation_token)
     return IntentDto(
+        outcome=clarification.COMPILED,
         agent=agent_dto(compilation),
         proposal=to_dto(proposal),
         timings=IntentTimingsDto(compile_ms=compile_ms, type_ms=type_ms),
         gestures=list(reading.facts),
+        pending_intent=pending_dto(resolution.pending),
     )

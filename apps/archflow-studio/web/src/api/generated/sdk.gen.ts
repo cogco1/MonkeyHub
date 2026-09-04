@@ -121,7 +121,7 @@ export const readProposalApiProposalsProposalIdGet = <ThrowOnError extends boole
 /**
  * Compile Intent
  *
- * Compile one request against the current selection, then propose it.
+ * Compile one request against the resolved target, then propose it.
  */
 export const compileIntentApiIntentsPost = <ThrowOnError extends boolean = false>(options: Options<CompileIntentApiIntentsPostData, ThrowOnError>): RequestResult<CompileIntentApiIntentsPostResponses, CompileIntentApiIntentsPostErrors, ThrowOnError> => (options.client ?? client).post<CompileIntentApiIntentsPostResponses, CompileIntentApiIntentsPostErrors, ThrowOnError>({
     url: '/api/intents',

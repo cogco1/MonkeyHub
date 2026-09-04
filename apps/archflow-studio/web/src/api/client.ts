@@ -19,6 +19,10 @@
 
 import { connection } from "./connection";
 import {
+  BLOCKED_NEEDS_HUMAN,
+  MISSING_EDITABLE_CONTROL,
+  STALE_CLARIFICATION,
+  UNSUPPORTED_REQUEST,
   call,
   NETWORK_ERROR,
   StudioApiError,
@@ -63,7 +67,16 @@ import type {
 // The error type and its codes are defined in `error.ts` so that the
 // connection can refuse a server in the same shape a call refuses an answer.
 // They are re-exported here because this module is what the app imports.
-export { NETWORK_ERROR, StudioApiError, TRANSPORT_ERROR, asStudioApiError };
+export {
+  BLOCKED_NEEDS_HUMAN,
+  MISSING_EDITABLE_CONTROL,
+  NETWORK_ERROR,
+  STALE_CLARIFICATION,
+  StudioApiError,
+  TRANSPORT_ERROR,
+  UNSUPPORTED_REQUEST,
+  asStudioApiError,
+};
 
 /**
  * The route the SSE panel opens `EventSource` against, on this connection's

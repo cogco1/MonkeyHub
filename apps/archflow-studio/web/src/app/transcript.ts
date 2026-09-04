@@ -54,7 +54,28 @@ export type Entry =
        */
       refinements: number;
     }
-  | { kind: "question"; id: string; error: StudioApiError; utterance: string }
+  | {
+      /**
+       * `NEEDS_CLARIFICATION`: the server needs something only a person can
+       * settle, and said which slot. The error carries the pending intent this
+       * question belongs to; answering it continues that exchange by token.
+       */
+      kind: "question";
+      id: string;
+      error: StudioApiError;
+      utterance: string;
+    }
+  | {
+      /**
+       * `MISSING_EDITABLE_CONTROL` or `UNSUPPORTED`: the exchange is over and
+       * the server has said what it lacks. There is no input box on this card:
+       * asking again is exactly the loop these two outcomes exist to end.
+       */
+      kind: "terminal";
+      id: string;
+      error: StudioApiError;
+      utterance: string;
+    }
   | { kind: "refusal"; id: string; error: StudioApiError; what: string }
   | {
       kind: "candidate";
@@ -86,6 +107,7 @@ export type EntryDraft =
   | Omit<Extract<Entry, { kind: "you" }>, "id">
   | Omit<Extract<Entry, { kind: "proposal" }>, "id">
   | Omit<Extract<Entry, { kind: "question" }>, "id">
+  | Omit<Extract<Entry, { kind: "terminal" }>, "id">
   | Omit<Extract<Entry, { kind: "refusal" }>, "id">
   | Omit<Extract<Entry, { kind: "candidate" }>, "id">
   | Omit<Extract<Entry, { kind: "verdict" }>, "id">

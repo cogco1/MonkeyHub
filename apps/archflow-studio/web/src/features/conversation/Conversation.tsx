@@ -23,8 +23,9 @@ import type { Entry } from "../../app/transcript";
 import { useT, type TFunction } from "../../i18n/useT";
 import { CandidateCard } from "./cards/CandidateCard";
 import { CompareCard } from "./cards/CompareCard";
+import { MissingControlCard } from "./cards/MissingControlCard";
 import { ProposalCard } from "./cards/ProposalCard";
-import { QuestionCard } from "./cards/QuestionCard";
+import { QuestionCard, type Choice } from "./cards/QuestionCard";
 import { ReadingLine } from "./cards/ReadingLine";
 import { RefusalCard } from "./cards/RefusalCard";
 import { SystemLine } from "./cards/Verbatim";
@@ -37,6 +38,12 @@ const FOLLOW_SLOP_PX = 40;
 export interface ConversationCallbacks {
   onRun(proposalId: string): void;
   onReply(text: string): void;
+  /**
+   * Answer a question with one of the server's own candidates: the selection
+   * moves and the pending intent is continued in one step, so the target the
+   * next request is about is never the stale one.
+   */
+  onChoose(choice: Choice): void;
   /** Put a proposal's compiled sentence back in the composer to edit it. */
   onAdjust(utterance: string): void;
   /** Move a proposal's number by hand; the entry is refined in place. */
@@ -211,7 +218,20 @@ function renderEntry(
       return (
         <>
           <p className="msg__who">{t("conversation.who.needsYou")}</p>
-          <QuestionCard error={entry.error} onReply={callbacks.onReply} />
+          <QuestionCard
+            error={entry.error}
+            onReply={callbacks.onReply}
+            onChoose={callbacks.onChoose}
+          />
+        </>
+      );
+    case "terminal":
+      // The exchange ended. This card asks nothing, so there is nobody it is
+      // waiting on: it is the studio saying what it is missing.
+      return (
+        <>
+          <p className="msg__who">{t("conversation.who.studio")}</p>
+          <MissingControlCard error={entry.error} />
         </>
       );
     case "refusal":

@@ -21,13 +21,22 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { asStudioApiError, studio, type StudioApiError } from "../api/client";
+import {
+  BLOCKED_NEEDS_HUMAN,
+  MISSING_EDITABLE_CONTROL,
+  STALE_CLARIFICATION,
+  UNSUPPORTED_REQUEST,
+  asStudioApiError,
+  studio,
+  type StudioApiError,
+} from "../api/client";
 import type { ServerIdentity } from "../api/connection";
 import type {
   ArtifactListDto,
   CandidateDto,
   CompareDto,
   GestureDto,
+  PendingIntentDto,
   ProjectArtifactDto,
   ProposalDto,
   StateProjectionDto,
@@ -42,6 +51,7 @@ import {
   seatOf,
 } from "../features/artifacts/artifactLabels";
 import { Conversation } from "../features/conversation/Conversation";
+import type { Choice } from "../features/conversation/cards/QuestionCard";
 import type { Selection } from "../features/conversation/Composer";
 import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { honestyCount } from "../features/evidence/HonestyTab";
@@ -66,7 +76,8 @@ import { LoadingOverlay } from "./LoadingOverlay";
 import { useSession } from "./useSession";
 import { useTranscript, type SystemTextPart } from "./transcript";
 
-const BLOCKED = "BLOCKED_NEEDS_HUMAN";
+/** The three refusing outcomes of an intent, and the two that end an exchange. */
+const TERMINAL_OUTCOMES = [MISSING_EDITABLE_CONTROL, UNSUPPORTED_REQUEST];
 
 function systemText(parts: readonly SystemTextPart[]): {
   readonly text: string;
@@ -149,6 +160,12 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [picked, setPicked] = useState<PickedFacts | null>(null);
   const [draft, setDraft] = useState("");
+  // The one clarification this tab is in the middle of, as the server described
+  // it. A ref rather than state because it is not drawn: the cards show what
+  // the server said, and this holds only the token the next request carries
+  // back. There is deliberately no second copy of the conversation here — the
+  // transcript is history, and the pending intent is the server's.
+  const pendingIntentRef = useRef<PendingIntentDto | null>(null);
 
   const [artifacts, setArtifacts] = useState<Loadable<ArtifactListDto>>(idle);
   const [artifactLoadingSha, setArtifactLoadingSha] = useState<string | null>(
@@ -600,11 +617,54 @@ export default function App({ server }: { server: ServerIdentity }) {
   // ref is what stops a second send that arrives before React has re-rendered
   // with it — Enter and the form's own submission can both fire for one key.
   const proposingRef = useRef(false);
+  /**
+   * Take the target the server resolved, whatever this tab was pointing at.
+   *
+   * The selection and the pending target move together or not at all. That is
+   * the whole of "no — the columns" working: the correction is not a hint the
+   * next request may or may not act on, it is the state of this tab from the
+   * moment the answer arrives.
+   */
+  const adoptTarget = useCallback(
+    (pending: PendingIntentDto) => {
+      const componentId = pending.targetComponentId;
+      if (componentId === null) return;
+      const elementId = pending.elementId ?? null;
+      if (
+        selection !== null &&
+        selection.componentId === componentId &&
+        selection.elementId === elementId
+      ) {
+        return;
+      }
+      setSelection({ componentId, elementId });
+      // The picked chip described the old subject; it must not outlive it, and
+      // neither must the mark on the model that went with it.
+      setPicked(null);
+      viewportRef.current?.highlight(null);
+      append({
+        kind: "system",
+        ...systemText([
+          { kind: "prose", text: "Now talking about " },
+          { kind: "technical", text: elementId ?? componentId },
+          { kind: "prose", text: " · the target the server resolved" },
+        ]),
+      });
+    },
+    [append, selection],
+  );
   const propose = useCallback(
-    async (utterance: string) => {
+    async (utterance: string, override?: Selection | null) => {
       if (stateDigest === null || project === null) return;
       if (proposingRef.current) return;
       proposingRef.current = true;
+      // What this request is asked against, and which exchange it belongs to.
+      // The token is the whole of the continuity: no transcript is sent, and
+      // the pending intent it names carries the original sentence, the target
+      // resolved so far and everything already ruled out.
+      const asked = override === undefined ? selection : override;
+      const continuationToken =
+        pendingIntentRef.current?.continuationToken ?? null;
       // The architect's sentence, exactly as said; the marks on their own line.
       append({ kind: "you", text: utterance });
       if (gestures.length > 0) {
@@ -650,12 +710,16 @@ export default function App({ server }: { server: ServerIdentity }) {
         // record's, and the agent's reading travels beside it, kept apart.
         const answer = await studio.compileIntent({
           stateDigest,
-          targetComponentId: selection?.componentId ?? null,
-          elementId: selection?.elementId ?? null,
+          targetComponentId: asked?.componentId ?? null,
+          elementId: asked?.elementId ?? null,
           utterance,
           projectId: project.projectId,
           gestures: [...gestures],
+          continuationToken,
         });
+        // COMPILED, the one outcome that is a proposal: the exchange is over
+        // and the token that got here is spent.
+        pendingIntentRef.current = null;
         // What the server read off the marks, in the record's names — printed
         // before the proposal so the reader sees what the sentence was said with.
         for (const fact of answer.gestures ?? []) {
@@ -734,7 +798,28 @@ export default function App({ server }: { server: ServerIdentity }) {
         // stand from the last one: the picture goes back to the loaded model.
         viewportRef.current?.ghost(null);
         setGhostProposalId(null);
-        if (error.code === BLOCKED) {
+        const pending = error.pendingIntent;
+        if (error.code === STALE_CLARIFICATION) {
+          // The pending intent was opened against a state the project has
+          // left. It is void — an answer given about the old record is not
+          // applied to the new one — so this tab drops it rather than
+          // continuing an exchange nobody checked.
+          pendingIntentRef.current = null;
+          append({ kind: "refusal", error, what: "POST /api/intents" });
+        } else if (pending !== null) {
+          // A refusal that belongs to a clarification moves this tab with it:
+          // the target the server resolved is the target the next sentence is
+          // about, and the two are never allowed to disagree. A terminal
+          // outcome leaves no token, so the card that shows it asks nothing.
+          adoptTarget(pending);
+          pendingIntentRef.current =
+            pending.continuationToken === null ? null : pending;
+          append({
+            kind: TERMINAL_OUTCOMES.includes(error.code) ? "terminal" : "question",
+            error,
+            utterance,
+          });
+        } else if (error.code === BLOCKED_NEEDS_HUMAN) {
           append({ kind: "question", error, utterance });
         } else {
           recoverFromStaleBase(error);
@@ -747,6 +832,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       }
     },
     [
+      adoptTarget,
       append,
       gestures,
       project,
@@ -758,6 +844,41 @@ export default function App({ server }: { server: ServerIdentity }) {
       stateDigest,
       t,
     ],
+  );
+
+  /**
+   * Answer a question with one of the server's own candidates.
+   *
+   * One click does all of it: the selection moves to what was chosen and the
+   * original request is asked again against it, carrying the pending intent's
+   * token. Nothing is retyped, and the request that follows cannot be about
+   * the thing that was just ruled out.
+   */
+  const chooseCandidate = useCallback(
+    (choice: Choice) => {
+      const pending = pendingIntentRef.current;
+      if (pending === null) return;
+      const next: Selection = {
+        componentId: choice.componentId,
+        elementId: choice.elementId,
+      };
+      setSelection(next);
+      setPicked(null);
+      viewportRef.current?.highlight(null);
+      append({
+        kind: "system",
+        ...systemText([
+          { kind: "prose", text: "Now talking about " },
+          { kind: "technical", text: choice.elementId ?? choice.componentId },
+          {
+            kind: "prose",
+            text: " · chosen from the answers the server offered",
+          },
+        ]),
+      });
+      void propose(pending.originalUtterance, next);
+    },
+    [append, propose],
   );
 
   /**
@@ -801,7 +922,13 @@ export default function App({ server }: { server: ServerIdentity }) {
         setGhostProposalId(copied > 0 ? answer.proposal.proposalId : null);
       } catch (cause) {
         const error = asStudioApiError(cause);
-        if (error.code === BLOCKED) {
+        // A refinement is a sentence already in the grammar against a target
+        // the record just answered about, so it starts no clarification and
+        // carries no token. It can still be refused, and a refusal that ends
+        // the matter shows the card that ends it.
+        if (TERMINAL_OUTCOMES.includes(error.code)) {
+          append({ kind: "terminal", error, utterance });
+        } else if (error.code === BLOCKED_NEEDS_HUMAN) {
           append({ kind: "question", error, utterance });
         } else {
           recoverFromStaleBase(error);
@@ -1402,7 +1529,12 @@ export default function App({ server }: { server: ServerIdentity }) {
             }}
             callbacks={{
               onRun: (proposalId) => void runCandidate(proposalId),
+              // An accepted form is a shape to type a number into, so it goes
+              // into the composer; sending it verbatim would earn the same
+              // question back. A candidate is an answer, so it is sent — see
+              // onChoose, which moves the selection with it.
               onReply: setDraft,
+              onChoose: chooseCandidate,
               onAdjust: (sentence) => {
                 // Adjust puts the compiled sentence in the composer to edit.
                 // Text already there is not lost silently, and the ghost of
