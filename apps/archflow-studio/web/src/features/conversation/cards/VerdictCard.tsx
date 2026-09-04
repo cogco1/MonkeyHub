@@ -3,7 +3,7 @@
  *
  * Three refusals are built into this card. It never says "validation passed":
  * it shows the receipt's own `passed` and every finding. It never computes
- * `advance`: the word is the server's boolean and `blockedBy` names the
+ * `reviewReady`: the word is the server's boolean and `blockedBy` names the
  * clauses that refused — each review line below is a clause or two of the
  * server's verdict, named underneath in the server's own words. And it never
  * loses a state: the three-state chips are the candidate's own block, copied
@@ -125,10 +125,10 @@ export function VerdictCard({
         <p className="label">{t("verdict.safeQuestion")}</p>
         <p
           className={`card__word ${
-            value.advance ? "card__word--go" : "card__word--no"
+            value.reviewReady ? "card__word--go" : "card__word--no"
           }`}
         >
-          {value.advance ? t("verdict.mayAdvance") : t("verdict.blocked")}
+          {value.reviewReady ? t("verdict.reviewReady") : t("verdict.blocked")}
         </p>
       </div>
       <div className="card__row">

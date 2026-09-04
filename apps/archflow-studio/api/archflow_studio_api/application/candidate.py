@@ -59,6 +59,7 @@ from .projection import (
     SELECTION_DECISION_REF,
     StateProjection,
     project_state,
+    require_actionable,
 )
 from .proposals import Proposal
 
@@ -179,6 +180,7 @@ def _operator_base(
     """
 
     projection = project_state(binding)
+    require_actionable(projection)
     if (
         projection.record_digest != expected_record_digest
         or projection.state_digest != expected_state_digest
@@ -279,7 +281,9 @@ def run_operator(
     """Replay one typed operator against the worker's latest bound record and run it."""
 
     seat_pack = load_seat_pack(binding.repository)
-    successor = apply_state_record_operator(project_state(binding).record, operator)
+    projection = project_state(binding)
+    require_actionable(projection)
+    successor = apply_state_record_operator(projection.record, operator)
     return _run_successor(binding, settings, seat_pack, successor, run_id, retain=retain)
 
 @dataclass(frozen=True, slots=True)
@@ -451,12 +455,12 @@ def _honesty(
 ) -> tuple[str, ...]:
     """What this candidate did not do, said out loud.
 
-    The studio replaces one authored value and runs; it does not recompute the
-    quantities that value feeds, because recomputation is the kernel's rule to
-    apply and the kernel has no successor operation yet (K1/P109). A candidate
-    whose geometry was built from a record where ``span`` still says what it
-    said before ``bay`` changed is not wrong — it is partial — and the
-    difference has to be on the wire, not in a design note somebody read once.
+    The kernel's ``StateRecordOperator`` applies the explicit edit and returns
+    the successor record. It deliberately does not invent new values for the
+    quantities that edit feeds. A candidate whose geometry was built from a
+    record where ``span`` still says what it said before ``bay`` changed is
+    therefore partial, and those unchanged downstream values must be named for
+    validation and human review rather than silently recomputed here.
     """
 
     if proposal is None:
@@ -471,8 +475,10 @@ def _honesty(
         )
     if proposal.impact.propagated:
         return (
-            f"derived values downstream of {proposal.target_ref} were not "
-            "recomputed for this candidate (K1/P109): "
+            f"this candidate applied only the explicit edit at "
+            f"{proposal.target_ref}; downstream derived values were not "
+            "automatically recomputed and must be assessed in validation/"
+            "review: "
             + ", ".join(proposal.impact.propagated),
         )
     if not projection.edges:

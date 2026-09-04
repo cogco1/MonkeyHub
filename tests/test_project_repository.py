@@ -176,6 +176,95 @@ class ProjectRepositoryTests(unittest.TestCase):
             b"voxel-data",
         )
 
+    def test_workspace_binary_lands_only_in_the_assigned_run_and_leaves_head_unchanged(
+        self,
+    ) -> None:
+        run = self.repository.create_run("workspace-run")
+        before = self.repository.read_head()
+
+        capture = self.repository.put_workspace_file(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_WORKSPACE,
+                run_id=run.run_id,
+            ),
+            artifact_id="viewport-capture-demo",
+            workspace_relative_path="studio-captures/viewport-demo.png",
+            media_type="image/png",
+            source=io.BytesIO(b"png-bytes"),
+        )
+
+        self.assertIsInstance(capture, ProjectArtifactRef)
+        self.assertEqual(
+            capture.relative_path,
+            "runs/workspace-run/workspaces/studio-captures/viewport-demo.png",
+        )
+        self.assertEqual(
+            self.repository.layout.resolve_record(capture).read_bytes(),
+            b"png-bytes",
+        )
+        self.assertEqual(self.repository.read_head(), before)
+
+        with self.assertRaisesRegex(ValueError, "run-workspace"):
+            self.repository.put_workspace_file(
+                run=run,
+                destination=PersistenceDestination(
+                    PersistenceArea.RUN_RECORD,
+                    run_id=run.run_id,
+                ),
+                artifact_id="misplaced-capture",
+                workspace_relative_path="studio-captures/misplaced.png",
+                media_type="image/png",
+                source=io.BytesIO(b"png-bytes"),
+            )
+
+    def test_workspace_binary_refuses_wrong_run_escape_and_overwrite(self) -> None:
+        run = self.repository.create_run("workspace-run")
+        other = self.repository.create_run("other-run")
+        workspace_destination = PersistenceDestination(
+            PersistenceArea.RUN_WORKSPACE,
+            run_id=run.run_id,
+        )
+
+        with self.assertRaisesRegex(ValueError, "another run"):
+            self.repository.put_workspace_file(
+                run=other,
+                destination=workspace_destination,
+                artifact_id="wrong-run-capture",
+                workspace_relative_path="studio-captures/wrong-run.png",
+                media_type="image/png",
+                source=io.BytesIO(b"png-bytes"),
+            )
+
+        with self.assertRaisesRegex(ValueError, "unsafe segment"):
+            self.repository.put_workspace_file(
+                run=run,
+                destination=workspace_destination,
+                artifact_id="escape-capture",
+                workspace_relative_path="../escape.png",
+                media_type="image/png",
+                source=io.BytesIO(b"png-bytes"),
+            )
+
+        fixed_path = "studio-captures/viewport-fixed.png"
+        self.repository.put_workspace_file(
+            run=run,
+            destination=workspace_destination,
+            artifact_id="fixed-capture",
+            workspace_relative_path=fixed_path,
+            media_type="image/png",
+            source=io.BytesIO(b"first-pixels"),
+        )
+        with self.assertRaisesRegex(ProjectIntegrityError, "different bytes"):
+            self.repository.put_workspace_file(
+                run=run,
+                destination=workspace_destination,
+                artifact_id="fixed-capture",
+                workspace_relative_path=fixed_path,
+                media_type="image/png",
+                source=io.BytesIO(b"changed-pixels"),
+            )
+
     def test_fixed_run_batch_creates_all_siblings_or_none(self) -> None:
         base = self.repository.read_head()
         run_a, run_b = self.repository.create_run_batch(

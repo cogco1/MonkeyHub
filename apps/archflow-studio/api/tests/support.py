@@ -19,6 +19,7 @@ import sys
 import archflow_studio_api  # noqa: F401
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.inputs import load_authored_record
 from archflow.project.record_kinds import (
     PROJECT_STAGE_WORKFLOW,
     PROMOTION_DECISION,
@@ -357,23 +358,43 @@ def retain_runner_receipt(
     *,
     design_state_digest: str | None,
     workflow_ref: str | None = None,
+    record_payload: object | None = None,
+    seat_results: object | None = None,
 ) -> ProjectRecordRef:
     """Retain the receipt a completed runner run leaves behind.
 
     ``design_state_digest=None`` writes a receipt that claims no digest, which
-    is what an older or interrupted runner can leave.
+    is what an older or interrupted runner can leave.  Like the production
+    runner, the fixture first retains the State Record bound to this exact run
+    and base, then points the receipt at that immutable record.
     """
 
+    authored = (
+        load_authored_record(repository).record
+        if record_payload is None
+        else StateRecord.from_dict(record_payload)
+    )
+    record = authored.bound_to(run)
+    state_record_ref = repository.put_json(
+        run=run,
+        destination=run_records(run.run_id),
+        record_kind=STATE_RECORD,
+        payload=record.to_dict(),
+    )
     payload: dict[str, object] = {
         "schema": "RunnerRunReceipt@3",
         "project_id": PROJECT_ID,
         "run_id": run.run_id,
         "seat_execution_complete": True,
+        "state_record_ref": state_record_ref.uri,
+        "state_record_digest": record.digest,
     }
     if design_state_digest is not None:
         payload["design_state_digest"] = design_state_digest
     if workflow_ref is not None:
         payload["workflow_ref"] = workflow_ref
+    if seat_results is not None:
+        payload["seat_results"] = seat_results
     return repository.put_json(
         run=run,
         destination=run_records(run.run_id),
@@ -493,12 +514,6 @@ def make_project(
         initial_state={"project_id": PROJECT_ID, "version": 0},
     )
     run = repository.create_run(REFERENCE_RUN_ID)
-    record_ref = repository.put_json(
-        run=run,
-        destination=run_records(REFERENCE_RUN_ID),
-        record_kind=STATE_RECORD,
-        payload=RECORD_PAYLOAD,
-    )
     write_runner_record(repository)
     write_runner_seats(repository)
     retain_runner_receipt(
@@ -509,6 +524,13 @@ def make_project(
             if design_state_digest is COMPUTED
             else design_state_digest
         ),
+    )
+    record_ref = next(
+        ref
+        for ref in repository.list_json(
+            run=run, destination=run_records(REFERENCE_RUN_ID)
+        )
+        if ref.record_kind == STATE_RECORD
     )
     return repository, record_ref
 
@@ -529,18 +551,17 @@ def make_portico_project(root: Path) -> tuple[FilesystemProjectRepository, str]:
         initial_state={"project_id": PROJECT_ID, "version": 0},
     )
     run = repository.create_run(REFERENCE_RUN_ID)
-    repository.put_json(
-        run=run,
-        destination=run_records(REFERENCE_RUN_ID),
-        record_kind=STATE_RECORD,
-        payload=PORTICO_RECORD_PAYLOAD,
-    )
     write_runner_record(repository, PORTICO_RECORD_PAYLOAD)
     write_runner_seats(repository, PORTICO_SEATS_PAYLOAD)
     digest = runner_state_digest(
         repository, REFERENCE_RUN_ID, PORTICO_RECORD_PAYLOAD
     )
-    retain_runner_receipt(repository, run, design_state_digest=digest)
+    retain_runner_receipt(
+        repository,
+        run,
+        design_state_digest=digest,
+        record_payload=PORTICO_RECORD_PAYLOAD,
+    )
     return repository, digest
 
 

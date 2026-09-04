@@ -31,6 +31,7 @@ from archflow_studio_api.transport.errors import StudioError
 from .support import (
     PORTICO_RECORD_PAYLOAD,
     RECORD_PAYLOAD,
+    make_empty_project,
     make_portico_project,
     write_runner_record,
 )
@@ -243,10 +244,15 @@ class FrameTestCase(unittest.TestCase):
     def test_the_frame_answers_for_a_record_the_kernel_will_not_view(self) -> None:
         """A record with no component tree still declares its own frame."""
 
-        write_runner_record(self.repository, _unviewable(PORTICO_RECORD_PAYLOAD))
-        state = self.client.get("/api/state").json()
+        repository = make_empty_project(self.root / "unviewable")
+        write_runner_record(repository, _unviewable(PORTICO_RECORD_PAYLOAD))
+        client = TestClient(
+            create_app(StudioSettings(project_dir=repository.layout.root))
+        )
+        self.addCleanup(client.close)
+        state = client.get("/api/state").json()
         self.assertIsNotNone(state["componentTreeError"])
-        body = self.client.get("/api/state/frame").json()
+        body = client.get("/api/state/frame").json()
         self.assertEqual([row["levelId"] for row in body["levels"]], [LEVEL])
 
 

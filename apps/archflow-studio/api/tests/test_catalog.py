@@ -33,7 +33,13 @@ from archflow_studio_api.application.projection import project_state
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
-from .support import PROJECT_ID, make_project, run_records, runner_state_digest
+from .support import (
+    PROJECT_ID,
+    make_project,
+    retain_runner_receipt,
+    run_records,
+    runner_state_digest,
+)
 
 SHA = "a" * 64
 
@@ -88,20 +94,13 @@ class CatalogTestCase(unittest.TestCase):
             {"seat_id": "seat-portico", "status": "proposal_accepted", "objects": len(OBJECTS),
              "cad": {"status": "succeeded", "path": "portico.3dm", "inspection_ref": ref.uri}}
         ]
-        self.repository.put_json(
-            run=run,
-            destination=run_records(self.run_id),
-            record_kind=RUNNER_RUN_RECEIPT,
-            payload={
-                "schema": "RunnerRunReceipt@3",
-                "project_id": PROJECT_ID,
-                "run_id": self.run_id,
-                "design_state_digest": runner_state_digest(
-                    self.repository, self.run_id
-                ),
-                "seat_execution_complete": True,
-                "seat_results": self.seat_results,
-            },
+        retain_runner_receipt(
+            self.repository,
+            run,
+            design_state_digest=runner_state_digest(
+                self.repository, self.run_id
+            ),
+            seat_results=self.seat_results,
         )
         self.app = create_app(
             StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=self.run_id)

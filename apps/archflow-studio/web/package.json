@@ -8,6 +8,7 @@
     "sync:loading": "node scripts/sync-loading.mjs",
     "sync": "npm run sync:rhino3dm && npm run sync:loading",
     "dev": "npm run sync && vite",
+    "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "npm run sync && tsc --noEmit && vite build",
     "api:dump": "py -3.12 scripts/dump-openapi.py",

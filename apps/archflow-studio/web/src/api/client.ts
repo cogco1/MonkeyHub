@@ -34,6 +34,7 @@ import {
   applyProgramApiProgramPost,
   compileIntentApiIntentsPost,
   createProposalApiProposalsPost,
+  createViewportCaptureApiCapturesPost,
   readArtifactBytesApiArtifactsSha256BytesGet,
   readArtifactsApiArtifactsGet,
   readCandidateApiCandidatesCandidateIdGet,
@@ -81,6 +82,7 @@ import type {
   SemanticsDto,
   StateProjectionDto,
   ValidationDto,
+  ViewportCaptureDto,
   VolumesDto,
 } from "./generated";
 
@@ -105,6 +107,16 @@ export {
  * so rather than this client pretending otherwise.
  */
 export const EVENTS_URL = connection.url("/api/events");
+
+function base64Of(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 32_768;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return window.btoa(binary);
+}
 
 // `GET /api/health` has no wrapper here on purpose. It answers whether the
 // process is up and whether its project binding opens — an operator's question,
@@ -204,6 +216,17 @@ export const studio = {
 
   artifacts(): Promise<ArtifactListDto> {
     return call("GET /api/artifacts", readArtifactsApiArtifactsGet());
+  },
+
+  /** Retain this browser-rendered PNG in the loaded run's P036 workspace. */
+  async capture(runId: string, png: Blob): Promise<ViewportCaptureDto> {
+    const pngBase64 = base64Of(await png.arrayBuffer());
+    return call(
+      "POST /api/captures",
+      createViewportCaptureApiCapturesPost({
+        body: { runId, pngBase64 },
+      }),
+    );
   },
 
   /**

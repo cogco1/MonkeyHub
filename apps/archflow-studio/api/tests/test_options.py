@@ -481,7 +481,7 @@ class RemoveFloorTests(OptionsTestCase):
 
 
 class SelectionTests(OptionsTestCase):
-    def _change_element_without_changing_massing_state(self) -> dict:
+    def _change_authored_wip_without_changing_the_retained_run(self) -> dict:
         path = self.repository.layout.resolve_relative(RUNNER_RECORD_PATH)
         payload = json.loads(path.read_text(encoding="utf-8"))
         for entity in payload["entities"]:
@@ -492,7 +492,7 @@ class SelectionTests(OptionsTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
-    def test_a_proposal_refuses_record_drift_hidden_by_the_state_digest(self) -> None:
+    def test_a_proposal_stays_bound_to_the_retained_run_when_wip_drifts(self) -> None:
         proposal_response = self.client.post(
             "/api/proposals",
             json={
@@ -504,38 +504,29 @@ class SelectionTests(OptionsTestCase):
         )
         self.assertEqual(proposal_response.status_code, 201, proposal_response.text)
         proposal = proposal_response.json()
-        runs_before = {path.name for path in self.repository.layout.runs.iterdir()}
-
-        current = self._change_element_without_changing_massing_state()
+        current = self._change_authored_wip_without_changing_the_retained_run()
         self.assertEqual(current["stateDigest"], proposal["baseStateDigest"])
-        self.assertNotEqual(current["recordDigest"], proposal["recordDigest"])
+        self.assertEqual(current["recordDigest"], proposal["recordDigest"])
 
         response = self.client.post(
             f"/api/proposals/{proposal['proposalId']}/candidate"
         )
 
-        self.assertEqual(response.status_code, 409, response.text)
-        self.assertEqual(response.json()["code"], "STALE_BASE")
-        self.assertEqual(
-            {path.name for path in self.repository.layout.runs.iterdir()},
-            runs_before,
-        )
+        self.assertEqual(response.status_code, 202, response.text)
+        self.assertEqual(self.finished(response.json()["jobId"])["status"], "succeeded")
 
-    def test_an_option_refuses_record_drift_hidden_by_the_state_digest(self) -> None:
+    def test_an_option_stays_bound_to_the_retained_run_when_wip_drifts(self) -> None:
+        before = self.client.get("/api/state").json()
         option = self.option("add_floor")
-        runs_before = {path.name for path in self.repository.layout.runs.iterdir()}
 
-        current = self._change_element_without_changing_massing_state()
+        current = self._change_authored_wip_without_changing_the_retained_run()
         self.assertEqual(current["stateDigest"], option["stateDigest"])
+        self.assertEqual(current["recordDigest"], before["recordDigest"])
 
         response = self.client.post(f"/api/options/{option['optionId']}/select")
 
-        self.assertEqual(response.status_code, 409, response.text)
-        self.assertEqual(response.json()["code"], "STALE_BASE")
-        self.assertEqual(
-            {path.name for path in self.repository.layout.runs.iterdir()},
-            runs_before,
-        )
+        self.assertEqual(response.status_code, 202, response.text)
+        self.assertEqual(self.finished(response.json()["jobId"])["status"], "succeeded")
 
     def test_selecting_an_option_runs_it_as_a_candidate(self) -> None:
         option = self.option("add_floor")

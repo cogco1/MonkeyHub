@@ -1,79 +1,109 @@
 # ArchFlow V4
 
-ArchFlow V4 explores **bounded architectural agency**: one primary Architect
-Agent may design freely with MCP, CLI, and discoverable capabilities inside an
-isolated workspace, while only validated submissions can advance canonical
-state.
+ArchFlow V4 is a framework for **bounded architectural agency**: agents work
+on explicit architectural state, produce candidate models, and submit evidence
+for validation and controlled promotion. Project history and canonical state
+are persisted through one project repository, P036.
 
-Start here:
+The current implementation is **StateRecord-driven**. Its working chain is:
 
-- [Dynamic map](docs/DYNAMIC_MAP.md) — current modules, status, next bounded
-  transition, and change rules.
-- [Architecture](docs/ARCHITECTURE.md) — the canonical/working-state boundary
-  and controlled-promotion model.
-- Architecture diagram —
-  [Chinese](docs/diagrams/v4-bounded-agency.svg) ·
-  [English](docs/diagrams/v4-bounded-agency.en.svg): phase-gated expert
-  reasoning, bounded Architect agency, controlled promotion, and dual
-  evaluation.
-- [Building probes](probes/README.md) — concrete building derivations and
-  evidence that never acquire framework generation authority.
-- [Project document boundary](archflow/project/README.md) — project identity,
-  layout, logical references, and the fail-closed persistence ports.
-- [External runtime configuration](config/README.md) — explicit workspace,
-  cache, and temp roots for active projects outside the checkout.
-
-Current phase: **P3 dual-state architecture realignment**. The repository
-proves the bounded control skeleton, one Minecraft MCP adapter, read-only voxel
-observation, minimal deterministic usability gates, dynamic expert discovery,
-soft multi-objective evaluation, and bounded repair. Raw-brief program
-derivation, a real model-backed Architect, durable cross-process state, and an
-accepted prompt-to-usable building remain planned or blocked.
-
-Run the deterministic proof:
-
-```powershell
-python -m unittest discover -s tests -v
+```text
+StateRecord → architectural elements → geometry program → Rhino export
+            → independent model readback → relation checks → retained run evidence
 ```
 
-Install the optional OpenNURBS reader and build a Rhino-free Pantheon progress
-snapshot:
+**ArchFlow Studio (MonkeyArch)** provides the browser interface: a FastAPI API
+and React/three.js client for inspecting 3DM models, selecting semantic objects,
+editing through typed operators, running candidates, and reviewing results.
+The client and server speak `archflow/2`.
+
+Studio uses the exact StateRecord retained by the selected reference run.
+Historical or incompletely bound references remain inspectable but cannot
+base new candidate work. Candidate review readiness does not issue a run or
+advance a stage; that remains the responsibility of `project.issue`.
+
+## Start here
+
+- [System map](docs/SYSTEM_MAP.md) — current capability owners and public APIs.
+- [Canonical spine](docs/CANONICAL_SPINE.md) — the record-driven architecture
+  and consolidation decisions.
+- [Studio guide](apps/archflow-studio/README.md) — setup, model interaction,
+  candidate execution, and validation.
+- [API protocol](docs/PROTOCOL.md) — client/server contracts and versioning.
+- [Dynamic map](docs/DYNAMIC_MAP.md) — active work and remaining plans.
+- [Project document boundary](archflow/project/README.md) — project identity,
+  storage layout, references, and persistence.
+- [Building probes](probes/README.md) — retained building cases and evidence.
+
+## Run Studio
+
+Use Python 3.12 and a Node.js version compatible with the web package's Vite
+and TypeScript dependencies. From the repository root, install the backend
+and optional 3DM reader:
 
 ```powershell
 py -3.12 -m pip install -e ".[cad-inspection]"
-py -3.12 tools/build_pantheon_progress_snapshot.py --no-persist
+py -3.12 -m pip install -r apps/archflow-studio/api/requirements.txt
 ```
 
-This reads the retained `.3dm` directly; it does not start Rhino. The snapshot
-checks file digest, document units, object/layer counts, user strings, bounding
-box, and geometry-program alignment. It is a non-authoritative view and never
-turns a candidate or passing local check into an accepted stage.
-
-Run the explicit probe-rooted framework smoke:
+In one terminal, start the API against an **existing P036 project directory**.
+Replace the placeholder with its absolute path; the server has no default project:
 
 ```powershell
-python tools/probe_smoke.py probes/test_library --run-id <new-run-id>
+cd apps/archflow-studio/api
+$env:ARCHFLOW_STUDIO_PROJECT_DIR = "<absolute path to a P036 project>"
+py -3.12 -m archflow_studio_api.main
 ```
 
-The case input and every generated state, receipt, workspace artifact, and
-manifest stay under `probes/test_library/`. The command is synthetic and does
-not claim that a library was architecturally designed or found usable.
-
-For an active project, copy the credential-free runtime example and initialize
-an external project root:
+In another terminal, starting from the repository root:
 
 ```powershell
-Copy-Item config/runtime.example.json config/runtime.json
-archflow-runtime --config config/runtime.json init
-archflow-runtime --config config/runtime.json bootstrap-project `
-  --project-id my-building `
-  --prompt "Design a building from the supplied brief."
+cd apps/archflow-studio/web
+npm install
+npm run dev
 ```
 
-Active project records then live under the configured
-`workspace/projects/<project_id>/`. Explicitly promoted regression or paper
-evidence belongs under `probes/<project_id>/`; tests keep disposable output in
-temporary directories. All project writes use P036 and the same project
-layout, regardless of physical root. If an output does not have one named
-destination, development stops for an ownership decision instead of creating
-an improvised path.
+Open [Studio](http://127.0.0.1:5174). The web development server proxies API
+requests to port 8000. See the [Studio guide](apps/archflow-studio/README.md)
+for reference-run selection, model providers, and optional Rhino execution.
+Opening retained models does not require launching Rhino; producing Rhino
+exports requires the separately configured executor.
+
+## Development checks
+
+From the repository root, with the backend dependencies installed:
+
+```powershell
+py -3.12 -m pip install pytest httpx2
+py -3.12 tools/archcheck.py
+py -3.12 -m pytest apps/archflow-studio/api/tests -q
+```
+
+For the web client, from `apps/archflow-studio/web`:
+
+```powershell
+npm --prefix tools/openapi-ts install
+npm test
+npm run typecheck
+npm run api:check
+```
+
+## Project data and current scope
+
+`archflow/` contains reusable mechanisms; `apps/archflow-studio/` contains the
+product interface. Active building projects live in an explicitly configured
+external project root. Promoted regression evidence belongs in `probes/`.
+Both use the same P036 layout and persistence owner.
+
+Studio viewport captures are PNG inspection images saved under the selected
+run's `workspaces/studio-captures/`. They are not certified model exports and
+do not change canonical HEAD. Runtime files, private project models, and
+machine-specific configuration do not belong in source commits.
+
+The current Studio workflow ends at candidate validation and human review.
+The richer canonical-state projection needed for complete obligation and
+commitment validation remains tracked by
+[P110](docs/mapping/planning/P110-canonical-state-projection.md).
+Planned capabilities and retained experiments are listed separately in the
+[dynamic map](docs/DYNAMIC_MAP.md); they are not a claim of a complete,
+autonomous brief-to-accepted-building workflow.

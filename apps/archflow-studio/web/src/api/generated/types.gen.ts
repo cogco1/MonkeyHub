@@ -3019,7 +3019,7 @@ export type ServerIdentityDto = {
     /**
      * Protocol
      *
-     * the protocol and its major version, 'archflow/1'
+     * the protocol and its major version, 'archflow/2'
      */
     protocol: string;
     /**
@@ -3174,11 +3174,11 @@ export type StudioEventDto = {
      */
     error?: string | null;
     /**
-     * Advance
+     * Reviewready
      *
-     * on validation.computed, the server's verdict; null on the lifecycle events, which decide nothing
+     * on validation.computed, whether the candidate is ready for human review; null on lifecycle events. This is not issue authority
      */
-    advance?: boolean | null;
+    reviewReady?: boolean | null;
     /**
      * Blockedby
      *
@@ -3291,11 +3291,11 @@ export type ValidationDto = {
      */
     seatExecutionComplete: boolean;
     /**
-     * Advance
+     * Reviewready
      *
-     * the server's verdict: every one of the five clauses holds. It is issued here and never derived by a client
+     * whether all five server-owned review clauses hold; this never issues a run or advances a stage
      */
-    advance: boolean;
+    reviewReady: boolean;
     /**
      * Blockedby
      *
@@ -3394,6 +3394,54 @@ export type ValidationReceiptDto = {
      * every finding the gates returned; empty is a real answer
      */
     findings: Array<ValidationFindingDto>;
+};
+
+/**
+ * ViewportCaptureDto
+ *
+ * A non-canonical PNG retained below the named run workspace.
+ */
+export type ViewportCaptureDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Relativepath
+     */
+    relativePath: string;
+    /**
+     * Sha256
+     */
+    sha256: string;
+    /**
+     * Mediatype
+     */
+    mediaType: string;
+    /**
+     * Sizebytes
+     */
+    sizeBytes: number;
+};
+
+/**
+ * ViewportCaptureRequestDto
+ *
+ * The loaded run and the PNG bytes the browser captured.
+ */
+export type ViewportCaptureRequestDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Pngbase64
+     */
+    pngBase64: string;
 };
 
 /**
@@ -3710,6 +3758,31 @@ export type ReadArtifactsApiArtifactsGetResponses = {
 };
 
 export type ReadArtifactsApiArtifactsGetResponse = ReadArtifactsApiArtifactsGetResponses[keyof ReadArtifactsApiArtifactsGetResponses];
+
+export type CreateViewportCaptureApiCapturesPostData = {
+    body: ViewportCaptureRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/captures';
+};
+
+export type CreateViewportCaptureApiCapturesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateViewportCaptureApiCapturesPostError = CreateViewportCaptureApiCapturesPostErrors[keyof CreateViewportCaptureApiCapturesPostErrors];
+
+export type CreateViewportCaptureApiCapturesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ViewportCaptureDto;
+};
+
+export type CreateViewportCaptureApiCapturesPostResponse = CreateViewportCaptureApiCapturesPostResponses[keyof CreateViewportCaptureApiCapturesPostResponses];
 
 export type ReadArtifactBytesApiArtifactsSha256BytesGetData = {
     body?: never;

@@ -2079,9 +2079,9 @@ button.chip:hover {
 }
 
 /* massing options */
-/* OptionsPanel.tsx: several massings side by side, as a panel over the stage.
-   It sits on the left where the frame sits on the right, so an architect can
-   have both open and read a shape against the datums it stands on. */
+/* OptionsPanel.tsx: several massings side by side, as a projection over the stage.
+   It sits on the left while the frame projection uses the right; neither
+   pretends to be geometry. */
 .options {
   position: absolute;
   top: 56px;

@@ -43,7 +43,7 @@ from ..application.intent_agent import (
     Selection,
     context_refs,
 )
-from ..application.projection import project_state
+from ..application.projection import project_state, require_actionable
 from ..application.proposals import proposal_from
 from ..transport.errors import (
     BlockedNeedsHuman,
@@ -113,6 +113,9 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     binding = bound_project(request.app.state)
     _require_bound_project(binding, body.project_id)
     projection = project_state(binding)
+    # Fail before resolution or model invocation: no compiler should explore
+    # against a historical run whose exact state cannot base new work.
+    require_actionable(projection)
     if body.state_digest != projection.state_digest:
         raise StudioError(
             409,

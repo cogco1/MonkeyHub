@@ -25,7 +25,9 @@ from .support import (
     PROJECT_ID,
     RECORD_PAYLOAD,
     REFERENCE_RUN_ID,
+    make_empty_project,
     make_project,
+    retain_runner_receipt,
     runner_state_digest,
     write_runner_record,
 )
@@ -245,13 +247,27 @@ class ElementTieBreakTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
-        self.repository, _ = make_project(self.root)
-        write_runner_record(self.repository, _prefixed_elements_payload())
+        payload = _prefixed_elements_payload()
+        self.repository = make_empty_project(self.root)
+        write_runner_record(self.repository, payload)
+        run = self.repository.create_run(REFERENCE_RUN_ID)
+        expected_digest = runner_state_digest(
+            self.repository, REFERENCE_RUN_ID, payload
+        )
+        retain_runner_receipt(
+            self.repository,
+            run,
+            design_state_digest=expected_digest,
+            record_payload=payload,
+        )
         self.client = TestClient(
             create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
-        self.state_digest = self.client.get("/api/state").json()["stateDigest"]
+        state = self.client.get("/api/state")
+        self.assertEqual(state.status_code, 200)
+        self.state_digest = state.json()["stateDigest"]
+        self.assertEqual(self.state_digest, expected_digest)
 
     def test_the_longest_element_id_that_prefixes_the_name_wins(self) -> None:
         response = self.client.post(

@@ -26,12 +26,21 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, SEAT_3DM_INSPECTION
+from archflow.project.record_kinds import SEAT_3DM_INSPECTION
 
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
-from .support import EVIDENCE, PROJECT_ID, RECORD_PAYLOAD, make_project, run_records, runner_state_digest, write_runner_record
+from .support import (
+    EVIDENCE,
+    PROJECT_ID,
+    RECORD_PAYLOAD,
+    make_project,
+    retain_runner_receipt,
+    run_records,
+    runner_state_digest,
+    write_runner_record,
+)
 
 SHA = "b" * 64
 # Standing south of the building, looking north: left is west.
@@ -121,12 +130,26 @@ class VillaLikeTestCase(unittest.TestCase):
             "object_count": len(objects),
             "document_user_strings": [{"key": "archflow:length_unit", "value": "meter"}],
         })
-        self.repository.put_json(run=run, destination=run_records(run_id), record_kind=RUNNER_RUN_RECEIPT, payload={
-            "schema": "RunnerRunReceipt@3", "project_id": PROJECT_ID, "run_id": run_id, "seat_execution_complete": True,
-            "design_state_digest": runner_state_digest(self.repository, run_id, record_payload),
-            "seat_results": [{"seat_id": "seat-portico", "status": "proposal_accepted", "objects": len(objects),
-                              "cad": {"status": "succeeded", "path": "portico.3dm", "inspection_ref": ref.uri}}],
-        })
+        retain_runner_receipt(
+            self.repository,
+            run,
+            design_state_digest=runner_state_digest(
+                self.repository, run_id, record_payload
+            ),
+            record_payload=record_payload,
+            seat_results=[
+                {
+                    "seat_id": "seat-portico",
+                    "status": "proposal_accepted",
+                    "objects": len(objects),
+                    "cad": {
+                        "status": "succeeded",
+                        "path": "portico.3dm",
+                        "inspection_ref": ref.uri,
+                    },
+                }
+            ],
+        )
         self.app = create_app(StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=run_id))
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)

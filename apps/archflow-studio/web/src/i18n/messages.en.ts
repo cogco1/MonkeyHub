@@ -45,7 +45,7 @@ export const messagesEn = {
   "evidence.honesty.noProjection": "No projection has been read in this tab",
   "evidence.honesty.projectionLines": "Record honesty · projection",
   "evidence.honesty.candidateLines": "Candidate honesty · {id}",
-  "evidence.honesty.verdictLines": "Verdict honesty · {id}",
+  "evidence.honesty.verdictLines": "Review-readiness notes · {id}",
   "evidence.honesty.identities": "Identities",
   "evidence.honesty.stateDigestUnavailable":
     "None — the kernel refused the bound view",
@@ -76,13 +76,14 @@ export const messagesEn = {
   "evidence.receipts.noModelExported": "No model was exported",
   "evidence.receipts.skippedRuns": "Skipped runs",
   "evidence.receipts.validationReceipt": "Validation receipt",
-  "evidence.receipts.noVerdict": "No verdict has been read for this candidate",
+  "evidence.receipts.noVerdict":
+    "No review-readiness result has been read for this candidate",
   "evidence.receipts.submission": "Submission",
   "evidence.receipts.checkedState": "Checked state",
   "evidence.receipts.passed": "Passed",
   "evidence.receipts.validators": "Validators",
   "evidence.receipts.effective": "Effective",
-  "evidence.receipts.advance": "Advance",
+  "evidence.receipts.reviewReady": "Ready for review",
   "evidence.receipts.blockedBy": "Blocked by",
   "evidence.receipts.noClauseRefused": "No clause refused",
   "evidence.receipts.findings": "Findings ({count})",
@@ -151,7 +152,7 @@ export const messagesEn = {
   "conversation.who.proposed": "Studio · proposed change",
   "conversation.who.needsYou": "Studio · needs you",
   "conversation.who.candidate": "Studio · candidate",
-  "conversation.who.verdict": "Studio · verdict",
+  "conversation.who.verdict": "Studio · review readiness",
   "conversation.who.compare": "Studio · before / after",
 
   "candidate.title": "Candidate",
@@ -281,8 +282,8 @@ export const messagesEn = {
   "verdict.checking": "checking…",
   "verdict.notFinished":
     "the server will not validate a candidate that has not finished",
-  "verdict.safeQuestion": "Is it safe?",
-  "verdict.mayAdvance": "May advance",
+  "verdict.safeQuestion": "Ready for human review?",
+  "verdict.reviewReady": "Ready for review",
   "verdict.blocked": "Blocked",
   "verdict.passed": "passed",
   "verdict.didNotPass": "did not pass",
@@ -290,13 +291,13 @@ export const messagesEn = {
   "verdict.protected": "Protected",
   "verdict.nothingProtected": "nothing was named to keep",
   "verdict.protectionExplanation":
-    "the studio never runs a change past a protection you named (a proposal that reaches one is refused before it runs); whether the relations on them held is not something this verdict reports",
+    "the studio never runs a change past a protection you named (a proposal that reaches one is refused before it runs); whether the relations on them held is not something this review-readiness result reports",
   "verdict.unresolved": "Unresolved",
   "verdict.nothingUnresolved":
     "nothing — no clause refused, no finding, nothing confessed",
   "verdict.refused": "refused",
   "verdict.serverSource":
-    "the verdict is the server's, read once per candidate and issue",
+    "review readiness is the server's result, read once per candidate and issue; project.issue alone can issue the run",
   "verdict.readReceipt": "Read the receipt",
   "verdict.held": "held",
 
@@ -391,6 +392,8 @@ export const messagesEn = {
   "stage.tools.remove.label": "Remove",
   "stage.tools.remove.title": "Mark what should go",
   "stage.tools.drawingHint": "Drawing: {tool} · press {tool} again to orbit",
+  "stage.tools.model": "Original",
+  "stage.tools.modelShow": "Restore the loaded model's original visibility and materials",
   "stage.tools.homeUnavailable":
     "This project has no export to come back to",
   "stage.tools.referenceShow":
@@ -401,6 +404,14 @@ export const messagesEn = {
   "stage.tools.home": "Home",
   "stage.tools.fit": "Fit",
   "stage.tools.front": "Front",
+  "stage.tools.screenshot": "Screenshot",
+  "stage.tools.screenshotTitle": "Save the current 3D view as a PNG",
+  "stage.tools.screenshotUnavailable": "Show a project run before taking a screenshot",
+  "stage.tools.screenshotBlendUnavailable":
+    "Exit version comparison before taking a screenshot",
+  "stage.tools.screenshotBusy": "Capturing…",
+  "stage.tools.screenshotSaved": "Saved: {path}",
+  "stage.tools.screenshotFailed": "Screenshot failed",
   "stage.tools.clear": "Clear",
   "stage.tools.open3dm": "Open .3dm",
   "stage.review.changeOne": "{count} change",
@@ -418,13 +429,13 @@ export const messagesEn = {
   "stage.source.status.noModel":
     "No model on screen · return to the reference run, choose a version below, or drop a local .3dm here",
   "stage.view.ghost": "Ghost preview",
-  "stage.view.validated": "Validated",
+  "stage.view.validated": "Review-ready",
   "stage.view.checked": "Checked",
   "stage.view.candidateExport": "Candidate export",
   "stage.view.current": "Current",
   "stage.view.approximate": "approximate",
-  "stage.view.mayAdvance": "may advance",
-  "stage.view.verdictUnread": "verdict not read yet",
+  "stage.view.reviewReady": "ready for review",
+  "stage.view.verdictUnread": "review readiness not read yet",
   "stage.view.blocked": "blocked",
   "stage.versions.ariaLabel": "Model versions",
   "stage.versions.reference": "Reference",

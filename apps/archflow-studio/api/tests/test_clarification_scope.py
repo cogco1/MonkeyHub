@@ -31,7 +31,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, SEAT_3DM_INSPECTION
+from archflow.project.record_kinds import SEAT_3DM_INSPECTION
 
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
@@ -41,7 +41,9 @@ from .support import (
     PROJECT_ID,
     RECORD_PAYLOAD,
     make_project,
+    retain_runner_receipt,
     run_records,
+    runner_state_digest,
     write_runner_record,
 )
 from .test_clarification_catalog import (
@@ -198,7 +200,8 @@ class StackedTestCase(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
-        write_runner_record(self.repository, stacked_record())
+        record_payload = stacked_record()
+        write_runner_record(self.repository, record_payload)
         (self.root / PROJECT_ID / "PROJECT.md").write_text(PROJECT_MD, encoding="utf-8")
         run_id = "inspected-001"
         run = self.repository.create_run(run_id)
@@ -218,28 +221,25 @@ class StackedTestCase(unittest.TestCase):
                 ],
             },
         )
-        self.repository.put_json(
-            run=run,
-            destination=run_records(run_id),
-            record_kind=RUNNER_RUN_RECEIPT,
-            payload={
-                "schema": "RunnerRunReceipt@3",
-                "project_id": PROJECT_ID,
-                "run_id": run_id,
-                "seat_execution_complete": True,
-                "seat_results": [
-                    {
-                        "seat_id": "seat-portico",
-                        "status": "proposal_accepted",
-                        "objects": len(objects),
-                        "cad": {
-                            "status": "succeeded",
-                            "path": "portico.3dm",
-                            "inspection_ref": ref.uri,
-                        },
-                    }
-                ],
-            },
+        retain_runner_receipt(
+            self.repository,
+            run,
+            design_state_digest=runner_state_digest(
+                self.repository, run_id, record_payload
+            ),
+            record_payload=record_payload,
+            seat_results=[
+                {
+                    "seat_id": "seat-portico",
+                    "status": "proposal_accepted",
+                    "objects": len(objects),
+                    "cad": {
+                        "status": "succeeded",
+                        "path": "portico.3dm",
+                        "inspection_ref": ref.uri,
+                    },
+                }
+            ],
         )
         self.app = create_app(
             StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=run_id)

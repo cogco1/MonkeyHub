@@ -30,6 +30,7 @@ from .support import (
     REFERENCE_RUN_ID,
     STRIPPED_RECORD_PAYLOAD,
     make_project,
+    retain_runner_receipt,
     runner_state_digest,
     write_runner_record,
 )
@@ -440,6 +441,14 @@ class NoParametersTests(ProposalTestCase):
     def setUp(self) -> None:
         super().setUp()
         write_runner_record(self.repository, STRIPPED_RECORD_PAYLOAD)
+        retain_runner_receipt(
+            self.repository,
+            self.repository.load_run(REFERENCE_RUN_ID),
+            design_state_digest=runner_state_digest(
+                self.repository, REFERENCE_RUN_ID, STRIPPED_RECORD_PAYLOAD
+            ),
+            record_payload=STRIPPED_RECORD_PAYLOAD,
+        )
         self.state_digest = self.client.get("/api/state").json()["stateDigest"]
 
     def test_a_parameter_intent_names_the_count_and_what_to_author(
@@ -480,6 +489,14 @@ class ZeroValueTests(ProposalTestCase):
             if entity["entity_id"] == "portico-base":
                 entity["fields"]["params"]["height"] = 0
         write_runner_record(self.repository, payload)
+        retain_runner_receipt(
+            self.repository,
+            self.repository.load_run(REFERENCE_RUN_ID),
+            design_state_digest=runner_state_digest(
+                self.repository, REFERENCE_RUN_ID, payload
+            ),
+            record_payload=payload,
+        )
         self.state_digest = self.client.get("/api/state").json()["stateDigest"]
 
     def test_a_percentage_of_zero_asks_for_an_absolute_value(self) -> None:

@@ -17,6 +17,7 @@ import type { EvidenceTab } from "../../app/evidence";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
 import { useT } from "../../i18n/useT";
 import type { SceneInspection } from "../../viewer/sceneInspection";
+import type { ModelDisplayMode } from "../../viewer/modelDisplay";
 import {
   ThreeDmViewport,
   type ViewportController,
@@ -60,6 +61,8 @@ export interface ReviewSummary {
   readonly needsReview: number;
 }
 
+export type CaptureState = "idle" | "busy" | "success" | "error";
+
 export function Stage({
   viewportRef,
   sourceLabel,
@@ -76,11 +79,9 @@ export function Stage({
   review,
   drawer,
   framePanel,
-  frameOpen,
-  onToggleFrame,
   optionsPanel,
-  optionsOpen,
-  onToggleOptions,
+  displayMode,
+  onDisplayMode,
   programPanel,
   programOpen,
   onToggleProgram,
@@ -102,6 +103,9 @@ export function Stage({
   blend,
   onBlend,
   onEndBlend,
+  captureState,
+  capturePath,
+  onCapture,
   onEvidence,
 }: {
   viewportRef: RefObject<ViewportController | null>;
@@ -123,11 +127,10 @@ export function Stage({
   drawer: ReactNode;
   /** The frame panel, mounted over the stage while the toolbar button is on. */
   framePanel: ReactNode;
-  frameOpen: boolean;
-  onToggleFrame(): void;
   optionsPanel: ReactNode;
-  optionsOpen: boolean;
-  onToggleOptions(): void;
+  /** The one global projection shown over the original model. */
+  displayMode: ModelDisplayMode;
+  onDisplayMode(mode: ModelDisplayMode): void;
   /** The program sheet, mounted the same way and beside it. */
   programPanel: ReactNode;
   programOpen: boolean;
@@ -161,10 +164,22 @@ export function Stage({
   blend: { candidateId: string; against: string; t: number; meshes: number } | null;
   onBlend(t: number): void;
   onEndBlend(): void;
+  captureState: CaptureState;
+  /** Relative project path returned after the server stores the PNG. */
+  capturePath: string | null;
+  onCapture(): Promise<void>;
   onEvidence(tab: EvidenceTab): void;
 }) {
   const t = useT();
   const activeTool = GESTURE_TOOLS.find((item) => item.kind === tool);
+  const captureFeedback =
+    captureState === "busy"
+      ? t("stage.tools.screenshotBusy")
+      : captureState === "success" && capturePath !== null
+        ? t("stage.tools.screenshotSaved", { path: capturePath })
+        : captureState === "error"
+          ? t("stage.tools.screenshotFailed")
+          : "";
   return (
     <section className="stage" aria-label={t("stage.ariaLabel")}>
       {/* A machine with no WebGL context throws while the renderer is built;
@@ -268,25 +283,32 @@ export function Stage({
             </span>
           )}
           <span className="viewtools__sep" aria-hidden="true" />
+          <button
+            type="button"
+            aria-pressed={displayMode === "model"}
+            title={t("stage.tools.modelShow")}
+            onClick={() => onDisplayMode("model")}
+          >
+            {t("stage.tools.model")}
+          </button>
           {/* The frame: what every element on this picture is placed
               against. A panel, not a camera tool, but this is the row an
               architect reaches for when the model is the question. */}
           <button
             type="button"
-            aria-pressed={frameOpen}
+            aria-pressed={displayMode === "framework"}
             title={t("frame.openTitle")}
-            onClick={onToggleFrame}
+            onClick={() => onDisplayMode("framework")}
           >
             {t("frame.open")}
           </button>
-          {/* The massing beside the frame: what the building *is*, next to
-              what it is placed against. Both are panels over the same
-              picture, and an architect reads them together. */}
+          {/* The massing projection: what the building *is*, over the same
+              original picture the frame reads against. */}
           <button
             type="button"
-            aria-pressed={optionsOpen}
+            aria-pressed={displayMode === "massing"}
             title={t("options.openTitle")}
-            onClick={onToggleOptions}
+            onClick={() => onDisplayMode("massing")}
           >
             {t("options.open")}
           </button>
@@ -326,6 +348,35 @@ export function Stage({
           <button type="button" onClick={() => viewportRef.current?.frontView()}>
             {t("stage.tools.front")}
           </button>
+          <button
+            type="button"
+            disabled={
+              loadedRunId === null ||
+              blend !== null ||
+              captureState === "busy"
+            }
+            title={
+              loadedRunId === null
+                ? t("stage.tools.screenshotUnavailable")
+                : blend !== null
+                  ? t("stage.tools.screenshotBlendUnavailable")
+                  : t("stage.tools.screenshotTitle")
+            }
+            onClick={() => void onCapture()}
+          >
+            {captureState === "busy"
+              ? t("stage.tools.screenshotBusy")
+              : t("stage.tools.screenshot")}
+          </button>
+          <span
+            className="viewtools__hint quiet mono"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            title={captureFeedback || undefined}
+          >
+            {captureFeedback}
+          </span>
           <button type="button" onClick={() => viewportRef.current?.clear()}>
             {t("stage.tools.clear")}
           </button>

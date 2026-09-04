@@ -40,6 +40,14 @@ import {
   type SceneInspection,
   type UserStrings,
 } from "./sceneInspection";
+import {
+  captureModelAppearance,
+  matchesSemanticCarrier,
+  restoreModelAppearance,
+  type ModelAppearance,
+  type SemanticHighlightTarget,
+} from "./modelDisplay";
+import { encodeViewportPng } from "./viewportScreenshot";
 
 export type ViewportStatus = "idle" | "loading" | "ready" | "error";
 
@@ -66,16 +74,10 @@ export interface ViewportPick {
 }
 
 /**
- * One element of the record, as the export names its objects: the element id
- * is the producer op (``archflow:producer_op``) and the object name is
- * ``obj-<elementId>``, optionally suffixed; the component is
- * ``archflow:component``. The record's ``producer`` field is the geometry
- * kind (``prism``), not an id, and is no use for matching.
+ * One element of the record and the exact objects the server catalog bound to
+ * it in the model run currently on screen.
  */
-export interface GhostTarget {
-  elementId: string;
-  componentId: string;
-}
+export type GhostTarget = SemanticHighlightTarget;
 
 /**
  * A ghost of a proposal: a translucent copy of the target's objects, scaled
@@ -92,12 +94,11 @@ export interface GhostSpec {
 }
 
 /**
- * What a highlight is asked for: an element of the record (every object the
- * export tagged with it), a component alone, or the one object a ray met when
- * the server could resolve neither. Null takes the highlight off.
+ * What a highlight is asked for: exact catalog object names, or the one object
+ * a ray met before the server resolved it. Null takes the highlight off.
  */
 export type HighlightRequest =
-  | { componentId?: string | null; elementId?: string | null }
+  | SemanticHighlightTarget
   | { object: Object3D }
   | null;
 
@@ -165,6 +166,10 @@ export interface ViewportController {
   ghost(spec: GhostSpec | null): number;
   fitView(): void;
   frontView(): void;
+  /** Encode the current rendered canvas for its caller; never writes the project. */
+  capturePng(): Promise<Blob | null>;
+  /** Remove temporary display projections and restore the loaded file exactly. */
+  showOriginal(): void;
   setLayerVisibility(index: number, visible: boolean): void;
   clear(): void;
 }
@@ -187,6 +192,8 @@ interface ViewportRuntime {
   renderer: WebGLRenderer;
   controls: OrbitControls;
   model: Object3D | null;
+  /** Visibility, layers and material references as the loaded file supplied them. */
+  appearance: ModelAppearance | null;
   ghost: Group | null;
   secondary: Object3D | null;
   /** The loaded model's materials as they were before a blend touched them. */
@@ -259,48 +266,17 @@ function accentColour(): string {
   );
 }
 
-/** What an object may be asked to be: an element, a component, or both. */
-interface CarrierTarget {
-  elementId?: string | null;
-  componentId?: string | null;
-}
-
 /**
- * Whether a loaded object is one of this target's, by the export's own tags.
- *
- * With both ids, an object whose component disagrees is out and the element is
- * matched on the producer op or the `obj-<elementId>` name. With a component
- * alone — a pick the server could name no element for — the objects that
- * component tagged are the answer.
+ * Whether a loaded object is one the server catalog explicitly returned.
  */
-function belongsTo(object: Object3D, target: CarrierTarget): boolean {
-  const attributes = object.userData.attributes as { userStrings?: unknown } | undefined;
-  const strings = toUserStrings(attributes?.userStrings);
-  const component = strings["archflow:component"];
-  const wantedComponent = target.componentId ?? null;
-  if (wantedComponent !== null && component !== undefined && component !== wantedComponent) {
-    return false;
-  }
-  const wantedElement = target.elementId ?? null;
-  if (wantedElement === null) {
-    return wantedComponent !== null && component === wantedComponent;
-  }
-  const producerOp = strings["archflow:producer_op"] ?? "";
-  const name = object.name ?? "";
-  const byElement = "obj-" + wantedElement;
-  return (
-    producerOp === wantedElement ||
-    producerOp.startsWith(wantedElement + "-") ||
-    name === byElement ||
-    name.startsWith(byElement + "-")
-  );
+function belongsTo(object: Object3D, target: SemanticHighlightTarget): boolean {
+  return matchesSemanticCarrier({ name: object.name }, target);
 }
 
-function carriersOf(model: Object3D, target: CarrierTarget): Object3D[] {
+function carriersOf(model: Object3D, target: SemanticHighlightTarget): Object3D[] {
   const found: Object3D[] = [];
   model.traverse((object) => {
-    const attributes = object.userData.attributes as { userStrings?: unknown } | undefined;
-    if (attributes?.userStrings !== undefined && belongsTo(object, target)) found.push(object);
+    if (belongsTo(object, target)) found.push(object);
   });
   return found;
 }
@@ -606,6 +582,7 @@ export const ThreeDmViewport = forwardRef<
     runtime.scene.remove(runtime.model);
     disposeScene(runtime.model);
     runtime.model = null;
+    runtime.appearance = null;
     runtime.render();
     callbacksRef.current.onInspection(null);
     reportStatus("idle", "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here");
@@ -696,8 +673,21 @@ export const ThreeDmViewport = forwardRef<
     }
     runtime.restore.clear();
     runtime.blendT = null;
+    // blend(1) hides the primary root. Removing the comparison must make the
+    // original model visible again as well as restoring its material opacity.
+    if (runtime.model) runtime.model.visible = true;
     runtime.render();
   }, []);
+
+  const showOriginal = useCallback(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime?.model) return;
+    restoreHighlight(runtime);
+    removeGhost();
+    clearSecondary();
+    if (runtime.appearance) restoreModelAppearance(runtime.model, runtime.appearance);
+    runtime.render();
+  }, [clearSecondary, removeGhost]);
 
   const blend = useCallback((t: number) => {
     const runtime = runtimeRef.current;
@@ -890,8 +880,9 @@ export const ThreeDmViewport = forwardRef<
         // run, and a picture quietly missing a seat is worse than the picture
         // that was already there.
         for (const model of models) disposeScene(model);
-        callbacksRef.current.onInspection(null);
-        callbacksRef.current.onSource(null);
+        // Parsing is all-or-none. The current model, its source label and any
+        // active comparison remain the picture on screen when the replacement
+        // cannot be opened.
         reportStatus("error", errorMessage(failure.reason));
         return;
       }
@@ -919,6 +910,7 @@ export const ThreeDmViewport = forwardRef<
         runtime.blendT = null;
       }
       runtime.model = model;
+      runtime.appearance = captureModelAppearance(model);
       runtime.scene.add(model);
       const inspection = inspectScene(
         model,
@@ -1072,6 +1064,12 @@ export const ThreeDmViewport = forwardRef<
         const runtime = runtimeRef.current;
         if (runtime) frontRuntime(runtime);
       },
+      capturePng: () => {
+        const runtime = runtimeRef.current;
+        if (!runtime?.model) return Promise.resolve(null);
+        return encodeViewportPng(runtime.renderer.domElement, runtime.render);
+      },
+      showOriginal,
       setLayerVisibility: (index, visible) => {
         const runtime = runtimeRef.current;
         if (!runtime?.model) return;
@@ -1095,6 +1093,7 @@ export const ThreeDmViewport = forwardRef<
       openFile,
       openFiles,
       sampleAt,
+      showOriginal,
       unprojectOnPlane,
     ],
   );
@@ -1113,6 +1112,9 @@ export const ThreeDmViewport = forwardRef<
     const renderer = new WebGLRenderer({
       antialias: true,
       powerPreference: "high-performance",
+      // The screenshot encoder runs asynchronously; retain the last explicit
+      // render so the browser cannot serialize a cleared WebGL buffer.
+      preserveDrawingBuffer: true,
     });
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
@@ -1164,6 +1166,7 @@ export const ThreeDmViewport = forwardRef<
       renderer,
       controls,
       model: null,
+      appearance: null,
       ghost: null,
       secondary: null,
       restore: new Map(),

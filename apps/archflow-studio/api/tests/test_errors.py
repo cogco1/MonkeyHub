@@ -14,7 +14,12 @@ from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.transport.errors import BlockedNeedsHuman, StudioError
 
-from .support import PROJECT_ID, RUNNER_RECORD_PATH, make_project
+from .support import (
+    PROJECT_ID,
+    RUNNER_RECORD_PATH,
+    make_empty_project,
+    make_project,
+)
 
 BUG_MARKER = "a-bug-nobody-anticipated"
 
@@ -115,7 +120,6 @@ class RefusalDetailTests(unittest.TestCase):
     def _refusals(self) -> list[tuple[str, dict]]:
         """One of every refusal a bound project can answer with."""
 
-        record = self.repository.layout.resolve_relative(RUNNER_RECORD_PATH)
         answers = [
             ("run named by the request", self.client.get(
                 "/api/state", params={"run": "run-nowhere"}
@@ -133,13 +137,22 @@ class RefusalDetailTests(unittest.TestCase):
                 "/api/proposals/studio-nope"
             )),
         ]
+        # Once a reference run exists, its immutable retained State Record is
+        # authoritative and authored WIP drift is irrelevant. Exercise the two
+        # authored-input refusals on a second project with no eligible run.
+        no_run = make_empty_project(self.root / "no-run")
+        no_run_client = TestClient(
+            create_app(StudioSettings(project_dir=no_run.layout.root))
+        )
+        self.addCleanup(no_run_client.close)
+        record = no_run.layout.resolve_relative(RUNNER_RECORD_PATH)
         record.write_text("{ not json", encoding="utf-8")
         answers.append(
-            ("record that will not parse", self.client.get("/api/state"))
+            ("record that will not parse", no_run_client.get("/api/state"))
         )
         record.unlink()
         answers.append(
-            ("record that is not there", self.client.get("/api/state"))
+            ("record that is not there", no_run_client.get("/api/state"))
         )
         return [(name, response.json()) for name, response in answers]
 

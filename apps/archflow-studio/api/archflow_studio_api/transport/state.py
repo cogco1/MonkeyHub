@@ -12,7 +12,6 @@ from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from archflow.project.layout import AUTHORED_RECORD_PATH
 
 from ..application.catalog import Catalog
 from ..application.frame import ClosureAnswer, RecordFrame
@@ -319,7 +318,7 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
             found_in=projection.reference.run.run_id,
         ),
         matches_reference_receipt=projection.matches_reference_receipt,
-        record_source=AUTHORED_RECORD_PATH,
+        record_source=projection.record_source,
         record_digest=projection.record_digest,
         state_digest=projection.state_digest,
         active_phase=(

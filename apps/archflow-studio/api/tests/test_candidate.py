@@ -370,7 +370,7 @@ class CandidateRunTests(CandidateTestCase):
         )
 
     def test_a_candidate_says_what_it_did_not_recompute(self) -> None:
-        """K1 on the wire: a partial change must not read as a whole one."""
+        """An explicit edit must not read as automatic downstream derivation."""
 
         accepted, job = self.run_candidate("set bay to 3")
         self.assertEqual(job["status"], "succeeded", job)
@@ -382,8 +382,10 @@ class CandidateRunTests(CandidateTestCase):
         self.assertEqual(
             honesty,
             [
-                "derived values downstream of parameter:bay were not "
-                "recomputed for this candidate (K1/P109): parameter:span"
+                "this candidate applied only the explicit edit at "
+                "parameter:bay; downstream derived values were not "
+                "automatically recomputed and must be assessed in "
+                "validation/review: parameter:span"
             ],
         )
 
@@ -617,21 +619,14 @@ class CandidateFailureTests(CandidateTestCase):
         proposal = self.propose(
             "set height to 2.2", elementId="portico-base"
         )
-        # The authored record moves underneath the proposal: what it was made
-        # against is no longer what the project would run.
-        path = self.repository.layout.resolve_relative(RUNNER_RECORD_PATH)
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        for entity in payload["entities"]:
-            if entity["entity_id"] == "portico-cornice":
-                entity["fields"]["params"]["height"] = 0.45
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        advance_head(self.repository, run_id="promotion-before-candidate")
 
         response = self.client.post(
             f"/api/proposals/{proposal['proposalId']}/candidate"
         )
 
         self.assertEqual(response.status_code, 409, response.text)
-        self.assertEqual(response.json()["code"], "STALE_BASE")
+        self.assertEqual(response.json()["code"], "REFERENCE_BASE_STALE")
 
     def test_a_candidate_id_is_never_rebound_to_a_second_job(self) -> None:
         """Two jobs on one candidate id would orphan the first run's records."""
@@ -660,7 +655,7 @@ class CandidateFailureTests(CandidateTestCase):
         )
         self.assertEqual(registry.get(first.job_id).proposal_id, "studio-first")
 
-    def test_a_record_that_moved_after_the_proposal_fails_the_run(self) -> None:
+    def test_head_that_moved_after_preflight_fails_the_run(self) -> None:
         """The base is checked again where the record is actually read.
 
         The route checked it when the request arrived; this is the interval
@@ -674,12 +669,7 @@ class CandidateFailureTests(CandidateTestCase):
                 "proposalId"
             ]
         )
-        path = self.repository.layout.resolve_relative(RUNNER_RECORD_PATH)
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        for entity in payload["entities"]:
-            if entity["entity_id"] == "portico-cornice":
-                entity["fields"]["params"]["height"] = 0.45
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        advance_head(self.repository, run_id="promotion-before-worker")
 
         run_id = "studio-cand-stale-guard"
         binding = bound_project(self.app.state)
@@ -693,11 +683,8 @@ class CandidateFailureTests(CandidateTestCase):
         finished = self.finished(job.job_id)
 
         self.assertEqual(finished["status"], "failed", finished)
-        self.assertIn(
-            "STALE_BASE: the authored record changed after the candidate base "
-            "was captured",
-            finished["error"],
-        )
+        self.assertIn("reference run", finished["error"])
+        self.assertIn("HEAD is version 1", finished["error"])
         self.assertFalse((self.repository.layout.runs / run_id).exists())
 
     def test_what_compiled_the_words_is_retained_with_the_run_they_became(

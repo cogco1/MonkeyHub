@@ -26,8 +26,8 @@ import { readProtocolApiProtocolGet } from "./generated";
 import type { ServerIdentityDto } from "./generated";
 import { StudioApiError, call } from "./error";
 
-/** The protocol major this client speaks. `archflow/1`. */
-export const PROTOCOL_MAJOR = 1;
+/** The protocol major this client speaks. `archflow/2`. */
+export const PROTOCOL_MAJOR = 2;
 
 /** A server this client will not talk to, because it does not speak its major. */
 export const PROTOCOL_MISMATCH = "PROTOCOL_MISMATCH";
@@ -60,7 +60,7 @@ export class ProtocolRefusal extends StudioApiError {
   }
 }
 
-/** `archflow/1` → 1. `null` when the string is not a protocol identity. */
+/** `archflow/2` → 2. `null` when the string is not a protocol identity. */
 export function protocolMajor(protocol: string): number | null {
   const match = /^archflow\/(\d+)$/.exec(protocol.trim());
   if (match === null) return null;

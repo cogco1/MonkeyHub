@@ -151,33 +151,12 @@
         "The round-one chain (exact HEAD, bound StateRecord, component and dependency projection, intent on a selected component, typed proposal or BLOCKED_NEEDS_HUMAN, impact closure, detached candidate artifact with SHA, validation receipt) runs end to end on one configured external project with no canonical commit.",
         "The six reserved protocols exist verbatim in api/archflow_studio_api/ports.py; viewer assets are moved, not copied; nothing is copied into a live archive directory.",
         "Every exported object carries the existing archflow user-string identity; no second key set; no Pydantic model mirrors an archflow schema.",
-        "Held, violated and unchecked relation checks are shown as three states; the server issues the advance verdict.",
+        "Held, violated and unchecked relation checks are shown as three states; the server reports candidate review readiness while project.issue remains the only stage issuer.",
         "Tests: contract, API, stale-base, cross-project rejection, UI state; archcheck stays green throughout.",
         "Tag studio-preview-slice-01 marks the last commit where the demo is intact."
       ],
       "notes": [
-        "Kernel gaps carded from the 2026-09-03 calibration: P109 (typed operator on StateRecord@1; Studio carries the candidate under the card) and P110 (CanonicalState projection; receipt labelled vacuous until it lands). P108 does not depend on either for round one."
-      ]
-    },
-    {
-      "id": "P109",
-      "stream": "planning",
-      "status": "ready",
-      "goal": "A kernel function applies a typed intent to a StateRecord@1 and returns the successor record: exact-base check on state_digest, protected set checked against the record's closure, deterministic, no propagation (propagation is the runner's). Raised by the Studio's P108 calibration: DecisionOperator/compile_decision_operator are typed to OperationalMarkovState and nothing applies a typed intent to a StateRecord. Until it lands the Studio carries a single-value-replace candidate under this card (AGENTS.md rule 3). Retires that Studio candidate the day it lands.",
-      "depends_on": [
-        "P102"
-      ],
-      "write_scope": [
-        "archflow/state/",
-        "tests/",
-        "docs/mapping/",
-        "governance/work_registry.json"
-      ],
-      "card": "docs/mapping/planning/P109-typed-operator-on-state-record.md",
-      "acceptance": [
-        "Exact-base, protected-set and single-value-change behaviour covered by tests in tests/test_state_record.py; one villa run through the verify_state_record harness.",
-        "The Studio's successor_record candidate is deleted in the same change; no second implementation remains.",
-        "python tools/archcheck.py passes."
+        "The remaining kernel gap from the 2026-09-03 calibration is P110 (CanonicalState projection; receipt labelled vacuous until it lands). P108 does not depend on it for round one."
       ]
     },
     {

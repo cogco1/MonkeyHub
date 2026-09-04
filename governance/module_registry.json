@@ -1585,7 +1585,7 @@
         "the persistence area vocabulary (PersistenceArea)",
         "a validated project- or run-scoped write destination (PersistenceDestination)",
         "the fail-closed check that a producer was assigned a destination (require_destination, PersistenceDestinationRequired)",
-        "the structural protocols a repository satisfies (RecordSink, ArtifactSink, CanonicalRepository, ProjectLoader)"
+        "the structural protocols a repository satisfies (RecordSink, WorkspaceSink)"
       ],
       "does_not_own": [
         "any implementation of these ports (project.repository is the only one)",
@@ -1605,6 +1605,7 @@
         "PersistenceDestination",
         "require_destination",
         "RecordSink",
+        "WorkspaceSink",
         "PersistenceDestinationRequired"
       ],
       "depends_on": [
@@ -1616,6 +1617,7 @@
         "archflow/capabilities/geometry_proposal.py",
         "archflow/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "tools/freeze_project_stage_workflow.py",
         "tools/verify_state_record.py"
@@ -1631,7 +1633,7 @@
         "tests/test_project_repository.py",
         "archive/tests/test_geometry_proposal_contract.py"
       ],
-      "notes": "ArtifactSink, CanonicalRepository and ProjectLoader are declared but no module imports them by name; only PersistenceArea/PersistenceDestination/require_destination/RecordSink are actually used."
+      "notes": "WorkspaceSink is the narrow binary-file seam for an already assigned run workspace; it does not make the file canonical or receipt-certified."
     },
     {
       "module_id": "project.record_kinds",
@@ -1785,7 +1787,7 @@
       "owner_path": "archflow/project/repository.py",
       "purpose": "The single durable filesystem owner of one project document: immutable content-addressed records plus one atomic compare-and-swap HEAD.",
       "owns": [
-        "the only write path to a project on disk (initialize, put_json, ingest)",
+        "the only write path to a project on disk (initialize, put_json, ingest, put_workspace_file)",
         "byte identity of a written record (sorted-key JSON plus a trailing newline, sha-256)",
         "HEAD read and compare-and-swap under a thread lock and an OS advisory file lock (compare_and_swap, StaleProjectHead, ProjectHeadLocked)",
         "promotion gating on an accepted exact-base PromotionDecision@1 receipt (prepare_transition, PromotionAuthorityError)",
@@ -1839,6 +1841,7 @@
         "archflow/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "tools/run_project.py",
         "tools/verify_state_record.py",
@@ -1851,6 +1854,7 @@
         "a stored record whose bytes disagree with its ref sha256 raises ProjectIntegrityError",
         "only an accepted PromotionDecision@1 naming the exact expected version may prepare a canonical transition",
         "a record lands in the area its PersistenceDestination names; events/ and canonical/ areas are re-checked on swap",
+        "put_workspace_file writes an immutable binary only below the assigned run workspace and never changes HEAD",
         "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable"
       ],
       "status": "canonical",
@@ -2285,7 +2289,7 @@
         "tests/integration/test_pantheon_compiled_state.py",
         "apps/archflow-studio/api/tests/test_proposals.py"
       ],
-      "notes": "Canonical: the Studio's conversational proposals remain DecisionOperator@2 inputs to OperationalMarkovState. StateRecord application is separately owned by state.record through its closed StateRecordOperator; P109 retires the Studio's successor_record candidate without extending DecisionOperator@2."
+      "notes": "Canonical: the Studio's conversational proposals remain DecisionOperator@2 inputs to OperationalMarkovState. StateRecord application is separately owned by state.record through its closed StateRecordOperator; no Studio-local successor remains."
     },
     {
       "module_id": "state.derivation",
@@ -3080,40 +3084,48 @@
     {
       "module_id": "studio.artifacts",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-      "purpose": "List the exported models a run's receipts certify, and serve their bytes under the digest that identifies them.",
+      "purpose": "List and serve the exported models a run's receipts certify, and save non-canonical Studio viewport captures into the explicitly named existing run's workspace.",
       "owns": [
         "reading seat-rhino-execution receipts into ArtifactRecord rows across a project's runs",
         "locating the certified file in the run's workspaces by name and re-verifying its sha256 as it is read",
         "the named unavailability reasons (no digest, file missing, file unreadable, digest mismatch) and which runs a not-found did not search",
         "the content-disposition save-as name in both RFC 6266 forms",
-        "the per-path sha256 cache keyed by path, size and mtime"
+        "the per-path sha256 cache keyed by path, size and mtime",
+        "verifying and decoding a viewport PNG before retaining its original bytes through P036 under runs/<requested-run>/workspaces/studio-captures with a server-generated content name"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
         "inspecting the .3dm - adapters.three_dm_inspector",
         "deciding an export succeeded - the retained receipt says so",
+        "turning a viewport capture into a receipt-certified ArtifactRecord or changing canonical HEAD",
         "the project binding and its record refs - studio.binding"
       ],
       "inputs": [
         "ProjectBinding",
-        "sha256 hex"
+        "sha256 hex",
+        "run id and base64 PNG bytes"
       ],
       "outputs": [
         "ArtifactListing",
         "ArtifactRecord",
-        "raw .3dm bytes"
+        "raw .3dm bytes",
+        "ViewportCapture"
       ],
       "public_api": [
         "GET /api/artifacts",
         "GET /api/artifacts/{sha256}/bytes",
+        "POST /api/captures",
         "list_artifacts",
         "artifact_bytes",
+        "save_viewport_capture",
         "ArtifactRecord",
-        "ArtifactListing"
+        "ArtifactListing",
+        "ViewportCapture"
       ],
       "depends_on": [
         "archflow.project.refs",
         "archflow.project.repository",
+        "project.ports",
         "project.record_kinds",
         "project.refs",
         "project.repository"
@@ -3121,16 +3133,19 @@
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-        "apps/archflow-studio/api/tests/test_artifacts.py"
+        "apps/archflow-studio/api/tests/test_artifacts.py",
+        "apps/archflow-studio/api/tests/test_captures.py"
       ],
       "invariants": [
         "a file on disk is not an artifact - only a retained receipt makes it one",
+        "a viewport capture is a non-canonical workspace file bound to the existing run named by the request; invalid or incomplete PNG data is refused before persistence; saving it does not mint a receipt or change HEAD",
         "bytes are served only when the file's own hash still matches the receipt's digest",
         "an unavailable artifact is refused in the receipt's own terms, naming the reason and the runs not searched"
       ],
       "status": "canonical",
       "tests": [
-        "apps/archflow-studio/api/tests/test_artifacts.py"
+        "apps/archflow-studio/api/tests/test_artifacts.py",
+        "apps/archflow-studio/api/tests/test_captures.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -3142,13 +3157,14 @@
     {
       "module_id": "studio.binding",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-      "purpose": "Bind the process to one P036 project and one reference run, resolve which project a scoped path names, and project the authored State Record into what a screen can read.",
+      "purpose": "Bind the process to one P036 project and one reference run, resolve which project a scoped path names, and project the exact State Record retained by that run into what a screen can read.",
       "owns": [
         "opening the located project on first use and holding that one binding for the process",
         "resolving the project segment of /api/projects/{project_id}: today only the bound project resolves, and every other id is 404 PROJECT_NOT_FOUND",
         "listing the projects this server binds, and which of them the unscoped default-project shortcut answers for",
         "choosing the reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping the harness workflows state.stage_workflow names",
         "reading the P036 record-name convention (kind plus sha256) and listing a run's record refs",
+        "loading the reference run's State Record through the state_record_ref carried by its runner receipt, checking its content digest and exact run/base binding; only a project with no eligible reference run reads the authored work-in-progress record",
         "answering project.inputs' refusals on the wire: 404 STATE_RECORD_NOT_FOUND and 422 STATE_RECORD_INVALID, each naming the file",
         "the projection: bound view, component tree, Element@1 rows with their numeric fields, parameters, dependency edges",
         "the honesty lines stating what this projection cannot tell you",
@@ -3241,7 +3257,8 @@
       "invariants": [
         "the project root is never defaulted in code - it comes from the environment or --project-dir",
         "binding happens on the first request that needs it, not at import or app creation",
-        "every fact on the projection is the kernel's answer: the record is parsed by StateRecord.from_dict and attached by bound_to",
+        "every fact on a reference projection is the kernel's answer from the State Record that run retained; the current authored input is never rebound onto an existing run",
+        "a reference whose receipt does not bind a readable State Record, whose record digest differs, or whose run base is not current remains inspectable but cannot be used for a proposal, impact or candidate",
         "a harness run is never chosen as the reference run",
         "the projection is read-only and states, in honesty lines, what it could not compute",
         "one process answers for one project: the scoped and the unscoped path resolve to the same binding and are shaped by the same function",
@@ -3286,7 +3303,7 @@
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
-        "the validation receipt and the advance verdict - studio.validation",
+        "the validation receipt and the candidate review-readiness verdict - studio.validation",
         "the before/after object comparison served on /api/candidates/{id}/compare - studio.validation's compare",
         "artifact bytes and availability - studio.artifacts",
         "making the proposal - studio.intent",
@@ -3411,7 +3428,7 @@
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
-        "what a change reaches and whether it may advance - studio.validation",
+        "what a change reaches and whether the candidate is ready for review - studio.validation",
         "writing to the record - runtime.project_runner, through studio.candidate",
         "the record and its projection - studio.binding",
         "the request and receipt contracts themselves - ports.model",
@@ -3632,7 +3649,7 @@
       "invariants": [
         "create_app touches no filesystem and binds no project - a wrong project root is discovered by the request that needs it",
         "the project root is never defaulted in code",
-        "GET /api/protocol opens no project, so a client can tell a foreign server from an unbound one",
+        "GET /api/protocol opens no project, so a client can tell a foreign server from an unbound one; removing or renaming a stable wire field changes the protocol major, and mismatched clients refuse at handshake",
         "a remote-mode StudioSettings without a token and without origins cannot be constructed, so no path can start one",
         "in remote mode every /api route but health and protocol answers 401 UNAUTHENTICATED without a matching bearer token, unknown paths included",
         "every failure answers in the same body shape, and an unexpected error says nothing about itself",
@@ -3645,7 +3662,8 @@
         "apps/archflow-studio/api/tests/test_health.py",
         "apps/archflow-studio/api/tests/test_settings.py",
         "apps/archflow-studio/api/tests/test_errors.py",
-        "apps/archflow-studio/api/tests/test_protocol.py"
+        "apps/archflow-studio/api/tests/test_protocol.py",
+        "apps/archflow-studio/web/test/connection.test.ts"
       ],
       "notes": "transport/* carries the wire shapes for all six concerns, so a DTO change is a shell change, not an application one. docs/PROTOCOL.md is the written form of what protocol.py names; the client half of the seam is apps/archflow-studio/web/src/api/connection.ts, which this registry does not list because it lists Python modules only. Browser-only language, theme, font-scale and event-visibility preferences stay in web localStorage; the typed client message catalogs and settings panel may display server facts but never create a second server-configuration or project-persistence authority.",
       "files": [
@@ -3664,10 +3682,10 @@
     {
       "module_id": "studio.validation",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-      "purpose": "Say what a finished candidate validates to - the kernel's receipt - and, separately, whether it may advance and what refuses it.",
+      "purpose": "Say what a finished candidate validates to - the kernel's receipt - and, separately, whether it is ready for human review and what refuses it.",
       "owns": [
         "building the CandidateSubmission and asking archflow.validation.engine.validate_submission about it",
-        "the five-clause advance verdict (receipt, seat execution, relations held, relations fully checked, exports available) and its blocked_by list",
+        "the five-clause review-readiness verdict (receipt, seat execution, relations held, relations fully checked, exports available) and its blocked_by list",
         "the honesty lines about what this receipt effectively proves on a ref-only published state",
         "memoizing one validation per candidate and issue, computed once in this process",
         "the impact arrangement around StateRecord.closure: direct, propagated, protected, conflicts, locks and unknown coverage",
@@ -3691,7 +3709,7 @@
       "outputs": [
         "ValidationReceipt",
         "CandidateValidation",
-        "Verdict",
+        "ReviewReadiness",
         "Impact",
         "Comparison",
         "ObjectChange",
@@ -3701,10 +3719,10 @@
         "GET /api/candidates/{candidate_id}/validation",
         "validate_candidate",
         "validation_key",
-        "verdict",
+        "review_readiness",
         "ValidationStore",
         "CandidateValidation",
-        "Verdict",
+        "ReviewReadiness",
         "impact",
         "Impact",
         "ImpactLock",
@@ -3735,8 +3753,9 @@
         "apps/archflow-studio/api/tests/test_compare.py"
       ],
       "invariants": [
-        "the receipt and the verdict are deliberately two different answers and are never merged",
-        "advance requires all five clauses; every refusal is named in blocked_by",
+        "the receipt and review readiness are deliberately two different answers and are never merged",
+        "review_ready requires all five clauses; every refusal is named in blocked_by",
+        "review readiness never issues a run or advances a stage; project.issue remains the only issuer",
         "a validation is about one candidate at one issue - the key includes the published version",
         "impact adds no propagation rule of its own; it calls StateRecord.closure and arranges the answer",
         "the comparison is a join on retained records, with a stated tolerance, not browser or geometry inference"
@@ -3816,13 +3835,13 @@
       "owns": [
         "loading and validating ArchFlowArchitecturePolicy@1",
         "the checked-file set for the configured roots and the single AST index per file",
-        "the checks: forbidden imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, commit soft-gate leaks, probe-boundary executables",
+        "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, commit soft-gate leaks, probe-boundary executables, registry owner/test/public-symbol truth and duplicate owned function bodies",
         "the Finding shape and the JSON/text report and exit code"
       ],
       "does_not_own": [
         "the policy content - governance/architecture_policy.json",
         "the work registry and its ledgers - tools.devctl",
-        "the module registry rules CANONICAL_SPINE 4 describes (owner-symbol, duplicate-body, archive-import) - not implemented here yet",
+        "semantic equivalence between differently written implementations - duplicate-body checks only identical normalized top-level function bodies",
         "running tests or type checks"
       ],
       "inputs": [

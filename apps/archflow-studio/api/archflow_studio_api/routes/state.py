@@ -1,4 +1,4 @@
-"""``GET /api/state``: the authored State Record, bound and projected.
+"""``GET /api/state``: the selected State Record, bound and projected.
 
 Three more read-only resources hang off it. ``GET /api/state/frame`` is the
 record's frame — the levels and axes every element is positioned against —
@@ -78,9 +78,9 @@ def read_frame(request: Request) -> FrameDto:
     record the kernel would not build a bound view for still declares its own
     frame, and refusing to name it would withhold an answer the record gives.
 
-    There is no ``?run=`` here on purpose. The frame is the authored record's,
-    and a run changes only what the record is bound to — never which levels
-    and axes it declares.
+    There is no ``?run=`` here on purpose. The frame comes from the same record
+    chosen by the default projection rule: an exact retained reference when
+    one exists, otherwise authored work in progress.
     """
 
     binding = bound_project(request.app.state)

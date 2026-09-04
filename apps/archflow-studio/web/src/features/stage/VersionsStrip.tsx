@@ -29,7 +29,7 @@ export interface VersionGroup {
   readonly label: "Reference" | "Candidate" | "Run";
   /** In the architect's words: the issue, the sentence, or the run. */
   readonly title: string;
-  /** The verdict word, or what this tab knows about the run; null when nothing. */
+  /** Review readiness, or what this tab knows about the run; null when nothing. */
   readonly detail: string | null;
   readonly exports: readonly VersionExport[];
 }
@@ -91,7 +91,7 @@ export function VersionsStrip({
               : t("stage.versions.run");
         const displayedDetail = (() => {
           if (group.detail === null) return null;
-          if (group.detail === "may advance") return t("stage.view.mayAdvance");
+          if (group.detail === "ready for review") return t("stage.view.reviewReady");
           if (group.detail === "verdict not read yet") return t("stage.view.verdictUnread");
           if (group.detail === "not launched from this tab") {
             return t("stage.versions.notLaunchedHere");

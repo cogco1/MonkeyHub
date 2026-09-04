@@ -11,6 +11,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any, BinaryIO
 from uuid import uuid4
 
@@ -31,6 +32,7 @@ from archflow.project.refs import (
     RunRef,
     record_file_name,
     require_identifier,
+    require_project_relative_path,
 )
 
 
@@ -704,6 +706,54 @@ class FilesystemProjectRepository:
             raise TypeError("artifact source must be opened in binary mode")
         digest = _sha256(data)
         path = self.layout.objects / digest[:2] / digest
+        with self._lock:
+            _write_immutable(path, data)
+        relative = path.relative_to(self.layout.root).as_posix()
+        return ProjectArtifactRef(
+            project_id=self._manifest.project_id,
+            artifact_id=artifact_id,
+            relative_path=relative,
+            sha256=digest,
+            media_type=media_type,
+        )
+
+    def put_workspace_file(
+        self,
+        *,
+        run: RunRef,
+        destination: PersistenceDestination,
+        artifact_id: str,
+        workspace_relative_path: str,
+        media_type: str,
+        source: BinaryIO,
+    ) -> ProjectArtifactRef:
+        """Install one immutable binary below an assigned run workspace."""
+
+        self._validate_run(run)
+        if destination.area is not PersistenceArea.RUN_WORKSPACE:
+            raise ValueError(
+                "workspace files require the run-workspace destination"
+            )
+        require_identifier(artifact_id, "artifact_id")
+        relative_in_workspace = require_project_relative_path(
+            workspace_relative_path
+        )
+        if not isinstance(media_type, str) or not media_type.strip():
+            raise ValueError("media_type must be non-empty text")
+        data = source.read()
+        if not isinstance(data, bytes):
+            raise TypeError("workspace source must be opened in binary mode")
+
+        workspace = self._destination_directory(run, destination).resolve(
+            strict=False
+        )
+        portable = PurePosixPath(relative_in_workspace)
+        path = (workspace / Path(*portable.parts)).resolve(strict=False)
+        try:
+            path.relative_to(workspace)
+        except ValueError as exc:
+            raise ValueError("workspace path escapes the assigned run") from exc
+        digest = _sha256(data)
         with self._lock:
             _write_immutable(path, data)
         relative = path.relative_to(self.layout.root).as_posix()

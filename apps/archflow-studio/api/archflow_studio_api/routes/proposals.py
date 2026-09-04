@@ -26,7 +26,11 @@ from starlette.requests import Request
 from ..application import episodes
 from ..application.binding import ProjectBinding, bound_project
 from ..application.intent import DeterministicIntentProvider
-from ..application.projection import StateProjection, project_state
+from ..application.projection import (
+    StateProjection,
+    project_state,
+    require_actionable,
+)
 from ..application.proposals import Proposal, proposal_from
 from ..transport.errors import StudioError
 from ..transport.proposal import (
@@ -55,6 +59,7 @@ def create_proposal(
     binding = bound_project(request.app.state)
     _require_bound_project(binding, body.project_id)
     projection = project_state(binding)
+    require_actionable(projection)
     proposal = proposal_from(
         DeterministicIntentProvider(projection).propose(
             # Round 1 has no session identity: the project the request is bound
@@ -125,6 +130,7 @@ def decide_proposal(
             "a modified decision has to say what it was modified to: send "
             "modifiedTo.utterance, the sentence that replaces the proposal.",
         )
+    require_actionable(projection)
     replacement = _reproposed(
         state, binding, projection, proposal, body.modified_to.utterance
     )

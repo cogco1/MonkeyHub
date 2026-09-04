@@ -1,17 +1,17 @@
-"""The kernel's validation receipt, and the verdict the server issues beside it.
+"""The kernel's validation receipt and the server's review-readiness result.
 
 Nothing here rehearses validation. Every receipt these tests read came out of
 ``archflow.validation.engine.validate_submission`` over a submission built from
 a real candidate run's own records, and the one thing the studio adds — the
-advance verdict — is asserted as what it is: a conjunction of four named
-clauses, each of which is shown blocking on its own.
+review-readiness result — is asserted as what it is: a conjunction of five
+named clauses, each of which is shown blocking on its own.
 
 The two negative cases are built the same way as the positive one. A stale base
 is a real ``CandidateRun`` whose base is an explicit older
 ``ProjectVersionRef``, handed to the same application function, so the
 ``state.base_mismatch`` finding is the kernel's own; unchecked relations are a
-real candidate with a synthetic three-state total, so ``advance`` flipping to
-false is the verdict's own rule. Neither mocks the kernel, because a mocked
+real candidate with a synthetic three-state total, so ``review_ready`` flipping
+to false is the readiness rule. Neither mocks the kernel, because a mocked
 gate proves only that the mock was called.
 
 The villa test at the bottom is the reality check, and it is a copy: it runs
@@ -162,7 +162,7 @@ class ValidationReceiptTests(ValidationTestCase):
         print(
             f"\n[validation] {validation['candidateId']} "
             f"passed={validation['receipt']['passed']} "
-            f"advance={validation['advance']} "
+            f"reviewReady={validation['reviewReady']} "
             f"blockedBy={validation['blockedBy']} "
             f"validators={validation['validators']} "
             f"effectiveChecks={validation['effectiveChecks']}"
@@ -175,7 +175,7 @@ class ValidationReceiptTests(ValidationTestCase):
         # compatibility-only ``required-claims`` gate is not among them.
         self.assertEqual(validation["validators"], THREE)
         self.assertNotIn("required-claims", validation["validators"])
-        self.assertIs(validation["advance"], True)
+        self.assertIs(validation["reviewReady"], True)
         self.assertEqual(validation["blockedBy"], [])
         # Every seat's program reached the submission, so there is nothing to
         # confess. Empty is the answer, not a missing field.
@@ -389,7 +389,7 @@ class ValidationReceiptTests(ValidationTestCase):
         )
 
 
-class AdvanceVerdictTests(ValidationTestCase):
+class ReviewReadinessTests(ValidationTestCase):
     def test_a_stale_base_is_the_kernels_finding_not_a_studio_fix(self) -> None:
         """The studio submits the base the candidate stood on, and is told."""
 
@@ -409,12 +409,12 @@ class AdvanceVerdictTests(ValidationTestCase):
             ["state.base_mismatch"],
         )
         self.assertIn("validation.receipt", drifted.blocked_by)
-        self.assertIs(drifted.advance, False)
+        self.assertIs(drifted.review_ready, False)
         # The rest of the candidate is untouched: one failing clause is one
         # failing clause, not a blanket refusal.
         self.assertEqual(drifted.blocked_by, ("validation.receipt",))
 
-    def test_unchecked_relations_alone_block_the_advance(self) -> None:
+    def test_unchecked_relations_alone_block_review_readiness(self) -> None:
         """Unchecked is never green, even when nothing was violated."""
 
         accepted, job = self.finished_candidate()
@@ -428,7 +428,7 @@ class AdvanceVerdictTests(ValidationTestCase):
         )
 
         self.assertIs(partial.receipt.passed, True)
-        self.assertIs(partial.advance, False)
+        self.assertIs(partial.review_ready, False)
         self.assertEqual(partial.blocked_by, ("relations.fully_checked",))
 
     def test_a_violated_relation_blocks_by_its_own_name(self) -> None:
@@ -442,7 +442,7 @@ class AdvanceVerdictTests(ValidationTestCase):
             )
         )
 
-        self.assertIs(violated.advance, False)
+        self.assertIs(violated.review_ready, False)
         self.assertEqual(violated.blocked_by, ("relations.held",))
 
     def test_seats_that_did_not_finish_block_by_their_own_name(self) -> None:
@@ -453,14 +453,15 @@ class AdvanceVerdictTests(ValidationTestCase):
             replace(candidate, seat_execution_complete=False)
         )
 
-        self.assertIs(incomplete.advance, False)
+        self.assertIs(incomplete.review_ready, False)
         self.assertEqual(
             incomplete.blocked_by, ("runner.seat_execution_complete",)
         )
 
-    def test_a_failed_export_blocks_the_advance_and_is_confessed(self) -> None:
-        """A candidate whose requested export failed must not be told it may
-        advance — its artifacts already say so, and the verdict must agree.
+    def test_a_failed_export_blocks_review_readiness_and_is_confessed(self) -> None:
+        """A candidate whose requested export failed is not review-ready.
+
+        Its artifacts already say so, and review readiness must agree.
         """
 
         accepted, job = self.finished_candidate()
@@ -481,7 +482,7 @@ class AdvanceVerdictTests(ValidationTestCase):
             )
         )
 
-        self.assertIs(failed.advance, False)
+        self.assertIs(failed.review_ready, False)
         self.assertIn(EXPORTS_CLAUSE, failed.blocked_by)
         self.assertIn(
             "export of cad-rhino-execution (model.3dm) is not available: "
@@ -515,8 +516,8 @@ class AdvanceVerdictTests(ValidationTestCase):
         This is the case an empty ``artifacts`` tuple could not tell from "no
         export was asked for": the seat row carries a ``cad`` block, so the
         run did export, and the record that would let anyone open the result
-        never reached this run's record area. That is not a candidate that may
-        advance.
+        never reached this run's record area. That candidate is not ready for
+        review.
         """
 
         accepted, job = self.finished_candidate()
@@ -541,7 +542,7 @@ class AdvanceVerdictTests(ValidationTestCase):
             )
         )
 
-        self.assertIs(exported.advance, False)
+        self.assertIs(exported.review_ready, False)
         self.assertIn(EXPORTS_CLAUSE, exported.blocked_by)
         self.assertEqual(
             exported.honesty,
@@ -611,7 +612,7 @@ class AdvanceVerdictTests(ValidationTestCase):
             ),
         )
 
-    def test_a_succeeded_export_does_not_block_the_advance(self) -> None:
+    def test_a_succeeded_export_does_not_block_review_readiness(self) -> None:
         accepted, job = self.finished_candidate()
         candidate = self.candidate_run(accepted, job)
 
@@ -632,7 +633,7 @@ class AdvanceVerdictTests(ValidationTestCase):
 
         The honesty lines are one per artifact, not one per clause — two
         failed exports must not collapse into a single confession, and the
-        clause that blocks the advance must not be repeated once per failure.
+        clause that blocks review readiness must not be repeated per failure.
         """
 
         accepted, job = self.finished_candidate()
@@ -686,7 +687,7 @@ class AdvanceVerdictTests(ValidationTestCase):
             )
         )
 
-        self.assertIs(blocked.advance, False)
+        self.assertIs(blocked.review_ready, False)
         self.assertEqual(
             blocked.blocked_by,
             (
@@ -705,7 +706,7 @@ class AdvanceVerdictTests(ValidationTestCase):
 
 
 class ValidationEventTests(ValidationTestCase):
-    def test_the_verdict_is_published(self) -> None:
+    def test_review_readiness_is_published(self) -> None:
         accepted, _ = self.finished_candidate()
 
         validation = self.validation_of(accepted["candidateId"])
@@ -718,10 +719,10 @@ class ValidationEventTests(ValidationTestCase):
         self.assertEqual(len(published), 1, published)
         event = published[0]
         self.assertEqual(event["candidate_id"], accepted["candidateId"])
-        self.assertIs(event["advance"], validation["advance"])
+        self.assertIs(event["review_ready"], validation["reviewReady"])
         self.assertEqual(event["blocked_by"], validation["blockedBy"])
 
-    def test_the_verdict_reaches_the_stream(self) -> None:
+    def test_review_readiness_reaches_the_stream(self) -> None:
         accepted, _ = self.finished_candidate()
         self.validation_of(accepted["candidateId"])
 
@@ -729,7 +730,7 @@ class ValidationEventTests(ValidationTestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         self.assertIn("event: validation.computed", response.text)
-        self.assertIn('"advance":true', response.text)
+        self.assertIn('"reviewReady":true', response.text)
         self.assertIn('"blockedBy":[]', response.text)
 
     def test_one_validation_is_computed_and_published_per_candidate(
@@ -761,14 +762,14 @@ class ValidationEventTests(ValidationTestCase):
         """A verdict names the state it checked, and cannot outlive it.
 
         The memo exists so polling does not look like deciding. It must not
-        become a way for a stale ``advance: true`` to survive the version it
+        become a way for stale ``reviewReady: true`` to survive the version it
         was true about: once HEAD moves, the candidate's base is no longer
         current, and the kernel says so.
         """
 
         accepted, _ = self.finished_candidate()
         first = self.validation_of(accepted["candidateId"])
-        self.assertIs(first["advance"], True)
+        self.assertIs(first["reviewReady"], True)
         before = self.repository.read_head()
 
         # Promotion through P036's own path; the API never does this.
@@ -799,7 +800,9 @@ class ValidationEventTests(ValidationTestCase):
             for event in self.app.state.events.replay()
             if event["type"] == "validation.computed"
         ]
-        self.assertEqual([event["advance"] for event in published], [True, False])
+        self.assertEqual(
+            [event["review_ready"] for event in published], [True, False]
+        )
 
     def test_two_candidates_are_two_verdicts(self) -> None:
         """The memo is per candidate; it must not answer for another run."""
@@ -1001,7 +1004,7 @@ class VillaValidationTests(unittest.TestCase):
         )
         self.addCleanup(self.client.close)
 
-    def test_the_villa_candidate_validates_and_may_advance(self) -> None:
+    def test_the_villa_candidate_becomes_ready_for_review(self) -> None:
         state = self.client.get("/api/state").json()
         proposal = self.client.post(
             "/api/proposals",
@@ -1040,7 +1043,7 @@ class VillaValidationTests(unittest.TestCase):
             f"effectiveChecks={validation['effectiveChecks']}\n"
             f"  relations={validation['relationChecks']} "
             f"seats={validation['seatExecutionComplete']}\n"
-            f"  advance={validation['advance']} "
+            f"  reviewReady={validation['reviewReady']} "
             f"blockedBy={validation['blockedBy']} "
             f"honesty={validation['honesty']}\n"
             f"  canonicalFacts={validation['canonicalFacts']}\n"
@@ -1050,7 +1053,7 @@ class VillaValidationTests(unittest.TestCase):
         self.assertIs(validation["receipt"]["passed"], True)
         self.assertEqual(validation["validators"], THREE)
         self.assertEqual(validation["effectiveChecks"], ["artifact-present"])
-        self.assertIs(validation["advance"], True)
+        self.assertIs(validation["reviewReady"], True)
         self.assertEqual(validation["blockedBy"], [])
         # Both of the villa's seats compiled a program the studio could name.
         self.assertEqual(validation["honesty"], [])

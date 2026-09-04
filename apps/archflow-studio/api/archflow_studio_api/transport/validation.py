@@ -1,4 +1,4 @@
-"""The wire form of one candidate's validation: a receipt, and a verdict.
+"""The wire form of one candidate's validation and review readiness.
 
 Three things this shape refuses to let a client do.
 
@@ -8,10 +8,13 @@ to check, and ``validatorNote`` and ``canonicalFacts`` say in words why the two
 lists differ. A client that shows "validation passed" without showing those is
 showing a claim the server never made.
 
-It cannot derive the verdict itself. ``advance`` and ``blockedBy`` are issued
-here; the browser is never given the four clauses to combine on its own, and
+It cannot derive review readiness itself. ``reviewReady`` and ``blockedBy``
+come from the server; the browser is never given the five clauses to combine on its own, and
 ``blockedBy`` names the failing ones so a refusal is actionable rather than
 merely red.
+
+Review readiness is not issue authority. This route writes nothing and cannot
+advance a stage; only ``project.issue`` can issue a run.
 
 And it cannot lose a state: ``relationChecks`` is the candidate's own
 three-state block, the same object the candidate readout serves, so nothing
@@ -96,9 +99,10 @@ class ValidationDto(BaseModel):
         description="the candidate's own three states, copied not recomputed",
     )
     seat_execution_complete: bool = Field(alias="seatExecutionComplete")
-    advance: bool = Field(
-        description="the server's verdict: every one of the five clauses "
-        "holds. It is issued here and never derived by a client",
+    review_ready: bool = Field(
+        alias="reviewReady",
+        description="whether all five server-owned review clauses hold; "
+        "this never issues a run or advances a stage",
     )
     blocked_by: list[str] = Field(
         alias="blockedBy",
@@ -125,7 +129,7 @@ def to_dto(validation: CandidateValidation) -> ValidationDto:
         validator_note=VALIDATOR_NOTE,
         relation_checks=relations_dto(validation.relation_checks),
         seat_execution_complete=validation.seat_execution_complete,
-        advance=validation.advance,
+        review_ready=validation.review_ready,
         blocked_by=list(validation.blocked_by),
         honesty=list(validation.honesty),
     )

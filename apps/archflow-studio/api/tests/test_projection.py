@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -14,6 +15,7 @@ from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
 from archflow.project.refs import RunRef
+from archflow.project.record_kinds import RUNNER_RUN_RECEIPT
 from archflow.state.state_record import StateRecord, developed_design_view
 
 from .support import (
@@ -23,12 +25,14 @@ from .support import (
     REFERENCE_RUN_ID,
     RUNNER_RECORD_PATH,
     STRIPPED_RECORD_PAYLOAD,
+    advance_head,
     add_harness_run,
     add_later_run,
     add_unreadable_run,
     make_empty_project,
     make_project,
     missing_workflow_ref,
+    run_records,
     unlistable_run,
     write_runner_record,
 )
@@ -77,9 +81,9 @@ class StateProjectionTests(unittest.TestCase):
 
     def test_the_projection_names_its_source_and_phase(self) -> None:
         self.assertEqual(self.payload["projectId"], PROJECT_ID)
-        self.assertEqual(
-            self.payload["recordSource"], RUNNER_RECORD_PATH
-        )
+        self.assertTrue(self.payload["recordSource"].startswith(
+            f"project://{PROJECT_ID}/runs/{REFERENCE_RUN_ID}/records/state-record-"
+        ))
         self.assertEqual(
             self.payload["activePhase"], "design_development"
         )
@@ -239,7 +243,7 @@ class StateProjectionTests(unittest.TestCase):
         self.assertEqual(payload["code"], "RUN_NOT_FOUND")
         self.assertIn("run-nowhere", payload["detail"])
 
-    def test_a_missing_authored_record_names_the_path_it_wanted(
+    def test_a_missing_authored_wip_does_not_erase_the_retained_run_record(
         self,
     ) -> None:
         self.repository.layout.resolve_relative(
@@ -248,10 +252,19 @@ class StateProjectionTests(unittest.TestCase):
 
         response = self.client.get("/api/state")
 
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
-        self.assertEqual(payload["code"], "STATE_RECORD_NOT_FOUND")
-        self.assertIn(RUNNER_RECORD_PATH, payload["detail"])
+        self.assertEqual(payload["recordDigest"], self.payload["recordDigest"])
+        self.assertEqual(payload["recordSource"], self.payload["recordSource"])
+
+    def test_authored_wip_drift_does_not_rebind_the_reference_run(self) -> None:
+        write_runner_record(self.repository, STRIPPED_RECORD_PAYLOAD)
+
+        payload = self.client.get("/api/state").json()
+
+        self.assertEqual(payload["recordDigest"], self.payload["recordDigest"])
+        self.assertEqual(payload["stateDigest"], self.payload["stateDigest"])
+        self.assertEqual(payload["recordSource"], self.payload["recordSource"])
 
 
 class DisagreeingReceiptTests(unittest.TestCase):
@@ -277,9 +290,50 @@ class DisagreeingReceiptTests(unittest.TestCase):
         self.assertIs(payload["matchesReferenceReceipt"], False)
         self.assertIn(
             "projection digest differs from the reference receipt: the "
-            f"authored record is not what run {REFERENCE_RUN_ID} executed",
+            f"projected record is not what run {REFERENCE_RUN_ID} executed",
             payload["honesty"],
         )
+
+
+class MissingExactReferenceTests(unittest.TestCase):
+    def test_legacy_receipt_is_read_only_and_cannot_base_a_proposal(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        repository, _ = make_project(root)
+        run = repository.load_run(REFERENCE_RUN_ID)
+        ref = repository.put_json(
+            run=run,
+            destination=run_records(REFERENCE_RUN_ID),
+            record_kind=RUNNER_RUN_RECEIPT,
+            payload={
+                "schema": "RunnerRunReceipt@3",
+                "project_id": PROJECT_ID,
+                "run_id": REFERENCE_RUN_ID,
+                "design_state_digest": "0" * 64,
+                "seat_execution_complete": True,
+            },
+        )
+        path = repository.layout.resolve_record(ref)
+        newest = path.stat().st_mtime + 60.0
+        os.utime(path, (newest, newest))
+        client = TestClient(create_app(StudioSettings(project_dir=root / PROJECT_ID)))
+        self.addCleanup(client.close)
+
+        state = client.get("/api/state")
+        self.assertEqual(state.status_code, 200, state.text)
+        self.assertEqual(state.json()["recordSource"], RUNNER_RECORD_PATH)
+        self.assertIs(state.json()["matchesReferenceReceipt"], False)
+        response = client.post(
+            "/api/proposals",
+            json={
+                "stateDigest": state.json()["stateDigest"],
+                "targetComponentId": "portico",
+                "elementId": "portico-base",
+                "utterance": "set height to 2.2",
+            },
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "REFERENCE_STATE_NOT_EXACT")
 
 
 class ProjectionWithoutAnyRunTests(unittest.TestCase):
@@ -329,6 +383,15 @@ class ProjectionWithoutAnyRunTests(unittest.TestCase):
             "construction",
         ):
             self.assertIn(line, payload["honesty"])
+
+    def test_missing_authored_wip_is_a_404_when_no_run_can_answer(self) -> None:
+        self.repository.layout.resolve_relative(RUNNER_RECORD_PATH).unlink()
+
+        response = self.client.get("/api/state")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["code"], "STATE_RECORD_NOT_FOUND")
+        self.assertIn(RUNNER_RECORD_PATH, response.json()["detail"])
 
 
 class UnreadableRunTests(unittest.TestCase):
@@ -431,7 +494,7 @@ class MalformedRecordTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
-        self.repository, _ = make_project(self.root)
+        self.repository = make_empty_project(self.root)
         self.client = TestClient(
             create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
         )
@@ -544,7 +607,7 @@ class UnviewableRecordTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
-        self.repository, _ = make_project(self.root)
+        self.repository = make_empty_project(self.root)
         payload = json.loads(json.dumps(RECORD_PAYLOAD))
         payload["evidence_refs"] = []
         write_runner_record(self.repository, payload)
@@ -688,9 +751,50 @@ class ReceiptWithoutADigestTests(unittest.TestCase):
         self.assertIsNone(payload["matchesReferenceReceipt"])
         self.assertNotIn(
             "projection digest differs from the reference receipt: the "
-            f"authored record is not what run {REFERENCE_RUN_ID} executed",
+            f"projected record is not what run {REFERENCE_RUN_ID} executed",
             payload["honesty"],
         )
+
+    def test_a_receipt_without_a_design_digest_cannot_base_a_proposal(self) -> None:
+        response = self.client.post(
+            "/api/proposals",
+            json={
+                "stateDigest": self.client.get("/api/state").json()["stateDigest"],
+                "targetComponentId": "portico",
+                "elementId": "portico-base",
+                "utterance": "set height to 2.2",
+            },
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "REFERENCE_STATE_MISMATCH")
+
+
+class HistoricalReferenceTests(unittest.TestCase):
+    def test_old_run_remains_readable_but_cannot_base_new_work(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        repository, _ = make_project(root)
+        original = repository.load_run(REFERENCE_RUN_ID)
+        advance_head(repository)
+        client = TestClient(create_app(StudioSettings(project_dir=root / PROJECT_ID)))
+        self.addCleanup(client.close)
+
+        state = client.get("/api/state")
+        self.assertEqual(state.status_code, 200, state.text)
+        self.assertEqual(state.json()["referenceRun"]["baseVersion"], original.base.version)
+        self.assertEqual(state.json()["published"]["version"], 1)
+        response = client.post(
+            "/api/proposals",
+            json={
+                "stateDigest": state.json()["stateDigest"],
+                "targetComponentId": "portico",
+                "elementId": "portico-base",
+                "utterance": "set height to 2.2",
+            },
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "REFERENCE_BASE_STALE")
 
 
 if __name__ == "__main__":

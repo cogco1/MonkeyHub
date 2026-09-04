@@ -8,9 +8,19 @@ from fastapi import APIRouter
 from fastapi.responses import Response
 from starlette.requests import Request
 
-from ..application.artifacts import artifact_bytes, list_artifacts
+from ..application.artifacts import (
+    artifact_bytes,
+    list_artifacts,
+    save_viewport_capture,
+)
 from ..application.binding import bound_project
-from ..transport.artifacts import ArtifactListDto, to_dto
+from ..transport.artifacts import (
+    ArtifactListDto,
+    ViewportCaptureDto,
+    ViewportCaptureRequestDto,
+    capture_dto,
+    to_dto,
+)
 
 router = APIRouter(tags=["artifacts"])
 
@@ -24,6 +34,27 @@ def read_artifacts(request: Request) -> ArtifactListDto:
     """List the exported models, each one still answered for by its receipt."""
 
     return to_dto(list_artifacts(bound_project(request.app.state)))
+
+
+@router.post(
+    "/captures",
+    response_model=ViewportCaptureDto,
+    response_model_by_alias=True,
+    status_code=201,
+)
+def create_viewport_capture(
+    request: Request,
+    payload: ViewportCaptureRequestDto,
+) -> ViewportCaptureDto:
+    """Save one viewport PNG in the explicitly named run's workspace."""
+
+    return capture_dto(
+        save_viewport_capture(
+            bound_project(request.app.state),
+            payload.run_id,
+            payload.png_base64,
+        )
+    )
 
 
 # The one route that does not answer with a DTO: its body is the exported file

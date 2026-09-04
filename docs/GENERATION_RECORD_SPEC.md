@@ -177,7 +177,8 @@ IFC 导出回执(`ifc-export-receipt`)、渲染清单
 | 任何 D2 记录(检索/快照/调用/采纳/校准)| **当前工作的项目** `runs/<run>/records/`;工具必须显式 `--project-id`,**禁止默认目标** |
 | 外来证据 | `run_basis_import.py` 整体导入当前项目(含快照与调用信封,带出处记录)|
 | 派生索引 / 执行契约 JSON / 人读总览 | 当前项目 `index/` |
-| 预览模型、截图、审查包(给人或其他代理看)| `V4_RUNTIME/output/YYMMDD_用途/` |
+| 与已有 run 一一绑定的过程预览、截图、审查件 | 当前项目 `runs/<run>/workspaces/<purpose>/`; Studio 视口截图固定为 `workspaces/studio-captures/viewport-<sha256>.png` |
+| 跨项目汇报、会议分发或一次性过手副本 | 操作方显式指定的项目外分发目录; 必须随附来源 project/run/ref 清单，不能反向成为项目状态; 工具不得从 `workspace_root` 猜测一个未配置的 `output_root` |
 | 证据级外化(正式 .3dm/.ifc/渲染)| 项目 `exports/` + 外化清单记录(D8)|
 | 重启备份 / 大文件过手 | `V4_RUNTIME/cache/` 或 `temp/` |
 | 会话 scratchpad 允许内容 | 工具结果解码缓冲、一次性诊断脚本 —— **仅此两类** |

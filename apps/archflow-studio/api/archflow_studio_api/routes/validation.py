@@ -1,10 +1,10 @@
-"""``GET /api/candidates/{id}/validation``: what the kernel says, and the verdict.
+"""``GET /api/candidates/{id}/validation``: the receipt and review readiness.
 
 The route does three things and delegates the rest. It refuses a live job
 while that job is still in flight, then reads the candidate back with the same
 ``describe`` the candidate readout uses — from its exact retained P036 harness
 receipt when process-local job or proposal memory is absent — so a client
-cannot be shown a verdict about one set of seat results and a readout about
+cannot be shown review readiness about one set of seat results and a readout about
 another.
 
 The refusal is worth its own sentence. A candidate that is queued or running
@@ -74,7 +74,7 @@ def read_validation(request: Request, candidate_id: str) -> ValidationDto:
         proposal_id=job.proposal_id if job is not None else None,
     )
     # Read once, then used both to check against and to remember under, so the
-    # verdict and the key it is filed under name the same canonical version.
+    # review-readiness result and its key name the same canonical version.
     head = binding.head()
     return validation_dto(
         # Computed on the first request for this candidate at this issue and

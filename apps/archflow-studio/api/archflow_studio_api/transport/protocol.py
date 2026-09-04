@@ -20,7 +20,7 @@ class ServerIdentityDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     protocol: str = Field(
-        description="the protocol and its major version, 'archflow/1'"
+        description="the protocol and its major version, 'archflow/2'"
     )
     server: str = Field(
         description="which implementation is answering, e.g. monkeyarch-api"

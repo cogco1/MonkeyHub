@@ -29,7 +29,11 @@ from ..application.options import (
     make_option,
     record_massing,
 )
-from ..application.projection import StateProjection, project_state
+from ..application.projection import (
+    StateProjection,
+    project_state,
+    require_actionable,
+)
 from ..settings import StudioSettings
 from ..transport.candidate import CandidateAcceptedDto, accepted_dto
 from ..transport.errors import StudioError
@@ -58,6 +62,7 @@ def make_massing_option(
     state = request.app.state
     binding = bound_project(state)
     projection = project_state(binding)
+    require_actionable(projection)
     _require_current_base(
         binding,
         projection,
@@ -129,6 +134,7 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
     option: MassingOption = state.options.get(option_id)
     binding = bound_project(state)
     projection = project_state(binding)
+    require_actionable(projection)
     _require_current_base(
         binding,
         projection,

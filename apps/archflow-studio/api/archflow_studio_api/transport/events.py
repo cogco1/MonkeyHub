@@ -38,10 +38,11 @@ class StudioEventDto(BaseModel):
     run_id: str | None = Field(alias="runId", default=None)
     wall_time_s: float | None = Field(alias="wallTimeS", default=None)
     error: str | None = Field(default=None)
-    advance: bool | None = Field(
+    review_ready: bool | None = Field(
+        alias="reviewReady",
         default=None,
-        description="on validation.computed, the server's verdict; null on "
-        "the lifecycle events, which decide nothing",
+        description="on validation.computed, whether the candidate is ready "
+        "for human review; null on lifecycle events. This is not issue authority",
     )
     blocked_by: list[str] | None = Field(
         alias="blockedBy",
@@ -64,6 +65,6 @@ def to_dto(event: Mapping[str, Any]) -> StudioEventDto:
         run_id=event.get("run_id"),
         wall_time_s=event.get("wall_time_s"),
         error=event.get("error"),
-        advance=event.get("advance"),
+        review_ready=event.get("review_ready"),
         blocked_by=event.get("blocked_by"),
     )

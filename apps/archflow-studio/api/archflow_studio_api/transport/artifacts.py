@@ -11,7 +11,11 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.artifacts import ArtifactListing, ArtifactRecord
+from ..application.artifacts import (
+    ArtifactListing,
+    ArtifactRecord,
+    ViewportCapture,
+)
 from .project import ProjectVersionDto
 
 
@@ -67,6 +71,28 @@ class ArtifactListDto(BaseModel):
     )
 
 
+class ViewportCaptureRequestDto(BaseModel):
+    """The loaded run and the PNG bytes the browser captured."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    run_id: str = Field(alias="runId")
+    png_base64: str = Field(alias="pngBase64")
+
+
+class ViewportCaptureDto(BaseModel):
+    """A non-canonical PNG retained below the named run workspace."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    project_id: str = Field(alias="projectId")
+    run_id: str = Field(alias="runId")
+    relative_path: str = Field(alias="relativePath")
+    sha256: str
+    media_type: str = Field(alias="mediaType")
+    size_bytes: int = Field(alias="sizeBytes")
+
+
 def artifact_dto(record: ArtifactRecord) -> ProjectArtifactDto:
     """Shape one artifact for the wire; every value came off its receipt."""
 
@@ -109,4 +135,15 @@ def to_dto(listing: ArtifactListing) -> ArtifactListDto:
         project_id=listing.project_id,
         artifacts=[artifact_dto(record) for record in listing.artifacts],
         skipped_runs=list(listing.skipped_runs),
+    )
+
+
+def capture_dto(capture: ViewportCapture) -> ViewportCaptureDto:
+    return ViewportCaptureDto(
+        project_id=capture.project_id,
+        run_id=capture.run_id,
+        relative_path=capture.relative_path,
+        sha256=capture.sha256,
+        media_type=capture.media_type,
+        size_bytes=capture.size_bytes,
     )

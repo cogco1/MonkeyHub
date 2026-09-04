@@ -75,7 +75,7 @@ is assigned to the lane whose entry points reach it; what nothing reaches is DEL
 | Field parsing | `contracts/fields.py` | 86 module-local `_text/_mapping/_list/…` copies go | |
 | Persistence and commit | `project/repository.py` (P036) | | `commit/store.py`, `commit/committer.py`, `workspace/manager.py` (controller lane); artifact side-channel writes (sandbox lane) |
 | HEAD schema | `CanonicalProjectState@1` | P110 makes `canonical_state_from_dict` accept it; `CanonicalState@1` as a HEAD shape goes | |
-| Design state | `StateRecord@1` + `developed_design_view` | `developed_design_view` emits components, dependencies and obligations itself; the `SchematicPack`/`SpatialOptionProposal` fabrication in `project_runner.py` and the `state → runtime` import inversion go; `initialize_developed_design` goes with the portfolio lane | `OperationalMarkovState`, `DesignStateTree`, `design_maturity` phase gates (controller lane); P109 decides what of `decision_operator` the record needs |
+| Design state | `StateRecord@1` + `developed_design_view` + `StateRecordOperator` | `developed_design_view` emits components, dependencies and obligations itself; the `SchematicPack`/`SpatialOptionProposal` fabrication in `project_runner.py` and the `state → runtime` import inversion go; `initialize_developed_design` goes with the portfolio lane | `OperationalMarkovState`, `DesignStateTree`, `design_maturity` phase gates (controller lane) |
 | Components | `Component@1` → `design_components_of` → `DesignComponent` | component library / templates / stair solver fold into element producers per the consolidation plan | `DevelopedComponent@2` (portfolio lane), `ComponentFamilyInstance` (research lane), `BuildingAssemblyTemplate`, `component_catalog` (DELETE) |
 | Geometry emission | `element_producers.py` | P105 gives the producers the monument vocabulary (revolve, boolean chain, arrays as one op kind) | pantheon hand-builders and parthenon op dicts (monuments lane); `GeometryProducer`/`ProducedAssembly`, `portico_geometry` (DELETE) |
 | Program and compiler | `state/geometry_program.py`, `compilers/geometry.py` | `runtime/geometry_compiler.py` shim goes | |
@@ -96,7 +96,7 @@ is assigned to the lane whose entry points reach it; what nothing reaches is DEL
 P066 and P069 close as superseded by this spec (their retained records stay readable from
 `archive/monuments/`). P105 and P106 become the only way a monument re-enters: as a State
 Record replayed through the spine. P094 reads retained records; it names, before execution,
-any reader it needs kept on the spine. P104, P107, P109, P110 are spine work and stand.
+any reader it needs kept on the spine. P104, P107 and P110 are spine work and stand.
 
 ## 3. The archive
 

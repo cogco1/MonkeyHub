@@ -11,14 +11,14 @@ no client has to guess which run a number belongs to.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 from starlette.datastructures import State
 
 from archflow.project.location import open_located_project
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import RUNNER_RUN_RECEIPT
+from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, STATE_RECORD
 from archflow.project.refs import (
     ProjectRecordRef,
     ProjectVersionRef,
@@ -30,6 +30,7 @@ from archflow.project.repository import (
     ProjectRepositoryError,
 )
 from archflow.state.stage_workflow import HARNESS_WORKFLOW_IDS
+from archflow.state.state_record import StateRecord, StateRecordError
 
 from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
 from ..transport.errors import StudioError, error_sentence
@@ -199,6 +200,75 @@ class ProjectBinding:
             if newest is None or mtime > newest[0]:
                 newest = (mtime, ref, payload)
         return None if newest is None else (newest[1], newest[2])
+
+    def exact_state_record(
+        self, reference: ReferenceRun
+    ) -> tuple[ProjectRecordRef, StateRecord]:
+        """Load the exact retained State Record named by a run receipt.
+
+        A run id and a content digest are not enough to establish lineage:
+        ``StateRecord.digest`` deliberately excludes the run and base.  This
+        reader therefore checks the receipt, P036 reference, retained payload,
+        run identity and exact canonical base together before returning it.
+        """
+
+        receipt = reference.receipt
+        if receipt is None:
+            raise _reference_state_not_exact(
+                reference,
+                "the reference run has no runner receipt",
+            )
+        if (
+            receipt.get("project_id") != self.project_id
+            or receipt.get("run_id") != reference.run.run_id
+        ):
+            raise _reference_state_not_exact(
+                reference,
+                "the runner receipt names a different project or run",
+            )
+        uri = receipt.get("state_record_ref")
+        try:
+            ref = record_ref_from_uri(uri, self.project_id)
+        except (TypeError, ValueError) as exc:
+            raise _reference_state_not_exact(
+                reference,
+                f"state_record_ref is not a record in this project: {error_sentence(exc)}",
+            ) from exc
+        expected_parent = PurePosixPath(
+            "runs", reference.run.run_id, "records"
+        )
+        path = PurePosixPath(ref.relative_path)
+        if path.parent != expected_parent or record_kind(ref) != STATE_RECORD:
+            raise _reference_state_not_exact(
+                reference,
+                "state_record_ref does not name this run's retained state-record",
+            )
+        try:
+            record = StateRecord.from_dict(self.repository.load_json(ref))
+        except Exception as exc:
+            raise _reference_state_not_exact(
+                reference,
+                f"the retained state record could not be verified: {error_sentence(exc)}",
+            ) from exc
+        try:
+            exact_run = record.run_ref
+        except (StateRecordError, ValueError) as exc:
+            raise _reference_state_not_exact(
+                reference,
+                f"the retained state record carries no exact run identity: {error_sentence(exc)}",
+            ) from exc
+        if exact_run != reference.run:
+            raise _reference_state_not_exact(
+                reference,
+                "the retained state record's run or canonical base differs from the run manifest",
+            )
+        claimed_digest = receipt.get("state_record_digest")
+        if not isinstance(claimed_digest, str) or claimed_digest != record.digest:
+            raise _reference_state_not_exact(
+                reference,
+                "state_record_digest does not match the retained state record",
+            )
+        return ref, record
 
     def _mtime(self, ref: ProjectRecordRef) -> float:
         """When the record was last written; the only ordering P036 offers.
@@ -399,6 +469,17 @@ def bound_project(state: State) -> ProjectBinding:
         binding = ProjectBinding.open(state.settings)
         state.binding = binding
     return binding
+
+
+def _reference_state_not_exact(
+    reference: ReferenceRun, detail: str
+) -> StudioError:
+    return StudioError(
+        409,
+        "REFERENCE_STATE_NOT_EXACT",
+        f"reference run {reference.run.run_id!r} is inspectable but not "
+        f"actionable: {detail}",
+    )
 
 
 def resolve_project(state: State, project_id: str) -> ProjectBinding:

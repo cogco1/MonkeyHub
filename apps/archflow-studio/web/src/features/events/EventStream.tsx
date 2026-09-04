@@ -73,8 +73,8 @@ function summarise(event: StudioEventDto): string {
   if (event.wallTimeS !== null && event.wallTimeS !== undefined) {
     parts.push(`wall=${event.wallTimeS}s`);
   }
-  if (event.advance !== null && event.advance !== undefined) {
-    parts.push(`advance=${event.advance}`);
+  if (event.reviewReady !== null && event.reviewReady !== undefined) {
+    parts.push(`reviewReady=${event.reviewReady}`);
   }
   if (event.blockedBy) {
     parts.push(`blockedBy=[${event.blockedBy.join(", ")}]`);

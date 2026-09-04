@@ -8,7 +8,7 @@
  * not do:
  *
  *  - it imports nothing from archflow and computes no geometry;
- *  - it derives no impact, no relation counts and no advance verdict;
+ *  - it derives no impact, no relation counts and no review-readiness result;
  *  - it writes nothing to the project and issues nothing;
  *  - it keeps no version history: reloading the tab loses the view, not the
  *    work.
@@ -33,6 +33,7 @@ import {
 import type { ServerIdentity } from "../api/connection";
 import type {
   ArtifactListDto,
+  CatalogDto,
   CandidateDto,
   CompareDto,
   GestureDto,
@@ -71,7 +72,12 @@ import {
   type SpaceEdit,
 } from "../features/program/ProgramPanel";
 import type { ViewState } from "../features/stage/SourceChip";
-import { Stage, type HomeModel, type PickedFacts } from "../features/stage/Stage";
+import {
+  Stage,
+  type CaptureState,
+  type HomeModel,
+  type PickedFacts,
+} from "../features/stage/Stage";
 import type { VersionExport, VersionGroup } from "../features/stage/VersionsStrip";
 import { useT } from "../i18n/useT";
 import type { SceneInspection } from "../viewer/sceneInspection";
@@ -83,6 +89,11 @@ import {
   type ViewportPick,
   type ViewportStatus,
 } from "../viewer/ThreeDmViewport";
+import {
+  nextModelDisplayMode,
+  semanticObjectNames,
+  type ModelDisplayMode,
+} from "../viewer/modelDisplay";
 import { AppShell } from "./AppShell";
 import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
@@ -122,10 +133,20 @@ function writePinned(pinned: boolean): void {
 /** The element as the projection names it, for the viewer to find its objects. */
 function ghostTarget(
   projection: StateProjectionDto,
+  catalog: CatalogDto,
   elementId: string,
 ): GhostTarget | null {
   const element = projection.elements.find((row) => row.elementId === elementId);
-  return element ? { elementId, componentId: element.componentId } : null;
+  return element
+    ? {
+        objectNames: semanticObjectNames(
+          catalog.objects,
+          catalog.components,
+          element.componentId,
+          elementId,
+        ),
+      }
+    : null;
 }
 
 /**
@@ -136,10 +157,11 @@ function ghostTarget(
  */
 function ghostSpecFor(
   projection: StateProjectionDto,
+  catalog: CatalogDto | null,
   proposal: ProposalDto,
 ): GhostSpec | null {
-  if (proposal.target.elementId === null) return null;
-  const target = ghostTarget(projection, proposal.target.elementId);
+  if (proposal.target.elementId === null || catalog === null) return null;
+  const target = ghostTarget(projection, catalog, proposal.target.elementId);
   if (target === null) return null;
   const isHeight = proposal.target.key === "height";
   const old = Number(proposal.change.old);
@@ -147,7 +169,7 @@ function ghostSpecFor(
   const factor = isHeight && old > 0 && Number.isFinite(next) ? next / old : 1;
   const affected = proposal.impact.propagated
     .filter((ref) => ref.startsWith("entity:"))
-    .map((ref) => ghostTarget(projection, ref.slice("entity:".length)))
+    .map((ref) => ghostTarget(projection, catalog, ref.slice("entity:".length)))
     .filter((item): item is GhostTarget => item !== null);
   return { target, factor, scaleAxis: isHeight ? "z" : null, affected };
 }
@@ -238,6 +260,8 @@ export default function App({ server }: { server: ServerIdentity }) {
     t: number;
     meshes: number;
   } | null>(null);
+  const [captureState, setCaptureState] = useState<CaptureState>("idle");
+  const [capturePath, setCapturePath] = useState<string | null>(null);
   const refineInFlight = useRef<string | null>(null);
   const refinePending = useRef<Map<string, number>>(new Map());
   const [candidates, setCandidates] = useState<Record<string, CandidateDto>>({});
@@ -252,7 +276,8 @@ export default function App({ server }: { server: ServerIdentity }) {
   // the panel is open. It is a read of the record, not of the picture, so it
   // is fetched on demand rather than at boot.
   const [frame, setFrame] = useState<Loadable<FrameDto>>(idle);
-  const [frameOpen, setFrameOpen] = useState(false);
+  const [displayMode, setDisplayMode] = useState<ModelDisplayMode>("model");
+  const frameOpen = displayMode === "framework";
 
   // The massing on the table: the record's own volumes, and the options this
   // server process is holding beside them. Read on demand like the frame, and
@@ -260,7 +285,7 @@ export default function App({ server }: { server: ServerIdentity }) {
   // record the tab has left is a number about a different building.
   const [optionsTable, setOptionsTable] = useState<Loadable<OptionsDto>>(idle);
   const [volumes, setVolumes] = useState<Loadable<VolumesDto>>(idle);
-  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsOpen = displayMode === "massing";
   const [optionsBusy, setOptionsBusy] = useState(false);
   // The program sheet: what the server answered, and the copy this tab is
   // editing. They are two values on purpose — `program` is the server's
@@ -283,6 +308,106 @@ export default function App({ server }: { server: ServerIdentity }) {
   const projection: StateProjectionDto | null =
     session.status === "ready" ? session.value.projection : null;
   const project = session.status === "ready" ? session.value.project : null;
+  const [viewerCatalog, setViewerCatalog] = useState<CatalogDto | null>(null);
+  const semanticCatalog = useMemo(() => {
+    const runId = loadedArtifact?.runId;
+    if (runId === undefined) return null;
+    if (projection?.catalog?.inspectionRun === runId) return projection.catalog;
+    return viewerCatalog?.inspectionRun === runId ? viewerCatalog : null;
+  }, [loadedArtifact?.runId, projection?.catalog, viewerCatalog]);
+
+  useEffect(() => {
+    const runId = loadedArtifact?.runId;
+    if (runId === undefined || projection?.catalog?.inspectionRun === runId) {
+      setViewerCatalog(null);
+      return;
+    }
+    let current = true;
+    setViewerCatalog(null);
+    void studio
+      .state(runId)
+      .then((answer) => {
+        if (current) setViewerCatalog(answer.catalog?.inspectionRun === runId ? answer.catalog : null);
+      })
+      .catch(() => {
+        if (current) setViewerCatalog(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [loadedArtifact?.runId, projection?.catalog]);
+
+  useEffect(() => {
+    setCaptureState("idle");
+    setCapturePath(null);
+  }, [loadedArtifact?.runId, sourceLabel]);
+
+  const captureViewport = useCallback(async () => {
+    const runId = loadedArtifact?.runId;
+    if (runId === undefined || blendState !== null) return;
+    setCaptureState("busy");
+    setCapturePath(null);
+    try {
+      const png = await viewportRef.current?.capturePng();
+      if (png === null || png === undefined) {
+        throw new Error("The viewport has no project model to capture.");
+      }
+      const saved = await studio.capture(runId, png);
+      setCapturePath(saved.relativePath);
+      setCaptureState("success");
+    } catch (cause) {
+      const error = asStudioApiError(cause);
+      setCaptureState("error");
+      append({
+        kind: "system",
+        ...systemText([
+          { kind: "technical", text: error.code },
+          { kind: "prose", text: ` · ${error.detail}` },
+        ]),
+      });
+    }
+  }, [append, blendState, loadedArtifact?.runId]);
+
+  const chooseDisplayMode = useCallback(
+    (requested: ModelDisplayMode) => {
+      const next = nextModelDisplayMode(displayMode, requested);
+      setDisplayMode(next);
+      if (next === "model") {
+        setGhostProposalId(null);
+        setBlendState(null);
+        viewportRef.current?.showOriginal();
+      }
+    },
+    [displayMode],
+  );
+
+  /** A semantic target lights only the exact object names in this run's catalog. */
+  const selectSemanticTarget = useCallback((componentId: string, elementId: string | null) => {
+    setSelection({ componentId, elementId });
+    setPicked(null);
+    const objectNames =
+      semanticCatalog === null
+        ? []
+        : semanticObjectNames(
+            semanticCatalog.objects,
+            semanticCatalog.components,
+            componentId,
+            elementId,
+          );
+    viewportRef.current?.highlight({ objectNames });
+  }, [semanticCatalog]);
+
+  useEffect(() => {
+    if (selection === null || semanticCatalog === null) return;
+    viewportRef.current?.highlight({
+      objectNames: semanticObjectNames(
+        semanticCatalog.objects,
+        semanticCatalog.components,
+        selection.componentId,
+        selection.elementId,
+      ),
+    });
+  }, [selection, semanticCatalog]);
 
   // The binding, said once per projection the tab reads.
   const announcedRef = useRef<string | null>(null);
@@ -660,6 +785,7 @@ export default function App({ server }: { server: ServerIdentity }) {
   /** The viewer says which file it holds; that is when the shell writes it down. */
   const noteSource = useCallback((label: string | null) => {
     setSourceLabel(label);
+    setDisplayMode("model");
     setLoadedArtifacts(
       label === null || label === LOCAL_SOURCE_LABEL
         ? []
@@ -739,16 +865,22 @@ export default function App({ server }: { server: ServerIdentity }) {
               )
             : [],
         });
-        // The server named it, so the mark becomes the element's: every object
-        // the export tagged with it, not only the face the ray met. When the
-        // loaded picture carries none of them, the one hit object stays lit —
+        // The server named it, so the mark becomes the exact object-name set
+        // in this run's catalog, not only the face the ray met. When the loaded
+        // picture carries none of them, the one hit object stays lit —
         // never nothing, which would read as the click having missed.
         if (resolution.elementId !== null || resolution.componentId !== null) {
+          const objectNames =
+            resolution.componentId === null || semanticCatalog === null
+              ? []
+              : semanticObjectNames(
+                  semanticCatalog.objects,
+                  semanticCatalog.components,
+                  resolution.componentId,
+                  resolution.elementId,
+                );
           const lit =
-            viewportRef.current?.highlight({
-              componentId: resolution.componentId,
-              elementId: resolution.elementId,
-            }) ?? 0;
+            viewportRef.current?.highlight({ objectNames }) ?? 0;
           if (lit === 0) viewportRef.current?.highlight({ object: pick.object });
         }
         if (resolution.status === "resolved" && resolution.componentId) {
@@ -763,7 +895,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         append({ kind: "refusal", error, what: "POST /api/pick/resolve" });
       }
     },
-    [append, loadedArtifact, projection, recoverFromStaleBase, stateDigest],
+    [append, loadedArtifact, projection, recoverFromStaleBase, semanticCatalog, stateDigest],
   );
 
   // One proposal in flight at a time. The busy flag renders the button; this
@@ -783,18 +915,12 @@ export default function App({ server }: { server: ServerIdentity }) {
       const componentId = pending.targetComponentId;
       if (componentId === null) return;
       const elementId = pending.elementId ?? null;
-      if (
+      const unchanged =
         selection !== null &&
         selection.componentId === componentId &&
-        selection.elementId === elementId
-      ) {
-        return;
-      }
-      setSelection({ componentId, elementId });
-      // The picked chip described the old subject; it must not outlive it, and
-      // neither must the mark on the model that went with it.
-      setPicked(null);
-      viewportRef.current?.highlight(null);
+        selection.elementId === elementId;
+      selectSemanticTarget(componentId, elementId);
+      if (unchanged) return;
       append({
         kind: "system",
         ...systemText([
@@ -804,7 +930,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         ]),
       });
     },
-    [append, selection],
+    [append, selectSemanticTarget, selection],
   );
   const propose = useCallback(
     async (utterance: string, override?: Selection | null) => {
@@ -893,7 +1019,9 @@ export default function App({ server }: { server: ServerIdentity }) {
         // The fast stage's picture: a ghost of this proposal over the loaded
         // model, drawn the moment the typed change exists. With no model on
         // screen there is nothing to draw over, and nothing is claimed.
-        const spec = projection ? ghostSpecFor(projection, answer.proposal) : null;
+        const spec = projection
+          ? ghostSpecFor(projection, semanticCatalog, answer.proposal)
+          : null;
         const copied =
           spec && sourceLabel !== null ? (viewportRef.current?.ghost(spec) ?? 0) : 0;
         if (copied > 0) {
@@ -909,21 +1037,22 @@ export default function App({ server }: { server: ServerIdentity }) {
                   kind: "prose",
                   text: "nothing to preview here: the loaded file carries no objects of ",
                 },
-                { kind: "technical", text: spec.target.elementId },
+                {
+                  kind: "technical",
+                  text:
+                    answer.proposal.target.elementId ?? answer.proposal.target.componentId,
+                },
               ]),
             });
           }
         }
         const { target } = answer.proposal;
-        if (
+        const targetChanged =
           selection === null ||
           target.componentId !== selection.componentId ||
-          target.elementId !== selection.elementId
-        ) {
-          setSelection({
-            componentId: target.componentId,
-            elementId: target.elementId,
-          });
+          target.elementId !== selection.elementId;
+        selectSemanticTarget(target.componentId, target.elementId);
+        if (targetChanged) {
           append({
             kind: "system",
             ...systemText([
@@ -935,10 +1064,6 @@ export default function App({ server }: { server: ServerIdentity }) {
               { kind: "prose", text: " · the proposal's target" },
             ]),
           });
-          // The picked chip described the old subject; it must not outlive it,
-          // and neither must the mark on the model that went with it.
-          setPicked(null);
-          viewportRef.current?.highlight(null);
         }
         setDraft("");
         // The marks were said; a new sentence starts clean. A question keeps
@@ -992,6 +1117,8 @@ export default function App({ server }: { server: ServerIdentity }) {
       projection,
       recoverFromStaleBase,
       removeEntry,
+      selectSemanticTarget,
+      semanticCatalog,
       selection,
       sourceLabel,
       stateDigest,
@@ -1015,9 +1142,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         componentId: choice.componentId,
         elementId: choice.elementId,
       };
-      setSelection(next);
-      setPicked(null);
-      viewportRef.current?.highlight(null);
+      selectSemanticTarget(next.componentId, next.elementId);
       append({
         kind: "system",
         ...systemText([
@@ -1031,7 +1156,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       });
       void propose(pending.originalUtterance, next);
     },
-    [append, propose],
+    [append, propose, selectSemanticTarget],
   );
 
   /**
@@ -1069,7 +1194,9 @@ export default function App({ server }: { server: ServerIdentity }) {
         // screen — not only when a ghost already stood: the first attempt may
         // have found no objects in the file loaded then, and a later file may
         // carry them.
-        const spec = projection ? ghostSpecFor(projection, answer.proposal) : null;
+        const spec = projection
+          ? ghostSpecFor(projection, semanticCatalog, answer.proposal)
+          : null;
         const copied =
           spec && sourceLabel !== null ? (viewportRef.current?.ghost(spec) ?? 0) : 0;
         setGhostProposalId(copied > 0 ? answer.proposal.proposalId : null);
@@ -1102,6 +1229,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       project,
       projection,
       recoverFromStaleBase,
+      semanticCatalog,
       sourceLabel,
       stateDigest,
       transcript,
@@ -1381,9 +1509,9 @@ export default function App({ server }: { server: ServerIdentity }) {
         { kind: "technical", text: twin.fileName },
         {
           kind: "prose",
-          text: validation.advance ? " · may advance" : " · blocked: ",
+          text: validation.reviewReady ? " · ready for review" : " · blocked: ",
         },
-        ...(validation.advance
+        ...(validation.reviewReady
           ? []
           : ([
               {
@@ -1483,8 +1611,8 @@ export default function App({ server }: { server: ServerIdentity }) {
           label: "Candidate",
           title: utteranceOf.get(proposalId) ?? runId,
           detail: validation
-            ? validation.advance
-              ? "may advance"
+            ? validation.reviewReady
+              ? "ready for review"
               : `blocked: ${validation.blockedBy.join(", ")}`
             : "verdict not read yet",
           exports,
@@ -1539,8 +1667,12 @@ export default function App({ server }: { server: ServerIdentity }) {
         ? { state: "ghost", label: "Ghost preview", detail: "approximate" }
         : loadedArtifact && candidates[loadedArtifact.runId]
           ? loadedValidation
-            ? loadedValidation.advance
-              ? { state: "validated", label: "Validated", detail: "may advance" }
+            ? loadedValidation.reviewReady
+              ? {
+                  state: "validated",
+                  label: "Review-ready",
+                  detail: "ready for review",
+                }
               : {
                   // The strongest word on the picture is the verdict's, in the
                   // verdict's colour: a blocked candidate is checked, not validated.
@@ -1583,7 +1715,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         return {
           ...sum,
           checked: sum.checked + 1,
-          needsReview: sum.needsReview + (verdict.advance ? 0 : 1),
+          needsReview: sum.needsReview + (verdict.reviewReady ? 0 : 1),
         };
       }
       return {
@@ -1729,7 +1861,7 @@ export default function App({ server }: { server: ServerIdentity }) {
             onDraft={setDraft}
             onSubmit={(utterance) => void propose(utterance)}
             onSelect={(componentId, elementId) => {
-              setSelection({ componentId, elementId });
+              selectSemanticTarget(componentId, elementId);
               append({
                 kind: "system",
                 ...systemText([
@@ -1802,15 +1934,15 @@ export default function App({ server }: { server: ServerIdentity }) {
             evidenceCounts={evidenceCounts}
             review={review}
             drawer={evidencePinned ? null : drawer}
-            frameOpen={frameOpen}
-            onToggleFrame={() => setFrameOpen((open) => !open)}
+            displayMode={displayMode}
+            onDisplayMode={chooseDisplayMode}
             framePanel={
               frameOpen ? (
                 <FrameEditor
                   frame={frame}
                   projection={projection}
                   onPick={(componentId, elementId) => {
-                    setSelection({ componentId, elementId });
+                    selectSemanticTarget(componentId, elementId);
                     append({
                       kind: "system",
                       ...systemText([
@@ -1823,12 +1955,10 @@ export default function App({ server }: { server: ServerIdentity }) {
                       ]),
                     });
                   }}
-                  onClose={() => setFrameOpen(false)}
+                  onClose={() => chooseDisplayMode("model")}
                 />
               ) : null
             }
-            optionsOpen={optionsOpen}
-            onToggleOptions={() => setOptionsOpen((open) => !open)}
             optionsPanel={
               optionsOpen ? (
                 <OptionsPanel
@@ -1838,7 +1968,7 @@ export default function App({ server }: { server: ServerIdentity }) {
                   busy={optionsBusy}
                   onMake={(body) => void makeOption(body)}
                   onSelect={(optionId) => void selectOption(optionId)}
-                  onClose={() => setOptionsOpen(false)}
+                  onClose={() => chooseDisplayMode("model")}
                 />
               ) : null
             }
@@ -1916,7 +2046,10 @@ export default function App({ server }: { server: ServerIdentity }) {
               });
               void loadRunIntoViewer(rows, runSourceLabel(group.runId, rows));
             }}
-            onShowHome={() => showHome(true)}
+            onShowHome={() => {
+              chooseDisplayMode("model");
+              showHome(true);
+            }}
             home={homeArtifacts}
             loadedRunId={loadedArtifact?.runId ?? null}
             onCompareVersion={(artifact) => void compareVersions(artifact)}
@@ -1929,6 +2062,9 @@ export default function App({ server }: { server: ServerIdentity }) {
               viewportRef.current?.clearSecondary();
               setBlendState(null);
             }}
+            captureState={captureState}
+            capturePath={capturePath}
+            onCapture={captureViewport}
             onEvidence={openEvidence}
           />
         }

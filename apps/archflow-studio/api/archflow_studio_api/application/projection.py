@@ -1,8 +1,9 @@
-"""The authored State Record, bound to a run and projected for one screen.
+"""The exact retained State Record of a run, projected for one screen.
 
 Everything on this page is the kernel's answer. The record is parsed by
-``StateRecord.from_dict`` and attached to its base by ``bound_to`` — never by a
-hand-built base — the component tree comes from ``design_components_of``, the
+``StateRecord.from_dict`` and verified against the run manifest and receipt;
+only a project with no eligible run reads the authored WIP and attaches it via
+``bound_to``. The component tree comes from ``design_components_of``, the
 edges from ``StateRecord.dependency_edges`` and the digest from the same
 ``developed_design_view`` the project runner uses, so a projection and a run
 receipt name the same number or the difference is stated out loud.
@@ -35,7 +36,7 @@ from archflow.state.state_record import (
 )
 
 from ..transport.errors import StudioError, error_sentence
-from .binding import ProjectBinding, ReferenceRun
+from .binding import ProjectBinding, ReferenceRun, STUDIO_RUN_ID
 
 # The project runner's own view kwargs. Changing any of them turns
 # ``stateDigest`` into a number no receipt carries.
@@ -63,6 +64,9 @@ class StateProjection:
     run: RunRef
     reference: ReferenceRun
     record: StateRecord
+    record_source: str
+    reference_state_exact: bool
+    reference_state_error: str | None
     # ``None`` when the kernel refused to build the bound view. Only
     # ``GET /api/state`` is served such a projection; see ``project_state``.
     state: DevelopedDesignState | None
@@ -103,7 +107,7 @@ def project_state(
     *,
     require_view: bool = True,
 ) -> StateProjection:
-    """Project the authored record against one run and the published version.
+    """Project one run's retained record, or authored WIP when no run exists.
 
     Everything after the record is parsed is still the record's own fault when
     it fails: the kernel validates no per-schema entity fields, so a record can
@@ -123,17 +127,42 @@ def project_state(
 
     reference = binding.reference_run(run_id)
     head = binding.head()
-    authored = _load_authored_record(binding)
-    run = RunRef(binding.project_id, reference.run.run_id, head)
+    record_source = AUTHORED_RECORD_PATH
+    reference_state_exact = False
+    reference_state_error: str | None = None
+    if reference.source == "none":
+        authored = _load_authored_record(binding)
+        run = reference.run
+        try:
+            record = authored.bound_to(run)
+        except (StateRecordError, KeyError, TypeError, ValueError) as exc:
+            raise _record_invalid(exc) from exc
+    else:
+        try:
+            retained_ref, record = binding.exact_state_record(reference)
+            run = reference.run
+            record_source = retained_ref.uri
+            reference_state_exact = True
+        except StudioError as exc:
+            if exc.code != "REFERENCE_STATE_NOT_EXACT":
+                raise
+            # Existing historical runs remain inspectable even when their
+            # receipt cannot establish an exact State Record.  The fallback is
+            # explicitly a current WIP projection under a synthetic run id;
+            # it is never rebound to the historical run it did not come from.
+            authored = _load_authored_record(binding)
+            run = RunRef(binding.project_id, STUDIO_RUN_ID, head)
+            try:
+                record = authored.bound_to(run)
+            except (StateRecordError, KeyError, TypeError, ValueError) as exc:
+                raise _record_invalid(exc) from exc
+            reference_state_error = exc.detail
     try:
-        # The one sanctioned binding: the record attaches itself to the run.
-        # Inside the refusal like everything else it can refuse for — an
-        # authored record whose ``project_id`` names another project is a
-        # record somebody put in this project's ``input/``, and the kernel's
-        # sentence about it belongs on the wire rather than in a 500.
-        record = authored.bound_to(run)
         state, components, component_tree_error = _bound_view(
-            record, run, require_view=require_view
+            record,
+            run,
+            require_view=require_view,
+            record_source=record_source,
         )
         edges = record.dependency_edges()
         elements = _elements(record)
@@ -150,7 +179,9 @@ def project_state(
         else reference.receipt.get("design_state_digest")
     )
     matches = (
-        state.state_digest == claimed
+        False
+        if reference.source != "none" and not reference_state_exact
+        else state.state_digest == claimed
         if state is not None and isinstance(claimed, str)
         else None
     )
@@ -160,6 +191,9 @@ def project_state(
         run=run,
         reference=reference,
         record=record,
+        record_source=record_source,
+        reference_state_exact=reference_state_exact,
+        reference_state_error=reference_state_error,
         state=state,
         matches_reference_receipt=matches,
         components=components,
@@ -172,19 +206,61 @@ def project_state(
             edges=edges,
             reference=reference,
             matches=matches,
-            run_id=run.run_id,
             component_tree_error=component_tree_error,
+            reference_state_exact=reference_state_exact,
+            reference_state_error=reference_state_error,
+            head=head,
         ),
     )
 
 
-def _record_invalid(exc: BaseException) -> StudioError:
+def require_actionable(projection: StateProjection) -> None:
+    """Require the exact current reference before creating design work.
+
+    A project with no eligible run deliberately starts from authored WIP.  Once
+    a run exists, proposal and candidate work must stand on that run's retained
+    record, its receipt digest and the same canonical base as current HEAD.
+    """
+
+    if projection.reference.source == "none":
+        return
+    if not projection.reference_state_exact:
+        raise StudioError(
+            409,
+            "REFERENCE_STATE_NOT_EXACT",
+            projection.reference_state_error
+            or "the reference run has no verified retained State Record",
+        )
+    if projection.reference.run.base != projection.head:
+        raise StudioError(
+            409,
+            "REFERENCE_BASE_STALE",
+            f"reference run {projection.reference.run.run_id!r} is based on "
+            f"canonical version {projection.reference.run.base.version}, but "
+            f"HEAD is version {projection.head.version}. It remains available "
+            "for inspection; choose or create a run on current HEAD before "
+            "proposing or running a candidate.",
+        )
+    if projection.matches_reference_receipt is not True:
+        raise StudioError(
+            409,
+            "REFERENCE_STATE_MISMATCH",
+            f"reference run {projection.reference.run.run_id!r} does not carry "
+            "a design_state_digest matching its verified State Record. It "
+            "remains available for inspection but cannot base a proposal or "
+            "candidate.",
+        )
+
+
+def _record_invalid(
+    exc: BaseException, *, record_source: str = AUTHORED_RECORD_PATH
+) -> StudioError:
     """The one refusal for a record this project holds and cannot use."""
 
     return StudioError(
         422,
         "STATE_RECORD_INVALID",
-        f"{AUTHORED_RECORD_PATH}: {error_sentence(exc)}",
+        f"{record_source}: {error_sentence(exc)}",
     )
 
 
@@ -218,6 +294,7 @@ def _bound_view(
     run: RunRef,
     *,
     require_view: bool,
+    record_source: str,
 ) -> tuple[
     DevelopedDesignState | None,
     tuple[DesignComponent, ...] | None,
@@ -247,7 +324,7 @@ def _bound_view(
         return state, design_components_of(record), None
     except StateRecordError as exc:
         if require_view:
-            raise _record_invalid(exc) from exc
+            raise _record_invalid(exc, record_source=record_source) from exc
         return None, None, str(exc)
 
 
@@ -280,8 +357,10 @@ def _honesty(
     edges: tuple[DependencyEdge, ...],
     reference: ReferenceRun,
     matches: bool | None,
-    run_id: str,
     component_tree_error: str | None,
+    reference_state_exact: bool,
+    reference_state_error: str | None,
+    head: ProjectVersionRef,
 ) -> tuple[str, ...]:
     """The lines the UI shows verbatim: what this projection cannot tell you."""
 
@@ -308,6 +387,18 @@ def _honesty(
             "no eligible reference run: projection bound to the studio run "
             "id; its digests are not comparable to any receipt"
         )
+    elif not reference_state_exact:
+        lines.append(
+            (reference_state_error or "reference State Record is not exact")
+            + "; showing current authored WIP for inspection only"
+        )
+    elif reference.run.base != head:
+        lines.append(
+            f"reference run {reference.run.run_id} is based on canonical "
+            f"version {reference.run.base.version}, while HEAD is version "
+            f"{head.version}: inspection is allowed but new proposals and "
+            "candidates are blocked"
+        )
     if reference.skipped_runs:
         # Shown verbatim, so it has to read as a sentence: one skipped run
         # directory is not "1 run directories".
@@ -327,6 +418,6 @@ def _honesty(
     if matches is False:
         lines.append(
             "projection digest differs from the reference receipt: the "
-            f"authored record is not what run {run_id} executed"
+            f"projected record is not what run {reference.run.run_id} executed"
         )
     return tuple(lines)

@@ -139,8 +139,8 @@ export function ReceiptsTab({
                   ? t("evidence.common.none")
                   : validation.effectiveChecks.join(" · ")}
               </dd>
-              <dt>{t("evidence.receipts.advance")}</dt>
-              <dd>{String(validation.advance)}</dd>
+              <dt>{t("evidence.receipts.reviewReady")}</dt>
+              <dd>{String(validation.reviewReady)}</dd>
               <dt>{t("evidence.receipts.blockedBy")}</dt>
               <dd>
                 {validation.blockedBy.length === 0

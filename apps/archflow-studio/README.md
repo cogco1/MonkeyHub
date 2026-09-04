@@ -20,7 +20,7 @@ ArchFlow Studio is the product shell for ArchFlow. It is two programs:
   on the left: what you said, and what the server answered — a typed-proposal card, a
   question card (`BLOCKED_NEEDS_HUMAN`, the question verbatim, the accepted forms as quick
   replies), a refusal card (code and detail verbatim), a candidate card that follows its job,
-  a verdict card (the server's word, the five clause chips, the three relation chips). The
+  a review-readiness card (the server's word, the five clause chips, the three relation chips). The
   **stage** on the right: the 3DM viewer (three.js + rhino3dm, unchanged from the previous
   shell), a source chip (`RUN` / `CANDIDATE` / `LOCAL`), the last resolved pick, the camera
   tools, and a versions strip of every exported model the receipts certify. The **evidence
@@ -37,7 +37,7 @@ The round-1 boundary, verbatim from the plan:
 > providers, login identity disabled; missing data → `BLOCKED_NEEDS_HUMAN` with a concrete
 > question.
 
-Nothing in round 1 commits. The chain ends at a validation receipt and a server verdict; no
+Nothing in round 1 commits. The chain ends at a validation receipt and server review readiness; no
 route issues anything, writes `canonical/` or `input/`, or calls `compare_and_swap`. The
 only writes the API performs are `repository.create_run(...)` and `repository.put_json(...)`
 into run areas of the bound project — which is what running a candidate is.
@@ -151,7 +151,9 @@ about which paths exist. Local mode is unchanged in every respect.
 The web client picks its server up the same way: `VITE_ARCHFLOW_API_URL` at build time (else the
 origin it was served from), an optional `?token=` on the first load which it reads once and
 removes from the address bar, and `GET /api/protocol` before anything else — a server whose
-protocol major is not 1 gets a refusal screen, not a blank stage.
+protocol major is not 2 gets a refusal screen. `archflow/2` replaces the validation and event
+field `advance` with `reviewReady`; client and server must both speak this major before the
+client reads design responses.
 
 Exported candidates (optional, slow — roughly 37 s per seat, and it drives Rhino):
 
@@ -236,9 +238,13 @@ Three groups of refusal are **shared**, and the table below does not repeat them
   except `GET /api/health`, `GET /api/proposals/{id}`, `GET /api/jobs/{id}` and
   `GET /api/events`, which answer from this process's own memory and never open the project;
 - **projection**: 404 `RUN_NOT_FOUND`, 404 `STATE_RECORD_NOT_FOUND` and 422
-  `STATE_RECORD_INVALID` from every route that reads the authored record — `/api/project`
+  `STATE_RECORD_INVALID` from every route that reads the selected record — `/api/project`
   (`RUN_NOT_FOUND` only), `/api/state`, `/api/pick/resolve`, `/api/intents`, both
   `/api/proposals` POSTs and both `/api/candidates` reads;
+- **action base**: 409 `REFERENCE_STATE_NOT_EXACT`, 409 `REFERENCE_BASE_STALE` or 409
+  `REFERENCE_STATE_MISMATCH` from an intent, proposal, option, program or candidate request
+  that cannot stand on the reference run's exact retained State Record. The same run remains
+  readable for inspection;
 - **proposal**: 404 `PROPOSAL_NOT_FOUND` from every route that reads a proposal back —
   `GET /api/proposals/{id}`, starting a candidate, and reading a candidate or its validation.
 
@@ -252,6 +258,7 @@ Three groups of refusal are **shared**, and the table below does not repeat them
 | GET | `/api/state?run=` | `StateProjectionDto` | — |
 | GET | `/api/artifacts` | `ArtifactListDto` | — (a run it cannot read is named in `skippedRuns`, never a refusal) |
 | GET | `/api/artifacts/{sha256}/bytes` | binary (`ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store`) | 404 `ARTIFACT_NOT_FOUND`, 409 `ARTIFACT_UNREADABLE`, 409 `ARTIFACT_DIGEST_MISMATCH` |
+| POST | `/api/captures` → 201 | `ViewportCaptureDto` (body `ViewportCaptureRequestDto`: `runId`, `pngBase64`) | 404 `RUN_NOT_FOUND`, 422 `CAPTURE_INVALID`, 409 `CAPTURE_WRITE_FAILED` |
 | POST | `/api/pick/resolve` | `PickResolutionDto` (body `PickRequestDto`) | 409 `STALE_BASE` |
 | POST | `/api/intents` → 201 | `IntentDto` = `agent` (`AgentReadingDto`) + `proposal` (`ProposalDto`) (body `IntentRequestDto`) | 422 `BLOCKED_NEEDS_HUMAN` (the agent's question, or the grammar's with `acceptedForms`), 502 `INTENT_AGENT_FAILED`, 409 `STALE_BASE`, 403 `PROJECT_MISMATCH` |
 | POST | `/api/proposals` → 201 | `ProposalDto` (body `ProposalRequestDto`) | 422 `BLOCKED_NEEDS_HUMAN` (+ `question`, `acceptedForms`), 409 `STALE_BASE`, 403 `PROJECT_MISMATCH` |
@@ -276,8 +283,13 @@ browser does not ask it: its own first question is stronger, and `GET /api/proje
 One chain, end to end, and every link is the kernel's answer shaped for the wire.
 
 **Published design ↔ record.** The project is opened with `open_located_project()` /
-`FilesystemProjectRepository`; the authored State Record at `input/runner/state-record.json`
-is bound to a run through `StateRecord.bound_to(run)` and never by any other route.
+`FilesystemProjectRepository`. When a reference run exists, its runner receipt must name a
+content-addressed `state_record_ref` below that run's records. The server verifies the P036
+reference, the record's project/run/base identity, `state_record_digest`, and the receipt's
+`design_state_digest`; it never rebinds mutable `input/runner/state-record.json` onto that run.
+Only a project with no eligible reference run starts from that authored work in progress.
+Legacy or damaged references and runs based on an older HEAD remain inspectable, but every
+route that would create design work refuses them with a named 409 action-base error.
 
 **Projection.** `GET /api/state` returns the component tree (`design_components_of`), the
 elements with their `params.<key>` scalars, the declared parameters with their locks, the
@@ -299,6 +311,12 @@ filtered out. Bytes are content-addressed: `GET /api/artifacts/{sha256}/bytes` r
 file on disk and refuses with `ARTIFACT_DIGEST_MISMATCH` if it does not hash to the digest in
 the path. A `.3dm` in this list is a file that was written — never a claim that anything about
 it passed.
+
+**Viewport captures.** `POST /api/captures` accepts the loaded model's existing `runId` and
+PNG bytes, then P036 retains the image at
+`runs/<runId>/workspaces/studio-captures/viewport-<sha256>.png`. The response exposes only
+that project-relative path. A capture is inspection output, not a receipt-certified model
+artifact, and saving one neither adds it to `GET /api/artifacts` nor changes `HEAD`.
 
 **Pick.** A click sends the object's `archflow:*` user strings, the document's own strings,
 and the object name. The server answers **resolved**, **unbound** (this project never produced
@@ -378,15 +396,15 @@ failed at the seat pack or the base check never created a run at all.
 **Validation.** `GET /api/candidates/{id}/validation` calls the kernel's `validate_submission`
 over `CanonicalState(ref=head)` with three production validators — `artifact-present`,
 `obligation-discharge`, `authorized-commitment-claims` — and reports the receipt's findings
-and its `passed` unedited. Beside it stands the server's own **verdict**, a fixed conjunction
-of five named clauses:
+and its `passed` unedited. Beside it stands the server's **review readiness**, a fixed
+conjunction of five named clauses:
 
 ```
-advance  ⟺  validation.receipt
-         ∧  runner.seat_execution_complete
-         ∧  relations.held
-         ∧  relations.fully_checked
-         ∧  runner.exports_available
+reviewReady  ⟺  validation.receipt
+             ∧  runner.seat_execution_complete
+             ∧  relations.held
+             ∧  relations.fully_checked
+             ∧  runner.exports_available
 ```
 
 The fifth clause reads two records, not one: the run receipt's own seat rows and the artifact
@@ -394,14 +412,14 @@ records this run retained. The runner fills a seat row's `cad` block only when i
 export, so that block is the evidence an export happened at all — every seat carrying one must
 have succeeded *and* be matched by an `available`, `succeeded` artifact found by the very
 `execution_ref` the runner wrote there, and every artifact the candidate carries must be
-available and succeeded. A seat that exported and left no artifact record blocks the advance
+available and succeeded. A seat that exported and left no artifact record blocks review readiness
 and says so in `honesty[]`. The clause is vacuous only for a candidate no seat of which
 attempted an export — which is now something the receipt states, rather than something an empty
 artifact list was taken to mean.
 
 `blockedBy[]` names every clause that refused. The fourth clause is the point of the other
 three: `held` is true whenever nothing was **violated**, including when nothing was
-**checked**, so a candidate whose relations nobody could check is never green. The verdict is
+**checked**, so a candidate whose relations nobody could check is never green. Review readiness is
 memoised per (candidate, issue) — a client polling the readout must not appear on the event
 stream as a server deciding over and over, and a new issue is a different question that gets
 a fresh answer and a fresh event.
@@ -415,8 +433,8 @@ passing them, and the payload says so (kernel card **P110**).
 
 | name | what it identifies | compare it for |
 | --- | --- | --- |
-| `stateDigest` | the authored record **bound to a run** — run- and base-scoped | "is this the state the client was just given?" Picks, proposals and candidates are all checked against it, and a mismatch is `409 STALE_BASE`. It is also the number a runner receipt cites, which is why `matchesReferenceReceipt` can compare the projection against the reference run's own `designStateDigest`. It is `null` when the kernel would not build the bound view (§4), and then there is nothing to compare. |
-| `recordDigest` | the record's **content**, invariant under binding | "is this the same authored record?" — the same content bound to two runs has two `stateDigest`s and one `recordDigest`. |
+| `stateDigest` | the selected record **bound to a run** — run- and base-scoped | "is this the state the client was just given?" Picks, proposals and candidates are all checked against it, and a mismatch is `409 STALE_BASE`. It is also the number a runner receipt cites, which is why `matchesReferenceReceipt` can compare the projection against the reference run's own `designStateDigest`. It is `null` when the kernel would not build the bound view (§4), and then there is nothing to compare. |
+| `recordDigest` | the selected record's **content**, invariant under binding | "is this the same record?" — the same content bound to two runs has two `stateDigest`s and one `recordDigest`. |
 | `published.stateSha256` | the project's published version | "has the project issued since?" It is half of the validation memo key, with `published.version`. |
 
 A client that confused the first two would compare a project against itself. They are named
@@ -428,12 +446,13 @@ was given.
 
 **Three-state law**, verbatim:
 
-> held / violated / unchecked are distinct; unchecked is never green; the server issues the
-> advance verdict.
+> held / violated / unchecked are distinct; unchecked is never green; the server reports
+> candidate review readiness.
 
 The chips follow it literally: held is green only when `held > 0 && violated == 0 &&
-unchecked == 0`; violated is red; unchecked is amber. The advance badge is the server's
-boolean and nothing else.
+unchecked == 0`; violated is red; unchecked is amber. The review-ready badge is the server's
+boolean and nothing else. It does not issue the run or advance the stage; only `project.issue`
+has that authority.
 
 **Browser law**, verbatim:
 
@@ -454,9 +473,6 @@ project moved under you" in the transcript.
 
 ## 7. Cards this slice stands on
 
-- **P109** — typed operator on the State Record. Until the kernel offers a successor
-  operation, a candidate's successor record is the K1 candidate-under-card: recomputed for the
-  candidate and said so on the wire, never issued.
 - **P110** — CanonicalState projection. Why `effectiveChecks` is narrower than `validators`
   (section 4).
 - Kernel-card candidates relayed to Kaiwen from this slice, fixed nowhere in passing: typed
@@ -482,6 +498,7 @@ py -3.12 -m unittest discover -s tests
 From `apps/archflow-studio/web`:
 
 ```powershell
+npm test
 npm run api:check
 npm run typecheck
 npm run build
@@ -491,8 +508,9 @@ npm run build
 a lint. The API tests run on real fixtures — a real P036 project via
 `FilesystemProjectRepository.initialize` — and there are no mocks in them.
 
-The web shell has no unit tests; its acceptance is a live smoke against a **temporary copy** of
-a project with export on: bind → choose or pick a component → propose → run the candidate →
-preview its export under the `CANDIDATE` chip → read the verdict card → send an abstract
+The web shell has focused unit tests for restoring the original model after display projections,
+semantic carrier matching, and viewport PNG encoding. Its end-to-end acceptance remains a live
+smoke against a **temporary copy** of a project with export on: bind → choose or pick a component → propose → run the candidate →
+preview its export under the `CANDIDATE` chip → read the review-readiness card → send an abstract
 sentence and get a question card → open the evidence drawer; then the light theme and the
 900 px fold.

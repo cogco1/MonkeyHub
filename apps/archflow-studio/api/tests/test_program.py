@@ -41,6 +41,7 @@ from .support import (
     RECORD_PAYLOAD,
     REFERENCE_RUN_ID,
     RUNNER_RECORD_PATH,
+    advance_head,
     make_portico_project,
     make_project,
     retain_runner_receipt,
@@ -384,12 +385,12 @@ class ApplyTests(ProgramTestCase):
         self.assertEqual(status, 409, answer)
         self.assertEqual(answer["code"], "STALE_BASE")
 
-    def test_worker_refuses_when_the_record_moves_after_program_preflight(self) -> None:
-        from archflow.state.state_record import StateRecordError
+    def test_worker_refuses_when_head_moves_after_program_preflight(self) -> None:
         from archflow_studio_api.application.binding import bound_project
         from archflow_studio_api.application.candidate import run_operator
         from archflow_studio_api.application.program import operator_for
         from archflow_studio_api.application.projection import project_state
+        from archflow_studio_api.transport.errors import StudioError
         from archflow_studio_api.transport.program import ProgramSheetDto, sheet_payload
 
         binding = bound_project(self.client.app.state)
@@ -401,16 +402,9 @@ class ApplyTests(ProgramTestCase):
             sheet_payload(ProgramSheetDto.model_validate(wire_sheet)), projection
         )
 
-        changed = json.loads(json.dumps(self.payload))
-        for entity in changed["entities"]:
-            if entity["entity_id"] == "portico-base":
-                entity["fields"]["params"]["height"] = 0.7
-        write_runner_record(self.repository, changed)
-        self.authored = self.repository.layout.resolve_relative(
-            RUNNER_RECORD_PATH
-        ).read_bytes()
+        advance_head(self.repository, run_id="promotion-before-program-worker")
 
-        with self.assertRaisesRegex(StateRecordError, "exact base is stale"):
+        with self.assertRaisesRegex(StudioError, "HEAD is version 1"):
             run_operator(
                 binding,
                 self.client.app.state.settings,
@@ -568,7 +562,7 @@ class MassingRecordTests(ProgramTestCase):
         self.assertEqual(status, 409, answer)
         self.assertEqual(answer["code"], "STALE_BASE")
 
-    def test_old_content_is_stale_even_when_the_state_digest_still_matches(self) -> None:
+    def test_authored_wip_drift_does_not_replace_the_retained_program_base(self) -> None:
         sheet = self.get("/api/program")["sheet"]
         changed = json.loads(json.dumps(self.payload))
         for entity in changed["entities"]:
@@ -580,18 +574,14 @@ class MassingRecordTests(ProgramTestCase):
         ).read_bytes()
         current = self.get("/api/state")
         self.assertEqual(current["stateDigest"], self.state_digest)
-        self.assertNotEqual(current["recordDigest"], self.record_digest)
+        self.assertEqual(current["recordDigest"], self.record_digest)
 
         status, answer = self.apply(sheet)
 
-        self.assertEqual(status, 409, answer)
-        self.assertEqual(answer["code"], "STALE_BASE")
-        self.assertEqual(
-            sorted(path.name for path in self.repository.layout.runs.iterdir()),
-            [REFERENCE_RUN_ID],
-        )
+        self.assertEqual(status, 202, answer)
+        self.assertEqual(self.finished(answer["jobId"])["status"], "succeeded")
 
-    def test_authored_sheet_from_old_content_yields_current_derived_sheet(self) -> None:
+    def test_saved_sheet_stays_bound_to_the_retained_run_when_wip_drifts(self) -> None:
         sheet = self.get("/api/program")["sheet"]
         status, answer = self.apply(sheet, save=True)
         self.assertEqual(status, 202, answer)
@@ -609,15 +599,8 @@ class MassingRecordTests(ProgramTestCase):
 
         read = self.get("/api/program")
 
-        self.assertEqual(read["source"], "derived")
-        self.assertEqual(read["sheet"]["recordDigest"], current["recordDigest"])
-        self.assertTrue(
-            any(
-                "was not returned or silently rebound" in line
-                for line in read["sheet"]["honesty"]
-            ),
-            read["sheet"]["honesty"],
-        )
+        self.assertEqual(read["source"], "input")
+        self.assertEqual(read["sheet"]["recordDigest"], self.record_digest)
         saved = json.loads(
             self.repository.layout.program_sheet.read_text(encoding="utf-8")
         )

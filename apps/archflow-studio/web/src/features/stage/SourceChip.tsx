@@ -21,7 +21,7 @@ function tagOf(sourceLabel: string | null): { tag: string; rest: string } {
 /**
  * What the picture on screen is, in three words the owner chose: CURRENT (the
  * loaded model as its receipt certifies it), GHOST PREVIEW (a proposal drawn
- * over it, approximate), VALIDATED (a candidate's export with its verdict
+ * over it, approximate), REVIEW-READY (a candidate export whose readiness was
  * read). The detail is the server's word — never a colour alone.
  */
 export interface ViewState {
@@ -59,7 +59,7 @@ export function SourceChip({
   const viewLabel = view
     ? ({
         "Ghost preview": t("stage.view.ghost"),
-        Validated: t("stage.view.validated"),
+        "Review-ready": t("stage.view.validated"),
         Checked: t("stage.view.checked"),
         "Candidate export": t("stage.view.candidateExport"),
         Current: t("stage.view.current"),
@@ -68,7 +68,7 @@ export function SourceChip({
   const viewDetail = (() => {
     if (!view?.detail) return null;
     if (view.detail === "approximate") return t("stage.view.approximate");
-    if (view.detail === "may advance") return t("stage.view.mayAdvance");
+    if (view.detail === "ready for review") return t("stage.view.reviewReady");
     if (view.detail === "verdict not read yet") return t("stage.view.verdictUnread");
     if (view.detail.startsWith("blocked: ")) {
       return (

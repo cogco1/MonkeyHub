@@ -84,3 +84,15 @@ class RecordSink(Protocol):
     ) -> ProjectRecordRef: ...
 
 
+class WorkspaceSink(Protocol):
+    def put_workspace_file(
+        self,
+        *,
+        run: RunRef,
+        destination: PersistenceDestination,
+        artifact_id: str,
+        workspace_relative_path: str,
+        media_type: str,
+        source: BinaryIO,
+    ) -> ProjectArtifactRef: ...
+

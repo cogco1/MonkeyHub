@@ -33,7 +33,7 @@ from ..application.program import (
     semantic_terms,
     operator_for,
 )
-from ..application.projection import project_state
+from ..application.projection import project_state, require_actionable
 from ..settings import StudioSettings
 from ..transport.errors import StudioError
 from ..transport.program import (
@@ -89,6 +89,7 @@ def apply_program(
     settings: StudioSettings = state.settings
     binding = bound_project(state)
     projection = project_state(binding)
+    require_actionable(projection)
     if (
         body.state_digest != projection.state_digest
         or body.sheet.state_digest != projection.record.state_digest

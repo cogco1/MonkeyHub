@@ -1,4 +1,4 @@
-"""The exported models a run's receipts certify, and nothing else.
+"""Receipt-certified model artifacts and non-canonical viewport captures.
 
 A ``.3dm`` file on disk is not an artifact: it is a file. What makes it an
 artifact is a retained ``seat-rhino-execution`` receipt that says which run and
@@ -18,18 +18,29 @@ and calling that corruption would put a claim on the wire that nobody checked.
 Resolution is content-addressed on purpose. Older runs did not put exports under
 ``cad-<stage_id>``, and two receipts in one run can name the same file. Matching
 by digest inside that run's workspaces answers both without a convention.
+
+A viewport capture is deliberately different: it is an inspection image, not
+an exported model. The Studio validates its PNG bytes and asks P036 to retain
+them below the existing run named by the request. No receipt is minted, the
+capture is not returned by ``list_artifacts``, and canonical HEAD is untouched.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass
 import hashlib
+from io import BytesIO
 import os
 from pathlib import Path
 import re
 from typing import Any, Mapping, NamedTuple
 
+from PIL import Image
+
 from archflow.project.record_kinds import SEAT_RHINO_EXECUTION
+from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef
 from archflow.project.repository import ProjectRepositoryError
 
@@ -48,6 +59,8 @@ NO_DIGEST = "no inspection digest"
 FILE_MISSING = "file missing"
 FILE_UNREADABLE = "file unreadable"
 DIGEST_MISMATCH = "digest mismatch"
+PNG_MEDIA_TYPE = "image/png"
+PNG_END = b"\x00\x00\x00\x00IEND\xaeB\x60\x82"
 
 
 class _Resolution(NamedTuple):
@@ -104,6 +117,91 @@ class ArtifactListing:
     # Run directories whose records could not be listed. One corrupt run must
     # not cost the client every other artifact, and the skip is never silent.
     skipped_runs: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ViewportCapture:
+    """One non-canonical inspection image retained in its named run."""
+
+    project_id: str
+    run_id: str
+    relative_path: str
+    sha256: str
+    media_type: str
+    size_bytes: int
+
+
+def save_viewport_capture(
+    binding: ProjectBinding,
+    run_id: str,
+    png_base64: str,
+) -> ViewportCapture:
+    """Retain one PNG below the explicitly named existing run through P036."""
+
+    if not isinstance(png_base64, str) or not png_base64:
+        raise StudioError(
+            422,
+            "CAPTURE_INVALID",
+            "the viewport capture is not a PNG image",
+        )
+    try:
+        png_bytes = base64.b64decode(png_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise StudioError(
+            422,
+            "CAPTURE_INVALID",
+            "the viewport capture is not valid base64 PNG data",
+        ) from exc
+    # Pillow tolerates a truncated IEND checksum; captures must be complete.
+    if not png_bytes.endswith(PNG_END):
+        raise StudioError(
+            422,
+            "CAPTURE_INVALID",
+            "the viewport capture is not a complete PNG image",
+        )
+    try:
+        with Image.open(BytesIO(png_bytes), formats=["PNG"]) as capture:
+            capture.verify()
+        # verify checks the chunks, not the compressed pixel data.
+        with Image.open(BytesIO(png_bytes), formats=["PNG"]) as capture:
+            capture.load()
+    except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
+        raise StudioError(
+            422,
+            "CAPTURE_INVALID",
+            "the viewport capture is not a readable PNG image",
+        ) from exc
+    run = binding.load_run(run_id)
+
+    digest = hashlib.sha256(png_bytes).hexdigest()
+    workspace_path = f"studio-captures/viewport-{digest}.png"
+    try:
+        ref = binding.repository.put_workspace_file(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_WORKSPACE,
+                run_id=run.run_id,
+            ),
+            artifact_id=f"viewport-capture-{digest}",
+            workspace_relative_path=workspace_path,
+            media_type=PNG_MEDIA_TYPE,
+            source=BytesIO(png_bytes),
+        )
+    except (ProjectRepositoryError, OSError) as exc:
+        raise StudioError(
+            409,
+            "CAPTURE_WRITE_FAILED",
+            f"{binding.project_id}: the viewport capture could not be retained "
+            f"in run {run.run_id}: {error_sentence(exc)}",
+        ) from exc
+    return ViewportCapture(
+        project_id=ref.project_id,
+        run_id=run.run_id,
+        relative_path=ref.relative_path,
+        sha256=ref.sha256,
+        media_type=ref.media_type,
+        size_bytes=len(png_bytes),
+    )
 
 
 def list_artifacts(binding: ProjectBinding) -> ArtifactListing:

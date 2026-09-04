@@ -37,7 +37,13 @@ from archflow_studio_api.application.projection import project_state
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
-from .support import PROJECT_ID, make_portico_project, write_runner_record
+from .support import (
+    PROJECT_ID,
+    advance_head,
+    make_portico_project,
+    retain_runner_receipt,
+    runner_state_digest,
+)
 
 ROOFS = "portico-roofs"
 COLUMNS = "portico-columns"
@@ -374,9 +380,19 @@ class StaleClarification(PorticoTestCase):
         _, first = self.say("make the portico taller", targetComponentId="portico")
         token = first["pendingIntent"]["continuationToken"]
 
-        # The record changes underneath: a new digest, a new projection.
-        moved = dict(clarification_payload())
-        write_runner_record(self.repository, moved)
+        # A later exact reference is based on the new canonical HEAD. The
+        # authored input is not the reference state and does not move here.
+        advance_head(self.repository, run_id="promotion-before-clarification-move")
+        moved = clarification_payload()
+        moved_run = self.repository.create_run("clarification-state-moved")
+        retain_runner_receipt(
+            self.repository,
+            moved_run,
+            design_state_digest=runner_state_digest(
+                self.repository, moved_run.run_id, moved
+            ),
+            record_payload=moved,
+        )
         response = self.client.get("/api/state")
         self.assertEqual(response.status_code, 200, response.text)
         digest = response.json()["stateDigest"]

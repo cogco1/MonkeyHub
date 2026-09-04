@@ -62,13 +62,12 @@ opened in round one); viewing via `ThreeDmViewport` and `ViewerAssetProvider`.
 
 **Display rule with kernel backing:** `RelationCheckReport.held` means none violated and does not subsume
 unchecked; the kernel also exposes `fully_checked`. Show held / violated / unchecked as three states; the server
-issues the advance verdict.
+reports candidate review readiness. Only `project.issue` can issue a run or advance a stage.
 
-**Kernel gaps carded from the calibration (2026-09-03, raised by 新建会话, verified by the main session):**
-P109 — no kernel function applies a typed intent to a `StateRecord@1` (`compile_decision_operator` is typed to
-`OperationalMarkovState`); the Studio carries a single-value-replace candidate under that card. P110 —
-`canonical_state_from_dict` rejects a State-Record project's HEAD (`CanonicalProjectState@1`, ref-based), so the
-validation receipt runs on `CanonicalState(ref=head)` with empty facts and must say so. Round one depends on neither.
+**Kernel gap carded from the calibration (2026-09-03, raised by 新建会话, verified by the main session):**
+P110 — `canonical_state_from_dict` rejects a State-Record project's HEAD
+(`CanonicalProjectState@1`, ref-based), so the validation receipt runs on
+`CanonicalState(ref=head)` with empty facts and must say so. Round one does not depend on it.
 
 **Reference-run rule (defect found in the plan's Task 2):** "the newest run whose receipt is complete" picks
 `array-patch-001` on the real villa today (harness and patch experiments also retain complete receipts), and
@@ -79,6 +78,12 @@ digest reproduces the reference receipt (`344b2206…` for `runner-002`) only un
 → newest complete receipt whose workflow is not a harness (`workflow_id` in {equivalence-harness,
 studio-candidate-harness}; a `RunnerRunReceipt@1` without `workflow_ref` counts). On the villa that leaves
 `runner-002` alone; a Studio candidate can never become the reference by construction.
+
+**Exact reference-record rule:** an existing reference run is projected only from the
+content-addressed `state_record_ref` in its runner receipt, after checking the record's project, run,
+branch/base and both record/state digests. Mutable authored WIP is used only when no eligible run exists.
+A legacy, damaged or historical reference can still be opened for inspection, but cannot create an intent,
+proposal, option, program or candidate until an exact current reference is selected.
 
 **Digest scope:** the run id enters both `state_digest` and the program digest (`_StateIdentity`). "Did this edit
 change anything" is answered by comparing two records bound to the same run, or the authored content before

@@ -1,4 +1,4 @@
-"""What this server *is*, on the wire: the open ArchFlow protocol, version 1.
+"""What this server *is*, on the wire: the open ArchFlow protocol, version 2.
 
 The Studio has been one program in two halves so far, and the halves knew each
 other by having been started together. A remote server and a second client
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from .settings import StudioSettings
 
-PROTOCOL_MAJOR = 1
+PROTOCOL_MAJOR = 2
 PROTOCOL_MINOR = 0
 PROTOCOL = f"archflow/{PROTOCOL_MAJOR}"
 
@@ -42,6 +42,7 @@ SERVER_VERSION = "0.1.0"
 BASE_CAPABILITIES: tuple[str, ...] = (
     "artifacts",
     "candidates",
+    "captures",
     "compare",
     "events",
     "gestures",

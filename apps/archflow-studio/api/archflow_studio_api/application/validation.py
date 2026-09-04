@@ -1,4 +1,4 @@
-"""What a finished candidate validates to: the kernel's receipt, and a verdict.
+"""What a finished candidate validates to: a receipt and review readiness.
 
 Two answers travel together here and they are deliberately not the same answer.
 
@@ -10,18 +10,18 @@ validator anywhere in this file. A gate re-implemented beside the kernel is a
 second opinion, and two opinions about whether a design is admissible is one
 too many.
 
-The **verdict** is the server's, and it is a fixed conjunction of five named
+The **review readiness** is the server's, and it is a fixed conjunction of five named
 clauses: the receipt passed, the runner finished its seats, no relation was
 violated, every declared relation was actually checked, and every artifact the
 run was asked to export is available and its export succeeded. ``blockedBy``
 names each clause that failed, by the same name every time, because "cannot
-advance" without a reason is a red light nobody can act on. The fourth clause
+review" without a reason is a red light nobody can act on. The fourth clause
 is the point of the other three: ``held`` is true whenever nothing was
 violated — including when nothing was checked — so a candidate whose
 relations nobody could check is never green. The fifth reads the run receipt's
 own seat rows beside the artifact records: a seat the runner exported for
 carries a ``cad`` block, and a block with no available artifact behind it
-blocks the advance. It is vacuous only for a candidate no seat of which
+blocks review readiness. It is vacuous only for a candidate no seat of which
 attempted an export, which is now something the records say rather than
 something an empty list was taken to mean.
 
@@ -34,7 +34,8 @@ which check the receipt actually stands on (kernel card P110).
 
 Nothing here writes. A validation is a reading of records the run already
 retained; the published position, ``canonical/`` and ``input/`` are untouched,
-and nothing is issued by having been validated.
+and nothing is issued by being ready for review. Only ``project.issue`` can
+issue a run or advance a stage.
 """
 
 from __future__ import annotations
@@ -110,7 +111,7 @@ VALIDATOR_NOTE = (
     "proves artifact presence and base match only"
 )
 
-# The five clauses of the advance verdict, named exactly as they travel.
+# The five clauses of review readiness, named exactly as they travel.
 RECEIPT_CLAUSE = "validation.receipt"
 SEATS_CLAUSE = "runner.seat_execution_complete"
 HELD_CLAUSE = "relations.held"
@@ -139,24 +140,24 @@ EXPORT_UNMATCHED = (
 
 
 @dataclass(frozen=True, slots=True)
-class Verdict:
-    """The server's advance decision, and every clause that refused it."""
+class ReviewReadiness:
+    """Whether a candidate is ready for review, and every refusing clause."""
 
-    advance: bool
+    review_ready: bool
     blocked_by: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class CandidateValidation:
-    """One candidate's receipt and verdict, as the route hands them on."""
+    """One candidate's receipt and review readiness for the route."""
 
     candidate_id: str
     receipt: ValidationReceipt
     seat_execution_complete: bool
-    # Copied from the candidate, never recomputed: the readout and the verdict
+    # Copied from the candidate, never recomputed: the readout and readiness
     # answer for the same three states or they are two different candidates.
     relation_checks: RelationTotals
-    advance: bool
+    review_ready: bool
     blocked_by: tuple[str, ...]
     # What the submission could not carry. Normally empty; never absent.
     honesty: tuple[str, ...]
@@ -207,12 +208,15 @@ def _submission(
     )
 
 
-def verdict(receipt: ValidationReceipt, candidate: CandidateRun) -> Verdict:
-    """The advance decision: five clauses, all of which must hold.
+def review_readiness(
+    receipt: ValidationReceipt,
+    candidate: CandidateRun,
+) -> ReviewReadiness:
+    """Review readiness: five clauses, all of which must hold.
 
     ``relations.held`` is the flag, not the count — it says nothing was
     violated — and it is exactly why ``relations.fully_checked`` stands beside
-    it. A run that checked nothing has violated nothing, and a verdict built on
+    it. A run that checked nothing has violated nothing, and readiness built on
     the first clause alone would call that a pass.
 
     ``runner.exports_available`` is read from two records, not one. Every
@@ -246,7 +250,7 @@ def verdict(receipt: ValidationReceipt, candidate: CandidateRun) -> Verdict:
         )
         if not holds
     )
-    return Verdict(advance=not blocked, blocked_by=blocked)
+    return ReviewReadiness(review_ready=not blocked, blocked_by=blocked)
 
 
 def _unmatched_exports(candidate: CandidateRun) -> tuple[SeatOutcome, ...]:
@@ -293,10 +297,10 @@ def validate_candidate(
     *,
     events: StudioEventSink,
 ) -> CandidateValidation:
-    """Ask the kernel about one finished candidate, then issue the verdict.
+    """Ask the kernel about one finished candidate, then assess review readiness.
 
     ``head`` is passed in rather than read here so that the version this
-    verdict is *about* is the same one its caller keyed it under. A receipt
+    readiness is *about* is the same one its caller keyed it under. A receipt
     names the state it checked, and a caller that remembered it under a
     different one would be able to serve an answer about a version the project
     has left.
@@ -316,7 +320,7 @@ def validate_candidate(
         _submission(candidate, artifacts),
         tuple(validator() for validator in VALIDATORS),
     )
-    decision = verdict(receipt, candidate)
+    readiness = review_readiness(receipt, candidate)
     events.publish(
         event={
             "type": VALIDATION_COMPUTED,
@@ -324,8 +328,8 @@ def validate_candidate(
             "candidate_id": candidate.candidate_id,
             "proposal_id": candidate.proposal_id,
             "run_id": candidate.candidate_id,
-            "advance": decision.advance,
-            "blocked_by": list(decision.blocked_by),
+            "review_ready": readiness.review_ready,
+            "blocked_by": list(readiness.blocked_by),
         }
     )
     return CandidateValidation(
@@ -333,8 +337,8 @@ def validate_candidate(
         receipt=receipt,
         seat_execution_complete=candidate.seat_execution_complete,
         relation_checks=candidate.relation_checks,
-        advance=decision.advance,
-        blocked_by=decision.blocked_by,
+        review_ready=readiness.review_ready,
+        blocked_by=readiness.blocked_by,
         honesty=honesty,
     )
 
@@ -426,12 +430,12 @@ def _status_of(cad: Mapping[str, Any] | None) -> str:
 def validation_key(
     candidate_id: str, head: ProjectVersionRef
 ) -> tuple[str, int, str | None]:
-    """What a remembered verdict is *about*: this candidate, at this issue.
+    """What remembered review readiness is *about*: this candidate, at this issue.
 
     Both halves are load-bearing. The candidate is obvious. The published
     version is there because the receipt names the state it checked and
-    ``passed`` depends on the submission's base matching it: a verdict kept
-    under the candidate id alone would go on saying ``advance: true`` after the
+    ``passed`` depends on the submission's base matching it: readiness kept
+    under the candidate id alone would go on saying ``reviewReady: true`` after the
     project issued a version that candidate is no longer based on, which is
     exactly the stale green this whole slice exists to prevent. Same issue,
     same key, so polling still dedupes; a new issue is a different question and
@@ -444,7 +448,7 @@ def validation_key(
 class ValidationStore:
     """One validation per candidate-and-issue, computed once in this process.
 
-    A finished candidate's records do not change, and neither does the verdict
+    A finished candidate's records do not change, and neither does readiness
     read off them while the project stands where it stood, so the second
     request for one is the same answer as the first. Recomputing it would be
     harmless; *republishing* it would not — a client polling the readout would
@@ -457,7 +461,7 @@ class ValidationStore:
 
     Each key gets its own lock, created under the store's mutex and dropped
     once the answer is in. Two simultaneous readers of the same key therefore
-    still produce one verdict and one event, while two readers of different
+    still produce one readiness result and one event, while two readers of different
     candidates do not queue behind each other for work that has nothing to do
     with them.
     """
@@ -472,7 +476,7 @@ class ValidationStore:
 
         One per issue the candidate was validated against, in no particular
         order and computed nowhere here: this is a read of what was already
-        decided, so a judgement can name the verdicts that were in front of
+        decided, so a judgement can name the validation receipts that were in front of
         whoever made it.
         """
 
@@ -490,7 +494,7 @@ class ValidationStore:
         key: tuple[str, int, str | None],
         compute: Callable[[], CandidateValidation],
     ) -> CandidateValidation:
-        """The verdict for one key, computing it the first time only."""
+        """The validation and readiness for one key, computed only once."""
 
         with self._mutex:
             validation = self._by_key.get(key)

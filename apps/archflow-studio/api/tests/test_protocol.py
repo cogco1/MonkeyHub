@@ -47,7 +47,7 @@ class ProtocolRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["protocol"], PROTOCOL)
-        self.assertEqual(body["protocol"], "archflow/1")
+        self.assertEqual(body["protocol"], "archflow/2")
         self.assertEqual(body["server"], SERVER_NAME)
         self.assertEqual(body["serverVersion"], SERVER_VERSION)
         self.assertEqual(body["mode"], LOCAL_MODE)
@@ -68,6 +68,7 @@ class ProtocolRouteTests(unittest.TestCase):
             "intents",
             "proposals",
             "candidates",
+            "captures",
             "artifacts",
             "events",
             "validation",

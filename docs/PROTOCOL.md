@@ -1,8 +1,8 @@
-# The open ArchFlow protocol, version 1 (draft)
+# The open ArchFlow protocol, version 2 (draft)
 
-**Status:** draft, written from the code on 2026-09-03. The one description of the wire is the
+**Status:** draft, written from the code on 2026-09-04. The one description of the wire is the
 FastAPI application (`apps/archflow-studio/api`); this document says what of it a client may
-rely on, and what version 1 has reserved but not yet built.
+rely on, and what version 2 has reserved but not yet built.
 
 ArchFlow is the methodology and this protocol. **MonkeyArch** is one implementation of it: the
 server `monkeyarch-api` and the client in `apps/archflow-studio/web`; a conforming server need
@@ -20,11 +20,11 @@ GET /api/protocol
 
 ```json
 {
-  "protocol": "archflow/1",
+  "protocol": "archflow/2",
   "server": "monkeyarch-api",
   "serverVersion": "0.1.0",
   "mode": "local",
-  "capabilities": ["artifacts", "candidates", "compare", "events", "gestures",
+  "capabilities": ["artifacts", "candidates", "captures", "compare", "events", "gestures",
                    "intents", "pick", "program", "projection", "proposals",
                    "validation"]
 }
@@ -45,7 +45,7 @@ Two identities and never three (ADR-003):
 
 | name | identifies | answer to |
 | --- | --- | --- |
-| `recordDigest` | the authored record's **content**, invariant under binding | "is this the same record?" |
+| `recordDigest` | the selected record's **content**, invariant under binding | "is this the same record?" |
 | `stateDigest` | that record **bound to a run and a base** | "is this the state I was given?" — a mismatch is `409 STALE_BASE` |
 | `head.stateSha256` | the project's published canonical version | "has the project moved?" |
 
@@ -73,22 +73,22 @@ on one place, and every resource below reads or writes exactly one of them.
 | **work in progress** | the authored State Record and the seat pack — loose files, nothing retained | the designer | read-only, through the projection (`GET /api/state`) |
 | **shared** | one run: the exact record used, the developed state, programs, relation checks, receipts, exported artifacts | the runner | listed, read, and **written** by running a candidate |
 | **published** | the one compare-and-swap position; moving a run there is an **issue** (出图) | `prepare_transition` + `compare_and_swap`, from a `PromotionDecision@1` | read-only: `head` on the binding |
-| **archived** | every canonical snapshot the published position has left behind | nobody deletes; the chain is the archive | not exposed in v1 (§10.5) |
+| **archived** | every canonical snapshot the published position has left behind | nobody deletes; the chain is the archive | not exposed in v2 (§10.5) |
 
 Two rules a client may not soften. A shared run is never "the current design" — only the
 published container is, and only until the next issue. And a server on this protocol **never
-issues**: version 1 has no route that writes the published container, and a client that offered
+issues**: version 2 has no route that writes the published container, and a client that offered
 one would be offering something no conforming server can do.
 
 ---
 
 ## 4. Resources
 
-`v1` says whether a client may rely on the shape: **stable** does not change within major 1 (a
-minor version may add fields); **provisional** may change within major 1 and a client should
+`v2` says whether a client may rely on the shape: **stable** does not change within major 2 (a
+minor version may add fields); **provisional** may change within major 2 and a client should
 tolerate it.
 
-| method | path | returns | container | v1 |
+| method | path | returns | container | v2 |
 | --- | --- | --- | --- | --- |
 | GET | `/api/health` | `{status, service, projectBound}` — is the process up, does its binding open | none | stable |
 | GET | `/api/protocol` | server identity and capabilities (§1) | none | stable |
@@ -98,13 +98,14 @@ tolerate it.
 | GET | `/api/state?run=` | the projection: component tree, `Element@1` rows and their numeric fields, parameters and their locks, dependency edges, `stateDigest`, `recordDigest`, `honesty[]` | reads work in progress + shared + published | stable |
 | GET | `/api/artifacts` | what the seat execution receipts certify, each row keeping its own `available` / `unavailableReason` | reads shared | stable |
 | GET | `/api/artifacts/{sha256}/bytes` | the certified bytes, re-hashed before they are served; `ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store` | reads shared | stable |
+| POST | `/api/captures` → 201 | a viewport PNG retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest | **writes shared workspace** | stable |
 | POST | `/api/pick/resolve` | what the object a user clicked actually is (§6) | reads work in progress + shared | stable |
 | POST | `/api/proposals` → 201 | a typed, exact-base `DecisionOperator` with its closure and impact. Never applied | reads work in progress + shared | stable |
 | GET | `/api/proposals/{proposalId}` | that proposal, as it was returned | server memory | stable |
 | POST | `/api/proposals/{proposalId}/candidate` → 202 | a job id and the run id the candidate will make | **writes shared** | stable |
 | GET | `/api/jobs/{jobId}` | that job as the server last saw it, failures included | server memory | stable |
 | GET | `/api/candidates/{candidateId}` | the finished candidate, read back out of the records its run retained | reads shared | stable |
-| GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's verdict (§5) | reads shared + published | stable |
+| GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
 | POST | `/api/proposals/{proposalId}/decision` → 201 | the judgement made on one proposal — rejected, or modified into a linked replacement — as a deliberation episode (§5.2) | server memory, **written into shared** by the next candidate run against the same state | provisional |
 | GET | `/api/episodes?stateDigest=` | the judgements this process holds, each saying whether it lives in a run or only in memory (§5.2) | server memory + reads shared | provisional |
@@ -124,7 +125,7 @@ tolerate it.
 | POST | `/api/program` → 202 | apply a sheet to the record **as a candidate**: a job id, the run id it will make, and the server's own `totals`. The authored record is never rewritten. `saveInput: true` also writes the architect's own sheet file — local mode only (§10.1) | **writes shared**; with `saveInput`, **writes work in progress** | provisional |
 | GET | `/api/semantics` | every registered `role.*` and `condition.*` with its meaning and aliases: the vocabulary canonical state may name (ADR-006). Opens no project | none | provisional |
 
-Thirty-two resources: fifteen stable, seventeen provisional. `/api/intents` is provisional because who
+Thirty-three resources: sixteen stable, seventeen provisional. `/api/intents` is provisional because who
 signs an agent's compilation receipt is still moving; the three deliberation resources because a
 judgement not yet met by a run is still one process's memory; `/api/controls` because a declared
 control has not entered the authored record; `/api/compare` because its `why` comes from one
@@ -161,7 +162,7 @@ stream as a record of anything: what a run did is in the run.
 
 ---
 
-## 5. Proposal → candidate → verdict
+## 5. Proposal → candidate → review readiness
 
 One chain, and each arrow is a route.
 
@@ -246,18 +247,22 @@ a value the server returns and never retains; no route writes it, it invents no 
 neighbouring element whose field shares a name is named there only to be refused.
 3. **Run it as a candidate.** `POST /api/proposals/{id}/candidate` answers `202` and a job id.
    This is the one write: a **harness run** in the shared container. It never closes a stage and
-   never becomes the reference run. Two refusals come before the job starts — the proposal
-   conflicts with something the utterance asked to keep (`409 PROPOSAL_NOT_RUNNABLE`), or its
-   base has moved (`409 STALE_BASE`). Everything after that is the job's, and a run the runner
-   refuses is a *failed job carrying the runner's own sentence*, never an HTTP error.
+   never becomes the reference run. Refusals come before the job starts when the proposal
+   conflicts with something the utterance asked to keep (`409 PROPOSAL_NOT_RUNNABLE`), its
+   client digest is stale (`409 STALE_BASE`), or the selected reference is not an exact retained
+   State Record on current HEAD (`409 REFERENCE_STATE_NOT_EXACT`, `REFERENCE_BASE_STALE` or
+   `REFERENCE_STATE_MISMATCH`). Everything after that is the job's, and a run the runner refuses
+   is a *failed job carrying the runner's own sentence*, never an HTTP error.
 4. **Follow it.** `GET /api/jobs/{jobId}`, or the event stream.
-5. **Read the verdict.** `GET /api/candidates/{id}/validation` returns the kernel's validation
-   receipt unedited, and beside it the server's `advance`, a fixed conjunction of five named
+5. **Read review readiness.** `GET /api/candidates/{id}/validation` returns the kernel's
+   validation receipt unedited, and beside it the server's `reviewReady`, a fixed conjunction of five named
    clauses with `blockedBy[]` naming every clause that refused. Three-state law, verbatim:
-   *held / violated / unchecked are distinct; unchecked is never green; the server issues the
-   advance verdict.* A client renders the server's boolean and computes no verdict of its own.
+   *held / violated / unchecked are distinct; unchecked is never green; the server reports
+   candidate review readiness.* A client renders the server's boolean and computes no readiness
+   result of its own. `reviewReady` grants no issue authority: only `project.issue` can issue a run
+   or advance a stage.
 
-The verdict is memoised per (candidate, published version): reading it twice is one decision.
+Review readiness is memoised per (candidate, published version): reading it twice is one result.
 
 ### 5.2 The judgement is retained
 
@@ -334,7 +339,7 @@ and closes as soon as the backlog drains — so a bounded read always terminates
 process. Without `limit` the connection is held open and carries live events.
 
 **Reserved.** The browser's `EventSource` cannot send an `Authorization` header, so an
-authenticated stream (§10.1) has no answer in v1. A minor version will name one — a bearer
+authenticated stream (§10.1) has no answer in v2. A minor version will name one — a bearer
 token on the stream request through a fetch reader, or a short-lived stream ticket — and until
 then a remote deployment's clients read the stream by other means or not at all.
 
@@ -345,7 +350,7 @@ then a remote deployment's clients read the stream by other means or not at all.
 Several answers carry `honesty[]`: plain sentences saying what that answer does **not** tell
 you. A projection whose bound view the kernel refused says so and still serves the entities the
 record declares; a candidate whose seat exported and left no artifact record says so; a
-verdict says which of its clauses was vacuous.
+review-readiness result says which of its clauses was vacuous.
 
 These are part of the protocol, not decoration. A conforming server states what it could not
 compute rather than answering with an empty list, and a client shows them verbatim rather than
@@ -374,7 +379,7 @@ it, and where a server keeps a project on disk is no part of an answer about a d
 
 ---
 
-## 10. What version 1 reserves
+## 10. What version 2 reserves
 
 ### 10.1 Authentication
 
@@ -389,8 +394,8 @@ A server is in one of two modes, and says which at `/api/protocol`.
   that cannot name a token does not start.
 
 The token is opaque to the protocol: how a client obtained it, and what it stands for, is
-outside v1. There is no login resource, no session, no user identity on any answer, and no
-per-project authorisation. A minor version adds them; nothing in v1 pretends they exist.
+outside v2. There is no login resource, no session, no user identity on any answer, and no
+per-project authorisation. A minor version adds them; nothing in v2 pretends they exist.
 
 That absence has one consequence a client can see. Writing an authored work-in-progress file —
 today, `POST /api/program` with `saveInput: true` — is a **local-mode act only**: a remote server
@@ -410,7 +415,7 @@ The unscoped paths — `/api/state`, `/api/pick/resolve`, `/api/proposals`, and 
 **default-project shortcut** for it. They are not deprecated and are not a second API: they mean
 the one project a server names `isDefault` in `GET /api/projects`.
 
-Version 1 serves the scoped prefix for the two listing resources only
+Version 2 serves the scoped prefix for the two listing resources only
 (`/api/projects`, `/api/projects/{projectId}`). Duplicating a dozen routes under a prefix that
 resolves to the same binding would be a second copy of the API to keep honest. What is built now
 is the part that cannot be retrofitted: the project segment has **one resolver**, so a server
@@ -424,7 +429,7 @@ wherever a server offers it.
 
 `capabilities` is how a client hides what a server cannot do instead of discovering it as a 404.
 A capability name is a feature, not a route: `projection`, `pick`, `gestures`, `intents`,
-`proposals`, `candidates`, `compare`, `artifacts`, `program`, `validation`, `events`, and
+`proposals`, `candidates`, `captures`, `compare`, `artifacts`, `program`, `validation`, `events`, and
 `rhino-export` where a server can really drive one. The list is sorted and reflects the running configuration,
 not the build.
 
@@ -438,7 +443,11 @@ answer, and `server` there is the implementation's product name.
 ### 10.4 Versioning
 
 - **Major.** A client refuses a server whose protocol major differs from its own, and says so
-  rather than reporting answers it may have misread. `archflow/1` is the only major that exists.
+  rather than reporting answers it may have misread. This implementation serves `archflow/2`.
+  Version 2 replaces `advance` with `reviewReady` in the stable validation response and event
+  payloads. The field reports candidate review readiness, never issue or stage-advance
+  authority. This rename is incompatible with `archflow/1`: both client and server must use
+  major 2, and a mismatched client stops at the handshake before reading design responses.
 - **Minor.** Additive only: new resources, new capabilities, new fields on existing answers, new
   error codes. Never a removal, a rename, or a change of meaning. A client ignores fields it does
   not know and does not fail on an unknown error `code`.
@@ -447,7 +456,7 @@ answer, and `server` there is the implementation's product name.
 - **Provisional resources** (§4) are the exception a minor version may change. A client that
   depends on one says so.
 
-### 10.5 Not in version 1
+### 10.5 Not in version 2
 
 Named here so nobody reads their absence as an oversight: issuing (writing the published
 container), the archived container as a resource, stage closure, per-user identity and
@@ -467,4 +476,4 @@ cover rather than the answer being silently narrowed.
 
 A **client** conforms when it probes `/api/protocol` first, refuses a foreign major, sends back
 the `stateDigest` it was given, renders the server's codes and honesty lines verbatim, and
-computes no verdict, no impact and no propagation of its own.
+computes no review readiness, impact or propagation of its own.

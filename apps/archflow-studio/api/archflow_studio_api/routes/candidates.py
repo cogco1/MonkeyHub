@@ -26,7 +26,11 @@ from ..application.binding import ProjectBinding, bound_project
 from ..application.candidate import describe, execute_candidate
 from ..application.compare import compare_runs
 from ..application.jobs import FAILED, QUEUED, RUNNING, SUCCEEDED, Job, JobRegistry
-from ..application.projection import StateProjection, project_state
+from ..application.projection import (
+    StateProjection,
+    project_state,
+    require_actionable,
+)
 from ..application.proposals import closure_of, Proposal
 from ..settings import StudioSettings
 from ..transport.candidate import (
@@ -71,6 +75,7 @@ def start_candidate(
         )
     binding = bound_project(state)
     projection = project_state(binding)
+    require_actionable(projection)
     _require_current_base(binding, projection, proposal)
     registry: JobRegistry = state.jobs
     settings: StudioSettings = state.settings
