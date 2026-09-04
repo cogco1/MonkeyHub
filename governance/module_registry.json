@@ -4229,11 +4229,12 @@
         "reading SourceObjects off a ThreeDmInspectionSummary (named bboxes, archflow:component / archflow:producer_op strings, geometry digests)",
         "family and side of an object from its producer op (column-west-3 -> column / west)",
         "precedence between sources per (component, side): a patch supersedes the base, equal patches are ALTERNATE and the base stands",
-        "element drafts per (component, family, side): column-array, capitals, beam, prism from boxes; AMBIGUOUS for forms boxes cannot carry",
+        "element drafts per (component, family, side): column-array, capitals, beam, prism, ring from boxes; stair flights from step families; wedge and shell rows only from explicit archflow:wedge_* / archflow:shell_* strings; AMBIGUOUS for forms boxes cannot carry",
         "drafting a GridAxis@1 the model needs and the record lacks (a column line), marked derived",
         "the residual between produced and inspected boxes, by running the real producers on the drafted rows",
         "derived support_contact relations from vertical contact within the stage-5 tolerance",
-        "the ComponentCatalog@1 payload and the successor record that adds axes, rows and relations and replaces nothing"
+        "the ComponentCatalog@1 payload and the successor record that adds axes, rows and relations and replaces nothing",
+        "re-seating a drafted prism onto a drafted flight's published <id>-top instead of a level"
       ],
       "does_not_own": [
         "producing geometry from a row - capabilities.element_producers",
@@ -4250,7 +4251,9 @@
         "place_objects",
         "family_of",
         "side_of",
-        "Frame"
+        "Frame",
+        "WEDGE_NOTE",
+        "SHELL_THICKNESS_NOTE"
       ],
       "depends_on": [
         "capabilities.element_producers",
