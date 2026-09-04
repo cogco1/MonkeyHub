@@ -253,6 +253,40 @@ class RingAndWallTests(unittest.TestCase):
         self.assertLessEqual(wall.residual_m, 0.2, wall.notes)   # frames project 0.1 m outside the face; the union is compared
 
 
+class ExistingRowTests(unittest.TestCase):
+    def test_a_component_with_two_rows_measures_each_against_its_own_family_and_drafts_the_new_one(self) -> None:
+        from dataclasses import replace
+        from archflow.state.state_record import Entity
+        base = fixture_record()
+        rows = (
+            Entity("porticos-base", "Element@1", {"component_id": "porticos", "producer": "prism", "references": {"base": {"level": "level-ground"}}, "params": {"profile": [[0, 0], [4, 0], [4, 2], [0, 2]], "height": 0.5}}, "porticos", (EVIDENCE,)),
+            Entity("porticos-cornice", "Element@1", {"component_id": "porticos", "producer": "prism", "references": {"base": {"level": "level-ground"}}, "params": {"profile": [[0, 0], [4, 0], [4, 2], [0, 2]], "height": 0.3}}, "porticos", (EVIDENCE,)),
+        )
+        record = replace(base, entities=base.entities + rows)
+        objs = [
+            box("obj-porticos-base", "porticos", "porticos-base", (0, 0, 0), (4, 2, 0.5)),
+            box("obj-porticos-cornice", "porticos", "porticos-cornice", (0, 0, 3.0), (4, 2, 3.3)),
+            box("obj-porticos-plinth", "porticos", "porticos-plinth", (0, 0, 11.335), (4, 2, 11.6)),
+        ]
+        result = reindex(record, [(inspection(objs), "record:base", 0)])
+        drafts = {d.element_id: d for d in result.drafts}
+        self.assertEqual(drafts["porticos-base"].status, "EXISTING")
+        self.assertEqual([o.name for o in drafts["porticos-base"].objects], ["obj-porticos-base"])
+        self.assertEqual(drafts["porticos-cornice"].status, "EXISTING")
+        self.assertEqual([o.name for o in drafts["porticos-cornice"].objects], ["obj-porticos-cornice"])
+        plinth = drafts["porticos-plinth"]
+        self.assertEqual((plinth.status, plinth.producer), (DRAFT, "prism"), plinth.notes)
+        self.assertLessEqual(plinth.residual_m, 0.001)
+
+    def test_a_six_face_solid_the_export_describes_as_a_wedge_is_drafted_as_one(self) -> None:
+        objs = roof_sector(wedge_low="0.3", wedge_high="1.78", wedge_axis="along", wedge_sense="+x")
+        objs[0]["bbox"]["mesh_face_count"] = 6   # a wedge whose low edge is above the base has six faces
+        result = reindex(fixture_record(), [(inspection(objs), "record:base", 0)])
+        wedge = {d.element_id: d for d in result.drafts}["portico-roof-abutments-west"]
+        self.assertEqual((wedge.status, wedge.producer), (DRAFT, "wedge"), wedge.notes)
+        self.assertLessEqual(wedge.residual_m, 0.001, wedge.notes)
+
+
 class NamingTests(unittest.TestCase):
     def test_family_and_side_come_off_the_producer_op(self) -> None:
         self.assertEqual(family_of("column-west-3"), "column")

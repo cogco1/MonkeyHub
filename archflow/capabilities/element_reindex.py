@@ -1197,7 +1197,13 @@ def is_stair_family(draft: ElementDraft) -> bool:
 def is_wedge_family(draft: ElementDraft) -> bool:
     """One five-face solid the model names as a sloped-top piece: a pediment, an abutment, a sector."""
 
-    return len(draft.objects) == 1 and draft.objects[0].faces == 5 and any(hint in draft.family for hint in WEDGE_HINTS)
+    if len(draft.objects) != 1:
+        return False
+    obj = draft.objects[0]
+    described = obj.wedge_low is not None or obj.wedge_high is not None or obj.wedge_axis is not None
+    # a solid the export describes as a wedge is one whatever its face count (a wedge whose low edge
+    # is above the base has six faces); an undescribed six-face solid is a box and stays a prism
+    return described or (obj.faces == 5 and any(hint in draft.family for hint in WEDGE_HINTS))
 
 
 def is_shell_family(draft: ElementDraft) -> bool:
@@ -1208,6 +1214,29 @@ def is_shell_family(draft: ElementDraft) -> bool:
     obj = draft.objects[0]
     ex, ey, _ = obj.extent
     return (obj.faces or 0) >= SHELL_FACES and abs(ex - ey) <= SNAP_M * 2
+
+
+def _existing_for(rows: Sequence[ElementRow], eid: str, component_id: str, fam: str, claimed: set[str]) -> ElementRow | None:
+    """The record's own row this family is: the row whose id is the drafted id, or whose id carries
+    the family's own tokens (the component's tokens do not count), or the wall row for the wall
+    family. Each row is claimed by one family only, so a component with several rows never has all
+    its families measured against the same one."""
+
+    own = [t for t in fam.split("-") if t not in set(component_id.split("-"))] or fam.split("-")
+    for row in rows:
+        if row.element_id in claimed:
+            continue
+        if row.element_id == eid:
+            return row
+    for row in rows:
+        if row.element_id in claimed:
+            continue
+        tokens = set(row.element_id.split("-"))
+        if fam == "wall" and row.producer == "wall":
+            return row
+        if all(t in tokens for t in own):
+            return row
+    return None
 
 
 def _split_into_prisms(draft: ElementDraft, frame: Frame, fam: str, side: str | None) -> list[ElementDraft]:
@@ -1489,9 +1518,10 @@ def reindex(record: StateRecord, sources: Sequence[tuple[Mapping[str, Any], str,
     components = {e.entity_id for e in record.entities_of("Component@1")}
     frame = Frame(record)
     existing_rows = element_rows_of(record)
-    existing_by_key: dict[tuple[str, str | None], ElementRow] = {}
+    existing_by_key: dict[tuple[str, str | None], list[ElementRow]] = defaultdict(list)
     for row in existing_rows:
-        existing_by_key[(row.component_id, side_of(row.element_id))] = row
+        existing_by_key[(row.component_id, side_of(row.element_id))].append(row)
+    claimed: set[str] = set()
     types = wall_types_of(existing_rows)
 
     bound = [p.obj for p in placements if p.status == BOUND and (p.obj.component_id or "") in components]
@@ -1514,8 +1544,9 @@ def reindex(record: StateRecord, sources: Sequence[tuple[Mapping[str, Any], str,
     for (cid, fam, side), objs in sorted(groups.items(), key=lambda kv: (order.get(kv[0][1], 2), kv[0])):
         eid = _element_id(cid, fam, side, len(families_per_component[cid]))
         draft = ElementDraft(eid, cid, side, fam, None, objects=tuple(sorted(objs, key=lambda o: o.name)), basis_refs=_refs(o.ref for o in objs))
-        existing = existing_by_key.get((cid, side))
-        if existing is not None and (existing.element_id == eid or fam in existing.element_id or existing.producer in ("prism", "wall")):
+        existing = _existing_for(existing_by_key.get((cid, side), ()), eid, cid, fam, claimed)
+        if existing is not None:
+            claimed.add(existing.element_id)
             draft.element_id = existing.element_id
             draft.producer = existing.producer
             draft.references = dict(existing.references)
