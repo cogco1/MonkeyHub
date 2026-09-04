@@ -317,9 +317,12 @@ export const messagesZhCN = {
   "stage.tools.remove.label": "移除",
   "stage.tools.remove.title": "标记需要移除的部分",
   "stage.tools.drawingHint": "正在绘制：{tool} · 再按一次{tool}恢复旋转视图",
-  "stage.tools.referenceUnavailable": "参考运行没有可返回的导出模型",
+  "stage.tools.homeUnavailable": "此项目没有可返回的导出模型",
   "stage.tools.referenceShow": "在模型区显示参考运行 {runId} 的全部席位",
   "stage.tools.reference": "参考模型",
+  "stage.tools.homeShow":
+    "回到打开时的模型：参考运行没有导出，这是列表中最后一个导出，来自运行 {runId}",
+  "stage.tools.home": "回到初始模型",
   "stage.tools.fit": "适合窗口",
   "stage.tools.front": "正视图",
   "stage.tools.clear": "清空",

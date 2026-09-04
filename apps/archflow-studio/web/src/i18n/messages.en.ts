@@ -339,11 +339,14 @@ export const messagesEn = {
   "stage.tools.remove.label": "Remove",
   "stage.tools.remove.title": "Mark what should go",
   "stage.tools.drawingHint": "Drawing: {tool} · press {tool} again to orbit",
-  "stage.tools.referenceUnavailable":
-    "The reference run left no export to come back to",
+  "stage.tools.homeUnavailable":
+    "This project has no export to come back to",
   "stage.tools.referenceShow":
     "Show every seat of the reference run {runId} on the stage",
   "stage.tools.reference": "Reference",
+  "stage.tools.homeShow":
+    "Back to the model this stage opened on: the reference run left no export, so this is the last export listed, from run {runId}",
+  "stage.tools.home": "Home",
   "stage.tools.fit": "Fit",
   "stage.tools.front": "Front",
   "stage.tools.clear": "Clear",

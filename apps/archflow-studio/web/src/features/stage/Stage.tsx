@@ -36,6 +36,17 @@ export interface PickedFacts {
   readonly fields: ReadonlyArray<readonly [string, number]>;
 }
 
+/**
+ * The picture the stage opens on and the one thing that brings it back, as
+ * far as the toolbar needs to know it: whether those bytes are the reference
+ * run's own exports or the export the auto-load fell back to, and the run
+ * they came from. Null when this project has no export anywhere.
+ */
+export interface HomeModel {
+  readonly kind: "reference" | "fallback";
+  readonly runId: string;
+}
+
 export interface EvidenceCounts {
   readonly honesty: number;
   readonly receipts: number;
@@ -75,8 +86,8 @@ export function Stage({
   onPick,
   onOpenVersion,
   onOpenRun,
-  onShowReference,
-  referenceRunId,
+  onShowHome,
+  home,
   loadedRunId,
   onCompareVersion,
   blend,
@@ -115,10 +126,14 @@ export function Stage({
   onOpenVersion(artifact: ProjectArtifactDto, sourceLabel: string): void;
   /** Put every available export of one run on the stage at once. */
   onOpenRun(group: VersionGroup): void;
-  /** Back to the whole reference run, from wherever the stage got to. */
-  onShowReference(): void;
-  /** The reference run, when it has exports to come back to; null when it has none. */
-  referenceRunId: string | null;
+  /** Back home, from wherever the stage got to. */
+  onShowHome(): void;
+  /**
+   * What home is, so the button can say which model it brings back: the
+   * reference run's exports, or the fallback the auto-load announced. Null
+   * only when nothing in this project can be shown.
+   */
+  home: HomeModel | null;
   /** The run whose export is on screen, for the strip's comparisons. */
   loadedRunId: string | null;
   onCompareVersion(artifact: ProjectArtifactDto): void;
@@ -233,17 +248,24 @@ export function Stage({
             </span>
           )}
           <span className="viewtools__sep" aria-hidden="true" />
+          {/* One button, home: the reference run's exports when it left
+              any, else the export the stage actually opened on — named for
+              what it brings back, disabled only when there is nothing. */}
           <button
             type="button"
-            disabled={referenceRunId === null}
+            disabled={home === null}
             title={
-              referenceRunId === null
-                ? t("stage.tools.referenceUnavailable")
-                : t("stage.tools.referenceShow", { runId: referenceRunId })
+              home === null
+                ? t("stage.tools.homeUnavailable")
+                : home.kind === "reference"
+                  ? t("stage.tools.referenceShow", { runId: home.runId })
+                  : t("stage.tools.homeShow", { runId: home.runId })
             }
-            onClick={onShowReference}
+            onClick={onShowHome}
           >
-            {t("stage.tools.reference")}
+            {home?.kind === "fallback"
+              ? t("stage.tools.home")
+              : t("stage.tools.reference")}
           </button>
           <button type="button" onClick={() => viewportRef.current?.fitView()}>
             {t("stage.tools.fit")}

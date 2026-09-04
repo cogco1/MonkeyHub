@@ -47,7 +47,7 @@ import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import type { ViewState } from "../features/stage/SourceChip";
-import { Stage, type PickedFacts } from "../features/stage/Stage";
+import { Stage, type HomeModel, type PickedFacts } from "../features/stage/Stage";
 import type { VersionExport, VersionGroup } from "../features/stage/VersionsStrip";
 import { useT } from "../i18n/useT";
 import type { SceneInspection } from "../viewer/sceneInspection";
@@ -125,6 +125,13 @@ function ghostSpecFor(
     .map((ref) => ghostTarget(projection, ref.slice("entity:".length)))
     .filter((item): item is GhostTarget => item !== null);
   return { target, factor, scaleAxis: isHeight ? "z" : null, affected };
+}
+
+/** Home, with the bytes it is made of; the toolbar sees only the first two. */
+interface HomeArtifacts extends HomeModel {
+  readonly artifacts: readonly ProjectArtifactDto[];
+  /** The reference run, which a fallback has to name to explain itself. */
+  readonly referenceRunId: string;
 }
 
 export default function App({ server }: { server: ServerIdentity }) {
@@ -375,108 +382,110 @@ export default function App({ server }: { server: ServerIdentity }) {
   }, [artifacts, projection]);
 
   /**
-   * Back to the whole reference run: every seat it exported, together, from
-   * wherever the stage got to — one seat of another run, a candidate's export,
-   * a local file, or nothing at all after clear.
+   * Home: the picture the stage opens on, and the one thing that brings it
+   * back. Every export of the reference run when it left any; failing that,
+   * the last export the listing names (the server lists runs by id; nothing
+   * here claims it is the newest), which is the fallback the conversation is
+   * told about. Derived once, here, so the auto-load, the toolbar button and
+   * the Reference card cannot disagree about what going back means.
    */
-  const showReferenceRun = useCallback(() => {
-    if (referenceExports.length === 0 || projection === null) return;
-    manualLoadRef.current = true;
-    const seats = referenceExports.map(seatOf);
-    append({
-      kind: "system",
-      ...systemText([
-        {
-          kind: "prose",
-          text:
-            referenceExports.length === 1
-              ? "Showing the reference run's export · "
-              : "Showing the reference run's exports · ",
-        },
-        {
-          kind: "technical",
-          text:
-            referenceExports.length === 1
-              ? referenceExports[0].fileName
-              : seats.join(" + "),
-        },
-      ]),
-    });
-    void loadRunIntoViewer(
-      referenceExports,
-      runSourceLabel(projection.referenceRun.runId, referenceExports),
-    );
-  }, [append, loadRunIntoViewer, projection, referenceExports, runSourceLabel]);
-
-  // The first ten seconds: a bound project shows its own certified model
-  // without being asked - every export of the reference run, so the stage
-  // opens on the whole thing and not one seat of it; failing that, the last
-  // export the listing names (the server lists runs by id; nothing here
-  // claims it is the newest), said so in the conversation. A file from this
-  // machine stays a secondary door; it is the one with no receipt.
-  const autoLoadedRef = useRef(false);
-  useEffect(() => {
-    if (autoLoadedRef.current) return;
-    if (artifacts.status !== "ready" || projection === null) return;
-    if (loadedArtifacts.length > 0 || pendingArtifacts.current.length > 0) return;
+  const homeArtifacts = useMemo<HomeArtifacts | null>(() => {
+    if (artifacts.status !== "ready" || projection === null) return null;
+    if (referenceExports.length > 0) {
+      return {
+        kind: "reference",
+        runId: projection.referenceRun.runId,
+        artifacts: referenceExports,
+        referenceRunId: projection.referenceRun.runId,
+      };
+    }
     const rows = artifacts.value.artifacts.filter(
       (row) => row.available && row.sha256 !== null,
     );
-    if (rows.length === 0) return;
-    autoLoadedRef.current = true;
-    if (referenceExports.length > 0) {
-      const seats = referenceExports.map(seatOf);
+    if (rows.length === 0) return null;
+    const pick = rows[rows.length - 1];
+    return {
+      kind: "fallback",
+      runId: pick.runId,
+      artifacts: [pick],
+      referenceRunId: projection.referenceRun.runId,
+    };
+  }, [artifacts, projection, referenceExports]);
+
+  /**
+   * Back home, from wherever the stage got to — one seat of another run, a
+   * candidate's export, a local file, or nothing at all after clear. The
+   * sentence written to the conversation is the auto-load's own, because this
+   * is the same act: the reference run's seats, or the fallback export named
+   * with the run it came from.
+   *
+   * `manual` is false for the auto-load alone, which is nobody's choice: a
+   * verdict may still put its exact model on screen over it.
+   */
+  const showHome = useCallback(
+    (manual: boolean) => {
+      if (homeArtifacts === null) return;
+      manualLoadRef.current = manual;
+      const rows = homeArtifacts.artifacts;
+      if (homeArtifacts.kind === "reference") {
+        const seats = rows.map(seatOf);
+        append({
+          kind: "system",
+          ...systemText([
+            {
+              kind: "prose",
+              text:
+                rows.length === 1
+                  ? "Showing the reference run's export · "
+                  : "Showing the reference run's exports · ",
+            },
+            {
+              kind: "technical",
+              text: rows.length === 1 ? rows[0].fileName : seats.join(" + "),
+            },
+          ]),
+        });
+        void loadRunIntoViewer(rows, runSourceLabel(homeArtifacts.runId, rows));
+        return;
+      }
+      const pick = rows[0];
       append({
         kind: "system",
         ...systemText([
+          { kind: "prose", text: "The reference run " },
+          { kind: "technical", text: homeArtifacts.referenceRunId },
           {
             kind: "prose",
-            text:
-              referenceExports.length === 1
-                ? "Showing the reference run's export · "
-                : "Showing the reference run's exports · ",
+            text: " left no export; showing the last export listed, ",
           },
-          {
-            kind: "technical",
-            text:
-              referenceExports.length === 1
-                ? referenceExports[0].fileName
-                : seats.join(" + "),
-          },
+          { kind: "technical", text: pick.fileName },
+          { kind: "prose", text: " from run " },
+          { kind: "technical", text: pick.runId },
         ]),
       });
-      void loadRunIntoViewer(
-        referenceExports,
-        runSourceLabel(projection.referenceRun.runId, referenceExports),
-      );
-      return;
-    }
-    const pick = rows[rows.length - 1];
-    append({
-      kind: "system",
-      ...systemText([
-        { kind: "prose", text: "The reference run " },
-        { kind: "technical", text: projection.referenceRun.runId },
-        {
-          kind: "prose",
-          text: " left no export; showing the last export listed, ",
-        },
-        { kind: "technical", text: pick.fileName },
-        { kind: "prose", text: " from run " },
-        { kind: "technical", text: pick.runId },
-      ]),
-    });
-    void loadArtifactIntoViewer(pick, canonicalSourceLabel(pick));
-  }, [
-    append,
-    artifacts,
-    loadArtifactIntoViewer,
-    loadRunIntoViewer,
-    loadedArtifacts,
-    projection,
-    referenceExports,
-    runSourceLabel,
-  ]);
+      void loadArtifactIntoViewer(pick, canonicalSourceLabel(pick));
+    },
+    [
+      append,
+      homeArtifacts,
+      loadArtifactIntoViewer,
+      loadRunIntoViewer,
+      runSourceLabel,
+    ],
+  );
+
+  // The first ten seconds: a bound project shows its own certified model
+  // without being asked — home, and the conversation is told which of the two
+  // home turned out to be. A file from this machine stays a secondary door;
+  // it is the one with no receipt.
+  const autoLoadedRef = useRef(false);
+  useEffect(() => {
+    if (autoLoadedRef.current) return;
+    if (homeArtifacts === null) return;
+    if (loadedArtifacts.length > 0 || pendingArtifacts.current.length > 0) return;
+    autoLoadedRef.current = true;
+    showHome(false);
+  }, [homeArtifacts, loadedArtifacts, showHome]);
 
   /** The viewer says which file it holds; that is when the shell writes it down. */
   const noteSource = useCallback((label: string | null) => {
@@ -1462,6 +1471,17 @@ export default function App({ server }: { server: ServerIdentity }) {
               void loadArtifactIntoViewer(artifact, label);
             }}
             onOpenRun={(group) => {
+              // The Reference card's `show run` is the toolbar's button by
+              // another name whenever home is the reference run's exports;
+              // one act, one sentence about it.
+              if (
+                homeArtifacts !== null &&
+                homeArtifacts.kind === "reference" &&
+                group.runId === homeArtifacts.runId
+              ) {
+                showHome(true);
+                return;
+              }
               const rows = group.exports
                 .map((item) => item.artifact)
                 .filter((artifact) => artifact.available && artifact.sha256 !== null);
@@ -1487,12 +1507,8 @@ export default function App({ server }: { server: ServerIdentity }) {
               });
               void loadRunIntoViewer(rows, runSourceLabel(group.runId, rows));
             }}
-            onShowReference={showReferenceRun}
-            referenceRunId={
-              referenceExports.length > 0 && projection !== null
-                ? projection.referenceRun.runId
-                : null
-            }
+            onShowHome={() => showHome(true)}
+            home={homeArtifacts}
             loadedRunId={loadedArtifact?.runId ?? null}
             onCompareVersion={(artifact) => void compareVersions(artifact)}
             blend={blendState}
