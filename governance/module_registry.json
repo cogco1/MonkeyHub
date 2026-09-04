@@ -3958,7 +3958,9 @@
         "the run-project command line (project root, run id, workflow ref, stage envelope ref, export, workspace, powershell)",
         "parsing a project:// record URI into a ProjectRecordRef",
         "assembling the StageExecutionGuard from retained workflow, envelope, predecessor exit and predecessor closure records",
-        "reading an authored seat payload into a SeatSpec (_seat, reused by tools/verify_state_record.py)"
+        "reading an authored seat payload into a SeatSpec (_seat, reused by tools/verify_state_record.py)",
+        "--record-ref: running a state-record record held in a run (a candidate successor) in place of the authored record, which is left untouched",
+        "--seats-file: partitioning a run by an explicit seat pack (a compile partition for a candidate) instead of input/runner/seats.json, which is left untouched"
       ],
       "does_not_own": [
         "the run itself and every record it writes - runtime.project_runner",
@@ -3990,7 +3992,8 @@
         "project.repository",
         "runtime.project_runner",
         "state.developed_design",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "state.record"
       ],
       "used_by": [
         "tools/verify_state_record.py"

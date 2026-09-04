@@ -22,6 +22,7 @@ successor stage may open against. Both refs are printed with the summary.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from archflow.state.stage_workflow import CompositeStageClosureReceipt
 from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.refs import record_ref_from_uri  # noqa: E402
+from archflow.state.state_record import StateRecord  # noqa: E402
 from archflow.runtime.project_runner import (  # noqa: E402
     RunOptions,
     StageExecutionGuard,
@@ -116,11 +118,23 @@ def main() -> int:
     parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
     parser.add_argument("--relaxed-coverage", action="store_true")
     parser.add_argument("--patch-oracle", action="store_true", help="when an export is patched, also rebuild in full and compare the two readbacks")
+    parser.add_argument("--record-ref", help="run this state-record record (a candidate successor held in a run) instead of the authored record; the authored record is not touched")
+    parser.add_argument("--seats-file", help="a seat pack JSON to partition this run by, instead of input/runner/seats.json (a compile partition for a candidate); the authored pack is not touched")
     args = parser.parse_args()
     project_root = Path(args.project).resolve()
     repository = FilesystemProjectRepository.open(project_root)
-    record = load_authored_record(repository).record
-    seats_payload = load_seat_pack_file(repository).payload
+    if args.record_ref:
+        record = StateRecord.from_dict(repository.load_json(record_ref_from_uri(args.record_ref, repository.read_head().project_id)))
+        print(f"record: {args.record_ref} (digest {record.digest[:16]}...)")
+    else:
+        record = load_authored_record(repository).record
+    if args.seats_file:
+        seats_payload = json.loads(Path(args.seats_file).read_text(encoding="utf-8"))
+        if not isinstance(seats_payload, dict) or "seats" not in seats_payload or "commitment_ref" not in seats_payload:
+            raise ValueError(f"{args.seats_file}: a seat pack is a JSON object with seats and commitment_ref")
+        print(f"seats: {args.seats_file}")
+    else:
+        seats_payload = load_seat_pack_file(repository).payload
     seats = tuple(_seat(s) for s in seats_payload["seats"])
     # The pack's provider identity is what a live provider would have to present. The
     # runner records its own proposals, so a pack that declares none still runs.
