@@ -279,6 +279,7 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>("honesty");
   const [eventCount, setEventCount] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [conversationOpen, setConversationOpen] = useState(true);
 
   const projection: StateProjectionDto | null =
     session.status === "ready" ? session.value.projection : null;
@@ -1688,6 +1689,15 @@ export default function App({ server }: { server: ServerIdentity }) {
             <button
               type="button"
               className="toolbar__btn"
+              aria-controls="conversation-panel"
+              aria-expanded={conversationOpen}
+              onClick={() => setConversationOpen((open) => !open)}
+            >
+              {t("conversation.title")}
+            </button>
+            <button
+              type="button"
+              className="toolbar__btn"
               aria-pressed={evidenceOpen || evidencePinned}
               onClick={() =>
                 evidenceOpen && !evidencePinned
@@ -1708,7 +1718,7 @@ export default function App({ server }: { server: ServerIdentity }) {
             </button>
           </>
         }
-        conversation={
+        conversation={conversationOpen ? (
           <Conversation
             entries={transcript.entries}
             sessionError={session.status === "failed" ? session.error : null}
@@ -1781,7 +1791,7 @@ export default function App({ server }: { server: ServerIdentity }) {
               onEvidence: openEvidence,
             }}
           />
-        }
+        ) : null}
         stage={
           <Stage
             viewportRef={viewportRef}

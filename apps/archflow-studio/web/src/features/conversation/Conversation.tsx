@@ -113,7 +113,11 @@ export function Conversation({
   }, [entries]);
 
   return (
-    <section className="chat" aria-label={t("conversation.ariaLabel")}>
+    <section
+      id="conversation-panel"
+      className="chat"
+      aria-label={t("conversation.ariaLabel")}
+    >
       <header className="chat__head">
         <span className="label">{t("conversation.title")}</span>
         <span className="chat__head-meta mono">{t("conversation.scope")}</span>
