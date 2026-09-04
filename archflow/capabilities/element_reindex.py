@@ -395,6 +395,8 @@ class ElementDraft:
     basis_refs: tuple[str, ...] = ()
     # objects folded in from other components (a wall's frames and glass): they bind to this element
     hosted: tuple[SourceObject, ...] = ()
+    # relations the draft's rows name and the record lacks (an opening's hosts_void interface), derived
+    relations: list[Relation] = field(default_factory=list)
 
     @property
     def union(self) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
@@ -445,13 +447,17 @@ def _refs(*parts: Iterable[str]) -> tuple[str, ...]:
 def _element_id(component_id: str, family: str, side: str | None, families_in_component: int) -> str:
     """``portico-entablature`` + ``entablature-front`` + west -> ``portico-entablature-front-west``: family tokens the component already says are not repeated."""
 
+    tokens = set(component_id.split("-"))
+    rest = [t for t in family.split("-") if t not in tokens]
     if families_in_component == 1:
         stem = component_id
     else:
-        tokens = set(component_id.split("-"))
-        rest = [t for t in family.split("-") if t not in tokens]
         stem = f"{component_id}-{'-'.join(rest)}" if rest else component_id
-    return _ident(f"{stem}-{side}" if side else stem)
+    text = f"{stem}-{side}" if side else stem
+    if text == component_id:
+        # entity ids are one namespace: an element may not take its component's id
+        text = f"{component_id}-{'-'.join(rest)}" if rest else f"{component_id}-1"
+    return _ident(text)
 
 
 def _plan_box(lo, hi) -> list[list[float]]:
@@ -646,22 +652,52 @@ def draft_ring(draft: ElementDraft, frame: Frame) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class WallTypes:
-    """What an existing wall row of the record teaches: its ``types`` and which component takes which type."""
+    """What an existing wall row of the record teaches: its ``types``, which component takes which
+    type, and which interface relation (a ``hosts_void`` between zones) each opening component names."""
 
     types: tuple[Mapping[str, Any], ...]
     type_of_component: Mapping[str, str]
     taught_by: str | None
+    interface_of_component: Mapping[str, str] = field(default_factory=dict)   # component -> relation id (with the teaching row's side in it)
+    taught_side: str | None = None
 
 
 def wall_types_of(rows: Sequence[ElementRow]) -> WallTypes:
     for row in rows:
         if row.producer == "wall" and row.params.get("types"):
             mapping = {str(o.get("component_id")): str(o["type_id"]) for o in row.params.get("openings", ()) if o.get("type_id") and o.get("component_id")}
-            return WallTypes(tuple(row.params["types"]), mapping, row.element_id)
+            interfaces = {str(o.get("component_id")): str(o["interface_ref"]).removeprefix("relation:") for o in row.params.get("openings", ()) if o.get("interface_ref") and o.get("component_id")}
+            return WallTypes(tuple(row.params["types"]), mapping, row.element_id, interfaces, side_of(row.element_id))
     return WallTypes((), {}, None)
 
 
-def draft_wall(draft: ElementDraft, frame: Frame, openings: Sequence[SourceObject], types: WallTypes, centroid: tuple[float, float]) -> None:
+def interface_for(types: WallTypes, component: str, side: str | None, record: StateRecord) -> tuple[str | None, Relation | None, str | None]:
+    """The interface relation a drafted opening should name on this side: the record's own when it
+    declares it, else a derived one mirrored from the teaching side (same kind, the side substituted
+    in id, subject and object, every named zone existing), else nothing and a note."""
+
+    template = types.interface_of_component.get(component)
+    if template is None or side is None or types.taught_side is None:
+        return None, None, f"no interface relation is taught for {component}"
+    wanted = template.replace(f"-{types.taught_side}-", f"-{side}-")
+    if wanted == template and side != types.taught_side:
+        return None, None, f"interface {template} carries no side to substitute"
+    declared = {r.relation_id: r for r in record.relations}
+    if wanted in declared:
+        return wanted, None, None
+    source = declared.get(template)
+    if source is None:
+        return None, None, f"the taught interface {template} is not a relation of the record"
+    ids = {e.entity_id for e in record.entities}
+    subject = source.subject.replace(f"-{types.taught_side}-", f"-{side}-")
+    obj = source.object.replace(f"-{types.taught_side}-", f"-{side}-")
+    if subject not in ids or obj not in ids:
+        return None, None, f"mirroring {template} to {side} names a zone the record lacks ({subject} / {obj})"
+    derived = Relation(relation_id=wanted, kind=source.kind, subject=subject, object=obj, datum_role=source.datum_role, propagation=source.propagation, parameters=dict(source.parameters), epistemic_status="derived", basis_refs=())
+    return wanted, derived, None
+
+
+def draft_wall(draft: ElementDraft, frame: Frame, openings: Sequence[SourceObject], types: WallTypes, centroid: tuple[float, float], record: StateRecord | None = None) -> None:
     """Wall pieces of a side -> one wall on the face axis between two edge axes, hosting the side's openings.
 
     The frame pieces of one opening (bottom/left/right/top) span exactly the
@@ -733,6 +769,7 @@ def draft_wall(draft: ElementDraft, frame: Frame, openings: Sequence[SourceObjec
             groups[key].append(o)
     opening_rows = []
     untyped = []
+    uninterfaced = []
     for key, objs in sorted(groups.items()):
         fr = [o for o in objs if o.op.removeprefix("obj-").startswith(("frame-", "door-frame"))]
         if not fr:
@@ -754,6 +791,14 @@ def draft_wall(draft: ElementDraft, frame: Frame, openings: Sequence[SourceObjec
             row["type_id"] = type_id
         else:
             untyped.append(key)
+        if record is not None:
+            relation_id, derived, why = interface_for(types, component, draft.side, record)
+            if relation_id is not None:
+                row["interface_ref"] = f"relation:{relation_id}"
+                if derived is not None and all(r.relation_id != derived.relation_id for r in draft.relations):
+                    draft.relations.append(replace(derived, basis_refs=_refs(o.ref for o in fr)))
+            else:
+                uninterfaced.append(f"{key}: {why}")
         opening_rows.append(row)
     if opening_rows:
         draft.params["openings"] = opening_rows
@@ -766,6 +811,10 @@ def draft_wall(draft: ElementDraft, frame: Frame, openings: Sequence[SourceObjec
         draft.notes.append(f"opening types as {types.taught_by} declares them")
     if untyped:
         draft.notes.append(f"openings without a taught type (void only): {', '.join(untyped)}")
+    if uninterfaced:
+        draft.notes.append("openings without an interface relation: " + "; ".join(uninterfaced))
+    if draft.relations:
+        draft.notes.append(f"{len(draft.relations)} hosts_void relation(s) mirrored from {types.taught_by} for this side")
 
 
 def grid_centre(frame: Frame, objects: Sequence[SourceObject]) -> tuple[float, float]:
@@ -945,6 +994,9 @@ class ReindexResult:
         rows = []
         known = {e.entity_id for e in self.record.entities}
         for d in self.drafts:
+            if d.status == DRAFT and d.producer and d.element_id in known:
+                d.status = ERROR
+                d.notes.append(f"id {d.element_id} is already an entity of the record; the row was not added")
             if d.status == DRAFT and d.producer and d.element_id not in known:
                 rows.append(Entity(d.element_id, "Element@1", {"component_id": d.component_id, "producer": d.producer, "references": d.references, "params": d.params, "epistemic_status": "derived", "confidence": d.confidence, "residual_m": d.residual_m, "objects": [o.name for o in d.all_objects]}, d.component_id, _refs(basis_refs, d.basis_refs)))
         record = _with_axes(self.record, self.frame, tuple(rows))
@@ -1063,7 +1115,7 @@ def reindex(record: StateRecord, sources: Sequence[tuple[Mapping[str, Any], str,
                 draft.hosted = tuple(sorted(openings_by_side.get(side, ()), key=lambda o: o.name))
             made = [draft]
         elif fam == "wall":
-            draft_wall(draft, frame, openings_by_side.get(side, ()), types, centroid)
+            draft_wall(draft, frame, openings_by_side.get(side, ()), types, centroid, record)
             made = [draft]
         else:
             made = draft_family(draft, frame, siblings)
@@ -1084,5 +1136,6 @@ def reindex(record: StateRecord, sources: Sequence[tuple[Mapping[str, Any], str,
             d.notes.append(f"id {d.element_id} was taken; numbered")
             d.element_id = _ident(f"{d.element_id}-{n + 1}")
     measure(drafts, record, frame, existing_rows)
-    relations = derive_support(drafts)
+    needed = tuple(r for d in drafts if d.status in (DRAFT, EXISTING) for r in d.relations)
+    relations = needed + derive_support(drafts)
     return ReindexResult(record, placements, tuple(drafts), frame, relations, tuple(source_rows))

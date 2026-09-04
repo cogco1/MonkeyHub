@@ -106,7 +106,7 @@ WEST_WALL_ROW = Entity("wall-west", "Element@1", {"component_id": "main-block", 
     "references": {"line": {"from": {"grid": ["WF", "SE"]}, "to": {"grid": ["WF", "NE"]}, "face": "exterior", "inward": [1, 0]}, "base": {"level": "level-ground"}, "top": {"level": "level-cornice"}},
     "params": {"thickness": 0.42, "types": [{"schema": "WindowType@1", "type_id": "window-type-2", "frame_width": 0.09, "frame_depth": 0.18, "frame_projection": 0.1, "glazing_thickness": 0.025, "glazing_offset": 0.01},
                                             {"schema": "DoorType@1", "type_id": "door-type-1", "frame_width": 0.12, "frame_depth": 0.18, "frame_projection": 0.1, "leaf_thickness": 0.08, "leaf_offset": -0.025, "leaf_count": 2, "leaf_gap": 0.03, "clearance_bottom": 0.02, "clearance_top": 0.02}],
-               "openings": [{"opening_id": "window-left", "kind": "window", "at": {"host": {"element": "wall-west", "along": 3.16}}, "width": 1.32, "sill": {"offset_from": {"level": "level-ground", "offset": 5.1}}, "head": {"offset_from": {"level": "level-ground", "offset": 8.15}}, "component_id": "portico-pediments", "type_id": "window-type-2"},
+               "openings": [{"opening_id": "window-left", "kind": "window", "at": {"host": {"element": "wall-west", "along": 3.16}}, "width": 1.32, "sill": {"offset_from": {"level": "level-ground", "offset": 5.1}}, "head": {"offset_from": {"level": "level-ground", "offset": 8.15}}, "component_id": "portico-pediments", "type_id": "window-type-2", "interface_ref": "relation:pediment-west-window-host-void"},
                             {"opening_id": "door", "kind": "door", "at": {"host": {"element": "wall-west", "along": 10.71}}, "width": 2.5, "sill": {"offset_from": {"level": "level-ground", "offset": 3.57}}, "head": {"offset_from": {"level": "level-ground", "offset": 8.1}}, "component_id": "main-block", "type_id": "door-type-1"}]}},
     "main-block", (EVIDENCE,))
 
@@ -118,14 +118,18 @@ def record_with_edges() -> StateRecord:
         Entity("axis-se", "GridAxis@1", {"role": "SE", "origin": [0.0, 0.0, -10.71], "direction": [1.0, 0.0, 0.0]}, None, (EVIDENCE,)),
         Entity("axis-ne", "GridAxis@1", {"role": "NE", "origin": [0.0, 0.0, 10.71], "direction": [1.0, 0.0, 0.0]}, None, (EVIDENCE,)),
         WEST_WALL_ROW,
+        component("portico-west-zone", "porticos"), component("portico-east-zone", "porticos"), component("upper-zone", "building"),
     )
-    return replace(base, entities=base.entities + extra)
+    from archflow.state.state_record import Relation
+    relation = Relation(relation_id="pediment-west-window-host-void", kind="hosts_void", subject="upper-zone", object="portico-west-zone", basis_refs=(EVIDENCE,))
+    return replace(base, entities=base.entities + extra, relations=(relation,))
 
 
 class RingAndWallTests(unittest.TestCase):
     def test_sectors_become_a_ring_around_drafted_centre_axes(self) -> None:
         result = reindex(fixture_record(), [(inspection(ring("main-block", "drum-bearing-ring")), "record:base", 0)])
-        draft = {d.element_id: d for d in result.drafts}["main-block"]
+        # a single family takes the component's name, except that an entity id is never shared with the component
+        draft = {d.element_id: d for d in result.drafts}["main-block-drum-bearing-ring"]
         self.assertEqual(draft.producer, "ring", draft.notes)
         self.assertEqual(draft.status, DRAFT, draft.notes)
         self.assertEqual(draft.references["at"], {"grid": ["CENTRE-X", "B"]})  # y=0 is axis B already
@@ -156,6 +160,13 @@ class RingAndWallTests(unittest.TestCase):
         self.assertEqual(openings["east-window-left"]["sill"], {"offset_from": {"level": "level-ground", "offset": 5.1}})
         self.assertEqual(openings["east-window-left"]["head"], {"offset_from": {"level": "level-ground", "offset": 8.15}})
         self.assertEqual(openings["east-window-left"]["type_id"], "window-type-2")
+        # the interface is mirrored from the west row: same kind, the side substituted, zones existing
+        self.assertEqual(openings["east-window-left"]["interface_ref"], "relation:pediment-east-window-host-void")
+        mirrored = {r.relation_id: r for r in result.relations}["pediment-east-window-host-void"]
+        self.assertEqual((mirrored.kind, mirrored.subject, mirrored.object, mirrored.epistemic_status), ("hosts_void", "upper-zone", "portico-east-zone", "derived"))
+        self.assertNotIn("interface_ref", openings["east-door"])   # the door's component names no interface in the teaching row
+        successor = result.successor(run_id="r", basis_refs=["record:base"])
+        self.assertIn("pediment-east-window-host-void", {r.relation_id for r in successor.relations})
         self.assertEqual(openings["east-window-left"]["component_id"], "portico-pediments")
         self.assertAlmostEqual(openings["east-door"]["width"], 2.5, places=6)
         self.assertAlmostEqual(openings["east-door"]["at"]["host"]["along"], 10.71, places=6)
