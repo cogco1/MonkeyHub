@@ -9,6 +9,7 @@ tall — so a failure says which arithmetic moved rather than which constant.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import shutil
 import tempfile
@@ -199,6 +200,26 @@ class VolumeReadingTests(OptionsTestCase):
 
 
 class MakingOptionsTests(OptionsTestCase):
+    def test_a_restarted_process_does_not_reuse_an_existing_option_run(self) -> None:
+        first = self.option("add_floor")
+        self.client.close()
+        restarted = create_app(
+            StudioSettings(project_dir=self.app.state.settings.project_dir)
+        )
+        with TestClient(restarted) as client:
+            response = client.post(
+                "/api/options",
+                json={"stateDigest": self.state_digest, "transform": "remove_floor"},
+            )
+
+        self.assertEqual(response.status_code, 201, response.text)
+        second = response.json()
+        self.assertEqual(first["optionId"], "option-001")
+        self.assertEqual(second["optionId"], "option-002")
+        self.assertEqual(second["runId"], "option-002")
+        self.assertEqual(self.kinds_of("option-001"), {"selected-spatial-option": 1})
+        self.assertEqual(self.kinds_of("option-002"), {"selected-spatial-option": 1})
+
     def test_a_floor_added_is_a_floor_and_a_footprint_more(self) -> None:
         """3 levels of the same 24 m2 plate: 72 m2 of floor, 12 m tall."""
 
@@ -460,6 +481,62 @@ class RemoveFloorTests(OptionsTestCase):
 
 
 class SelectionTests(OptionsTestCase):
+    def _change_element_without_changing_massing_state(self) -> dict:
+        path = self.repository.layout.resolve_relative(RUNNER_RECORD_PATH)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for entity in payload["entities"]:
+            if entity["entity_id"] == "portico-cornice":
+                entity["fields"]["params"]["height"] = 0.45
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        response = self.client.get("/api/state")
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_a_proposal_refuses_record_drift_hidden_by_the_state_digest(self) -> None:
+        proposal_response = self.client.post(
+            "/api/proposals",
+            json={
+                "stateDigest": self.state_digest,
+                "targetComponentId": "portico",
+                "elementId": "portico-base",
+                "utterance": "set height to 2.2",
+            },
+        )
+        self.assertEqual(proposal_response.status_code, 201, proposal_response.text)
+        proposal = proposal_response.json()
+        runs_before = {path.name for path in self.repository.layout.runs.iterdir()}
+
+        current = self._change_element_without_changing_massing_state()
+        self.assertEqual(current["stateDigest"], proposal["baseStateDigest"])
+        self.assertNotEqual(current["recordDigest"], proposal["recordDigest"])
+
+        response = self.client.post(
+            f"/api/proposals/{proposal['proposalId']}/candidate"
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "STALE_BASE")
+        self.assertEqual(
+            {path.name for path in self.repository.layout.runs.iterdir()},
+            runs_before,
+        )
+
+    def test_an_option_refuses_record_drift_hidden_by_the_state_digest(self) -> None:
+        option = self.option("add_floor")
+        runs_before = {path.name for path in self.repository.layout.runs.iterdir()}
+
+        current = self._change_element_without_changing_massing_state()
+        self.assertEqual(current["stateDigest"], option["stateDigest"])
+
+        response = self.client.post(f"/api/options/{option['optionId']}/select")
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "STALE_BASE")
+        self.assertEqual(
+            {path.name for path in self.repository.layout.runs.iterdir()},
+            runs_before,
+        )
+
     def test_selecting_an_option_runs_it_as_a_candidate(self) -> None:
         option = self.option("add_floor")
 

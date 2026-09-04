@@ -31,7 +31,7 @@ from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, SEAT_3DM_INSPECTIO
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
-from .support import EVIDENCE, PROJECT_ID, RECORD_PAYLOAD, make_project, run_records, write_runner_record
+from .support import EVIDENCE, PROJECT_ID, RECORD_PAYLOAD, make_project, run_records, runner_state_digest, write_runner_record
 
 SHA = "b" * 64
 # Standing south of the building, looking north: left is west.
@@ -39,8 +39,9 @@ CAMERA = {"position": [0, -50, 10], "target": [0, 0, 0], "up": [0, 0, 1], "fov":
 PROJECT_MD = """# Villa-like fixture
 
 ## Names
-- 柱子, columns => portico-columns
+- 柱子, 柱, columns => portico-columns
 - 柱廊, portico => porticos
+- 甲组 => porticos
 - 屋顶, roof => portico-roofs
 
 ## Compass
@@ -106,7 +107,8 @@ class VillaLikeTestCase(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
-        self.record_path = write_runner_record(self.repository, villa_like_record(columns_have_elements=self.columns_have_elements))
+        record_payload = villa_like_record(columns_have_elements=self.columns_have_elements)
+        self.record_path = write_runner_record(self.repository, record_payload)
         (self.root / PROJECT_ID / "PROJECT.md").write_text(PROJECT_MD, encoding="utf-8")
         run_id = "inspected-001"
         run = self.repository.create_run(run_id)
@@ -121,6 +123,7 @@ class VillaLikeTestCase(unittest.TestCase):
         })
         self.repository.put_json(run=run, destination=run_records(run_id), record_kind=RUNNER_RUN_RECEIPT, payload={
             "schema": "RunnerRunReceipt@3", "project_id": PROJECT_ID, "run_id": run_id, "seat_execution_complete": True,
+            "design_state_digest": runner_state_digest(self.repository, run_id, record_payload),
             "seat_results": [{"seat_id": "seat-portico", "status": "proposal_accepted", "objects": len(objects),
                               "cad": {"status": "succeeded", "path": "portico.3dm", "inspection_ref": ref.uri}}],
         })
@@ -128,6 +131,9 @@ class VillaLikeTestCase(unittest.TestCase):
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
         self.state_digest = self.client.get("/api/state").json()["stateDigest"]
+        (self.root / PROJECT_ID / "PROJECT.md").write_text(
+            PROJECT_MD + f"\nstate digest: {self.state_digest}\n", encoding="utf-8"
+        )
 
     def ask(self, utterance: str, **body):
         body.setdefault("stateDigest", self.state_digest)
@@ -137,6 +143,42 @@ class VillaLikeTestCase(unittest.TestCase):
 
 
 class CameraAndCompassTests(VillaLikeTestCase):
+    def test_a_latin_alias_matches_only_as_a_whole_word(self) -> None:
+        embedded_status, embedded = self.ask("把 waterproof 提高 0.1m")
+        exact_status, exact = self.ask("把roof提高 0.1m")
+
+        self.assertEqual(embedded_status, 422, embedded)
+        self.assertIsNone(embedded["pendingIntent"]["targetComponentId"])
+        self.assertEqual(exact_status, 422, exact)
+        self.assertEqual(
+            exact["pendingIntent"]["targetComponentId"], "portico-roofs"
+        )
+
+    def test_a_long_cjk_alias_is_not_swallowed_by_its_short_prefix(self) -> None:
+        status, payload = self.ask("把柱廊提高 0.1m")
+
+        self.assertEqual(status, 422, payload)
+        self.assertEqual(payload["pendingIntent"]["targetComponentId"], "porticos")
+
+    def test_stale_project_conventions_do_not_enter_intent(self) -> None:
+        (self.root / PROJECT_ID / "PROJECT.md").write_text(
+            PROJECT_MD + "\nstate digest: " + "0" * 64 + "\n", encoding="utf-8"
+        )
+
+        alias_status, alias_payload = self.ask("把甲组提高 0.1m")
+        compass_status, compass_payload = self.ask(
+            "把左侧柱子提高 0.1m", camera=CAMERA
+        )
+
+        self.assertEqual(alias_status, 422, alias_payload)
+        self.assertIsNone(alias_payload["pendingIntent"]["targetComponentId"])
+        self.assertEqual(compass_status, 422, compass_payload)
+        self.assertIsNone(compass_payload["pendingIntent"]["elementId"])
+        self.assertEqual(
+            sorted(item["elementId"] for item in compass_payload["pendingIntent"]["candidates"]),
+            ["portico-columns-east", "portico-columns-west"],
+        )
+
     def test_left_with_a_camera_and_the_compass_is_the_west_columns(self) -> None:
         status, payload = self.ask("把左侧柱廊的柱子提高 0.1m", camera=CAMERA)
         self.assertEqual(status, 201, payload)

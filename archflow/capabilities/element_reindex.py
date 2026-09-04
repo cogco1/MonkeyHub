@@ -45,8 +45,8 @@ keeps the objects then. Existing rows are never replaced: a component that
 already has an element for that side keeps it, and the draft is measured
 against it.
 
-The output is data: a ``ComponentCatalog@1`` payload and, optionally, a
-successor StateRecord holding the drafted axes, rows and derived relations.
+The output is data: a ``ComponentCatalog@1`` payload and, optionally, the
+typed StateRecord operator for the drafted axes, rows and derived relations.
 Writing them anywhere is the caller's (tools/reindex_project.py through the
 repository); this module touches no file.
 """
@@ -71,7 +71,16 @@ from archflow.capabilities.element_producers import (
 )
 from archflow.capabilities.reference_resolver import ReferenceContext
 from archflow.state.geometry_program import GeometryOperationKind
-from archflow.state.state_record import Entity, Relation, StateRecord, StateRecordError, project_grids_of, project_levels_of
+from archflow.state.state_record import (
+    Entity,
+    Relation,
+    StateRecord,
+    StateRecordEditKind,
+    StateRecordError,
+    StateRecordOperator,
+    project_grids_of,
+    project_levels_of,
+)
 
 SCHEMA = "ComponentCatalog@1"
 
@@ -1418,8 +1427,8 @@ class ReindexResult:
     relations: tuple[Relation, ...]
     sources: tuple[dict[str, Any], ...]
 
-    def successor(self, *, run_id: str, basis_refs: Sequence[str]) -> StateRecord:
-        """The record with the drafted axes, the DRAFT rows and the derived relations added; nothing replaced."""
+    def operator(self, *, basis_refs: Sequence[str]) -> StateRecordOperator:
+        """Compile the drafted axes, rows and relations; the state owner applies them."""
 
         rows = []
         known = {e.entity_id for e in self.record.entities}
@@ -1440,11 +1449,18 @@ class ReindexResult:
         # entities and relations go in together: a mirrored connection names a mirrored relation,
         # and the record validates both at once
         axes = tuple(a for a in self.frame.axis_entities(self.record.basis_refs[:1]) if a.entity_id not in known)
-        entities = self.record.entities + axes + tuple(extra_entities) + tuple(rows)
-        ids = {e.entity_id for e in entities}
+        additions = axes + tuple(extra_entities) + tuple(rows)
+        ids = known | {e.entity_id for e in additions}
         relation_ids = {r.relation_id for r in self.record.relations}
         relations = tuple(r for r in self.relations if r.subject in ids and r.object in ids and r.relation_id not in relation_ids)
-        return replace(self.record, run_id=run_id, entities=entities, relations=self.record.relations + relations, basis_refs=_refs(self.record.basis_refs, basis_refs), predecessor_ref=f"record:{self.record.digest}")
+        return StateRecordOperator(
+            kind=StateRecordEditKind.REINDEX,
+            base_record_digest=self.record.digest,
+            base_state_digest=self.record.state_digest,
+            entities=additions,
+            relations=relations,
+            basis_refs=_refs(basis_refs),
+        )
 
     def catalog(self, *, run_id: str) -> dict[str, Any]:
         components = {e.entity_id: e for e in self.record.entities_of("Component@1")}

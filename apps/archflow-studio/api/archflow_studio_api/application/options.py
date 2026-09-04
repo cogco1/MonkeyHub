@@ -50,7 +50,10 @@ from archflow.state.spatial import SpatialProposalError
 from archflow.state.state_record import (
     SchematicPack,
     StateRecord,
+    StateRecordEditKind,
     StateRecordError,
+    StateRecordOperator,
+    apply_state_record_operator,
     schematic_pack_of,
     schematic_proposal,
     volume_boxes_of,
@@ -58,7 +61,6 @@ from archflow.state.state_record import (
 
 from ..transport.errors import StudioError
 from .binding import ProjectBinding
-from .candidate import massing_successor
 
 # The six moves an option can be made by. Closed: a seventh would be a second
 # way of saying one of these, and ``pack`` is already the one that takes
@@ -94,6 +96,7 @@ class MassingOption:
     label: str
     transform: str
     parameters: Mapping[str, Any]
+    base_record_digest: str
     base_state_digest: str
     pack: SchematicPack
     record: StateRecord
@@ -253,7 +256,11 @@ def make_option(
             "is " + ", ".join(TRANSFORMS) + ".",
         )
     base = baseline_pack(record)
-    option_id, run_id = store.reserve()
+    existing_runs = set(binding.run_ids())
+    while True:
+        option_id, run_id = store.reserve()
+        if run_id not in existing_runs:
+            break
     pack, honesty = _transformed(base, transform, parameters, option_id)
     successor, metrics, findings, more = _measure(
         record, pack, envelope=envelope, program_targets=program_targets
@@ -266,6 +273,7 @@ def make_option(
             label=label or pack.label,
             transform=transform,
             parameters=dict(parameters),
+            base_record_digest=record.digest,
             base_state_digest=state_digest,
             pack=pack,
             record=successor,
@@ -294,7 +302,15 @@ def _measure(
     """
 
     try:
-        successor = massing_successor(record, pack)
+        successor = apply_state_record_operator(
+            record,
+            StateRecordOperator(
+                kind=StateRecordEditKind.REPLACE_MASSING,
+                base_record_digest=record.digest,
+                base_state_digest=record.state_digest,
+                massing_pack=pack,
+            ),
+        )
         # The kernel's own validation of the option, run here so a refusal
         # arrives as a 422 about this transform. The runner would build the
         # same value from the same record.

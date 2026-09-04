@@ -25,7 +25,7 @@ from ..application import episodes
 from ..application.binding import ProjectBinding, bound_project
 from ..application.candidate import describe, execute_candidate
 from ..application.compare import compare_runs
-from ..application.jobs import Job, JobRegistry
+from ..application.jobs import FAILED, QUEUED, RUNNING, SUCCEEDED, Job, JobRegistry
 from ..application.projection import StateProjection, project_state
 from ..application.proposals import closure_of, Proposal
 from ..settings import StudioSettings
@@ -142,7 +142,39 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
     """One finished candidate, read back out of the records its run retained."""
 
     state = request.app.state
-    job: Job = state.jobs.for_candidate(candidate_id)
+    binding = bound_project(state)
+    try:
+        job: Job = state.jobs.for_candidate(candidate_id)
+    except StudioError as exc:
+        if exc.code != "CANDIDATE_NOT_FOUND":
+            raise
+        # Jobs and proposals are process-local execution state. A completed
+        # candidate remains readable after restart only when its exact P036
+        # runner receipt proves that this run used the Studio harness.
+        return candidate_dto(
+            describe(
+                binding,
+                None,
+                candidate_id=candidate_id,
+                job_id=None,
+                status=SUCCEEDED,
+                proposal_id=None,
+            )
+        )
+    if job.status in (QUEUED, RUNNING, FAILED):
+        # Only unfinished/failed execution state is answered by the in-memory
+        # registry. A succeeded candidate must still prove itself below with
+        # its exact retained runner receipt.
+        return candidate_dto(
+            describe(
+                binding,
+                None,
+                candidate_id=candidate_id,
+                job_id=job.job_id,
+                status=job.status,
+                proposal_id=job.proposal_id,
+            )
+        )
     try:
         # The proposal that was executed, for the honesty lines: what the
         # change reached is a fact about the change, and the run records
@@ -155,11 +187,11 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
         proposal = None
     return candidate_dto(
         describe(
-            bound_project(state),
+            binding,
             proposal,
             candidate_id=candidate_id,
             job_id=job.job_id,
-            status=job.status,
+            status=SUCCEEDED,
             proposal_id=job.proposal_id,
         )
     )
@@ -228,16 +260,22 @@ def _require_current_base(
     record, or the refusal is about a state the episode does not describe.
     """
 
-    live = projection.state_digest
-    if live == proposal.base_state_digest:
+    live_state = projection.state_digest
+    live_record = projection.record_digest
+    if (
+        live_state == proposal.base_state_digest
+        and live_record == proposal.record_digest
+    ):
         return
     raise StudioError(
         409,
         "STALE_BASE",
         f"proposal {proposal.proposal_id} was made against state "
-        f"{proposal.base_state_digest}, and {binding.project_id} now projects "
-        f"{live}. Re-read /api/state and propose again: a candidate is only "
-        "meaningful against the state it was proposed for.",
+        f"record {proposal.record_digest} / state "
+        f"{proposal.base_state_digest}, and {binding.project_id} now has "
+        f"record {live_record} / state {live_state}. Re-read /api/state and "
+        "propose again: a candidate is only meaningful against the exact "
+        "record it was proposed for.",
     )
 
 

@@ -247,6 +247,9 @@ class StackedTestCase(unittest.TestCase):
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
         self.state_digest = self.client.get("/api/state").json()["stateDigest"]
+        (self.root / PROJECT_ID / "PROJECT.md").write_text(
+            PROJECT_MD + f"\nstate digest: {self.state_digest}\n", encoding="utf-8"
+        )
 
     def ask(self, utterance: str, **body):
         body.setdefault("stateDigest", self.state_digest)

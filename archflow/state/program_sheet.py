@@ -45,7 +45,14 @@ from typing import Any, Iterable, Mapping, Sequence
 from archflow.relations.contracts import ArchitecturalRelationKind
 from archflow.project.refs import require_identifier
 from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic
-from archflow.state.state_record import Entity, Relation, StateRecord
+from archflow.state.state_record import (
+    Entity,
+    Relation,
+    StateRecord,
+    StateRecordEditKind,
+    StateRecordOperator,
+    apply_state_record_operator,
+)
 
 PROGRAM_SHEET_SCHEMA = "ProgramSheet@1"
 
@@ -129,10 +136,11 @@ def sheet_from_record(
     Function is the semantic kind of the component the zone names, when the
     record names one and the registry knows it.
 
-    ``state_digest`` is the record this sheet was read from, for the client
-    that will send it back. A caller that already holds the projection's
-    digest passes it; otherwise the record's own is taken where the record is
-    bound to a run, and is ``None`` — with an honesty line — where it is not.
+    ``record_digest`` names the record's complete design content.
+    ``state_digest`` names its run/base binding for the client that will send
+    the sheet back. A caller that already holds the projection's state digest
+    passes it; otherwise the record's own is taken where the record is bound to
+    a run, and is ``None`` — with an honesty line — where it is not.
     """
 
     honesty: list[str] = []
@@ -181,6 +189,7 @@ def sheet_from_record(
     sheet = {
         "schema": PROGRAM_SHEET_SCHEMA,
         "project_id": record.project_id,
+        "record_digest": record.digest,
         "state_digest": state_digest if state_digest is not None else _own_digest(record, honesty),
         "departments": [departments[key] for key in sorted(departments)],
         "adjacencies": adjacencies,
@@ -422,8 +431,10 @@ def _adjacencies_of(
 # ---------------------------------------------------------------- sheet -> record
 
 
-def apply_sheet(record: StateRecord, sheet: Mapping[str, Any]) -> StateRecord:
-    """A **new** record carrying what this sheet adds, and nothing removed.
+def compile_sheet_operator(
+    record: StateRecord, sheet: Mapping[str, Any]
+) -> StateRecordOperator:
+    """Compile what this sheet adds into the canonical StateRecord operator.
 
     A sheet space with no ``zone_id`` becomes a ``Space@1`` under its own id,
     holding the program ref that names its department and itself, the levels
@@ -441,6 +452,23 @@ def apply_sheet(record: StateRecord, sheet: Mapping[str, Any]) -> StateRecord:
     """
 
     validate_sheet(sheet)
+    declared_state = sheet.get("state_digest")
+    if declared_state is None:
+        raise ProgramSheetError(
+            "state_digest is required to apply a program sheet; derive the sheet "
+            "from a bound record before sending it back"
+        )
+    declared_record = sheet.get("record_digest")
+    if declared_record is None:
+        raise ProgramSheetError(
+            "record_digest is required to apply a program sheet; derive the sheet "
+            "from the record before sending it back"
+        )
+    if (
+        str(declared_state) != record.state_digest
+        or str(declared_record) != record.digest
+    ):
+        raise ProgramSheetError("program sheet exact base is stale")
     known = {entity.entity_id for entity in record.entities}
     zones = {
         entity.entity_id
@@ -553,7 +581,24 @@ def apply_sheet(record: StateRecord, sheet: Mapping[str, Any]) -> StateRecord:
             },
         ))
         known.add(connection_id)
-    return replace(record, entities=tuple(entities), relations=tuple(relations))
+    before = {entity.entity_id: entity for entity in record.entities}
+    edits = tuple(
+        entity for entity in entities if before.get(entity.entity_id) != entity
+    )
+    additions = tuple(relations[len(record.relations) :])
+    return StateRecordOperator(
+        kind=StateRecordEditKind.APPLY_PROGRAM,
+        base_record_digest=str(declared_record),
+        base_state_digest=str(declared_state),
+        entities=edits,
+        relations=additions,
+    )
+
+
+def apply_sheet(record: StateRecord, sheet: Mapping[str, Any]) -> StateRecord:
+    """Apply a program sheet through the one canonical StateRecord operator."""
+
+    return apply_state_record_operator(record, compile_sheet_operator(record, sheet))
 
 
 def _with_program_ref(entity: Entity, ref: str) -> Entity:

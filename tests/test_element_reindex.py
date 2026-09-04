@@ -22,13 +22,14 @@ from archflow.capabilities.element_reindex import (
     reindex,
     side_of,
 )
-from archflow.state.state_record import Entity, StateRecord
+from archflow.project.refs import ProjectVersionRef
+from archflow.state.state_record import Entity, StateRecord, apply_state_record_operator
 
 EVIDENCE = "evidence:fixture"
 
 
 def component(entity_id: str, parent: str | None) -> Entity:
-    return Entity(entity_id, "Component@1", {"schema": "DesignComponent@1", "semantic_kind": "storage-and-roof-support", "intent": "", "maturity": "schematic", "revision": 0, "volume_ids": [], "unresolved_child_roles": [], "source_refs": [EVIDENCE]}, parent, (EVIDENCE,))
+    return Entity(entity_id, "Component@1", {"schema": "DesignComponent@1", "semantic_kind": "storage-and-roof-support", "intent": entity_id, "maturity": "schematic", "revision": 0, "volume_ids": [], "unresolved_child_roles": [], "source_refs": [EVIDENCE]}, parent, (EVIDENCE,))
 
 
 def fixture_record() -> StateRecord:
@@ -44,7 +45,14 @@ def fixture_record() -> StateRecord:
         Entity("axis-c", "GridAxis@1", {"role": "C", "origin": [0.0, 0.0, 1.6], "direction": [1.0, 0.0, 0.0]}, None, (EVIDENCE,)),
         Entity("axis-wf", "GridAxis@1", {"role": "WF", "origin": [-10.0, 0.0, 0.0], "direction": [0.0, 0.0, 1.0]}, None, (EVIDENCE,)),
     ]
-    return StateRecord("fixture", "runner", tuple(entities), option={"option_id": "fixture-option"}, evidence_refs=(EVIDENCE,))
+    return StateRecord(
+        "fixture",
+        "runner",
+        tuple(entities),
+        option={"option_id": "fixture-option"},
+        evidence_refs=(EVIDENCE,),
+        base=ProjectVersionRef("fixture", 0, "0" * 64),
+    )
 
 
 def box(name: str, component: str, op: str, lo, hi, faces=6, sha="ab" * 32):
@@ -231,7 +239,9 @@ class RingAndWallTests(unittest.TestCase):
         mirrored = {r.relation_id: r for r in result.relations}["pediment-east-window-host-void"]
         self.assertEqual((mirrored.kind, mirrored.subject, mirrored.object, mirrored.epistemic_status), ("hosts_void", "upper-zone", "portico-east-zone", "derived"))
         self.assertNotIn("interface_ref", openings["door"])   # the door's component names no interface in the teaching row
-        successor = result.successor(run_id="r", basis_refs=["record:base"])
+        successor = apply_state_record_operator(
+            result.record, result.operator(basis_refs=("record:base",))
+        )
         self.assertIn("pediment-east-window-host-void", {r.relation_id for r in successor.relations})
         # and the connection that makes the mirrored interface available to a spatial option
         connection = {e.entity_id: e for e in successor.entities_of("Connection@1")}["pediments-east-to-portico"]
@@ -355,9 +365,12 @@ class DraftTests(unittest.TestCase):
 
     def test_the_successor_is_a_valid_record_that_adds_and_replaces_nothing(self) -> None:
         before = self.record.digest
-        successor = self.result.successor(run_id="reindex-001", basis_refs=["record:base"])
+        successor = apply_state_record_operator(
+            self.result.record,
+            self.result.operator(basis_refs=("record:base",)),
+        )
         self.assertEqual(self.record.digest, before)
-        self.assertEqual(successor.run_id, "reindex-001")
+        self.assertEqual(successor.run_id, self.record.run_id)
         self.assertEqual(successor.predecessor_ref, f"record:{before}")
         rows = {e.entity_id: e for e in successor.entities_of("Element@1")}
         self.assertEqual(set(rows), {"portico-columns-west", "portico-capitals-west", "portico-entablature-front-west", "portico-entablature-return-left-west", "portico-roof-abutments-west"})
@@ -441,7 +454,9 @@ class StairTests(unittest.TestCase):
         self.assertEqual(landing_draft.references["base"], {"datum": "main-block-stair-west-top"})
         self.assertLessEqual(landing_draft.residual_m, 0.001, landing_draft.notes)
         self.assertIn("main-block-stair-west-supports-main-block-landing", {r.relation_id for r in result.relations})
-        successor = result.successor(run_id="r", basis_refs=["record:base"])
+        successor = apply_state_record_operator(
+            result.record, result.operator(basis_refs=("record:base",))
+        )
         self.assertEqual({e.entity_id for e in successor.entities_of("Element@1")}, {"main-block-stair-west", "main-block-landing"})
         StateRecord.from_dict(successor.to_dict())
 
@@ -476,7 +491,10 @@ class StairTests(unittest.TestCase):
         self.assertEqual(flight.references["from"], {"axis_point": {"axis": drafted.role, "along": STAIR_X0}})
         self.assertTrue(any(f"run axis {drafted.role} drafted" in n for n in flight.notes), flight.notes)
         self.assertLessEqual(flight.residual_m, 0.001, flight.notes)
-        StateRecord.from_dict(result.successor(run_id="r", basis_refs=["record:base"]).to_dict())
+        successor = apply_state_record_operator(
+            result.record, result.operator(basis_refs=("record:base",))
+        )
+        StateRecord.from_dict(successor.to_dict())
 
     def test_a_rotating_step_family_falls_back_to_one_prism_per_step_and_names_the_invariant(self) -> None:
         # not a flight the stair producer can carry: the boxes are still the model, so each step is

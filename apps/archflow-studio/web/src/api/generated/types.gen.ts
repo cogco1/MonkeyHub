@@ -250,12 +250,16 @@ export type CandidateDto = {
     candidateId: string;
     /**
      * Proposalid
+     *
+     * the process-local proposal id; null after restart
      */
-    proposalId: string;
+    proposalId: string | null;
     /**
      * Jobid
+     *
+     * the process-local job id; null after restart
      */
-    jobId: string;
+    jobId: string | null;
     /**
      * Status
      */
@@ -2358,6 +2362,12 @@ export type ProgramSheetDto = {
      * Projectid
      */
     projectId: string;
+    /**
+     * Recorddigest
+     *
+     * the complete content identity of the record this sheet was read from
+     */
+    recordDigest?: string | null;
     /**
      * Statedigest
      *

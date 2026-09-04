@@ -22,7 +22,7 @@ changed nothing rather than implying it did.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -38,9 +38,11 @@ from archflow.project.record_kinds import (
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.runtime.project_runner import RunOptions, run_project
 from archflow.state.state_record import (
-    Entity,
     SchematicPack,
     StateRecord,
+    StateRecordEditKind,
+    StateRecordOperator,
+    apply_state_record_operator,
     developed_design_view,
 )
 
@@ -56,12 +58,6 @@ from .projection import (
     PORTFOLIO_ID,
     SELECTION_DECISION_REF,
     StateProjection,
-    # Module-private, deliberately reused rather than re-implemented: a
-    # candidate must start from the same authored record, read the same way
-    # and refusing for the same reasons, as the projection the user was shown.
-    # A second reader of that file would be a second answer to "what does this
-    # project say", and the two would drift.
-    _load_authored_record,
     project_state,
 )
 from .proposals import Proposal
@@ -76,171 +72,6 @@ class StaleBaseError(ValueError):
     route cannot see — between accepting the job and reading the record — and
     the job reports it.
     """
-
-
-def successor_record(record: StateRecord, proposal: Proposal) -> StateRecord:
-    """The authored record with the one value the proposal names replaced.
-
-    This is the K1 candidate-under-card: until the kernel offers a successor
-    operation of its own, the studio edits exactly one authored scalar and
-    nothing else. An element proposal replaces ``params.<key>`` on its row; a
-    parameter proposal replaces that ``Parameter``'s value. No expression is
-    re-evaluated and no derived value is touched — recomputing them here would
-    be a second propagation rule beside the kernel's.
-    """
-
-    if proposal.element_id is not None:
-        entities = tuple(
-            entity
-            if entity.entity_id != proposal.element_id
-            else replace(
-                entity,
-                fields={
-                    **entity.fields,
-                    "params": {
-                        **entity.fields["params"],
-                        proposal.key: proposal.new,
-                    },
-                },
-            )
-            for entity in record.entities
-        )
-        return replace(record, entities=entities)
-    for parameter in record.parameters:
-        if parameter.key == proposal.key and parameter.lock_authority:
-            # The lock is the record's own statement that this value is not the studio's to change.
-            raise StudioError(409, "PARAMETER_LOCKED",
-                              f"parameter {proposal.key} is locked by {parameter.lock_authority}; the authored record has to unlock it first")
-    parameters = tuple(
-        parameter
-        if parameter.key != proposal.key
-        else replace(parameter, value=proposal.new)
-        for parameter in record.parameters
-    )
-    return replace(record, parameters=parameters)
-
-
-# The four entity schemas that are a record's massing. A massing successor
-# replaces exactly these and the declared ``option``; everything else in the
-# record — its levels, axes, elements, parameters and relations — is the
-# authored record's and is carried through untouched.
-MASSING_SCHEMAS = ("MassingLevel@1", "Volume@1", "Space@1", "Connection@1")
-
-
-def massing_successor(record: StateRecord, pack: SchematicPack) -> StateRecord:
-    """The authored record with its massing replaced by one option's pack.
-
-    The studio's second successor operation, beside ``successor_record``. A
-    proposal edits one authored scalar; a selected massing option replaces the
-    four massing schemas together, because a volume, the level it stands on
-    and the zone that owns it are one statement and half of it is not a
-    building.
-
-    Two things are carried rather than rewritten. An entity whose id survives
-    keeps its own ``basis_refs`` and any field the pack does not carry, so a
-    pack that says exactly what the record already said produces the same
-    record — same order, same fields, same digest. And ``Component@1``
-    ``volume_ids`` are updated from the pack's components, because the kernel
-    requires every massing volume to have exactly one semantic owner
-    (``SpatialOptionProposal``) and a transform that adds or drops a volume
-    without saying who owns it would be refused by the runner rather than
-    here.
-    """
-
-    existing = {entity.entity_id: entity for entity in record.entities}
-    evidence = tuple(sorted(set(record.evidence_refs)))
-
-    def entity(entity_id: str, schema: str, fields: Mapping[str, Any]) -> Entity:
-        previous = existing.get(entity_id)
-        if previous is not None and previous.schema == schema:
-            return replace(previous, fields={**previous.fields, **fields})
-        return Entity(entity_id, schema, dict(fields), basis_refs=evidence)
-
-    replacements = {
-        **{
-            level["level_id"]: entity(
-                level["level_id"],
-                "MassingLevel@1",
-                {"base_y": level["base_y"], "height": level["height"]},
-            )
-            for level in pack.levels
-        },
-        **{
-            volume["volume_id"]: entity(
-                volume["volume_id"],
-                "Volume@1",
-                {
-                    "min": list(volume["min"]),
-                    "max": list(volume["max"]),
-                    "level_ids": list(volume["level_ids"]),
-                },
-            )
-            for volume in pack.volumes
-        },
-        **{
-            zone["zone_id"]: entity(
-                zone["zone_id"],
-                "Space@1",
-                {
-                    "program_node_refs": list(zone["program_node_refs"]),
-                    "level_ids": list(zone["level_ids"]),
-                    "volume_ids": list(zone["volume_ids"]),
-                },
-            )
-            for zone in pack.zones
-        },
-        **{
-            connection["connection_id"]: entity(
-                connection["connection_id"],
-                "Connection@1",
-                {
-                    "source_zone_id": connection["source_zone_id"],
-                    "target_zone_id": connection["target_zone_id"],
-                    "relationship_refs": list(connection["relationship_refs"]),
-                    "directed": bool(connection.get("directed", False)),
-                },
-            )
-            for connection in pack.connections
-        },
-    }
-    owned = {
-        component.component_id: list(component.volume_ids)
-        for component in pack.components
-    }
-    kept: list[Entity] = []
-    seen: set[str] = set()
-    for item in record.entities:
-        if item.schema == "Component@1" and item.entity_id in owned:
-            volume_ids = owned[item.entity_id]
-            kept.append(
-                item
-                if list(item.fields.get("volume_ids", ())) == volume_ids
-                else replace(item, fields={**item.fields, "volume_ids": volume_ids})
-            )
-            continue
-        if item.schema not in MASSING_SCHEMAS:
-            kept.append(item)
-            continue
-        successor = replacements.get(item.entity_id)
-        if successor is not None:
-            kept.append(successor)
-            seen.add(item.entity_id)
-    kept.extend(
-        item for entity_id, item in replacements.items() if entity_id not in seen
-    )
-    return replace(
-        record,
-        entities=tuple(kept),
-        option={
-            **dict(record.option),
-            "option_id": pack.option_id,
-            "label": pack.label,
-            "typology": pack.typology,
-            "rationale": pack.rationale,
-            "footprint_cells": [list(cell) for cell in pack.footprint_cells],
-            "assumption_refs": list(pack.assumption_refs),
-        },
-    )
 
 
 def execute_candidate(
@@ -261,8 +92,20 @@ def execute_candidate(
     leaves no run directory behind for somebody to wonder about later.
     """
 
-    seat_pack = _seat_pack(binding, proposal.base_state_digest)
-    successor = successor_record(_load_authored_record(binding), proposal)
+    base_record = _operator_base(
+        binding,
+        expected_record_digest=proposal.record_digest,
+        expected_state_digest=proposal.base_state_digest,
+    )
+    operator = StateRecordOperator(
+        kind=StateRecordEditKind.SET_SCALAR,
+        base_record_digest=proposal.record_digest,
+        base_state_digest=base_record.state_digest,
+        protected=tuple(sorted(set(proposal.protected))),
+        target_ref=proposal.target_ref,
+        key=proposal.key,
+        value=proposal.new,
+    )
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = ()
     if proposal.compilation_receipt is not None:
         # A chat turn is work in progress; a run is shared (ADR-007). The receipt of
@@ -282,9 +125,7 @@ def execute_candidate(
                 },
             ),
         )
-    return _run_successor(
-        binding, settings, seat_pack, successor, run_id, retain=retain
-    )
+    return run_operator(binding, settings, operator, run_id, retain=retain)
 
 
 def execute_option_candidate(
@@ -293,6 +134,7 @@ def execute_option_candidate(
     pack: SchematicPack,
     run_id: str,
     *,
+    base_record_digest: str,
     base_state_digest: str,
 ) -> Mapping[str, Any]:
     """Run one selected massing option as a candidate, by the same arrangement.
@@ -309,31 +151,46 @@ def execute_option_candidate(
     statement of the same fact.
     """
 
-    seat_pack = _seat_pack(binding, base_state_digest)
-    successor = massing_successor(_load_authored_record(binding), pack)
-    return _run_successor(binding, settings, seat_pack, successor, run_id)
+    base_record = _operator_base(
+        binding,
+        expected_record_digest=base_record_digest,
+        expected_state_digest=base_state_digest,
+    )
+    operator = StateRecordOperator(
+        kind=StateRecordEditKind.REPLACE_MASSING,
+        base_record_digest=base_record_digest,
+        base_state_digest=base_record.state_digest,
+        massing_pack=pack,
+    )
+    return run_operator(binding, settings, operator, run_id)
 
 
-def _seat_pack(
-    binding: ProjectBinding, base_state_digest: str
-) -> Mapping[str, Any]:
-    """The seat pack, and the base check made where the record is actually read.
+def _operator_base(
+    binding: ProjectBinding,
+    *,
+    expected_record_digest: str,
+    expected_state_digest: str,
+) -> StateRecord:
+    """Bind a Studio request to the StateRecord exact base on the worker.
 
     The route checked the base too, but that was before this job reached the
-    front of the queue: in between, the authored record may have been
-    rewritten, and running the change against a state nobody was shown is the
-    one failure that would look like a success. The seat pack is loaded first,
-    so a candidate that cannot run leaves no run directory behind.
+    front of the queue. Both identities captured by the proposal or option
+    are checked rather than replacing either with a fresh value from here.
     """
 
-    seat_pack = load_seat_pack(binding.repository)
-    live = project_state(binding).state_digest
-    if live != base_state_digest:
+    projection = project_state(binding)
+    if (
+        projection.record_digest != expected_record_digest
+        or projection.state_digest != expected_state_digest
+    ):
         raise StaleBaseError(
-            "STALE_BASE: the authored record changed after the proposal was "
-            f"made ({base_state_digest[:8]} -> {(live or 'none')[:8]})"
+            "STALE_BASE: the authored record changed after the candidate base "
+            f"was captured (record {expected_record_digest[:8]} -> "
+            f"{projection.record_digest[:8]}; state "
+            f"{expected_state_digest[:8]} -> "
+            f"{(projection.state_digest or 'none')[:8]})"
         )
-    return seat_pack
+    return projection.record
 
 
 def _run_successor(
@@ -355,7 +212,9 @@ def _run_successor(
 
     repository = binding.repository
     seats = seats_of(seat_pack)
-    run = repository.create_run(run_id)
+    if successor.base is None:
+        raise StateRecordError("candidate successor carries no project base")
+    run = repository.create_run(run_id, base=successor.base)
     for record_kind_, payload in retain:
         repository.put_json(
             run=run,
@@ -409,21 +268,18 @@ def _run_successor(
     )
 
 
-def run_successor(
+def run_operator(
     binding: ProjectBinding,
     settings: StudioSettings,
-    successor: StateRecord,
+    operator: StateRecordOperator,
     run_id: str,
     *,
-    base_state_digest: str | None = None,
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
 ) -> Mapping[str, Any]:
-    """Run a successor record that no proposal made (a program sheet applied) by the same
-    arrangement every candidate takes: the base check where the record is read, the run, the
-    harness stage and the seats (``_run_successor``). ``base_state_digest`` is checked against
-    the live state when given; ``retain`` are records put into the run before it starts."""
+    """Replay one typed operator against the worker's latest bound record and run it."""
 
-    seat_pack = _seat_pack(binding, base_state_digest) if base_state_digest is not None else load_seat_pack(binding.repository)
+    seat_pack = load_seat_pack(binding.repository)
+    successor = apply_state_record_operator(project_state(binding).record, operator)
     return _run_successor(binding, settings, seat_pack, successor, run_id, retain=retain)
 
 @dataclass(frozen=True, slots=True)
@@ -470,8 +326,8 @@ class CandidateRun:
     """One finished candidate, read back off the records its run retained."""
 
     candidate_id: str
-    proposal_id: str
-    job_id: str
+    proposal_id: str | None
+    job_id: str | None
     status: str
     base: ProjectVersionRef
     state_digest: str | None
@@ -496,7 +352,7 @@ def describe(
     proposal: Proposal | None,
     *,
     candidate_id: str,
-    job_id: str,
+    job_id: str | None,
     status: str,
     proposal_id: str | None = None,
 ) -> CandidateRun:
@@ -510,8 +366,9 @@ def describe(
 
     ``proposal`` is ``None`` for a candidate this process did not make from a
     sentence — a selected massing option, or any candidate whose proposal was
-    lost with a restart — and ``proposal_id`` then names what the job was
-    submitted for. The run's own facts are unaffected: they are the records'.
+    lost with a restart. The process-local proposal and job ids may then both
+    be absent; they are never reconstructed from the run id. The run's own
+    facts are unaffected: they are the records'.
     """
 
     if status in (QUEUED, RUNNING):
@@ -547,9 +404,7 @@ def describe(
     return CandidateRun(
         candidate_id=candidate_id,
         proposal_id=(
-            proposal.proposal_id
-            if proposal is not None
-            else (proposal_id or job_id)
+            proposal.proposal_id if proposal is not None else proposal_id
         ),
         job_id=job_id,
         status=status,
@@ -640,7 +495,17 @@ def _receipt(
     start preferring a different one than the projection reads.
     """
 
-    newest = binding.newest_runner_receipt(run_id)
+    try:
+        newest = binding.newest_runner_receipt(run_id)
+    except StudioError as exc:
+        if exc.code != "RUN_NOT_FOUND":
+            raise
+        raise StudioError(
+            404,
+            "CANDIDATE_NOT_FOUND",
+            f"{binding.project_id}: no completed candidate {run_id} is "
+            "retained in this project.",
+        ) from exc
     if newest is None:
         raise StudioError(
             404,
@@ -649,7 +514,23 @@ def _receipt(
             f"{RUNNER_RUN_RECEIPT}, so there is no candidate to read. A run "
             "that failed leaves its reason on its job, not a candidate.",
         )
-    return newest
+    retained, receipt = newest
+    stage = receipt.get("stage")
+    if not (
+        receipt.get("project_id") == binding.project_id
+        and receipt.get("run_id") == run_id
+        and receipt.get("workflow_is_harness") is True
+        and isinstance(stage, Mapping)
+        and stage.get("stage_id") == STAGE_ID
+    ):
+        raise StudioError(
+            404,
+            "CANDIDATE_NOT_FOUND",
+            f"{binding.project_id}: run {run_id} retained a runner receipt, "
+            f"but it is not the exact {STAGE_ID} harness receipt for this "
+            "project and run.",
+        )
+    return retained, receipt
 
 
 def _relation_totals(

@@ -2285,7 +2285,7 @@
         "tests/integration/test_pantheon_compiled_state.py",
         "apps/archflow-studio/api/tests/test_proposals.py"
       ],
-      "notes": "Canonical: the Studio's typed proposals are DecisionOperators. P109 lands the kernel function that applies one to a StateRecord and retires the Studio's successor_record candidate."
+      "notes": "Canonical: the Studio's conversational proposals remain DecisionOperator@2 inputs to OperationalMarkovState. StateRecord application is separately owned by state.record through its closed StateRecordOperator; P109 retires the Studio's successor_record candidate without extending DecisionOperator@2."
     },
     {
       "module_id": "state.derivation",
@@ -2791,7 +2791,7 @@
     {
       "module_id": "state.record",
       "owner_path": "archflow/state/state_record.py",
-      "purpose": "The canonical StateRecord@1: a project's design state as typed entities, parameters, relations, obligations and evidence, plus the typed views derived from it. It states no stage: a stage belongs to the run that executes it (ADR-007).",
+      "purpose": "The canonical StateRecord@1: a project's design state as typed entities, parameters, relations, obligations and evidence, the one closed typed operator that derives a successor, and the typed views derived from it. It states no stage: a stage belongs to the run that executes it (ADR-007).",
       "owns": [
         "design content identity, independent of run and base (StateRecord.digest)",
         "the binding identity a geometry program cites (StateRecord.state_digest)",
@@ -2804,7 +2804,8 @@
         "the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of)",
         "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)",
         "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1",
-        "the one reading of a Volume@1 box in the kernel's voxel lattice - x and z plan, y up, inclusive cells (volume_boxes_of); the schematic pack read out of the record (schematic_pack_of), which developed_design_view and the massing metrics both use"
+        "the one reading of a Volume@1 box in the kernel's voxel lattice - x and z plan, y up, inclusive cells (volume_boxes_of); the schematic pack read out of the record (schematic_pack_of), which developed_design_view and the massing metrics both use",
+        "the closed StateRecord edit vocabulary and its one successor function: set_scalar, replace_massing, apply_program and reindex (StateRecordEditKind, StateRecordOperator, apply_state_record_operator)"
       ],
       "does_not_own": [
         "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
@@ -2813,13 +2814,15 @@
         "the ProjectLevel/ProjectGridAxis shapes it emits (state.geometry_program)",
         "persisting the record (project.repository)",
         "compiling geometry from it (compilers/geometry.py via capabilities/element_producers.py)",
-        "the stage a run opens; the record names none, and from_dict refuses a stage key (runtime/project_runner.py, state.stage_workflow, ADR-007)"
+        "the stage a run opens; the record names none, and from_dict refuses a stage key (runtime/project_runner.py, state.stage_workflow, ADR-007)",
+        "propagating a successor or persisting it; the runner and repository retain those authorities"
       ],
       "inputs": [
         "Entity/Parameter/Relation/DesignObligation tuples",
         "RunRef",
         "ProjectVersionRef base",
-        "serialized StateRecord@1 mapping"
+        "serialized StateRecord@1 mapping",
+        "StateRecordOperator"
       ],
       "outputs": [
         "StateRecord",
@@ -2827,7 +2830,9 @@
         "ProjectLevels",
         "ProjectGrids",
         "DevelopedDesignState",
-        "DependencyEdge tuple"
+        "DependencyEdge tuple",
+        "StateRecordOperator",
+        "deterministic successor StateRecord"
       ],
       "public_api": [
         "CHECK_KINDS",
@@ -2837,8 +2842,11 @@
         "Relation",
         "SchematicPack",
         "StateRecord",
+        "StateRecordEditKind",
         "StateRecordError",
+        "StateRecordOperator",
         "ValidatorBinding",
+        "apply_state_record_operator",
         "bootstrap_developed_state",
         "design_components_of",
         "developed_design_view",
@@ -2870,6 +2878,11 @@
         "archflow/capabilities/relation_checks.py",
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/options.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/program.py",
+        "archflow/state/program_sheet.py",
+        "archflow/capabilities/element_reindex.py",
+        "tools/reindex_project.py",
         "tools/verify_state_record.py"
       ],
       "invariants": [
@@ -2879,7 +2892,8 @@
         "a relation kind outside the kernel vocabulary is refused",
         "a ValidatorBinding names a check the spine can measure: CHECK_KINDS is the whole vocabulary and each id carries its own field shape",
         "geometry programs, validation results, receipts and indexes are derived from the record and never authoritative",
-        "developed_design_view is an adapter, not a second source of truth; design_components_of is the single component-tree builder"
+        "developed_design_view is an adapter, not a second source of truth; design_components_of is the single component-tree builder",
+        "every successor edit binds both complete content identity (record.digest) and run/base binding identity (state_digest), checks protected dependency closure and parameter locks in one function, and performs no propagation"
       ],
       "status": "canonical",
       "tests": [
@@ -3261,7 +3275,6 @@
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
       "purpose": "Execute a proposal as a detached candidate through the kernel's own runner, and read the finished run back out of the records it retained.",
       "owns": [
-        "the successor record: the authored record with exactly the one value the proposal names replaced",
         "arranging the run - new run id, harness stage guard, seat pack, RunOptions - and calling run_project",
         "retaining the intent compilation receipt in the candidate run as intent-compilation",
         "the studio candidate harness workflow and stage, explicitly not a project stage advance",
@@ -3269,9 +3282,7 @@
         "the worker pool and queue: closure-based conflicts, the exclusive Rhino export lane, and per-job lifecycle state",
         "the bounded in-process event log, its replay and its live subscribers",
         "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines",
-        "the massing successor: the authored record with its four massing schemas and its declared option replaced by one option's pack (massing_successor)",
-        "one arrangement for every kind of candidate - the base check, the run, the harness stage and the seats (_seat_pack, _run_successor)",
-        "running one successor record as a detached candidate, whatever produced the successor (run_successor over _run_successor: seats, harness stage, binding, export workspaces, run_project)"
+        "one arrangement for every kind of candidate: compile or receive a StateRecordOperator, replay it against the worker's latest bound record, then run the successor (run_operator over _run_successor)"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -3280,7 +3291,8 @@
         "artifact bytes and availability - studio.artifacts",
         "making the proposal - studio.intent",
         "resolving what a request is about, and the pending intent a clarification is carried in - studio.intent",
-        "the project binding - studio.binding"
+        "the project binding - studio.binding",
+        "deriving any successor record - state.record"
       ],
       "inputs": [
         "Proposal",
@@ -3302,7 +3314,6 @@
         "GET /api/candidates/{candidate_id}",
         "GET /api/candidates/{candidate_id}/compare",
         "GET /api/events",
-        "successor_record",
         "execute_candidate",
         "describe",
         "CandidateRun",
@@ -3318,9 +3329,7 @@
         "seat_from",
         "JobRegistry.candidates_of",
         "execute_option_candidate",
-        "massing_successor",
-        "MASSING_SCHEMAS",
-        "run_successor"
+        "run_operator"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -3349,7 +3358,7 @@
       ],
       "invariants": [
         "a candidate is detached: it runs under the studio-candidate harness stage and advances no project stage",
-        "the record must not have moved since the proposal was made - a stale base is refused, not merged",
+        "the record must not have moved since the proposal or option was made: both StateRecord.digest content identity and StateRecord.state_digest binding identity are rechecked, and a stale base is refused rather than merged",
         "run_project calls asyncio.run, so a candidate runs on a worker thread and never on the event loop",
         "two candidates whose closures intersect do not run together, and only one Rhino export runs at a time",
         "relation totals stay three counts plus two flags; they are never collapsed into a single verdict",
@@ -4272,13 +4281,13 @@
         "drafting a GridAxis@1 the model needs and the record lacks (a column line), marked derived",
         "the residual between produced and inspected boxes, by running the real producers on the drafted rows",
         "derived support_contact relations from vertical contact within the stage-5 tolerance",
-        "the ComponentCatalog@1 payload and the successor record that adds axes, rows and relations and replaces nothing",
+        "the ComponentCatalog@1 payload and the typed reindex operator that adds axes, rows and relations and replaces nothing",
         "re-seating a drafted prism onto a drafted flight's published <id>-top instead of a level"
       ],
       "does_not_own": [
         "producing geometry from a row - capabilities.element_producers",
         "resolving a reference - capabilities.reference_resolver",
-        "writing any record - tools/reindex_project.py through project.repository",
+        "applying or writing any successor - state.record and tools/reindex_project.py through project.repository",
         "the studio's derived catalog of an authored record - studio.binding"
       ],
       "public_api": [
@@ -4311,7 +4320,7 @@
     {
       "module_id": "tools.reindex_project",
       "owner_path": "tools/reindex_project.py",
-      "purpose": "CLI: re-index a project's authored record against named inspection records and write a component-catalog and a draft state-record successor into a new run through the repository.",
+      "purpose": "CLI: re-index a project's authored record against named inspection records, apply the typed reindex operator, and write a component-catalog and draft state-record successor into a new run through the repository.",
       "owns": [
         "the --source <uri>@<precedence> vocabulary",
         "writing component-catalog and state-record records into --out-run",
@@ -4331,7 +4340,8 @@
         "project.repository",
         "project.record_kinds",
         "project.refs",
-        "project.ports"
+        "project.ports",
+        "state.record"
       ],
       "files": [
         "tools/reindex_project.py"
@@ -4418,7 +4428,7 @@
       "does_not_own": [
         "measuring a massing (state.massing_metrics)",
         "reading the record's massing as a pack (state.record.schematic_pack_of)",
-        "the successor record a selection runs (studio.candidate.massing_successor)",
+        "deriving the successor record a selection runs (state.record)",
         "running a candidate (studio.candidate)",
         "the record kind vocabulary (project.record_kinds)"
       ],
@@ -4452,7 +4462,7 @@
       ],
       "invariants": [
         "never writes the authored record and never touches canonical",
-        "an option is measured on the successor record selecting it would run, not on an approximation",
+        "an option is measured on the successor record selecting it would run, not on an approximation, and retains the exact StateRecord.digest it was measured from",
         "a massing the kernel would refuse is refused at make time, with the request that made it",
         "the metrics are this process's memory; only the pack is retained"
       ],
@@ -4470,12 +4480,12 @@
     {
       "module_id": "state.program_sheet",
       "owner_path": "archflow/state/program_sheet.py",
-      "purpose": "The architect's program sheet and the two directions between it and a record's spatial option: one sheet row per Space@1, and a new record carrying what a sheet adds.",
+      "purpose": "The architect's program sheet and the two directions between it and a record's spatial option: one sheet row per Space@1, and a typed operator for what a sheet adds.",
       "owns": [
         "the ProgramSheet@1 payload shape and its refusals (ProgramSheetError)",
         "reading a sheet out of a record: department and space id from a zone's program:<department>/<space> ref, area from the union of its Volume@1 plan boxes on its own levels, function from the component the zone names, adjacency rows from Connection@1 plus the relation kind",
         "the four program requirements and the kernel relation kind each becomes (adjacent -> adjacent, apart -> clearance; near and visual have none and are refused with the vocabulary named)",
-        "applying a sheet as additions only: a Space@1 per unmapped space, a Relation plus its Connection@1 per undeclared adjacency, and a program_node_refs entry on a mapped zone that lacks one",
+        "compiling a sheet as additions only: a Space@1 per unmapped space, a Relation plus its Connection@1 per undeclared adjacency, and a program_node_refs entry on a mapped zone that lacks one",
         "the sheet's totals (target x count, mapped, unmapped ids)"
       ],
       "does_not_own": [
@@ -4488,14 +4498,16 @@
       "inputs": [
         "StateRecord",
         "ProgramSheet@1 mapping",
-        "optional state digest"
+        "the record content digest and run/base state digest the sheet was read from"
       ],
       "outputs": [
         "ProgramSheet@1 dict",
-        "StateRecord"
+        "StateRecordOperator",
+        "StateRecord through state.record.apply_state_record_operator"
       ],
       "public_api": [
         "sheet_from_record",
+        "compile_sheet_operator",
         "apply_sheet",
         "totals_of",
         "validate_sheet",
@@ -4519,6 +4531,7 @@
       "invariants": [
         "pure: no I/O, no run, no record written",
         "never deletes an entity or a relation, and changes no field of an existing entity except a program_node_refs entry it lacks",
+        "a derived sheet carries both record.digest and state_digest, and applying it requires both identities to match the record exactly",
         "no area is invented: a zone with no readable Volume@1 box has null, not zero",
         "no relation kind is invented: a requirement the kernel has no kind for is refused with the whole vocabulary named",
         "a function is resolved by semantics.registry or refused with the nearest ids"
@@ -4546,13 +4559,13 @@
       "does_not_own": [
         "deriving or applying a sheet (state.program_sheet)",
         "reading or writing the input file (project.inputs)",
-        "running the successor (studio.candidate.run_successor)"
+        "applying the operator (state.record) or running its successor (studio.candidate.run_operator)"
       ],
       "public_api": [
         "ProgramView",
         "ProgramCandidate",
         "read_program",
-        "successor_for",
+        "operator_for",
         "save_input_sheet",
         "closure_of_sheet",
         "candidate_run_id",

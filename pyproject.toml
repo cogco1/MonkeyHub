@@ -22,3 +22,6 @@ exclude = ["tests*", "probes*", "governance*", "docs*", "tools*"]
 [tool.archflow]
 phase = "P1"
 test_command = "python -m unittest discover -s tests -v"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

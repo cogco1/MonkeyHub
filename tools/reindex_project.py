@@ -29,8 +29,9 @@ from archflow.capabilities.element_reindex import AMBIGUOUS, DRAFT, ERROR, EXIST
 from archflow.project.inputs import load_authored_record  # noqa: E402
 from archflow.project.ports import PersistenceArea, PersistenceDestination  # noqa: E402
 from archflow.project.record_kinds import COMPONENT_CATALOG, STATE_RECORD  # noqa: E402
-from archflow.project.refs import record_ref_from_uri  # noqa: E402
+from archflow.project.refs import RunRef, record_ref_from_uri  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository  # noqa: E402
+from archflow.state.state_record import apply_state_record_operator  # noqa: E402
 
 
 def _source(arg: str) -> tuple[str, int]:
@@ -93,14 +94,21 @@ def main(argv: list[str] | None = None) -> int:
 
     repository = FilesystemProjectRepository.open(Path(args.project))
     authored = load_authored_record(repository)
-    record = authored.record
+    run_layout = repository.layout.run(args.out_run)
+    target_run = (
+        repository.load_run(args.out_run)
+        if run_layout.manifest.exists()
+        else RunRef(authored.record.project_id, args.out_run, repository.read_head())
+    )
+    record = authored.record.bound_to(target_run)
     sources = []
     for uri, precedence in args.source:
         ref = record_ref_from_uri(uri, record.project_id)
         sources.append((repository.load_json(ref), uri, precedence))
     result = reindex(record, sources)
+    operator = result.operator(basis_refs=[uri for uri, _ in args.source])
+    successor = apply_state_record_operator(record, operator)
     catalog = result.catalog(run_id=args.out_run)
-    successor = result.successor(run_id=args.out_run, basis_refs=[uri for uri, _ in args.source])
 
     s = catalog["summary"]
     print(f"objects {s['objects']} (bound {s['bound']}, superseded {s['superseded']}, alternate {s['alternate']})")
@@ -114,8 +122,11 @@ def main(argv: list[str] | None = None) -> int:
         print(markdown(catalog))
     if args.dry_run:
         return 0
-    run_layout = repository.layout.run(args.out_run)
-    run = repository.load_run(args.out_run) if run_layout.manifest.exists() else repository.create_run(args.out_run)
+    run = (
+        repository.load_run(args.out_run)
+        if run_layout.manifest.exists()
+        else repository.create_run(args.out_run, base=target_run.base)
+    )
     destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=args.out_run)
     catalog_ref = repository.put_json(run=run, destination=destination, record_kind=COMPONENT_CATALOG, payload=catalog)
     successor_ref = repository.put_json(run=run, destination=destination, record_kind=STATE_RECORD, payload=successor.to_dict())

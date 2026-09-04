@@ -677,6 +677,7 @@ def run_project(
         exit_binding_ref = put(STAGE_EXIT_BINDING, exit_binding.to_dict()).uri
     payload = {
         "schema": "RunnerRunReceipt@3", "project_id": run.project_id, "run_id": run.run_id, "state_record_ref": record_ref.uri, "state_record_digest": record.digest,
+        "coverage_mode": "strict" if options.strict_coverage else "relaxed",
         "unowned_components": list(unowned),
         "levels_ref": levels_ref.uri, "grids_ref": grids_ref, "spatial_option_ref": spatial_ref.uri, "design_state_ref": state_ref.uri if state_ref else None,
         "design_state_digest": state.state_digest,
@@ -712,8 +713,9 @@ def _stage_closure(stage_guard: StageExecutionGuard, *, branch: BranchRef, resul
     """The stage's closure, compiled from this run's own checks (ADR-007 r3).
 
     One finding per problem and nothing else: a required check kind no
-    relation measured, a relation of a required kind that did not hold, and a
-    seat that did not finish. No finding is SATISFIED, and only a SATISFIED
+    relation measured, a relation of a required kind that did not hold, a
+    seat that did not finish, or a seat whose owned leaves remain undeclared
+    or explicitly declined. No finding is SATISFIED, and only a SATISFIED
     closure may become a ``StageExitBinding``.
 
     A relation the record declares is measured by every seat, so the same
@@ -743,6 +745,15 @@ def _stage_closure(stage_guard: StageExecutionGuard, *, branch: BranchRef, resul
     incomplete = tuple(r for r in results if r.status not in ("proposal_accepted", "empty"))
     for result in incomplete:
         note(StageClosureFinding(code=StageClosureFindingCode.SEAT_INCOMPLETE, requirement_id=result.seat_id))
+    for result in results:
+        if result.undeclared_components:
+            note(StageClosureFinding(code=StageClosureFindingCode.SEAT_INCOMPLETE,
+                                     requirement_id=f"{result.seat_id}:undeclared_components",
+                                     refs=result.undeclared_components))
+        if result.declined:
+            note(StageClosureFinding(code=StageClosureFindingCode.SEAT_INCOMPLETE,
+                                     requirement_id=f"{result.seat_id}:declined_components",
+                                     refs=result.declined))
     if not seat_execution_complete and not incomplete:
         # Every seat was admitted and none produced a program: no seat failed,
         # and the stage still has nothing to close over.

@@ -149,6 +149,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     # the request's camera let a viewer word become a side; the catalog is the
     # one directory of editable elements and of what the model shows without a row.
     conventions = project_conventions(binding)
+    conventions_are_current = conventions.state_digest == projection.state_digest
     camera = (
         body.camera.model_dump()
         if body.camera is not None
@@ -165,8 +166,8 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         has_camera=bool(body.gestures) or camera is not None,
         pending=pending,
         camera=camera,
-        compass=conventions.compass,
-        aliases=conventions.aliases,
+        compass=conventions.compass if conventions_are_current else None,
+        aliases=conventions.aliases if conventions_are_current else {},
         catalog=catalog,
         scope=body.scope,
     )

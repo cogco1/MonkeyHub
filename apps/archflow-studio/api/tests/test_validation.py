@@ -150,7 +150,6 @@ class ValidationTestCase(CandidateTestCase):
         return validate_candidate(
             bound_project(state).head(),
             candidate,
-            state.proposals.get(candidate.proposal_id),
             events=state.events,
         )
 
@@ -830,6 +829,59 @@ class ValidationEventTests(ValidationTestCase):
 
 
 class ValidationRefusalTests(ValidationTestCase):
+    def test_a_completed_candidate_validates_from_p036_after_restart(self) -> None:
+        accepted, job = self.finished_candidate()
+        self.assertEqual(job["status"], "succeeded", job)
+        before = self.validation_of(accepted["candidateId"])
+        restarted = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(restarted.close)
+
+        # The new process has neither the job nor its proposal.  The exact
+        # retained Studio harness receipt is still sufficient to validate it.
+        self.assertEqual(
+            restarted.get(f"/api/jobs/{accepted['jobId']}").status_code,
+            404,
+        )
+        response = restarted.get(
+            f"/api/candidates/{accepted['candidateId']}/validation"
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        after = response.json()
+        self.assertEqual(after["candidateId"], accepted["candidateId"])
+        self.assertEqual(
+            after["receipt"]["submissionDigest"],
+            before["receipt"]["submissionDigest"],
+        )
+
+    def test_a_finished_non_proposal_job_validates_its_retained_run(self) -> None:
+        accepted, _ = self.finished_candidate()
+        restarted = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(restarted.close)
+        state = restarted.app.state
+        job = state.jobs.submit(
+            candidate_id=accepted["candidateId"],
+            proposal_id="program-sheet:fixture",
+            work=lambda: None,
+        )
+        deadline = time.monotonic() + JOB_DEADLINE
+        while time.monotonic() < deadline:
+            if state.jobs.get(job.job_id).status in TERMINAL:
+                break
+            time.sleep(0.01)
+        self.assertEqual(state.jobs.get(job.job_id).status, "succeeded")
+
+        response = restarted.get(
+            f"/api/candidates/{accepted['candidateId']}/validation"
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["candidateId"], accepted["candidateId"])
+
     def test_an_unfinished_candidate_is_refused_by_name(self) -> None:
         """Work in flight is a 409, never a receipt nobody could stand on."""
 

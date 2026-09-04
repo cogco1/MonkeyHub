@@ -7,19 +7,14 @@
  * "what would move" toggle is that closure, as the server already computed it
  * and sent with the frame; opening it asks nothing.
  *
- * The prefill button writes a sentence into the composer and stops there. The
- * grammar has no rule for a level or an axis — they are not `Element@1`
- * params — so what comes back is the grammar's own refusal. The tooltip says
- * so first; nothing here pretends the sentence will be accepted, and nothing
- * here adds a rule that would make it so.
+ * This surface is read-only. The grammar has no rule for editing a level or an
+ * axis, so it offers no action that the server is already known to refuse.
  */
 
 import { useState } from "react";
 
 import type {
-  FrameAxisDto,
   FrameDto,
-  FrameLevelDto,
   StateProjectionDto,
 } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
@@ -28,15 +23,6 @@ import { BilingualText } from "../../i18n/BilingualText";
 import { useT, type TFunction } from "../../i18n/useT";
 
 const ENTITY = "entity:";
-
-/** The sentence the composer is prefilled with, per the brief's exact wording. */
-export function levelSentence(level: FrameLevelDto): string {
-  return `set ${level.levelId} elevation to ${level.elevation}`;
-}
-
-export function axisSentence(axis: FrameAxisDto): string {
-  return `set ${axis.axisId} position to ${axis.value}`;
-}
 
 /** The element ids in a closure, in the order the server sent them. */
 function elementsIn(
@@ -96,10 +82,8 @@ function Row({
   unit,
   count,
   closure,
-  sentence,
   componentOf,
   onPick,
-  onPrefill,
   t,
 }: {
   id: string;
@@ -109,11 +93,8 @@ function Row({
   unit: string;
   count: number;
   closure: readonly string[];
-  /** The sentence the prefill button writes, or null when there is no value. */
-  sentence: string | null;
   componentOf: ReadonlyMap<string, string>;
   onPick(componentId: string, elementId: string | null): void;
-  onPrefill(sentence: string): void;
   t: TFunction;
 }) {
   const [open, setOpen] = useState(false);
@@ -135,17 +116,6 @@ function Row({
         >
           {t(open ? "frame.hideMove" : "frame.whatMoves", { n: moved })}
         </button>
-        <button
-          type="button"
-          className="btn btn--small frame__prefill"
-          disabled={sentence === null}
-          title={
-            sentence === null ? t("frame.noValueTitle") : t("frame.notYetEditable")
-          }
-          onClick={() => sentence !== null && onPrefill(sentence)}
-        >
-          {t("frame.prefill")}
-        </button>
       </div>
       {open && (
         <Closure closure={closure} componentOf={componentOf} onPick={onPick} t={t} />
@@ -158,14 +128,12 @@ export function FrameEditor({
   frame,
   projection,
   onPick,
-  onPrefill,
   onClose,
 }: {
   frame: Loadable<FrameDto>;
   /** Where an element id learns which component it belongs to; null before the projection loads. */
   projection: StateProjectionDto | null;
   onPick(componentId: string, elementId: string | null): void;
-  onPrefill(sentence: string): void;
   onClose(): void;
 }) {
   const t = useT();
@@ -209,10 +177,8 @@ export function FrameEditor({
                     unit={t("frame.metres")}
                     count={level.elementsOn.length}
                     closure={level.closure}
-                    sentence={levelSentence(level)}
                     componentOf={componentOf}
                     onPick={onPick}
-                    onPrefill={onPrefill}
                     t={t}
                   />
                 ))}
@@ -238,10 +204,8 @@ export function FrameEditor({
                     }
                     count={axis.elementsOn.length}
                     closure={axis.closure}
-                    sentence={axis.value === null ? null : axisSentence(axis)}
                     componentOf={componentOf}
                     onPick={onPick}
-                    onPrefill={onPrefill}
                     t={t}
                   />
                 ))}

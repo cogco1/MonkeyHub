@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.operational_state import DependencyEffect, DesignObligation, ObligationStatus
-from archflow.project.refs import RunRef
+from archflow.project.refs import ProjectVersionRef, RunRef
 from archflow.state.state_record import (
     CHECK_KINDS,
     Entity,
@@ -21,8 +22,11 @@ from archflow.state.state_record import (
     Parameter,
     Relation,
     StateRecord,
+    StateRecordEditKind,
     StateRecordError,
+    StateRecordOperator,
     ValidatorBinding,
+    apply_state_record_operator,
     developed_design_view,
 )
 
@@ -52,6 +56,214 @@ def _record() -> StateRecord:
 
 
 class StateRecordTests(unittest.TestCase):
+    def test_typed_operator_changes_one_value_deterministically(self) -> None:
+        record = replace(
+            _record(), base=ProjectVersionRef("demo", 0, "0" * 64)
+        )
+        operator = StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR,
+            base_record_digest=record.digest,
+            base_state_digest=record.state_digest,
+            target_ref="parameter:column_diameter",
+            key="column_diameter",
+            value=0.72,
+        )
+
+        first = apply_state_record_operator(record, operator)
+        second = apply_state_record_operator(record, operator)
+
+        self.assertEqual(first.digest, second.digest)
+        self.assertNotEqual(first.digest, record.digest)
+        self.assertEqual(first.entities, record.entities)
+        self.assertEqual(first.parameter("column_height"), record.parameter("column_height"))
+        self.assertEqual(first.parameter("column_diameter").value, 0.72)
+
+    def test_typed_operator_refuses_an_old_complete_record_base(self) -> None:
+        source = _record()
+        columns = source.entity("columns-west")
+        record = replace(
+            source,
+            entities=tuple(
+                replace(
+                    entity,
+                    fields={**entity.fields, "params": {"height": 6.426}},
+                )
+                if entity.entity_id == columns.entity_id
+                else replace(
+                    entity,
+                    fields={**entity.fields, "volume_ids": ["volume-main"]},
+                )
+                if entity.entity_id == "building"
+                else entity
+                for entity in source.entities
+            )
+            + (
+                Entity(
+                    "massing-ground",
+                    "MassingLevel@1",
+                    {"base_y": 0, "height": 4},
+                ),
+                Entity(
+                    "volume-main",
+                    "Volume@1",
+                    {
+                        "min": [0, 0, 0],
+                        "max": [4, 4, 4],
+                        "level_ids": ["massing-ground"],
+                    },
+                ),
+                Entity(
+                    "space-main",
+                    "Space@1",
+                    {
+                        "program_node_refs": ["program:public/main"],
+                        "level_ids": ["massing-ground"],
+                        "volume_ids": ["volume-main"],
+                    },
+                ),
+            ),
+            option={"option_id": "complete-record-base"},
+            base=ProjectVersionRef("demo", 0, "0" * 64),
+        )
+        first_edit = StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR,
+            base_record_digest=record.digest,
+            base_state_digest=record.state_digest,
+            target_ref="entity:columns-west",
+            key="height",
+            value=6.5,
+        )
+        stale_edit = replace(first_edit, value=6.6)
+        changed = apply_state_record_operator(record, first_edit)
+        self.assertEqual(changed.state_digest, record.state_digest)
+
+        with self.assertRaisesRegex(StateRecordError, "exact base is stale"):
+            apply_state_record_operator(changed, stale_edit)
+
+        rebound = replace(
+            record,
+            run_id="run-2",
+            base=ProjectVersionRef("demo", 1, "1" * 64),
+        )
+        self.assertEqual(rebound.digest, record.digest)
+        self.assertNotEqual(rebound.state_digest, record.state_digest)
+        with self.assertRaisesRegex(StateRecordError, "exact base is stale"):
+            apply_state_record_operator(rebound, first_edit)
+
+    def test_program_operator_cannot_rewrite_existing_space_identity(self) -> None:
+        record = replace(
+            _record(),
+            entities=_record().entities
+            + (
+                Entity(
+                    "existing-space",
+                    "Space@1",
+                    {
+                        "program_node_refs": ["program:public/existing"],
+                        "level_ids": [],
+                        "volume_ids": [],
+                    },
+                    parent_id="building",
+                    basis_refs=("reading:plan",),
+                    lineage=Lineage(introduced_at="stage-2"),
+                ),
+            ),
+            base=ProjectVersionRef("demo", 0, "0" * 64),
+        )
+        previous = record.entity("existing-space")
+        rewritten = replace(
+            previous,
+            parent_id="portico-west",
+            fields={
+                **previous.fields,
+                "program_node_refs": [
+                    "program:public/existing",
+                    "program:public/new",
+                ],
+            },
+        )
+        operator = StateRecordOperator(
+            kind=StateRecordEditKind.APPLY_PROGRAM,
+            base_record_digest=record.digest,
+            base_state_digest=record.state_digest,
+            entities=(rewritten,),
+        )
+
+        with self.assertRaisesRegex(StateRecordError, "may only append"):
+            apply_state_record_operator(record, operator)
+
+    def test_reindex_operator_accepts_only_index_entity_schemas(self) -> None:
+        record = replace(
+            _record(), base=ProjectVersionRef("demo", 0, "0" * 64)
+        )
+        operator = StateRecordOperator(
+            kind=StateRecordEditKind.REINDEX,
+            base_record_digest=record.digest,
+            base_state_digest=record.state_digest,
+            entities=(
+                Entity(
+                    "invented-component",
+                    "Component@1",
+                    {"semantic_kind": "whole-building"},
+                ),
+            ),
+        )
+
+        with self.assertRaisesRegex(StateRecordError, "cannot add entity schemas"):
+            apply_state_record_operator(record, operator)
+
+    def test_typed_operator_refuses_stale_base_and_protected_closure(self) -> None:
+        record = replace(
+            _record(), base=ProjectVersionRef("demo", 0, "0" * 64)
+        )
+        with self.assertRaisesRegex(StateRecordError, "exact base is stale"):
+            apply_state_record_operator(
+                record,
+                StateRecordOperator(
+                    kind=StateRecordEditKind.SET_SCALAR,
+                    base_record_digest="f" * 64,
+                    base_state_digest=record.state_digest,
+                    target_ref="parameter:column_diameter",
+                    key="column_diameter",
+                    value=0.72,
+                ),
+            )
+        with self.assertRaisesRegex(StateRecordError, "reaches protected refs"):
+            apply_state_record_operator(
+                record,
+                StateRecordOperator(
+                    kind=StateRecordEditKind.SET_SCALAR,
+                    base_record_digest=record.digest,
+                    base_state_digest=record.state_digest,
+                    protected=("parameter:column_height",),
+                    target_ref="parameter:column_diameter",
+                    key="column_diameter",
+                    value=0.72,
+                ),
+            )
+
+    def test_typed_operator_refuses_a_locked_parameter_in_the_closure(self) -> None:
+        authored = _record()
+        locked = replace(
+            authored,
+            parameters=(
+                authored.parameters[0],
+                replace(authored.parameters[1], lock_authority="architect"),
+            ),
+            base=ProjectVersionRef("demo", 0, "0" * 64),
+        )
+        operator = StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR,
+            base_record_digest=locked.digest,
+            base_state_digest=locked.state_digest,
+            target_ref="parameter:column_diameter",
+            key="column_diameter",
+            value=0.72,
+        )
+
+        with self.assertRaisesRegex(StateRecordError, "locked parameters"):
+            apply_state_record_operator(locked, operator)
+
     def test_record_round_trips_and_digests(self) -> None:
         record = _record()
         self.assertEqual(StateRecord.from_dict(record.to_dict()).digest, record.digest)
@@ -179,7 +391,6 @@ class StateRecordTests(unittest.TestCase):
     def test_the_compiler_binds_a_program_to_the_record_itself(self) -> None:
         """P102 last step: the record answers the four identity questions, so the compiler takes it directly."""
 
-        from dataclasses import replace
         from archflow.compilers.geometry import compile_geometry_program
         from tests.test_geometry_compiler import COMMITMENT, _proposal, _state
 

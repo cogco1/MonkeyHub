@@ -738,8 +738,45 @@ def _match_by_id(
         if f" {_normalised(component_id).strip()} " in haystack
     ]
     lowered = utterance.lower()
+    cjk_matches: list[tuple[str, str, tuple[tuple[int, int], ...]]] = []
     for phrase, component_id in (aliases or {}).items():
-        if component_id in parents and component_id not in named and phrase and phrase.lower() in lowered:
+        if component_id not in parents or not phrase:
+            continue
+        needle = phrase.lower()
+        if re.search(r"[\u3400-\u9fff]", needle):
+            spans: list[tuple[int, int]] = []
+            start = 0
+            while (at := lowered.find(needle, start)) != -1:
+                spans.append((at, at + len(needle)))
+                start = at + 1
+            if spans:
+                cjk_matches.append((phrase, component_id, tuple(spans)))
+        elif (
+            re.search(
+                rf"(?<![0-9a-z]){re.escape(needle)}(?![0-9a-z])",
+                lowered,
+            )
+            and component_id not in named
+        ):
+            named.append(component_id)
+
+    # CJK has no whitespace boundary. Resolve overlapping aliases by taking
+    # the longest phrase at each occurrence, while retaining separate phrases
+    # elsewhere in the sentence ("柱和柱廊" still names both).
+    occupied: set[int] = set()
+    for phrase, component_id, spans in sorted(
+        cjk_matches, key=lambda item: len(item[0]), reverse=True
+    ):
+        available = [
+            span
+            for span in spans
+            if not any(index in occupied for index in range(span[0], span[1]))
+        ]
+        if not available:
+            continue
+        for start, end in available:
+            occupied.update(range(start, end))
+        if component_id not in named:
             named.append(component_id)
     named.sort(key=len, reverse=True)
     return tuple(named)

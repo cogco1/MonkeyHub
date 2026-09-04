@@ -116,6 +116,8 @@ export function Composer({
       {pickerOpen && projection && (
         <ComponentTree
           projection={projection}
+          selectedComponentId={selection?.componentId ?? null}
+          selectedElementId={selection?.elementId ?? null}
           onPick={(componentId, elementId) => {
             onSelect(componentId, elementId);
             setPickerOpen(false);

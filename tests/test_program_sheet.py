@@ -12,8 +12,10 @@ Nothing here is villa data; every id is invented for this file.
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from archflow.relations.contracts import ArchitecturalRelationKind
+from archflow.project.refs import ProjectVersionRef
 from archflow.state.program_sheet import (
     PROGRAM_SHEET_SCHEMA,
     ProgramSheetError,
@@ -32,7 +34,7 @@ def record() -> StateRecord:
         "demo",
         "run-1",
         (
-            Entity("building", "Component@1", {"semantic_kind": "whole-building", "intent": "the building", "source_refs": [EVIDENCE]}),
+            Entity("building", "Component@1", {"semantic_kind": "whole-building", "intent": "the building", "source_refs": [EVIDENCE], "volume_ids": ["volume-hall", "volume-portico"]}),
             Entity("hall-use", "Component@1", {"semantic_kind": "principal-use", "intent": "the hall", "source_refs": [EVIDENCE]}, parent_id="building"),
             Entity("portico-use", "Component@1", {"semantic_kind": "controlled-entry", "intent": "the portico", "source_refs": [EVIDENCE]}, parent_id="building"),
             Entity("massing-ground", "MassingLevel@1", {"base_y": 0, "height": 4}),
@@ -48,7 +50,12 @@ def record() -> StateRecord:
             Relation("rel-portico-to-hall", ArchitecturalRelationKind.ADJACENT.value, "zone-portico", "zone-hall"),
         ),
         evidence_refs=(EVIDENCE,),
+        option={"option_id": "program-sheet-fixture"},
     )
+
+
+def bound_record() -> StateRecord:
+    return replace(record(), base=ProjectVersionRef("demo", 0, "0" * 64))
 
 
 def sheet_with(**overrides: object) -> dict:
@@ -57,7 +64,8 @@ def sheet_with(**overrides: object) -> dict:
     base = {
         "schema": PROGRAM_SHEET_SCHEMA,
         "project_id": "demo",
-        "state_digest": None,
+        "record_digest": bound_record().digest,
+        "state_digest": bound_record().state_digest,
         "departments": [
             {
                 "department_id": "service",
@@ -204,6 +212,7 @@ class SheetFromRecordTests(unittest.TestCase):
 
     def test_an_unbound_record_names_no_state_digest_and_says_why(self) -> None:
         sheet = sheet_from_record(record())
+        self.assertEqual(sheet["record_digest"], record().digest)
         self.assertIsNone(sheet["state_digest"])
         self.assertTrue(any("bound to no run" in line for line in sheet["honesty"]))
 
@@ -212,15 +221,59 @@ class ApplySheetTests(unittest.TestCase):
     """What applying a sheet adds, and everything it leaves alone."""
 
     def test_a_space_without_a_zone_becomes_one_space_entity(self) -> None:
-        applied = apply_sheet(record(), sheet_with())
+        applied = apply_sheet(bound_record(), sheet_with())
         store = applied.entity("store")
         self.assertEqual(store.schema, "Space@1")
         self.assertEqual(store.fields["program_node_refs"], ["program:service/store"])
         self.assertEqual(store.fields["level_ids"], ["massing-ground"])
         self.assertEqual(store.fields["volume_ids"], [])
 
+    def test_a_sheet_without_a_state_digest_cannot_be_applied(self) -> None:
+        with self.assertRaisesRegex(ProgramSheetError, "state_digest is required"):
+            apply_sheet(bound_record(), sheet_with(state_digest=None))
+
+    def test_a_sheet_without_a_record_digest_cannot_be_applied(self) -> None:
+        with self.assertRaisesRegex(ProgramSheetError, "record_digest is required"):
+            apply_sheet(bound_record(), sheet_with(record_digest=None))
+
+    def test_a_sheet_from_an_older_state_is_stale(self) -> None:
+        before = bound_record()
+        sheet = sheet_with(state_digest=before.state_digest)
+        changed = replace(
+            before,
+            option={**before.option, "label": "changed after sheet creation"},
+        )
+        self.assertNotEqual(changed.state_digest, before.state_digest)
+
+        with self.assertRaisesRegex(ProgramSheetError, "exact base is stale"):
+            apply_sheet(changed, sheet)
+
+    def test_a_sheet_from_different_content_is_stale_even_when_state_matches(self) -> None:
+        before = bound_record()
+        sheet = sheet_from_record(before)
+        changed = replace(
+            before,
+            entities=tuple(
+                Entity(
+                    entity.entity_id,
+                    entity.schema,
+                    {**entity.fields, "author_note": "content changed"},
+                    parent_id=entity.parent_id,
+                    basis_refs=entity.basis_refs,
+                )
+                if entity.entity_id == "building"
+                else entity
+                for entity in before.entities
+            ),
+        )
+        self.assertEqual(changed.state_digest, before.state_digest)
+        self.assertNotEqual(changed.digest, before.digest)
+
+        with self.assertRaisesRegex(ProgramSheetError, "exact base is stale"):
+            apply_sheet(changed, sheet)
+
     def test_an_adjacency_becomes_one_relation_and_the_connection_that_carries_it(self) -> None:
-        applied = apply_sheet(record(), sheet_with())
+        applied = apply_sheet(bound_record(), sheet_with())
         added = applied.relations[-1]
         self.assertEqual(added.kind, ArchitecturalRelationKind.ADJACENT.value)
         self.assertEqual((added.subject, added.object), ("store", "zone-hall"))
@@ -232,13 +285,13 @@ class ApplySheetTests(unittest.TestCase):
         )
 
     def test_the_record_it_was_given_is_not_touched(self) -> None:
-        before = record()
+        before = bound_record()
         digest = before.digest
         apply_sheet(before, sheet_with())
         self.assertEqual(before.digest, digest)
 
     def test_existing_entities_keep_every_field_they_had(self) -> None:
-        before = record()
+        before = bound_record()
         applied = apply_sheet(before, sheet_with())
         for entity in before.entities:
             self.assertEqual(applied.entity(entity.entity_id).to_dict(), entity.to_dict())
@@ -261,7 +314,7 @@ class ApplySheetTests(unittest.TestCase):
             }],
             adjacencies=[],
         )
-        applied = apply_sheet(record(), sheet)
+        applied = apply_sheet(bound_record(), sheet)
         hall = applied.entity("zone-hall")
         self.assertEqual(
             hall.fields["program_node_refs"],
@@ -269,18 +322,19 @@ class ApplySheetTests(unittest.TestCase):
         )
         # The rest of the zone is untouched.
         self.assertEqual(hall.fields["volume_ids"], ["volume-hall"])
-        self.assertEqual(len(applied.entities), len(record().entities))
+        self.assertEqual(len(applied.entities), len(bound_record().entities))
 
     def test_applying_a_derived_sheet_changes_nothing(self) -> None:
         """The round trip: what the record already says adds nothing to it."""
 
-        before = record()
+        before = bound_record()
         applied = apply_sheet(before, sheet_from_record(before))
         self.assertEqual(applied.digest, before.digest)
 
     def test_a_sheet_derived_from_the_applied_record_holds_the_new_space(self) -> None:
-        applied = apply_sheet(record(), sheet_with())
-        derived = sheet_from_record(applied)
+        before = bound_record()
+        applied = apply_sheet(before, sheet_with())
+        derived = sheet_from_record(applied, state_digest=before.state_digest)
         departments = {d["department_id"]: d for d in derived["departments"]}
         self.assertEqual(
             [s["space_id"] for s in departments["service"]["spaces"]],
@@ -300,7 +354,7 @@ class ApplySheetTests(unittest.TestCase):
         sheet = sheet_with()
         sheet["departments"][0]["spaces"][0]["function"] = "brooding-nook"
         with self.assertRaises(ProgramSheetError) as raised:
-            apply_sheet(record(), sheet)
+            apply_sheet(bound_record(), sheet)
         self.assertIn("brooding-nook", str(raised.exception))
         self.assertIn("nearest", str(raised.exception))
 
@@ -310,7 +364,7 @@ class ApplySheetTests(unittest.TestCase):
                 sheet = sheet_with()
                 sheet["adjacencies"][0]["requirement"] = requirement
                 with self.assertRaises(ProgramSheetError) as raised:
-                    apply_sheet(record(), sheet)
+                    apply_sheet(bound_record(), sheet)
                 message = str(raised.exception)
                 self.assertIn(requirement, message)
                 # The vocabulary it does have, named rather than invented.
@@ -320,7 +374,7 @@ class ApplySheetTests(unittest.TestCase):
     def test_apart_becomes_the_kernel_clearance_kind(self) -> None:
         sheet = sheet_with()
         sheet["adjacencies"][0]["requirement"] = "apart"
-        applied = apply_sheet(record(), sheet)
+        applied = apply_sheet(bound_record(), sheet)
         self.assertEqual(
             applied.relations[-1].kind,
             ArchitecturalRelationKind.CLEARANCE.value,
@@ -330,25 +384,25 @@ class ApplySheetTests(unittest.TestCase):
         sheet = sheet_with()
         sheet["departments"][0]["spaces"][0]["space_id"] = "zone-hall"
         with self.assertRaises(ProgramSheetError) as raised:
-            apply_sheet(record(), sheet)
+            apply_sheet(bound_record(), sheet)
         self.assertIn("zone-hall", str(raised.exception))
 
     def test_a_zone_id_that_names_no_zone_is_refused(self) -> None:
         sheet = sheet_with()
         sheet["departments"][0]["spaces"][0]["zone_id"] = "zone-nowhere"
         with self.assertRaises(ProgramSheetError):
-            apply_sheet(record(), sheet)
+            apply_sheet(bound_record(), sheet)
 
     def test_a_level_the_record_does_not_hold_is_refused(self) -> None:
         sheet = sheet_with()
         sheet["departments"][0]["spaces"][0]["level_ids"] = ["massing-attic"]
         with self.assertRaises(ProgramSheetError) as raised:
-            apply_sheet(record(), sheet)
+            apply_sheet(bound_record(), sheet)
         self.assertIn("massing-attic", str(raised.exception))
 
     def test_a_payload_that_does_not_claim_the_schema_is_refused(self) -> None:
         with self.assertRaises(ProgramSheetError):
-            apply_sheet(record(), sheet_with(schema="Something@1"))
+            apply_sheet(bound_record(), sheet_with(schema="Something@1"))
 
     def test_the_same_space_twice_is_refused(self) -> None:
         sheet = sheet_with()
@@ -356,18 +410,18 @@ class ApplySheetTests(unittest.TestCase):
             dict(sheet["departments"][0]["spaces"][0])
         )
         with self.assertRaises(ProgramSheetError):
-            apply_sheet(record(), sheet)
+            apply_sheet(bound_record(), sheet)
 
     def test_an_adjacency_end_that_is_neither_space_nor_zone_is_refused(self) -> None:
         sheet = sheet_with()
         sheet["adjacencies"][0]["to_space_id"] = "nowhere"
         with self.assertRaises(ProgramSheetError):
-            apply_sheet(record(), sheet)
+            apply_sheet(bound_record(), sheet)
 
     def test_the_applied_record_still_satisfies_the_record_contracts(self) -> None:
         """Not a schema assertion: the record's own constructor re-validates."""
 
-        applied = apply_sheet(record(), sheet_with())
+        applied = apply_sheet(bound_record(), sheet_with())
         StateRecord.from_dict(applied.to_dict())
 
 

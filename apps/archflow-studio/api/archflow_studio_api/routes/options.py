@@ -58,7 +58,12 @@ def make_massing_option(
     state = request.app.state
     binding = bound_project(state)
     projection = project_state(binding)
-    _require_current_base(binding, projection, body.state_digest)
+    _require_current_base(
+        binding,
+        projection,
+        state_digest=body.state_digest,
+        record_digest=projection.record_digest,
+    )
     envelope = (
         None
         if body.envelope is None
@@ -124,7 +129,12 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
     option: MassingOption = state.options.get(option_id)
     binding = bound_project(state)
     projection = project_state(binding)
-    _require_current_base(binding, projection, option.base_state_digest)
+    _require_current_base(
+        binding,
+        projection,
+        state_digest=option.base_state_digest,
+        record_digest=option.base_record_digest,
+    )
     registry: JobRegistry = state.jobs
     settings: StudioSettings = state.settings
     run_id = _run_id(option_id)
@@ -136,6 +146,7 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
             settings,
             pack,
             run_id,
+            base_record_digest=option.base_record_digest,
             base_state_digest=option.base_state_digest,
         )
 
@@ -162,16 +173,20 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
 def _require_current_base(
     binding: ProjectBinding,
     projection: StateProjection,
+    *,
     state_digest: str,
+    record_digest: str,
 ) -> None:
-    live = projection.state_digest
-    if live == state_digest:
+    live_state = projection.state_digest
+    live_record = projection.record_digest
+    if live_state == state_digest and live_record == record_digest:
         return
     raise StudioError(
         409,
         "STALE_BASE",
-        f"this option was made against state {state_digest}, and "
-        f"{binding.project_id} now projects {live}. Re-read /api/state and "
+        f"this option was made against record {record_digest} / state "
+        f"{state_digest}, and {binding.project_id} now has record "
+        f"{live_record} / state {live_state}. Re-read /api/state and "
         "make the option again: a massing is only meaningful against the "
         "state it was measured on.",
     )

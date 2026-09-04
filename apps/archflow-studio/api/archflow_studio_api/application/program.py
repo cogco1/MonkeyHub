@@ -10,14 +10,14 @@ becomes a candidate run without touching the record anybody authored.
 **Two sheets, and which one you got.** A project may hold the architect's own
 ``input/runner/program-sheet.json`` — the brief being written, work in progress
 like the authored record and the seat pack (ADR-007) — and it always has the
-sheet the record itself states. The input sheet wins where it exists, because
-it is the document a person typed; the derivation is what the record says back.
-``source`` names which one this is, and ``honesty`` says whether the input
-sheet was written against the state that answers now.
+sheet the record itself states. A current input sheet wins because it is the
+document a person typed; a stale one remains on disk while the derivation is
+returned, because silently rebinding old rows would guess. ``source`` names
+which one this is, and ``honesty`` names any stale authored file left aside.
 
 **Applying writes no authored file.** A sheet becomes a *candidate*: the
 successor record goes through the same path a proposal's candidate takes
-(``candidate.run_successor``), under a detached run, and the authored record is
+(``candidate.run_operator``), under a detached run, and the authored record is
 never rewritten. The one file this can write is the architect's own sheet, and
 only when the request asks for it, and only on a local studio: a shared server
 has no per-user authoring yet, and one architect's brief overwriting another's
@@ -42,13 +42,15 @@ from archflow.semantics.conditions import CONDITIONS
 from archflow.semantics.roles import ROLES
 from archflow.state.program_sheet import (
     ProgramSheetError,
-    apply_sheet,
+    compile_sheet_operator,
     sheet_from_record,
     totals_of,
 )
 from archflow.state.state_record import (
     StateRecord,
     StateRecordError,
+    StateRecordOperator,
+    apply_state_record_operator,
     developed_design_view,
 )
 
@@ -60,11 +62,6 @@ from .projection import (
     PORTFOLIO_ID,
     SELECTION_DECISION_REF,
     StateProjection,
-    # Module-private, deliberately reused rather than re-implemented, for the
-    # same reason ``candidate`` reuses it: applying a sheet must start from the
-    # same authored record, read the same way and refusing for the same
-    # reasons, as the projection the architect was shown.
-    _load_authored_record,
 )
 
 # Which sheet a reader was given.
@@ -100,15 +97,14 @@ def read_program(
 ) -> ProgramView:
     """The architect's sheet where one exists, else the record's own.
 
-    An input sheet is returned as authored, with its totals recomputed and its
-    honesty extended — never edited otherwise. Recomputing the totals is not an
-    edit of the document: a total is a sum of its own rows, and a stale one
-    would be the only number on the screen nobody could account for.
+    A current input sheet is returned as authored, with its totals recomputed
+    and its honesty extended — never edited otherwise. An input sheet from
+    another exact record remains on disk, but this read returns the current
+    record's derived sheet so reading again produces something that can be
+    applied without silently rebinding the architect's old rows.
     """
 
-    derived = sheet_from_record(
-        projection.record, state_digest=projection.state_digest
-    )
+    derived = sheet_from_record(projection.record)
     try:
         authored = load_program_sheet_file(binding.repository)
     except ProgramSheetMissing:
@@ -120,6 +116,28 @@ def read_program(
             f"{PROGRAM_SHEET_PATH}: {exc}",
         ) from exc
     sheet = dict(authored.payload)
+    claimed_state = sheet.get("state_digest")
+    claimed_record = sheet.get("record_digest")
+    if (
+        projection.state_digest is None
+        or claimed_state != projection.record.state_digest
+        or claimed_record != projection.record_digest
+    ):
+        current = dict(derived)
+        current["honesty"] = [
+            *(
+                str(line)
+                for line in current.get("honesty", ())
+                if isinstance(line, str)
+            ),
+            f"{PROGRAM_SHEET_PATH} was written against record {claimed_record} "
+            f"and state {claimed_state}, while the project now answers record "
+            f"{projection.record_digest} and state "
+            f"{projection.record.state_digest}; "
+            "the authored file remains unchanged, but it was not returned or "
+            "silently rebound because its mapped zones may have moved",
+        ]
+        return ProgramView(current, DERIVED, projection.state_digest)
     honesty = [
         f"this is the architect's own sheet, read from {PROGRAM_SHEET_PATH}; "
         "the record's own reading of its zones is not what you are looking at",
@@ -129,23 +147,10 @@ def read_program(
             if isinstance(line, str)
         ),
     ]
-    claimed = sheet.get("state_digest")
-    if projection.state_digest is None:
-        honesty.append(
-            "the kernel would not build a bound view of this record, so there "
-            "is no state digest to check this sheet against"
-        )
-    elif claimed == projection.state_digest:
-        honesty.append(
-            "it was written against the state that answers now "
-            f"({projection.state_digest})"
-        )
-    else:
-        honesty.append(
-            f"it was written against state {claimed}, and the project now "
-            f"answers {projection.state_digest}: the zones it maps to may have "
-            "moved. Applying it will be refused until it is read again"
-        )
+    honesty.append(
+        "it was written against the record and state that answer now "
+        f"({projection.record_digest}, {projection.record.state_digest})"
+    )
     sheet["honesty"] = honesty
     sheet["totals"] = totals_of(sheet)
     return ProgramView(sheet, INPUT, projection.state_digest)
@@ -166,12 +171,10 @@ def semantic_terms() -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
     )
 
 
-def successor_for(
-    binding: ProjectBinding,
-    sheet: Mapping[str, Any],
-    projection: StateProjection,
-) -> StateRecord:
-    """The authored record with this sheet applied, or the sheet's refusal.
+def operator_for(
+    sheet: Mapping[str, Any], projection: StateProjection
+) -> StateRecordOperator:
+    """The typed program operator, preflighted against the state on screen.
 
     The kernel refuses a sheet it cannot apply — an unregistered function, a
     requirement it has no relation kind for, a space id that would rewrite an
@@ -188,7 +191,11 @@ def successor_for(
     """
 
     try:
-        successor = apply_sheet(_load_authored_record(binding), sheet)
+        operator = compile_sheet_operator(
+            projection.record,
+            sheet,
+        )
+        successor = apply_state_record_operator(projection.record, operator)
     except ProgramSheetError as exc:
         raise StudioError(422, "PROGRAM_SHEET_INVALID", str(exc)) from exc
     except StateRecordError as exc:
@@ -200,7 +207,7 @@ def successor_for(
         ) from exc
     try:
         developed_design_view(
-            successor.bound_to(projection.run),
+            successor,
             run=projection.run,
             portfolio_id=PORTFOLIO_ID,
             branch_id=BRANCH_ID,
@@ -216,7 +223,7 @@ def successor_for(
             "occupied region — so a space of the brief that nothing has been "
             "drawn for yet cannot enter that record as a zone.",
         ) from exc
-    return successor
+    return operator
 
 
 def save_input_sheet(
@@ -295,12 +302,9 @@ def candidate_honesty(saved: bool, settings: StudioSettings) -> tuple[str, ...]:
     lines = [
         "the authored record was not rewritten: this sheet was applied to a "
         "copy of it, and the copy is what the candidate run executed",
-        # A program candidate has no proposal, so the candidate readout — which
-        # is a readout *of a proposal's* run — cannot answer for it. Saying so
-        # here is cheaper than a client discovering a 404 later.
-        "this candidate came from a sheet rather than a proposal, so "
-        "GET /api/candidates/{id} has no proposal to read it against; follow "
-        "it with GET /api/jobs/{jobId} and read the run's own records",
+        "GET /api/jobs/{jobId} tracks this work while it runs; after the run "
+        "finishes, GET /api/candidates/{id} reads the candidate from its "
+        "retained project records even though it came from a sheet",
     ]
     if not saved:
         lines.append(

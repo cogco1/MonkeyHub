@@ -34,6 +34,12 @@ interface Node {
   unboundObjectCount: number;
 }
 
+interface TreeMatch {
+  componentId: string;
+  elementId: string | null;
+  score: number;
+}
+
 function catalogNodes(projection: StateProjectionDto): Node[] | null {
   const catalog = projection.catalog ?? null;
   if (!catalog || catalog.components.length === 0) return null;
@@ -102,6 +108,37 @@ function matching(nodes: Node[], needle: string, keep: Set<string>): boolean {
   return any;
 }
 
+/** The deepest actual match, never an ancestor kept only to expose its path. */
+function mostSpecificMatch(nodes: Node[], needle: string, depth = 0): TreeMatch | null {
+  let best: TreeMatch | null = null;
+  const consider = (match: TreeMatch) => {
+    if (best === null || match.score > best.score) best = match;
+  };
+  for (const node of nodes) {
+    const component = node.id.toLowerCase();
+    if (component.includes(needle)) {
+      consider({
+        componentId: node.id,
+        elementId: null,
+        score: (component === needle ? 1_000_000 : 0) + depth * 2,
+      });
+    }
+    for (const elementId of node.elementIds) {
+      const element = elementId.toLowerCase();
+      if (element.includes(needle)) {
+        consider({
+          componentId: node.id,
+          elementId,
+          score: (element === needle ? 1_000_000 : 0) + depth * 2 + 1,
+        });
+      }
+    }
+    const below = mostSpecificMatch(node.children, needle, depth + 1);
+    if (below) consider(below);
+  }
+  return best;
+}
+
 const STATE_KEYS = {
   editable: "tree.state.editable",
   locked: "tree.state.locked",
@@ -147,17 +184,15 @@ export function ComponentTree({
     if (needle) matching(roots, needle, keep);
     return keep;
   }, [roots, needle]);
-  const firstShown = useMemo(() => {
-    const walk = (nodes: Node[]): Node | null => {
-      for (const node of nodes) {
-        if (!needle || kept.has(node.id)) return node;
-        const below = walk(node.children);
-        if (below) return below;
-      }
-      return null;
-    };
-    return walk(roots);
-  }, [roots, needle, kept]);
+  const enterMatch = useMemo(
+    () =>
+      needle
+        ? mostSpecificMatch(roots, needle)
+        : roots[0]
+          ? { componentId: roots[0].id, elementId: null, score: 0 }
+          : null,
+    [roots, needle],
+  );
 
   const toggle = (id: string) => {
     setFolded((current) => {
@@ -174,6 +209,7 @@ export function ComponentTree({
     const missing = catalogMissing(node);
     const selected = selectedComponentId === node.id && selectedElementId === null;
     const hasBelow = node.children.length > 0 || node.elementIds.length > 0;
+    const nodeMatches = node.id.toLowerCase().includes(needle);
     return (
       <li key={`c:${node.id}`} className="tree__item">
         <div className={`tree__row${selected ? " tree__row--selected" : ""}`} style={{ paddingLeft: `${depth * 14}px` }}>
@@ -219,7 +255,7 @@ export function ComponentTree({
         {!isFolded && (
           <ul className="tree__children">
             {node.elementIds
-              .filter((id) => !needle || id.toLowerCase().includes(needle) || kept.has(node.id))
+              .filter((id) => !needle || nodeMatches || id.toLowerCase().includes(needle))
               .map((id) => (
                 <li key={`e:${id}`} className="tree__item">
                   <div
@@ -257,7 +293,9 @@ export function ComponentTree({
         onChange={(event) => setQuery(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape") onClose();
-          if (event.key === "Enter" && firstShown) onPick(firstShown.id, null);
+          if (event.key === "Enter" && enterMatch) {
+            onPick(enterMatch.componentId, enterMatch.elementId);
+          }
         }}
       />
       {projection.componentTreeError && (

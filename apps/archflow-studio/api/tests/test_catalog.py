@@ -10,6 +10,7 @@ field in their place.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -32,7 +33,7 @@ from archflow_studio_api.application.projection import project_state
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
-from .support import PROJECT_ID, make_project, run_records
+from .support import PROJECT_ID, make_project, run_records, runner_state_digest
 
 SHA = "a" * 64
 
@@ -70,6 +71,7 @@ class CatalogTestCase(unittest.TestCase):
         self.repository, _ = make_project(self.root)
         self.run_id = "inspected-001"
         run = self.repository.create_run(self.run_id)
+        self.run = run
         ref = self.repository.put_json(
             run=run,
             destination=run_records(self.run_id),
@@ -82,6 +84,10 @@ class CatalogTestCase(unittest.TestCase):
                 "object_count": len(OBJECTS),
             },
         )
+        self.seat_results = [
+            {"seat_id": "seat-portico", "status": "proposal_accepted", "objects": len(OBJECTS),
+             "cad": {"status": "succeeded", "path": "portico.3dm", "inspection_ref": ref.uri}}
+        ]
         self.repository.put_json(
             run=run,
             destination=run_records(self.run_id),
@@ -90,11 +96,11 @@ class CatalogTestCase(unittest.TestCase):
                 "schema": "RunnerRunReceipt@3",
                 "project_id": PROJECT_ID,
                 "run_id": self.run_id,
+                "design_state_digest": runner_state_digest(
+                    self.repository, self.run_id
+                ),
                 "seat_execution_complete": True,
-                "seat_results": [
-                    {"seat_id": "seat-portico", "status": "proposal_accepted", "objects": len(OBJECTS),
-                     "cad": {"status": "succeeded", "path": "portico.3dm", "inspection_ref": ref.uri}}
-                ],
+                "seat_results": self.seat_results,
             },
         )
         self.app = create_app(
@@ -130,6 +136,36 @@ class ObjectBindingTests(CatalogTestCase):
             (6, 3, 2, 1),
         )
         self.assertEqual(catalog.inspection_run, self.run_id)
+
+    def test_different_state_receipt_cannot_bind_inspection_objects(self) -> None:
+        ref = self.repository.put_json(
+            run=self.run,
+            destination=run_records(self.run_id),
+            record_kind=RUNNER_RUN_RECEIPT,
+            payload={
+                "schema": "RunnerRunReceipt@3",
+                "project_id": PROJECT_ID,
+                "run_id": self.run_id,
+                "design_state_digest": "0" * 64,
+                "seat_execution_complete": True,
+                "seat_results": self.seat_results,
+            },
+        )
+        path = self.repository.layout.resolve_record(ref)
+        later = path.stat().st_mtime + 60.0
+        os.utime(path, (later, later))
+
+        binding = bound_project(self.app.state)
+        projection = project_state(binding)
+        self.assertFalse(projection.matches_reference_receipt)
+
+        catalog = catalog_of(binding, projection)
+        self.assertFalse(any(item.status == BOUND for item in catalog.objects))
+        self.assertEqual((catalog.coverage.objects, catalog.coverage.bound), (0, 0))
+        self.assertIsNone(catalog.inspection_run)
+        self.assertTrue(
+            any("object coverage unknown" in line for line in catalog.honesty)
+        )
 
     def test_elements_carry_their_capabilities_and_their_objects(self) -> None:
         catalog = self.catalog()

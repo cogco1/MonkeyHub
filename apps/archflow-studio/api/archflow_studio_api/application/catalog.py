@@ -205,14 +205,21 @@ def catalog_of(binding: ProjectBinding, projection: StateProjection) -> Catalog:
     run_id = projection.reference.run.run_id
     shapes: tuple[Shape, ...] | None
     honesty: list[str] = []
-    try:
-        shapes = shapes_of(binding, run_id)
-    except StudioError as exc:
+    if projection.matches_reference_receipt is not True:
         shapes = None
         honesty.append(
-            f"object coverage unknown: reference run {run_id} has no inspection to "
-            f"join ({exc.code})"
+            f"object coverage unknown: reference run {run_id} is not bound to "
+            "this design state"
         )
+    else:
+        try:
+            shapes = shapes_of(binding, run_id)
+        except StudioError as exc:
+            shapes = None
+            honesty.append(
+                f"object coverage unknown: reference run {run_id} has no inspection to "
+                f"join ({exc.code})"
+            )
     return build_catalog(projection, shapes, inspection_run=run_id if shapes else None, honesty=honesty)
 
 

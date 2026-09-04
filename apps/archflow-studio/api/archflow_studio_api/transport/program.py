@@ -5,10 +5,11 @@ authors into a file; the wire is ``camelCase`` like every other field of this
 protocol. The two mappings live here and nowhere else, so a route never
 reshapes a sheet and the client never sees the file's own spelling.
 
-``stateDigest`` on a sheet is the record it was read from. It travels on the
-document rather than only on the request because a sheet is a thing a person
-keeps — in a file, in a browser tab, in an email — and a sheet that could not
-say which building it describes would be a table of areas about nothing.
+``recordDigest`` and ``stateDigest`` on a sheet are the complete content and
+run/base identities it was read from. They travel on the document rather than
+only on the request because a sheet is a thing a person keeps — in a file, in
+a browser tab, in an email — and a sheet that could not say which exact record
+it describes would be a table of areas about nothing.
 """
 
 from __future__ import annotations
@@ -113,6 +114,11 @@ class ProgramSheetDto(BaseModel):
         description=f"always {PROGRAM_SHEET_SCHEMA}",
     )
     project_id: str = Field(alias="projectId")
+    record_digest: str | None = Field(
+        alias="recordDigest",
+        default=None,
+        description="the complete content identity of the record this sheet was read from",
+    )
     state_digest: str | None = Field(
         alias="stateDigest",
         description="the record this sheet was read from, or written against",
@@ -180,6 +186,7 @@ def sheet_dto(sheet: Mapping[str, Any]) -> ProgramSheetDto:
     return ProgramSheetDto(
         schema_=str(sheet.get("schema", PROGRAM_SHEET_SCHEMA)),
         project_id=str(sheet.get("project_id", "")),
+        record_digest=sheet.get("record_digest"),
         state_digest=sheet.get("state_digest"),
         departments=[
             ProgramDepartmentDto(
@@ -227,6 +234,7 @@ def sheet_payload(dto: ProgramSheetDto) -> dict[str, Any]:
     return {
         "schema": PROGRAM_SHEET_SCHEMA,
         "project_id": dto.project_id,
+        "record_digest": dto.record_digest,
         "state_digest": dto.state_digest,
         "departments": [
             {

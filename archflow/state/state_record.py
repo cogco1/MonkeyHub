@@ -19,9 +19,10 @@ an adapter with a lineage note, scheduled for retirement with them.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.refs import ProjectVersionRef, RunRef, require_identifier
@@ -664,6 +665,421 @@ class SchematicPack:
             "zones": list(self.zones), "connections": list(self.connections), "components": [c.to_dict() for c in self.components],
             "footprint_cells": [list(c) for c in self.footprint_cells], "assumption_refs": list(self.assumption_refs),
         }
+
+
+class StateRecordEditKind(StrEnum):
+    """The four StateRecord edits that have production consumers today."""
+
+    SET_SCALAR = "set_scalar"
+    REPLACE_MASSING = "replace_massing"
+    APPLY_PROGRAM = "apply_program"
+    REINDEX = "reindex"
+
+
+@dataclass(frozen=True, slots=True)
+class StateRecordOperator:
+    """One exact-base, typed request to derive a successor StateRecord.
+
+    This is deliberately not a general patch language.  Its closed kinds are
+    exactly the edits currently compiled by the Studio scalar and massing
+    paths, the program sheet, and element re-indexing.
+    """
+
+    kind: StateRecordEditKind
+    base_record_digest: str
+    base_state_digest: str
+    protected: tuple[str, ...] = ()
+    target_ref: str | None = None
+    key: str | None = None
+    value: int | float | None = None
+    massing_pack: SchematicPack | None = None
+    entities: tuple[Entity, ...] = ()
+    relations: tuple[Relation, ...] = ()
+    basis_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, StateRecordEditKind):
+            raise TypeError("state-record operator kind is invalid")
+        if (
+            not isinstance(self.base_record_digest, str)
+            or len(self.base_record_digest) != 64
+            or any(char not in "0123456789abcdef" for char in self.base_record_digest.lower())
+        ):
+            raise StateRecordError("operator base_record_digest must be a SHA-256 hex digest")
+        if (
+            not isinstance(self.base_state_digest, str)
+            or len(self.base_state_digest) != 64
+            or any(char not in "0123456789abcdef" for char in self.base_state_digest.lower())
+        ):
+            raise StateRecordError("operator base_state_digest must be a SHA-256 hex digest")
+        _refs(self.protected, "operator protected refs")
+        if any(
+            not ref.startswith(("entity:", "parameter:"))
+            for ref in self.protected
+        ):
+            raise StateRecordError("operator protected refs must name an entity or parameter")
+        if not isinstance(self.entities, tuple) or any(not isinstance(item, Entity) for item in self.entities):
+            raise TypeError("operator entities must be Entity items")
+        if not isinstance(self.relations, tuple) or any(not isinstance(item, Relation) for item in self.relations):
+            raise TypeError("operator relations must be Relation items")
+        _refs(self.basis_refs, "operator basis_refs")
+
+        scalar = self.kind is StateRecordEditKind.SET_SCALAR
+        massing = self.kind is StateRecordEditKind.REPLACE_MASSING
+        graph = self.kind in (StateRecordEditKind.APPLY_PROGRAM, StateRecordEditKind.REINDEX)
+        if scalar:
+            if (
+                not isinstance(self.target_ref, str)
+                or not self.target_ref.startswith(("entity:", "parameter:"))
+                or not isinstance(self.key, str)
+                or not self.key
+                or isinstance(self.value, bool)
+                or not isinstance(self.value, (int, float))
+            ):
+                raise StateRecordError("set_scalar needs one entity/parameter target, key and numeric value")
+        elif self.target_ref is not None or self.key is not None or self.value is not None:
+            raise StateRecordError(f"{self.kind.value} cannot carry a scalar target")
+        if massing != (self.massing_pack is not None):
+            raise StateRecordError("replace_massing alone carries a SchematicPack")
+        if not graph and (self.entities or self.relations):
+            raise StateRecordError(f"{self.kind.value} cannot carry entity or relation edits")
+        if self.kind is not StateRecordEditKind.REINDEX and self.basis_refs:
+            raise StateRecordError("only reindex can add record basis refs")
+
+
+_MASSING_SCHEMAS = frozenset(
+    {"MassingLevel@1", "Volume@1", "Space@1", "Connection@1"}
+)
+
+
+def apply_state_record_operator(
+    record: StateRecord, operator: StateRecordOperator
+) -> StateRecord:
+    """Apply the one canonical StateRecord operator, or refuse it typed.
+
+    Exact-base, protected closure and parameter locks are checked here for all
+    four edit kinds.  Domain modules only compile an operator; none of them
+    constructs a successor record.
+    """
+
+    if not isinstance(record, StateRecord):
+        raise TypeError("record must be a StateRecord")
+    if not isinstance(operator, StateRecordOperator):
+        raise TypeError("operator must be a StateRecordOperator")
+    if (
+        operator.base_record_digest != record.digest
+        or operator.base_state_digest != record.state_digest
+    ):
+        raise StateRecordError("state-record operator exact base is stale")
+    _require_declared_protections(record, operator.protected)
+
+    if operator.kind is StateRecordEditKind.SET_SCALAR:
+        successor = _apply_scalar_operator(record, operator)
+    elif operator.kind is StateRecordEditKind.REPLACE_MASSING:
+        successor = _apply_massing_operator(
+            record, cast(SchematicPack, operator.massing_pack)
+        )
+    elif operator.kind is StateRecordEditKind.APPLY_PROGRAM:
+        successor = _apply_program_operator(record, operator.entities, operator.relations)
+    elif operator.kind is StateRecordEditKind.REINDEX:
+        successor = _apply_reindex_operator(
+            record, operator.entities, operator.relations, operator.basis_refs
+        )
+
+    changed = _changed_refs(record, successor)
+    closure = set(record.closure(changed)) if changed else set()
+    conflicts = tuple(sorted(closure & set(operator.protected)))
+    if conflicts:
+        raise StateRecordError(
+            "state-record operator reaches protected refs: " + ", ".join(conflicts)
+        )
+    locks = tuple(
+        sorted(
+            f"{parameter.ref} ({parameter.lock_authority})"
+            for parameter in record.parameters
+            if parameter.lock_authority and parameter.ref in closure
+        )
+    )
+    if locks:
+        raise StateRecordError(
+            "state-record operator reaches locked parameters: " + ", ".join(locks)
+        )
+    return successor
+
+
+def _require_declared_protections(record: StateRecord, protected: tuple[str, ...]) -> None:
+    declared = {entity.ref for entity in record.entities} | {
+        parameter.ref for parameter in record.parameters
+    }
+    unknown = tuple(ref for ref in protected if ref not in declared)
+    if unknown:
+        raise StateRecordError(
+            "state-record operator protects unknown refs: " + ", ".join(unknown)
+        )
+
+
+def _apply_scalar_operator(
+    record: StateRecord, operator: StateRecordOperator
+) -> StateRecord:
+    target_ref = cast(str, operator.target_ref)
+    key = cast(str, operator.key)
+    value = cast(int | float, operator.value)
+    if target_ref.startswith("parameter:"):
+        parameter_key = target_ref.removeprefix("parameter:")
+        if parameter_key != key:
+            raise StateRecordError("parameter target and scalar key disagree")
+        record.parameter(parameter_key)
+        parameters = tuple(
+            replace(item, value=value)
+            if item.key == parameter_key
+            else item
+            for item in record.parameters
+        )
+        return replace(record, parameters=parameters)
+
+    entity_id = target_ref.removeprefix("entity:")
+    entity = record.entity(entity_id)
+    if entity.schema != "Element@1":
+        raise StateRecordError("set_scalar entity target must be an Element@1")
+    params = entity.fields.get("params")
+    if not isinstance(params, Mapping) or key not in params:
+        raise StateRecordError(
+            f"element {entity_id}: params has no field {key!r}"
+        )
+    old = params[key]
+    if isinstance(old, bool) or not isinstance(old, (int, float)):
+        raise StateRecordError(
+            f"element {entity_id}: params.{key} is not numeric"
+        )
+    replacement = replace(
+        entity,
+        fields={**entity.fields, "params": {**params, key: value}},
+    )
+    return replace(
+        record,
+        entities=tuple(
+            replacement if item.entity_id == entity_id else item
+            for item in record.entities
+        ),
+    )
+
+
+def _apply_massing_operator(record: StateRecord, pack: SchematicPack) -> StateRecord:
+    if pack.project_id != record.project_id:
+        raise StateRecordError("schematic pack belongs to another project")
+    existing = {entity.entity_id: entity for entity in record.entities}
+    evidence = tuple(sorted(set(record.evidence_refs)))
+
+    def entity(entity_id: str, schema: str, fields: Mapping[str, Any]) -> Entity:
+        previous = existing.get(entity_id)
+        if previous is not None and previous.schema == schema:
+            return replace(previous, fields={**previous.fields, **fields})
+        return Entity(entity_id, schema, dict(fields), basis_refs=evidence)
+
+    replacements = {
+        **{
+            level["level_id"]: entity(
+                level["level_id"],
+                "MassingLevel@1",
+                {"base_y": level["base_y"], "height": level["height"]},
+            )
+            for level in pack.levels
+        },
+        **{
+            volume["volume_id"]: entity(
+                volume["volume_id"],
+                "Volume@1",
+                {
+                    "min": list(volume["min"]),
+                    "max": list(volume["max"]),
+                    "level_ids": list(volume["level_ids"]),
+                },
+            )
+            for volume in pack.volumes
+        },
+        **{
+            zone["zone_id"]: entity(
+                zone["zone_id"],
+                "Space@1",
+                {
+                    "program_node_refs": list(zone["program_node_refs"]),
+                    "level_ids": list(zone["level_ids"]),
+                    "volume_ids": list(zone["volume_ids"]),
+                },
+            )
+            for zone in pack.zones
+        },
+        **{
+            connection["connection_id"]: entity(
+                connection["connection_id"],
+                "Connection@1",
+                {
+                    "source_zone_id": connection["source_zone_id"],
+                    "target_zone_id": connection["target_zone_id"],
+                    "relationship_refs": list(connection["relationship_refs"]),
+                    "directed": bool(connection.get("directed", False)),
+                },
+            )
+            for connection in pack.connections
+        },
+    }
+    owned = {
+        component.component_id: list(component.volume_ids)
+        for component in pack.components
+    }
+    kept: list[Entity] = []
+    seen: set[str] = set()
+    for item in record.entities:
+        if item.schema == "Component@1" and item.entity_id in owned:
+            volume_ids = owned[item.entity_id]
+            kept.append(
+                item
+                if list(item.fields.get("volume_ids", ())) == volume_ids
+                else replace(item, fields={**item.fields, "volume_ids": volume_ids})
+            )
+            continue
+        if item.schema not in _MASSING_SCHEMAS:
+            kept.append(item)
+            continue
+        replacement = replacements.get(item.entity_id)
+        if replacement is not None:
+            kept.append(replacement)
+            seen.add(item.entity_id)
+    kept.extend(
+        item for entity_id, item in replacements.items() if entity_id not in seen
+    )
+    return replace(
+        record,
+        entities=tuple(kept),
+        option={
+            **dict(record.option),
+            "option_id": pack.option_id,
+            "label": pack.label,
+            "typology": pack.typology,
+            "rationale": pack.rationale,
+            "footprint_cells": [list(cell) for cell in pack.footprint_cells],
+            "assumption_refs": list(pack.assumption_refs),
+        },
+    )
+
+
+def _apply_program_operator(
+    record: StateRecord,
+    edits: tuple[Entity, ...],
+    additions: tuple[Relation, ...],
+) -> StateRecord:
+    existing = {entity.entity_id: entity for entity in record.entities}
+    for edit in edits:
+        previous = existing.get(edit.entity_id)
+        if previous is None:
+            if edit.schema not in {"Space@1", "Connection@1"}:
+                raise StateRecordError("program operator can add only Space@1 or Connection@1")
+            continue
+        if previous.schema != "Space@1" or edit.schema != "Space@1":
+            raise StateRecordError("program operator can replace only an existing Space@1")
+        previous_fields = dict(previous.fields)
+        next_fields = dict(edit.fields)
+        previous_refs = tuple(previous_fields.pop("program_node_refs", ()))
+        next_refs = tuple(next_fields.pop("program_node_refs", ()))
+        if (
+            edit.parent_id != previous.parent_id
+            or edit.basis_refs != previous.basis_refs
+            or edit.lineage != previous.lineage
+            or previous_fields != next_fields
+            or next_refs[: len(previous_refs)] != previous_refs
+        ):
+            raise StateRecordError(
+                "program operator may only append an existing Space@1 program_node_refs"
+            )
+    return _upsert_graph(record, edits, additions, allow_entity_replace=True)
+
+
+def _apply_reindex_operator(
+    record: StateRecord,
+    additions: tuple[Entity, ...],
+    relations: tuple[Relation, ...],
+    basis_refs: tuple[str, ...],
+) -> StateRecord:
+    allowed_schemas = {"Element@1", "GridAxis@1", "Connection@1"}
+    refused = tuple(
+        sorted({entity.schema for entity in additions if entity.schema not in allowed_schemas})
+    )
+    if refused:
+        raise StateRecordError(
+            "reindex operator cannot add entity schemas: " + ", ".join(refused)
+        )
+    successor = _upsert_graph(
+        record, additions, relations, allow_entity_replace=False
+    )
+    return replace(
+        successor,
+        basis_refs=tuple(sorted(set((*record.basis_refs, *basis_refs)))),
+        predecessor_ref=f"record:{record.digest}",
+    )
+
+
+def _upsert_graph(
+    record: StateRecord,
+    entities: tuple[Entity, ...],
+    relations: tuple[Relation, ...],
+    *,
+    allow_entity_replace: bool,
+) -> StateRecord:
+    entity_ids = [entity.entity_id for entity in entities]
+    relation_ids = [relation.relation_id for relation in relations]
+    if len(set(entity_ids)) != len(entity_ids):
+        raise StateRecordError("operator entity ids must be unique")
+    if len(set(relation_ids)) != len(relation_ids):
+        raise StateRecordError("operator relation ids must be unique")
+    existing_entities = {entity.entity_id for entity in record.entities}
+    if not allow_entity_replace and existing_entities & set(entity_ids):
+        raise StateRecordError("operator cannot replace an existing entity")
+    existing_relations = {relation.relation_id for relation in record.relations}
+    duplicate_relations = tuple(sorted(existing_relations & set(relation_ids)))
+    if duplicate_relations:
+        raise StateRecordError(
+            "operator cannot replace existing relations: "
+            + ", ".join(duplicate_relations)
+        )
+    by_id = {entity.entity_id: entity for entity in entities}
+    seen: set[str] = set()
+    result: list[Entity] = []
+    for entity in record.entities:
+        replacement = by_id.get(entity.entity_id)
+        result.append(replacement if replacement is not None else entity)
+        if replacement is not None:
+            seen.add(entity.entity_id)
+    result.extend(entity for entity in entities if entity.entity_id not in seen)
+    return replace(
+        record,
+        entities=tuple(result),
+        relations=record.relations + relations,
+    )
+
+
+def _changed_refs(
+    before: StateRecord, after: StateRecord
+) -> tuple[str, ...]:
+    changed: set[str] = set()
+    before_entities = {entity.entity_id: entity for entity in before.entities}
+    after_entities = {entity.entity_id: entity for entity in after.entities}
+    for entity_id in before_entities.keys() | after_entities.keys():
+        if before_entities.get(entity_id) != after_entities.get(entity_id):
+            changed.add(f"entity:{entity_id}")
+    before_parameters = {parameter.key: parameter for parameter in before.parameters}
+    after_parameters = {parameter.key: parameter for parameter in after.parameters}
+    for key in before_parameters.keys() | after_parameters.keys():
+        if before_parameters.get(key) != after_parameters.get(key):
+            changed.add(f"parameter:{key}")
+    before_relations = {relation.relation_id: relation for relation in before.relations}
+    after_relations = {relation.relation_id: relation for relation in after.relations}
+    for relation_id in before_relations.keys() | after_relations.keys():
+        old, new = before_relations.get(relation_id), after_relations.get(relation_id)
+        if old != new:
+            for relation in (old, new):
+                if relation is not None:
+                    changed.update((f"entity:{relation.subject}", f"entity:{relation.object}"))
+    return tuple(sorted(changed))
 
 def schematic_proposal(pack: SchematicPack) -> SpatialOptionProposal:
     """The pack as a validated spatial option; the dataclasses reject gaps."""

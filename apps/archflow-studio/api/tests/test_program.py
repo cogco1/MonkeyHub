@@ -26,8 +26,10 @@ import unittest
 
 from fastapi.testclient import TestClient
 
+from archflow.project.inputs import load_authored_record
 from archflow.project.layout import PROGRAM_SHEET_PATH
 from archflow.project.record_kinds import STATE_RECORD
+from archflow.project.refs import RunRef
 from archflow.state.program_sheet import PROGRAM_SHEET_SCHEMA
 
 from archflow_studio_api.main import create_app
@@ -122,6 +124,7 @@ def sheet_adding(space_id: str, *, zone: str, requirement: str = "adjacent") -> 
     return {
         "schema": PROGRAM_SHEET_SCHEMA,
         "projectId": PROJECT_ID,
+        "recordDigest": None,
         "stateDigest": None,
         "departments": [
             {
@@ -188,6 +191,12 @@ class ProgramTestCase(unittest.TestCase):
         self.state_digest = runner_state_digest(
             self.repository, REFERENCE_RUN_ID, self.payload
         )
+        authored_record = load_authored_record(self.repository).record
+        bound_record = authored_record.bound_to(
+            RunRef(PROJECT_ID, REFERENCE_RUN_ID, self.repository.read_head())
+        )
+        self.record_digest = bound_record.digest
+        self.sheet_state_digest = bound_record.state_digest
         settings = (
             StudioSettings(project_dir=self.repository.layout.root)
             if self.mode == "local"
@@ -226,10 +235,16 @@ class ProgramTestCase(unittest.TestCase):
         return response.json()
 
     def apply(self, sheet: dict, *, save: bool = False, digest: str | None = None) -> tuple[int, dict]:
+        request_digest = digest if digest is not None else self.state_digest
+        sheet = dict(sheet)
+        if sheet.get("recordDigest") is None:
+            sheet["recordDigest"] = self.record_digest
+        if sheet.get("stateDigest") is None:
+            sheet["stateDigest"] = self.sheet_state_digest
         response = self.client.post(
             "/api/program",
             json={
-                "stateDigest": digest if digest is not None else self.state_digest,
+                "stateDigest": request_digest,
                 "sheet": sheet,
                 "saveInput": save,
             },
@@ -267,7 +282,8 @@ class DeriveTests(ProgramTestCase):
         answer = self.get("/api/program")
 
         self.assertEqual(answer["stateDigest"], self.state_digest)
-        self.assertEqual(answer["sheet"]["stateDigest"], self.state_digest)
+        self.assertEqual(answer["sheet"]["recordDigest"], self.record_digest)
+        self.assertEqual(answer["sheet"]["stateDigest"], self.sheet_state_digest)
         self.assertEqual(answer["sheet"]["projectId"], PROJECT_ID)
 
     def test_the_semantic_vocabulary_is_served_rather_than_copied(self) -> None:
@@ -325,6 +341,10 @@ class ApplyTests(ProgramTestCase):
         self.assertEqual(answer["totals"]["targetAreaM2"], 36.0)
         self.assertEqual(answer["totals"]["unmappedSpaces"], ["store"])
         self.assertFalse(answer["savedInput"])
+        self.assertTrue(
+            any("GET /api/candidates/{id}" in line for line in answer["honesty"]),
+            answer["honesty"],
+        )
         self.finished(answer["jobId"])
 
     def test_the_candidate_run_holds_the_record_the_sheet_made(self) -> None:
@@ -363,6 +383,43 @@ class ApplyTests(ProgramTestCase):
 
         self.assertEqual(status, 409, answer)
         self.assertEqual(answer["code"], "STALE_BASE")
+
+    def test_worker_refuses_when_the_record_moves_after_program_preflight(self) -> None:
+        from archflow.state.state_record import StateRecordError
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.candidate import run_operator
+        from archflow_studio_api.application.program import operator_for
+        from archflow_studio_api.application.projection import project_state
+        from archflow_studio_api.transport.program import ProgramSheetDto, sheet_payload
+
+        binding = bound_project(self.client.app.state)
+        projection = project_state(binding)
+        wire_sheet = sheet_adding("store", zone="zone-hall")
+        wire_sheet["recordDigest"] = self.record_digest
+        wire_sheet["stateDigest"] = self.sheet_state_digest
+        operator = operator_for(
+            sheet_payload(ProgramSheetDto.model_validate(wire_sheet)), projection
+        )
+
+        changed = json.loads(json.dumps(self.payload))
+        for entity in changed["entities"]:
+            if entity["entity_id"] == "portico-base":
+                entity["fields"]["params"]["height"] = 0.7
+        write_runner_record(self.repository, changed)
+        self.authored = self.repository.layout.resolve_relative(
+            RUNNER_RECORD_PATH
+        ).read_bytes()
+
+        with self.assertRaisesRegex(StateRecordError, "exact base is stale"):
+            run_operator(
+                binding,
+                self.client.app.state.settings,
+                operator,
+                "studio-cand-stale-program-worker",
+            )
+        self.assertFalse(
+            self.repository.layout.run("studio-cand-stale-program-worker").manifest.exists()
+        )
 
     def test_an_unregistered_function_is_refused_by_the_kernel_sentence(self) -> None:
         sheet = sheet_adding("store", zone="zone-hall")
@@ -420,7 +477,7 @@ class ApplyTests(ProgramTestCase):
         # The totals are the server's sum of the rows, never the file's claim.
         self.assertEqual(read["sheet"]["totals"]["targetAreaM2"], 36.0)
 
-    def test_a_saved_sheet_written_against_another_state_is_flagged(self) -> None:
+    def test_a_stale_saved_sheet_is_not_silently_rebound_or_returned(self) -> None:
         sheet = sheet_adding("store", zone="zone-hall")
         status, answer = self.apply(sheet, save=True)
         self.assertEqual(status, 202, answer)
@@ -434,11 +491,25 @@ class ApplyTests(ProgramTestCase):
             json.dumps(stale, indent=2, sort_keys=True), encoding="utf-8"
         )
 
-        honesty = self.get("/api/program")["sheet"]["honesty"]
+        first = self.get("/api/program")
+        second = self.get("/api/program")
 
-        self.assertTrue(
-            any("may have moved" in line for line in honesty), honesty
-        )
+        for read in (first, second):
+            self.assertEqual(read["source"], "derived")
+            self.assertEqual(read["sheet"]["recordDigest"], self.record_digest)
+            self.assertEqual(read["sheet"]["stateDigest"], self.sheet_state_digest)
+            self.assertEqual(
+                [d["departmentId"] for d in read["sheet"]["departments"]],
+                ["public"],
+            )
+            self.assertTrue(
+                any("was not returned or silently rebound" in line for line in read["sheet"]["honesty"]),
+                read["sheet"]["honesty"],
+            )
+
+        status, answer = self.apply(second["sheet"], digest=second["stateDigest"])
+        self.assertEqual(status, 202, answer)
+        self.finished(answer["jobId"])
 
     def test_a_file_at_that_path_that_is_not_a_sheet_is_named_not_ignored(self) -> None:
         self.repository.layout.program_sheet.parent.mkdir(
@@ -483,10 +554,74 @@ class MassingRecordTests(ProgramTestCase):
         sheet["departments"][0]["departmentId"] = "renamed"
         sheet["adjacencies"] = []
 
-        status, answer = self.apply(sheet, digest=sheet["stateDigest"])
+        status, answer = self.apply(sheet, digest=self.state_digest)
 
         self.assertEqual(status, 202, answer)
         self.finished(answer["jobId"])
+
+    def test_an_inner_sheet_digest_cannot_be_hidden_by_a_current_outer_digest(self) -> None:
+        sheet = self.get("/api/program")["sheet"]
+        sheet["stateDigest"] = "b" * 64
+
+        status, answer = self.apply(sheet, digest=self.state_digest)
+
+        self.assertEqual(status, 409, answer)
+        self.assertEqual(answer["code"], "STALE_BASE")
+
+    def test_old_content_is_stale_even_when_the_state_digest_still_matches(self) -> None:
+        sheet = self.get("/api/program")["sheet"]
+        changed = json.loads(json.dumps(self.payload))
+        for entity in changed["entities"]:
+            if entity["entity_id"] == "portico-base":
+                entity["fields"]["author_note"] = "content changed"
+        write_runner_record(self.repository, changed)
+        self.authored = self.repository.layout.resolve_relative(
+            RUNNER_RECORD_PATH
+        ).read_bytes()
+        current = self.get("/api/state")
+        self.assertEqual(current["stateDigest"], self.state_digest)
+        self.assertNotEqual(current["recordDigest"], self.record_digest)
+
+        status, answer = self.apply(sheet)
+
+        self.assertEqual(status, 409, answer)
+        self.assertEqual(answer["code"], "STALE_BASE")
+        self.assertEqual(
+            sorted(path.name for path in self.repository.layout.runs.iterdir()),
+            [REFERENCE_RUN_ID],
+        )
+
+    def test_authored_sheet_from_old_content_yields_current_derived_sheet(self) -> None:
+        sheet = self.get("/api/program")["sheet"]
+        status, answer = self.apply(sheet, save=True)
+        self.assertEqual(status, 202, answer)
+        self.finished(answer["jobId"])
+        changed = json.loads(json.dumps(self.payload))
+        for entity in changed["entities"]:
+            if entity["entity_id"] == "portico-base":
+                entity["fields"]["author_note"] = "content changed"
+        write_runner_record(self.repository, changed)
+        self.authored = self.repository.layout.resolve_relative(
+            RUNNER_RECORD_PATH
+        ).read_bytes()
+        current = self.get("/api/state")
+        self.assertEqual(current["stateDigest"], self.state_digest)
+
+        read = self.get("/api/program")
+
+        self.assertEqual(read["source"], "derived")
+        self.assertEqual(read["sheet"]["recordDigest"], current["recordDigest"])
+        self.assertTrue(
+            any(
+                "was not returned or silently rebound" in line
+                for line in read["sheet"]["honesty"]
+            ),
+            read["sheet"]["honesty"],
+        )
+        saved = json.loads(
+            self.repository.layout.program_sheet.read_text(encoding="utf-8")
+        )
+        self.assertEqual(saved["record_digest"], self.record_digest)
 
 
 class RemoteModeTests(ProgramTestCase):

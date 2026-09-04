@@ -57,7 +57,6 @@ from archflow.project.refs import ProjectVersionRef, parse_record_file_name
 
 from ..ports import StudioEventSink
 from .candidate import CandidateRun, RelationTotals, SeatOutcome
-from .proposals import Proposal
 
 # The claim a candidate makes about itself: this run happened, and here is the
 # record that says so. It is not a design assertion and it gates nothing; it
@@ -165,7 +164,6 @@ class CandidateValidation:
 
 def _submission(
     candidate: CandidateRun,
-    proposal: Proposal,
     artifacts: tuple[ArtifactRef, ...],
 ) -> CandidateSubmission:
     """The candidate as something the kernel can be asked about.
@@ -189,7 +187,11 @@ def _submission(
         submission_id=candidate.candidate_id,
         base=candidate.base,
         workspace_id=candidate.candidate_id,
-        intent=proposal.utterance,
+        # Validation answers for the retained run, not for process-local
+        # proposal memory.  The candidate id is the one intent label that is
+        # still exact after restart and for option/program candidates, which
+        # were never made from a Proposal in the first place.
+        intent=f"validate retained candidate {candidate.candidate_id}",
         delta=CandidateDelta(artifacts_add=artifacts),
         claims=(
             Claim(
@@ -288,7 +290,6 @@ def _export_delivered(seat: SeatOutcome, candidate: CandidateRun) -> bool:
 def validate_candidate(
     head: ProjectVersionRef,
     candidate: CandidateRun,
-    proposal: Proposal,
     *,
     events: StudioEventSink,
 ) -> CandidateValidation:
@@ -312,7 +313,7 @@ def validate_candidate(
     honesty = honesty + _exports_of(candidate)
     receipt = validate_submission(
         CanonicalState(ref=head),
-        _submission(candidate, proposal, artifacts),
+        _submission(candidate, artifacts),
         tuple(validator() for validator in VALIDATORS),
     )
     decision = verdict(receipt, candidate)

@@ -21,7 +21,7 @@ from starlette.requests import Request
 from archflow.state.program_sheet import totals_of
 
 from ..application.binding import bound_project
-from ..application.candidate import run_successor
+from ..application.candidate import run_operator
 from ..application.jobs import JobRegistry
 from ..application.program import (
     ProgramCandidate,
@@ -31,7 +31,7 @@ from ..application.program import (
     read_program,
     save_input_sheet,
     semantic_terms,
-    successor_for,
+    operator_for,
 )
 from ..application.projection import project_state
 from ..settings import StudioSettings
@@ -89,22 +89,30 @@ def apply_program(
     settings: StudioSettings = state.settings
     binding = bound_project(state)
     projection = project_state(binding)
-    if body.state_digest != projection.state_digest:
+    if (
+        body.state_digest != projection.state_digest
+        or body.sheet.state_digest != projection.record.state_digest
+        or body.sheet.record_digest != projection.record_digest
+    ):
         raise StudioError(
             409,
             "STALE_BASE",
-            f"the sheet was written against state {body.state_digest}, and "
-            f"{binding.project_id} now answers {projection.state_digest}. Read "
+            f"the request names state {body.state_digest}; its sheet names "
+            f"record {body.sheet.record_digest} and state "
+            f"{body.sheet.state_digest}; {binding.project_id} now answers "
+            f"record {projection.record_digest} and state "
+            f"{projection.record.state_digest} (request state "
+            f"{projection.state_digest}). Read "
             "/api/program again: a sheet maps to zones of one state, and the "
             "zones it names may have moved.",
         )
     sheet = sheet_payload(body.sheet)
-    successor = successor_for(binding, sheet, projection)
+    operator = operator_for(sheet, projection)
     registry: JobRegistry = state.jobs
     run_id = candidate_run_id()
 
     def work() -> object:
-        return run_successor(binding, settings, successor, run_id)
+        return run_operator(binding, settings, operator, run_id)
 
     job = registry.submit(
         candidate_id=run_id,

@@ -286,6 +286,8 @@ export function ProgramPanel({
 }) {
   const t = useT();
   const [save, setSave] = useState(false);
+  const totalsAreCurrent =
+    program.status === "ready" && sheet !== null && sheet === program.value.sheet;
   return (
     <div className="program" role="dialog" aria-label={t("program.ariaLabel")}>
       <div className="program__head">
@@ -362,23 +364,25 @@ export function ProgramPanel({
               </section>
             ))
           )}
-          <p className="program__totals">
-            <span>
-              {t("program.totalTarget", {
-                value: round(sheet.totals.targetAreaM2),
-              })}
-            </span>
-            <span>
-              {t("program.totalMapped", {
-                value: round(sheet.totals.mappedAreaM2),
-              })}
-            </span>
-            <span data-unmapped={String(sheet.totals.unmappedSpaces.length > 0)}>
-              {t("program.totalUnmapped", {
-                n: sheet.totals.unmappedSpaces.length,
-              })}
-            </span>
-          </p>
+          {totalsAreCurrent && (
+            <p className="program__totals">
+              <span>
+                {t("program.totalTarget", {
+                  value: round(sheet.totals.targetAreaM2),
+                })}
+              </span>
+              <span>
+                {t("program.totalMapped", {
+                  value: round(sheet.totals.mappedAreaM2),
+                })}
+              </span>
+              <span data-unmapped={String(sheet.totals.unmappedSpaces.length > 0)}>
+                {t("program.totalUnmapped", {
+                  n: sheet.totals.unmappedSpaces.length,
+                })}
+              </span>
+            </p>
+          )}
           <section className="program__department">
             <h3 className="program__heading">{t("program.adjacencies")}</h3>
             {sheet.adjacencies.length === 0 ? (

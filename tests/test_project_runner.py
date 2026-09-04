@@ -100,6 +100,8 @@ def _record(opening_along: float = 6.0, extra_components=(), elements=("portico-
         "portico-columns": Entity("columns-front", "Element@1", {"component_id": "portico-columns", "producer": "column-array",
                                   "references": {"at": {"axis_point": {"axis": "F", "along": 6.0}}, "direction": "F", "base": {"level": "level-piano-nobile"}},
                                   "params": {"count": 4, "spacing": 2.5, "radius": 0.4, "height": 6.0}}, parent_id="portico-columns", basis_refs=BASIS),
+        "declined-portico-columns": Entity("columns-front-declined", "Element@1", {"component_id": "portico-columns", "producer": "declined",
+                                           "params": {"reason": "human decision pending"}}, parent_id="portico-columns", basis_refs=BASIS),
         "wall-south": Entity("wall-south", "Element@1", {"component_id": "exterior-walls", "producer": "wall",
                              "references": {"line": {"from": {"grid": ["E", "S"]}, "to": {"grid": ["W", "S"]}, "face": "exterior", "inward": [0, 1]}, "base": {"level": "level-ground"}, "top": {"level": "level-cornice"}},
                              "params": {"thickness": 0.6, "openings": [{"opening_id": "door", "kind": "door", "at": {"host": {"element": "wall-south", "along": opening_along}}, "width": 1.4, "sill": 3.5, "head": 8.0}]}},
@@ -227,6 +229,8 @@ class RunTests(unittest.TestCase):
         repository, receipt = self._run(_record())
         self.assertTrue(receipt["seat_execution_complete"], receipt["seat_results"])
         self.assertEqual(receipt["schema"], "RunnerRunReceipt@3")
+        self.assertEqual(receipt["coverage_mode"], "strict")
+        self.assertEqual(repository.load_json(_ref(receipt["receipt_ref"]))["coverage_mode"], "strict")
         self.assertIn("state_record_ref", receipt)
         self.assertNotIn("accepted", receipt)
         self.assertEqual(receipt["stage"]["status"], "OPEN")
@@ -349,11 +353,35 @@ class RunTests(unittest.TestCase):
         record = _record(elements=("wall-south",))
         with self.assertRaises(ProjectRunnerError):
             self._run(record)
-        repository, receipt = self._run(record, strict_coverage=False)
+        repository, receipt = self._run(record, required_checks=(), strict_coverage=False)
+        self.assertEqual(receipt["coverage_mode"], "relaxed")
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        self.assertIsNone(receipt["exit_binding_ref"])
         seats = {s["seat_id"]: s for s in receipt["seat_results"]}
         self.assertEqual(seats["seat-structure"]["status"], "empty")
         self.assertEqual(seats["seat-structure"]["undeclared_components"], ["portico-columns"])
         self.assertEqual(seats["seat-envelope"]["status"], "proposal_accepted")
+        closure = repository.load_json(_ref(receipt["closure_ref"]))
+        self.assertEqual(
+            closure["findings"],
+            [{"code": "seat_incomplete", "requirement_id": "seat-structure:undeclared_components", "receipt_id": None,
+              "refs": ["portico-columns"]}],
+        )
+
+    def test_declined_component_keeps_stage_open(self) -> None:
+        repository, receipt = self._run(_record(elements=("declined-portico-columns", "wall-south")), required_checks=())
+
+        self.assertEqual(receipt["coverage_mode"], "strict")
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        self.assertIsNone(receipt["exit_binding_ref"])
+        seats = {s["seat_id"]: s for s in receipt["seat_results"]}
+        self.assertEqual(seats["seat-structure"]["declined_components"], ["portico-columns"])
+        closure = repository.load_json(_ref(receipt["closure_ref"]))
+        self.assertEqual(
+            closure["findings"],
+            [{"code": "seat_incomplete", "requirement_id": "seat-structure:declined_components", "receipt_id": None,
+              "refs": ["portico-columns"]}],
+        )
 
     def test_unretained_or_cross_run_stage_envelope_fails_before_seat_writes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

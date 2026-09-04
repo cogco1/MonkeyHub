@@ -162,8 +162,14 @@ class CandidateDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     candidate_id: str = Field(alias="candidateId")
-    proposal_id: str = Field(alias="proposalId")
-    job_id: str = Field(alias="jobId")
+    proposal_id: str | None = Field(
+        alias="proposalId",
+        description="the process-local proposal id; null after restart",
+    )
+    job_id: str | None = Field(
+        alias="jobId",
+        description="the process-local job id; null after restart",
+    )
     status: str
     base: ProjectVersionDto
     state_digest: str | None = Field(

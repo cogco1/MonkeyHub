@@ -1823,10 +1823,6 @@ export default function App({ server }: { server: ServerIdentity }) {
                       ]),
                     });
                   }}
-                  // The sentence goes into the composer and no further. The
-                  // grammar has no rule for a level or an axis, so sending it
-                  // is the architect's act and the refusal is the grammar's.
-                  onPrefill={setDraft}
                   onClose={() => setFrameOpen(false)}
                 />
               ) : null

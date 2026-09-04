@@ -31,6 +31,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -58,6 +59,7 @@ from .support import (
     RUNNER_SEATS_PATH,
     SEATS_PAYLOAD,
     add_unreadable_run,
+    advance_head,
     make_project,
     runner_state_digest,
     write_runner_seats,
@@ -229,6 +231,99 @@ class CandidateRunTests(CandidateTestCase):
         self.assertTrue(seat["relationCheckRef"].startswith("project://"))
         # Nothing was unreadable, and the list says so rather than being absent.
         self.assertEqual(candidate["skippedRuns"], [])
+
+    def test_candidate_run_keeps_the_base_checked_before_head_moves(self) -> None:
+        proposal = self.app.state.proposals.get(
+            self.propose("set height to 2.2", elementId="portico-base")[
+                "proposalId"
+            ]
+        )
+        run_id = "studio-cand-head-race"
+        binding = bound_project(self.app.state)
+        candidate_repository = binding.repository
+        original_create_run = candidate_repository.create_run
+        moved = False
+
+        def create_run_after_head_moves(
+            requested_run_id: str, *, base=None
+        ):
+            nonlocal moved
+            if requested_run_id == run_id and not moved:
+                moved = True
+                advance_head(
+                    candidate_repository, run_id="promotion-during-candidate"
+                )
+            return original_create_run(requested_run_id, base=base)
+
+        with mock.patch.object(
+            candidate_repository,
+            "create_run",
+            side_effect=create_run_after_head_moves,
+        ):
+            execute_candidate(
+                binding,
+                self.app.state.settings,
+                proposal,
+                run_id,
+            )
+
+        self.assertEqual(self.repository.read_head().version, 1)
+        self.assertEqual(self.repository.load_run(run_id).base.version, 0)
+
+    def test_completed_candidate_is_recovered_from_p036_after_restart(self) -> None:
+        accepted, job = self.run_candidate(
+            "set height to 2.2", elementId="portico-base"
+        )
+        self.assertEqual(job["status"], "succeeded", job)
+
+        restarted = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(restarted.close)
+
+        # A new process has no job or proposal memory, but the exact run and
+        # its P036 runner receipt still describe the completed candidate.
+        self.assertEqual(
+            restarted.get(f"/api/jobs/{accepted['jobId']}").status_code, 404
+        )
+        response = restarted.get(
+            f"/api/candidates/{accepted['candidateId']}"
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        candidate = response.json()
+        self.assertEqual(candidate["candidateId"], accepted["candidateId"])
+        self.assertEqual(candidate["status"], "succeeded")
+        self.assertIsNone(candidate["jobId"])
+        self.assertIsNone(candidate["proposalId"])
+        self.assertTrue(candidate["seatExecutionComplete"])
+        self.assertTrue(candidate["receiptRef"].startswith("project://"))
+
+    def test_restart_does_not_relabel_a_project_run_as_a_candidate(self) -> None:
+        restarted = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(restarted.close)
+
+        response = restarted.get(f"/api/candidates/{REFERENCE_RUN_ID}")
+
+        self.assertEqual(response.status_code, 404, response.text)
+        self.assertEqual(response.json()["code"], "CANDIDATE_NOT_FOUND")
+
+    def test_restart_still_refuses_a_missing_run_and_a_run_without_a_receipt(
+        self,
+    ) -> None:
+        empty_run = "studio-cand-empty"
+        self.repository.create_run(empty_run)
+        restarted = TestClient(
+            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        )
+        self.addCleanup(restarted.close)
+
+        for candidate_id in ("studio-cand-missing", empty_run):
+            with self.subTest(candidate=candidate_id):
+                response = restarted.get(f"/api/candidates/{candidate_id}")
+                self.assertEqual(response.status_code, 404, response.text)
 
     def test_candidate_differs_from_the_projection_it_started_from(
         self,
@@ -599,8 +694,8 @@ class CandidateFailureTests(CandidateTestCase):
 
         self.assertEqual(finished["status"], "failed", finished)
         self.assertIn(
-            "STALE_BASE: the authored record changed after the proposal was "
-            f"made ({proposal.base_state_digest[:8]} -> ",
+            "STALE_BASE: the authored record changed after the candidate base "
+            "was captured",
             finished["error"],
         )
         self.assertFalse((self.repository.layout.runs / run_id).exists())
