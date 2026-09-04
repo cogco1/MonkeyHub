@@ -1178,6 +1178,65 @@
       "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts."
     },
     {
+      "module_id": "project.containers",
+      "owner_path": "archflow/project/containers.py",
+      "purpose": "Naming the four container states of ADR-007 over the layout: which work is in progress, which run is shared, what is published, and what the archive holds.",
+      "owns": [
+        "the four container states and the ISO 19650 suitability code each one carries (ContainerState, StatusCode)",
+        "one container as a value: its state, code, project, run, ref, author, branch and the line a person reads (Container)",
+        "surveying the authored work-in-progress slots, today the runner's and tomorrow one per author (work_in_progress)",
+        "surveying the runs as shared containers and awarding S1 or S4 from what each run retains (shared)",
+        "naming HEAD as the one published container and its issue (published)",
+        "naming the canonical snapshots HEAD has left behind, oldest issue first (archived)"
+      ],
+      "does_not_own": [
+        "reading or parsing an authored record or seat pack - project.inputs; only existence and the digest of the bytes are read here",
+        "naming any path - project.layout",
+        "retaining, digesting or verifying anything - project.repository; this module never writes",
+        "writing a stage closure or moving HEAD - the runner and the issue tool",
+        "the stage a run is in - state.stage_workflow"
+      ],
+      "inputs": [
+        "FilesystemProjectRepository",
+        "author identifier",
+        "branch_id"
+      ],
+      "outputs": [
+        "Container"
+      ],
+      "public_api": [
+        "Container",
+        "ContainerError",
+        "ContainerState",
+        "StatusCode",
+        "archived",
+        "published",
+        "shared",
+        "work_in_progress"
+      ],
+      "depends_on": [
+        "project.layout",
+        "project.ports",
+        "project.refs",
+        "project.repository"
+      ],
+      "used_by": [
+        "tests/test_project_containers.py"
+      ],
+      "invariants": [
+        "no persistence, no pointer beside HEAD, no write of any kind",
+        "records are read through the repository and are digest-verified; only the run and canonical directories the layout owns are listed by path",
+        "a run whose manifest or records cannot be read is reported as a shared container saying so, never skipped silently",
+        "S4 needs both halves - a runner receipt with seats complete and a SATISFIED stage closure; nothing writes a closure yet, so every run is S1 today",
+        "an absent work-in-progress slot is an empty tuple, not a refusal"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_project_containers.py"
+      ],
+      "notes": "The seam for parallel development: many work in progress, one published. The author and branch parameters resolve against paths and records that exist today, so the second author and the second branch arrive without a second store."
+    },
+    {
       "module_id": "project.digests",
       "owner_path": "archflow/project/digests.py",
       "purpose": "The one semantic digest of canonical project-state content, taken with the state's own declared digest field removed.",
@@ -2733,7 +2792,7 @@
         "the SATISFIED exit binding of one independently closed stage (StageExitBinding, StageExitStatus)",
         "carrying the exact retained predecessor envelope and exit into a successor (StageRunPredecessor)",
         "the fail-closed guards callers use before running or closing a stage (require_stage_run_envelope, require_stage_exit_binding)",
-        "the design-phase ladder (DesignPhase, DESIGN_PHASES)",
+        "the design-phase ladder and what each phase is called in RIBA 2020, the AIA phases and the Chinese design stages, with the LOD range it admits (DesignPhase, DESIGN_PHASES, PhaseLadder, PHASE_LADDER, LOD_LEVELS)",
         "the stage-exit record the guard reads (CompositeStageClosureReceipt, StageClosureFinding, StageClosureStatus)"
       ],
       "does_not_own": [
@@ -2758,6 +2817,9 @@
         "CompositeStageClosureReceipt",
         "DESIGN_PHASES",
         "DesignPhase",
+        "LOD_LEVELS",
+        "PHASE_LADDER",
+        "PhaseLadder",
         "ProjectStage",
         "ProjectStageWorkflow",
         "StageClosureError",
@@ -2792,7 +2854,8 @@
         "stage 0 has no predecessor; every later stage must name the exact retained predecessor envelope and its SATISFIED exit",
         "SATISFIED is the only exit status the vocabulary admits",
         "record key sets are exact; a drifted payload is refused, never coerced",
-        "never writes the filesystem"
+        "never writes the filesystem",
+        "lod is optional, non-decreasing across stages, and inside the range its phase admits; an absent lod serialises to nothing, so a workflow frozen before the ladder keeps its digest"
       ],
       "status": "canonical",
       "tests": [
@@ -3447,12 +3510,12 @@
       "owns": [
         "loading ArchFlowDevelopmentRegistry@2 and its statuses (active, ready, blocked)",
         "the readiness rule: an item is ready when no live item blocks it, and an id absent from the registry counts as finished",
-        "rendering docs/DYNAMIC_MAP.md and docs/mapping/planning/INDEX.md"
+        "rendering docs/DYNAMIC_MAP.md, docs/mapping/planning/INDEX.md, docs/SYSTEM_MAP.md and docs/SEMANTIC_REGISTRY.md, including the stage-ladder table generated from PHASE_LADDER"
       ],
       "does_not_own": [
         "architecture boundary enforcement - tools.archcheck",
         "the module registry described in CANONICAL_SPINE 4, which is a separate file from work_registry.json",
-        "any archflow behaviour: it imports nothing from the package"
+        "any archflow behaviour: it reads the semantic tables and the phase ladder to render them and defines none of them"
       ],
       "inputs": [
         "governance/work_registry.json"
@@ -3460,6 +3523,8 @@
       "outputs": [
         "docs/DYNAMIC_MAP.md",
         "docs/mapping/planning/INDEX.md",
+        "docs/SYSTEM_MAP.md",
+        "docs/SEMANTIC_REGISTRY.md",
         "exit code"
       ],
       "public_api": [
@@ -3471,16 +3536,18 @@
       "depends_on": [
         "semantics.conditions",
         "semantics.registry",
-        "semantics.roles"
+        "semantics.roles",
+        "state.stage_workflow"
       ],
       "used_by": [],
       "invariants": [
         "the registry holds only unfinished work; a finished card is deleted along with its entry",
-        "both ledgers are generated, never hand-edited"
+        "both ledgers are generated, never hand-edited",
+        "the ladder table is generated from PHASE_LADDER, never hand-written, so the map cannot drift from the enum"
       ],
       "status": "canonical",
       "tests": [],
-      "notes": "No test on main (only stale bytecode in tests/__pycache__); pure governance tooling with no archflow imports.",
+      "notes": "Pure governance tooling; it puts its own tree on sys.path so a worktree renders itself and not whichever archflow is importable.",
       "untested_reason": "governance CLI that renders docs from the registries; run by hand, output is committed and diffed"
     },
     {

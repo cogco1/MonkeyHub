@@ -134,6 +134,13 @@ Own the provider-independent model invocation contracts: request, receipt, statu
 
 ## project
 
+### project.containers — `archflow/project/containers.py`
+Naming the four container states of ADR-007 over the layout: which work is in progress, which run is shared, what is published, and what the archive holds.
+- owns: the four container states and the ISO 19650 suitability code each one carries (ContainerState, StatusCode); one container as a value: its state, code, project, run, ref, author, branch and the line a person reads (Container); surveying the authored work-in-progress slots, today the runner's and tomorrow one per author (work_in_progress); surveying the runs as shared containers and awarding S1 or S4 from what each run retains (shared); naming HEAD as the one published container and its issue (published); naming the canonical snapshots HEAD has left behind, oldest issue first (archived)
+- does not own: reading or parsing an authored record or seat pack - project.inputs; only existence and the digest of the bytes are read here; naming any path - project.layout; retaining, digesting or verifying anything - project.repository; this module never writes; writing a stage closure or moving HEAD - the runner and the issue tool; the stage a run is in - state.stage_workflow
+- api: `Container`, `ContainerError`, `ContainerState`, `StatusCode`, `archived`, `published`, `shared`, `work_in_progress`
+- invariants: no persistence, no pointer beside HEAD, no write of any kind; records are read through the repository and are digest-verified; only the run and canonical directories the layout owns are listed by path; a run whose manifest or records cannot be read is reported as a shared container saying so, never skipped silently; S4 needs both halves - a runner receipt with seats complete and a SATISFIED stage closure; nothing writes a closure yet, so every run is S1 today; an absent work-in-progress slot is an empty tuple, not a refusal
+
 ### project.digests — `archflow/project/digests.py`
 The one semantic digest of canonical project-state content, taken with the state's own declared digest field removed.
 - owns: digesting canonical state content excluding state_sha256 (project_state_sha256); verifying a declared state_sha256 against the recomputed digest
@@ -312,10 +319,10 @@ The schematic option contracts (grid basis, levels, volumes, zones, connections,
 
 ### state.stage_workflow — `archflow/state/stage_workflow.py`
 The ordered stage sequence of a project and the exact, authority-free envelope and exit binding that guard stage orchestration.
-- owns: the stage sequence record, its stages and its digest (ProjectStageWorkflow, ProjectStage); binding one run to exactly one stage with its base, branch and state digest (StageRunEnvelope, open_stage_run_envelope); the SATISFIED exit binding of one independently closed stage (StageExitBinding, StageExitStatus); carrying the exact retained predecessor envelope and exit into a successor (StageRunPredecessor); the fail-closed guards callers use before running or closing a stage (require_stage_run_envelope, require_stage_exit_binding); the design-phase ladder (DesignPhase, DESIGN_PHASES); the stage-exit record the guard reads (CompositeStageClosureReceipt, StageClosureFinding, StageClosureStatus)
+- owns: the stage sequence record, its stages and its digest (ProjectStageWorkflow, ProjectStage); binding one run to exactly one stage with its base, branch and state digest (StageRunEnvelope, open_stage_run_envelope); the SATISFIED exit binding of one independently closed stage (StageExitBinding, StageExitStatus); carrying the exact retained predecessor envelope and exit into a successor (StageRunPredecessor); the fail-closed guards callers use before running or closing a stage (require_stage_run_envelope, require_stage_exit_binding); the design-phase ladder and what each phase is called in RIBA 2020, the AIA phases and the Chinese design stages, with the LOD range it admits (DesignPhase, DESIGN_PHASES, PhaseLadder, PHASE_LADDER, LOD_LEVELS); the stage-exit record the guard reads (CompositeStageClosureReceipt, StageClosureFinding, StageClosureStatus)
 - does not own: running a stage or producing its closure record (runtime/project_runner.py); the design phase vocabulary it references (state.design_maturity); the content of the closure the exit binding points at (capabilities/relation_checks.py via the runner); the authority block shape (contracts.authority)
-- api: `CompositeStageClosureReceipt`, `DESIGN_PHASES`, `DesignPhase`, `ProjectStage`, `ProjectStageWorkflow`, `StageClosureError`, `StageClosureFinding`, `StageClosureFindingCode`, `StageClosureStatus`, `StageExitBinding`, `StageExitStatus`, `StageRunEnvelope`, `StageWorkflowError`, `open_stage_run_envelope`, `require_stage_exit_binding`, `require_stage_run_envelope`
-- invariants: these records are guards only: they never select design, accept a stage, mutate geometry, persist state, promote a candidate or write canonical state; stage 0 has no predecessor; every later stage must name the exact retained predecessor envelope and its SATISFIED exit; SATISFIED is the only exit status the vocabulary admits; record key sets are exact; a drifted payload is refused, never coerced; never writes the filesystem
+- api: `CompositeStageClosureReceipt`, `DESIGN_PHASES`, `DesignPhase`, `LOD_LEVELS`, `PHASE_LADDER`, `PhaseLadder`, `ProjectStage`, `ProjectStageWorkflow`, `StageClosureError`, `StageClosureFinding`, `StageClosureFindingCode`, `StageClosureStatus`, `StageExitBinding`, `StageExitStatus`, `StageRunEnvelope`, `StageWorkflowError`, `open_stage_run_envelope`, `require_stage_exit_binding`, `require_stage_run_envelope`
+- invariants: these records are guards only: they never select design, accept a stage, mutate geometry, persist state, promote a candidate or write canonical state; stage 0 has no predecessor; every later stage must name the exact retained predecessor envelope and its SATISFIED exit; SATISFIED is the only exit status the vocabulary admits; record key sets are exact; a drifted payload is refused, never coerced; never writes the filesystem; lod is optional, non-decreasing across stages, and inside the range its phase admits; an absent lod serialises to nothing, so a workflow frozen before the ladder keeps its digest
 
 ## studio
 
@@ -381,10 +388,10 @@ Policy-as-code architecture boundary checks over the source roots, driven by gov
 
 ### tools.devctl — `tools/devctl.py`
 Read governance/work_registry.json and render the two generated ledgers: the dynamic map and the planning index.
-- owns: loading ArchFlowDevelopmentRegistry@2 and its statuses (active, ready, blocked); the readiness rule: an item is ready when no live item blocks it, and an id absent from the registry counts as finished; rendering docs/DYNAMIC_MAP.md and docs/mapping/planning/INDEX.md
-- does not own: architecture boundary enforcement - tools.archcheck; the module registry described in CANONICAL_SPINE 4, which is a separate file from work_registry.json; any archflow behaviour: it imports nothing from the package
+- owns: loading ArchFlowDevelopmentRegistry@2 and its statuses (active, ready, blocked); the readiness rule: an item is ready when no live item blocks it, and an id absent from the registry counts as finished; rendering docs/DYNAMIC_MAP.md, docs/mapping/planning/INDEX.md, docs/SYSTEM_MAP.md and docs/SEMANTIC_REGISTRY.md, including the stage-ladder table generated from PHASE_LADDER
+- does not own: architecture boundary enforcement - tools.archcheck; the module registry described in CANONICAL_SPINE 4, which is a separate file from work_registry.json; any archflow behaviour: it reads the semantic tables and the phase ladder to render them and defines none of them
 - api: `load_registry`, `is_ready`, `render`, `main`
-- invariants: the registry holds only unfinished work; a finished card is deleted along with its entry; both ledgers are generated, never hand-edited
+- invariants: the registry holds only unfinished work; a finished card is deleted along with its entry; both ledgers are generated, never hand-edited; the ladder table is generated from PHASE_LADDER, never hand-written, so the map cannot drift from the enum
 
 ### tools.freeze_project_stage_workflow — `tools/freeze_project_stage_workflow.py`
 Validate and retain a ProjectStageWorkflow@1 through the P036 repository, and prove canonical HEAD did not move.
@@ -422,3 +429,18 @@ The spine's validation result vocabulary: a finding, and the receipt that binds 
 - does not own: running validators (validation.engine); the deterministic-check envelope used by relation and stage checks (validation.contracts, the parallel being folded away); the submission it reports on (submission.model)
 - api: `Finding`, `ValidationReceipt`, `Severity`
 - invariants: passed is true exactly when no ERROR finding exists; submission_digest must be 64-hex: a receipt cannot float free of the content it checked; never writes the filesystem
+
+## Stage ladder
+
+Two axes: the phase (RIBA 2020 / AIA / 中国) and the BIMForum Level of
+Development inside it. A `ProjectStage` states an optional `lod` from 100, 200, 300, 350, 400, 500; LOD 500 is field-verified as-built and belongs to no design phase.
+
+| phase | RIBA 2020 | AIA | 中国 | LOD range |
+| --- | --- | --- | --- | --- |
+| `research_brief` | 0 Strategic Definition | pre-design | 前期调研 / 项目建议书 | — |
+| `programming` | 1 Preparation and Briefing | programming | 任务书 / 策划 | — |
+| `site_resource_coordination` | 1 Preparation and Briefing (site information) | pre-design | 场地 / 资源条件 | — |
+| `schematic_design` | 2 Concept Design | Schematic Design | 方案设计 | 100–200 |
+| `design_development` | 3 Spatial Coordination | Design Development | 初步设计(扩初) | 200–300 |
+| `candidate_coordination` | 3 Spatial Coordination (coordination of alternatives) | DD coordination | 扩初深化 / 专业配合 | 300–350 |
+| `execution_ready` | 4 Technical Design | Construction Documents | 施工图设计 | 350–400 |

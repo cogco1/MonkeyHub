@@ -12,6 +12,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The renderers read the source they document, so they must read *this* tree
+# and not whichever archflow happens to be importable from the interpreter.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 REGISTRY_PATH = ROOT / "governance" / "work_registry.json"
 MAP_PATH = ROOT / "docs" / "DYNAMIC_MAP.md"
 PLANNING_INDEX = ROOT / "docs" / "mapping" / "planning" / "INDEX.md"
@@ -115,7 +119,43 @@ def render_system_map() -> str | None:
             if e.get("invariants"):
                 lines.append("- invariants: " + "; ".join(e["invariants"]))
             lines.append("")
-    return "\n".join(lines)
+    return "\n".join(lines + render_stage_ladder())
+
+
+def render_stage_ladder() -> list[str]:
+    """The phase ladder as the industry says it, straight from PHASE_LADDER.
+
+    The table is generated so the map cannot drift from the enum: a phase
+    added to ``DesignPhase`` without a ladder entry cannot be rendered here.
+    """
+
+    from archflow.state.stage_workflow import LOD_LEVELS, PHASE_LADDER
+
+    tick = chr(96)
+    lines = [
+        "## Stage ladder",
+        "",
+        "Two axes: the phase (RIBA 2020 / AIA / 中国) and the BIMForum Level of",
+        "Development inside it. A " + tick + "ProjectStage" + tick + " states an optional "
+        + tick + "lod" + tick + " from "
+        + ", ".join(str(level) for level in LOD_LEVELS)
+        + "; LOD 500 is field-verified as-built and belongs to no design phase.",
+        "",
+        "| phase | RIBA 2020 | AIA | 中国 | LOD range |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for phase, entry in PHASE_LADDER.items():
+        span = (
+            "—"
+            if entry.lod_range is None
+            else f"{entry.lod_range[0]}–{entry.lod_range[1]}"
+        )
+        lines.append(
+            f"| {tick}{phase.value}{tick} | {entry.riba_stage} | {entry.aia} "
+            f"| {entry.cn} | {span} |"
+        )
+    lines.append("")
+    return lines
 
 
 def render_semantic_registry() -> str:

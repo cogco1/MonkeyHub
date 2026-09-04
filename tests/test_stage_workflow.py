@@ -3,10 +3,13 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.contracts.authority import DEFAULT_AUTHORITY_FIELDS
-from archflow.state.stage_workflow import DesignPhase
+from archflow.contracts.authority import DEFAULT_AUTHORITY_FIELDS, no_authority
+from archflow.state.stage_workflow import DESIGN_PHASES, DesignPhase
 from archflow.state.operational_state import DesignObligation, ObligationStatus
 from archflow.state.stage_workflow import (
+    LOD_LEVELS,
+    PHASE_LADDER,
+    PhaseLadder,
     ProjectStage,
     ProjectStageWorkflow,
     StageExitBinding,
@@ -29,6 +32,7 @@ def stage(
     stage_id: str | None = None,
     phase: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT,
     close_obligation_id: str | None = None,
+    lod: int | None = None,
 ) -> ProjectStage:
     return ProjectStage(
         stage_id=stage_id or f"stage-{index}",
@@ -39,6 +43,7 @@ def stage(
         close_obligation_id=(
             close_obligation_id or f"close-stage-{index}"
         ),
+        lod=lod,
     )
 
 
@@ -540,6 +545,184 @@ class StageRunEnvelopeTests(unittest.TestCase):
             ),
             loaded,
         )
+
+
+class StageLadderTests(unittest.TestCase):
+    """The ladder is industry vocabulary; lod is optional and only climbs."""
+
+    def test_every_phase_is_placed_on_all_three_ladders(self) -> None:
+        self.assertEqual(tuple(PHASE_LADDER), DESIGN_PHASES)
+        for phase, entry in PHASE_LADDER.items():
+            with self.subTest(phase=phase):
+                self.assertIsInstance(entry, PhaseLadder)
+                self.assertTrue(entry.riba_stage and entry.aia and entry.cn)
+
+    def test_a_phase_range_is_two_declared_levels_that_do_not_regress(
+        self,
+    ) -> None:
+        for phase, entry in PHASE_LADDER.items():
+            if entry.lod_range is None:
+                continue
+            low, high = entry.lod_range
+            with self.subTest(phase=phase):
+                self.assertIn(low, LOD_LEVELS)
+                self.assertIn(high, LOD_LEVELS)
+                self.assertLessEqual(low, high)
+
+    def test_the_ranges_climb_with_the_phases(self) -> None:
+        placed = [
+            PHASE_LADDER[phase].lod_range
+            for phase in DESIGN_PHASES
+            if PHASE_LADDER[phase].lod_range is not None
+        ]
+        self.assertEqual(placed, sorted(placed))
+
+    def test_a_workflow_without_lod_serialises_exactly_as_before(self) -> None:
+        self.assertEqual(
+            workflow().to_dict(),
+            {
+                "schema": "ProjectStageWorkflow@1",
+                "project_id": "demo",
+                "workflow_id": "villa-reconstruction",
+                "stages": [
+                    {
+                        "stage_id": "stage-0",
+                        "stage_index": 0,
+                        "phase": "schematic_design",
+                        "required_roles": ["role-0-a", "role-0-b"],
+                        "required_checks": ["check-0-a", "check-0-b"],
+                        "close_obligation_id": "close-stage-0",
+                    },
+                    {
+                        "stage_id": "stage-1",
+                        "stage_index": 1,
+                        "phase": "design_development",
+                        "required_roles": ["role-1-a", "role-1-b"],
+                        "required_checks": ["check-1-a", "check-1-b"],
+                        "close_obligation_id": "close-stage-1",
+                    },
+                    {
+                        "stage_id": "stage-2",
+                        "stage_index": 2,
+                        "phase": "candidate_coordination",
+                        "required_roles": ["role-2-a", "role-2-b"],
+                        "required_checks": ["check-2-a", "check-2-b"],
+                        "close_obligation_id": "close-stage-2",
+                    },
+                ],
+                "basis_refs": ["decision:stage-sequence"],
+                **no_authority(DEFAULT_AUTHORITY_FIELDS),
+            },
+        )
+
+    def test_a_stated_lod_round_trips_and_an_absent_one_writes_nothing(
+        self,
+    ) -> None:
+        stated = stage(0, phase=DesignPhase.SCHEMATIC_DESIGN, lod=200)
+        self.assertEqual(stated.to_dict()["lod"], 200)
+        self.assertEqual(ProjectStage.from_dict(stated.to_dict()), stated)
+
+        silent = stage(0, phase=DesignPhase.SCHEMATIC_DESIGN)
+        self.assertNotIn("lod", silent.to_dict())
+        self.assertIsNone(ProjectStage.from_dict(silent.to_dict()).lod)
+
+    def test_a_lod_bearing_workflow_round_trips(self) -> None:
+        carried = ProjectStageWorkflow(
+            project_id="demo",
+            workflow_id="villa-lod",
+            stages=(
+                stage(0, phase=DesignPhase.SCHEMATIC_DESIGN, lod=100),
+                stage(1, phase=DesignPhase.DESIGN_DEVELOPMENT, lod=300),
+                stage(2, phase=DesignPhase.CANDIDATE_COORDINATION, lod=350),
+            ),
+        )
+        self.assertEqual(
+            ProjectStageWorkflow.from_dict(carried.to_dict()), carried
+        )
+
+    def test_only_a_lod_bearing_workflow_gets_a_new_digest(self) -> None:
+        without = workflow()
+        with_lod = ProjectStageWorkflow(
+            project_id=without.project_id,
+            workflow_id=without.workflow_id,
+            stages=(
+                replace(without.stages[0], lod=200),
+                *without.stages[1:],
+            ),
+            basis_refs=without.basis_refs,
+        )
+        self.assertNotEqual(without.workflow_digest, with_lod.workflow_digest)
+        self.assertEqual(
+            without.workflow_digest,
+            ProjectStageWorkflow.from_dict(without.to_dict()).workflow_digest,
+        )
+
+    def test_lod_must_be_one_of_the_declared_levels(self) -> None:
+        with self.assertRaisesRegex(StageWorkflowError, "is not one of"):
+            stage(0, phase=DesignPhase.SCHEMATIC_DESIGN, lod=150)
+        with self.assertRaisesRegex(
+            StageWorkflowError, "level of development"
+        ):
+            stage(0, phase=DesignPhase.SCHEMATIC_DESIGN, lod="200")
+
+    def test_lod_must_lie_inside_the_range_its_phase_admits(self) -> None:
+        with self.assertRaisesRegex(
+            StageWorkflowError,
+            "outside phase 'schematic_design' range 100-200",
+        ):
+            stage(0, phase=DesignPhase.SCHEMATIC_DESIGN, lod=350)
+
+    def test_a_research_phase_refuses_a_lod_and_says_why(self) -> None:
+        for phase in (
+            DesignPhase.RESEARCH_BRIEF,
+            DesignPhase.PROGRAMMING,
+            DesignPhase.SITE_RESOURCE_COORDINATION,
+        ):
+            with self.subTest(phase=phase), self.assertRaisesRegex(
+                StageWorkflowError,
+                "resolves no model and admits no lod",
+            ):
+                stage(0, phase=phase, lod=100)
+
+    def test_lod_may_repeat_but_cannot_regress_across_stages(self) -> None:
+        repeated = ProjectStageWorkflow(
+            project_id="demo",
+            workflow_id="repeated-lod",
+            stages=(
+                stage(0, phase=DesignPhase.DESIGN_DEVELOPMENT, lod=200),
+                stage(1, phase=DesignPhase.DESIGN_DEVELOPMENT, lod=200),
+            ),
+        )
+        self.assertEqual(len(repeated.stages), 2)
+
+        with self.assertRaisesRegex(
+            StageWorkflowError,
+            "lod must be non-decreasing",
+        ):
+            ProjectStageWorkflow(
+                project_id="demo",
+                workflow_id="lod-regression",
+                stages=(
+                    stage(0, phase=DesignPhase.CANDIDATE_COORDINATION, lod=350),
+                    stage(1, phase=DesignPhase.EXECUTION_READY, lod=400),
+                    stage(2, phase=DesignPhase.EXECUTION_READY, lod=350),
+                ),
+            )
+
+    def test_a_stage_without_lod_does_not_reset_the_ladder(self) -> None:
+        with self.assertRaisesRegex(
+            StageWorkflowError,
+            "lod must be non-decreasing",
+        ):
+            ProjectStageWorkflow(
+                project_id="demo",
+                workflow_id="silent-then-lower",
+                stages=(
+                    stage(0, phase=DesignPhase.CANDIDATE_COORDINATION, lod=350),
+                    stage(1, phase=DesignPhase.CANDIDATE_COORDINATION),
+                    stage(2, phase=DesignPhase.CANDIDATE_COORDINATION, lod=300),
+                ),
+            )
 
 
 if __name__ == "__main__":

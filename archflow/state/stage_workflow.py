@@ -10,6 +10,7 @@ persist state, promote a candidate, or write canonical state.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -52,6 +53,99 @@ class DesignPhase(StrEnum):
 
 
 DESIGN_PHASES: tuple[DesignPhase, ...] = tuple(DesignPhase)
+
+
+@dataclass(frozen=True, slots=True)
+class PhaseLadder:
+    """What one of our phases is called in the three industry ladders.
+
+    Two axes, both borrowed rather than invented. The coarse axis is the
+    phase: RIBA Plan of Work 2020, the AIA phases, and the Chinese design
+    stages of 《建筑工程设计文件编制深度规定》. The fine axis is the BIMForum
+    Level of Development, which is the industry's own answer to "our stages
+    are finer than SD/DD": LOD says how resolved the model is inside a phase,
+    so a phase carries a range and a stage picks a level in it.
+    """
+
+    riba_stage: str
+    aia: str
+    cn: str
+    lod_range: tuple[int, int] | None
+
+
+# BIMForum's levels. 500 is field-verified as-built and belongs to no design
+# phase: it is the reconstruction case, the evidence a monument's record
+# already is, from which our stages work down to 100 and back up.
+LOD_LEVELS: tuple[int, ...] = (100, 200, 300, 350, 400, 500)
+
+
+PHASE_LADDER: Mapping[DesignPhase, PhaseLadder] = {
+    DesignPhase.RESEARCH_BRIEF: PhaseLadder(
+        riba_stage="0 Strategic Definition",
+        aia="pre-design",
+        cn="前期调研 / 项目建议书",
+        lod_range=None,
+    ),
+    DesignPhase.PROGRAMMING: PhaseLadder(
+        riba_stage="1 Preparation and Briefing",
+        aia="programming",
+        cn="任务书 / 策划",
+        lod_range=None,
+    ),
+    DesignPhase.SITE_RESOURCE_COORDINATION: PhaseLadder(
+        riba_stage="1 Preparation and Briefing (site information)",
+        aia="pre-design",
+        cn="场地 / 资源条件",
+        lod_range=None,
+    ),
+    DesignPhase.SCHEMATIC_DESIGN: PhaseLadder(
+        riba_stage="2 Concept Design",
+        aia="Schematic Design",
+        cn="方案设计",
+        lod_range=(100, 200),
+    ),
+    DesignPhase.DESIGN_DEVELOPMENT: PhaseLadder(
+        riba_stage="3 Spatial Coordination",
+        aia="Design Development",
+        cn="初步设计(扩初)",
+        lod_range=(200, 300),
+    ),
+    DesignPhase.CANDIDATE_COORDINATION: PhaseLadder(
+        riba_stage="3 Spatial Coordination (coordination of alternatives)",
+        aia="DD coordination",
+        cn="扩初深化 / 专业配合",
+        lod_range=(300, 350),
+    ),
+    DesignPhase.EXECUTION_READY: PhaseLadder(
+        riba_stage="4 Technical Design",
+        aia="Construction Documents",
+        cn="施工图设计",
+        lod_range=(350, 400),
+    ),
+}
+
+
+def _require_lod(value: object, phase: DesignPhase) -> int:
+    """One level of development, inside the range its phase admits."""
+
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise StageWorkflowError("lod must be an integer level of development")
+    if value not in LOD_LEVELS:
+        raise StageWorkflowError(
+            f"lod {value} is not one of {LOD_LEVELS}"
+        )
+    admitted = PHASE_LADDER[phase].lod_range
+    if admitted is None:
+        raise StageWorkflowError(
+            f"phase {phase.value!r} resolves no model and admits no lod"
+        )
+    low, high = admitted
+    if not low <= value <= high:
+        raise StageWorkflowError(
+            f"lod {value} is outside phase {phase.value!r} range "
+            f"{low}-{high}"
+        )
+    return value
 
 
 class StageWorkflowError(ValueError):
@@ -338,6 +432,7 @@ class ProjectStage:
     required_roles: tuple[str, ...]
     required_checks: tuple[str, ...]
     close_obligation_id: str
+    lod: int | None = None
 
     RECORD_KEYS = frozenset(
         {
@@ -349,6 +444,9 @@ class ProjectStage:
             "close_obligation_id",
         }
     )
+    # ``lod`` is written only when a stage states one, so a stage authored
+    # before the ladder serialises exactly as it did (ADR-004).
+    OPTIONAL_RECORD_KEYS = frozenset({"lod"})
 
     def __post_init__(self) -> None:
         require_identifier(self.stage_id, "stage_id")
@@ -358,9 +456,11 @@ class ProjectStage:
         _identifier_tuple(self.required_roles, "required_roles")
         _identifier_tuple(self.required_checks, "required_checks")
         require_local_id(self.close_obligation_id, "close_obligation_id")
+        if self.lod is not None:
+            _require_lod(self.lod, self.phase)
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "stage_id": self.stage_id,
             "stage_index": self.stage_index,
             "phase": self.phase.value,
@@ -368,11 +468,19 @@ class ProjectStage:
             "required_checks": list(self.required_checks),
             "close_obligation_id": self.close_obligation_id,
         }
+        if self.lod is not None:
+            payload["lod"] = self.lod
+        return payload
 
     @classmethod
     def from_dict(cls, value: object) -> "ProjectStage":
         payload = _mapping(value, "project stage")
-        _exact(payload, cls.RECORD_KEYS, "project stage")
+        required = {
+            key: item
+            for key, item in payload.items()
+            if key not in cls.OPTIONAL_RECORD_KEYS
+        }
+        _exact(required, cls.RECORD_KEYS, "project stage")
         return cls(
             stage_id=payload["stage_id"],
             stage_index=payload["stage_index"],
@@ -384,6 +492,7 @@ class ProjectStage:
                 payload["required_checks"], "required_checks"
             ),
             close_obligation_id=payload["close_obligation_id"],
+            lod=payload.get("lod"),
         )
 
 
@@ -439,10 +548,26 @@ class ProjectStageWorkflow:
             raise StageWorkflowError(
                 "workflow phases must be non-decreasing"
             )
+        # Resolution only ever goes up. A stage that states no level does not
+        # reset the ladder, so the stated levels are read in stage order.
+        stated = tuple(
+            item.lod for item in self.stages if item.lod is not None
+        )
+        if stated != tuple(sorted(stated)):
+            raise StageWorkflowError(
+                "workflow lod must be non-decreasing"
+            )
         _logical_ref_tuple(self.basis_refs, "basis_refs")
 
     @property
     def workflow_digest(self) -> str:
+        """The digest of the workflow as serialised.
+
+        A stage that states no ``lod`` writes no ``lod`` key, so every
+        workflow frozen before the ladder digests to exactly what it did; only
+        a workflow that carries a level has a new digest (ADR-004).
+        """
+
         return canonical_digest(self.to_dict())
 
     def stage_at(self, stage_index: int) -> ProjectStage:
