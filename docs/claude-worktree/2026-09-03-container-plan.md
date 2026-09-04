@@ -106,6 +106,16 @@ table; villa workflow v2 in `input/`, v1's file retired from `inputs/`.
 **W8 — issue** (memo step 4): `tools/issue_project.py` from a satisfied closure; the word HEAD leaves
 the tools' and the Studio's vocabulary.
 
+## Found while freezing the villa's workflow (after W7)
+
+`developed_design_view` hard-codes `active_phase = DesignPhase.DESIGN_DEVELOPMENT`
+(`state_record.py`, the view's constructor), and `StageExecutionGuard` requires the envelope's phase
+to equal it. So a workflow whose stage 0 is `schematic_design` can be frozen and opened but never run
+(villa `workflow-002` / `stage-0-001` are that dead pair, left retained). The villa's live workflow
+`villa-rotonda-spine-v3` (`workflow-003`) therefore keeps all three stages in `design_development`
+and climbs by LOD only (200 / 300 / 300). **W7b:** the phase is the run's (ADR-007 rule 1): the view
+takes it from the envelope, not from a constant; then the ladder's other phases become reachable.
+
 ## Out of scope for the workers
 
 The villa WIP file (`input/runner/state-record.json`) is Kaiwen's; when W1 lands, Fable strips its
