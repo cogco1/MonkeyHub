@@ -3437,7 +3437,9 @@
         "state.operational_state",
         "state.record",
         "studio.binding",
-        "project.record_kinds"
+        "project.record_kinds",
+        "project.ports",
+        "project.refs"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
