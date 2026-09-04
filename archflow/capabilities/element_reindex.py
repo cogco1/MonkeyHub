@@ -851,16 +851,40 @@ def draft_wedge(draft: ElementDraft, frame: Frame) -> None:
     from_ref, to_ref, _start, _end, across_at, conf = _run_references(draft, frame, run, lo[i], hi[i], (lo[j] + hi[j]) / 2.0, draft_id=f"{draft.element_id}-line")
     base, base_conf, base_note = frame.base_reference(lo[2])
     draft.producer = "wedge"
-    # the producer puts ``low`` at the ``from`` end (or on the -normal side across); the export
-    # says which end is low with archflow:wedge_sense, so "to" swaps the two references
+    # The producer puts ``low`` at the ``from`` end (along) or on the -normal side (across), and
+    # this drafter's from->to runs in the +x / +y world direction. archflow:wedge_sense says which
+    # way the top rises, anchored to the kernel plane so it does not depend on any row's reference
+    # order: "+x" | "-x" | "+z" | "-z" (kernel z is world y). The legacy "from" | "to" names the
+    # low end relative to this drafter's run and is still read. A rise that contradicts the
+    # drafter's orientation swaps the two references.
     sense = (obj.wedge_sense or "from").strip().lower()
-    if sense not in ("from", "to"):
+    swap = False
+    if sense in ("from", "to"):
+        swap = sense == "to"
+    elif sense in ("+x", "-x", "+z", "-z"):
+        world_axis = "x" if sense[1] == "x" else "y"
+        sign = 1 if sense[0] == "+" else -1
+        if axis == "along":
+            if world_axis != run:
+                draft.status = AMBIGUOUS
+                draft.notes.append(f"archflow:wedge_sense {sense!r} is not along the run ({run}); a wedge sloping along its run rises along it")
+                return
+            swap = sign < 0
+        else:
+            if world_axis == run:
+                draft.status = AMBIGUOUS
+                draft.notes.append(f"archflow:wedge_sense {sense!r} is along the run ({run}); a wedge sloping across it rises across it")
+                return
+            # for from->to along +x the +normal side is world -y; along +y it is world +x
+            expected = -1 if run == "x" else 1
+            swap = sign != expected
+    else:
         draft.status = AMBIGUOUS
-        draft.notes.append(f"archflow:wedge_sense is {obj.wedge_sense!r}; it names the low end, 'from' or 'to'")
+        draft.notes.append(f"archflow:wedge_sense is {obj.wedge_sense!r}; it names the rise: '+x' | '-x' | '+z' | '-z' in the kernel plane, or the legacy 'from' | 'to'")
         return
-    if sense == "to":
+    if swap:
         from_ref, to_ref = to_ref, from_ref
-        draft.notes.append("archflow:wedge_sense 'to': the low edge is at the run's far end, so the references are swapped")
+        draft.notes.append(f"archflow:wedge_sense {sense!r}: the rise runs against this drafter's orientation, so the run references are swapped")
     draft.references = {"from": from_ref, "to": to_ref, "base": base}
     draft.params = {"depth": _r(depth), "low": _r(low), "high": _r(high)}
     if axis == "across":

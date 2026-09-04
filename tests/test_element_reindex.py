@@ -504,6 +504,27 @@ class WedgeTests(unittest.TestCase):
         self.assertEqual(refused.status, AMBIGUOUS)
         self.assertTrue(any("wedge_sense" in n for n in refused.notes), refused.notes)
 
+    def test_a_plan_anchored_sense_orients_the_run_without_any_reference_order(self) -> None:
+        def wedge(**strings):
+            result = reindex(fixture_record(), [(inspection(roof_sector(wedge_low="0.3", wedge_high="1.78", **strings)), "record:base", 0)])
+            return {d.element_id: d for d in result.drafts}["portico-roof-abutments-west"]
+        forward = wedge(wedge_axis="along", wedge_sense="+x")        # the sector runs along x: rising +x is this drafter's own orientation
+        backward = wedge(wedge_axis="along", wedge_sense="-x")
+        self.assertEqual((forward.status, backward.status), (DRAFT, DRAFT), (forward.notes, backward.notes))
+        self.assertEqual(forward.references["from"], backward.references["to"])
+        self.assertEqual(forward.references["to"], backward.references["from"])
+        self.assertLessEqual(backward.residual_m, 0.001, backward.notes)
+        # across the run (world y): for from->to along +x the high side is world -y, so "-z" keeps the order and "+z" swaps it
+        keeps = wedge(wedge_axis="across", wedge_sense="-z")
+        swaps = wedge(wedge_axis="across", wedge_sense="+z")
+        self.assertEqual((keeps.status, swaps.status), (DRAFT, DRAFT), (keeps.notes, swaps.notes))
+        self.assertEqual(keeps.references["from"], forward.references["from"])
+        self.assertEqual(swaps.references["from"], forward.references["to"])
+        self.assertTrue(keeps.params["slope_across"] and swaps.params["slope_across"])
+        wrong = wedge(wedge_axis="along", wedge_sense="+z")
+        self.assertEqual(wrong.status, AMBIGUOUS)
+        self.assertTrue(any("not along the run" in n for n in wrong.notes), wrong.notes)
+
     def test_a_slope_across_the_run_is_the_axis_string_and_a_bad_string_is_named(self) -> None:
         across = reindex(fixture_record(), [(inspection(roof_sector(wedge_low="0.3", wedge_high="1.78", wedge_axis="across")), "record:base", 0)])
         wedge = {d.element_id: d for d in across.drafts}["portico-roof-abutments-west"]
