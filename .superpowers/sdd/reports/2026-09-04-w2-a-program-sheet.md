@@ -20,13 +20,13 @@ work-in-progress input at `input/runner/program-sheet.json` owned by
 
 ## Commits
 
-- `6bd8ecd` — the kernel: `state.program_sheet`, the layout path, the inputs
+- `f979c08` — the kernel: `state.program_sheet`, the layout path, the inputs
   reader and writer, and their tests
-- `0c9e97e` — the studio: `/api/program`, `/api/semantics`, the successor
+- `38a42bb` — the studio: `/api/program`, `/api/semantics`, the successor
   extraction in `studio.candidate`, the web panel, the regenerated client,
   PROTOCOL.md, and this report
 
-(Exact hashes are in the final message; both are on `worktree-agent-aee5dda3ab99d7000`.)
+Both on `worktree-agent-aee5dda3ab99d7000`, on top of `d20f206`.
 
 ## Tests
 
