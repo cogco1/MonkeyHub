@@ -149,8 +149,12 @@ condition.
   seam read it as `declare_missing_control` / `MISSING_EDITABLE_CONTROL`, which
   is what the brief asked the sentence to be.
 
-After the one code change made post-preview (below), all three branches were
-re-verified live on fixture 2.
+Two code changes were made after that first preview — the singular
+`capability.validatorsOne` (concern 5) and removing a stray NUL byte
+(concern 6). Typecheck and build were re-run clean afterwards, and all three
+branches were re-verified live on fixture 2: element auto-opens with its row,
+component defaults collapsed and expands into three groups, catalog-missing
+shows its sentence and its button.
 
 ## Registrations needed
 
@@ -199,13 +203,23 @@ changed. `governance/module_registry.json` and
    `capability.validators` did get a singular (`capability.validatorsOne`)
    because I saw "1 validators" in the live preview; the tree's `{n} elements` /
    `{n} capabilities` chips have the same defect and are not mine to change.
-6. **The worktree started stale.** Its branch was at `6a4a31a`, several commits
+6. **A raw NUL byte had got into the new file and is gone.** The first draft
+   keyed the panel's fold state on a `` `${componentId}<sep>${elementId}` ``
+   template string, and the separator I wrote landed on disk as a literal
+   `U+0000`. Typecheck, build and the browser all accepted it silently; `od`
+   found it. The fix removes the string key entirely — the fold state now holds
+   the `Selection` itself and compares `componentId` / `elementId` — so there is
+   no separator to get wrong. All five changed files were then re-scanned
+   (`grep -P '[\x00-\x08\x0b\x0c\x0e-\x1f\r]'`): zero control bytes, zero CR,
+   pure LF, matching the rest of the repo (`core.autocrlf=false`). Worth knowing
+   for the lane: an invisible control byte survives the whole web gate.
+7. **The worktree started stale.** Its branch was at `6a4a31a`, several commits
    behind `main`, and did not contain `ComponentTree.tsx` at all. The branch had
    no commits of its own (HEAD == merge-base), so I fast-forwarded it to `main`
    (`bc605aa`) before starting — no merge of divergent work, no rebase of
    anything, nothing pushed. Without it I would have been extending a file that
    does not exist on this branch.
-7. **`npm ci` was needed** in the worktree; `node_modules` existed only in the
+8. **`npm ci` was needed** in the worktree; `node_modules` existed only in the
    main tree. It writes only `apps/archflow-studio/web/node_modules`, which is
    gitignored and not committed.
 
