@@ -155,3 +155,16 @@ or authority.
 - Next (studio, on the main session's clarification.py per the relayed ruling A): camera+compass level, catalog as the single directory (MODEL_VISIBLE_CATALOG_MISSING as a sub-reason of COMPONENT_HAS_NO_EDITABLE_ELEMENT), controls persistence on AuthoredControlDraftDto, nested tree panel in web/src on their QuestionCard/MissingControlCard/App.tsx sync; Wave E1/E3/E4 absorbed as requirements.
 - Studio, on the main session's clarification.py (b465d0e): camera + PROJECT.md compass read "left" into a side that narrows and never introduces; PROJECT.md aliases name components; the catalog is the resolver's directory and the terminal draft says MODEL_VISIBLE_CATALOG_MISSING with the objects; absolute deltas ("提高 0.1m") read into the grammar deterministically; POST /api/controls keeps a confirmed draft. Web (8391b65): nested ComponentTree replaces SelectionPicker; verified in the browser against the villa with reindex-compile-008 as reference run (building → porticos → portico-capitals: 24 objects, 24 without a row). Left: E1 episode record kind + writer, E3 scope step, E4 derived-control branch; installing the reindex-005 successor as the authored record is Kaiwen's call.
 
+## 6. Full-design-flow wave, 2026-09-04 (Opus implemented, Fable calibrated)
+
+Eight worker results merged to main (36ba695), each rebased, tested and registered by hand:
+- W1-A deliberation episodes (E1): record kind DeliberationEpisode@1; POST /api/proposals/{id}/decision, GET /api/episodes; written into the candidate run at accept, flushed from memory at the next run of the same state.
+- W1-B producers stair / wedge / shell (with the _loft parameter-order fix 609379c the re-index worker found).
+- W1-C web capability panel (what a selected element can be asked; set… and declare-a-control prefill).
+- W1-D scope step (SCOPE_UNRESOLVED: element / stack / datum from the catalog closure; asked only when a stack exists, never for a picked element) and derived controls (CONTROL_IS_DERIVED names the source, never compiles).
+- W2-B frame editor (GET /api/state/frame, POST /api/state/closure; levels and axes with what changing one would move).
+- W3-A re-index drafts stair flights; wedges and shells only from explicit archflow:wedge_*/shell_* export strings (the main session's 526f745/6935fc0 write them; wedge_sense is plane-anchored +x/-x/+z/-z); a failed flight falls back to per-step prisms (3acba47).
+- W2-C massing options with metrics (state/massing_metrics.py; options retained as selected-spatial-option in option-NNN runs; state.record gained volume_boxes_of / schematic_pack_of).
+- W2-A program sheet (state/program_sheet.py; input/runner/program-sheet.json read/written only by project.inputs; applied as a candidate; saveInput local-mode only).
+Left for the next wave: design steps 0/1 (brief → obligations with sources; site envelope), step 6 (design-obligation validators, review agent), step 7 (IFC/Revit), a generative provider on the pack transform, the sheet candidate readable through GET /api/candidates/{id}, the retention-failure-fails-job concern in episodes, and the wedge export strings verified end to end on the villa.
+
