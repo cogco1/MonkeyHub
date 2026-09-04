@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@2",
-  "phase": "P7 - semantic geometry production closure proven",
+  "phase": "Continuing design deliberation - P111 planned; StateRecord geometry spine implemented",
   "items": [
     {
       "id": "P094",
@@ -181,6 +181,35 @@
         "validate_submission on that state exercises ObligationDischargeValidator and AuthorizedCommitmentClaimsValidator on real content; a test shows a finding is reachable.",
         "The Studio drops the 'unavailable' label and the empty-facts construction in the same change.",
         "python tools/archcheck.py passes."
+      ]
+    },
+    {
+      "id": "P111",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "One continuing design cycle in MonkeyArch: retain an unresolved question, compare alternatives, carry human rejection and revision judgments into a second round, recover after a service restart, and explicitly accept a checked result as the next project base. Extend existing owners and retire process-only retention for work that must survive sessions. P108 and P110 gate final acceptance; initial gap inspection can proceed.",
+      "depends_on": [
+        "P108",
+        "P110"
+      ],
+      "write_scope": [
+        "archflow/state/",
+        "archflow/project/",
+        "apps/archflow-studio/",
+        "tests/",
+        "docs/mapping/",
+        "governance/module_registry.json",
+        "governance/work_registry.json"
+      ],
+      "card": "docs/mapping/planning/P111-continuing-design-cycle.md",
+      "acceptance": [
+        "Two rounds on one project retain an open question, two alternatives, an explicit rejection with its reason, a revision and an explicit acceptance.",
+        "After service restart and model-session reset, the same project recovers questions, proposals and human judgments and can continue without restating saved decisions.",
+        "The second round references the prior judgment and makes preserved or explicitly revised commitments visible; rejected proposals remain inspectable.",
+        "P110 validates real project content; stale bases and failed checks prevent issue. Review readiness never issues a run by itself.",
+        "Explicit acceptance uses project.issue; the next round uses the correct published version, and judgment authorship and reasons are recoverable from P036 records.",
+        "A second differently composed project uses the same path; repeated explanation, rework and waiting are reported as observations, not assumed improvements.",
+        "Affected owner behavior tests, relevant API and UI checks, and python tools/archcheck.py pass."
       ]
     }
   ]

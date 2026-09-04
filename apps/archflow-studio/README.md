@@ -2,6 +2,15 @@
 
 ## 1. What it is
 
+MonkeyArch is the professional modeling environment used to test ArchFlow's
+research into continuing design deliberation. Its long-term product goal is
+**Continue**: retain an open question, inspect alternatives, carry a person's
+judgment into revision, and resume the same project in another session.
+See the [vision](../../docs/VISION.md) and the
+[P111 development cycle](../../docs/mapping/planning/P111-continuing-design-cycle.md).
+The round-one implementation described below remains a candidate and review
+workflow; P111's recovery and acceptance criteria are planned work.
+
 ArchFlow Studio is the product shell for ArchFlow. It is two programs:
 
 - **`api/`** — a FastAPI **BFF** (`archflow_studio_api`). It validates requests, streams

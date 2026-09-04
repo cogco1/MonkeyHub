@@ -1,65 +1,58 @@
 # ArchFlow V4
 
-**Toward an architectural practice where intent, reasoning, and construction
-remain connected.**
+> 当机器越来越擅长生成答案，我们想让它重新学会陪人推敲。
+>
+> As machines become better at generating answers, we want them to learn
+> to deliberate with people.
 
-ArchFlow explores how an Architect Agent could carry a design through an
-evolving building project: interpreting a brief, investigating a site,
-developing spatial alternatives, coordinating technical knowledge, and
-revising the work as constraints and ambitions change.
+ArchFlow explores a computational representation of design as an ongoing
+process of deliberation. It seeks to make the questions, commitments,
+alternatives, evidence, judgments, and uncertainty of unfinished design
+understandable, persistent, and available for humans and machines to work on.
 
-The long-term goal is a working environment in which architects and agents
-can develop a building together, with every meaningful decision connected
-to the model it changes, the evidence behind it, and the consequences that
-follow. Human architects set the direction, negotiate competing values,
-and decide what is ready to become a project commitment.
+## Research: representing unfinished design
 
-## A building that remembers its reasoning
+What should a building that has not yet been fully thought through be inside
+a computer?
 
-Architectural work moves between conversations, sketches, models, drawings,
-calculations, specifications, and decisions. The relationships between these
-representations are often held in people's memory. A change to one can leave
-the others behind.
+Architectural design develops through questions, competing proposals, partial
+judgments and revisions. ArchFlow studies how that process can become part of
+an evolving design state alongside models and drawings. An unresolved question
+can remain open; a rejected proposal can still inform the next attempt; an
+accepted decision can become a condition for further work.
 
-ArchFlow aims to make those relationships part of the project itself. A bay
-dimension should remain connected to the spaces it organizes, the structure
-it spans, and the envelope it supports. Revising it should expose which
-decisions need to be revisited and which commitments must be preserved.
+The research concerns how a building gradually becomes itself, from early
+spatial exploration through technical coordination and construction.
 
-This would let a project accumulate understanding across design iterations:
-what was proposed, why it changed, what was checked, and what the team accepted.
-Models and drawings would become coordinated expressions of that evolving
-architectural understanding.
+## Technology: project understanding that persists
 
-## An agent with room to design
+The long-term architecture places human and agent proposals around a persistent
+design state, from which compilers and execution tools produce geometry.
+Models contribute intelligence; project records preserve what was proposed,
+why it changed, what remains uncertain and what people accepted.
 
-The research premise is **bounded architectural agency**. A primary Architect
-Agent should have room to formulate a design approach, discover capabilities,
-consult specialist knowledge, use modeling tools, and test alternatives in
-an isolated workspace.
+The goal is to continue the same project across sessions and model providers.
+With a model disconnected, the retained design and its reasoning should remain
+available for inspection and further human work. Human architects set direction,
+weigh competing values and decide what becomes a project commitment.
 
-Its freedom to explore is paired with explicit responsibility for the result.
-Before a proposal becomes accepted project state, it must be checked against
-the project's constraints, existing commitments, and required evidence.
-Unresolved questions return to the architect for judgment; accepted decisions
-become the basis for the next iteration.
+## Product: Continue
 
-The ambition extends from early spatial exploration toward technical
-coordination and construction documentation. Across those stages, ArchFlow
-seeks to preserve a continuous relationship between design intent and the
-building that can actually be made.
+**MonkeyArch (ArchFlow Studio)** is the professional modeling environment used
+to test this research in architectural practice. Its long-term core loop is:
 
-## From conversation to a shared project
+```text
+Notice → Question → Propose → Externalize → Judge → Revise → Commit
+```
 
-**ArchFlow Studio (MonkeyArch)** is the interface through which this research
-is becoming a working tool. Its intended experience brings conversation,
-model interaction, design alternatives, and review into one place. An
-architect should be able to point to part of a building, discuss a change,
-inspect its consequences, and choose how the project proceeds.
+These activities can be revisited. When an architect says an entrance feels
+heavy, the environment should help retain the question, explore interpretations,
+make alternatives visible, compare them and carry the architect's judgment into
+another round. Reopening the project should make that work easy to continue.
 
-The framework beneath that interface is intended to support different model
-providers and discoverable capabilities while keeping the project coherent
-across tools, sessions, and collaborators.
+The [vision](docs/VISION.md) defines the research, technical and product direction
+in Chinese, with a reusable English statement. The conceptual design state is a
+research framework; it does not prescribe a new schema or one module per concern.
 
 ## Where V4 stands
 
@@ -71,12 +64,15 @@ repository.
 Studio provides 3DM inspection, semantic object selection, typed edits,
 candidate execution, and review. Its current workflow ends at candidate
 validation and human review; review readiness does not advance canonical
-project state. The broader brief-to-construction vision remains the research
-direction. Current work and remaining capabilities are tracked in the
-[dynamic map](docs/DYNAMIC_MAP.md).
+project state. The full deliberation and cross-session continuation loop remains
+development work. [P111](docs/mapping/planning/P111-continuing-design-cycle.md)
+defines the next cycle, with P108 and P110 as acceptance prerequisites. Current
+work and remaining capabilities are tracked in the [dynamic map](docs/DYNAMIC_MAP.md).
 
 ## Start here
 
+- [Vision](docs/VISION.md) — long-term research, technology and product direction.
+- [Continue development cycle](docs/mapping/planning/P111-continuing-design-cycle.md) — staged work and acceptance criteria.
 - [System map](docs/SYSTEM_MAP.md) — current capability owners and public APIs.
 - [Canonical spine](docs/CANONICAL_SPINE.md) — the record-driven architecture
   and consolidation decisions.

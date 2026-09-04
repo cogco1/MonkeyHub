@@ -3,6 +3,21 @@
 These rules are specific to `D:\ARCHFLOW_V4` and supplement the global Codex
 instructions.
 
+## Long-term direction
+
+`docs/VISION.md` defines the research, technical and product vision: represent
+unfinished design as a continuing process of deliberation. MonkeyArch tests
+that idea in architectural practice; its product goal is to help people continue
+a design across proposals, judgments and sessions. The current development
+cycle is P111, indexed by `governance/work_registry.json`.
+
+Questions, commitments, alternatives, judgments, evidence and uncertainty are
+research concerns, not an instruction to add one schema or module per noun.
+Extend existing owners for demonstrated needs. Keep human judgment attributable,
+unresolved questions open, and project understanding recoverable independently
+of a model's context. Vision is direction; current contracts and acceptance
+checks determine what the implementation can claim.
+
 ## Framework versus project data
 
 - `archflow/` contains reusable mechanisms only.
