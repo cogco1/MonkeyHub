@@ -1917,3 +1917,45 @@ button.chip:hover {
 .tree__chip--missing { background: rgba(220, 70, 70, 0.22); }
 .tree__chip--locked { background: rgba(120, 120, 120, 0.3); }
 .tree__chip--derived { background: rgba(90, 140, 255, 0.18); }
+
+/* capability panel (CapabilityPanel.tsx), on the picker's frame, tree chips reused */
+.tree__chip--editable { background: rgba(70, 170, 110, 0.22); }
+.capability {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.capability__head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.capability__title { font-size: calc(12px * var(--font-scale, 1)); color: var(--unchecked); }
+.capability__subject { font-size: calc(12px * var(--font-scale, 1)); }
+.capability__toggle { margin-left: auto; }
+.capability__note { margin: 0; color: var(--unchecked); font-size: calc(12px * var(--font-scale, 1)); }
+.capability__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.capability__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.capability__item { margin: 0; }
+.capability__group { list-style: none; margin: 0; padding: 0; }
+.capability__groupName { display: block; padding: 4px 6px 0; font-size: 11px; opacity: 0.75; }
+.capability__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: calc(12px * var(--font-scale, 1));
+}
+.capability__row:hover { background: var(--surface-2, rgba(127, 127, 127, 0.12)); }
+.capability__value { font-variant-numeric: tabular-nums; }
+.capability__source { font-size: 11px; opacity: 0.8; }
+.capability__set { margin-left: auto; }
+.capability__more { padding: 3px 6px; font-size: 11px; opacity: 0.8; }

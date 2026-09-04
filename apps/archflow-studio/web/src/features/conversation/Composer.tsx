@@ -3,12 +3,19 @@
  * the context chip shows. The chip is the server's resolution or the
  * projection's own id, never a guess; the grammar hint names the four forms
  * the server understands today.
+ *
+ * Beside the tree that chooses the selection sits the capability panel, which
+ * says what that selection can be asked: the box is no longer typed into the
+ * dark, and a row's "set…" button fills it with a sentence the catalog already
+ * agreed exists. The panel writes only the draft — the same text state the
+ * transcript's own reply and adjust buttons write.
  */
 
 import { useState, type FormEvent } from "react";
 
 import type { GestureDto, StateProjectionDto } from "../../api/generated";
 import { useT, type TFunction } from "../../i18n/useT";
+import { CapabilityPanel } from "./CapabilityPanel";
 import { ComponentTree } from "./ComponentTree";
 
 const MARK_GLYPH: Record<GestureDto["kind"], string> = {
@@ -114,6 +121,13 @@ export function Composer({
             setPickerOpen(false);
           }}
           onClose={() => setPickerOpen(false)}
+        />
+      )}
+      {projection && selection && (
+        <CapabilityPanel
+          projection={projection}
+          selection={selection}
+          onPrefill={onDraft}
         />
       )}
       {gestures.length > 0 && (
