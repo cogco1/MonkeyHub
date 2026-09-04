@@ -52,7 +52,7 @@ from archflow.state.stage_workflow import (  # noqa: E402
     open_stage_run_envelope,
     require_measurable,
 )
-from archflow.state.state_record import developed_design_view  # noqa: E402
+from archflow.state.state_record import StateRecord, developed_design_view  # noqa: E402
 
 # What the envelope binds its state digest to. The runner computes the same
 # projection from the same record with the same three constants, and its guard
@@ -108,6 +108,7 @@ def open_stage_run(
     stage_index: int,
     run_id: str,
     predecessor_run_id: str | None = None,
+    record_ref: str | None = None,
 ) -> dict[str, object]:
     """Create the run and retain the envelope that says which stage it is."""
 
@@ -146,7 +147,11 @@ def open_stage_run(
 
     run = repository.create_run(run_id, base=repository.read_head())
     options = RunOptions(commitment_ref=f"commitment:{workflow.workflow_id}")
-    record = load_authored_record(repository).record
+    if record_ref:
+        # a candidate held in a run (a re-indexed successor): the envelope binds *its* developed state
+        record = StateRecord.from_dict(repository.load_json(record_ref_from_uri(record_ref, repository.read_head().project_id)))
+    else:
+        record = load_authored_record(repository).record
     state = developed_design_view(
         record,
         run=run,
@@ -218,6 +223,7 @@ def main() -> int:
     parser.add_argument("--stage-index", required=True, type=int)
     parser.add_argument("--run", required=True, help="the run id to create")
     parser.add_argument("--predecessor-run", default=None, help="the run that closed stage N-1 (required for stage N>0)")
+    parser.add_argument("--record-ref", default=None, help="bind the envelope to this state-record record (a candidate held in a run) instead of the authored record")
     args = parser.parse_args()
     result = open_stage_run(
         project_root=args.project.resolve(),
@@ -225,6 +231,7 @@ def main() -> int:
         stage_index=args.stage_index,
         run_id=args.run,
         predecessor_run_id=args.predecessor_run,
+        record_ref=args.record_ref,
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
     print(

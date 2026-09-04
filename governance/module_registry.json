@@ -3901,7 +3901,8 @@
         "creating the run against canonical HEAD and computing the state digest its envelope binds, from the work-in-progress record with the three constants RunOptions declares",
         "finding the one retained stage-exit-binding of a predecessor run, and refusing a stage N>0 that names none or names a run holding more than one",
         "refusing to open a project stage against a harness workflow",
-        "the close obligation the envelope carries: OPEN, naming the stage the runner's closure will answer"
+        "the close obligation the envelope carries: OPEN, naming the stage the runner's closure will answer",
+        "--record-ref: opening a stage whose envelope binds a candidate record held in a run, instead of the authored record"
       ],
       "does_not_own": [
         "running the stage or writing its closure - runtime.project_runner",
