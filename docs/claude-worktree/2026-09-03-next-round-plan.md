@@ -81,6 +81,28 @@ panel to it. One owner for the file: the API's settings module; the launcher onl
 - Two names for the server (`archflow-studio-api` on /api/health, `monkeyarch-api` on
   /api/protocol) — decide one when the health probe consumers are known.
 
+## Wave E — the four claims, calibrated against the code (added after the evening's synthesis)
+
+Kaiwen's synthesis of 2026-09-03: the object of computation is the *design transition*
+(S_t → proposals → judgment → commit → S_{t+1}), not the final geometry; facts are retrieved, rules
+computed, judgment learned or asked; the data unit worth keeping is the *deliberation episode*;
+the four original claims are rationale as executable state, change-scope inference,
+obligation-based progression, and the deliberation trajectory. Where the code stands on each:
+
+| claim | in the code today | the gap | wave |
+|---|---|---|---|
+| Design transition is the unit | a run is a shared container with the exact record, the developed state, programs, checks, receipts, closure; `issue` commits it | the transition is retained; **the judgment is not**: proposals live in the Studio's in-memory `ProposalStore`; a REJECT or MODIFY leaves nothing in P036; only a candidate that ran leaves `intent-compilation` | **E1** `deliberation-episode` record: intent, every proposal with its verdict (accept / reject / modify + reason + scope), protected elements, evidence cited, validation ref, the run it produced. Written by the Studio at each verdict, retained in the run (or a `deliberation-<n>` run when nothing ran). This is the dataset unit. |
+| Rationale as executable state | `basis_refs`, `evidence_refs`, `decision_ref`, parameter `lineage`, `lock_authority`, relations with validators; the closure re-checks required kinds | `evidence_refs` are free strings until W10; nothing reads "why" to constrain the next change except locks and validators | W10 (ledger) + **E2**: a change that touches an element cited by a `keep` clause or a protected relation is refused or scoped down by the kernel, not the prompt |
+| Change-scope inference (selection ≠ intended scope) | pick resolves component/element; `circle` = selection, `keep` = keep clause; `successor_record` edits exactly one scalar | no scope step; nothing offers "this wall / the vertical stack / the whole datum" | **E3** scope candidates computed from the record's reference graph (`dependency_edges`): same element; elements sharing the grid/axis pair across levels (the stack); elements referencing the same datum or grid (the datum); offered as a choice in the loop before ghost; the choice is retained in the episode |
+| Controls: explicit / derived / latent | parameters with lineage; the Studio proposes creating a parameter when none exists; the villa declares 0 parameters, so every parameter intent is BLOCKED_NEEDS_HUMAN | "no height → create height" is wrong when top/bottom levels already determine it; no derived-from-relationship check | **E4** the control resolver: existing control → derived from references (level/datum/grid) → propose a new design variable; a derived control is shown, never created |
+| Obligation-based progression | `obligations` on the developed state are discipline coordination obligations; stages carry a `close_obligation_id`; closure findings say MISSING_CHECK / CHECK_FAILED / SEAT_INCOMPLETE | no *design* obligation ("provide compliant secondary egress") that exists before any solution and that a closure can require resolved | **E5** `Obligation@1` entity in the record (statement, status open/resolved/waived, resolved_by refs, basis); closure requires the stage's obligations resolved or explicitly waived; the Studio lists unresolved obligations as the stage's questions |
+| Deliberation trajectory vs fixed workflow | ADR-007's ladder is fixed | no tension once named: the ladder says *when a design may be issued* (phase, LOD, required checks); the trajectory is what happens *inside* a stage (episodes, obligations, candidates). The ladder stays coarse and industry-shaped; the deliberation is the fine structure | E1 + E5 |
+| Semantic registry grows from use | static `role.*` / `condition.*` tables; the record refuses unregistered ids (ADR-006) | no path from a project-local control to the core vocabulary | **E6** ADR-006 amendment: `local.*` ids declared in the record's own vocabulary block are accepted and reported as unregistered; `devctl` counts them across projects; promotion into the core tables by review. Not now: first see what the villa and pantheon actually need |
+
+Order: E1 (the dataset unit; small, Studio + one record kind) right after D1; E3 and E4 together
+(one worker, the Studio loop gains the Scope step); E5 with W7b's successor since closure logic is
+touched; E2 after W10; E6 is a decision for Kaiwen, not a wave yet.
+
 ## The paper thread (runs beside the waves, Kaiwen + Fable)
 
 The villa now has a citable chain: authored record (content digest e88eba2a…) → `workflow-003` →
