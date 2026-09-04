@@ -2090,6 +2090,16 @@ button.chip:hover {
   display: grid;
   gap: 8px;
   width: min(460px, calc(100% - 24px));
+/* program sheet */
+/* ProgramPanel.tsx: the brief as a table, over the stage beside the frame. */
+.program {
+  position: absolute;
+  top: 56px;
+  right: 12px;
+  z-index: 6;
+  display: grid;
+  gap: 8px;
+  width: min(680px, calc(100% - 24px));
   max-height: calc(100% - 120px);
   overflow-y: auto;
   padding: 10px;
@@ -2100,6 +2110,7 @@ button.chip:hover {
 }
 
 .options__head {
+.program__head {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -2108,6 +2119,10 @@ button.chip:hover {
 .options__title { font-weight: 600; }
 
 .options__note {
+.program__title { font-weight: 600; }
+
+.program__note,
+.program__source {
   margin: 0;
   font-size: calc(11.5px * var(--font-scale, 1));
 }
@@ -2134,6 +2149,105 @@ button.chip:hover {
 .options__cards {
   display: grid;
   gap: 6px;
+.program__close { margin-left: auto; }
+
+.program__department {
+  display: grid;
+  gap: 4px;
+}
+
+.program__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(11.5px * var(--font-scale, 1));
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.program__id {
+  font-size: calc(10.5px * var(--font-scale, 1));
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.program__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: calc(11.5px * var(--font-scale, 1));
+}
+
+.program__table th {
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+}
+
+.program__table td {
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: baseline;
+}
+
+.program__number { text-align: right; }
+
+/* A row nothing has been drawn for is marked, never hidden: it is the whole
+   reason to read this table beside the model. */
+.program__row[data-unmapped="true"] td { color: var(--unchecked); }
+
+.program__text,
+.program__num,
+.program__function {
+  width: 100%;
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.program__num { text-align: right; }
+
+.program__text:hover,
+.program__num:hover,
+.program__function:hover,
+.program__text:focus,
+.program__num:focus,
+.program__function:focus {
+  border-color: var(--line);
+  background: var(--bg);
+  outline: none;
+}
+
+.program__function--plain { color: var(--muted); }
+
+.program__unmapped {
+  color: var(--unchecked);
+  font-size: calc(10.5px * var(--font-scale, 1));
+}
+
+.program__totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+  font-size: calc(11.5px * var(--font-scale, 1));
+  font-weight: 600;
+}
+
+.program__totals [data-unmapped="true"] { color: var(--unchecked); }
+
+.program__adjacencies {
+  display: grid;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2201,3 +2315,39 @@ button.chip:hover {
 }
 
 .options__honesty { color: var(--unchecked); }
+.program__adjacency {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: calc(11.5px * var(--font-scale, 1));
+}
+
+.program__requirement { color: var(--muted); }
+
+.program__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.program__save {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: calc(11.5px * var(--font-scale, 1));
+}
+
+.program__honesty {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+  color: var(--unchecked);
+  font-size: calc(11.5px * var(--font-scale, 1));
+}

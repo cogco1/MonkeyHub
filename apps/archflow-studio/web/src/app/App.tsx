@@ -40,8 +40,11 @@ import type {
   OptionsDto,
   PendingIntentDto,
   FrameDto,
+  ProgramDto,
+  ProgramSheetDto,
   ProjectArtifactDto,
   ProposalDto,
+  SemanticsDto,
   StateProjectionDto,
   ValidationDto,
   VolumesDto,
@@ -62,6 +65,11 @@ import { OptionsPanel } from "../features/options/OptionsPanel";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { FrameEditor } from "../features/stage/FrameEditor";
+import {
+  ProgramPanel,
+  edited,
+  type SpaceEdit,
+} from "../features/program/ProgramPanel";
 import type { ViewState } from "../features/stage/SourceChip";
 import { Stage, type HomeModel, type PickedFacts } from "../features/stage/Stage";
 import type { VersionExport, VersionGroup } from "../features/stage/VersionsStrip";
@@ -254,6 +262,17 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [volumes, setVolumes] = useState<Loadable<VolumesDto>>(idle);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [optionsBusy, setOptionsBusy] = useState(false);
+  // The program sheet: what the server answered, and the copy this tab is
+  // editing. They are two values on purpose — `program` is the server's
+  // document and stays as it was answered, `sheet` is what will be sent back,
+  // and keeping one would lose the ability to say what has been changed.
+  const [program, setProgram] = useState<Loadable<ProgramDto>>(idle);
+  const [programOpen, setProgramOpen] = useState(false);
+  const [sheet, setSheet] = useState<ProgramSheetDto | null>(null);
+  const [applyingProgram, setApplyingProgram] = useState(false);
+  // The record's semantic vocabulary, read once: it is the framework's, not
+  // this project's, so it does not change when the record does.
+  const [semantics, setSemantics] = useState<Loadable<SemanticsDto>>(idle);
 
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [evidencePinned, setEvidencePinned] = useState(readPinned);
@@ -342,6 +361,17 @@ export default function App({ server }: { server: ServerIdentity }) {
       setVolumes(ready(await studio.volumes()));
     } catch (cause) {
       setVolumes(failed(asStudioApiError(cause)));
+  const loadProgram = useCallback(async () => {
+    setProgram(loading);
+    try {
+      const answer = await studio.program();
+      setProgram(ready(answer));
+      // The edited copy is replaced by what the server just said. Anything
+      // typed and not applied is lost, and that is the honest outcome: the
+      // sheet on screen has to be one the server would accept back.
+      setSheet(answer.sheet);
+    } catch (cause) {
+      setProgram(failed(asStudioApiError(cause)));
     }
   }, []);
 
@@ -349,6 +379,66 @@ export default function App({ server }: { server: ServerIdentity }) {
     if (!optionsOpen || projection === null) return;
     void loadOptions();
   }, [optionsOpen, projection?.recordDigest, loadOptions]);
+    if (!programOpen || projection === null) return;
+    void loadProgram();
+  }, [programOpen, projection?.recordDigest, loadProgram]);
+
+  useEffect(() => {
+    if (!programOpen || semantics.status !== "idle") return;
+    setSemantics(loading);
+    void (async () => {
+      try {
+        setSemantics(ready(await studio.semantics()));
+      } catch (cause) {
+        setSemantics(failed(asStudioApiError(cause)));
+      }
+    })();
+  }, [programOpen, semantics.status]);
+
+  /**
+   * Send the edited sheet to be run as a candidate.
+   *
+   * It appends a system line rather than a candidate card: a card polls
+   * `GET /api/candidates/{id}`, which reads a candidate *against its
+   * proposal*, and a sheet is not a proposal. The line names the run and
+   * repeats the server's own honesty verbatim.
+   */
+  const applyProgram = useCallback(
+    async (current: ProgramSheetDto, saveInput: boolean) => {
+      if (stateDigest === null) return;
+      setApplyingProgram(true);
+      try {
+        const answer = await studio.applyProgram({
+          stateDigest,
+          sheet: current,
+          saveInput,
+        });
+        append({
+          kind: "system",
+          ...systemText([
+            { kind: "prose", text: "Program applied as candidate " },
+            { kind: "technical", text: answer.candidateId },
+            { kind: "prose", text: " · job " },
+            { kind: "technical", text: answer.jobId },
+            {
+              kind: "prose",
+              text: answer.savedInput ? " · sheet saved" : " · sheet not saved",
+            },
+          ]),
+        });
+        for (const line of answer.honesty) {
+          append({ kind: "system", ...systemText([{ kind: "prose", text: line }]) });
+        }
+      } catch (cause) {
+        const error = asStudioApiError(cause);
+        recoverFromStaleBase(error);
+        append({ kind: "refusal", error, what: "POST /api/program" });
+      } finally {
+        setApplyingProgram(false);
+      }
+    },
+    [append, recoverFromStaleBase, stateDigest],
+  );
 
   const openLocalFile = useCallback((file: File) => {
     void viewportRef.current?.openFile(file);
@@ -1748,6 +1838,28 @@ export default function App({ server }: { server: ServerIdentity }) {
                   onMake={(body) => void makeOption(body)}
                   onSelect={(optionId) => void selectOption(optionId)}
                   onClose={() => setOptionsOpen(false)}
+            programOpen={programOpen}
+            onToggleProgram={() => setProgramOpen((open) => !open)}
+            programPanel={
+              programOpen ? (
+                <ProgramPanel
+                  program={program}
+                  semantics={semantics}
+                  sheet={sheet}
+                  applying={applyingProgram}
+                  // Only a local studio writes the architect's own file; a
+                  // remote server refuses, so the box is not offered there.
+                  canSave={server.mode === "local"}
+                  onEdit={(edit: SpaceEdit) =>
+                    setSheet((current) =>
+                      current === null ? current : edited(current, edit),
+                    )
+                  }
+                  onApply={(current, saveInput) =>
+                    void applyProgram(current, saveInput)
+                  }
+                  onReread={() => void loadProgram()}
+                  onClose={() => setProgramOpen(false)}
                 />
               ) : null
             }

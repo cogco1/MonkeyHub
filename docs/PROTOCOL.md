@@ -25,7 +25,8 @@ GET /api/protocol
   "serverVersion": "0.1.0",
   "mode": "local",
   "capabilities": ["artifacts", "candidates", "compare", "events", "gestures",
-                   "intents", "pick", "projection", "proposals", "validation"]
+                   "intents", "pick", "program", "projection", "proposals",
+                   "validation"]
 }
 ```
 
@@ -119,16 +120,40 @@ tolerate it.
 | GET | `/api/options` | the record's massing as the baseline and every option this process holds beside it, measured the same way | server memory + reads shared | provisional |
 | POST | `/api/options/{optionId}/select` → 202 | run that option as a candidate, through the same candidate path a proposal takes; answers a job id, never a run | writes a **detached run** | provisional |
 
-Twenty-nine resources: fifteen stable, fourteen provisional. `/api/intents` is provisional because who
+| GET | `/api/program` | the program sheet: departments, spaces with target area / count / clear height / function, adjacency requirements, `totals`, `honesty[]`. `source` is `input` (the architect's own `input/runner/program-sheet.json`) or `derived` (what the record's own `Space@1` zones say) | reads work in progress + shared + published | provisional |
+| POST | `/api/program` → 202 | apply a sheet to the record **as a candidate**: a job id, the run id it will make, and the server's own `totals`. The authored record is never rewritten. `saveInput: true` also writes the architect's own sheet file — local mode only (§10.1) | **writes shared**; with `saveInput`, **writes work in progress** | provisional |
+| GET | `/api/semantics` | every registered `role.*` and `condition.*` with its meaning and aliases: the vocabulary canonical state may name (ADR-006). Opens no project | none | provisional |
+
+Thirty-two resources: fifteen stable, seventeen provisional. `/api/intents` is provisional because who
 signs an agent's compilation receipt is still moving; the three deliberation resources because a
 judgement not yet met by a run is still one process's memory; `/api/controls` because a declared
 control has not entered the authored record; `/api/compare` because its `why` comes from one
 process's memory of a proposal; `/api/events` because its event types are not a closed set and
 authenticated streams have no answer yet (§7); `/api/state/frame` and `/api/state/closure` because
 levels and axes are not yet editable — the grammar has no sentence for them — so what an
-architect can do with the frame is still moving; and the four massing resources because an
+architect can do with the frame is still moving; the four massing resources because an
 option's metrics are held in the server's memory — there is no retained record kind whose payload
-is a set of measurements, so only the option's pack survives a restart, in its own run.
+is a set of measurements, so only the option's pack survives a restart, in its own run; the three program resources because who owns an
+authored sheet on a shared server has no answer yet, and because a candidate made from a sheet is
+not yet readable through `GET /api/candidates/{id}` (below).
+
+**The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
+the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
+that is not the state the project answers with now, and `422 PROGRAM_SHEET_INVALID` when the kernel
+refuses a row — a `function` outside the semantic registry, a `requirement` the kernel relation
+vocabulary has no kind for (`near` and `visual` have none; `adjacent` and `apart` become `adjacent`
+and `clearance`), a `spaceId` that would rewrite an existing entity. It refuses
+`422 PROGRAM_SHEET_NOT_APPLICABLE` when the record the sheet would make is one the kernel will not
+build a design view of — a space with no zone becomes a `Space@1` with no volume, and a record that
+already draws massing has no room for a zone that occupies nothing.
+
+A candidate made from a sheet carries no proposal, so `GET /api/candidates/{candidateId}` answers
+`404 PROPOSAL_NOT_FOUND` for one. Follow it with `GET /api/jobs/{jobId}` and read the run's own
+records; the 202's `honesty[]` says so verbatim.
+
+`saveInput: true` on a remote server answers `409 WIP_WRITE_REMOTE` and **still makes the
+candidate**, naming its run and job in the refusal: running a sheet is a read of the record, and
+only keeping one needs an owner this protocol does not yet have.
 
 **Server memory.** Proposals, jobs and events live in the process and are lost on restart. A
 client treats `PROPOSAL_NOT_FOUND` and `JOB_NOT_FOUND` as ordinary and never uses the event
@@ -367,6 +392,12 @@ The token is opaque to the protocol: how a client obtained it, and what it stand
 outside v1. There is no login resource, no session, no user identity on any answer, and no
 per-project authorisation. A minor version adds them; nothing in v1 pretends they exist.
 
+That absence has one consequence a client can see. Writing an authored work-in-progress file —
+today, `POST /api/program` with `saveInput: true` — is a **local-mode act only**: a remote server
+cannot say whose sheet it would be saving, so it answers `409 WIP_WRITE_REMOTE` rather than let one
+architect's brief silently replace another's. The read and the candidate are unaffected, and the
+refusal names the run that was made. When per-user authoring lands, this refusal goes with it.
+
 ### 10.2 Multi-project addressing
 
 The general form of every resource is project-scoped:
@@ -393,8 +424,8 @@ wherever a server offers it.
 
 `capabilities` is how a client hides what a server cannot do instead of discovering it as a 404.
 A capability name is a feature, not a route: `projection`, `pick`, `gestures`, `intents`,
-`proposals`, `candidates`, `compare`, `artifacts`, `validation`, `events`, and `rhino-export`
-where a server can really drive one. The list is sorted and reflects the running configuration,
+`proposals`, `candidates`, `compare`, `artifacts`, `program`, `validation`, `events`, and
+`rhino-export` where a server can really drive one. The list is sorted and reflects the running configuration,
 not the build.
 
 A client must tolerate a capability it does not know — that is how a minor version adds one —

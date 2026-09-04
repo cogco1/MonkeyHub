@@ -21,6 +21,7 @@ changed nothing rather than implying it did.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -34,7 +35,7 @@ from archflow.project.record_kinds import (
     RUNNER_RUN_RECEIPT,
     SEAT_RELATION_CHECK,
 )
-from archflow.project.refs import ProjectRecordRef, ProjectVersionRef
+from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.runtime.project_runner import RunOptions, run_project
 from archflow.state.state_record import (
     Entity,
@@ -364,49 +365,32 @@ def _run_successor(
             record_kind=record_kind_,
             payload=payload,
         )
-    # The one sanctioned binding: the record attaches itself to this run.
-    bound = successor.bound_to(run)
-    state = developed_design_view(
-        bound,
-        run=run,
-        portfolio_id=PORTFOLIO_ID,
-        branch_id=BRANCH_ID,
-        selection_decision_ref=SELECTION_DECISION_REF,
-    )
-    guard = harness_guard(repository, run, state)
-    # What a live provider would have to present. The runner records its own
-    # proposals, so a pack that declares no provider identity still runs.
-    declared_provider = seat_pack.get("provider_identity")
-    options = RunOptions(
-        commitment_ref=seat_pack["commitment_ref"],
-        live_provider_identity=(
-            None
-            if declared_provider is None
-            else GeometryProposalProviderIdentity(**declared_provider)
-        ),
-        branch_id=seat_pack.get("branch_id", BRANCH_ID),
-        export=settings.rhino_export,
-        workspace_root=repository.layout.run(run_id).root / "workspaces",
-        powershell=settings.powershell,
-    )
-    if options.export:
-        # The exporter writes into a directory per seat and expects it to be
-        # there; production's own entry point creates them the same way.
-        for seat in seats:
-            if not seat.reviewer:
-                (
-                    options.workspace_root
-                    / f"cad-{STAGE_ID}-{seat.seat_id}"
-                ).mkdir(parents=True, exist_ok=True)
-    return run_project(
-        repository,
-        run=run,
-        stage_guard=guard,
-        record=bound,
-        seats=seats,
-        options=options,
+
+    return run_successor(
+        binding,
+        settings,
+        successor,
+        run_id,
+        retain_before_run=retain_compilation,
     )
 
+
+def run_successor(
+    binding: ProjectBinding,
+    settings: StudioSettings,
+    successor: StateRecord,
+    run_id: str,
+    *,
+    base_state_digest: str | None = None,
+    retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
+) -> Mapping[str, Any]:
+    """Run a successor record that no proposal made (a program sheet applied) by the same
+    arrangement every candidate takes: the base check where the record is read, the run, the
+    harness stage and the seats (``_run_successor``). ``base_state_digest`` is checked against
+    the live state when given; ``retain`` are records put into the run before it starts."""
+
+    seat_pack = _seat_pack(binding, base_state_digest) if base_state_digest is not None else load_seat_pack(binding.repository)
+    return _run_successor(binding, settings, seat_pack, successor, run_id, retain=retain)
 
 @dataclass(frozen=True, slots=True)
 class SeatOutcome:

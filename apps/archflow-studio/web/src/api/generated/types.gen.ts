@@ -2222,6 +2222,244 @@ export type PickResolutionDto = {
 };
 
 /**
+ * ProgramAdjacencyDto
+ *
+ * One requirement between two spaces of the brief.
+ */
+export type ProgramAdjacencyDto = {
+    /**
+     * Fromspaceid
+     */
+    fromSpaceId: string;
+    /**
+     * Tospaceid
+     */
+    toSpaceId: string;
+    /**
+     * Requirement
+     *
+     * one of adjacent, near, apart, visual
+     */
+    requirement: string;
+    /**
+     * Relationid
+     *
+     * the record relation this requirement is already carried by; null means applying the sheet would declare one
+     */
+    relationId: string | null;
+};
+
+/**
+ * ProgramApplyRequestDto
+ *
+ * Apply a sheet to the record as a candidate; optionally keep the sheet.
+ */
+export type ProgramApplyRequestDto = {
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    sheet: ProgramSheetDto;
+    /**
+     * Saveinput
+     *
+     * also write the sheet to input/runner/program-sheet.json. Local mode only; a remote server refuses with WIP_WRITE_REMOTE and still makes the candidate
+     */
+    saveInput?: boolean;
+};
+
+/**
+ * ProgramCandidateDto
+ *
+ * The wire form of ``POST /api/program``: 202, and what it will total.
+ */
+export type ProgramCandidateDto = {
+    /**
+     * Jobid
+     */
+    jobId: string;
+    /**
+     * Candidateid
+     *
+     * the run id this application will be retained under
+     */
+    candidateId: string;
+    /**
+     * Status
+     */
+    status: string;
+    totals: ProgramTotalsDto;
+    /**
+     * Savedinput
+     *
+     * whether the architect's own sheet file was written
+     */
+    savedInput: boolean;
+    /**
+     * Honesty
+     */
+    honesty: Array<string>;
+};
+
+/**
+ * ProgramDepartmentDto
+ *
+ * One department of the brief and the spaces under it.
+ */
+export type ProgramDepartmentDto = {
+    /**
+     * Departmentid
+     */
+    departmentId: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Spaces
+     */
+    spaces: Array<ProgramSpaceDto>;
+};
+
+/**
+ * ProgramDto
+ *
+ * The wire form of ``GET /api/program``.
+ */
+export type ProgramDto = {
+    /**
+     * Source
+     *
+     * input — the architect's own input/runner/program-sheet.json; derived — what the record's own zones say
+     */
+    source: string;
+    sheet: ProgramSheetDto;
+    /**
+     * Statedigest
+     *
+     * the state that answers now, whatever the sheet claims
+     */
+    stateDigest: string | null;
+};
+
+/**
+ * ProgramSheetDto
+ *
+ * One ``ProgramSheet@1``, as authored or as derived.
+ */
+export type ProgramSheetDto = {
+    /**
+     * Schema
+     *
+     * always ProgramSheet@1
+     */
+    schema?: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Statedigest
+     *
+     * the record this sheet was read from, or written against
+     */
+    stateDigest: string | null;
+    /**
+     * Departments
+     */
+    departments: Array<ProgramDepartmentDto>;
+    /**
+     * Adjacencies
+     */
+    adjacencies: Array<ProgramAdjacencyDto>;
+    totals: ProgramTotalsDto;
+    /**
+     * Honesty
+     */
+    honesty: Array<string>;
+};
+
+/**
+ * ProgramSpaceDto
+ *
+ * One room of the brief, and the zone of the record it maps to.
+ */
+export type ProgramSpaceDto = {
+    /**
+     * Spaceid
+     */
+    spaceId: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Function
+     *
+     * a registered role/condition id or alias (GET /api/semantics); null where the brief has not said what this space is for
+     */
+    function: string | null;
+    /**
+     * Targetaream2
+     *
+     * what the brief asks for, per one of them; null where it asks for no number
+     */
+    targetAreaM2: number | null;
+    /**
+     * Count
+     *
+     * how many of this space the brief asks for
+     */
+    count: number;
+    /**
+     * Clearheightm
+     *
+     * null from a derived sheet: a MassingLevel@1 height is the level's full height, not a clear height
+     */
+    clearHeightM: number | null;
+    /**
+     * Levelids
+     */
+    levelIds: Array<string>;
+    /**
+     * Zoneid
+     *
+     * the Space@1 this row maps to; null means applying the sheet would add one
+     */
+    zoneId: string | null;
+    /**
+     * Mappedaream2
+     *
+     * the footprint the record actually draws for the mapped zone; null when it draws none. Never authored: it is recomputed from the record on every read
+     */
+    mappedAreaM2: number | null;
+};
+
+/**
+ * ProgramTotalsDto
+ *
+ * Target against mapped, and what maps to nothing.
+ */
+export type ProgramTotalsDto = {
+    /**
+     * Targetaream2
+     *
+     * the sum of the rows that state a target, times their count; rows that state none are not counted as zero
+     */
+    targetAreaM2: number;
+    /**
+     * Mappedaream2
+     */
+    mappedAreaM2: number;
+    /**
+     * Unmappedspaces
+     *
+     * the spaces of the brief that no zone of the record carries
+     */
+    unmappedSpaces: Array<string>;
+};
+
+/**
  * ProjectArtifactDto
  *
  * One exported model, as its receipt describes it and disk answers for it.
@@ -2711,6 +2949,50 @@ export type SeatTimingDto = {
      * Walltimes
      */
     wallTimeS: number | null;
+};
+
+/**
+ * SemanticTermDto
+ *
+ * One registered term: its id, what it means, and what may stand for it.
+ */
+export type SemanticTermDto = {
+    /**
+     * Id
+     *
+     * the canonical id canonical state carries
+     */
+    id: string;
+    /**
+     * Meaning
+     */
+    meaning: string;
+    /**
+     * Aliases
+     *
+     * what a person or a model may write instead; an alias resolves to the id and never enters canonical state itself
+     */
+    aliases: Array<string>;
+};
+
+/**
+ * SemanticsDto
+ *
+ * The wire form of ``GET /api/semantics``.
+ */
+export type SemanticsDto = {
+    /**
+     * Roles
+     *
+     * what a component does for the building
+     */
+    roles: Array<SemanticTermDto>;
+    /**
+     * Conditions
+     *
+     * the spatial condition a component or connection forms
+     */
+    conditions: Array<SemanticTermDto>;
 };
 
 /**
@@ -3345,6 +3627,63 @@ export type ReadClosureApiStateClosurePostResponses = {
 };
 
 export type ReadClosureApiStateClosurePostResponse = ReadClosureApiStateClosurePostResponses[keyof ReadClosureApiStateClosurePostResponses];
+
+export type ReadSheetApiProgramGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/program';
+};
+
+export type ReadSheetApiProgramGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProgramDto;
+};
+
+export type ReadSheetApiProgramGetResponse = ReadSheetApiProgramGetResponses[keyof ReadSheetApiProgramGetResponses];
+
+export type ApplyProgramApiProgramPostData = {
+    body: ProgramApplyRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/program';
+};
+
+export type ApplyProgramApiProgramPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ApplyProgramApiProgramPostError = ApplyProgramApiProgramPostErrors[keyof ApplyProgramApiProgramPostErrors];
+
+export type ApplyProgramApiProgramPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: ProgramCandidateDto;
+};
+
+export type ApplyProgramApiProgramPostResponse = ApplyProgramApiProgramPostResponses[keyof ApplyProgramApiProgramPostResponses];
+
+export type ReadSemanticsApiSemanticsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/semantics';
+};
+
+export type ReadSemanticsApiSemanticsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SemanticsDto;
+};
+
+export type ReadSemanticsApiSemanticsGetResponse = ReadSemanticsApiSemanticsGetResponses[keyof ReadSemanticsApiSemanticsGetResponses];
 
 export type ReadArtifactsApiArtifactsGetData = {
     body?: never;

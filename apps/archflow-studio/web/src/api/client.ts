@@ -31,6 +31,7 @@ import {
   type FieldsResult,
 } from "./error";
 import {
+  applyProgramApiProgramPost,
   compileIntentApiIntentsPost,
   createProposalApiProposalsPost,
   readArtifactBytesApiArtifactsSha256BytesGet,
@@ -43,6 +44,8 @@ import {
   readClosureApiStateClosurePost,
   readFrameApiStateFrameGet,
   readOptionsApiOptionsGet,
+  readSemanticsApiSemanticsGet,
+  readSheetApiProgramGet,
   readStateApiStateGet,
   readVolumesApiStateVolumesGet,
   makeMassingOptionApiOptionsPost,
@@ -68,10 +71,14 @@ import type {
   OptionsDto,
   PickRequestDto,
   PickResolutionDto,
+  ProgramApplyRequestDto,
+  ProgramCandidateDto,
+  ProgramDto,
   ProjectBindingDto,
   ProjectListDto,
   ProposalDto,
   ProposalRequestDto,
+  SemanticsDto,
   StateProjectionDto,
   ValidationDto,
   VolumesDto,
@@ -168,6 +175,28 @@ export const studio = {
       `POST /api/options/${optionId}/select`,
       selectOptionApiOptionsOptionIdSelectPost({ path: { option_id: optionId } }),
     );
+   * The project's program sheet: the architect's own where one is authored,
+   * else the record's own reading of its zones. `source` says which.
+   */
+  program(): Promise<ProgramDto> {
+    return call("GET /api/program", readSheetApiProgramGet());
+  },
+
+  /**
+   * Apply a sheet to the record as a candidate run. Answers 202 with the run
+   * it will become; the authored record is never rewritten.
+   */
+  applyProgram(body: ProgramApplyRequestDto): Promise<ProgramCandidateDto> {
+    return call("POST /api/program", applyProgramApiProgramPost({ body }));
+  },
+
+  /**
+   * Every role and condition canonical state may name. The function dropdown
+   * is built from this rather than from a list this client carries: the
+   * record refuses a term the registry does not know.
+   */
+  semantics(): Promise<SemanticsDto> {
+    return call("GET /api/semantics", readSemanticsApiSemanticsGet());
   },
 
   artifacts(): Promise<ArtifactListDto> {

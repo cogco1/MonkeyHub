@@ -13,6 +13,7 @@ from . import (
     intents,
     options,
     pick,
+    program,
     project,
     projects,
     protocol,
@@ -28,6 +29,7 @@ router.include_router(protocol.router)
 router.include_router(projects.router)
 router.include_router(project.router)
 router.include_router(state.router)
+router.include_router(program.router)
 router.include_router(artifacts.router)
 router.include_router(pick.router)
 router.include_router(proposals.router)

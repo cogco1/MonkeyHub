@@ -47,6 +47,7 @@ BASE_CAPABILITIES: tuple[str, ...] = (
     "gestures",
     "intents",
     "pick",
+    "program",
     "projection",
     "proposals",
     "validation",
