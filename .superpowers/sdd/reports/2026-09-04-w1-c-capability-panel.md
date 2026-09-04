@@ -11,9 +11,12 @@ unimplemented.
 
 ## Commits
 
-- `<HASH_1>` — Studio web: the capability panel says what a selection can be asked
+- `a757ef9` — Studio web: the capability panel says what a selection can be asked
+  (the panel, the mount, both i18n tables, the styles, and this report)
+- `<HASH_2>` — this report, with the hash of the commit above filled in
 
-(Hash filled in below by the commit itself; see `## Commits (actual)`.)
+Branch `worktree-agent-a20b32f2d1b09afa6`, based on `main` at `bc605aa`. Nothing
+merged, rebased or pushed.
 
 ## Files
 
