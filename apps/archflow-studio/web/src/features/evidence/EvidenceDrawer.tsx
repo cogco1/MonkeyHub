@@ -14,14 +14,17 @@ import type {
 } from "../../api/generated";
 import type { ServerIdentity } from "../../api/connection";
 import type { EvidenceTab } from "../../app/evidence";
+import type { MessageKey } from "../../i18n/messages.en";
+import { usePreferences } from "../settings/preferences";
+import { useT } from "../../i18n/useT";
 import { EventStream } from "../events/EventStream";
 import { HonestyTab } from "./HonestyTab";
 import { ReceiptsTab } from "./ReceiptsTab";
 
-const TABS: ReadonlyArray<{ id: EvidenceTab; title: string }> = [
-  { id: "honesty", title: "Honesty" },
-  { id: "receipts", title: "Receipts" },
-  { id: "events", title: "Events" },
+const TABS: ReadonlyArray<{ id: EvidenceTab; title: MessageKey }> = [
+  { id: "honesty", title: "evidence.tabs.honesty" },
+  { id: "receipts", title: "evidence.tabs.receipts" },
+  { id: "events", title: "evidence.tabs.events" },
 ];
 
 export function EvidenceDrawer({
@@ -57,18 +60,21 @@ export function EvidenceDrawer({
   onPin(pinned: boolean): void;
   onEventCount(count: number): void;
 }) {
+  const t = useT();
+  const { eventStreamVisible } = usePreferences();
+
   return (
     <aside
       className="drawer"
       data-open={String(open || pinned)}
       data-pinned={String(pinned)}
-      aria-label="evidence"
+      aria-label={t("evidence.drawer.ariaLabel")}
       aria-hidden={!(open || pinned)}
     >
       <div className="drawer__head">
         <div>
-          <p className="label">Evidence</p>
-          <p className="drawer__title">Everything the server said, verbatim</p>
+          <p className="label">{t("nav.evidence")}</p>
+          <p className="drawer__title">{t("evidence.drawer.title")}</p>
         </div>
         <div className="drawer__controls">
           <button
@@ -77,13 +83,13 @@ export function EvidenceDrawer({
             aria-pressed={pinned}
             onClick={() => onPin(!pinned)}
           >
-            {pinned ? "unpin" : "pin"}
+            {pinned ? t("evidence.drawer.unpin") : t("evidence.drawer.pin")}
           </button>
           {!pinned && (
             <button
               type="button"
               className="icon-x"
-              aria-label="close the evidence drawer"
+              aria-label={t("evidence.drawer.close")}
               onClick={onClose}
             >
               ×
@@ -100,7 +106,7 @@ export function EvidenceDrawer({
             aria-selected={tab === item.id}
             onClick={() => onTab(item.id)}
           >
-            {item.title}
+            {t(item.title)}
             <span className="drawer__count mono">{counts[item.id]}</span>
           </button>
         ))}
@@ -117,9 +123,14 @@ export function EvidenceDrawer({
         <div hidden={tab !== "receipts"}>
           <ReceiptsTab candidate={candidate} validation={validation} sentence={sentence} />
         </div>
-        <div hidden={tab !== "events"}>
+        <div hidden={tab !== "events" || !eventStreamVisible}>
           <EventStream notices={notices} onCount={onEventCount} />
         </div>
+        {tab === "events" && !eventStreamVisible && (
+          <p className="panel__note">
+            {t("settings.fields.eventStreamVisible")} · {t("settings.options.hide")}
+          </p>
+        )}
       </div>
     </aside>
   );

@@ -17,6 +17,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 import type { GestureDto, GestureHitDto } from "../../api/generated";
+import type { MessageKey } from "../../i18n/messages.en";
+import { useT } from "../../i18n/useT";
 import type { SampleHit, Vec3, ViewportController } from "../../viewer/ThreeDmViewport";
 
 export type GestureTool = GestureDto["kind"];
@@ -24,12 +26,33 @@ export type GestureTool = GestureDto["kind"];
 export const GESTURE_TOOLS: ReadonlyArray<{
   kind: GestureTool;
   glyph: string;
-  title: string;
+  labelKey: MessageKey;
+  titleKey: MessageKey;
 }> = [
-  { kind: "circle", glyph: "◯", title: "circle an area: this is what I mean" },
-  { kind: "arrow", glyph: "↗", title: "draw an arrow: which way, and how far" },
-  { kind: "keep", glyph: "✓", title: "mark what must not change" },
-  { kind: "remove", glyph: "✗", title: "mark what should go" },
+  {
+    kind: "circle",
+    glyph: "◯",
+    labelKey: "stage.tools.circle.label",
+    titleKey: "stage.tools.circle.title",
+  },
+  {
+    kind: "arrow",
+    glyph: "↗",
+    labelKey: "stage.tools.arrow.label",
+    titleKey: "stage.tools.arrow.title",
+  },
+  {
+    kind: "keep",
+    glyph: "✓",
+    labelKey: "stage.tools.keep.label",
+    titleKey: "stage.tools.keep.title",
+  },
+  {
+    kind: "remove",
+    glyph: "✗",
+    labelKey: "stage.tools.remove.label",
+    titleKey: "stage.tools.remove.title",
+  },
 ];
 
 /** A stroke is sampled every this many pixels along its length. */
@@ -136,6 +159,7 @@ export function Annotate({
   gestures: readonly GestureDto[];
   onGesture(gesture: GestureDto): void;
 }) {
+  const t = useT();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stroke, setStroke] = useState<Point[] | null>(null);
   const strokeRef = useRef<Point[] | null>(null);
@@ -266,45 +290,50 @@ export function Annotate({
     <>
       {moved && gestures.length > 0 && (
         <p className="annotate__note quiet">
-          marks are held in the view they were drawn in · what they touched still goes with
-          the sentence
+          {t("stage.annotate.note")}
         </p>
       )}
-    <canvas
-      ref={canvasRef}
-      className="annotate"
-      data-armed={tool !== null}
-      aria-label={tool ? `drawing: ${tool}` : undefined}
-      onPointerDown={(event) => {
-        if (!tool) return;
-        event.currentTarget.setPointerCapture(event.pointerId);
-        const points = [local(event)];
-        strokeRef.current = points;
-        setStroke(points);
-      }}
-      onPointerMove={(event) => {
-        const points = strokeRef.current;
-        if (!tool || !points) return;
-        const point = local(event);
-        const tail = points[points.length - 1];
-        if (Math.hypot(point[0] - tail[0], point[1] - tail[1]) < 2) return;
-        const next = [...points, point];
-        strokeRef.current = next;
-        setStroke(next);
-      }}
-      onPointerUp={(event) => {
-        const points = strokeRef.current;
-        strokeRef.current = null;
-        setStroke(null);
-        if (!tool || !points) return;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-        finish(points, event.currentTarget);
-      }}
-      onPointerCancel={() => {
-        strokeRef.current = null;
-        setStroke(null);
-      }}
-    />
+      <canvas
+        ref={canvasRef}
+        className="annotate"
+        data-armed={tool !== null}
+        aria-label={
+          tool
+            ? t("stage.annotate.drawingAria", {
+                tool: t(GESTURE_TOOLS.find((item) => item.kind === tool)?.labelKey ?? "stage.tools.circle.label"),
+              })
+            : undefined
+        }
+        onPointerDown={(event) => {
+          if (!tool) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          const points = [local(event)];
+          strokeRef.current = points;
+          setStroke(points);
+        }}
+        onPointerMove={(event) => {
+          const points = strokeRef.current;
+          if (!tool || !points) return;
+          const point = local(event);
+          const tail = points[points.length - 1];
+          if (Math.hypot(point[0] - tail[0], point[1] - tail[1]) < 2) return;
+          const next = [...points, point];
+          strokeRef.current = next;
+          setStroke(next);
+        }}
+        onPointerUp={(event) => {
+          const points = strokeRef.current;
+          strokeRef.current = null;
+          setStroke(null);
+          if (!tool || !points) return;
+          event.currentTarget.releasePointerCapture(event.pointerId);
+          finish(points, event.currentTarget);
+        }}
+        onPointerCancel={() => {
+          strokeRef.current = null;
+          setStroke(null);
+        }}
+      />
     </>
   );
 }

@@ -45,9 +45,11 @@ import { Conversation } from "../features/conversation/Conversation";
 import type { Selection } from "../features/conversation/Composer";
 import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { honestyCount } from "../features/evidence/HonestyTab";
+import { SettingsPanel } from "../features/settings/SettingsPanel";
 import type { ViewState } from "../features/stage/SourceChip";
 import { Stage, type PickedFacts } from "../features/stage/Stage";
 import type { VersionExport, VersionGroup } from "../features/stage/VersionsStrip";
+import { useT } from "../i18n/useT";
 import type { SceneInspection } from "../viewer/sceneInspection";
 import {
   LOCAL_SOURCE_LABEL,
@@ -62,9 +64,19 @@ import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { useSession } from "./useSession";
-import { useTranscript } from "./transcript";
+import { useTranscript, type SystemTextPart } from "./transcript";
 
 const BLOCKED = "BLOCKED_NEEDS_HUMAN";
+
+function systemText(parts: readonly SystemTextPart[]): {
+  readonly text: string;
+  readonly parts: readonly SystemTextPart[];
+} {
+  return {
+    text: parts.map((part) => part.text).join(""),
+    parts,
+  };
+}
 
 function readPinned(): boolean {
   try {
@@ -116,6 +128,7 @@ function ghostSpecFor(
 }
 
 export default function App({ server }: { server: ServerIdentity }) {
+  const t = useT();
   const transcript = useTranscript();
   const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
   const pushNotice = useCallback(
@@ -201,6 +214,7 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [evidencePinned, setEvidencePinned] = useState(readPinned);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>("honesty");
   const [eventCount, setEventCount] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const projection: StateProjectionDto | null =
     session.status === "ready" ? session.value.projection : null;
@@ -213,19 +227,31 @@ export default function App({ server }: { server: ServerIdentity }) {
     const key = `${projection.recordDigest}:${projection.stateDigest ?? "-"}`;
     if (announcedRef.current === key) return;
     announcedRef.current = key;
+    const parts: SystemTextPart[] = [
+      { kind: "prose", text: "Bound to " },
+      { kind: "technical", text: project.projectId },
+      { kind: "prose", text: " at issue " },
+      { kind: "technical", text: String(project.published.version) },
+      { kind: "prose", text: " · reference run " },
+      { kind: "technical", text: projection.referenceRun.runId },
+      { kind: "prose", text: " (" },
+      { kind: "technical", text: projection.referenceRunSource },
+      { kind: "prose", text: ")" },
+    ];
+    if (projection.matchesReferenceReceipt === true) {
+      parts.push({ kind: "prose", text: " · receipt reproduced" });
+    } else if (projection.matchesReferenceReceipt === false) {
+      parts.push({ kind: "prose", text: " · receipt not reproduced" });
+    }
+    if (projection.stateDigest === null) {
+      parts.push({
+        kind: "prose",
+        text: " · the kernel refused the bound view; nothing can be proposed",
+      });
+    }
     append({
       kind: "system",
-      text:
-        `Bound to ${project.projectId} at issue ${project.published.version} · ` +
-        `reference run ${projection.referenceRun.runId} (${projection.referenceRunSource})` +
-        (projection.matchesReferenceReceipt === true
-          ? " · receipt reproduced"
-          : projection.matchesReferenceReceipt === false
-            ? " · receipt not reproduced"
-            : "") +
-        (projection.stateDigest === null
-          ? " · the kernel refused the bound view; nothing can be proposed"
-          : ""),
+      ...systemText(parts),
     });
   }, [append, project, projection]);
 
@@ -359,10 +385,22 @@ export default function App({ server }: { server: ServerIdentity }) {
     const seats = referenceExports.map(seatOf);
     append({
       kind: "system",
-      text:
-        referenceExports.length === 1
-          ? `Showing the reference run's export · ${referenceExports[0].fileName}`
-          : `Showing the reference run's exports · ${seats.join(" + ")}`,
+      ...systemText([
+        {
+          kind: "prose",
+          text:
+            referenceExports.length === 1
+              ? "Showing the reference run's export · "
+              : "Showing the reference run's exports · ",
+        },
+        {
+          kind: "technical",
+          text:
+            referenceExports.length === 1
+              ? referenceExports[0].fileName
+              : seats.join(" + "),
+        },
+      ]),
     });
     void loadRunIntoViewer(
       referenceExports,
@@ -390,10 +428,22 @@ export default function App({ server }: { server: ServerIdentity }) {
       const seats = referenceExports.map(seatOf);
       append({
         kind: "system",
-        text:
-          referenceExports.length === 1
-            ? `Showing the reference run's export · ${referenceExports[0].fileName}`
-            : `Showing the reference run's exports · ${seats.join(" + ")}`,
+        ...systemText([
+          {
+            kind: "prose",
+            text:
+              referenceExports.length === 1
+                ? "Showing the reference run's export · "
+                : "Showing the reference run's exports · ",
+          },
+          {
+            kind: "technical",
+            text:
+              referenceExports.length === 1
+                ? referenceExports[0].fileName
+                : seats.join(" + "),
+          },
+        ]),
       });
       void loadRunIntoViewer(
         referenceExports,
@@ -404,7 +454,17 @@ export default function App({ server }: { server: ServerIdentity }) {
     const pick = rows[rows.length - 1];
     append({
       kind: "system",
-      text: `The reference run ${projection.referenceRun.runId} left no export; showing the last export listed, ${pick.fileName} from run ${pick.runId}`,
+      ...systemText([
+        { kind: "prose", text: "The reference run " },
+        { kind: "technical", text: projection.referenceRun.runId },
+        {
+          kind: "prose",
+          text: " left no export; showing the last export listed, ",
+        },
+        { kind: "technical", text: pick.fileName },
+        { kind: "prose", text: " from run " },
+        { kind: "technical", text: pick.runId },
+      ]),
     });
     void loadArtifactIntoViewer(pick, canonicalSourceLabel(pick));
   }, [
@@ -448,6 +508,12 @@ export default function App({ server }: { server: ServerIdentity }) {
         append({
           kind: "system",
           text: "a pick is resolved against a state; the projection has not loaded yet",
+          parts: [
+            {
+              kind: "prose",
+              text: "a pick is resolved against a state; the projection has not loaded yet",
+            },
+          ],
         });
         return;
       }
@@ -463,10 +529,20 @@ export default function App({ server }: { server: ServerIdentity }) {
           resolution.elementId ?? resolution.componentId ?? "nothing resolvable";
         append({
           kind: "system",
-          text:
-            `You picked ${subject} in the model · ${resolution.status} · ` +
-            `source ${resolution.sourceState}` +
-            (resolution.detail ? ` · ${resolution.detail}` : ""),
+          ...systemText([
+            { kind: "prose", text: "You picked " },
+            { kind: "technical", text: subject },
+            { kind: "prose", text: " in the model · " },
+            { kind: "technical", text: resolution.status },
+            { kind: "prose", text: " · source " },
+            { kind: "technical", text: resolution.sourceState },
+            ...(resolution.detail
+              ? ([
+                  { kind: "prose", text: " · " },
+                  { kind: "technical", text: resolution.detail },
+                ] satisfies SystemTextPart[])
+              : []),
+          ]),
         });
         const element = resolution.elementId
           ? projection?.elements.find(
@@ -525,7 +601,18 @@ export default function App({ server }: { server: ServerIdentity }) {
       if (gestures.length > 0) {
         append({
           kind: "system",
-          text: `with ${gestures.length} ${gestures.length === 1 ? "mark" : "marks"} on the model: ${gestures.map((gesture) => gesture.kind).join(", ")}`,
+          ...systemText([
+            { kind: "prose", text: "with " },
+            { kind: "technical", text: String(gestures.length) },
+            {
+              kind: "prose",
+              text: gestures.length === 1 ? " mark on the model: " : " marks on the model: ",
+            },
+            {
+              kind: "technical",
+              text: gestures.map((gesture) => gesture.kind).join(", "),
+            },
+          ]),
         });
       }
       setProposalBusy(true);
@@ -537,9 +624,12 @@ export default function App({ server }: { server: ServerIdentity }) {
           selection?.elementId ??
           selection?.componentId ??
           (gestures.some((gesture) => gesture.kind === "circle")
-            ? "what you circled"
-            : "the record"),
-        recordSize: `${projection?.counts.components ?? "?"} components, ${projection?.elements.length ?? "?"} elements`,
+            ? t("reading.subjectCircled")
+            : t("reading.subjectRecord")),
+        recordSize: t("reading.recordSize", {
+          components: projection?.counts.components ?? "?",
+          elements: projection?.elements.length ?? "?",
+        }),
         provider: project.intentProvider,
         startedAt: Date.now(),
       });
@@ -560,7 +650,13 @@ export default function App({ server }: { server: ServerIdentity }) {
         // What the server read off the marks, in the record's names — printed
         // before the proposal so the reader sees what the sentence was said with.
         for (const fact of answer.gestures ?? []) {
-          append({ kind: "system", text: `read from the model: ${fact}` });
+          append({
+            kind: "system",
+            ...systemText([
+              { kind: "prose", text: "read from the model: " },
+              { kind: "technical", text: fact },
+            ]),
+          });
         }
         append({
           kind: "proposal",
@@ -582,7 +678,13 @@ export default function App({ server }: { server: ServerIdentity }) {
           if (spec && sourceLabel !== null) {
             append({
               kind: "system",
-              text: `nothing to preview here: the loaded file carries no objects of ${spec.target.elementId}`,
+              ...systemText([
+                {
+                  kind: "prose",
+                  text: "nothing to preview here: the loaded file carries no objects of ",
+                },
+                { kind: "technical", text: spec.target.elementId },
+              ]),
             });
           }
         }
@@ -598,7 +700,14 @@ export default function App({ server }: { server: ServerIdentity }) {
           });
           append({
             kind: "system",
-            text: `Now talking about ${target.elementId ?? target.componentId} · the proposal's target`,
+            ...systemText([
+              { kind: "prose", text: "Now talking about " },
+              {
+                kind: "technical",
+                text: target.elementId ?? target.componentId,
+              },
+              { kind: "prose", text: " · the proposal's target" },
+            ]),
           });
           // The picked chip described the old subject; it must not outlive it,
           // and neither must the mark on the model that went with it.
@@ -638,6 +747,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       selection,
       sourceLabel,
       stateDigest,
+      t,
     ],
   );
 
@@ -743,7 +853,14 @@ export default function App({ server }: { server: ServerIdentity }) {
       if (shown === null || shown.runId !== comparison.against) {
         append({
           kind: "system",
-          text: `to cross-fade, load an export of ${comparison.against} first; the comparison was counted against it`,
+          ...systemText([
+            { kind: "prose", text: "to cross-fade, load an export of " },
+            { kind: "technical", text: comparison.against },
+            {
+              kind: "prose",
+              text: " first; the comparison was counted against it",
+            },
+          ]),
         });
         return;
       }
@@ -758,7 +875,12 @@ export default function App({ server }: { server: ServerIdentity }) {
       if (!twin || !twin.sha256) {
         append({
           kind: "system",
-          text: `${comparison.candidateId} left no servable export of ${shown.stageId ?? "this seat"}; nothing to cross-fade`,
+          ...systemText([
+            { kind: "technical", text: comparison.candidateId },
+            { kind: "prose", text: " left no servable export of " },
+            { kind: "technical", text: shown.stageId ?? "this seat" },
+            { kind: "prose", text: "; nothing to cross-fade" },
+          ]),
         });
         return;
       }
@@ -891,15 +1013,37 @@ export default function App({ server }: { server: ServerIdentity }) {
     if (manualLoadRef.current && loadedArtifact !== null && loadedArtifact.runId !== candidateId) {
       append({
         kind: "system",
-        text: `the exact model is ready · ${twin.fileName} · not shown: you chose ${loadedArtifact.fileName} to look at; its card can show it`,
+        ...systemText([
+          { kind: "prose", text: "the exact model is ready · " },
+          { kind: "technical", text: twin.fileName },
+          { kind: "prose", text: " · not shown: you chose " },
+          { kind: "technical", text: loadedArtifact.fileName },
+          {
+            kind: "prose",
+            text: " to look at; its card can show it",
+          },
+        ]),
       });
       return;
     }
     append({
       kind: "system",
-      text: `the exact model is on screen · ${twin.fileName} · ${
-        validation.advance ? "may advance" : `blocked: ${validation.blockedBy.join(", ")}`
-      }`,
+      ...systemText([
+        { kind: "prose", text: "the exact model is on screen · " },
+        { kind: "technical", text: twin.fileName },
+        {
+          kind: "prose",
+          text: validation.advance ? " · may advance" : " · blocked: ",
+        },
+        ...(validation.advance
+          ? []
+          : ([
+              {
+                kind: "technical",
+                text: validation.blockedBy.join(", "),
+              },
+            ] satisfies SystemTextPart[])),
+      ]),
     });
     void loadArtifactIntoViewer(twin, candidateSourceLabel(candidateId));
   }, [append, artifacts, loadArtifactIntoViewer, loadedArtifact, validations]);
@@ -1024,13 +1168,13 @@ export default function App({ server }: { server: ServerIdentity }) {
     selection !== null || gestures.some((gesture) => gesture.kind === "circle");
   const disabledReason =
     session.status === "failed"
-      ? `the binding refused: ${session.error.code}`
+      ? t("shell.bindingRefused", { code: session.error.code })
       : projection === null
-        ? "reading the projection…"
+        ? t("shell.readingProjection")
         : projection.stateDigest === null
-          ? "the kernel refused this record's bound view; fix the record before proposing"
+          ? t("shell.boundViewRefused")
           : !hasSubject
-            ? "pick something in the model first, or choose a component"
+            ? t("shell.pickFirst")
             : null;
 
   // CURRENT / GHOST PREVIEW / VALIDATED — what the picture is, with the
@@ -1133,8 +1277,13 @@ export default function App({ server }: { server: ServerIdentity }) {
           mode="boot"
           status={
             session.status === "idle"
-              ? "starting the session"
-              : "reading the binding · GET /api/project"
+              ? t("loading.startingSession")
+              : (
+                  <>
+                    {t("loading.readingBinding")} ·{" "}
+                    <code lang="en">GET /api/project</code>
+                  </>
+                )
           }
         />
       )}
@@ -1154,7 +1303,7 @@ export default function App({ server }: { server: ServerIdentity }) {
           <>
             <span
               className="wordmark"
-              title="Professional modeling environment · Powered by the open ArchFlow protocol."
+              title={t("shell.wordmarkTitle")}
             >
               MonkeyArch
             </span>
@@ -1165,26 +1314,26 @@ export default function App({ server }: { server: ServerIdentity }) {
                   {project.projectId}
                 </span>
                 <span className="mono toolbar__item">
-                  published · issue {project.published.version}
+                  {t("shell.publishedIssue", { version: project.published.version })}
                 </span>
                 <span
                   className="pill pill--plain"
-                  title="proposal only · every run is a harness beside the project; nothing is issued"
+                  title={t("shell.proposalOnlyTitle")}
                 >
-                  proposal only · nothing is written to the project
+                  {t("shell.proposalOnly")}
                 </span>
                 <span className="toolbar__spacer" />
               </>
             ) : session.status === "failed" ? (
               <>
                 <span className="toolbar__item">
-                  not bound · {session.error.code}
+                  {t("shell.notBound", { code: session.error.code })}
                 </span>
                 <span className="toolbar__spacer" />
               </>
             ) : (
               <>
-                <span className="toolbar__item">reading the binding…</span>
+                <span className="toolbar__item">{t("shell.readingBinding")}</span>
                 <span className="toolbar__spacer" />
               </>
             )}
@@ -1198,7 +1347,16 @@ export default function App({ server }: { server: ServerIdentity }) {
                   : openEvidence(evidenceTab)
               }
             >
-              Evidence
+              {t("nav.evidence")}
+            </button>
+            <button
+              type="button"
+              className="toolbar__btn"
+              aria-haspopup="dialog"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen(true)}
+            >
+              {t("nav.settings")}
             </button>
           </>
         }
@@ -1226,7 +1384,11 @@ export default function App({ server }: { server: ServerIdentity }) {
               setSelection({ componentId, elementId });
               append({
                 kind: "system",
-                text: `Talking about ${elementId ?? componentId} · chosen from the record`,
+                ...systemText([
+                  { kind: "prose", text: "Talking about " },
+                  { kind: "technical", text: elementId ?? componentId },
+                  { kind: "prose", text: " · chosen from the record" },
+                ]),
               });
             }}
             callbacks={{
@@ -1239,7 +1401,14 @@ export default function App({ server }: { server: ServerIdentity }) {
                 if (draft.trim() !== "" && draft !== sentence) {
                   append({
                     kind: "system",
-                    text: `the unsent text "${draft}" was replaced by the proposal's sentence`,
+                    ...systemText([
+                      { kind: "prose", text: "the unsent text “" },
+                      { kind: "user", text: draft },
+                      {
+                        kind: "prose",
+                        text: "” was replaced by the proposal's sentence",
+                      },
+                    ]),
                   });
                 }
                 setDraft(sentence);
@@ -1300,10 +1469,21 @@ export default function App({ server }: { server: ServerIdentity }) {
               manualLoadRef.current = true;
               append({
                 kind: "system",
-                text:
-                  rows.length === 1
-                    ? `Showing ${group.runId} · ${rows[0].fileName}`
-                    : `Showing every seat of ${group.runId} · ${rows.map(seatOf).join(" + ")}`,
+                ...systemText([
+                  {
+                    kind: "prose",
+                    text: rows.length === 1 ? "Showing " : "Showing every seat of ",
+                  },
+                  { kind: "technical", text: group.runId },
+                  { kind: "prose", text: " · " },
+                  {
+                    kind: "technical",
+                    text:
+                      rows.length === 1
+                        ? rows[0].fileName
+                        : rows.map(seatOf).join(" + "),
+                  },
+                ]),
               });
               void loadRunIntoViewer(rows, runSourceLabel(group.runId, rows));
             }}
@@ -1328,6 +1508,12 @@ export default function App({ server }: { server: ServerIdentity }) {
           />
         }
         pinnedDrawer={evidencePinned ? drawer : null}
+      />
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        server={server}
+        project={project}
       />
     </>
   );

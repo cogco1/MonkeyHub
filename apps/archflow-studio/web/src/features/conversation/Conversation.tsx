@@ -20,6 +20,7 @@ import type {
 } from "../../api/generated";
 import type { EvidenceTab } from "../../app/evidence";
 import type { Entry } from "../../app/transcript";
+import { useT, type TFunction } from "../../i18n/useT";
 import { CandidateCard } from "./cards/CandidateCard";
 import { CompareCard } from "./cards/CompareCard";
 import { ProposalCard } from "./cards/ProposalCard";
@@ -95,6 +96,7 @@ export function Conversation({
   onSelect(componentId: string, elementId: string | null): void;
   callbacks: ConversationCallbacks;
 }) {
+  const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
 
@@ -104,10 +106,10 @@ export function Conversation({
   }, [entries]);
 
   return (
-    <section className="chat" aria-label="conversation">
+    <section className="chat" aria-label={t("conversation.ariaLabel")}>
       <header className="chat__head">
-        <span className="label">Conversation</span>
-        <span className="chat__head-meta mono">this tab · not version history</span>
+        <span className="label">{t("conversation.title")}</span>
+        <span className="chat__head-meta mono">{t("conversation.scope")}</span>
       </header>
       <div
         ref={scrollRef}
@@ -133,6 +135,7 @@ export function Conversation({
               ghostProposalId,
               refiningEntryId,
               callbacks,
+              t,
             })}
           </div>
         ))}
@@ -162,17 +165,19 @@ function renderEntry(
     ghostProposalId,
     refiningEntryId,
     callbacks,
+    t,
   }: {
     runBusy: boolean;
     loadingSha: string | null;
     ghostProposalId: string | null;
     refiningEntryId: string | null;
     callbacks: ConversationCallbacks;
+    t: TFunction;
   },
 ): ReactNode {
   switch (entry.kind) {
     case "system":
-      return <SystemLine text={entry.text} />;
+      return <SystemLine text={entry.text} parts={entry.parts} />;
     case "reading":
       return (
         <ReadingLine
@@ -187,7 +192,7 @@ function renderEntry(
     case "proposal":
       return (
         <>
-          <p className="msg__who">Studio · proposed change</p>
+          <p className="msg__who">{t("conversation.who.proposed")}</p>
           <ProposalCard
             proposal={entry.proposal}
             agent={entry.agent}
@@ -205,21 +210,21 @@ function renderEntry(
     case "question":
       return (
         <>
-          <p className="msg__who">Studio · needs you</p>
+          <p className="msg__who">{t("conversation.who.needsYou")}</p>
           <QuestionCard error={entry.error} onReply={callbacks.onReply} />
         </>
       );
     case "refusal":
       return (
         <>
-          <p className="msg__who">Studio</p>
+          <p className="msg__who">{t("conversation.who.studio")}</p>
           <RefusalCard error={entry.error} what={entry.what} />
         </>
       );
     case "candidate":
       return (
         <>
-          <p className="msg__who">Studio · candidate</p>
+          <p className="msg__who">{t("conversation.who.candidate")}</p>
           <CandidateCard
             candidateId={entry.candidateId}
             jobId={entry.jobId}
@@ -235,7 +240,7 @@ function renderEntry(
     case "verdict":
       return (
         <>
-          <p className="msg__who">Studio · verdict</p>
+          <p className="msg__who">{t("conversation.who.verdict")}</p>
           <VerdictCard
             candidateId={entry.candidateId}
             protectedRefs={entry.protectedRefs}
@@ -247,7 +252,7 @@ function renderEntry(
     case "compare":
       return (
         <>
-          <p className="msg__who">Studio · before / after</p>
+          <p className="msg__who">{t("conversation.who.compare")}</p>
           <CompareCard
             comparison={entry.comparison}
             onCompareInModel={() => callbacks.onCompareInModel(entry.comparison)}

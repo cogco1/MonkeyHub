@@ -13,6 +13,8 @@ import { useEffect, useRef, useState } from "react";
 
 import type { AgentReadingDto, ProposalDto } from "../../../api/generated";
 import type { EvidenceTab } from "../../../app/evidence";
+import { BilingualText } from "../../../i18n/BilingualText";
+import { useT } from "../../../i18n/useT";
 import { Verbatim } from "./Verbatim";
 
 /** A release is sent this long after the last move, so a drag is one request. */
@@ -39,9 +41,6 @@ function refineDomain(
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
-
-const HARNESS_SENTENCE =
-  "a harness run beside the project; no stage advances, nothing is issued";
 
 /** A kernel ref without its prefix, for the eye; the ref itself is in the title attribute. */
 function shortRef(ref: string): string {
@@ -75,6 +74,7 @@ export function ProposalCard({
   onRefine(value: number): void;
   onEvidence(tab: EvidenceTab): void;
 }) {
+  const t = useT();
   const { target, change, impact } = proposal;
   const subject = target.elementId ?? target.componentId;
   const compiled = agent?.compiledUtterance ?? proposal.utterance;
@@ -84,18 +84,24 @@ export function ProposalCard({
       {readByAgent && (
         <div className="card__row card__agent">
           <p className="label">
-            Read by {agent.provider}
+            {t("proposal.readBy")} {" "}
+            <span className="mono">{agent.provider}</span>
             {agent.model ? ` · ${agent.model}` : ""} ·{" "}
             {(agent.latencyMs / 1000).toFixed(1)} s
           </p>
-          {agent.why && <p className="verbatim-line">{agent.why}</p>}
+          {agent.why && (
+            <p className="verbatim-line">
+              <BilingualText source={agent.why} />
+            </p>
+          )}
           <p className="quiet">
-            compiled to <code>{agent.compiledUtterance}</code>
+            {t("proposal.compiledTo")} {" "}
+            <code>{agent.compiledUtterance}</code>
           </p>
         </div>
       )}
       <div className="card__row">
-        <p className="label">Proposed change</p>
+        <p className="label">{t("proposal.title")}</p>
         <p className="card__title">
           <span className="mono">{subject}</span>
           {target.elementId && (
@@ -105,18 +111,18 @@ export function ProposalCard({
       </div>
       <div className="card__row">
         <dl className="kv kv--review">
-          <dt>Change</dt>
+          <dt>{t("proposal.change")}</dt>
           <dd className="delta">
             {target.key} {String(change.old)} → <b>{String(change.new)}</b>
             {change.unit ? ` ${change.unit}` : ""}
             {change.unit === null && (
-              <span className="quiet"> (the record's own units)</span>
+              <span className="quiet"> {t("proposal.recordUnits")}</span>
             )}
           </dd>
-          <dt>Will update</dt>
+          <dt>{t("proposal.willUpdate")}</dt>
           <dd>
             {impact.propagated.length === 0 ? (
-              <span className="quiet">nothing downstream is declared</span>
+              <span className="quiet">{t("proposal.noDownstream")}</span>
             ) : (
               <ul className="reflist">
                 {impact.propagated.map((ref) => (
@@ -129,22 +135,23 @@ export function ProposalCard({
             {impact.unknownCoverage.count > 0 && (
               <span className="quiet">
                 {" "}
-                · {impact.unknownCoverage.count} components with unknown
-                coverage{" "}
+                · {t("proposal.unknownCoverage", {
+                  count: impact.unknownCoverage.count,
+                })}{" "}
                 <button
                   type="button"
                   className="btn btn--link"
                   onClick={() => onEvidence("honesty")}
                 >
-                  why
+                  {t("proposal.why")}
                 </button>
               </span>
             )}
           </dd>
-          <dt>Keep</dt>
+          <dt>{t("proposal.keep")}</dt>
           <dd>
             {proposal.protected.length === 0 ? (
-              <span className="quiet">nothing was named</span>
+              <span className="quiet">{t("proposal.nothingNamed")}</span>
             ) : (
               <ul className="reflist">
                 {proposal.protected.map((ref) => (
@@ -161,7 +168,7 @@ export function ProposalCard({
       {proposal.status === "conflict" && (
         <div className="card__row">
           <p className="card__conflict">
-            Conflict: the change reaches what you asked to keep —{" "}
+            {t("proposal.conflict")} — {" "}
             <span className="mono">{impact.conflicts.join(", ")}</span>
           </p>
         </div>
@@ -181,9 +188,12 @@ export function ProposalCard({
       {ghostShown && (
         <div className="card__row">
           <p className="quiet">
-            <span className="ghost-mark">ghost shown in the model</span> · approximate
-            {target.key === "height" && " · drawn as a vertical stretch of the picked objects"} — Apply
-            for the exact geometry
+            <span className="ghost-mark">{t("proposal.ghostShown")}</span> · {" "}
+            {t("proposal.approximate")}
+            {target.key === "height" && (
+              <> · {t("proposal.verticalStretch")}</>
+            )}{" "}
+            — {t("proposal.applyForExact")}
           </p>
         </div>
       )}
@@ -194,16 +204,16 @@ export function ProposalCard({
           disabled={busy}
           onClick={onRun}
         >
-          Apply
+          {t("common.apply")}
         </button>
         <button
           type="button"
           className="btn"
           onClick={() => onAdjust(compiled)}
         >
-          Adjust
+          {t("proposal.adjust")}
         </button>
-        <span className="quiet">{HARNESS_SENTENCE}</span>
+        <span className="quiet">{t("candidate.harness")}</span>
       </div>
     </article>
   );
@@ -232,6 +242,7 @@ function Refine({
   refining: boolean;
   onRefine(value: number): void;
 }) {
+  const t = useT();
   const { min, max, step } = refineDomain(old, current);
   const [value, setValue] = useState(current);
   const timer = useRef<number | null>(null);
@@ -267,15 +278,18 @@ function Refine({
   const percent = ((value - old) / old) * 100;
   const sign = percent > 0 ? "+" : "";
   const status = refining
-    ? "asking the record…"
+    ? t("proposal.refine.asking")
     : refinements > 0
-      ? "refined ×" + String(refinements)
-      : "by hand";
+      ? t("proposal.refine.count", { count: refinements })
+      : t("proposal.refine.byHand");
   const originPercent = max > min ? ((old - min) / (max - min)) * 100 : 50;
   return (
-    <div className="card__row refine" aria-label={"refine " + fieldKey}>
+    <div
+      className="card__row refine"
+      aria-label={t("proposal.refine.ariaLabel")}
+    >
       <div className="refine__head">
-        <span className="label">Refine</span>
+        <span className="label">{t("proposal.refine.label")}</span>
         <span className={"mono refine__readout" + (refining ? " refine__readout--asking" : "")}>
           {fieldKey} {Number(value.toFixed(6))}
           <span className="quiet">
@@ -290,7 +304,7 @@ function Refine({
         <button
           type="button"
           className="btn btn--small"
-          aria-label="one percent less"
+          aria-label={t("proposal.refine.less")}
           onClick={() => send(value - step)}
         >
           −
@@ -302,12 +316,13 @@ function Refine({
           max={max}
           step={step}
           value={value}
+          aria-label={t("proposal.refine.sliderAria")}
           onChange={(event) => send(Number(event.currentTarget.value))}
         />
         <button
           type="button"
           className="btn btn--small"
-          aria-label="one percent more"
+          aria-label={t("proposal.refine.more")}
           onClick={() => send(value + step)}
         >
           +
@@ -317,7 +332,7 @@ function Refine({
         <span>{Number(min.toFixed(6))}</span>
         <span
           className="refine__origin"
-          title="the record's number"
+          title={t("proposal.refine.recordNumber")}
           style={{ left: originPercent + "%" }}
         >
           {Number(old.toFixed(6))}
@@ -325,7 +340,7 @@ function Refine({
         <span>{Number(max.toFixed(6))}</span>
       </div>
       <p className="quiet refine__note">
-        each move asks the record again - the number in Change is always the record's
+        {t("proposal.refine.note")}
       </p>
     </div>
   );

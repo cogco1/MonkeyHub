@@ -10,17 +10,18 @@
  */
 
 import { useEffect, useState } from "react";
+import { useT, type TFunction } from "../../../i18n/useT";
 
 /** Who is reading, in words, from the provider GET /api/project named. */
-export function readerWords(provider: string): string {
+export function readerWords(provider: string, t: TFunction): string {
   switch (provider) {
     case "deterministic":
-      return "the studio is typing your sentence against the record";
+      return t("reading.deterministic");
     case "codex":
     case "anthropic":
-      return `${provider} is reading your sentence against the record`;
+      return t("reading.agent", { provider });
     default:
-      return "your sentence is being read against the record";
+      return t("reading.default");
   }
 }
 
@@ -35,6 +36,7 @@ export function ReadingLine({
   provider: string;
   startedAt: number;
 }) {
+  const t = useT();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 250);
@@ -44,7 +46,8 @@ export function ReadingLine({
   return (
     <p className="reading" aria-live="polite">
       <span>
-        {readerWords(provider)} ({recordSize}) for{" "}
+        {readerWords(provider, t)} (<span className="mono">{recordSize}</span>){" "}
+        {t("reading.for")} {" "}
         <span className="mono">{subject}</span>…
       </span>
       <span className="mono reading__clock">{seconds.toFixed(0)} s</span>

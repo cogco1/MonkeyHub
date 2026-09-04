@@ -5,6 +5,8 @@
  */
 
 import type { CandidateDto, ValidationDto } from "../../api/generated";
+import { BilingualText } from "../../i18n/BilingualText";
+import { useT } from "../../i18n/useT";
 
 export function ReceiptsTab({
   candidate,
@@ -15,58 +17,59 @@ export function ReceiptsTab({
   validation: ValidationDto | null;
   sentence: string | null;
 }) {
+  const t = useT();
   if (candidate === null) {
-    return <p className="ev__none">no candidate has run in this tab</p>;
+    return <p className="ev__none">{t("evidence.receipts.noCandidate")}</p>;
   }
   return (
     <>
       <div className="ev">
-        <p className="label">Candidate receipt</p>
+        <p className="label">{t("evidence.receipts.candidateReceipt")}</p>
         {sentence && (
           <p className="ev__sentence">
             “{sentence}”
-            <span className="quiet"> · the candidate this drawer shows</span>
+            <span className="quiet"> · {t("evidence.receipts.shownCandidate")}</span>
           </p>
         )}
         <dl>
-          <dt>run</dt>
+          <dt>{t("evidence.fields.run")}</dt>
           <dd>{candidate.candidateId}</dd>
-          <dt>job</dt>
+          <dt>{t("evidence.fields.job")}</dt>
           <dd>{candidate.jobId} · {candidate.status}</dd>
-          <dt>proposal</dt>
+          <dt>{t("evidence.fields.proposal")}</dt>
           <dd>{candidate.proposalId}</dd>
-          <dt>base</dt>
+          <dt>{t("evidence.fields.base")}</dt>
           <dd>
             v{candidate.base.version} · {candidate.base.stateSha256 ?? "—"}
           </dd>
-          <dt>state digest</dt>
+          <dt>{t("evidence.fields.stateDigest")}</dt>
           <dd>{candidate.stateDigest ?? "—"}</dd>
-          <dt>record digest</dt>
+          <dt>{t("evidence.fields.recordDigest")}</dt>
           <dd>{candidate.recordDigest ?? "—"}</dd>
-          <dt>changed</dt>
+          <dt>{t("evidence.fields.changed")}</dt>
           <dd>{String(candidate.changedVsProjection)}</dd>
-          <dt>receipt</dt>
+          <dt>{t("evidence.fields.receipt")}</dt>
           <dd>{candidate.receiptRef}</dd>
-          <dt>wall time</dt>
+          <dt>{t("evidence.fields.wallTime")}</dt>
           <dd>{candidate.wallTimeS === null ? "—" : `${candidate.wallTimeS} s`}</dd>
-          <dt>seats complete</dt>
+          <dt>{t("evidence.receipts.seatsComplete")}</dt>
           <dd>{String(candidate.seatExecutionComplete)}</dd>
-          <dt>harness</dt>
+          <dt>{t("evidence.receipts.harness")}</dt>
           <dd>{candidate.harness}</dd>
         </dl>
       </div>
       <div className="ev">
-        <p className="label">Timings</p>
+        <p className="label">{t("evidence.receipts.timings")}</p>
         <dl>
-          <dt>run</dt>
+          <dt>{t("evidence.fields.run")}</dt>
           <dd>{candidate.timings.runS === null ? "—" : `${candidate.timings.runS} s`}</dd>
           {candidate.timings.seats.map((seat) => (
             <SeatTiming key={seat.seatId} seatId={seat.seatId} wallTimeS={seat.wallTimeS} />
           ))}
           {candidate.timings.exports.length === 0 ? (
             <>
-              <dt>exports</dt>
-              <dd>none — this run exported nothing</dd>
+              <dt>{t("evidence.receipts.exports")}</dt>
+              <dd>{t("evidence.receipts.noExports")}</dd>
             </>
           ) : (
             candidate.timings.exports.map((item) => (
@@ -76,9 +79,11 @@ export function ReceiptsTab({
         </dl>
       </div>
       <div className="ev">
-        <p className="label">Seat rows ({candidate.seatResults.length})</p>
+        <p className="label">
+          {t("evidence.receipts.seatRows", { count: candidate.seatResults.length })}
+        </p>
         {candidate.seatResults.length === 0 ? (
-          <p className="ev__none">the receipt names no seats</p>
+          <p className="ev__none">{t("evidence.receipts.noSeats")}</p>
         ) : (
           <dl>
             {candidate.seatResults.map((seat) => (
@@ -88,9 +93,11 @@ export function ReceiptsTab({
         )}
       </div>
       <div className="ev">
-        <p className="label">Exported artifacts ({candidate.artifacts.length})</p>
+        <p className="label">
+          {t("evidence.receipts.exportedArtifacts", { count: candidate.artifacts.length })}
+        </p>
         {candidate.artifacts.length === 0 ? (
-          <p className="ev__none">no model was exported</p>
+          <p className="ev__none">{t("evidence.receipts.noModelExported")}</p>
         ) : (
           <dl>
             {candidate.artifacts.map((artifact) => (
@@ -100,59 +107,60 @@ export function ReceiptsTab({
         )}
         {candidate.skippedRuns.length > 0 && (
           <p className="verbatim-line">
-            skipped runs: {candidate.skippedRuns.join(", ")}
+            {t("evidence.receipts.skippedRuns")}: {candidate.skippedRuns.join(", ")}
           </p>
         )}
       </div>
       <div className="ev">
-        <p className="label">Validation receipt</p>
+        <p className="label">{t("evidence.receipts.validationReceipt")}</p>
         {validation === null ? (
-          <p className="ev__none">no verdict has been read for this candidate</p>
+          <p className="ev__none">{t("evidence.receipts.noVerdict")}</p>
         ) : (
           <>
             <dl>
-              <dt>receipt</dt>
+              <dt>{t("evidence.fields.receipt")}</dt>
               <dd>{validation.receipt.receiptId}</dd>
-              <dt>submission</dt>
+              <dt>{t("evidence.receipts.submission")}</dt>
               <dd>
                 {validation.receipt.submissionId} · {validation.receipt.submissionDigest}
               </dd>
-              <dt>checked state</dt>
+              <dt>{t("evidence.receipts.checkedState")}</dt>
               <dd>
                 v{validation.receipt.checkedState.version} ·{" "}
                 {validation.receipt.checkedState.stateSha256 ?? "—"}
               </dd>
-              <dt>passed</dt>
+              <dt>{t("evidence.receipts.passed")}</dt>
               <dd>{String(validation.receipt.passed)}</dd>
-              <dt>validators</dt>
+              <dt>{t("evidence.receipts.validators")}</dt>
               <dd>{validation.validators.join(" · ")}</dd>
-              <dt>effective</dt>
+              <dt>{t("evidence.receipts.effective")}</dt>
               <dd>
                 {validation.effectiveChecks.length === 0
-                  ? "none"
+                  ? t("evidence.common.none")
                   : validation.effectiveChecks.join(" · ")}
               </dd>
-              <dt>advance</dt>
+              <dt>{t("evidence.receipts.advance")}</dt>
               <dd>{String(validation.advance)}</dd>
-              <dt>blocked by</dt>
+              <dt>{t("evidence.receipts.blockedBy")}</dt>
               <dd>
                 {validation.blockedBy.length === 0
-                  ? "no clause refused"
+                  ? t("evidence.receipts.noClauseRefused")
                   : validation.blockedBy.join(" · ")}
               </dd>
             </dl>
-            <p className="label">Findings ({validation.receipt.findings.length})</p>
+            <p className="label">
+              {t("evidence.receipts.findings", {
+                count: validation.receipt.findings.length,
+              })}
+            </p>
             {validation.receipt.findings.length === 0 ? (
-              <p className="ev__none">
-                the gates returned no findings — the receipt's answer, not a claim
-                about what was not checked
-              </p>
+              <p className="ev__none">{t("evidence.receipts.noFindings")}</p>
             ) : (
               <ul>
                 {validation.receipt.findings.map((finding, index) => (
                   <li key={`${finding.code}:${index}`}>
                     <span className="mono">{finding.code}</span> · {finding.severity}{" "}
-                    · {finding.message}
+                    · <BilingualText source={finding.message} showSourceToggle />
                   </li>
                 ))}
               </ul>
@@ -165,37 +173,45 @@ export function ReceiptsTab({
 }
 
 function SeatTiming({ seatId, wallTimeS }: { seatId: string; wallTimeS: number | null }) {
+  const t = useT();
   return (
     <>
       <dt>{seatId}</dt>
-      <dd>{wallTimeS === null ? "no wall time recorded" : `${wallTimeS} s`}</dd>
+      <dd>{wallTimeS === null ? t("evidence.receipts.noWallTime") : `${wallTimeS} s`}</dd>
     </>
   );
 }
 
 function ExportTiming({ item }: { item: CandidateDto["timings"]["exports"][number] }) {
+  const t = useT();
   return (
     <>
-      <dt>export · {item.seatId}</dt>
+      <dt>{t("evidence.receipts.export")} · {item.seatId}</dt>
       <dd>
-        {item.path ?? "path unknown"} · {item.seconds === null ? "no seconds recorded" : `${item.seconds} s`}{" "}
-        · {item.status ?? "no status"}
+        {item.path ?? t("evidence.receipts.pathUnknown")} ·{" "}
+        {item.seconds === null ? t("evidence.receipts.noSeconds") : `${item.seconds} s`}{" "}
+        · {item.status ?? t("evidence.receipts.noStatus")}
         {item.rebuildRatio !== null &&
-          ` · rebuilt ${item.rebuiltObjects} of ${(item.rebuiltObjects ?? 0) + (item.keptObjects ?? 0)} (ratio ${item.rebuildRatio.toFixed(3)})`}
+          ` · ${t("evidence.receipts.rebuiltRatio", {
+            rebuilt: item.rebuiltObjects ?? 0,
+            total: (item.rebuiltObjects ?? 0) + (item.keptObjects ?? 0),
+            ratio: item.rebuildRatio.toFixed(3),
+          })}`}
       </dd>
     </>
   );
 }
 
 function SeatRow({ seat }: { seat: CandidateDto["seatResults"][number] }) {
+  const t = useT();
   return (
     <>
       <dt>{seat.seatId}</dt>
       <dd>
         {seat.status}
-        {seat.objects !== null && ` · ${seat.objects} objects`}
+        {seat.objects !== null && ` · ${t("evidence.receipts.objectCount", { count: seat.objects })}`}
         {seat.programRef && ` · ${seat.programRef}`}
-        {seat.relationCheckRef && ` · relations ${seat.relationCheckRef}`}
+        {seat.relationCheckRef && ` · ${t("evidence.receipts.relations")} ${seat.relationCheckRef}`}
       </dd>
     </>
   );
@@ -206,16 +222,21 @@ function ArtifactRow({
 }: {
   artifact: CandidateDto["artifacts"][number];
 }) {
+  const t = useT();
   return (
     <>
       <dt>{artifact.fileName}</dt>
       <dd>
-        {artifact.status ?? "no status"} · available {String(artifact.available)}
-        {artifact.unavailableReason && ` · ${artifact.unavailableReason}`}
+        {artifact.status ?? t("evidence.receipts.noStatus")} ·{" "}
+        {t("evidence.receipts.available")} {String(artifact.available)}
+        {artifact.unavailableReason && (
+          <> · <BilingualText source={artifact.unavailableReason} showSourceToggle /></>
+        )}
         {artifact.sha256 && ` · ${artifact.sha256}`}
-        {artifact.objectCount !== null && ` · ${artifact.objectCount} objects`}
+        {artifact.objectCount !== null &&
+          ` · ${t("evidence.receipts.objectCount", { count: artifact.objectCount })}`}
         {artifact.readbackVerified !== null &&
-          ` · readback ${String(artifact.readbackVerified)}`}
+          ` · ${t("evidence.receipts.readback")} ${String(artifact.readbackVerified)}`}
       </dd>
     </>
   );

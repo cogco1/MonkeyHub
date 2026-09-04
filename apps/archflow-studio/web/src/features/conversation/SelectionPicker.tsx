@@ -10,6 +10,8 @@
 import { useMemo, useState } from "react";
 
 import type { StateProjectionDto } from "../../api/generated";
+import { BilingualText } from "../../i18n/BilingualText";
+import { useT, type TFunction } from "../../i18n/useT";
 
 interface Row {
   key: string;
@@ -19,7 +21,7 @@ interface Row {
   secondary: string;
 }
 
-function rowsOf(projection: StateProjectionDto): Row[] {
+function rowsOf(projection: StateProjectionDto, t: TFunction): Row[] {
   const rows: Row[] = [];
   const elementsByComponent = new Map<string, typeof projection.elements>();
   for (const element of projection.elements) {
@@ -34,7 +36,7 @@ function rowsOf(projection: StateProjectionDto): Row[] {
     })) ??
     [...elementsByComponent.keys()].map((id) => ({
       id,
-      secondary: "component named by its elements",
+      secondary: t("selection.componentNamedByElements"),
     }));
   for (const component of components) {
     rows.push({
@@ -50,7 +52,7 @@ function rowsOf(projection: StateProjectionDto): Row[] {
         componentId: component.id,
         elementId: element.elementId,
         primary: element.elementId,
-        secondary: `element · ${element.producer}`,
+        secondary: `${t("selection.element")} · ${element.producer}`,
       });
     }
   }
@@ -66,8 +68,9 @@ export function SelectionPicker({
   onPick(componentId: string, elementId: string | null): void;
   onClose(): void;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
-  const rows = useMemo(() => rowsOf(projection), [projection]);
+  const rows = useMemo(() => rowsOf(projection, t), [projection, t]);
   const needle = query.trim().toLowerCase();
   const shown = needle
     ? rows.filter(
@@ -78,12 +81,12 @@ export function SelectionPicker({
     : rows;
 
   return (
-    <div className="picker" role="dialog" aria-label="choose a component">
+    <div className="picker" role="dialog" aria-label={t("selection.dialog.ariaLabel")}>
       <input
         className="picker__input"
         type="text"
         autoFocus
-        placeholder="type a component or element id"
+        placeholder={t("selection.placeholder")}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         onKeyDown={(event) => {
@@ -95,11 +98,13 @@ export function SelectionPicker({
         }}
       />
       {projection.componentTreeError && (
-        <p className="picker__note">{projection.componentTreeError}</p>
+        <p className="picker__note">
+          <BilingualText source={projection.componentTreeError} showSourceToggle />
+        </p>
       )}
       <ul className="picker__list">
         {shown.length === 0 ? (
-          <li className="picker__empty">nothing in the record matches</li>
+          <li className="picker__empty">{t("selection.empty")}</li>
         ) : (
           shown.map((row) => (
             <li key={row.key}>

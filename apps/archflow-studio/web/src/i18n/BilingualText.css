@@ -1,0 +1,62 @@
+.bilingual-text {
+  display: inline-flex;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 0.4em;
+}
+
+.bilingual-text__stack {
+  display: inline-grid;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  vertical-align: baseline;
+}
+
+.bilingual-text__layer {
+  grid-area: 1 / 1;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+
+.bilingual-text__layer--active {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.bilingual-text__layer--inactive {
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.bilingual-text__status {
+  color: var(--muted);
+  font-size: 0.88em;
+  white-space: nowrap;
+}
+
+.bilingual-text__toggle {
+  min-block-size: 24px;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.88em;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  touch-action: manipulation;
+}
+
+.bilingual-text__toggle:hover {
+  background: var(--accent-soft);
+}
+
+.bilingual-text__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

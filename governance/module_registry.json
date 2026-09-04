@@ -3497,7 +3497,7 @@
         "apps/archflow-studio/api/tests/test_errors.py",
         "apps/archflow-studio/api/tests/test_protocol.py"
       ],
-      "notes": "transport/* carries the wire shapes for all six concerns, so a DTO change is a shell change, not an application one. docs/PROTOCOL.md is the written form of what protocol.py names; the client half of the seam is apps/archflow-studio/web/src/api/connection.ts, which this registry does not list because it lists Python modules only.",
+      "notes": "transport/* carries the wire shapes for all six concerns, so a DTO change is a shell change, not an application one. docs/PROTOCOL.md is the written form of what protocol.py names; the client half of the seam is apps/archflow-studio/web/src/api/connection.ts, which this registry does not list because it lists Python modules only. Browser-only language, theme, font-scale and event-visibility preferences stay in web localStorage; the typed client message catalogs and settings panel may display server facts but never create a second server-configuration or project-persistence authority.",
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/main.py",
         "apps/archflow-studio/api/archflow_studio_api/settings.py",

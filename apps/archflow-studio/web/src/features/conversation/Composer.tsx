@@ -8,6 +8,7 @@
 import { useState, type FormEvent } from "react";
 
 import type { GestureDto, StateProjectionDto } from "../../api/generated";
+import { useT, type TFunction } from "../../i18n/useT";
 import { SelectionPicker } from "./SelectionPicker";
 
 const MARK_GLYPH: Record<GestureDto["kind"], string> = {
@@ -18,12 +19,16 @@ const MARK_GLYPH: Record<GestureDto["kind"], string> = {
 };
 
 /** One mark as a chip: its kind and how many of the file's objects it touched. */
-function markLabel(gesture: GestureDto): string {
+function markLabel(gesture: GestureDto, t: TFunction): string {
   const hits = gesture.hits ?? [];
+  const kind = t(`composer.mark.${gesture.kind}`);
   if (gesture.kind === "keep" || gesture.kind === "remove") {
-    return gesture.kind + " · " + (hits[0]?.objectName ?? "nothing under the mark");
+    return kind + " · " + (hits[0]?.objectName ?? t("composer.mark.empty"));
   }
-  return gesture.kind + " · " + String(hits.length) + (hits.length === 1 ? " object" : " objects");
+  return `${kind} · ${t(
+    hits.length === 1 ? "composer.mark.oneObject" : "composer.mark.manyObjects",
+    { count: hits.length },
+  )}`;
 }
 
 export interface Selection {
@@ -36,9 +41,6 @@ export interface Selection {
  * answers most of them with a question — which field, which number — and the
  * hint under the box says so rather than teaching the grammar first.
  */
-const PLACEHOLDER =
-  "make the west portico a little taller · open up the entry · keep the roofline";
-
 export function Composer({
   selection,
   projection,
@@ -67,6 +69,7 @@ export function Composer({
   onSubmit(utterance: string): void;
   onSelect(componentId: string, elementId: string | null): void;
 }) {
+  const t = useT();
   const [pickerOpen, setPickerOpen] = useState(false);
   const disabled = disabledReason !== null || busy;
 
@@ -84,13 +87,13 @@ export function Composer({
   return (
     <form className="composer" onSubmit={submit}>
       <div className="context">
-        <span>talking about</span>
+        <span>{t("composer.context.talkingAbout")}</span>
         {selection ? (
           <span className="pill pill--accent mono">
             {selection.elementId ?? selection.componentId}
           </span>
         ) : (
-          <span className="quiet">nothing yet — pick in the model, or</span>
+          <span className="quiet">{t("composer.context.nothingSelected")}</span>
         )}
         <button
           type="button"
@@ -98,7 +101,9 @@ export function Composer({
           disabled={projection === null}
           onClick={() => setPickerOpen((open) => !open)}
         >
-          {selection ? "change" : "choose a component"}
+          {selection
+            ? t("composer.context.change")
+            : t("composer.context.chooseComponent")}
         </button>
       </div>
       {pickerOpen && projection && (
@@ -112,15 +117,17 @@ export function Composer({
         />
       )}
       {gestures.length > 0 && (
-        <div className="marks" aria-label="marks on the model">
-          <span className="quiet">with</span>
+        <div className="marks" aria-label={t("composer.marks.ariaLabel")}>
+          <span className="quiet">{t("composer.marks.with")}</span>
           {gestures.map((gesture, index) => (
             <span key={index} className={"gesture-chip gesture-chip--" + gesture.kind}>
-              {MARK_GLYPH[gesture.kind]} {markLabel(gesture)}
+              {MARK_GLYPH[gesture.kind]} {markLabel(gesture, t)}
               <button
                 type="button"
                 className="gesture-chip__x"
-                aria-label={"remove this " + gesture.kind + " mark"}
+                aria-label={t("composer.mark.removeAria", {
+                  kind: t(`composer.mark.${gesture.kind}`),
+                })}
                 onClick={() => onRemoveGesture(index)}
               >
                 ×
@@ -132,8 +139,8 @@ export function Composer({
       <div className="composer__box">
         <input
           type="text"
-          aria-label="intent"
-          placeholder={PLACEHOLDER}
+          aria-label={t("composer.intent.ariaLabel")}
+          placeholder={t("composer.placeholder")}
           value={draft}
           disabled={busy}
           onChange={(event) => onDraft(event.target.value)}
@@ -151,7 +158,7 @@ export function Composer({
           className="btn btn--primary"
           disabled={disabled || draft.trim() === ""}
         >
-          {busy ? "Proposing…" : "Propose"}
+          {busy ? t("composer.proposing") : t("composer.propose")}
         </button>
       </div>
       {disabledReason ? (
@@ -160,17 +167,15 @@ export function Composer({
         <p className="composer__hint">
           {intentProvider === "codex" || intentProvider === "anthropic" ? (
             <>
-              Say it in your words, about the thing you picked. {intentProvider} reads it
-              against the record and proposes one exact change; if the record does not
-              carry what you asked for, it asks. Marks on the model go with the sentence.
+              {t("composer.hint.agent", { provider: intentProvider })}
             </>
           ) : (
             <>
-              No agent is wired here: the studio types four exact forms —{" "}
+              {t("composer.hint.exactPrefix")} {" "}
               <code>set … to …</code>, <code>set … = …</code>,{" "}
-              <code>increase … by … %</code>, <code>decrease … by … %</code>, with an
-              optional <code>keep …</code> — and answers anything else with a question.
-              Marks on the model go with the sentence.
+              <code>increase … by … %</code>, <code>decrease … by … %</code>,{" "}
+              {t("composer.hint.exactOptional")} <code>keep …</code>{" "}
+              {t("composer.hint.exactSuffix")}
             </>
           )}
         </p>

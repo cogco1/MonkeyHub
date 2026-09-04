@@ -15,6 +15,7 @@ import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import type { EvidenceTab } from "../../app/evidence";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
+import { useT } from "../../i18n/useT";
 import type { SceneInspection } from "../../viewer/sceneInspection";
 import {
   ThreeDmViewport,
@@ -127,11 +128,13 @@ export function Stage({
   onEndBlend(): void;
   onEvidence(tab: EvidenceTab): void;
 }) {
+  const t = useT();
+  const activeTool = GESTURE_TOOLS.find((item) => item.kind === tool);
   return (
-    <section className="stage" aria-label="model">
+    <section className="stage" aria-label={t("stage.ariaLabel")}>
       {/* A machine with no WebGL context throws while the renderer is built;
           behind its own boundary that costs the canvas and nothing else. */}
-      <ErrorBoundary label="viewer">
+      <ErrorBoundary label={t("stage.viewer.label")}>
         <ThreeDmViewport
           ref={viewportRef}
           onInspection={onInspection}
@@ -161,8 +164,8 @@ export function Stage({
             view={view}
           />
           {blend && (
-            <div className="blend" aria-label="before / after cross-fade">
-              <span className="label">before</span>
+            <div className="blend" aria-label={t("stage.blend.ariaLabel")}>
+              <span className="label">{t("stage.blend.before")}</span>
               <input
                 type="range"
                 className="blend__slider"
@@ -170,23 +173,30 @@ export function Stage({
                 max={1}
                 step={0.01}
                 value={blend.t}
-                aria-label="cross-fade between before and after"
+                aria-label={t("stage.blend.sliderAria")}
                 onChange={(event) => onBlend(Number(event.currentTarget.value))}
               />
-              <span className="label">after</span>
+              <span className="label">{t("stage.blend.after")}</span>
               <span className="quiet mono blend__meta">
-                {blend.candidateId} · {blend.meshes} meshes · after is tinted
+                {blend.candidateId} · {t("stage.blend.meshes", { count: blend.meshes })} ·{" "}
+                {t("stage.blend.afterTinted")}
               </span>
               <button type="button" className="btn btn--small" onClick={onEndBlend}>
-                done
+                {t("stage.blend.done")}
               </button>
             </div>
           )}
           {picked && (
-            <div className="picked" title={`${picked.status} · source ${picked.sourceState}`}>
-              <span className="label">picked</span>
+            <div
+              className="picked"
+              title={t("stage.picked.title", {
+                status: picked.status,
+                sourceState: picked.sourceState,
+              })}
+            >
+              <span className="label">{t("stage.picked.label")}</span>
               <span className="mono">
-                {picked.elementId ?? picked.componentId ?? "nothing resolvable"}
+                {picked.elementId ?? picked.componentId ?? t("stage.picked.none")}
               </span>
               {picked.status !== "resolved" && (
                 <span className="picked__meta">{picked.status}</span>
@@ -210,16 +220,16 @@ export function Stage({
             <button
               key={item.kind}
               type="button"
-              title={item.title}
+              title={t(item.titleKey)}
               aria-pressed={tool === item.kind}
               onClick={() => onTool(tool === item.kind ? null : item.kind)}
             >
-              {item.glyph} {item.kind}
+              {item.glyph} {t(item.labelKey)}
             </button>
           ))}
-          {tool && (
+          {tool && activeTool && (
             <span className="viewtools__hint quiet">
-              drawing: {tool} · press {tool} again to orbit
+              {t("stage.tools.drawingHint", { tool: t(activeTool.labelKey) })}
             </span>
           )}
           <span className="viewtools__sep" aria-hidden="true" />
@@ -228,24 +238,24 @@ export function Stage({
             disabled={referenceRunId === null}
             title={
               referenceRunId === null
-                ? "the reference run left no export to come back to"
-                : `show every seat of the reference run ${referenceRunId} on the stage`
+                ? t("stage.tools.referenceUnavailable")
+                : t("stage.tools.referenceShow", { runId: referenceRunId })
             }
             onClick={onShowReference}
           >
-            reference
+            {t("stage.tools.reference")}
           </button>
           <button type="button" onClick={() => viewportRef.current?.fitView()}>
-            fit
+            {t("stage.tools.fit")}
           </button>
           <button type="button" onClick={() => viewportRef.current?.frontView()}>
-            front
+            {t("stage.tools.front")}
           </button>
           <button type="button" onClick={() => viewportRef.current?.clear()}>
-            clear
+            {t("stage.tools.clear")}
           </button>
           <button type="button" onClick={onRequestFile}>
-            open .3dm
+            {t("stage.tools.open3dm")}
           </button>
         </div>
       </div>
@@ -266,14 +276,28 @@ export function Stage({
           className="drawer-tab"
           onClick={() => onEvidence("honesty")}
         >
-          Evidence
+          {t("nav.evidence")}
           <span className="drawer-tab__count">
-            {review.changes} {review.changes === 1 ? "change" : "changes"} ·{" "}
-            {review.checked} checked · {review.needsReview}{" "}
-            {review.needsReview === 1 ? "needs" : "need"} review
+            {t(
+              review.changes === 1
+                ? "stage.review.changeOne"
+                : "stage.review.changeMany",
+              { count: review.changes },
+            )}{" "}
+            · {t("stage.review.checked", { count: review.checked })} ·{" "}
+            {t(
+              review.needsReview === 1
+                ? "stage.review.needsOne"
+                : "stage.review.needsMany",
+              { count: review.needsReview },
+            )}
           </span>
-          <span className="drawer-tab__count mono" title="what the drawer holds">
-            honesty {evidenceCounts.honesty} · events {evidenceCounts.events}
+          <span
+            className="drawer-tab__count mono"
+            title={t("stage.review.drawerTitle")}
+          >
+            {t("evidence.tabs.honesty")} {evidenceCounts.honesty} ·{" "}
+            {t("evidence.tabs.events")} {evidenceCounts.events}
           </span>
         </button>
       </div>

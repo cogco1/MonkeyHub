@@ -13,7 +13,10 @@
  * that script enforces: it refuses rather than serving a set this file will not ask for.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+
+import { useT } from "../i18n/useT";
+import { BilingualProse } from "./ErrorPanel";
 
 export const LOADING_FRAMES = [
   "/loading/frame-01.png",
@@ -32,9 +35,10 @@ export function LoadingOverlay({
   /** `boot` covers the window before the shell has anything to show; `stage` covers the model. */
   mode: "boot" | "stage";
   /** What is actually being waited for, in the words of whoever is waiting. */
-  status: string;
+  status: ReactNode;
 }) {
   const [frame, setFrame] = useState(0);
+  const t = useT();
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -50,8 +54,8 @@ export function LoadingOverlay({
         <p className="boot__title">
           MonkeyArch <span className="boot__glyph">🐒</span>
         </p>
-        <p className="boot__tagline">Professional modeling environment</p>
-        <p className="boot__protocol">Powered by the open ArchFlow protocol.</p>
+        <p className="boot__tagline">{t("loading.tagline")}</p>
+        <p className="boot__protocol">{t("loading.protocol")}</p>
         {/* Every frame is in the document from the first paint, and only one of them is
             shown: swapping one `src` would leave the first cycle blank while each file is
             fetched, which on a loading surface reads as the loading having stalled. */}
@@ -66,8 +70,10 @@ export function LoadingOverlay({
             />
           ))}
         </div>
-        <p className="boot__working">猴子正在后台狠狠干 OCCT</p>
-        <p className="boot__status mono">{status}</p>
+        <p className="boot__working">{t("loading.working")}</p>
+        <p className="boot__status mono">
+          {typeof status === "string" ? <BilingualProse source={status} /> : status}
+        </p>
       </div>
     </div>
   );

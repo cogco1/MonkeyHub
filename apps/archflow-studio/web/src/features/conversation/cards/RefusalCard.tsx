@@ -5,6 +5,7 @@
 
 import type { StudioApiError } from "../../../api/client";
 import { ErrorPanel } from "../../../app/ErrorPanel";
+import { useT } from "../../../i18n/useT";
 
 export function RefusalCard({
   error,
@@ -13,10 +14,11 @@ export function RefusalCard({
   error: StudioApiError;
   what: string;
 }) {
+  const t = useT();
   return (
     <article className="card card--refusal">
       <div className="card__row">
-        <p className="card__word card__word--no">The server refused</p>
+        <p className="card__word card__word--no">{t("refusal.title")}</p>
         <ErrorPanel error={error} what={what} />
       </div>
     </article>

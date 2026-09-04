@@ -12,6 +12,7 @@
  */
 
 import type { RelationChecksDto } from "../api/generated";
+import { useT } from "../i18n/useT";
 
 /** Whether the held count has earned green. Colour only; never a verdict. */
 function heldIsGreen(checks: RelationChecksDto): boolean {
@@ -19,31 +20,36 @@ function heldIsGreen(checks: RelationChecksDto): boolean {
 }
 
 export function RelationChips({ checks }: { checks: RelationChecksDto }) {
+  const t = useT();
   return (
     <div className="chips">
       <span
         className={`chip ${heldIsGreen(checks) ? "chip--held" : "chip--neutral"}`}
       >
-        held {checks.held}
+        {t("relations.heldCount", { count: checks.held })}
       </span>
       <span
         className={`chip ${checks.violated > 0 ? "chip--violated" : "chip--neutral"}`}
       >
-        violated {checks.violated}
+        {t("relations.violatedCount", { count: checks.violated })}
       </span>
       <span
         className={`chip ${checks.unchecked > 0 ? "chip--unchecked" : "chip--neutral"}`}
       >
-        unchecked {checks.unchecked}
+        {t("relations.uncheckedCount", { count: checks.unchecked })}
       </span>
       <span className="chip chip--flag" title={`heldFlag ${String(checks.heldFlag)}`}>
-        {checks.heldFlag ? "nothing violated" : "something violated"}
+        {checks.heldFlag
+          ? t("relations.nothingViolated")
+          : t("relations.somethingViolated")}
       </span>
       <span
         className="chip chip--flag"
         title={`fullyChecked ${String(checks.fullyChecked)}`}
       >
-        {checks.fullyChecked ? "every relation checked" : "not every relation was checked"}
+        {checks.fullyChecked
+          ? t("relations.everyChecked")
+          : t("relations.notEveryChecked")}
       </span>
     </div>
   );

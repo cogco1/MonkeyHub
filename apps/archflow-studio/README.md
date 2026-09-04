@@ -188,6 +188,26 @@ TypeScript 5. The app itself is built with TypeScript 7. There is **no committed
 snapshot**: the one description of this API is the FastAPI app, and `api:check` is what keeps
 the committed client honest to it.
 
+### Language and settings
+
+The toolbar's **Settings** dialog has six operator-facing categories. Language, theme,
+interface size and event-stream visibility are browser preferences and are the only editable
+values in this browser client. They are stored as one versioned value in `localStorage`; a
+`?lang=en` or `?lang=zh-CN` query overrides the stored language at startup and is then
+remembered. Project, model,
+geometry, server and diagnostic rows are read-only facts from `GET /api/project` or
+`GET /api/protocol`; a value those routes do not expose is labelled as unavailable rather
+than inferred from `runtime.json` or the host machine.
+
+Client-owned labels come from complete typed `en` and `zh-CN` catalogs. For caller-approved
+English prose that arrives at runtime, the client may use Chrome's on-device Translator API
+as a progressive enhancement. The English source and Chinese translation occupy the same
+layout cell: changing language hides the inactive layer but does not replace the source in
+React state or the DOM. Unsupported browsers, unavailable language packs and translation
+failures fall back to the English source. Codes, paths, hashes, identifiers, protocol strings
+and accepted command forms remain verbatim, and translations are display-only: they never
+enter an API request, proposal, receipt or project artifact.
+
 ## 3. The API
 
 Every route is under `/api`. Every error, without exception, is the one body

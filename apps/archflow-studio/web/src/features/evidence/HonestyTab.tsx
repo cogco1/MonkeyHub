@@ -14,17 +14,22 @@ import type {
   StateProjectionDto,
   ValidationDto,
 } from "../../api/generated";
+import { BilingualText } from "../../i18n/BilingualText";
+import { useT } from "../../i18n/useT";
 
 function Lines({ label, lines }: { label: string; lines: readonly string[] }) {
+  const t = useT();
   return (
     <div className="ev">
       <p className="label">{label}</p>
       {lines.length === 0 ? (
-        <p className="ev__none">none — the server had nothing to confess here</p>
+        <p className="ev__none">{t("evidence.honesty.none")}</p>
       ) : (
         <ul>
           {lines.map((line, index) => (
-            <li key={`${index}:${line}`}>{line}</li>
+            <li key={`${index}:${line}`}>
+              <BilingualText source={line} showSourceToggle />
+            </li>
           ))}
         </ul>
       )}
@@ -55,12 +60,13 @@ export function HonestyTab({
   candidate: CandidateDto | null;
   validation: ValidationDto | null;
 }) {
+  const t = useT();
   const connected = (
     <div className="ev">
-      <p className="label">Connection</p>
+      <p className="label">{t("evidence.honesty.connection")}</p>
       <p className="verbatim-line">{connectionLine(server, connection.baseUrl)}</p>
       <p className="ev__none">
-        {server.capabilities.length} capabilities ·{" "}
+        {t("evidence.honesty.capabilities", { count: server.capabilities.length })} ·{" "}
         {server.capabilities.join(", ")}
       </p>
     </div>
@@ -69,65 +75,72 @@ export function HonestyTab({
     return (
       <>
         {connected}
-        <p className="ev__none">no projection has been read in this tab</p>
+        <p className="ev__none">{t("evidence.honesty.noProjection")}</p>
       </>
     );
   }
   return (
     <>
       {connected}
-      <Lines label="Record honesty · projection" lines={projection.honesty} />
+      <Lines label={t("evidence.honesty.projectionLines")} lines={projection.honesty} />
       {candidate && (
         <Lines
-          label={`Candidate honesty · ${candidate.candidateId}`}
+          label={t("evidence.honesty.candidateLines", { id: candidate.candidateId })}
           lines={candidate.honesty}
         />
       )}
       {validation && (
         <Lines
-          label={`Verdict honesty · ${validation.candidateId}`}
+          label={t("evidence.honesty.verdictLines", { id: validation.candidateId })}
           lines={validation.honesty}
         />
       )}
       <div className="ev">
-        <p className="label">Identities</p>
+        <p className="label">{t("evidence.honesty.identities")}</p>
         <dl>
-          <dt>state digest</dt>
-          <dd>{projection.stateDigest ?? "none — the kernel refused the bound view"}</dd>
-          <dt>record digest</dt>
+          <dt>{t("evidence.fields.stateDigest")}</dt>
+          <dd>{projection.stateDigest ?? t("evidence.honesty.stateDigestUnavailable")}</dd>
+          <dt>{t("evidence.fields.recordDigest")}</dt>
           <dd>{projection.recordDigest}</dd>
-          <dt>published</dt>
+          <dt>{t("evidence.honesty.published")}</dt>
           <dd>
-            issue {projection.published.version} ·{" "}
+            {t("evidence.honesty.issue", { version: projection.published.version })} ·{" "}
             {projection.published.stateSha256 ?? "—"}
           </dd>
-          <dt>reference run</dt>
+          <dt>{t("settings.fields.referenceRun")}</dt>
           <dd>
-            {projection.referenceRun.runId} · {projection.referenceRunSource} · base
-            v{projection.referenceRun.baseVersion}
+            {projection.referenceRun.runId} · {projection.referenceRunSource} ·{" "}
+            {t("evidence.honesty.baseVersion", {
+              version: projection.referenceRun.baseVersion,
+            })}
           </dd>
-          <dt>receipt match</dt>
+          <dt>{t("evidence.honesty.receiptMatch")}</dt>
           <dd>
             {projection.matchesReferenceReceipt === null
-              ? "not comparable"
+              ? t("evidence.honesty.notComparable")
               : String(projection.matchesReferenceReceipt)}
           </dd>
-          <dt>active phase</dt>
+          <dt>{t("evidence.honesty.activePhase")}</dt>
           <dd>{projection.activePhase ?? "—"}</dd>
-          <dt>declared</dt>
+          <dt>{t("evidence.honesty.declared")}</dt>
           <dd>
-            {projection.counts.components} components · {projection.counts.parameters}{" "}
-            parameters · {projection.counts.relations} relations ·{" "}
-            {projection.counts.dependencyEdges} dependency edges ·{" "}
-            {projection.counts.obligations} obligations
+            {t("evidence.honesty.componentCount", { count: projection.counts.components })} ·{" "}
+            {t("evidence.honesty.parameterCount", { count: projection.counts.parameters })} ·{" "}
+            {t("evidence.honesty.relationCount", { count: projection.counts.relations })} ·{" "}
+            {t("evidence.honesty.edgeCount", { count: projection.counts.dependencyEdges })} ·{" "}
+            {t("evidence.honesty.obligationCount", { count: projection.counts.obligations })}
           </dd>
         </dl>
       </div>
       {validation && (
         <div className="ev">
-          <p className="label">Validation note</p>
-          <p className="verbatim-line">{validation.validatorNote}</p>
-          <p className="verbatim-line">{validation.canonicalFacts}</p>
+          <p className="label">{t("evidence.honesty.validationNote")}</p>
+          <p className="verbatim-line">
+            <BilingualText source={validation.validatorNote} showSourceToggle />
+          </p>
+          <p className="verbatim-line">
+            <BilingualText source={validation.canonicalFacts} showSourceToggle />
+          </p>
         </div>
       )}
     </>

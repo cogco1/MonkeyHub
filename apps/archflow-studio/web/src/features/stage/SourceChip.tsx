@@ -5,6 +5,7 @@
  */
 
 import type { SceneInspection } from "../../viewer/sceneInspection";
+import { useT } from "../../i18n/useT";
 import {
   LOCAL_SOURCE_LABEL,
   type ViewportStatus,
@@ -42,25 +43,71 @@ export function SourceChip({
   message: string;
   view: ViewState | null;
 }) {
+  const t = useT();
   const { tag, rest } = tagOf(sourceLabel);
+  const displayedTag =
+    tag === "NO MODEL"
+      ? t("stage.source.noModel")
+      : tag === "LOCAL"
+        ? t("stage.source.local")
+        : tag === "RUN"
+          ? t("stage.source.run")
+          : tag;
+  const displayedRest = tag === "LOCAL" && rest === "unbound"
+    ? t("stage.source.unbound")
+    : rest;
+  const viewLabel = view
+    ? ({
+        "Ghost preview": t("stage.view.ghost"),
+        Validated: t("stage.view.validated"),
+        Checked: t("stage.view.checked"),
+        "Candidate export": t("stage.view.candidateExport"),
+        Current: t("stage.view.current"),
+      } as Readonly<Record<string, string>>)[view.label] ?? view.label
+    : null;
+  const viewDetail = (() => {
+    if (!view?.detail) return null;
+    if (view.detail === "approximate") return t("stage.view.approximate");
+    if (view.detail === "may advance") return t("stage.view.mayAdvance");
+    if (view.detail === "verdict not read yet") return t("stage.view.verdictUnread");
+    if (view.detail.startsWith("blocked: ")) {
+      return (
+        <>
+          {t("stage.view.blocked")}: {view.detail.slice("blocked: ".length)}
+        </>
+      );
+    }
+    return <span lang="en" translate="no">{view.detail}</span>;
+  })();
   return (
     <div className="source" data-tag={tag} data-state={view?.state ?? "none"}>
       {view && (
         <span className={`source__state source__state--${view.state}`}>
-          {view.label}
-          {view.detail && <span className="source__state-detail"> · {view.detail}</span>}
+          {viewLabel}
+          {viewDetail && <span className="source__state-detail"> · {viewDetail}</span>}
         </span>
       )}
-      <span className="source__tag">{tag}</span>
-      {rest && <span className="mono">{rest}</span>}
+      <span className="source__tag">{displayedTag}</span>
+      {displayedRest && <span className="mono">{displayedRest}</span>}
       {inspection && (
         <span className="mono source__facts">
-          {inspection.fileName} · {inspection.meshCount.toLocaleString()} meshes ·{" "}
-          {inspection.objectCount.toLocaleString()} objects
+          {inspection.fileName} ·{" "}
+          {t("stage.source.meshes", {
+            count: inspection.meshCount.toLocaleString(),
+          })}{" "}
+          ·{" "}
+          {t("stage.source.objects", {
+            count: inspection.objectCount.toLocaleString(),
+          })}
         </span>
       )}
       {status !== "ready" && message && (
-        <span className="source__status">{message}</span>
+        <span className="source__status">
+          {message ===
+          "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here"
+            ? t("stage.source.status.noModel")
+            : <span lang="en" translate="no">{message}</span>}
+        </span>
       )}
     </div>
   );

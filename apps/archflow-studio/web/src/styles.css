@@ -104,7 +104,9 @@ body {
   overflow: hidden;
   background: var(--ground);
   color: var(--ink);
-  font: 13px/1.5 var(--font-ui);
+  font-family: var(--font-ui);
+  font-size: calc(13px * var(--font-scale, 1));
+  line-height: 1.5;
 }
 
 button,
@@ -136,14 +138,14 @@ code {
 
 .mono {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
   word-break: break-all;
 }
 
 .label {
   margin: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -152,7 +154,7 @@ code {
 .quiet {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .visually-hidden {
@@ -173,7 +175,7 @@ code {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
   font-weight: 500;
   transition:
     background-color 120ms ease,
@@ -208,7 +210,7 @@ code {
 
 .btn--small {
   padding: 3px 8px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
 }
 
 /* The viewer's own controls (rendered inside ThreeDmViewport). */
@@ -219,7 +221,7 @@ code {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
   font-weight: 500;
 }
 
@@ -245,7 +247,7 @@ code {
   border-radius: 2px;
   background: var(--panel);
   color: var(--ink-2);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
   white-space: nowrap;
 }
 
@@ -300,7 +302,7 @@ code {
   border-radius: 2px;
   background: var(--panel);
   color: var(--ink-2);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
   white-space: nowrap;
 }
 
@@ -386,13 +388,13 @@ button.chip:hover {
   padding: 0 12px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
   overflow: hidden;
   white-space: nowrap;
 }
 
 .wordmark {
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -406,7 +408,7 @@ button.chip:hover {
 .toolbar__item {
   overflow: hidden;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
   text-overflow: ellipsis;
 }
 
@@ -419,7 +421,7 @@ button.chip:hover {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .toolbar__btn:hover,
@@ -450,7 +452,7 @@ button.chip:hover {
 
 .chat__head-meta {
   color: var(--faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
 }
 
 .chat__scroll {
@@ -481,7 +483,7 @@ button.chip:hover {
 .msg__who {
   margin: 0 0 4px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   letter-spacing: 0.04em;
 }
 
@@ -489,7 +491,7 @@ button.chip:hover {
   margin: 0;
   padding: 2px 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
   text-align: center;
 }
 
@@ -520,7 +522,7 @@ button.chip:hover {
 }
 
 .card__word {
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale, 1));
   font-weight: 700;
 }
 
@@ -553,7 +555,7 @@ button.chip:hover {
   grid-template-columns: 78px minmax(0, 1fr);
   gap: 4px 12px;
   margin: 0;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 .kv dt {
@@ -570,7 +572,7 @@ button.chip:hover {
 .delta {
   margin-top: 2px !important;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 .delta b {
@@ -616,7 +618,7 @@ button.chip:hover {
 .findings {
   margin: 0;
   padding-left: 18px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 /* Review language: the proposed-change and is-it-safe cards ---------------- */
@@ -671,7 +673,7 @@ button.chip:hover {
 }
 
 .review__clauses {
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--font-scale, 1));
 }
 
 .review__detail {
@@ -683,7 +685,7 @@ button.chip:hover {
   padding-left: 10px;
   border-left: 2px solid var(--line);
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 .verbatim ul {
@@ -697,7 +699,7 @@ button.chip:hover {
   padding-left: 10px;
   border-left: 2px solid var(--line);
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 /* Composer --------------------------------------------------------------- */
@@ -716,7 +718,7 @@ button.chip:hover {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .composer__box {
@@ -739,7 +741,7 @@ button.chip:hover {
   border: 0;
   background: none;
   outline: none;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
 }
 
 .composer__box input::placeholder {
@@ -749,7 +751,7 @@ button.chip:hover {
 .composer__hint {
   margin: 0;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
 }
 
 .composer__hint code {
@@ -780,7 +782,7 @@ button.chip:hover {
 .picker__note {
   margin: 0;
   color: var(--unchecked);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .picker__list {
@@ -813,13 +815,13 @@ button.chip:hover {
 
 .picker__meta {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
 }
 
 .picker__empty {
   padding: 4px 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 /* ---------------------------------------------------------------------------
@@ -877,7 +879,7 @@ button.chip:hover {
 .viewport-state p {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .viewport-state--error {
@@ -941,7 +943,7 @@ button.chip:hover {
   border-radius: var(--radius);
   background: var(--overlay);
   box-shadow: var(--shadow);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .source .mono {
@@ -950,7 +952,7 @@ button.chip:hover {
 
 .source__tag {
   color: var(--accent);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -975,7 +977,7 @@ button.chip:hover {
   border-radius: var(--radius);
   background: var(--overlay);
   box-shadow: var(--shadow);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .picked__meta {
@@ -1001,7 +1003,7 @@ button.chip:hover {
   border: 0;
   border-left: 1px solid var(--line-2);
   background: none;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .viewtools button:first-child {
@@ -1053,7 +1055,7 @@ button.chip:hover {
   border-radius: var(--radius);
   background: var(--overlay);
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   white-space: nowrap;
 }
 
@@ -1111,12 +1113,12 @@ button.chip:hover {
 }
 
 .vcard .label {
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
 }
 
 .vcard__title {
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1124,7 +1126,7 @@ button.chip:hover {
 
 .vcard__meta {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
 }
 
 .vcard--unavailable .vcard__meta {
@@ -1140,7 +1142,7 @@ button.chip:hover {
   border-radius: var(--radius);
   background: var(--overlay);
   box-shadow: var(--shadow);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 .drawer-tab:hover {
@@ -1205,7 +1207,7 @@ button.chip:hover {
   border: 0;
   background: none;
   color: var(--muted);
-  font-size: 18px;
+  font-size: calc(18px * var(--font-scale, 1));
   line-height: 1;
 }
 
@@ -1225,7 +1227,7 @@ button.chip:hover {
   border-bottom: 2px solid transparent;
   background: none;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 .drawer__tabs button[aria-selected="true"] {
@@ -1268,7 +1270,7 @@ button.chip:hover {
   margin: 0;
   padding-left: 18px;
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 .ev dl {
@@ -1276,7 +1278,7 @@ button.chip:hover {
   grid-template-columns: 96px minmax(0, 1fr);
   gap: 3px 10px;
   margin: 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .ev dt {
@@ -1286,14 +1288,14 @@ button.chip:hover {
 .ev dd {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
   word-break: break-all;
 }
 
 .ev__none {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 /* The handshake refusal: what stands in for the shell when the server is not
@@ -1321,21 +1323,21 @@ button.chip:hover {
 
 .refusal__title {
   margin: 0;
-  font-size: 18px;
+  font-size: calc(18px * var(--font-scale, 1));
   font-weight: 600;
 }
 
 .refusal__lead {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale, 1));
 }
 
 .refusal__where {
   margin: 0;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
   word-break: break-all;
 }
 
@@ -1358,7 +1360,7 @@ button.chip:hover {
   flex-wrap: wrap;
   gap: 8px;
   margin: 0 0 4px;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1376,7 +1378,7 @@ button.chip:hover {
 .error-panel__detail,
 .error-panel__question {
   margin: 3px 0;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 .error-panel__question {
@@ -1386,7 +1388,7 @@ button.chip:hover {
 .error-panel__forms {
   margin: 4px 0 0;
   padding-left: 18px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
 }
 
 /* Events (kept; rendered in the drawer) ----------------------------------- */
@@ -1402,12 +1404,12 @@ button.chip:hover {
   margin-bottom: 6px;
   padding: 4px 8px;
   border-left: 2px solid var(--accent);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
 }
 
 .events__lines {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
 }
 
 .events__line {
@@ -1433,7 +1435,7 @@ button.chip:hover {
 .panel__note {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 /* ---------------------------------------------------------------------------
@@ -1458,7 +1460,7 @@ button.chip:hover {
 .source__state {
   padding: 1px 7px;
   border-radius: 2px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1522,7 +1524,7 @@ button.chip:hover {
 
 .refine__meta {
   margin-left: auto;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
 }
 
 .refine__row {
@@ -1544,7 +1546,7 @@ button.chip:hover {
   justify-content: space-between;
   padding: 0 34px;
   color: var(--faint);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--font-scale, 1));
 }
 
 .refine__origin {
@@ -1602,7 +1604,7 @@ button.chip:hover {
   border: 1px dashed var(--accent);
   border-radius: 2px;
   color: var(--accent);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
   white-space: nowrap;
 }
 
@@ -1621,7 +1623,7 @@ button.chip:hover {
   border: 0;
   background: none;
   color: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
   line-height: 1;
 }
 
@@ -1642,7 +1644,7 @@ button.chip:hover {
 }
 
 .compare__component {
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 .compare__name {
@@ -1680,7 +1682,7 @@ button.chip:hover {
 }
 
 .blend__meta {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
 }
 
 /* The agent is reading: the waiting half of a proposal, with a clock ------- */
@@ -1693,7 +1695,7 @@ button.chip:hover {
   border: 1px dashed var(--line);
   border-radius: var(--radius);
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .reading__clock {
@@ -1705,7 +1707,7 @@ button.chip:hover {
 .viewtools__hint {
   align-self: center;
   padding: 0 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
 }
 
 .refine__readout--asking {
@@ -1723,19 +1725,19 @@ button.chip:hover {
 }
 
 .refine__note {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
 }
 
 .ev__sentence {
   margin: 0 0 6px;
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale, 1));
 }
 
 .vcard__save {
   align-self: center;
   color: var(--accent);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   text-decoration: none;
 }
 
@@ -1752,7 +1754,7 @@ button.chip:hover {
   padding: 3px 8px;
   border-radius: 2px;
   background: var(--overlay);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
 }
 
 /* A whole run on the stage ------------------------------------------------- */
@@ -1811,7 +1813,7 @@ button.chip:hover {
 
 .boot__title {
   margin: 0;
-  font-size: 34px;
+  font-size: calc(34px * var(--font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1.1;
@@ -1824,13 +1826,13 @@ button.chip:hover {
 .boot__tagline {
   margin: 10px 0 0;
   color: var(--boot-stone-dim);
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale, 1));
 }
 
 .boot__protocol {
   margin: 3px 0 0;
   color: var(--boot-faint);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
 }
 
 .boot__reel {
@@ -1862,7 +1864,7 @@ button.chip:hover {
 .boot__working {
   margin: 20px 0 0;
   color: var(--boot-amber);
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -1870,11 +1872,11 @@ button.chip:hover {
 .boot__status {
   margin: 8px 0 0;
   color: var(--boot-stone-dim);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale, 1));
 }
 
 .boot[data-mode="stage"] .boot__title {
-  font-size: 24px;
+  font-size: calc(24px * var(--font-scale, 1));
 }
 
 .boot[data-mode="stage"] .boot__reel {

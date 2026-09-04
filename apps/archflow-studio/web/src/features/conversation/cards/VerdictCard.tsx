@@ -26,6 +26,8 @@ import {
   ready,
   type Loadable,
 } from "../../../app/loadable";
+import { BilingualText } from "../../../i18n/BilingualText";
+import { useT } from "../../../i18n/useT";
 import { Verbatim } from "./Verbatim";
 
 const NOT_FINISHED = "CANDIDATE_NOT_FINISHED";
@@ -35,14 +37,23 @@ const NOT_FINISHED = "CANDIDATE_NOT_FINISHED";
  * `blockedBy`. A name in `blockedBy` that no line knows is still shown, under
  * Unresolved — never dropped.
  */
-const REVIEW: ReadonlyArray<{ title: string; clauses: readonly string[] }> = [
+const REVIEW = [
   {
-    title: "Geometry",
+    id: "geometry",
+    titleKey: "verdict.review.geometry",
     clauses: ["runner.seat_execution_complete", "runner.exports_available"],
   },
-  { title: "Dependencies", clauses: ["relations.held", "relations.fully_checked"] },
-  { title: "Receipt", clauses: ["validation.receipt"] },
-];
+  {
+    id: "dependencies",
+    titleKey: "verdict.review.dependencies",
+    clauses: ["relations.held", "relations.fully_checked"],
+  },
+  {
+    id: "receipt",
+    titleKey: "verdict.review.receipt",
+    clauses: ["validation.receipt"],
+  },
+] as const;
 
 export function VerdictCard({
   candidateId,
@@ -56,6 +67,7 @@ export function VerdictCard({
   onValidation(validation: ValidationDto): void;
   onEvidence(tab: EvidenceTab, candidateId?: string): void;
 }) {
+  const t = useT();
   const [validation, setValidation] = useState<Loadable<ValidationDto>>(idle);
 
   useEffect(() => {
@@ -80,7 +92,7 @@ export function VerdictCard({
     return (
       <article className="card">
         <div className="card__row">
-          <p className="quiet">checking…</p>
+          <p className="quiet">{t("verdict.checking")}</p>
         </div>
       </article>
     );
@@ -91,7 +103,7 @@ export function VerdictCard({
         <div className="card__row">
           {validation.error.code === NOT_FINISHED && (
             <p className="quiet">
-              the server will not validate a candidate that has not finished
+              {t("verdict.notFinished")}
             </p>
           )}
           <ErrorPanel
@@ -105,18 +117,18 @@ export function VerdictCard({
 
   const value = validation.value;
   const refused = new Set(value.blockedBy);
-  const known = new Set(REVIEW.flatMap((line) => line.clauses));
+  const known = new Set<string>(REVIEW.flatMap((line) => line.clauses));
   const unresolved = value.blockedBy.filter((name) => !known.has(name));
   return (
     <article className="card card--verdict">
       <div className="card__row verdict">
-        <p className="label">Is it safe?</p>
+        <p className="label">{t("verdict.safeQuestion")}</p>
         <p
           className={`card__word ${
             value.advance ? "card__word--go" : "card__word--no"
           }`}
         >
-          {value.advance ? "May advance" : "Blocked"}
+          {value.advance ? t("verdict.mayAdvance") : t("verdict.blocked")}
         </p>
       </div>
       <div className="card__row">
@@ -126,30 +138,32 @@ export function VerdictCard({
             const ok = refusing.length === 0;
             return (
               <ReviewLine
-                key={line.title}
-                title={line.title}
+                key={line.id}
+                title={t(line.titleKey)}
                 ok={ok}
                 clauses={line.clauses}
                 refusing={refusing}
               >
-                {line.title === "Dependencies" && (
+                {line.id === "dependencies" && (
                   <RelationChips checks={value.relationChecks} />
                 )}
-                {line.title === "Receipt" && (
+                {line.id === "receipt" && (
                   <span className="quiet">
-                    {value.receipt.passed ? "passed" : "did not pass"} · effective:{" "}
+                    {value.receipt.passed
+                      ? t("verdict.passed")
+                      : t("verdict.didNotPass")} · {t("verdict.effective")}: {" "}
                     {value.effectiveChecks.length === 0
-                      ? "none"
+                      ? t("evidence.common.none")
                       : value.effectiveChecks.join(", ")}
                   </span>
                 )}
               </ReviewLine>
             );
           })}
-          <dt>Protected</dt>
+          <dt>{t("verdict.protected")}</dt>
           <dd>
             {protectedRefs.length === 0 ? (
-              <span className="quiet">nothing was named to keep</span>
+              <span className="quiet">{t("verdict.nothingProtected")}</span>
             ) : (
               <>
                 <ul className="reflist">
@@ -160,19 +174,17 @@ export function VerdictCard({
                   ))}
                 </ul>
                 <span className="quiet">
-                  the studio never runs a change past a protection you named (a proposal
-                  that reaches one is refused before it runs); whether the relations on
-                  them held is not something this verdict reports
+                  {t("verdict.protectionExplanation")}
                 </span>
               </>
             )}
           </dd>
-          <dt>Unresolved</dt>
+          <dt>{t("verdict.unresolved")}</dt>
           <dd>
             {value.blockedBy.length === 0 &&
             value.receipt.findings.length === 0 &&
             value.honesty.length === 0 ? (
-              <span className="quiet">nothing — no clause refused, no finding, nothing confessed</span>
+              <span className="quiet">{t("verdict.nothingUnresolved")}</span>
             ) : (
               <>
                 {unresolved.length > 0 && (
@@ -183,14 +195,18 @@ export function VerdictCard({
                     {value.receipt.findings.map((finding, index) => (
                       <li key={`${finding.code}:${index}`}>
                         <span className="mono">{finding.code}</span> ·{" "}
-                        {finding.severity} · {finding.message}
+                        <span className="mono">{finding.severity}</span> · {" "}
+                        <BilingualText source={finding.message} />
                       </li>
                     ))}
                   </ul>
                 )}
                 <Verbatim lines={value.honesty} />
                 {value.blockedBy.length > 0 && unresolved.length === 0 && (
-                  <p className="quiet mono">refused: {value.blockedBy.join(" · ")}</p>
+                  <p className="quiet">
+                    {t("verdict.refused")}: {" "}
+                    <span className="mono">{value.blockedBy.join(" · ")}</span>
+                  </p>
                 )}
               </>
             )}
@@ -199,14 +215,14 @@ export function VerdictCard({
       </div>
       <div className="card__row actions">
         <span className="quiet">
-          the verdict is the server's, read once per candidate and issue
+          {t("verdict.serverSource")}
         </span>
         <button
           type="button"
           className="btn btn--link"
           onClick={() => onEvidence("receipts", candidateId)}
         >
-          Read the receipt
+          {t("verdict.readReceipt")}
         </button>
       </div>
     </article>
@@ -226,6 +242,7 @@ function ReviewLine({
   refusing: readonly string[];
   children?: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <>
       <dt>{title}</dt>
@@ -233,7 +250,14 @@ function ReviewLine({
         <span className={`mark ${ok ? "mark--ok" : "mark--no"}`}>
           {ok ? "✓" : "△"}
         </span>{" "}
-        {ok ? "held" : `refused: ${refusing.join(", ")}`}
+        {ok ? (
+          t("verdict.held")
+        ) : (
+          <>
+            {t("verdict.refused")}: {" "}
+            <span className="mono">{refusing.join(", ")}</span>
+          </>
+        )}
         <span className="quiet mono review__clauses"> {clauses.join(" · ")}</span>
         {children && <div className="review__detail">{children}</div>}
       </dd>

@@ -28,6 +28,8 @@ import {
   type Loadable,
 } from "../../../app/loadable";
 import { candidateSourceLabel } from "../../artifacts/artifactLabels";
+import { BilingualText } from "../../../i18n/BilingualText";
+import { useT } from "../../../i18n/useT";
 import { Verbatim } from "./Verbatim";
 
 /** How often the job is asked whether it is over. */
@@ -53,6 +55,7 @@ export function CandidateCard({
   /** The sentence another candidate of this tab was made from, for naming a blocker. */
   labelOf(candidateId: string): string | null;
 }) {
+  const t = useT();
   const [job, setJob] = useState<Loadable<JobDto>>(idle);
   const [candidate, setCandidate] = useState<Loadable<CandidateDto>>(idle);
   // A clock while the run is in flight: eighty seconds of one word was the
@@ -117,7 +120,12 @@ export function CandidateCard({
     <article className="card">
       <div className="card__row">
         <p className="card__title">
-          Candidate <span className={`status status--${status}`}>{status}</span>
+          {t("candidate.title")} {" "}
+          <span className={`status status--${status}`}>
+            {job.status === "ready"
+              ? job.value.status
+              : t("candidate.status.reading")}
+          </span>
           {job.status === "ready" && job.value.wallTimeS !== null && (
             <span className="quiet"> {job.value.wallTimeS.toFixed(1)} s</span>
           )}
@@ -132,7 +140,7 @@ export function CandidateCard({
           <p className="quiet">
             {job.value.waitingFor ? (
               <>
-                waiting for{" "}
+                {t("candidate.waitingFor")}{" "}
                 <span
                   className={labelOf(job.value.waitingFor) ? "" : "mono"}
                   title={job.value.waitingFor}
@@ -141,10 +149,13 @@ export function CandidateCard({
                     ? `“${labelOf(job.value.waitingFor)}”`
                     : job.value.waitingFor}
                 </span>{" "}
-                · {job.value.waitingReason}
+                · <BilingualText source={job.value.waitingReason} />
               </>
             ) : (
-              <>waiting · {job.value.waitingReason}</>
+              <>
+                {t("candidate.waiting")} ·{" "}
+                <BilingualText source={job.value.waitingReason} />
+              </>
             )}
           </p>
         </div>
@@ -153,8 +164,8 @@ export function CandidateCard({
         <div className="card__row">
           <p className="quiet">
             {job.value.lane === "exclusive"
-              ? "running in the export lane · the kernel first, then one Rhino export per seat, one at a time on this machine"
-              : "running · the kernel only, no export"}
+              ? t("candidate.running.exportLane")
+              : t("candidate.running.kernelOnly")}
           </p>
         </div>
       )}
@@ -165,12 +176,14 @@ export function CandidateCard({
       )}
       {job.status === "ready" && job.value.error && (
         <div className="card__row">
-          <p className="verbatim-line">{job.value.error}</p>
+          <p className="verbatim-line">
+            <BilingualText source={job.value.error} />
+          </p>
         </div>
       )}
       {candidate.status === "loading" && (
         <div className="card__row">
-          <p className="quiet">reading the candidate's records…</p>
+          <p className="quiet">{t("candidate.readingRecords")}</p>
         </div>
       )}
       {candidate.status === "failed" && (
@@ -204,53 +217,78 @@ function CandidateReadout({
   onPreview(artifact: ProjectArtifactDto, sourceLabel: string): void;
   onEvidence(tab: EvidenceTab, candidateId?: string): void;
 }) {
+  const t = useT();
   const seats = candidate.seatResults;
   return (
     <>
       <div className="card__row">
         <p>
-          {seats.length} seat{seats.length === 1 ? "" : "s"}
-          {seats.length > 0 && " · "}
-          {seats
-            .map(
-              (seat) =>
-                `${seat.seatId} ${seat.status}` +
-                (seat.objects !== null ? ` · ${seat.objects} objects` : ""),
-            )
-            .join(" · ")}
+          {t(
+            seats.length === 1
+              ? "candidate.seats.one"
+              : "candidate.seats.many",
+            { count: seats.length },
+          )}
+          {seats.map((seat) => (
+            <span key={seat.seatId}>
+              {" · "}
+              <span className="mono">{seat.seatId}</span>{" "}
+              <span className="mono">{seat.status}</span>
+              {seat.objects !== null && (
+                <> · {t("candidate.objects", { count: seat.objects })}</>
+              )}
+            </span>
+          ))}
         </p>
-        <p className="quiet" title={candidate.harness}>
-          a harness run beside the project; no stage advances, nothing is issued
+        <p className="quiet">
+          <BilingualText source={candidate.harness} />
         </p>
         {!candidate.seatExecutionComplete && (
-          <p className="quiet">seat execution is not complete</p>
+          <p className="quiet">{t("candidate.seatExecutionIncomplete")}</p>
         )}
         {/* Where the seconds went, as the receipt times them: the run, then
             each export with the runner's own word for its path. A run that
             exported nothing says so with no export figures at all. */}
         <p className="quiet mono">
           {candidate.timings.runS === null
-            ? "run time not recorded"
-            : `run ${candidate.timings.runS.toFixed(1)} s`}
-          {candidate.timings.exports.length > 0 &&
-            " · export " +
-              candidate.timings.exports
-                .map(
-                  (item) =>
-                    `${item.seconds === null ? "?" : item.seconds.toFixed(1)} s (${item.path ?? "path unknown"}` +
-                    (item.rebuildRatio !== null
-                      ? `, rebuilt ${item.rebuiltObjects} of ${(item.rebuiltObjects ?? 0) + (item.keptObjects ?? 0)}`
-                      : "") +
-                    ")",
-                )
-                .join(" + ")}
+            ? t("candidate.timings.runUnrecorded")
+            : (
+                <>
+                  {t("candidate.timings.run")} {candidate.timings.runS.toFixed(1)} s
+                </>
+              )}
+          {candidate.timings.exports.length > 0 && (
+            <>
+              {" · "}
+              {t("candidate.timings.export")} {" "}
+              {candidate.timings.exports.map((item, index) => (
+                <span key={`${item.path ?? "unknown"}:${index}`}>
+                  {index > 0 && " + "}
+                  {item.seconds === null ? "?" : item.seconds.toFixed(1)} s ({
+                    item.path === null ? (
+                      t("candidate.timings.pathUnknown")
+                    ) : (
+                      <span>{item.path}</span>
+                    )
+                  }
+                  {item.rebuildRatio !== null && (
+                    <>
+                      , {t("candidate.timings.rebuilt")} {item.rebuiltObjects} {" "}
+                      {t("candidate.timings.of")} {" "}
+                      {(item.rebuiltObjects ?? 0) + (item.keptObjects ?? 0)}
+                    </>
+                  )}
+                  )
+                </span>
+              ))}
+            </>
+          )}
         </p>
       </div>
       <div className="card__row">
         {candidate.artifacts.length === 0 ? (
           <p className="quiet">
-            this candidate exported no model — a file that was not written, not
-            a failure
+            {t("candidate.noModelExported")}
           </p>
         ) : (
           <div className="actions">
@@ -269,8 +307,13 @@ function CandidateReadout({
                   }
                 >
                   {loadingSha !== null && loadingSha === artifact.sha256
-                    ? "loading bytes…"
-                    : `Preview ${artifact.fileName}`}
+                    ? t("candidate.loadingBytes")
+                    : (
+                        <>
+                          {t("candidate.preview")} {" "}
+                          <span className="mono">{artifact.fileName}</span>
+                        </>
+                      )}
                 </button>
               ) : null,
             )}
@@ -281,15 +324,19 @@ function CandidateReadout({
                   className="btn btn--link"
                   href={`/api/artifacts/${artifact.sha256}/bytes`}
                   download={artifact.fileName}
-                  title="the certified bytes, as the receipt names them"
+                  title={t("candidate.saveCertifiedTitle")}
                 >
-                  Save {artifact.fileName}
+                  {t("common.save")} {" "}
+                  <span className="mono">{artifact.fileName}</span>
                 </a>
               ) : (
                 <span key={artifact.artifactId} className="quiet">
-                  {artifact.fileName}:{" "}
-                  {artifact.unavailableReason ??
-                    "unavailable, and the server gave no reason"}
+                  <span className="mono">{artifact.fileName}</span>: {" "}
+                  {artifact.unavailableReason ? (
+                    <BilingualText source={artifact.unavailableReason} />
+                  ) : (
+                    t("candidate.unavailableNoReason")
+                  )}
                 </span>
               ),
             )}
@@ -297,7 +344,8 @@ function CandidateReadout({
         )}
         {candidate.skippedRuns.length > 0 && (
           <p className="quiet mono">
-            skipped runs: {candidate.skippedRuns.join(", ")}
+            {t("candidate.skippedRuns")}: {" "}
+            <span>{candidate.skippedRuns.join(", ")}</span>
           </p>
         )}
       </div>
@@ -312,7 +360,7 @@ function CandidateReadout({
           className="btn btn--link"
           onClick={() => onEvidence("receipts", candidate.candidateId)}
         >
-          receipts
+          {t("candidate.receipts")}
         </button>
       </div>
     </>

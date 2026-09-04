@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { asStudioApiError } from "../api/client";
 import { connection, type ServerIdentity } from "../api/connection";
+import { useT } from "../i18n/useT";
 import App from "./App";
 import { ErrorPanel } from "./ErrorPanel";
 import { failed, loading, ready, type Loadable } from "./loadable";
@@ -25,6 +26,7 @@ import { LoadingOverlay } from "./LoadingOverlay";
 
 export function Connected() {
   const [server, setServer] = useState<Loadable<ServerIdentity>>(loading);
+  const t = useT();
 
   const probe = useCallback(() => {
     setServer(loading);
@@ -43,20 +45,20 @@ export function Connected() {
       <div className="refusal" role="alert">
         <div className="refusal__card">
           <p className="label">MonkeyArch</p>
-          <h1 className="refusal__title">This client is not talking to that server.</h1>
+          <h1 className="refusal__title">{t("shell.refusal.title")}</h1>
           <p className="refusal__lead">
-            Every session starts with one question — <code>GET /api/protocol</code>{" "}
-            — and this is the answer it got. Nothing else has been asked, and
-            nothing has been read from any project.
+            {t("shell.refusal.leadBeforeProtocol")} {" "}
+            <code lang="en">GET /api/protocol</code>{" "}
+            {t("shell.refusal.leadAfterProtocol")}
           </p>
-          <ErrorPanel error={server.error} what="the handshake" />
+          <ErrorPanel error={server.error} what={t("shell.handshake")} />
           <p className="refusal__where">
             {connection.baseUrl === ""
-              ? "server: the origin this page was served from"
-              : `server: ${connection.baseUrl}`}
+              ? t("shell.serverOrigin")
+              : `${t("shell.serverLabel")}: ${connection.baseUrl}`}
           </p>
           <button type="button" className="btn" onClick={() => void probe()}>
-            ask again
+            {t("shell.askAgain")}
           </button>
         </div>
       </div>
@@ -68,7 +70,15 @@ export function Connected() {
     // showing a moment ago, so it gets the same surface rather than a bare line:
     // between the splash closing and the shell mounting nothing should look empty.
     return (
-      <LoadingOverlay mode="boot" status="asking the server · GET /api/protocol" />
+      <LoadingOverlay
+        mode="boot"
+        status={
+          <>
+            {t("loading.askingServer")} ·{" "}
+            <code lang="en">GET /api/protocol</code>
+          </>
+        }
+      />
     );
   }
 

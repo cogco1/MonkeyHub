@@ -39,6 +39,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { EVENTS_URL } from "../../api/client";
 import type { StudioEventDto } from "../../api/generated";
+import { BilingualText } from "../../i18n/BilingualText";
+import type { MessageKey } from "../../i18n/messages.en";
+import { useT, type MessageParameters } from "../../i18n/useT";
 
 /** The event names the API documents on `StudioEventDto.type`. */
 const EVENT_TYPES: readonly string[] = [
@@ -52,14 +55,12 @@ const EVENT_TYPES: readonly string[] = [
 /** How many frames the panel keeps. Older ones are dropped, not summarised. */
 const KEEP = 200;
 
-/** What a re-open after a drop says, because the panel cannot promise more. */
-const RECONNECTED =
-  "the stream reconnected; a frame may repeat and the sequence may restart";
-
 interface StreamLine {
   readonly key: string;
   readonly seq: number | null;
-  readonly text: string;
+  readonly text?: string;
+  readonly messageKey?: MessageKey;
+  readonly parameters?: MessageParameters;
   readonly kind: "event" | "gap" | "transport" | "notice";
 }
 
@@ -90,6 +91,7 @@ export function EventStream({
   /** How many lines the panel holds, for the tab that names it. */
   onCount?(count: number): void;
 }) {
+  const t = useT();
   const [lines, setLines] = useState<readonly StreamLine[]>([]);
   useEffect(() => {
     onCount?.(lines.length);
@@ -117,9 +119,19 @@ export function EventStream({
       setLines((current) => [...current, line].slice(-KEEP));
     };
 
-    const note = (text: string, kind: StreamLine["kind"]) => {
+    const note = (
+      messageKey: MessageKey,
+      kind: StreamLine["kind"],
+      parameters?: MessageParameters,
+    ) => {
       lineIdRef.current += 1;
-      push({ key: `${kind}:${lineIdRef.current}`, seq: null, text, kind });
+      push({
+        key: `${kind}:${lineIdRef.current}`,
+        seq: null,
+        messageKey,
+        parameters,
+        kind,
+      });
     };
 
     // A Set iterates in insertion order, so the first entry is the oldest seq
@@ -140,8 +152,9 @@ export function EventStream({
         event = JSON.parse(message.data) as StudioEventDto;
       } catch {
         note(
-          `a frame arrived that this client could not parse: ${message.data}`,
+          "evidence.events.parseFailure",
           "transport",
+          { frame: message.data },
         );
         return;
       }
@@ -151,10 +164,13 @@ export function EventStream({
       if (previous !== null && event.seq > previous + 1) {
         const missing = event.seq - previous - 1;
         note(
-          `${missing} event${missing === 1 ? "" : "s"} (seq ${previous + 1}…` +
-            `${event.seq - 1}) were not shown (a name this panel does not ` +
-            "listen for, a reconnect replay, or a server-side drop)",
+          missing === 1 ? "evidence.events.gapOne" : "evidence.events.gapMany",
           "gap",
+          {
+            count: missing,
+            start: previous + 1,
+            end: event.seq - 1,
+          },
         );
       }
       if (previous === null || event.seq > previous) lastSeqRef.current = event.seq;
@@ -181,14 +197,13 @@ export function EventStream({
       lastSeqRef.current = null;
       if (droppedRef.current) {
         droppedRef.current = false;
-        note(RECONNECTED, "notice");
+        note("evidence.events.reconnected", "notice");
       }
     };
     source.onerror = () => {
       droppedRef.current = true;
       note(
-        "the event stream dropped; the browser will retry. Nothing about the " +
-          "project changed because of this.",
+        "evidence.events.dropped",
         "transport",
       );
     };
@@ -206,14 +221,14 @@ export function EventStream({
       {notices.length > 0 && (
         <ul className="events__notices">
           {notices.map((notice, index) => (
-            <li key={`${index}:${notice}`}>{notice}</li>
+            <li key={`${index}:${notice}`}>
+              <BilingualText source={notice} showSourceToggle />
+            </li>
           ))}
         </ul>
       )}
       {lines.length === 0 ? (
-        <p className="panel__note">
-          the stream is open and this process has published nothing yet.
-        </p>
+        <p className="panel__note">{t("evidence.events.empty")}</p>
       ) : (
         <ul className="events__lines mono">
           {lines.map((line) => (
@@ -221,7 +236,11 @@ export function EventStream({
               <span className="events__seq">
                 {line.seq === null ? "—" : line.seq}
               </span>
-              <span>{line.text}</span>
+              <span>
+                {line.messageKey === undefined
+                  ? line.text
+                  : t(line.messageKey, line.parameters)}
+              </span>
             </li>
           ))}
         </ul>

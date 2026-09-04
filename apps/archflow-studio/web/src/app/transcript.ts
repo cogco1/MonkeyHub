@@ -16,8 +16,20 @@ import { useCallback, useRef, useState } from "react";
 import type { StudioApiError } from "../api/client";
 import type { AgentReadingDto, CompareDto, ProposalDto } from "../api/generated";
 
+export type SystemTextPart =
+  | { readonly kind: "prose"; readonly text: string }
+  | { readonly kind: "technical"; readonly text: string }
+  | { readonly kind: "user"; readonly text: string };
+
 export type Entry =
-  | { kind: "system"; id: string; text: string }
+  | {
+      kind: "system";
+      id: string;
+      /** Plain source retained for history and safe fallback. */
+      text: string;
+      /** Only explicitly separated prose is eligible for translation. */
+      parts?: readonly SystemTextPart[];
+    }
   | {
       /** The waiting half of a proposal: an agent is reading the sentence. */
       kind: "reading";

@@ -20,6 +20,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { StudioApiError } from "../api/client";
+import { useT } from "../i18n/useT";
 import { ErrorPanel } from "./ErrorPanel";
 
 /** A crash in this client's own code, as distinct from anything the API said. */
@@ -38,13 +39,17 @@ interface ErrorBoundaryProps {
   readonly children: ReactNode;
 }
 
+interface ErrorBoundaryImplProps extends ErrorBoundaryProps {
+  readonly reloadLabel: string;
+}
+
 interface ErrorBoundaryState {
   readonly error: unknown;
   readonly caught: boolean;
 }
 
-export class ErrorBoundary extends Component<
-  ErrorBoundaryProps,
+class ErrorBoundaryImpl extends Component<
+  ErrorBoundaryImplProps,
   ErrorBoundaryState
 > {
   state: ErrorBoundaryState = { error: null, caught: false };
@@ -78,9 +83,21 @@ export class ErrorBoundary extends Component<
           className="button button--small"
           onClick={() => window.location.reload()}
         >
-          reload the page
+          {this.props.reloadLabel}
         </button>
       </div>
     );
   }
+}
+
+export function ErrorBoundary({ label, children }: ErrorBoundaryProps) {
+  const t = useT();
+  return (
+    <ErrorBoundaryImpl
+      label={label ?? t("shell.client")}
+      reloadLabel={t("shell.reloadPage")}
+    >
+      {children}
+    </ErrorBoundaryImpl>
+  );
 }

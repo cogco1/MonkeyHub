@@ -15,6 +15,7 @@ import { useState } from "react";
 
 import type { ProjectArtifactDto } from "../../api/generated";
 import { sha8 } from "../../app/format";
+import { useT } from "../../i18n/useT";
 
 export interface VersionExport {
   readonly artifact: ProjectArtifactDto;
@@ -54,6 +55,7 @@ export function VersionsStrip({
   /** Compare this card's run against the loaded run's exports. */
   onCompare(artifact: ProjectArtifactDto): void;
 }) {
+  const t = useT();
   const [showEarlier, setShowEarlier] = useState(false);
   if (groups.length === 0) return null;
   // Reference and this tab's candidates always show; other runs fold. A run
@@ -66,7 +68,7 @@ export function VersionsStrip({
     ? groups
     : groups.filter((group) => !earlier.includes(group));
   return (
-    <div className="versions" role="list">
+    <div className="versions" role="list" aria-label={t("stage.versions.ariaLabel")}>
       {shown.map((group) => {
         const loaded = group.runId === loadedRunId;
         const comparable =
@@ -77,6 +79,32 @@ export function VersionsStrip({
         const servable = group.exports.filter(
           (item) => item.artifact.available && item.artifact.sha256 !== null,
         );
+        const referenceIssue =
+          group.label === "Reference"
+            ? /^based on issue (.+)$/.exec(group.title)?.[1]
+            : undefined;
+        const displayedLabel =
+          group.label === "Reference"
+            ? t("stage.versions.reference")
+            : group.label === "Candidate"
+              ? t("stage.versions.candidate")
+              : t("stage.versions.run");
+        const displayedDetail = (() => {
+          if (group.detail === null) return null;
+          if (group.detail === "may advance") return t("stage.view.mayAdvance");
+          if (group.detail === "verdict not read yet") return t("stage.view.verdictUnread");
+          if (group.detail === "not launched from this tab") {
+            return t("stage.versions.notLaunchedHere");
+          }
+          if (group.detail.startsWith("blocked: ")) {
+            return (
+              <>
+                {t("stage.view.blocked")}: {group.detail.slice("blocked: ".length)}
+              </>
+            );
+          }
+          return <span lang="en" translate="no">{group.detail}</span>;
+        })();
         return (
           <div
             key={group.runId}
@@ -85,9 +113,15 @@ export function VersionsStrip({
             title={group.runId}
           >
             <div className="vcard__head">
-              <span className="label">{group.label}</span>
-              <span className="vcard__title">{group.title}</span>
-              {group.detail && <span className="vcard__meta">{group.detail}</span>}
+              <span className="label">{displayedLabel}</span>
+              <span className="vcard__title">
+                {referenceIssue !== undefined ? (
+                  t("stage.versions.referenceBasedOn", { version: referenceIssue })
+                ) : (
+                  group.title
+                )}
+              </span>
+              {displayedDetail && <span className="vcard__meta">{displayedDetail}</span>}
             </div>
             <div className="vcard__exports">
               {servable.length > 0 && (
@@ -96,12 +130,12 @@ export function VersionsStrip({
                   className="btn btn--small vcard__run"
                   aria-pressed={loaded && loadedShas.length > 1}
                   disabled={loadingSha !== null}
-                  title={`show every seat of this run on the stage · ${servable
-                    .map((item) => item.seat)
-                    .join(" + ")}`}
+                  title={t("stage.versions.showRunTitle", {
+                    seats: servable.map((item) => item.seat).join(" + "),
+                  })}
                   onClick={() => onOpenRun(group)}
                 >
-                  show run
+                  {t("stage.versions.showRun")}
                 </button>
               )}
               {group.exports.map(({ artifact, seat, sourceLabel }) => {
@@ -118,14 +152,17 @@ export function VersionsStrip({
                     disabled={!artifact.available || loadingSha !== null}
                     title={
                       artifact.available
-                        ? `show this seat's export on the stage · ${artifact.fileName} · ${sha8(artifact.sha256)}`
+                        ? t("stage.versions.showSeatTitle", {
+                            fileName: artifact.fileName,
+                            sha: sha8(artifact.sha256),
+                          })
                         : (artifact.unavailableReason ??
-                          "unavailable, and the server gave no reason")
+                          t("stage.versions.unavailableNoReason"))
                     }
                     onClick={() => onOpen(artifact, sourceLabel)}
                   >
-                    {loadingThis ? "loading…" : seat}
-                    {!artifact.available && " · unavailable"}
+                    {loadingThis ? t("stage.versions.loading") : seat}
+                    {!artifact.available && ` · ${t("stage.versions.unavailable")}`}
                   </button>
                 );
               })}
@@ -137,19 +174,21 @@ export function VersionsStrip({
                     className="vcard__save"
                     href={`/api/artifacts/${artifact.sha256}/bytes`}
                     download={artifact.fileName}
-                    title={`save ${artifact.fileName}`}
+                    title={t("stage.versions.saveTitle", {
+                      fileName: artifact.fileName,
+                    })}
                   >
-                    save {seat}
+                    {t("stage.versions.saveSeat", { seat })}
                   </a>
                 ))}
               {comparable && firstAvailable && (
                 <button
                   type="button"
                   className="btn btn--small vcard__compare"
-                  title="Before / after against the run on screen"
+                  title={t("stage.versions.compareTitle")}
                   onClick={() => onCompare(firstAvailable.artifact)}
                 >
-                  compare
+                  {t("stage.versions.compare")}
                 </button>
               )}
             </div>
@@ -164,8 +203,8 @@ export function VersionsStrip({
           onClick={() => setShowEarlier((open) => !open)}
         >
           {showEarlier
-            ? "fold earlier runs"
-            : `earlier runs · ${earlier.length}`}
+            ? t("stage.versions.foldEarlier")
+            : t("stage.versions.earlierRuns", { count: earlier.length })}
         </button>
       )}
     </div>
