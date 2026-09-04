@@ -152,6 +152,7 @@
         "the supported operation vocabulary and its rhinoscriptsyntax emission (solid, revolve, extrusion, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
         "the layer path and layer colour tables derived from components and material assignment",
         "the archflow:* object user text each physical object must carry (expected_object_semantics)",
+        "the one map from producer parameters to archflow:* user strings, and the canonical text a stated number or literal is written as",
         "the analytic per-object bounds the realization must reproduce (expected_object_bounds)",
         "applying a datum-bound base_level to profile points (lift_to_base_level)",
         "the P103 partial emission of an operation subset"
@@ -201,7 +202,8 @@
         "an unsupported operation kind fails CadTranslationError rather than being dropped silently",
         "the same program translates to the same script bytes - the emission is deterministic and self-contained",
         "coordinates pass through as the program states them; the translator performs no frame conversion",
-        "every physical object is named and carries its archflow:* identity strings"
+        "every physical object is named and carries its archflow:* identity strings",
+        "an object carries its producer's parameters as archflow:* user strings (wedge: low/high/axis/sense; shell: thickness/kind); geometry is never recomputed to write them"
       ],
       "status": "canonical",
       "tests": [
@@ -217,7 +219,7 @@
       "owns": [
         "the ThreeDmInspection shape and its versioned key sets (the one place the schema's required keys are declared)",
         "reading layers, objects, instance definitions and references, counts by type and by layer",
-        "document and object user strings",
+        "document and object user strings: every key an object carries, attributes and geometry alike, read whole rather than by a known list",
         "world bounds: aggregate, per named object, and the visible-bounds witnesses that back each leaf bound",
         "native material and render-material tables and each object's material binding",
         "per-object encoded-geometry digests and morphology analysis (planarity, curve sampling)",
@@ -258,6 +260,7 @@
         "read-only: rhino3dm is imported lazily, one immutable byte snapshot is read, and no Rhino process is started",
         "bounds come from saved visible geometry, never from Brep control points",
         "an object geometry digest hashes encoded geometry only - object attributes cannot change it",
+        "object user strings are read back verbatim whatever their key, so a new archflow:* string the export starts writing needs no change here",
         "an unreadable or unsupported file fails with a named error code, not a partial summary"
       ],
       "status": "canonical",
@@ -434,7 +437,8 @@
         "declaring the support relations that construction materializes (ProducedRelation), with engagement or rise",
         "typed declination: a component owned, looked at, and left without geometry for a stated reason",
         "the building-local frame id and the +Y extrusion convention every producer emits",
-        "a straight flight of steps (stair), a sloped-top wedge (wedge) and a hollow revolved shell (shell), each publishing <id>-top and seated by a support relation like prism"
+        "a straight flight of steps (stair), a sloped-top wedge (wedge) and a hollow revolved shell (shell), each publishing <id>-top and seated by a support relation like prism",
+        "stating on the operation the row parameters the produced solid cannot show (a wedge's low/high/axis/sense, a shell's thickness/kind), for the export to carry"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",

@@ -24,7 +24,7 @@ this module on 2026-09-02; the runner reads Element@1 rows and calls
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping
 
 from archflow.capabilities.reference_resolver import (
@@ -166,6 +166,28 @@ def _extrusion(op_id: str, profile, height: float, binding_id: str, frame_id: st
 
 def _bind(op_id: str, datum_id: str) -> DatumBinding:
     return DatumBinding(binding_id=f"bind-{op_id}", datum_id=datum_id, op_id=op_id, parameter_name="base_level")
+
+
+def _stating(operation: GeometryOperation, *parameters: GeometryParameter) -> GeometryOperation:
+    """The same operation, with row parameters the exported solid cannot show stated on it.
+
+    A bounding box holds the same hull for a wedge rising along its run and
+    one rising across it, and shows nothing of a shell's wall thickness. So
+    the row's own numbers travel on the operation - not a measurement of the
+    geometry, the parameter the producer read - and the CAD adapter writes
+    them as ``archflow:*`` user strings the re-index can read back. Names
+    stay sorted, which a GeometryOperation requires.
+    """
+
+    return replace(operation, parameters=tuple(sorted((*operation.parameters, *parameters), key=lambda item: item.name)))
+
+
+def _text(name: str, value: str) -> GeometryParameter:
+    return GeometryParameter.create(name=name, kind=GeometryParameterKind.TEXT, value=value)
+
+
+def _metres(name: str, value: float) -> GeometryParameter:
+    return GeometryParameter.create(name=name, kind=GeometryParameterKind.NUMBER, value=round(value, 9), unit=_M)
 
 
 def _level_datum(datum_id: str, published_by: str, value: float, basis: tuple[str, ...]) -> InterfaceDatum:
@@ -608,9 +630,14 @@ def produce_wedge(row: ElementRow, context: ProductionContext) -> ProducedElemen
     near = (low, high) if across else (low, low)
     far = (low, high) if across else (high, high)
     produced = _loft(row, context, _end_face(start, normal, half, *near) + _end_face(end, normal, half, *far), 4, base_datum, base_offset)
+    # The solid keeps its own slope: low, high, the axis it tips on, and which end of the run is
+    # the low one. This producer always seats low at the `from` end (and, across, on the -normal
+    # side); a flipped wedge has no parameter here, so the sense is stated, not inferred.
+    stated = _stating(produced.operations[0], _text("wedge_axis", "across" if across else "along"), _metres("wedge_high", high),
+                      _metres("wedge_low", low), _text("wedge_sense", "from"))
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + high, row.basis_refs)
     context.published[top.datum_id] = top
-    return ProducedElement(produced.operations, produced.bindings, (top,), produced.relations, None)
+    return ProducedElement((stated,), produced.bindings, (top,), produced.relations, None)
 
 
 def produce_shell(row: ElementRow, context: ProductionContext) -> ProducedElement:
@@ -657,6 +684,9 @@ def produce_shell(row: ElementRow, context: ProductionContext) -> ProducedElemen
             profiles.extend(_annulus(cx, cz, height * math.sin(phi), r_out, r_out * scale, segments))
         lofted = _loft(row, context, profiles, 2 * segments, base_datum, base_offset)
         operations, bindings = lofted.operations, lofted.bindings
+    # The wall is nowhere in the hull: a solid drum and a hollow one share a box. The shell states
+    # its own thickness and which revolved form it is, so the export can say what the box cannot.
+    operations = (_stating(operations[0], _text("shell_kind", kind), _metres("shell_thickness", thickness)),)
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
     context.published[top.datum_id] = top
     return ProducedElement(operations, bindings, (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)

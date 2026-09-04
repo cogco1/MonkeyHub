@@ -636,5 +636,219 @@ class LayerSchemeTests(unittest.TestCase):
             _component_layer(("portico-columns",), {"portico-columns": "20::STRUCTURE"})
 
 
+BASIS = ("reading:plate",)
+
+
+def _reference_context():
+    from archflow.capabilities.reference_resolver import ReferenceContext
+    from archflow.state.geometry_program import (
+        ProjectGridAxis,
+        ProjectGrids,
+        ProjectLevel,
+        ProjectLevels,
+    )
+
+    return ReferenceContext(
+        grids=ProjectGrids(
+            project_id="demo",
+            published_by="seat-coordination",
+            axes=(ProjectGridAxis("axis-w", "W", (0.0, 0.0, -13.85), (1.0, 0.0, 0.0), BASIS),),
+        ),
+        levels=ProjectLevels(
+            project_id="demo",
+            published_by="seat-coordination",
+            levels=(ProjectLevel("level-ground", "terrain-grade", 0.0, BASIS),),
+        ),
+    )
+
+
+def _produced_program(*rows):
+    """The real producers' operations, wrapped as the program the translator reads."""
+
+    from archflow.capabilities.element_producers import ProductionContext, produce_rows
+
+    context = ProductionContext(references=_reference_context(), published={})
+    operations = [
+        operation
+        for element in produce_rows(rows, context)
+        for operation in element.operations
+    ]
+    return program(
+        *operations,
+        bindings=tuple(
+            binding(row.binding_id, row.component_id, [f"obj-{row.element_id}"])
+            for row in rows
+        ),
+    )
+
+
+def _wedge_row(**params):
+    from archflow.capabilities.element_producers import ElementRow
+
+    return ElementRow(
+        "abutment-north",
+        "roof-abutments",
+        "wedge",
+        {
+            "from": {"axis_point": {"axis": "W", "along": 0.0}},
+            "to": {"axis_point": {"axis": "W", "along": 4.0}},
+            "base": {"level": "level-ground"},
+        },
+        {"depth": 2.0, "low": 0.5, "high": 2.5, **params},
+        BASIS,
+    )
+
+
+def _shell_row(**params):
+    from archflow.capabilities.element_producers import ElementRow
+
+    return ElementRow(
+        "rotunda-shell",
+        "rotunda-wall",
+        "shell",
+        {
+            "at": {"axis_point": {"axis": "W", "along": 0.0}},
+            "base": {"level": "level-ground"},
+        },
+        {
+            "outer_radius": 5.0,
+            "thickness": 0.6,
+            "height": 4.0,
+            "kind": "cylinder",
+            "segments": 8,
+            **params,
+        },
+        BASIS,
+    )
+
+
+def _prism_row():
+    from archflow.capabilities.element_producers import ElementRow
+
+    return ElementRow(
+        "plinth",
+        "plinth-block",
+        "prism",
+        {
+            "at": {"axis_point": {"axis": "W", "along": 0.0}},
+            "base": {"level": "level-ground"},
+        },
+        {"profile": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], "height": 0.4},
+        BASIS,
+    )
+
+
+class ProducerParameterUserTextTests(unittest.TestCase):
+    """W3-B: what a saved solid cannot show about itself, the object says in user text.
+
+    A wedge's slope and a shell's wall are not in the bounding box, and the
+    mirrored wedge leaves the box unchanged, so the re-index reads them off
+    ``archflow:wedge_*`` / ``archflow:shell_*`` instead. The values here are
+    the row's own numbers, carried through the real producers - the
+    translator reads the operation's parameters and never measures geometry.
+    """
+
+    def _user_text(self, *rows):
+        semantics = expected_object_semantics(_produced_program(*rows))
+        return {
+            object_id: row["user_text"]
+            for object_id, row in semantics["objects"].items()
+        }
+
+    def test_a_wedge_carries_its_low_high_axis_and_sense_and_nothing_more(self):
+        text = self._user_text(_wedge_row())
+
+        self.assertEqual(
+            text["obj-abutment-north"],
+            {
+                "archflow:producer_op": "abutment-north",
+                "archflow:object_ref": "cad-object:obj-abutment-north",
+                "archflow:operation_ref": "cad-operation:abutment-north",
+                "archflow:bindings": "binding-roof-abutments",
+                "archflow:component": "roof-abutments",
+                "archflow:wedge_low": "0.5",
+                "archflow:wedge_high": "2.5",
+                "archflow:wedge_axis": "along",
+                "archflow:wedge_sense": "from",
+            },
+        )
+
+    def test_a_wedge_sloping_across_its_run_says_across(self):
+        text = self._user_text(_wedge_row(slope_across=True))
+
+        self.assertEqual(text["obj-abutment-north"]["archflow:wedge_axis"], "across")
+        self.assertEqual(text["obj-abutment-north"]["archflow:wedge_sense"], "from")
+
+    def test_a_shell_carries_its_thickness_and_kind(self):
+        cylinder = self._user_text(_shell_row())["obj-rotunda-shell"]
+        dome = self._user_text(_shell_row(kind="dome", rings=4))["obj-rotunda-shell"]
+
+        self.assertEqual(
+            cylinder,
+            {
+                "archflow:producer_op": "rotunda-shell",
+                "archflow:object_ref": "cad-object:obj-rotunda-shell",
+                "archflow:operation_ref": "cad-operation:rotunda-shell",
+                "archflow:bindings": "binding-rotunda-wall",
+                "archflow:component": "rotunda-wall",
+                "archflow:shell_thickness": "0.6",
+                "archflow:shell_kind": "cylinder",
+            },
+        )
+        self.assertEqual(dome["archflow:shell_kind"], "dome")
+        self.assertEqual(dome["archflow:shell_thickness"], "0.6")
+
+    def test_a_prism_carries_none_of_them(self):
+        text = self._user_text(_prism_row())
+
+        self.assertEqual(
+            sorted(text["obj-plinth"]),
+            [
+                "archflow:bindings",
+                "archflow:component",
+                "archflow:object_ref",
+                "archflow:operation_ref",
+                "archflow:producer_op",
+            ],
+        )
+
+    def test_the_strings_travel_into_the_build_script(self):
+        script = translate_to_rhino_python(
+            _produced_program(_wedge_row(), _shell_row(), _prism_row())
+        ).script
+
+        for key, value in (
+            ("archflow:wedge_low", "0.5"),
+            ("archflow:wedge_high", "2.5"),
+            ("archflow:wedge_axis", "along"),
+            ("archflow:wedge_sense", "from"),
+            ("archflow:shell_thickness", "0.6"),
+            ("archflow:shell_kind", "cylinder"),
+        ):
+            self.assertIn(f'"{key}": "{value}"', script)
+
+    def test_metres_are_canonical_decimal_text_not_a_locale_or_a_python_object(self):
+        """A stated length reparses to the same float; a value the map cannot carry fails closed."""
+
+        text = self._user_text(_wedge_row(low=0.0, high=1.0 / 3.0))["obj-abutment-north"]
+        self.assertEqual(text["archflow:wedge_low"], "0.0")
+        self.assertEqual(float(text["archflow:wedge_high"]), round(1.0 / 3.0, 9))
+        self.assertNotIn(",", text["archflow:wedge_high"])
+
+        with self.assertRaises(CadTranslationError):
+            expected_object_semantics(
+                program(
+                    op(
+                        "bad-shell",
+                        "extrusion",
+                        ["obj-bad-shell"],
+                        profile=[[0.0, 0.0, 0.0]],
+                        shell_kind=["cylinder"],
+                        vector=[0.0, 1.0, 0.0],
+                    )
+                )
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

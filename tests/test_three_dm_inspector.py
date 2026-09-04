@@ -241,6 +241,50 @@ class ThreeDmInspectorTests(unittest.TestCase):
         self.assertEqual(binding["archflow_material_id"], "stucco")
         self.assertIsNone(binding["render_material_instance_id"])
 
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_every_object_user_string_is_read_back_whatever_its_key(self) -> None:
+        """The producer parameters an export writes come back verbatim, keys the reader has never seen included.
+
+        The inspector reads the whole user-string table off the object, not a
+        known subset, so the wedge and shell strings the CAD side started
+        writing need no change here - and neither will the next producer's.
+        """
+
+        written = {
+            "archflow:component": "roof-abutments",
+            "archflow:producer_op": "abutment-north",
+            "archflow:wedge_low": "0.5",
+            "archflow:wedge_high": "2.5",
+            "archflow:wedge_axis": "along",
+            "archflow:wedge_sense": "from",
+            "archflow:shell_thickness": "0.6",
+            "archflow:shell_kind": "cylinder",
+            "archflow:not_a_key_this_reader_knows": "carried anyway",
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "stated-parameters.3dm"
+            model = rhino3dm.File3dm()
+            layer = rhino3dm.Layer()
+            layer.Name = "Main"
+            layer_index = model.Layers.Add(layer)
+            attributes = rhino3dm.ObjectAttributes()
+            attributes.LayerIndex = layer_index
+            attributes.Name = "obj-abutment-north"
+            for key, value in written.items():
+                attributes.SetUserString(key, value)
+            model.Objects.AddPoint(rhino3dm.Point3d(0, 0, 0), attributes)
+            self.assertTrue(model.Write(str(source), 8))
+
+            summary = inspect_three_dm(source).to_dict()
+
+        self.assertEqual(len(summary["object_user_strings"]), 1)
+        row = summary["object_user_strings"][0]
+        self.assertEqual(row["name"], "obj-abutment-north")
+        self.assertEqual(
+            {item["key"]: item["value"] for item in row["attributes"]},
+            written,
+        )
+
     def test_brep_bounds_use_retained_face_mesh_vertices(self) -> None:
         vertices = tuple(
             SimpleNamespace(X=x, Y=y, Z=z)

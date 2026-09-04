@@ -19,6 +19,32 @@ native block instancing (one definition, N transforms), mirroring the
 family identity the program already owns. The script reads its own
 semantics back from the document and prints them beside the measures so
 the receipt can verify the round trip against the program alone.
+
+Some forms are not recoverable from the geometry they leave behind: a
+bounding box holds the same hull for a wedge rising along its run, one
+rising across it and one rising the other way, and a hollow drum and a
+solid one share a box entirely. Those producers therefore state their own
+defining numbers on the operation, and every object of such an operation
+carries them as user text beside its identity — keys and formats exactly:
+
+===========================  ==========================================
+``archflow:wedge_low``       metres above the row's base datum
+``archflow:wedge_high``      metres above the base datum, above ``low``
+``archflow:wedge_axis``      ``along`` | ``across``
+``archflow:wedge_sense``     ``from`` | ``to`` — the end of the run the
+                             low edge sits at
+``archflow:shell_thickness`` metres of wall
+``archflow:shell_kind``      ``cylinder`` | ``dome``
+===========================  ==========================================
+
+Metres are canonical decimal text (shortest round-trip repr: ``0.5``,
+``2.0`` — no locale, no thousands separator), enumerated values their bare
+literal. ``_PRODUCER_USER_TEXT`` is the one table that decides this, read
+straight off ``GeometryOperation.parameters``: no geometry is measured or
+recomputed to write a string, and an object whose producer states none of
+them carries none of them. An older export that predates the strings is
+not repaired here — the re-index keeps such a row AMBIGUOUS and names what
+is missing.
 """
 
 from __future__ import annotations
@@ -45,6 +71,31 @@ _SUPPORTED = {
 }
 
 _ROOT_LAYER = "archflow"
+
+# The producer parameters an object carries as its own ``archflow:*`` user text.
+#
+# A bounding box cannot show a wedge's slope or a shell's wall, and a mirrored
+# wedge leaves the same box behind, so the forms whose defining numbers are
+# invisible in the saved geometry state them here instead. The key is
+# ``archflow:`` followed by the parameter's own name; the value is the parameter
+# exactly as the program states it — a number as canonical decimal metres
+# (repr-stable, locale-free), an enumerated value as its literal. Nothing is
+# measured or recomputed to write one, and an operation that does not state the
+# parameter carries no string for it.
+#
+#   archflow:wedge_low        metres above the row's base datum
+#   archflow:wedge_high       metres above the row's base datum, above low
+#   archflow:wedge_axis       "along" | "across" — the run, or the depth
+#   archflow:wedge_sense      "from" | "to" — the end of the run the low edge sits at
+#   archflow:shell_thickness  metres of wall
+#   archflow:shell_kind       "cylinder" | "dome"
+_PRODUCER_USER_TEXT: dict[str, tuple[str, ...]] = {
+    "wedge": ("wedge_low", "wedge_high", "wedge_axis", "wedge_sense"),
+    "shell": ("shell_thickness", "shell_kind"),
+}
+_PARAMETER_USER_TEXT: tuple[str, ...] = tuple(
+    sorted(name for names in _PRODUCER_USER_TEXT.values() for name in names)
+)
 
 
 class CadTranslationError(ValueError):
@@ -110,6 +161,24 @@ def _params(operation) -> dict[str, object]:
     for parameter in operation.parameters:
         decoded[parameter.name] = json.loads(parameter.value_json)
     return decoded
+
+
+def _user_text_value(name: str, value: object) -> str:
+    """One stated parameter as the user string a reader parses back.
+
+    A number becomes canonical decimal text — Python's shortest round-trip
+    repr, which is locale-free and reparses to the same float — and an
+    enumerated value its own literal. Anything else is a parameter this map
+    cannot carry, and says so rather than writing a Python repr into the file.
+    """
+
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise CadTranslationError(
+            f"parameter {name!r} cannot travel as user text: {value!r}"
+        )
+    return repr(value)
 
 
 _LAYER_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _\-.]{0,63}$")
@@ -230,10 +299,11 @@ def expected_object_semantics(
     """The semantics each physical object must carry in the CAD document.
 
     Derived from the program alone: producer op, binding ids, component
-    id, commitment and evidence refs, and the per-component layer path.
-    Objects the program leaves unbound stay on the root layer with no
-    invented component. Families report the block definitions arrays
-    must create with their instance multiplicities.
+    id, commitment and evidence refs, the per-component layer path, and the
+    producer parameters ``_PRODUCER_USER_TEXT`` names — the numbers a saved
+    solid cannot show about itself. Objects the program leaves unbound stay
+    on the root layer with no invented component. Families report the block
+    definitions arrays must create with their instance multiplicities.
     """
 
     proposal = program.proposal
@@ -245,6 +315,7 @@ def expected_object_semantics(
     families: dict[str, int] = {}
     for operation in proposal.operations:
         kind = operation.kind.value
+        parameters = _params(operation)
         for object_id in operation.output_object_ids:
             binding_ids = tuple(
                 sorted(getattr(operation, "semantic_binding_ids", ()) or ())
@@ -295,17 +366,22 @@ def expected_object_semantics(
                 user_text["archflow:commitments"] = ",".join(commitments)
             if evidence:
                 user_text["archflow:evidence"] = ",".join(evidence)
+            for parameter_name in _PARAMETER_USER_TEXT:
+                if parameter_name in parameters:
+                    user_text[f"archflow:{parameter_name}"] = _user_text_value(
+                        parameter_name, parameters[parameter_name]
+                    )
             objects[object_id] = {
                 "name": object_id,
                 "layer": layer,
                 "user_text": user_text,
             }
-            if bool(_params(operation).get("hidden_for_inspection", False)):
+            if bool(parameters.get("hidden_for_inspection", False)):
                 objects[object_id]["visible"] = False
                 user_text["archflow:inspection_witness"] = "hidden"
         if kind in ("array", "radial_array"):
             families[f"archflow-family-{operation.op_id}"] = int(
-                _params(operation)["count"]
+                parameters["count"]
             )
     physical = set(_physical_ids(proposal))
     return {
