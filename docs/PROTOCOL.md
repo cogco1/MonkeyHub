@@ -107,8 +107,10 @@ tolerate it.
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
 | GET | `/api/candidates/{candidateId}/compare?against=` | before / after / why, from the inspection records both runs retained | reads shared | provisional |
 | GET | `/api/events` | the server-sent event stream (§7) | server memory | provisional |
+| POST | `/api/controls` → 201 | keep a confirmed authored-control draft (the terminal MISSING_EDITABLE_CONTROL answer) as a declared control: component, property, provenance, what the catalog showed | server memory | provisional |
+| GET | `/api/controls/{controlId}` | one declared control | server memory | provisional |
 
-Eighteen resources: fifteen stable, three provisional. `/api/intents` is provisional because who
+Twenty resources: fifteen stable, five provisional. `/api/intents` is provisional because who
 signs an agent's compilation receipt is still moving; `/api/compare` because its `why` comes from
 one process's memory of a proposal; `/api/events` because its event types are not a closed set and
 authenticated streams have no answer yet (§7).
@@ -133,6 +135,14 @@ One chain, and each arrow is a route.
    and only the first is a proposal.
 
 ### 5.1 The four outcomes of an intent
+
+> **Declared controls are provisional and not retained.** `POST /api/controls` keeps the
+> authored-control draft a MISSING_EDITABLE_CONTROL answer returned, once the architect confirms
+> it, in server memory against the state it was drafted for. A confirmed control has **not**
+> entered the authored record: it is lost on restart, it is not a row, a run or a candidate, and
+> turning it into an `Element@1` row is a later, schema-announced step (the re-index tool drafts
+> rows with provenance for a whole model today).
+
 
 An intent is not a free exchange. It ends in one of four named answers, every one of which says
 which it is in an `outcome` field:

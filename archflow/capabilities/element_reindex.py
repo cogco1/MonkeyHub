@@ -808,11 +808,9 @@ def draft_wall(draft: ElementDraft, frame: Frame, openings: Sequence[SourceObjec
         width = (fhi[0] - flo[0]) if run == "x" else (fhi[1] - flo[1])
         kind = "door" if key.startswith("door") else "window"
         component = fr[0].component_id or draft.component_id
-        # the opening solver names its operations from the opening id alone, so an id must be
-        # unique across walls: the side goes in front ("east-window-left"), and a wall row the
-        # record already carries keeps its own ids
-        opening_id = f"{draft.side}-{key}" if draft.side else key
-        row = {"opening_id": opening_id, "kind": kind, "at": {"host": {"element": draft.element_id, "along": _r((centre - origin) * sign)}}, "width": _r(width),
+        # opening ids are the model's own ("window-left"); the opening solver scopes its
+        # operation ids by wall (f10c925), so two walls may name the same opening
+        row = {"opening_id": key, "kind": kind, "at": {"host": {"element": draft.element_id, "along": _r((centre - origin) * sign)}}, "width": _r(width),
                "sill": {"offset_from": {"level": base_level, "offset": _r(flo[2] - frame.levels[base_level])}}, "head": {"offset_from": {"level": base_level, "offset": _r(fhi[2] - frame.levels[base_level])}},
                "component_id": component}
         type_id = types.type_of_component.get(component)
