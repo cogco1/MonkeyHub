@@ -11,9 +11,7 @@ value the runner writes for the option a run executes. Details under **Left out 
 
 ## Commits
 
-- `HASH_MAIN` — Massing metrics, options with envelope findings, and one selected as a candidate
-
-(One commit; the hash is in the final message.)
+- `6cfd350` — Massing options: several shapes on the table, measured, one of them run
 
 ## What was built
 
