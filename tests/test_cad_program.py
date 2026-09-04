@@ -682,16 +682,17 @@ def _produced_program(*rows):
     )
 
 
-def _wedge_row(**params):
+def _wedge_row(line=None, **params):
     from archflow.capabilities.element_producers import ElementRow
 
+    start, end = line or (0.0, 4.0)          # metres along the W axis, which runs +x
     return ElementRow(
         "abutment-north",
         "roof-abutments",
         "wedge",
         {
-            "from": {"axis_point": {"axis": "W", "along": 0.0}},
-            "to": {"axis_point": {"axis": "W", "along": 4.0}},
+            "from": {"axis_point": {"axis": "W", "along": start}},
+            "to": {"axis_point": {"axis": "W", "along": end}},
             "base": {"level": "level-ground"},
         },
         {"depth": 2.0, "low": 0.5, "high": 2.5, **params},
@@ -769,15 +770,27 @@ class ProducerParameterUserTextTests(unittest.TestCase):
                 "archflow:wedge_low": "0.5",
                 "archflow:wedge_high": "2.5",
                 "archflow:wedge_axis": "along",
-                "archflow:wedge_sense": "from",
+                "archflow:wedge_sense": "+x",
             },
         )
 
+    def test_the_object_carries_the_sense_the_producer_stated_mirror_included(self):
+        """The rise direction, world-anchored: the same run named backwards exports the mirror literal."""
+
+        forward = self._user_text(_wedge_row())["obj-abutment-north"]
+        backward = self._user_text(_wedge_row(line=(4.0, 0.0)))["obj-abutment-north"]
+
+        self.assertEqual(forward["archflow:wedge_sense"], "+x")
+        self.assertEqual(backward["archflow:wedge_sense"], "-x")
+        self.assertEqual(backward["archflow:wedge_axis"], "along")
+
     def test_a_wedge_sloping_across_its_run_says_across(self):
         text = self._user_text(_wedge_row(slope_across=True))
+        mirrored = self._user_text(_wedge_row(line=(4.0, 0.0), slope_across=True))
 
         self.assertEqual(text["obj-abutment-north"]["archflow:wedge_axis"], "across")
-        self.assertEqual(text["obj-abutment-north"]["archflow:wedge_sense"], "from")
+        self.assertEqual(text["obj-abutment-north"]["archflow:wedge_sense"], "-z")
+        self.assertEqual(mirrored["obj-abutment-north"]["archflow:wedge_sense"], "+z")
 
     def test_a_shell_carries_its_thickness_and_kind(self):
         cylinder = self._user_text(_shell_row())["obj-rotunda-shell"]
@@ -821,7 +834,7 @@ class ProducerParameterUserTextTests(unittest.TestCase):
             ("archflow:wedge_low", "0.5"),
             ("archflow:wedge_high", "2.5"),
             ("archflow:wedge_axis", "along"),
-            ("archflow:wedge_sense", "from"),
+            ("archflow:wedge_sense", "+x"),
             ("archflow:shell_thickness", "0.6"),
             ("archflow:shell_kind", "cylinder"),
         ):

@@ -36,7 +36,16 @@ PN = "level-piano-nobile"
 def _grids() -> ProjectGrids:
     axes = [ProjectGridAxis(f"axis-{k + 1}", str(k + 1), ((k - 2.5) * 1.6065, 0.0, 0.0), (0.0, 0.0, 1.0), BASIS) for k in range(6)]
     axes.append(ProjectGridAxis("axis-w", "W", (0.0, 0.0, -13.85), (1.0, 0.0, 0.0), BASIS))       # the west facade line
+    axes.append(ProjectGridAxis("axis-ox", "OX", (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), BASIS))        # three lines through the origin, for
+    axes.append(ProjectGridAxis("axis-oz", "OZ", (0.0, 0.0, 0.0), (0.0, 0.0, 1.0), BASIS))        # reading a stated direction off a
+    axes.append(ProjectGridAxis("axis-od", "OD", (0.0, 0.0, 0.0), (1.0, 0.0, 1.0), BASIS))        # run whose plan coordinates are plain
     return ProjectGrids(project_id="demo", published_by="seat-coordination", axes=tuple(sorted(axes, key=lambda a: a.axis_id)))
+
+
+def _on(axis: str, along: float) -> dict:
+    """A plan point at ``along`` metres from an axis's origin, along that axis."""
+
+    return {"axis_point": {"axis": axis, "along": along}}
 
 
 def _levels(piano: float = 3.57) -> ProjectLevels:
@@ -244,11 +253,19 @@ class StairTests(unittest.TestCase):
 class WedgeTests(unittest.TestCase):
     """A five-face wedge: one loft through two end rectangles, the far one taller."""
 
-    def _row(self, **params) -> ElementRow:
+    def _row(self, line=None, **params) -> ElementRow:
         p = {"depth": 2.0, "low": 0.5, "high": 2.5}
         p.update(params)
+        start, end = line or (_on("W", 0.0), _on("W", 4.0))
         return ElementRow("abutment-north", "roof-abutments", "wedge",
-                          {"from": {"axis_point": {"axis": "W", "along": 0.0}}, "to": {"axis_point": {"axis": "W", "along": 4.0}}, "base": {"level": "level-ground"}}, p, BASIS)
+                          {"from": start, "to": end, "base": {"level": "level-ground"}}, p, BASIS)
+
+    def _stated(self, line=None, **params) -> dict:
+        (wedge,), _ = _produce((self._row(line, **params),))
+        return _op_params(wedge.operations[0])
+
+    def _sense(self, line, **params) -> str:
+        return self._stated(line, **params)["wedge_sense"]
 
     def test_the_top_plane_rises_along_the_line_and_the_wedge_publishes_it(self) -> None:
         (wedge,), context = _produce((self._row(),))
@@ -272,6 +289,31 @@ class WedgeTests(unittest.TestCase):
         self.assertAlmostEqual(profiles[3][2], -12.85)                                   # low sits on the -normal side
         self.assertAlmostEqual(profiles[2][2], -14.85)
         self.assertAlmostEqual(context.datum_value("abutment-north-top"), 2.5)
+
+    def test_the_stated_sense_is_the_world_direction_the_top_rises_in(self) -> None:
+        """Along the run the low edge is at ``from``, so the rise is the from→to direction itself.
+
+        The string is anchored to the kernel plan axes, not to the row's
+        reference order, so the same line named backwards is the mirror
+        wedge and says so — which is the one thing the saved box cannot show.
+        """
+
+        origin, ten_x = _on("OX", 0.0), _on("OX", 10.0)                # (0, 0) → (10, 0)
+        self.assertEqual(self._sense((origin, ten_x)), "+x")
+        self.assertEqual(self._sense((ten_x, origin)), "-x")           # the same line, named the other way round
+        ten_z = _on("OZ", 10.0)                                        # (0, 0) → (0, 10): z dominates
+        self.assertEqual(self._sense((origin, ten_z)), "+z")
+        self.assertEqual(self._sense((ten_z, origin)), "-z")
+        self.assertEqual(self._sense((_on("OD", 0.0), _on("OD", 10.0))), "+x")   # a 45° run: an exact tie picks x
+
+    def test_across_the_run_the_stated_sense_is_the_normal_it_rises_on(self) -> None:
+        """``slope_across`` puts high on the +normal side, and the normal of from→to is (uz, −ux)."""
+
+        origin, ten_x = _on("OX", 0.0), _on("OX", 10.0)
+        self.assertEqual(self._sense((origin, ten_x), slope_across=True), "-z")  # u = (1, 0), so the normal is (0, −1)
+        self.assertEqual(self._sense((ten_x, origin), slope_across=True), "+z")  # u = (−1, 0), so the normal is (0, 1)
+        self.assertEqual(self._stated((origin, ten_x), slope_across=True)["wedge_axis"], "across")
+        self.assertEqual(self._stated()["wedge_axis"], "along")
 
     def test_a_wedge_refuses_a_top_that_does_not_rise_and_a_zero_length_line(self) -> None:
         with self.assertRaises(ElementProducerError):

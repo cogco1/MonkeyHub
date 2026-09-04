@@ -598,6 +598,24 @@ def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElemen
     return ProducedElement(tuple(ops), tuple(bindings), (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
 
 
+def _rise_sense(ux: float, uz: float, across: bool) -> str:
+    """Which way a wedge's top rises, as a kernel plan axis and a sign: ``+x`` | ``-x`` | ``+z`` | ``-z``.
+
+    Declared data, not measured geometry: it is read off the row's own
+    ``from``→``to`` unit vector, but stated world-anchored so a reader does
+    not have to know which end the row happened to name first. Along the
+    run the low edge is at ``from``, so the rise is that unit vector;
+    across it the high edge is on the +normal side, so the rise is the
+    normal ``(uz, −ux)``. The dominant component names the string, and an
+    exact tie (``|x| == |z|``, a run at 45°) picks x.
+    """
+
+    rx, rz = (uz, -ux) if across else (ux, uz)
+    if abs(rx) >= abs(rz):
+        return "+x" if rx > 0.0 else "-x"
+    return "+z" if rz > 0.0 else "-z"
+
+
 def produce_wedge(row: ElementRow, context: ProductionContext) -> ProducedElement:
     """A right prism with a sloped top: the box ``from``→``to``, ``depth`` across it, rising from ``low`` to ``high``.
 
@@ -609,6 +627,16 @@ def produce_wedge(row: ElementRow, context: ProductionContext) -> ProducedElemen
     roof sector — a pediment's sibling that is not a tympanum. It refuses a
     zero-length line, a ``low`` below the base datum, and a ``high`` that is
     not above ``low``: a wedge with a level top is a prism, and says so.
+
+    The bounding box the export leaves behind holds the same hull whichever
+    way the top rises, so the row's own numbers travel on the operation:
+    ``wedge_low`` and ``wedge_high`` in metres, ``wedge_axis`` (``along`` |
+    ``across``), and ``wedge_sense`` — the rise direction in the kernel
+    plan, ``+x`` | ``-x`` | ``+z`` | ``-z``, computed by ``_rise_sense``
+    from the declared line and ``slope_across`` alone. It is world-anchored
+    rather than named against the row's reference order, so a re-index that
+    re-derives its own ``from``/``to`` can still tell a wedge from its
+    mirror image.
     """
 
     p = row.params
@@ -630,11 +658,11 @@ def produce_wedge(row: ElementRow, context: ProductionContext) -> ProducedElemen
     near = (low, high) if across else (low, low)
     far = (low, high) if across else (high, high)
     produced = _loft(row, context, _end_face(start, normal, half, *near) + _end_face(end, normal, half, *far), 4, base_datum, base_offset)
-    # The solid keeps its own slope: low, high, the axis it tips on, and which end of the run is
-    # the low one. This producer always seats low at the `from` end (and, across, on the -normal
-    # side); a flipped wedge has no parameter here, so the sense is stated, not inferred.
+    # The solid keeps its own slope: low, high, the axis it tips on, and the direction it rises in.
+    # This producer always seats low at the `from` end (along) or on the -normal side (across), so
+    # the sense follows from the declared line; it is stated world-anchored, not measured back.
     stated = _stating(produced.operations[0], _text("wedge_axis", "across" if across else "along"), _metres("wedge_high", high),
-                      _metres("wedge_low", low), _text("wedge_sense", "from"))
+                      _metres("wedge_low", low), _text("wedge_sense", _rise_sense(ux, uz, across)))
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + high, row.basis_refs)
     context.published[top.datum_id] = top
     return ProducedElement((stated,), produced.bindings, (top,), produced.relations, None)

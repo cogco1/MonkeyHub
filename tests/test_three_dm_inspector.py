@@ -256,7 +256,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
             "archflow:wedge_low": "0.5",
             "archflow:wedge_high": "2.5",
             "archflow:wedge_axis": "along",
-            "archflow:wedge_sense": "from",
+            "archflow:wedge_sense": "+x",
             "archflow:shell_thickness": "0.6",
             "archflow:shell_kind": "cylinder",
             "archflow:not_a_key_this_reader_knows": "carried anyway",

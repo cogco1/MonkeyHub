@@ -31,8 +31,10 @@ carries them as user text beside its identity — keys and formats exactly:
 ``archflow:wedge_low``       metres above the row's base datum
 ``archflow:wedge_high``      metres above the base datum, above ``low``
 ``archflow:wedge_axis``      ``along`` | ``across``
-``archflow:wedge_sense``     ``from`` | ``to`` — the end of the run the
-                             low edge sits at
+``archflow:wedge_sense``     ``+x`` | ``-x`` | ``+z`` | ``-z`` — the
+                             direction the top rises in, anchored to the
+                             kernel plan axes rather than to the row's
+                             reference order
 ``archflow:shell_thickness`` metres of wall
 ``archflow:shell_kind``      ``cylinder`` | ``dome``
 ===========================  ==========================================
@@ -86,7 +88,7 @@ _ROOT_LAYER = "archflow"
 #   archflow:wedge_low        metres above the row's base datum
 #   archflow:wedge_high       metres above the row's base datum, above low
 #   archflow:wedge_axis       "along" | "across" — the run, or the depth
-#   archflow:wedge_sense      "from" | "to" — the end of the run the low edge sits at
+#   archflow:wedge_sense      "+x" | "-x" | "+z" | "-z" — the kernel-plan direction the top rises in
 #   archflow:shell_thickness  metres of wall
 #   archflow:shell_kind       "cylinder" | "dome"
 _PRODUCER_USER_TEXT: dict[str, tuple[str, ...]] = {

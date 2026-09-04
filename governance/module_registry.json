@@ -203,7 +203,7 @@
         "the same program translates to the same script bytes - the emission is deterministic and self-contained",
         "coordinates pass through as the program states them; the translator performs no frame conversion",
         "every physical object is named and carries its archflow:* identity strings",
-        "an object carries its producer's parameters as archflow:* user strings (wedge: low/high/axis/sense; shell: thickness/kind); geometry is never recomputed to write them"
+        "an object carries its producer's parameters as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); geometry is never recomputed to write them"
       ],
       "status": "canonical",
       "tests": [
@@ -438,7 +438,7 @@
         "typed declination: a component owned, looked at, and left without geometry for a stated reason",
         "the building-local frame id and the +Y extrusion convention every producer emits",
         "a straight flight of steps (stair), a sloped-top wedge (wedge) and a hollow revolved shell (shell), each publishing <id>-top and seated by a support relation like prism",
-        "stating on the operation the row parameters the produced solid cannot show (a wedge's low/high/axis/sense, a shell's thickness/kind), for the export to carry"
+        "stating on the operation the row parameters the produced solid cannot show (a wedge's low/high/axis/sense, a shell's thickness/kind), for the export to carry; wedge_sense is the world-anchored rise direction +x|-x|+z|-z, derived from the row's declared from->to line and slope_across, never measured back off the geometry"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
