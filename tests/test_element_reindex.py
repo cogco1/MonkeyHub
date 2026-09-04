@@ -490,6 +490,20 @@ class WedgeTests(unittest.TestCase):
         self.assertEqual(wedge.status, DRAFT, wedge.notes)
         self.assertLessEqual(wedge.residual_m, 0.001, wedge.notes)
 
+    def test_the_wedge_sense_says_which_end_is_low(self) -> None:
+        base = reindex(fixture_record(), [(inspection(roof_sector(wedge_low="0.3", wedge_high="1.78", wedge_axis="along")), "record:base", 0)])
+        forward = {d.element_id: d for d in base.drafts}["portico-roof-abutments-west"]
+        flipped = reindex(fixture_record(), [(inspection(roof_sector(wedge_low="0.3", wedge_high="1.78", wedge_axis="along", wedge_sense="to")), "record:base", 0)])
+        wedge = {d.element_id: d for d in flipped.drafts}["portico-roof-abutments-west"]
+        self.assertEqual((wedge.status, wedge.producer), (DRAFT, "wedge"), wedge.notes)
+        self.assertEqual(wedge.references["from"], forward.references["to"])
+        self.assertEqual(wedge.references["to"], forward.references["from"])
+        self.assertLessEqual(wedge.residual_m, 0.001, wedge.notes)
+        bad = reindex(fixture_record(), [(inspection(roof_sector(wedge_low="0.3", wedge_high="1.78", wedge_axis="along", wedge_sense="left")), "record:base", 0)])
+        refused = {d.element_id: d for d in bad.drafts}["portico-roof-abutments-west"]
+        self.assertEqual(refused.status, AMBIGUOUS)
+        self.assertTrue(any("wedge_sense" in n for n in refused.notes), refused.notes)
+
     def test_a_slope_across_the_run_is_the_axis_string_and_a_bad_string_is_named(self) -> None:
         across = reindex(fixture_record(), [(inspection(roof_sector(wedge_low="0.3", wedge_high="1.78", wedge_axis="across")), "record:base", 0)])
         wedge = {d.element_id: d for d in across.drafts}["portico-roof-abutments-west"]

@@ -136,6 +136,7 @@ class SourceObject:
     wedge_low: str | None = None
     wedge_high: str | None = None
     wedge_axis: str | None = None
+    wedge_sense: str | None = None      # archflow:wedge_sense "from" | "to": which end of the run is the low edge (default from)
     shell_thickness: str | None = None
     shell_kind: str | None = None
 
@@ -199,6 +200,7 @@ def objects_of(payload: Mapping[str, Any], source_ref: str, precedence: int) -> 
             wedge_low=written(attrs, "archflow:wedge_low"),
             wedge_high=written(attrs, "archflow:wedge_high"),
             wedge_axis=written(attrs, "archflow:wedge_axis"),
+            wedge_sense=written(attrs, "archflow:wedge_sense"),
             shell_thickness=written(attrs, "archflow:shell_thickness"),
             shell_kind=written(attrs, "archflow:shell_kind"),
         ))
@@ -849,6 +851,16 @@ def draft_wedge(draft: ElementDraft, frame: Frame) -> None:
     from_ref, to_ref, _start, _end, across_at, conf = _run_references(draft, frame, run, lo[i], hi[i], (lo[j] + hi[j]) / 2.0, draft_id=f"{draft.element_id}-line")
     base, base_conf, base_note = frame.base_reference(lo[2])
     draft.producer = "wedge"
+    # the producer puts ``low`` at the ``from`` end (or on the -normal side across); the export
+    # says which end is low with archflow:wedge_sense, so "to" swaps the two references
+    sense = (obj.wedge_sense or "from").strip().lower()
+    if sense not in ("from", "to"):
+        draft.status = AMBIGUOUS
+        draft.notes.append(f"archflow:wedge_sense is {obj.wedge_sense!r}; it names the low end, 'from' or 'to'")
+        return
+    if sense == "to":
+        from_ref, to_ref = to_ref, from_ref
+        draft.notes.append("archflow:wedge_sense 'to': the low edge is at the run's far end, so the references are swapped")
     draft.references = {"from": from_ref, "to": to_ref, "base": base}
     draft.params = {"depth": _r(depth), "low": _r(low), "high": _r(high)}
     if axis == "across":
