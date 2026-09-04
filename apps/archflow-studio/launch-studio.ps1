@@ -1,13 +1,23 @@
-param(
+﻿param(
     [string]$RuntimeConfig = (Join-Path $PSScriptRoot 'runtime.json'),
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$HideConsole
 )
 
-# One-click start for ArchFlow Studio: the API (FastAPI) and the web client (Vite), bound
-# to the project named in runtime.json. Closing this window stops both. Same shape as
-# LINEPLUS's launch-current.ps1: a runtime.json is the only input, and it is validated first.
+# One-click start for MonkeyArch: the ArchFlow Studio API (FastAPI) and the web client
+# (Vite), bound to the project named in runtime.json. Launching is meant to feel like
+# opening an application, so there is no console to read and no console to close:
 #
-# Windows PowerShell 5.1 is the floor. No `??`, no ternary, no .NET-Core-only overloads.
+#   - a splash window says what is happening while the two servers come up, and a
+#     refusal turns that same window red instead of pausing a black box;
+#   - once the browser is open the splash goes and a tray icon stays, and "Quit
+#     MonkeyArch" in its menu is what stops both servers.
+#
+# The methodology and the protocol are still ArchFlow; MonkeyArch is the application.
+#
+# Windows PowerShell 5.1 is the floor: WinForms only, no WPF, no `??`, no ternary, no
+# .NET-Core-only overloads. -HideConsole is what OPEN_MONKEYARCH.bat passes; run this
+# script from a console without it and you get the console output as well as the splash.
 
 $ErrorActionPreference = 'Stop'
 # UTF-8 so a project path with Chinese characters prints as itself. The setter also flips the
@@ -16,12 +26,293 @@ $ErrorActionPreference = 'Stop'
 # UTF8Encoding($false) keeps a BOM out of a redirected stdout.
 try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
 
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+# Throws once a control already exists in the process; nothing has been built yet, but a
+# reload in the same host would hit that, and the setting is cosmetic either way.
+try { [System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false) } catch { }
+
+if ($HideConsole) {
+    # -WindowStyle Hidden already hides the window this process was given; hiding it again
+    # from inside covers the launch that did not get that switch, and costs nothing when the
+    # window is hidden already. A console-less process answers IntPtr.Zero and is left alone.
+    $windowApi = @'
+[DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();
+[DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
+'@
+    try {
+        $native = Add-Type -MemberDefinition $windowApi -Name 'ConsoleWindow' -Namespace 'MonkeyArch' -PassThru
+        $consoleWindow = $native::GetConsoleWindow()
+        if ($consoleWindow -ne [System.IntPtr]::Zero) { $native::ShowWindow($consoleWindow, 0) | Out-Null }
+    } catch { }
+}
+
 $studioRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $studioRoot '..\..')).Path
 $apiRoot = Join-Path $studioRoot 'api'
 $webRoot = Join-Path $studioRoot 'web'
 $logRoot = Join-Path $studioRoot '.runtime'
+$assetRoot = Join-Path $studioRoot 'assets'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+
+$script:LogRoot = $logRoot
+$script:WebUrl = $null
+$script:Children = @()
+$script:Splash = $null
+$script:FaultOpen = $false
+$script:Quitting = $false
+
+# --- the brand, verbatim, and the palette assets/make_icon.py draws the icon in
+$BrandName = 'MonkeyArch'
+$BrandGlyph = [char]::ConvertFromUtf32(0x1F412)  # the monkey; see Set-SplashBrand for the fallback
+$BrandLineOne = 'Professional modeling environment'
+$BrandLineTwo = 'Powered by the open ArchFlow protocol.'
+$WorkingLine = "猴子正在后台狠狠干 OCCT"
+$StepCount = 8
+
+$Ink = [System.Drawing.Color]::FromArgb(18, 38, 63)
+$InkPanel = [System.Drawing.Color]::FromArgb(24, 49, 79)
+$Stone = [System.Drawing.Color]::FromArgb(244, 239, 230)
+$StoneDim = [System.Drawing.Color]::FromArgb(176, 190, 209)
+$Faint = [System.Drawing.Color]::FromArgb(100, 120, 154)
+$Amber = [System.Drawing.Color]::FromArgb(232, 163, 61)
+$Rim = [System.Drawing.Color]::FromArgb(46, 74, 110)
+$FaultInk = [System.Drawing.Color]::FromArgb(58, 18, 20)
+$FaultPanel = [System.Drawing.Color]::FromArgb(38, 12, 13)
+$FaultRed = [System.Drawing.Color]::FromArgb(240, 138, 130)
+
+function Get-BrandIcon {
+    # The MonkeyArch icon once it is drawn, the ArchFlow one until then. Both names are
+    # tried at run time rather than one being assumed, because the rename lands in its own
+    # change and this launcher has to work either side of it. Neither file is written here.
+    foreach ($name in @('monkeyarch.ico', 'archflow.ico')) {
+        $path = Join-Path $assetRoot $name
+        if (Test-Path -LiteralPath $path -PathType Leaf) { return $path }
+    }
+    return $null
+}
+
+function New-Label([string]$Text, [System.Drawing.Font]$Font, [System.Drawing.Color]$Colour) {
+    $label = New-Object System.Windows.Forms.Label
+    $label.Text = $Text
+    $label.Font = $Font
+    $label.ForeColor = $Colour
+    $label.BackColor = [System.Drawing.Color]::Transparent
+    $label.AutoSize = $true
+    return $label
+}
+
+function New-Splash {
+    # The splash: borderless, centred, in the icon's three colours. It is built before
+    # runtime.json is even read, because the first thing that can be refused is runtime.json
+    # itself and that refusal has to have somewhere to appear.
+    $form = New-Object System.Windows.Forms.Form
+    $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+    $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $form.ClientSize = New-Object System.Drawing.Size(640, 360)
+    $form.BackColor = $Ink
+    $form.Text = $BrandName
+    $form.TopMost = $true
+    $form.ShowInTaskbar = $true
+    $form.KeyPreview = $true
+    $iconPath = Get-BrandIcon
+    if ($iconPath) {
+        try { $form.Icon = New-Object System.Drawing.Icon($iconPath) } catch { }
+    }
+    $form.Add_Paint({
+        param($sender, $eventArgs)
+        if (-not $script:Splash) { return }
+        $pen = New-Object System.Drawing.Pen($script:Splash.Rim, 1)
+        $eventArgs.Graphics.DrawRectangle($pen, 0, 0, $sender.ClientSize.Width - 1, $sender.ClientSize.Height - 1)
+        $pen.Dispose()
+    })
+
+    $strip = New-Object System.Windows.Forms.Panel
+    $strip.BackColor = $Amber
+    $strip.Height = 4
+    $strip.Dock = [System.Windows.Forms.DockStyle]::Top
+    $form.Controls.Add($strip)
+
+    $title = New-Label ($BrandName + ' ' + $BrandGlyph) (New-Object System.Drawing.Font('Segoe UI', 26, [System.Drawing.FontStyle]::Bold)) $Stone
+    $tagline = New-Label $BrandLineOne (New-Object System.Drawing.Font('Segoe UI', 11)) $StoneDim
+    $protocol = New-Label $BrandLineTwo (New-Object System.Drawing.Font('Segoe UI', 9)) $Faint
+    $working = New-Label $WorkingLine (New-Object System.Drawing.Font('Microsoft YaHei UI', 12, [System.Drawing.FontStyle]::Bold)) $Amber
+    $progress = New-Label '' (New-Object System.Drawing.Font('Segoe UI', 9)) $StoneDim
+
+    $stage = New-Object System.Windows.Forms.PictureBox
+    $stage.BackColor = $InkPanel
+    $stage.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+    $stage.Size = New-Object System.Drawing.Size(300, 150)
+    $stage.Location = New-Object System.Drawing.Point(170, 134)
+
+    $fault = New-Object System.Windows.Forms.TextBox
+    $fault.Multiline = $true
+    $fault.ReadOnly = $true
+    $fault.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
+    $fault.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $fault.BackColor = $FaultPanel
+    $fault.ForeColor = $Stone
+    $fault.Font = New-Object System.Drawing.Font('Consolas', 9)
+    $fault.Size = New-Object System.Drawing.Size(552, 184)
+    $fault.Location = New-Object System.Drawing.Point(44, 100)
+    $fault.Visible = $false
+
+    $close = New-Object System.Windows.Forms.Button
+    $close.Text = 'Close'
+    $close.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+    $close.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $close.FlatAppearance.BorderSize = 0
+    $close.BackColor = $Amber
+    $close.ForeColor = $Ink
+    $close.Size = New-Object System.Drawing.Size(104, 30)
+    $close.Location = New-Object System.Drawing.Point(492, 298)
+    $close.Visible = $false
+    $close.Add_Click({ $script:FaultOpen = $false })
+
+    foreach ($control in @($title, $tagline, $protocol, $stage, $working, $progress, $fault, $close)) {
+        $form.Controls.Add($control)
+    }
+    $form.Add_KeyDown({
+        param($sender, $eventArgs)
+        if ($eventArgs.KeyCode -eq [System.Windows.Forms.Keys]::Escape -and $script:FaultOpen) { $script:FaultOpen = $false }
+    })
+
+    # Centred by measurement rather than by anchoring: AutoSize labels know their width only
+    # once the font is on them, and a title whose glyph did not render must not leave a hole.
+    $title.Top = 28
+    $tagline.Top = 82
+    $protocol.Top = 110
+    $working.Top = 288
+    $progress.Top = 316
+
+    $frames = New-Object System.Collections.ArrayList
+    $loadingDir = Join-Path $assetRoot 'loading'
+    if (Test-Path -LiteralPath $loadingDir -PathType Container) {
+        foreach ($file in (Get-ChildItem -LiteralPath $loadingDir -Filter 'frame-*.png' | Sort-Object Name)) {
+            try {
+                # Read the bytes first: Image.FromFile would hold the file open for the life
+                # of the image, and these files are redrawn by make_frames.py in place.
+                $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                $memory = New-Object System.IO.MemoryStream(,$bytes)
+                [void]$frames.Add([System.Drawing.Image]::FromStream($memory))
+            } catch { }
+        }
+    }
+    if ($frames.Count -gt 0) { $stage.Image = $frames[0] } else { $stage.Visible = $false }
+
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 125  # ~8 fps
+    $timer.Add_Tick({
+        $splash = $script:Splash
+        if (-not $splash) { return }
+        if ($splash.Frames.Count -lt 2) { return }
+        $splash.FrameIndex = ($splash.FrameIndex + 1) % $splash.Frames.Count
+        $splash.Stage.Image = $splash.Frames[$splash.FrameIndex]
+    })
+
+    $script:Splash = @{
+        Form = $form; Title = $title; Tagline = $tagline; Protocol = $protocol
+        Stage = $stage; Working = $working; Progress = $progress
+        Fault = $fault; Close = $close; Timer = $timer
+        Frames = $frames; FrameIndex = 0; Rim = $Rim
+    }
+
+    Set-SplashBrand
+    $form.Show()
+    $form.Activate()
+    $timer.Start()
+    return $script:Splash
+}
+
+function Set-SplashBrand {
+    # Segoe UI has no monkey; the glyph comes from whatever font Windows falls back to, which
+    # on Windows 11 is Segoe UI Emoji. A machine with no font for it measures the glyph at
+    # nothing, and the title then reads as the plain wordmark rather than as a wordmark with a
+    # box after it. The measurement is printed so a launch from a console says which happened.
+    $splash = $script:Splash
+    $title = $splash.Title
+    $glyphOnly = [System.Windows.Forms.TextRenderer]::MeasureText($BrandGlyph, $title.Font)
+    if ($glyphOnly.Width -le 4) {
+        $title.Text = $BrandName
+    } else {
+        $title.Text = $BrandName + ' ' + $BrandGlyph
+    }
+    Set-SplashCentred
+    Write-Host ("  brand   : the monkey glyph measured " + $glyphOnly.Width + " px wide in " + $title.Font.Name)
+}
+
+function Set-SplashCentred {
+    $splash = $script:Splash
+    $width = $splash.Form.ClientSize.Width
+    foreach ($label in @($splash.Title, $splash.Tagline, $splash.Protocol, $splash.Working, $splash.Progress)) {
+        $label.Left = [int](($width - $label.Width) / 2)
+    }
+}
+
+function Set-SplashStep([int]$Index, [string]$Text) {
+    Write-Host ("  step " + $Index + "/" + $StepCount + " : " + $Text)
+    $splash = $script:Splash
+    if (-not $splash -or $splash.Form.IsDisposed) { return }
+    $splash.Progress.Text = "$Index / $StepCount  ·  $Text"
+    Set-SplashCentred
+    Invoke-Pump 0
+}
+
+function Invoke-Pump([int]$Milliseconds) {
+    # The splash animates on this thread, so every wait in this script is a wait that pumps.
+    [System.Windows.Forms.Application]::DoEvents()
+    if ($Milliseconds -le 0) { return }
+    $deadline = (Get-Date).AddMilliseconds($Milliseconds)
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 25
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+}
+
+function Show-Fault([string]$Message) {
+    # The same window, turned red. Every `throw` sentence in this script is written to be read
+    # here, so nothing is reworded on the way: the message is the message.
+    Write-Host ''
+    Write-Host "$BrandName did not start." -ForegroundColor Red
+    Write-Host $Message -ForegroundColor Red
+    if (-not $script:Splash -or $script:Splash.Form.IsDisposed) { New-Splash | Out-Null }
+    $splash = $script:Splash
+    $splash.Timer.Stop()
+    $splash.Form.BackColor = $FaultInk
+    $splash.Stage.Visible = $false
+    $splash.Working.Visible = $false
+    $splash.Protocol.Visible = $false
+    $splash.Title.Font = New-Object System.Drawing.Font('Segoe UI', 17, [System.Drawing.FontStyle]::Bold)
+    $splash.Title.Text = "$BrandName did not start"
+    $splash.Title.Top = 30
+    $splash.Tagline.Text = 'The launcher refused. Nothing was left running.'
+    $splash.Tagline.ForeColor = $FaultRed
+    $splash.Tagline.Top = 70
+    $splash.Progress.Visible = $false
+    $splash.Fault.Text = ($Message -replace "`r`n", "`n") -replace "`n", "`r`n"
+    $splash.Fault.Visible = $true
+    $splash.Close.Visible = $true
+    $splash.Close.BringToFront()
+    Set-SplashCentred
+    $splash.Form.TopMost = $true
+    $splash.Form.Show()
+    $splash.Form.Activate()
+
+    $script:FaultOpen = $true
+    $splash.Form.Add_FormClosed({ $script:FaultOpen = $false })
+    while ($script:FaultOpen -and -not $splash.Form.IsDisposed) { Invoke-Pump 50 }
+    if (-not $splash.Form.IsDisposed) { $splash.Form.Close() }
+}
+
+function Close-Splash {
+    $splash = $script:Splash
+    if (-not $splash) { return }
+    $splash.Timer.Stop()
+    if (-not $splash.Form.IsDisposed) { $splash.Form.Close() }
+    $script:Splash = $null
+}
 
 function Invoke-Quiet {
     # Run a native command and hand back its exit code and its combined output. Native stderr
@@ -58,19 +349,71 @@ function Wait-Http([string]$url, [int]$seconds, [System.Diagnostics.Process]$Pro
     while ((Get-Date) -lt $deadline) {
         if ($Process -and $Process.HasExited) { return $false }
         try {
-            $response = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 3
+            $response = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 2
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) { return $true }
         } catch { }
-        Start-Sleep -Milliseconds 400
+        Invoke-Pump 400
     }
     return $false
 }
 
+function Stop-Children {
+    foreach ($child in $script:Children) {
+        $process = $child.Process
+        if ($process -and -not $process.HasExited) {
+            # /T because the web child is cmd.exe with node under it: killing cmd alone
+            # would leave a Vite server holding the port.
+            try { & taskkill /PID $process.Id /T /F 2>&1 | Out-Null } catch { }
+        }
+    }
+}
+
+function Start-Tray([string]$url) {
+    # What is left on screen once the app is open: one icon, three sentences, and the only
+    # way to stop the pair that does not involve finding a process.
+    $tray = New-Object System.Windows.Forms.NotifyIcon
+    $iconPath = Get-BrandIcon
+    if ($iconPath) {
+        $tray.Icon = New-Object System.Drawing.Icon($iconPath)
+    } else {
+        # A NotifyIcon with no icon is invisible, and an invisible tray icon is an
+        # application with no way to quit it. Any icon beats none.
+        $tray.Icon = [System.Drawing.SystemIcons]::Application
+    }
+    $tray.Text = "$BrandName · $url"
+    $menu = New-Object System.Windows.Forms.ContextMenuStrip
+    $openItem = $menu.Items.Add("Open $BrandName")
+    $logsItem = $menu.Items.Add('Show logs')
+    [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    $quitItem = $menu.Items.Add("Quit $BrandName")
+    $openItem.Font = New-Object System.Drawing.Font($menu.Font, [System.Drawing.FontStyle]::Bold)
+    $tray.ContextMenuStrip = $menu
+    $openItem.Add_Click({ Start-Process $script:WebUrl })
+    $logsItem.Add_Click({ Start-Process 'explorer.exe' $script:LogRoot })
+    $quitItem.Add_Click({ Invoke-Quit })
+    $tray.Add_DoubleClick({ Start-Process $script:WebUrl })
+    $script:Tray = $tray
+    $tray.Visible = $true
+    $tray.ShowBalloonTip(4000, $BrandName, "Running on $url. Quit it from this icon.", [System.Windows.Forms.ToolTipIcon]::Info)
+    return $tray
+}
+
+function Invoke-Quit {
+    $script:Quitting = $true
+    if ($script:Tray) { $script:Tray.Visible = $false }
+    Stop-Children
+    [System.Windows.Forms.Application]::ExitThread()
+}
+
 # Everything below runs inside one try: a refusal reaches the reader as the sentence that
-# explains it, not as a PowerShell stack trace over a .bat window that is about to pause.
+# explains it, in the splash window, not as a PowerShell stack trace over a console that is
+# about to close.
 try {
 
+New-Splash | Out-Null
+
 # --- runtime.json is the only input, and it is validated before anything is started
+Set-SplashStep 1 'validating runtime.json'
 if (-not (Test-Path -LiteralPath $RuntimeConfig -PathType Leaf)) { throw "runtime.json is required: $RuntimeConfig" }
 $runtime = Get-Content -LiteralPath $RuntimeConfig -Raw -Encoding utf8 | ConvertFrom-Json
 if ($runtime.schema_version -ne 'archflow-studio-runtime@1') { throw "runtime.json has an unsupported schema_version: $($runtime.schema_version)" }
@@ -92,26 +435,33 @@ $pythonExe = $pythonParts[0]
 $pythonArgs = @()
 if ($pythonParts.Count -gt 1) { $pythonArgs = @($pythonParts[1..($pythonParts.Count - 1)]) }
 
-Write-Host "ArchFlow Studio" -ForegroundColor Cyan
+Write-Host "$BrandName (ArchFlow Studio)" -ForegroundColor Cyan
 Write-Host "  config  : $RuntimeConfig"
 Write-Host "  project : $projectDir"
 Write-Host "  api     : http://127.0.0.1:$apiPort   web: http://127.0.0.1:$webPort"
 
 # --- preflight: python + fastapi, node_modules, free ports
+Set-SplashStep 2 'checking python and fastapi'
 $check = Invoke-Quiet $pythonExe ($pythonArgs + @('-c', 'import fastapi, uvicorn'))
 if ($check.ExitCode -ne 0) {
     $requirements = Join-Path $repoRoot 'apps\archflow-studio\api\requirements.txt'
     throw "'$($runtime.python)' cannot import fastapi/uvicorn. Install them with:$([Environment]::NewLine)  $($runtime.python) -m pip install -r $requirements$([Environment]::NewLine)$($check.Output)"
 }
+Set-SplashStep 3 'checking web dependencies'
 if (-not (Test-Path -LiteralPath (Join-Path $webRoot 'node_modules\.bin\vite.cmd'))) {
+    Set-SplashStep 3 'installing web dependencies · this takes a few minutes'
     Write-Host "  web deps missing; running npm install (this takes a few minutes) ..." -ForegroundColor Yellow
-    Push-Location $webRoot
-    try {
-        $install = Invoke-Quiet 'npm.cmd' @('install')
-        if ($install.ExitCode -ne 0) { throw "npm install failed in $webRoot$([Environment]::NewLine)$($install.Output)" }
-    } finally { Pop-Location }
+    $installLog = Join-Path $logRoot "npm-install-$stamp.log"
+    $installErr = Join-Path $logRoot "npm-install-$stamp.err.log"
+    # Started rather than called, so the splash keeps animating through a five-minute install.
+    $install = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', 'npm.cmd install') -WorkingDirectory $webRoot -PassThru -NoNewWindow -RedirectStandardOutput $installLog -RedirectStandardError $installErr
+    while (-not $install.HasExited) { Invoke-Pump 100 }
+    $install.WaitForExit()
+    if ($install.ExitCode -ne 0) {
+        throw "npm install failed in $webRoot$([Environment]::NewLine)$(Get-LogTail $installErr 25)$([Environment]::NewLine)(full logs: $installLog, $installErr)"
+    }
 }
-if (-not (Test-PortFree $apiPort)) { throw "port $apiPort is already in use (a Studio API is running, or another program holds it)." }
+if (-not (Test-PortFree $apiPort)) { throw "port $apiPort is already in use (a $BrandName API is running, or another program holds it)." }
 if (-not (Test-PortFree $webPort)) { throw "port $webPort is already in use (a Vite dev server is running, or another program holds it)." }
 if ([string]$runtime.codex -and -not (Test-Path -LiteralPath ([string]$runtime.codex) -PathType Leaf)) {
     Write-Host "  warning : codex not found at $($runtime.codex); the API refuses to start with intent_provider codex until it is (it needs codex --version to sign its receipts)." -ForegroundColor Yellow
@@ -130,57 +480,82 @@ if ([string]$runtime.codex) { $env:ARCHFLOW_STUDIO_CODEX = [string]$runtime.code
 # log that says why it died and an empty file.
 $env:PYTHONUNBUFFERED = '1'
 
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $apiOut = Join-Path $logRoot "api-$stamp.out.log"
 $apiErr = Join-Path $logRoot "api-$stamp.err.log"
 $webOut = Join-Path $logRoot "web-$stamp.out.log"
 $webErr = Join-Path $logRoot "web-$stamp.err.log"
-$children = @()
 try {
+    Set-SplashStep 4 'starting the API'
     $apiArgs = $pythonArgs + @('-m', 'archflow_studio_api.main', '--host', '127.0.0.1', '--port', "$apiPort")
     $api = Start-Process -FilePath $pythonExe -ArgumentList $apiArgs -WorkingDirectory $apiRoot -PassThru -NoNewWindow -RedirectStandardOutput $apiOut -RedirectStandardError $apiErr
-    $children += [pscustomobject]@{ Name = 'the API'; Process = $api; ErrorLog = $apiErr }
+    $script:Children += [pscustomobject]@{ Name = 'the API'; Process = $api; ErrorLog = $apiErr }
+    Set-SplashStep 5 'waiting for the API to answer /api/health'
     if (-not (Wait-Http "http://127.0.0.1:$apiPort/api/health" 60 $api)) {
         throw "the API did not answer /api/health. Its log said:$([Environment]::NewLine)$(Get-LogTail $apiErr 25)$([Environment]::NewLine)(full log: $apiErr)"
     }
     $health = (Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$apiPort/api/health").Content
+    Set-SplashStep 5 'the API answered /api/health'
     Write-Host "  api up  : $health"
 
+    Set-SplashStep 6 'starting the web client'
     $web = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', "npm.cmd run dev -- --port $webPort --strictPort") -WorkingDirectory $webRoot -PassThru -NoNewWindow -RedirectStandardOutput $webOut -RedirectStandardError $webErr
-    $children += [pscustomobject]@{ Name = 'the web client'; Process = $web; ErrorLog = $webErr }
+    $script:Children += [pscustomobject]@{ Name = 'the web client'; Process = $web; ErrorLog = $webErr }
+    Set-SplashStep 7 "waiting for the web client on :$webPort"
     if (-not (Wait-Http "http://127.0.0.1:$webPort/" 90 $web)) {
         throw "the web client did not answer on :$webPort. Its log said:$([Environment]::NewLine)$(Get-LogTail $webErr 25)$([Environment]::NewLine)$(Get-LogTail $webOut 10)$([Environment]::NewLine)(full logs: $webErr, $webOut)"
     }
+    Set-SplashStep 7 'the web client answered'
     Write-Host "  web up  : http://127.0.0.1:$webPort"
 
-    if ($runtime.open_browser -and -not $NoBrowser) { Start-Process "http://127.0.0.1:$webPort" }
+    $script:WebUrl = "http://127.0.0.1:$webPort"
+    Set-SplashStep 8 'opening the browser'
+    if ($runtime.open_browser -and -not $NoBrowser) { Start-Process $script:WebUrl }
+    # A beat with the last step on screen: the browser takes a moment to paint, and a splash
+    # that vanished before it did would look like the launch had failed.
+    Invoke-Pump 1400
+    Close-Splash
+
+    $tray = Start-Tray $script:WebUrl
     Write-Host ""
-    Write-Host "Studio is running. Close this window or press Ctrl+C to stop both servers." -ForegroundColor Green
+    Write-Host "$BrandName is running. Quit it from the tray icon." -ForegroundColor Green
     Write-Host "  logs: $logRoot"
-    while ($true) {
-        Start-Sleep -Seconds 2
-        foreach ($child in $children) {
+
+    # The watchdog: the same check the console loop used to make, answering into a balloon
+    # tip and a red window instead of into a console nobody is looking at.
+    $watchdog = New-Object System.Windows.Forms.Timer
+    $watchdog.Interval = 2000
+    $watchdog.Add_Tick({
+        if ($script:Quitting) { return }
+        foreach ($child in $script:Children) {
             if ($child.Process.HasExited) {
-                throw "$($child.Name) exited with code $($child.Process.ExitCode). Its log said:$([Environment]::NewLine)$(Get-LogTail $child.ErrorLog 25)$([Environment]::NewLine)(logs: $logRoot)"
+                $script:Watchdog.Stop()
+                $script:Quitting = $true
+                $message = "$($child.Name) exited with code $($child.Process.ExitCode). Its log said:$([Environment]::NewLine)$(Get-LogTail $child.ErrorLog 25)$([Environment]::NewLine)(logs: $script:LogRoot)"
+                if ($script:Tray) {
+                    $script:Tray.ShowBalloonTip(8000, "$BrandName stopped", "$($child.Name) exited. The window behind this says why.", [System.Windows.Forms.ToolTipIcon]::Error)
+                }
+                Stop-Children
+                if ($script:Tray) { $script:Tray.Visible = $false }
+                Show-Fault $message
+                [System.Windows.Forms.Application]::ExitThread()
+                return
             }
         }
-    }
+    })
+    $script:Watchdog = $watchdog
+    $watchdog.Start()
+    [System.Windows.Forms.Application]::Run()
+    $watchdog.Stop()
+    $tray.Visible = $false
+    $tray.Dispose()
 } finally {
-    foreach ($child in $children) {
-        $process = $child.Process
-        if ($process -and -not $process.HasExited) {
-            # /T because the web child is cmd.exe with node under it: killing cmd alone
-            # would leave a Vite server holding the port.
-            try { & taskkill /PID $process.Id /T /F 2>&1 | Out-Null } catch { }
-        }
-    }
-    Write-Host "Studio stopped."
+    Stop-Children
+    Write-Host "$BrandName stopped."
 }
 
 } catch {
     # The inner finally above has already stopped whatever had started.
-    Write-Host ""
-    Write-Host "ArchFlow Studio did not start." -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Red
+    if ($script:Tray) { try { $script:Tray.Visible = $false } catch { } }
+    Show-Fault $_.Exception.Message
     exit 1
 }

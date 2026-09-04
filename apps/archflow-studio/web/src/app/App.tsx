@@ -60,6 +60,7 @@ import {
 import { AppShell } from "./AppShell";
 import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
+import { LoadingOverlay } from "./LoadingOverlay";
 import { useSession } from "./useSession";
 import { useTranscript } from "./transcript";
 
@@ -1120,8 +1121,23 @@ export default function App({ server }: { server: ServerIdentity }) {
     />
   );
 
+  // The tab is still starting up until the API has answered for the binding. The launcher's
+  // splash said the same three things while the servers came up; this is the second half of
+  // that wait, and it is over when the shell has a project to name.
+  const booting = session.status === "idle" || session.status === "loading";
+
   return (
     <>
+      {booting && (
+        <LoadingOverlay
+          mode="boot"
+          status={
+            session.status === "idle"
+              ? "starting the session"
+              : "reading the binding · GET /api/project"
+          }
+        />
+      )}
       <input
         ref={fileInputRef}
         className="visually-hidden"
@@ -1136,7 +1152,12 @@ export default function App({ server }: { server: ServerIdentity }) {
       <AppShell
         toolbar={
           <>
-            <span className="wordmark">ArchFlow Studio</span>
+            <span
+              className="wordmark"
+              title="Professional modeling environment · Powered by the open ArchFlow protocol."
+            >
+              MonkeyArch
+            </span>
             <span className="toolbar__sep" />
             {project ? (
               <>

@@ -21,6 +21,7 @@ import { connection, type ServerIdentity } from "../api/connection";
 import App from "./App";
 import { ErrorPanel } from "./ErrorPanel";
 import { failed, loading, ready, type Loadable } from "./loadable";
+import { LoadingOverlay } from "./LoadingOverlay";
 
 export function Connected() {
   const [server, setServer] = useState<Loadable<ServerIdentity>>(loading);
@@ -63,13 +64,11 @@ export function Connected() {
   }
 
   if (server.status !== "ready") {
+    // The handshake is the first half of the same wait the launcher's splash was
+    // showing a moment ago, so it gets the same surface rather than a bare line:
+    // between the splash closing and the shell mounting nothing should look empty.
     return (
-      <div className="refusal">
-        <div className="refusal__card">
-          <p className="label">MonkeyArch</p>
-          <p className="refusal__lead">reading the server…</p>
-        </div>
-      </div>
+      <LoadingOverlay mode="boot" status="asking the server · GET /api/protocol" />
     );
   }
 

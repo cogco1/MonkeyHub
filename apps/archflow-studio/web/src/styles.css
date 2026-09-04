@@ -1771,3 +1771,127 @@ button.chip:hover {
   border-color: var(--accent);
   color: var(--ink);
 }
+
+/* Loading, in the launcher's words ----------------------------------------- */
+
+/* MonkeyArch's own three colours rather than the shell's tokens. This is the
+   surface the splash window was already showing on an ink ground while the two
+   servers came up, and a boot screen that changed colour with the OS theme
+   would not read as that same window carrying on into the tab. Two modes, one
+   component: `boot` covers the window until the API has answered for the
+   binding, `stage` covers the model while the viewport parses. */
+
+.boot {
+  --boot-ink: #12263f;
+  --boot-panel: #18314f;
+  --boot-stone: #f4efe6;
+  --boot-stone-dim: #b0bed1;
+  --boot-faint: #64789a;
+  --boot-amber: #e8a33d;
+
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  background: var(--boot-ink);
+  color: var(--boot-stone);
+  user-select: none;
+}
+
+.boot[data-mode="stage"] {
+  position: absolute;
+  background: rgba(18, 38, 63, 0.94);
+}
+
+.boot__card {
+  padding: 0 24px;
+  text-align: center;
+}
+
+.boot__title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
+.boot__glyph {
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+}
+
+.boot__tagline {
+  margin: 10px 0 0;
+  color: var(--boot-stone-dim);
+  font-size: 14px;
+}
+
+.boot__protocol {
+  margin: 3px 0 0;
+  color: var(--boot-faint);
+  font-size: 11.5px;
+}
+
+.boot__reel {
+  position: relative;
+  width: 300px;
+  height: 150px;
+  margin: 22px auto 0;
+  border-radius: var(--radius);
+  background: var(--boot-panel);
+}
+
+/* Every frame is in the document and one of them is opaque: the swap is a
+   change of opacity rather than of `src`, so the first cycle is not four
+   blanks while four files are fetched. */
+
+.boot__frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+}
+
+.boot__frame[data-on="true"] {
+  opacity: 1;
+}
+
+.boot__working {
+  margin: 20px 0 0;
+  color: var(--boot-amber);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.boot__status {
+  margin: 8px 0 0;
+  color: var(--boot-stone-dim);
+  font-size: 11.5px;
+}
+
+.boot[data-mode="stage"] .boot__title {
+  font-size: 24px;
+}
+
+.boot[data-mode="stage"] .boot__reel {
+  width: 220px;
+  height: 110px;
+  margin-top: 16px;
+}
+
+/* A reader who asked for less motion gets the strike frame and no loop; the
+   status line is what tells them the wait is still going. */
+
+@media (prefers-reduced-motion: reduce) {
+  .boot__frame[data-on="true"] {
+    opacity: 0;
+  }
+
+  .boot__reel .boot__frame:nth-child(3) {
+    opacity: 1;
+  }
+}

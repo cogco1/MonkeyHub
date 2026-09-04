@@ -44,30 +44,60 @@ into run areas of the bound project — which is what running a candidate is.
 
 ## 2. Run it
 
-**One click.** `OPEN_ARCHFLOW_STUDIO.bat` — or the Desktop shortcut `make-desktop-shortcut.ps1`
-writes — starts both halves and opens the browser at the web client. Its one input is
-`runtime.json` beside it, and the line you normally change is the first: `project_dir`, the P036
-project the API binds. The rest are `reference_run`, `rhino_export`, `powershell`,
-`intent_provider` and `codex` (the environment variables the sections below describe), `python`
-(the interpreter command, `py -3.12`), `api_port`, `web_port` and `open_browser`. Two optional
-keys name the agent more exactly: `intent_model` (the model the provider runs, forwarded as
-`ARCHFLOW_STUDIO_INTENT_MODEL`) and `intent_timeout_s` (how long one compile may take, default
-120, forwarded as `ARCHFLOW_STUDIO_INTENT_TIMEOUT_S`). **The paths in
+**One click.** The application is called **MonkeyArch**; the methodology and the protocol it
+runs are still ArchFlow. `OPEN_MONKEYARCH.bat` — or the Desktop shortcut
+`make-desktop-shortcut.ps1` writes, `打开 MonkeyArch.lnk` — starts both halves and opens the
+browser at the web client. **There is no console.** The .bat starts Windows PowerShell hidden
+(`powershell.exe` and not `pwsh`: a WinForms message loop needs an STA thread, and pwsh runs
+MTA on Windows), and the shortcut is saved with window style 7 so the cmd window that hands
+over is never painted. What you see instead is a splash window in the icon's three colours —
+the wordmark, a monkey hammering at a wireframe box, and a progress line that follows the real
+steps: validating runtime.json, python and fastapi, web dependencies, starting the API,
+`/api/health`, starting the web client, its first answer, opening the browser. **A refusal turns
+that same window red**, with the launcher's own sentence in it and a Close button; nothing waits
+in a console for a keypress.
+
+Its one input is `runtime.json` beside it, and the line you normally change is the first:
+`project_dir`, the P036 project the API binds. The rest are `reference_run`, `rhino_export`,
+`powershell`, `intent_provider` and `codex` (the environment variables the sections below
+describe), `python` (the interpreter command, `py -3.12`), `api_port`, `web_port` and
+`open_browser`. Two optional keys name the agent more exactly: `intent_model` (the model the
+provider runs, forwarded as `ARCHFLOW_STUDIO_INTENT_MODEL`) and `intent_timeout_s` (how long one
+compile may take, default 120, forwarded as `ARCHFLOW_STUDIO_INTENT_TIMEOUT_S`). **The paths in
 it are absolute and machine-specific**; it is not a file to copy between machines unchanged.
 The launcher validates all of it before it starts anything, so a `project_dir` with no
 `project.json` in it, a port already held, or a Python that cannot import FastAPI is a refusal
-naming the reason — never a half-started pair. **Closing the window, or Ctrl+C in it, stops the
-API and the web client together.** Each start writes `api-<stamp>.out.log`,
-`api-<stamp>.err.log` and the same pair for the web client into `apps/archflow-studio/.runtime/`
-(git-ignored); that is where a server which would not start says why, and the launcher quotes
-the tail of it on screen rather than making you go looking. `launch-studio.ps1` takes
-`-NoBrowser` and `-RuntimeConfig <path>`, so a second project can be launched without editing
-the one beside it. Windows PowerShell 5.1 is the floor: the script needs no `pwsh`.
-The shortcut's icon is `assets/archflow.ico` — an arch over a flowing line, drawn at
+naming the reason — never a half-started pair.
+
+**Quitting.** Once the browser is open the splash goes and a **tray icon** stays: "Open
+MonkeyArch" reopens the tab, "Show logs" opens `.runtime/`, and **"Quit MonkeyArch" stops the
+API and the web client together** and exits the launcher; double-clicking the icon opens the
+app. Windows 11 hides a tray icon nobody has pinned yet — it is under the notification area's
+chevron until you drag it out. If one of the two servers dies on its own, the launcher says so
+in a balloon tip, shows the tail of that server's log in the same red window, stops the other
+server and exits. Each start writes `api-<stamp>.out.log`, `api-<stamp>.err.log` and the same
+pair for the web client into `apps/archflow-studio/.runtime/` (git-ignored); that is where a
+server which would not start says why, and the launcher quotes the tail of it in the window
+rather than making you go looking. `launch-studio.ps1` takes `-NoBrowser`,
+`-RuntimeConfig <path>` and `-HideConsole` (what the .bat passes), so a second project can be
+launched without editing the one beside it, and running the script by hand from a console gives
+you the console output as well as the splash. Windows PowerShell 5.1 is the floor: WinForms
+only, no WPF, no extra runtime.
+
+The icon on the shortcut, on the splash window and in the tray is `assets/monkeyarch.ico`
+when that file is there and `assets/archflow.ico` — an arch over a flowing line, drawn at
 16, 24, 32, 48, 64, 128 and 256 px by `assets/make_icon.py` (Pillow), each size from its
-own spec rather than downscaled from one image. Redraw it with
+own spec rather than downscaled from one image — until it is. Redraw the ArchFlow one with
 `py -3.12 apps/archflow-studio/assets/make_icon.py`; the shortcut points at the `.ico` by
-absolute path, so an existing shortcut picks up a redraw without being rewritten.
+absolute path, so an existing shortcut picks up a redraw without being rewritten, but a
+shortcut written before the MonkeyArch icon arrived still names the old file and has to be
+written again. The loading
+animation is four frames in `assets/loading/` (`frame-01.png` … `frame-04.png`), cycled at 8 fps
+by the splash window and, in the browser, by the same overlay while the client waits for the API
+and while the viewport parses exports. `assets/loading/make_frames.py` draws the placeholder
+set; the storyboard replaces those four files in place, and `web/scripts/sync-loading.mjs`
+copies them into the served public directory at `npm run dev` and `npm run build` — the same way
+the rhino3dm runtime is synced, so `assets/loading/` stays the one source.
 
 **Install** (from the repo root):
 
@@ -145,7 +175,8 @@ The other scripts:
 | `npm run api:generate` | dumps, then regenerates `src/api/generated/` from that schema |
 | `npm run api:check` | regenerates into a temp directory and diffs; exit 1 on drift |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run build` | syncs the rhino3dm runtime, typechecks, then `vite build` |
+| `npm run sync` | copies the rhino3dm runtime and the four loading frames into `.generated/public/`; `dev` and `build` run it first |
+| `npm run build` | syncs those assets, typechecks, then `vite build` |
 
 `@hey-api/openapi-ts` crashes under TypeScript 7, so the generator lives in
 `web/tools/openapi-ts/` with its own `package.json`, its own `node_modules` and its own

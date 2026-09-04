@@ -14,6 +14,7 @@ import type { GestureDto, ProjectArtifactDto } from "../../api/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import type { EvidenceTab } from "../../app/evidence";
+import { LoadingOverlay } from "../../app/LoadingOverlay";
 import type { SceneInspection } from "../../viewer/sceneInspection";
 import {
   ThreeDmViewport,
@@ -146,6 +147,9 @@ export function Stage({
         gestures={gestures}
         onGesture={onGesture}
       />
+      {/* Parsing a run's exports is the longest wait in the app after the launch itself, and
+          it is the same wait: the viewport's own status line is what the overlay says. */}
+      {status === "loading" && <LoadingOverlay mode="stage" status={message} />}
 
       <div className="hud">
         <div className="hud__left">
