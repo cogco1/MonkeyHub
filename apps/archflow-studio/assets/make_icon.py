@@ -37,11 +37,18 @@ there at every size, and it is the monkey that is spent down:
 
 Each size is rasterised at 8x and box-filtered down -- exact area averaging over
 the supersamples -- so two runs of this script write the same bytes.
+
+The animal itself is not private to the icon. `draw_monkey(pen, pose)` draws it
+in whatever units the pen works in, and `Pose` says where its parts are, so the
+loading frames in loading/make_frames.py stand the same figure on a ground line
+and put a hammer in its hand rather than drawing a second monkey that would
+drift away from this one. The icon's own pose is `_hanging_pose`.
 """
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -140,24 +147,29 @@ FULL = {
 }
 
 
-class Canvas:
-    """A supersampled tile. All coordinates are fractions of the tile side."""
+class Pen:
+    """Draws onto a supersampled raster in whatever unit the caller works in.
 
-    def __init__(self, size: int):
-        self.size = size
-        self.side = size * SS
-        # The canvas starts ink, not transparent, so the box filter never blends
-        # a colour with an unpainted pixel at the tile's rounded corners.
-        self.img = Image.new("RGB", (self.side, self.side), INK)
-        self.d = ImageDraw.Draw(self.img)
+    `scale` is how many device pixels one of those units is worth: the icon
+    works in fractions of the tile side and hands over the tile's size, the
+    loading frames work in frame pixels and hand over 1. Everything drawn
+    through a pen -- the arch, and every part of the animal -- is written in the
+    caller's units, which is what lets one monkey be drawn into a 24 px tile and
+    into a 600x360 frame from the same routine.
+    """
+
+    def __init__(self, draw: ImageDraw.ImageDraw, scale: float, ss: int = SS):
+        self.d = draw
+        self.scale = scale
+        self.ss = ss
 
     def q(self, u: float) -> int:
-        """A fraction of the tile side, in supersampled device pixels."""
-        return int(round(u * self.size * SS))
+        """One of the caller's units, in supersampled device pixels."""
+        return int(round(u * self.scale * self.ss))
 
     def w(self, u: float, floor_px: float = 1.0) -> int:
         """A stroke width: never thinner than floor_px real pixels."""
-        return int(round(max(u * self.size, floor_px) * SS))
+        return int(round(max(u * self.scale, floor_px) * self.ss))
 
     def rect(self, x0, y0, x1, y1, colour) -> None:
         self.d.rectangle([self.q(x0), self.q(y0), self.q(x1) - 1,
@@ -185,6 +197,18 @@ class Canvas:
             for x, y in (pts[0], pts[-1]):
                 self.d.ellipse([x - wide // 2, y - wide // 2,
                                 x + wide // 2, y + wide // 2], fill=colour)
+
+
+class Canvas(Pen):
+    """A supersampled tile. All coordinates are fractions of the tile side."""
+
+    def __init__(self, size: int):
+        self.size = size
+        self.side = size * SS
+        # The canvas starts ink, not transparent, so the box filter never blends
+        # a colour with an unpainted pixel at the tile's rounded corners.
+        self.img = Image.new("RGB", (self.side, self.side), INK)
+        super().__init__(ImageDraw.Draw(self.img), size, SS)
 
     def finish(self) -> Image.Image:
         margin, radius, _ = TILE[self.size]
@@ -223,7 +247,101 @@ def _spiral(cx, cy, r0, r1, a0, a1, steps=112):
     return points
 
 
-def _face(c: Canvas, mode: int, hx: float, hy: float, hr: float) -> None:
+def _tilt_about(degrees: float, ox: float, oy: float):
+    """A rotation of the head's furniture about the head's centre.
+
+    An untilted head returns the identity rather than a rotation by zero: the
+    icon's poses are all untilted, and a round trip through the rotation would
+    move points by a last bit or two and change the icon's bytes.
+    """
+    if not degrees:
+        return lambda x, y: (x, y)
+    ca, sa = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+    return lambda x, y: (ox + (x - ox) * ca - (y - oy) * sa,
+                         oy + (x - ox) * sa + (y - oy) * ca)
+
+
+@dataclass(frozen=True)
+class Limb:
+    """One arm or leg: a stroked polyline, and the hand or foot at the end.
+
+    `hand` is (cx, cy, rx, ry) or None -- a hanging arm ends in a hand, a leg
+    that is only a bent line does not.
+    """
+
+    points: tuple
+    width: float
+    hand: tuple | None = None
+    floor_px: float = 1.5
+
+
+@dataclass(frozen=True)
+class Pose:
+    """Where the animal's parts are, in the caller's units.
+
+    The figure is the same in the icon and in the loading frames -- head, two
+    ears level with the eyes, the limestone inverted-teardrop face patch, a body
+    narrower than the head is wide, and the spiral tail -- and what changes
+    between them is only this: where the limbs go, how far the tail curls, and
+    which way the head is turned. Everything is absolute in the caller's units,
+    so the pose carries the scale rather than the routine carrying a factor.
+
+    The order the parts are drawn in is the order they overlap in: the tail
+    behind everything, then the limbs, then the body over where they join it,
+    then the ears, the head, the face, and last of all `grip` -- the hand that
+    has to be over whatever the animal is holding.
+    """
+
+    head: tuple
+    head_r: float
+    body: tuple
+    body_rx: float
+    body_ry: float
+    ear_r: float
+    ear_dx: float
+    ear_dy: float
+    face: int = 0
+    tilt: float = 0.0
+    # (root point, centre x, centre y, start radius, end radius, start angle,
+    # end angle, stroke) -- the root is where the curl leaves the rump.
+    tail: tuple | None = None
+    limbs: tuple = ()
+    grip: tuple | None = None
+    fur: tuple = BROWN
+    stone: tuple = STONE
+    ink: tuple = INK
+
+
+def draw_monkey(pen: Pen, pose: Pose) -> None:
+    """Draw the animal in one pose, through one pen, in the pen's units."""
+    hx, hy = pose.head
+    bx, by = pose.body
+
+    if pose.tail is not None:
+        root, tcx, tcy, r0, r1, a0, a1, width = pose.tail
+        pen.stroke([root] + _spiral(tcx, tcy, r0, r1, a0, a1),
+                   pose.fur, width, 1.5)
+
+    for limb in pose.limbs:
+        pen.stroke(list(limb.points), pose.fur, limb.width, limb.floor_px)
+        if limb.hand is not None:
+            pen.oval(*limb.hand, pose.fur)
+
+    pen.oval(bx, by, pose.body_rx, pose.body_ry, pose.fur)
+    turn = _tilt_about(pose.tilt, hx, hy)
+    for side in (-1, 1):
+        pen.disc(*turn(hx + side * pose.ear_dx, hy + pose.ear_dy),
+                 pose.ear_r, pose.fur)
+    pen.disc(hx, hy, pose.head_r, pose.fur)
+    _face(pen, pose.face, hx, hy, pose.head_r,
+          tilt=pose.tilt, stone=pose.stone, ink=pose.ink)
+
+    if pose.grip is not None:
+        pen.oval(*pose.grip, pose.fur)
+
+
+def _face(c: Pen, mode: int, hx: float, hy: float, hr: float, *,
+          tilt: float = 0.0, stone=STONE, ink=INK) -> None:
     """The limestone patch: two lobes over the eyes, tapering to the muzzle.
 
     One shape, not a muzzle stuck under a mask -- an inverted teardrop with a
@@ -243,24 +361,26 @@ def _face(c: Canvas, mode: int, hx: float, hy: float, hr: float) -> None:
     lobe_cy = hy - 0.17 * hr
     muzzle_cy = lobe_cy + 0.50 * hr * scale
     mrx, mry = 0.42 * hr * scale, 0.33 * hr * scale
+    turn = _tilt_about(tilt, hx, hy)
 
-    c.poly([(fx - lobe_dx - lobe_r, lobe_cy),
-            (fx + lobe_dx + lobe_r, lobe_cy),
-            (fx + mrx, muzzle_cy), (fx - mrx, muzzle_cy)], STONE)
+    c.poly([turn(fx - lobe_dx - lobe_r, lobe_cy),
+            turn(fx + lobe_dx + lobe_r, lobe_cy),
+            turn(fx + mrx, muzzle_cy), turn(fx - mrx, muzzle_cy)], stone)
     for side in (-1, 1):
-        c.disc(fx + side * lobe_dx, lobe_cy, lobe_r, STONE)
-    c.oval(fx, muzzle_cy, mrx, mry, STONE)
+        c.disc(*turn(fx + side * lobe_dx, lobe_cy), lobe_r, stone)
+    c.oval(*turn(fx, muzzle_cy), mrx, mry, stone)
 
     if mode >= 2:
         for side in (-1, 1):
-            c.disc(fx + side * lobe_dx, lobe_cy, 0.175 * hr, INK)
+            c.disc(*turn(fx + side * lobe_dx, lobe_cy), 0.175 * hr, ink)
 
     if mode >= 3:
         for side in (-1, 1):
-            c.disc(fx + side * 0.13 * hr, muzzle_cy - 0.06 * hr, 0.062 * hr, INK)
-        c.stroke([(fx - 0.17 * hr, muzzle_cy + 0.12 * hr),
-                  (fx, muzzle_cy + 0.19 * hr),
-                  (fx + 0.17 * hr, muzzle_cy + 0.12 * hr)], INK, 0.060 * hr)
+            c.disc(*turn(fx + side * 0.13 * hr, muzzle_cy - 0.06 * hr),
+                   0.062 * hr, ink)
+        c.stroke([turn(fx - 0.17 * hr, muzzle_cy + 0.12 * hr),
+                  turn(fx, muzzle_cy + 0.19 * hr),
+                  turn(fx + 0.17 * hr, muzzle_cy + 0.12 * hr)], ink, 0.060 * hr)
 
 
 def _reduced_monkey(c: Canvas, level: int, cx: float, foot: float) -> None:
@@ -285,31 +405,22 @@ def _reduced_monkey(c: Canvas, level: int, cx: float, foot: float) -> None:
         c.oval(cx, hy + dy, rx, ry, STONE)
 
 
-def _full_monkey(c: Canvas, level: int, cx: float, foot: float,
-                 pier: float) -> None:
+def _hanging_pose(level: int, cx: float, foot: float, pier: float) -> Pose:
     """32 px and up: hanging by one arm, the other hand out on the intrados."""
     cfg = FULL[level]
     k = cfg["k"]
     hx, hy = cx + HEAD_DX * k, foot + HEAD_DY * k
-    hr = HEAD_R * k
     bx, by = hx + BODY_DX * k, hy + BODY_DY * k
 
-    # The tail, behind everything: down off the rump, out to the right, up and
-    # over, and round into a loop small enough to keep a hole in it at 48 px.
-    root = (bx + 0.050 * k, by + 0.029 * k)
-    c.stroke([root] + _spiral(bx + TAIL_DX * k, by + TAIL_DY * k, TAIL_R0 * k,
-                              cfg["tail_r1"] * k, TAIL_A0,
-                              TAIL_A0 - cfg["tail_sweep"]),
-             BROWN, TAIL_W * k, 1.5)
-
+    limbs = []
     if cfg["legs"] >= 1:
-        c.stroke([(bx - 0.026 * k, by + 0.108 * k),
-                  (bx - 0.070 * k, by + 0.155 * k),
-                  (bx - 0.026 * k, by + 0.175 * k)], BROWN, 0.040 * k, 1.5)
+        limbs.append(Limb(((bx - 0.026 * k, by + 0.108 * k),
+                           (bx - 0.070 * k, by + 0.155 * k),
+                           (bx - 0.026 * k, by + 0.175 * k)), 0.040 * k))
     if cfg["legs"] >= 2:
-        c.stroke([(bx + 0.030 * k, by + 0.106 * k),
-                  (bx + 0.078 * k, by + 0.143 * k),
-                  (bx + 0.046 * k, by + 0.173 * k)], BROWN, 0.038 * k, 1.5)
+        limbs.append(Limb(((bx + 0.030 * k, by + 0.106 * k),
+                           (bx + 0.078 * k, by + 0.143 * k),
+                           (bx + 0.046 * k, by + 0.173 * k)), 0.038 * k))
 
     if cfg["free_arm"]:
         # The free hand, out on the inner face of the pier. It has to land on
@@ -317,24 +428,32 @@ def _full_monkey(c: Canvas, level: int, cx: float, foot: float,
         # stump, and the whole point of the second hand is that the animal is
         # holding the arch it is hanging in.
         hand = (pier + 0.014 * k, by + 0.062 * k)
-        c.stroke([(bx - 0.055 * k, by - 0.010 * k),
-                  (bx - 0.125 * k, by + 0.040 * k), hand], BROWN, 0.040 * k, 1.5)
-        c.oval(hand[0], hand[1], 0.034 * k, 0.030 * k, BROWN)
+        limbs.append(Limb(((bx - 0.055 * k, by - 0.010 * k),
+                           (bx - 0.125 * k, by + 0.040 * k), hand), 0.040 * k,
+                          hand=(hand[0], hand[1], 0.034 * k, 0.030 * k)))
 
     # The gripping arm, straight up to the keystone. It runs behind the head and
     # the far ear, which are the same brown, so the two read as one form.
-    c.stroke([(hx + 0.046 * k, hy + 0.088 * k), (hx + 0.060 * k, hy - 0.020 * k),
-              (cx - 0.002, foot + 0.004)], BROWN, ARM_W * k, 1.5)
+    limbs.append(Limb(((hx + 0.046 * k, hy + 0.088 * k),
+                       (hx + 0.060 * k, hy - 0.020 * k),
+                       (cx - 0.002, foot + 0.004)), ARM_W * k))
 
-    c.oval(bx, by, BODY_RX * k, BODY_RY * k, BROWN)
-    for side in (-1, 1):
-        c.disc(hx + side * EAR_DX * k, hy + EAR_DY * k, EAR_R * k, BROWN)
-    c.disc(hx, hy, hr, BROWN)
-    _face(c, cfg["face"], hx, hy, hr)
-
-    # The hand last of all, over the amber: the one place the two halves of the
-    # mark touch, so it is the last thing drawn and nothing crosses it.
-    c.oval(cx, foot + GRIP_DY * k, HAND_RX * k, HAND_RY * k, BROWN)
+    return Pose(
+        head=(hx, hy), head_r=HEAD_R * k,
+        body=(bx, by), body_rx=BODY_RX * k, body_ry=BODY_RY * k,
+        ear_r=EAR_R * k, ear_dx=EAR_DX * k, ear_dy=EAR_DY * k,
+        face=cfg["face"],
+        # The tail, behind everything: down off the rump, out to the right, up
+        # and over, and round into a loop that keeps a hole in it at 48 px.
+        tail=((bx + 0.050 * k, by + 0.029 * k),
+              bx + TAIL_DX * k, by + TAIL_DY * k, TAIL_R0 * k,
+              cfg["tail_r1"] * k, TAIL_A0, TAIL_A0 - cfg["tail_sweep"],
+              TAIL_W * k),
+        limbs=tuple(limbs),
+        # The hand last of all, over the amber: the one place the two halves of
+        # the mark touch, so nothing is drawn across it.
+        grip=(cx, foot + GRIP_DY * k, HAND_RX * k, HAND_RY * k),
+    )
 
 
 def render(size: int) -> Image.Image:
@@ -372,7 +491,7 @@ def render(size: int) -> Image.Image:
     if level <= 1:
         _reduced_monkey(c, level, cx, foot)
     else:
-        _full_monkey(c, level, cx, foot, x0 + thick)
+        draw_monkey(c, _hanging_pose(level, cx, foot, x0 + thick))
 
     return c.finish()
 
