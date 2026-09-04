@@ -25,6 +25,7 @@ import uvicorn
 from . import routes
 from .application.clarification import PendingIntentStore
 from .application.controls import DeclaredControlStore
+from .application.episodes import EpisodeStore
 from .application.events import StudioEvents
 from .application.intent_agent import compiler_from_settings
 from .application.jobs import JobRegistry
@@ -187,6 +188,12 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # it is one process's memory and is lost on restart.
     app.state.pending_intents = PendingIntentStore()
     app.state.controls = DeclaredControlStore()
+    # The judgements this process has made: which proposal was accepted,
+    # rejected or modified, and why. Unlike everything above it, this one does
+    # not stay in memory — a judgement is written into the candidate run it
+    # produced, and the store holds only the ones that have not met a run yet.
+    # Those are lost on restart, and every episode says which of the two it is.
+    app.state.episodes = EpisodeStore()
     # Who compiles an architect's sentence into the grammar: nobody (the
     # deterministic pass-through), a local codex process, or the Anthropic
     # API — chosen by the settings this app was built with, held here so a

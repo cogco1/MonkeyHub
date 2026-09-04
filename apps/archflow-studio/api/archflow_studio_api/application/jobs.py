@@ -184,6 +184,21 @@ class JobRegistry:
             )
         return self.get(job_id)
 
+    def candidates_of(self, proposal_id: str) -> tuple[str, ...]:
+        """Every candidate this process ran from one proposal, in job order.
+
+        The reverse of ``for_candidate``, and read-only. It exists so that a
+        judgement about a proposal can name what was actually looked at before
+        it was made; nothing here starts, stops or changes a job.
+        """
+
+        with self._lock:
+            return tuple(
+                job.candidate_id
+                for job in self._jobs.values()
+                if job.proposal_id == proposal_id
+            )
+
     def shutdown(self) -> None:
         """Stop accepting work and let the running candidates finish."""
 

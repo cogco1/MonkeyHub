@@ -21,11 +21,12 @@ import secrets
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
+from ..application import episodes
 from ..application.binding import ProjectBinding, bound_project
 from ..application.candidate import describe, execute_candidate
 from ..application.compare import compare_runs
 from ..application.jobs import Job, JobRegistry
-from ..application.projection import project_state
+from ..application.projection import StateProjection, project_state
 from ..application.proposals import closure_of, Proposal
 from ..settings import StudioSettings
 from ..transport.candidate import (
@@ -69,19 +70,49 @@ def start_candidate(
             "a protection the user named.",
         )
     binding = bound_project(state)
-    _require_current_base(binding, proposal)
+    projection = project_state(binding)
+    _require_current_base(binding, projection, proposal)
     registry: JobRegistry = state.jobs
     settings: StudioSettings = state.settings
     run_id = _run_id(proposal_id)
+    # The judgement is made here, when the architect asks for this proposal and
+    # no other — not when the run finishes. What was on the table is what this
+    # process was holding at that moment, so it is read now; the episode itself
+    # is only written once there is a run to write it into.
+    superseded = episodes.still_open(
+        state.episodes,
+        state.proposals.for_state(proposal.base_state_digest),
+        without=proposal_id,
+    )
+    read = episodes.validation_refs_read(
+        state.jobs, state.validations, (proposal, *superseded)
+    )
+    evidence = tuple(projection.record.evidence_refs)
+
+    def work() -> object:
+        receipt = execute_candidate(binding, settings, proposal, run_id)
+        # Only a run that happened carries a judgement. A refused value or a
+        # stale base raises above this line, the job reports it, and nothing
+        # claims a decision was retained when no run exists to hold it.
+        episodes.accept(
+            state.episodes,
+            binding.repository,
+            binding.load_run(run_id),
+            project_id=binding.project_id,
+            proposal=proposal,
+            superseded=superseded,
+            evidence_refs=evidence,
+            validation_refs=read,
+        )
+        return receipt
+
     return accepted_dto(
         registry.submit(
             candidate_id=run_id,
             proposal_id=proposal_id,
             # The work runs on a registry worker thread: ``run_project``
             # calls ``asyncio.run`` and would refuse to start on the loop.
-            work=lambda: execute_candidate(
-                binding, settings, proposal, run_id
-            ),
+            work=work,
             # The queue's two facts about this run: what it touches, and
             # whether it needs the one Rhino this machine can export with.
             closure=closure_of(proposal),
@@ -173,7 +204,9 @@ def compare_candidate(
 
 
 def _require_current_base(
-    binding: ProjectBinding, proposal: Proposal
+    binding: ProjectBinding,
+    projection: StateProjection,
+    proposal: Proposal,
 ) -> None:
     """Refuse a proposal whose base the project has since moved off.
 
@@ -181,9 +214,13 @@ def _require_current_base(
     that matters is this one: between being shown a number and running it,
     somebody may have authored a different record. Executing against a base
     the user never saw is the one failure that would look like a success.
+
+    The projection is the caller's, read once: the digest this refuses on and
+    the evidence the judgement cites have to come off the same reading of the
+    record, or the refusal is about a state the episode does not describe.
     """
 
-    live = project_state(binding).state_digest
+    live = projection.state_digest
     if live == proposal.base_state_digest:
         return
     raise StudioError(

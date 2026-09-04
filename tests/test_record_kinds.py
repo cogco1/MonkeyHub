@@ -18,6 +18,7 @@ from pathlib import Path
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
     COMPONENT_TEMPLATE,
+    DELIBERATION_EPISODE,
     RECORD_KINDS,
     RESEARCH_EVIDENCE_LEDGER,
     STAGE_CLOSURE,
@@ -218,6 +219,28 @@ class PutJsonRegistrationTests(unittest.TestCase):
                 ref = self.put(kind)
                 self.assertEqual(ref.record_kind, kind)
                 self.assertEqual(self.repository.load_json(ref)["kind"], kind)
+
+    def test_the_studio_may_retain_a_deliberation_episode(self) -> None:
+        """The judgement the studio writes at accept/reject/modify.
+
+        Registered here because ``put_json`` refuses a kind the table does not
+        hold: without the entry, the one record that says which proposal was
+        chosen and why could not be written at all.
+        """
+
+        entry = require_registered(DELIBERATION_EPISODE)
+        self.assertEqual(entry.schema, "DeliberationEpisode@1")
+        self.assertEqual(entry.area, PersistenceArea.RUN_RECORD.value)
+        ref = self.repository.put_json(
+            run=self.run,
+            destination=self.destination,
+            record_kind=DELIBERATION_EPISODE,
+            payload={"schema": entry.schema, "episode_id": "ep-000000000000"},
+        )
+        self.assertEqual(ref.record_kind, DELIBERATION_EPISODE)
+        self.assertEqual(
+            self.repository.load_json(ref)["schema"], "DeliberationEpisode@1"
+        )
 
     def test_an_unregistered_kind_is_refused_and_nothing_is_written(self) -> None:
         with self.assertRaises(ProjectRepositoryError) as raised:

@@ -92,6 +92,7 @@ STATE_RECORD_EQUIVALENCE = "state-record-equivalence"
 STUDIO_CANDIDATE_WORKFLOW = "studio-candidate-workflow"
 STUDIO_CANDIDATE_ENVELOPE = "studio-candidate-envelope"
 INTENT_COMPILATION = "intent-compilation"
+DELIBERATION_EPISODE = "deliberation-episode"
 
 # ---- read by the spine, written by nobody on it
 
@@ -301,6 +302,15 @@ _TABLE: tuple[RecordKind, ...] = (
         "IntentCompilation@1",
         _RUN_RECORD,
         "the model call that turned an utterance into this run's proposal",
+    ),
+    RecordKind(
+        DELIBERATION_EPISODE,
+        "DeliberationEpisode@1",
+        _RUN_RECORD,
+        "one judgement of the studio: the intent, the proposals on the table, "
+        "the decision on each with its reason and scope, what was protected, "
+        "the evidence and validation refs read, and the run it produced; "
+        "written by the studio at accept/reject/modify",
     ),
     RecordKind(
         COMPONENT_TEMPLATE,

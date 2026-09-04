@@ -466,6 +466,24 @@ class ValidationStore:
         self._by_key: dict[tuple[str, int, str | None], CandidateValidation] = {}
         self._locks: dict[tuple[str, int, str | None], threading.Lock] = {}
 
+    def receipt_ids(self, candidate_id: str) -> tuple[str, ...]:
+        """The validation receipts this process has computed for one candidate.
+
+        One per issue the candidate was validated against, in no particular
+        order and computed nowhere here: this is a read of what was already
+        decided, so a judgement can name the verdicts that were in front of
+        whoever made it.
+        """
+
+        with self._mutex:
+            return tuple(
+                sorted(
+                    validation.receipt.receipt_id
+                    for key, validation in self._by_key.items()
+                    if key[0] == candidate_id
+                )
+            )
+
     def remembered(
         self,
         key: tuple[str, int, str | None],

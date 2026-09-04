@@ -105,6 +105,9 @@ tolerate it.
 | GET | `/api/candidates/{candidateId}` | the finished candidate, read back out of the records its run retained | reads shared | stable |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's verdict (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
+| POST | `/api/proposals/{proposalId}/decision` → 201 | the judgement made on one proposal — rejected, or modified into a linked replacement — as a deliberation episode (§5.2) | server memory, **written into shared** by the next candidate run against the same state | provisional |
+| GET | `/api/episodes?stateDigest=` | the judgements this process holds, each saying whether it lives in a run or only in memory (§5.2) | server memory + reads shared | provisional |
+| GET | `/api/episodes/{episodeId}` | one of them | server memory + reads shared | provisional |
 | GET | `/api/candidates/{candidateId}/compare?against=` | before / after / why, from the inspection records both runs retained | reads shared | provisional |
 | GET | `/api/events` | the server-sent event stream (§7) | server memory | provisional |
 | POST | `/api/controls` → 201 | keep a confirmed authored-control draft (the terminal MISSING_EDITABLE_CONTROL answer) as a declared control: component, property, provenance, what the catalog showed | server memory | provisional |
@@ -112,9 +115,11 @@ tolerate it.
 | GET | `/api/state/frame` | the record's frame: each `Level@1` and `GridAxis@1` with its role, its value, the elements whose own references name it, and the closure of changing it; `honesty[]` | reads work in progress + shared + published | provisional |
 | POST | `/api/state/closure` | what changing `changedRefs` would move, and the propagating edges that carried it. Reads only; the POST carries the list and the `stateDigest` it is asked against | reads work in progress + shared + published | provisional |
 
-Twenty-two resources: fifteen stable, seven provisional. `/api/intents` is provisional because who
-signs an agent's compilation receipt is still moving; `/api/compare` because its `why` comes from
-one process's memory of a proposal; `/api/events` because its event types are not a closed set and
+Twenty-five resources: fifteen stable, ten provisional. `/api/intents` is provisional because who
+signs an agent's compilation receipt is still moving; the three deliberation resources because a
+judgement not yet met by a run is still one process's memory; `/api/controls` because a declared
+control has not entered the authored record; `/api/compare` because its `why` comes from one
+process's memory of a proposal; `/api/events` because its event types are not a closed set and
 authenticated streams have no answer yet (§7); `/api/state/frame` and `/api/state/closure` because
 levels and axes are not yet editable — the grammar has no sentence for them — so what an
 architect can do with the frame is still moving.
@@ -197,6 +202,21 @@ neighbouring element whose field shares a name is named there only to be refused
    advance verdict.* A client renders the server's boolean and computes no verdict of its own.
 
 The verdict is memoised per (candidate, published version): reading it twice is one decision.
+
+### 5.2 The judgement is retained
+
+Accepting a proposal has always left a run, and turning one down left nothing at all, so the
+option that was considered and not chosen disappeared with the chat — which is why a **deliberation
+episode** is now a record: the intent that was answered, every proposal that was on the table with
+the decision made on it and the architect's own sentence for it, what the request asked to keep,
+the evidence and validation receipts read before deciding, and the run the accepted one produced.
+Running a proposal as a candidate writes that episode into its run as `deliberation-episode`
+(`DeliberationEpisode@1`), closes every other option still open against the same `stateDigest` with
+the reason `superseded by <proposalId>`, and flushes into the same run the rejections and
+modifications this process was holding for that state. A judgement made before any run exists has
+no run to be written into and says so — `producedRun` is `null` and `persistence` reads
+`in-memory (not version history)` until a candidate meets it, after which `persistence` is
+`run:<id>`, exactly as for a proposal.
 
 ---
 

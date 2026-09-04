@@ -16,12 +16,15 @@ it exists at all is that ``POST /api/proposals`` must be able to answer a later
 from __future__ import annotations
 
 from dataclasses import MISSING, dataclass, fields
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 from archflow.state.decision_operator import DecisionOperator
 
 from ..transport.errors import StudioError
 from .impact import Impact
+
+if TYPE_CHECKING:  # the pending intent is a value, not a dependency
+    from .clarification import PendingIntent
 
 # What the DTO says about itself, verbatim. A client that shows this has been
 # told the truth about what it is looking at.
@@ -59,6 +62,15 @@ class Proposal:
     # grammar, which no model read. It travels with the proposal so that a run
     # made from it can retain what answered; nothing here reads it.
     compilation_receipt: Mapping[str, Any] | None = None
+    # The pending intent this proposal came out of, when the request went
+    # through ``POST /api/intents``: the same frozen value the pending-intent
+    # store holds, carried by reference and never copied field by field. It is
+    # here so a judgement about this proposal can say what was actually asked —
+    # the request id, the slots the resolver filled, the semantic property the
+    # architect named — instead of re-reading the sentence and guessing. A
+    # sentence sent straight to ``POST /api/proposals`` opened no pending
+    # intent and carries ``None``. Nothing in this module reads it.
+    pending: "PendingIntent | None" = None
 
 
 
@@ -116,6 +128,21 @@ class ProposalStore:
     def put(self, proposal: Proposal) -> Proposal:
         self._by_id[proposal.proposal_id] = proposal
         return proposal
+
+    def for_state(self, state_digest: str) -> tuple[Proposal, ...]:
+        """Every proposal this process holds against one exact base.
+
+        The order is the order they were made in, which is what makes "the
+        other options that were on the table" a list somebody can read rather
+        than a set. A proposal made against another base is not on this table
+        at all: it was proposed about a different building.
+        """
+
+        return tuple(
+            proposal
+            for proposal in self._by_id.values()
+            if proposal.base_state_digest == state_digest
+        )
 
     def get(self, proposal_id: str) -> Proposal:
         """One proposal, or a 404 that says where proposals do not survive."""

@@ -986,6 +986,156 @@ export type ElementDto = {
 };
 
 /**
+ * EpisodeChangeDto
+ *
+ * The number the record had, and the number the option proposed.
+ */
+export type EpisodeChangeDto = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Old
+     */
+    old: number | number;
+    /**
+     * New
+     */
+    new: number | number;
+};
+
+/**
+ * EpisodeDto
+ *
+ * One retained judgement: the intent, the options, and the run.
+ */
+export type EpisodeDto = {
+    /**
+     * Episodeid
+     */
+    episodeId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    intent: EpisodeIntentDto;
+    /**
+     * Proposals
+     */
+    proposals: Array<EpisodeProposalDto>;
+    /**
+     * Protected
+     */
+    protected: Array<string>;
+    /**
+     * Evidencerefs
+     */
+    evidenceRefs: Array<string>;
+    /**
+     * Validationrefs
+     */
+    validationRefs: Array<string>;
+    /**
+     * Producedrun
+     *
+     * the candidate run the accepted proposal made; null while the judgement has met no run
+     */
+    producedRun: string | null;
+    /**
+     * Chosenscope
+     */
+    chosenScope: string | null;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Persistence
+     *
+     * run:<id> once the judgement is in a run's records, and the in-memory sentence while it is only this process's
+     */
+    persistence: string;
+};
+
+/**
+ * EpisodeIntentDto
+ *
+ * What was asked, as the studio resolved it — not the chat log.
+ */
+export type EpisodeIntentDto = {
+    /**
+     * Utterance
+     */
+    utterance: string;
+    /**
+     * Targetcomponentid
+     */
+    targetComponentId: string;
+    /**
+     * Elementid
+     */
+    elementId: string | null;
+    /**
+     * Requestedproperty
+     */
+    requestedProperty: string | null;
+    /**
+     * Knownslots
+     */
+    knownSlots: {
+        [key: string]: string;
+    };
+    /**
+     * Requestid
+     *
+     * the pending intent this request belonged to, when it came through a clarification chain
+     */
+    requestId: string | null;
+};
+
+/**
+ * EpisodeProposalDto
+ *
+ * One option that was on the table, and what became of it.
+ */
+export type EpisodeProposalDto = {
+    /**
+     * Proposalid
+     */
+    proposalId: string;
+    /**
+     * Target
+     */
+    target: string;
+    change: EpisodeChangeDto;
+    /**
+     * Closure
+     *
+     * every ref this option would invalidate, as the proposal's own closure had it
+     */
+    closure: Array<string>;
+    /**
+     * Decision
+     */
+    decision: 'accepted' | 'rejected' | 'modified';
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Modifiedto
+     */
+    modifiedTo: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
  * ExportTimingDto
  *
  * One seat's export, as its ``cad`` block times it.
@@ -1496,6 +1646,20 @@ export type JobDto = {
 };
 
 /**
+ * ModifiedToDto
+ *
+ * What the architect said instead, when the decision was ``modified``.
+ */
+export type ModifiedToDto = {
+    /**
+     * Utterance
+     *
+     * the sentence the architect replaced the proposal with; it is re-proposed through the same deterministic path
+     */
+    utterance: string;
+};
+
+/**
  * ObjectBindingDto
  *
  * One exported object and the element the catalog can name for it.
@@ -1931,6 +2095,35 @@ export type ProposalChangeDto = {
      * the unit the record declares; element params are unit-less numbers and answer null
      */
     unit: string | null;
+};
+
+/**
+ * ProposalDecisionRequestDto
+ *
+ * ``POST /api/proposals/{id}/decision``: what was decided, and why.
+ *
+ * ``accepted`` is deliberately not a decision this route takes. A proposal is
+ * accepted by being run — ``POST /api/proposals/{id}/candidate`` — and an
+ * acceptance that left no run would be a judgement about a building nobody
+ * built.
+ */
+export type ProposalDecisionRequestDto = {
+    /**
+     * Decision
+     *
+     * rejected closes the option; modified closes it and re-proposes modifiedTo in its place
+     */
+    decision: 'rejected' | 'modified';
+    /**
+     * Reason
+     *
+     * the architect's own sentence for the decision, kept verbatim; null when none was given
+     */
+    reason?: string | null;
+    /**
+     * required when decision is modified, refused otherwise
+     */
+    modifiedTo?: ModifiedToDto | null;
 };
 
 /**
@@ -2822,6 +3015,36 @@ export type ReadProposalApiProposalsProposalIdGetResponses = {
 
 export type ReadProposalApiProposalsProposalIdGetResponse = ReadProposalApiProposalsProposalIdGetResponses[keyof ReadProposalApiProposalsProposalIdGetResponses];
 
+export type DecideProposalApiProposalsProposalIdDecisionPostData = {
+    body: ProposalDecisionRequestDto;
+    path: {
+        /**
+         * Proposal Id
+         */
+        proposal_id: string;
+    };
+    query?: never;
+    url: '/api/proposals/{proposal_id}/decision';
+};
+
+export type DecideProposalApiProposalsProposalIdDecisionPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DecideProposalApiProposalsProposalIdDecisionPostError = DecideProposalApiProposalsProposalIdDecisionPostErrors[keyof DecideProposalApiProposalsProposalIdDecisionPostErrors];
+
+export type DecideProposalApiProposalsProposalIdDecisionPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: EpisodeDto;
+};
+
+export type DecideProposalApiProposalsProposalIdDecisionPostResponse = DecideProposalApiProposalsProposalIdDecisionPostResponses[keyof DecideProposalApiProposalsProposalIdDecisionPostResponses];
+
 export type CompileIntentApiIntentsPostData = {
     body: IntentRequestDto;
     path?: never;
@@ -3028,6 +3251,70 @@ export type CompareCandidateApiCandidatesCandidateIdCompareGetResponses = {
 };
 
 export type CompareCandidateApiCandidatesCandidateIdCompareGetResponse = CompareCandidateApiCandidatesCandidateIdCompareGetResponses[keyof CompareCandidateApiCandidatesCandidateIdCompareGetResponses];
+
+export type ListEpisodesApiEpisodesGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Statedigest
+         *
+         * only the judgements made against this exact state; left out, every judgement this process holds
+         */
+        stateDigest?: string | null;
+    };
+    url: '/api/episodes';
+};
+
+export type ListEpisodesApiEpisodesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEpisodesApiEpisodesGetError = ListEpisodesApiEpisodesGetErrors[keyof ListEpisodesApiEpisodesGetErrors];
+
+export type ListEpisodesApiEpisodesGetResponses = {
+    /**
+     * Response List Episodes Api Episodes Get
+     *
+     * Successful Response
+     */
+    200: Array<EpisodeDto>;
+};
+
+export type ListEpisodesApiEpisodesGetResponse = ListEpisodesApiEpisodesGetResponses[keyof ListEpisodesApiEpisodesGetResponses];
+
+export type ReadEpisodeApiEpisodesEpisodeIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Episode Id
+         */
+        episode_id: string;
+    };
+    query?: never;
+    url: '/api/episodes/{episode_id}';
+};
+
+export type ReadEpisodeApiEpisodesEpisodeIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadEpisodeApiEpisodesEpisodeIdGetError = ReadEpisodeApiEpisodesEpisodeIdGetErrors[keyof ReadEpisodeApiEpisodesEpisodeIdGetErrors];
+
+export type ReadEpisodeApiEpisodesEpisodeIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EpisodeDto;
+};
+
+export type ReadEpisodeApiEpisodesEpisodeIdGetResponse = ReadEpisodeApiEpisodesEpisodeIdGetResponses[keyof ReadEpisodeApiEpisodesEpisodeIdGetResponses];
 
 export type ReadValidationApiCandidatesCandidateIdValidationGetData = {
     body?: never;
