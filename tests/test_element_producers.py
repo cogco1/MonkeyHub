@@ -9,6 +9,7 @@ engagement with a depth.
 from __future__ import annotations
 
 import json
+import math
 import unittest
 from dataclasses import replace
 
@@ -19,6 +20,7 @@ from archflow.capabilities.element_producers import (
     ProductionContext,
     element_rows_of,
     produce_rows,
+    production_order,
 )
 from archflow.capabilities.reference_resolver import ReferenceContext
 from archflow.compilers.geometry import compile_geometry_program
@@ -61,6 +63,22 @@ def _rows(column_height: float = 6.426, engagement: float | None = None) -> tupl
 def _produce(rows, levels=None):
     context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=levels or _levels()), published={})
     return produce_rows(rows, context), context
+
+
+def _op_params(operation) -> dict:
+    return {p.name: json.loads(p.value_json) for p in operation.parameters}
+
+
+def _assert_bbox(case, points, expected) -> None:
+    """The produced profile points against hand-computed extremes, per axis (X, Y, Z)."""
+
+    for axis, (low, high) in enumerate(expected):
+        case.assertAlmostEqual(min(p[axis] for p in points), low, places=6)
+        case.assertAlmostEqual(max(p[axis] for p in points), high, places=6)
+
+
+def _radius(point, centre=(0.0, -13.85)) -> float:
+    return math.hypot(point[0] - centre[0], point[2] - centre[1])
 
 
 class VerticalSliceTests(unittest.TestCase):
@@ -176,6 +194,138 @@ class OpeningIdScopeTests(unittest.TestCase):
         op_ids = {op.op_id for op in produced[0].operations}
         self.assertIn("glazing-wall-south-window", op_ids)
         self.assertNotIn("glazing-wall-south-wall-south-window", op_ids)
+
+class StairTests(unittest.TestCase):
+    """A flight is measured by its two plan references: steps on the line, rises above the base, one top."""
+
+    def _row(self, **params) -> ElementRow:
+        p = {"count": 10, "rise": 0.18, "width": 1.2}
+        p.update(params)
+        return ElementRow("stair-north", "monument-stair", "stair",
+                          {"from": {"axis_point": {"axis": "W", "along": 0.0}}, "to": {"axis_point": {"axis": "W", "along": 3.0}}, "base": {"level": PN}}, p, BASIS)
+
+    def test_solid_steps_stack_from_the_base_datum_and_the_flight_publishes_its_top(self) -> None:
+        (stair,), context = _produce((self._row(),))
+        self.assertEqual([op.op_id for op in stair.operations], [f"stair-north-{k}" for k in range(10)])
+        self.assertTrue(all(op.semantic_binding_ids == ("binding-monument-stair",) for op in stair.operations))
+        self.assertTrue(all(b.datum_id == PN for b in stair.bindings))
+        self.assertEqual(stair.datums[0].datum_id, "stair-north-top")
+        self.assertAlmostEqual(context.datum_value("stair-north-top"), 3.57 + 10 * 0.18)
+        first, fourth, last = (_op_params(stair.operations[k]) for k in (0, 3, 9))
+        self.assertNotIn("base_offset", first)                                        # the first step stands on the datum itself
+        self.assertAlmostEqual(fourth["base_offset"], 3 * 0.18)                       # every later step rises by whole risers
+        self.assertAlmostEqual(first["vector"][1], 0.18)                              # a solid step fills its rise
+        _assert_bbox(self, first["profile"], ((0.0, 0.3), (0.0, 0.0), (-14.45, -13.25)))     # going 3.0 / 10, width 1.2 across the line
+        _assert_bbox(self, last["profile"], ((2.7, 3.0), (0.0, 0.0), (-14.45, -13.25)))
+        self.assertEqual([(r.relation_id, r.kind, r.subject, r.object, r.datum_id) for r in stair.relations],
+                         [("stair-north-stands-on", "support", PN, "stair-north", PN)])
+
+    def test_a_slab_step_carries_only_its_tread_thickness(self) -> None:
+        (stair,), context = _produce((self._row(thickness=0.05),))
+        self.assertAlmostEqual(_op_params(stair.operations[0])["vector"][1], 0.05)
+        self.assertAlmostEqual(_op_params(stair.operations[9])["base_offset"], 9 * 0.18)
+        self.assertAlmostEqual(context.datum_value("stair-north-top"), 3.57 + 10 * 0.18)     # the flight still climbs by its rises
+
+    def test_a_flight_refuses_a_zero_length_line_and_a_going_that_does_not_span_it(self) -> None:
+        row = self._row()
+        with self.assertRaises(ElementProducerError):
+            _produce((replace(row, references={**row.references, "to": {"axis_point": {"axis": "W", "along": 0.0}}}),))
+        with self.assertRaises(ElementProducerError):
+            _produce((self._row(going=0.4),))                                     # ten steps of 0.4 m span 4 m, not the 3 m line
+        (stair,), _ = _produce((self._row(going=0.3),))                           # the declared going that does span it is taken
+        self.assertEqual(len(stair.operations), 10)
+
+    def test_production_order_puts_the_flight_before_what_seats_on_its_top(self) -> None:
+        landing = ElementRow("landing", "monument-landing", "prism", {"base": {"datum": "stair-north-top"}},
+                             {"profile": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], "height": 0.2}, BASIS)
+        self.assertEqual([r.element_id for r in production_order((landing, self._row()))], ["stair-north", "landing"])
+
+
+class WedgeTests(unittest.TestCase):
+    """A five-face wedge: one loft through two end rectangles, the far one taller."""
+
+    def _row(self, **params) -> ElementRow:
+        p = {"depth": 2.0, "low": 0.5, "high": 2.5}
+        p.update(params)
+        return ElementRow("abutment-north", "roof-abutments", "wedge",
+                          {"from": {"axis_point": {"axis": "W", "along": 0.0}}, "to": {"axis_point": {"axis": "W", "along": 4.0}}, "base": {"level": "level-ground"}}, p, BASIS)
+
+    def test_the_top_plane_rises_along_the_line_and_the_wedge_publishes_it(self) -> None:
+        (wedge,), context = _produce((self._row(),))
+        op, = wedge.operations
+        self.assertEqual((op.op_id, op.kind, op.semantic_binding_ids), ("abutment-north", GeometryOperationKind.LOFT, ("binding-roof-abutments",)))
+        params = _op_params(op)
+        self.assertEqual(params["profile_size"], 4)
+        self.assertEqual(len(params["profiles"]), 8)
+        _assert_bbox(self, params["profiles"][:4], ((0.0, 0.0), (0.0, 0.5), (-14.85, -12.85)))     # the near face stops at low
+        _assert_bbox(self, params["profiles"][4:], ((4.0, 4.0), (0.0, 2.5), (-14.85, -12.85)))     # the far face reaches high
+        self.assertEqual(wedge.datums[0].datum_id, "abutment-north-top")
+        self.assertAlmostEqual(context.datum_value("abutment-north-top"), 2.5)
+        self.assertEqual([(r.relation_id, r.kind, r.subject, r.object, r.datum_id) for r in wedge.relations],
+                         [("abutment-north-stands-on", "support", "level-ground", "abutment-north", "level-ground")])
+
+    def test_slope_across_tips_the_plane_across_the_depth_instead(self) -> None:
+        (wedge,), context = _produce((self._row(slope_across=True),))
+        profiles = _op_params(wedge.operations[0])["profiles"]
+        self.assertEqual([round(p[1], 9) for p in profiles[:4]], [0.0, 0.0, 2.5, 0.5])
+        self.assertEqual([round(p[1], 9) for p in profiles[4:]], [0.0, 0.0, 2.5, 0.5])   # the same face at both ends: the slope is across
+        self.assertAlmostEqual(profiles[3][2], -12.85)                                   # low sits on the -normal side
+        self.assertAlmostEqual(profiles[2][2], -14.85)
+        self.assertAlmostEqual(context.datum_value("abutment-north-top"), 2.5)
+
+    def test_a_wedge_refuses_a_top_that_does_not_rise_and_a_zero_length_line(self) -> None:
+        with self.assertRaises(ElementProducerError):
+            _produce((self._row(high=0.5),))                                       # high == low is a prism, and says so
+        row = self._row()
+        with self.assertRaises(ElementProducerError):
+            _produce((replace(row, references={**row.references, "to": {"axis_point": {"axis": "W", "along": 0.0}}}),))
+
+
+class ShellTests(unittest.TestCase):
+    """A hollow revolved shell: one annulus extruded, or annuli lofted up a cap."""
+
+    def _row(self, **params) -> ElementRow:
+        p = {"outer_radius": 5.0, "thickness": 0.6, "height": 4.0, "kind": "cylinder", "segments": 8}
+        p.update(params)
+        return ElementRow("rotunda-shell", "rotunda-wall", "shell",
+                          {"at": {"axis_point": {"axis": "W", "along": 0.0}}, "base": {"level": "level-ground"}}, p, BASIS)
+
+    def test_a_cylinder_shell_is_one_annulus_extruded_by_its_height(self) -> None:
+        (shell,), context = _produce((self._row(),))
+        op, = shell.operations
+        self.assertEqual((op.op_id, op.kind, op.semantic_binding_ids), ("rotunda-shell", GeometryOperationKind.EXTRUSION, ("binding-rotunda-wall",)))
+        params = _op_params(op)
+        self.assertEqual(len(params["profile"]), 16)                               # eight points out, eight back
+        self.assertAlmostEqual(params["vector"][1], 4.0)
+        _assert_bbox(self, params["profile"], ((-5.0, 5.0), (0.0, 0.0), (-18.85, -8.85)))
+        for point in params["profile"][:8]:
+            self.assertAlmostEqual(_radius(point), 5.0)
+        for point in params["profile"][8:]:
+            self.assertAlmostEqual(_radius(point), 4.4)                            # outer_radius - thickness, the same way round back
+        self.assertEqual(shell.datums[0].datum_id, "rotunda-shell-top")
+        self.assertAlmostEqual(context.datum_value("rotunda-shell-top"), 4.0)
+        self.assertEqual([(r.relation_id, r.kind, r.subject, r.object, r.datum_id) for r in shell.relations],
+                         [("rotunda-shell-stands-on", "support", "level-ground", "rotunda-shell", "level-ground")])
+
+    def test_a_dome_shell_lofts_its_rings_up_the_cap_and_closes_on_a_small_annulus(self) -> None:
+        (shell,), context = _produce((self._row(kind="dome", height=3.0, rings=4),))
+        op, = shell.operations
+        self.assertEqual(op.kind, GeometryOperationKind.LOFT)
+        params = _op_params(op)
+        self.assertEqual(params["profile_size"], 16)
+        self.assertEqual(len(params["profiles"]), 64)
+        first_of_ring = [params["profiles"][i * 16] for i in range(4)]
+        self.assertEqual([round(p[1], 6) for p in first_of_ring], [0.0, 1.5, 2.598076, 3.0])          # 3 m * sin(0, 30, 60, 90 degrees)
+        self.assertEqual([round(_radius(p), 6) for p in first_of_ring], [5.0, 4.330127, 2.5, 0.3])    # 5 m * cos(...), the crown at thickness / 2
+        self.assertAlmostEqual(_radius(params["profiles"][8]), 4.4)                                   # the inner circle of the base ring
+        _assert_bbox(self, params["profiles"], ((-5.0, 5.0), (0.0, 3.0), (-18.85, -8.85)))
+        self.assertAlmostEqual(context.datum_value("rotunda-shell-top"), 3.0)
+
+    def test_a_shell_refuses_a_thickness_that_is_not_inside_the_outer_radius_and_an_unknown_kind(self) -> None:
+        with self.assertRaises(ElementProducerError):
+            _produce((self._row(outer_radius=0.5),))                               # a 0.6 m wall has nowhere to stand inside a 0.5 m radius
+        with self.assertRaises(ElementProducerError):
+            _produce((self._row(kind="vault"),))
 
 
 class AuthoredRecordTests(unittest.TestCase):

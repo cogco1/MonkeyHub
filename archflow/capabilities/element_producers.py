@@ -180,6 +180,22 @@ def _circle(cx: float, cz: float, r: float, n: int):
     return [(cx + r * math.cos(2 * math.pi * i / n), 0.0, cz + r * math.sin(2 * math.pi * i / n)) for i in range(n)]
 
 
+def _annulus(cx: float, cz: float, y: float, r_out: float, r_in: float, n: int):
+    """One closed ring profile at one elevation: the outer circle, then the inner circle back."""
+
+    outer = [(cx + r_out * math.cos(2 * math.pi * i / n), y, cz + r_out * math.sin(2 * math.pi * i / n)) for i in range(n)]
+    inner = [(cx + r_in * math.cos(2 * math.pi * i / n), y, cz + r_in * math.sin(2 * math.pi * i / n)) for i in reversed(range(n))]
+    return outer + inner
+
+
+def _end_face(point: tuple[float, float], normal: tuple[float, float], half: float, y_minus: float, y_plus: float):
+    """One end of a wedge: the base edge across the normal, then the top edge back, taller where the slope says."""
+
+    nx, nz = normal
+    return [(point[0] - nx * half, 0.0, point[1] - nz * half), (point[0] + nx * half, 0.0, point[1] + nz * half),
+            (point[0] + nx * half, y_plus, point[1] + nz * half), (point[0] - nx * half, y_minus, point[1] - nz * half)]
+
+
 def _base(row: ElementRow, context: ProductionContext) -> tuple[str, float]:
     """The element's base as (datum id, offset); a level, or a datum another element published."""
 
@@ -467,15 +483,16 @@ def produce_ring(row: ElementRow, context: ProductionContext) -> ProducedElement
     return ProducedElement(tuple(ops), tuple(bindings), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
 
 
-def _loft(row: ElementRow, context: ProductionContext, profiles, size: int, base_datum: str) -> ProducedElement:
+def _loft(row: ElementRow, context: ProductionContext, profiles, size: int, base_datum: str, base_offset: float = 0.0) -> ProducedElement:
     op = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.LOFT, output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id, parameters=(
         GeometryParameter.create(name="cap_ends", kind=GeometryParameterKind.BOOLEAN, value=True),
         GeometryParameter.create(name="loft_type", kind=GeometryParameterKind.TEXT, value=str(row.params.get("loft_type", "straight"))),
         GeometryParameter.create(name="profile_basis", kind=GeometryParameterKind.TEXT, value="polyline"),
         GeometryParameter.create(name="profile_size", kind=GeometryParameterKind.INTEGER, value=size),
         _points("profiles", profiles),
-    ), semantic_binding_ids=(row.binding_id,))
-    return ProducedElement((op,), (_bind(row.element_id, base_datum),), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum),), None)
+    ) + ((GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=round(base_offset, 9), unit=_M),) if base_offset else ()),
+        semantic_binding_ids=(row.binding_id,))
+    return ProducedElement((op,), (_bind(row.element_id, base_datum),), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
 
 
 def produce_loft(row: ElementRow, context: ProductionContext) -> ProducedElement:
@@ -508,6 +525,143 @@ def produce_dome_cap(row: ElementRow, context: ProductionContext) -> ProducedEle
     return _loft(row, context, [pt for section in profiles for pt in section], n, base_datum)
 
 
+def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """A straight flight of ``count`` steps between two plan references.
+
+    Each step is one box, ``going`` long along the from→to line and ``width``
+    across it, standing on the base datum lifted by ``k · rise``: a solid step
+    fills its whole rise, a slab step only its ``thickness``. The flight
+    publishes ``<id>-top`` at ``base + count · rise`` — the datum a landing,
+    a podium or a stylobate above it binds, so changing the rise moves what
+    the flight carries. It refuses a zero-length line, a count below one, and
+    a declared ``going`` whose ``count · going`` misses the line length by
+    more than a millimetre: a flight is measured by its references, never
+    stretched to fit them.
+    """
+
+    p = row.params
+    base_datum, base_offset = _base(row, context)
+    start, end = _plan_point(row, context, "from"), _plan_point(row, context, "to")
+    count = int(p["count"])
+    if count < 1:
+        raise ElementProducerError(f"{row.element_id}: a flight needs at least one step")
+    rise = _positive(p["rise"], f"{row.element_id} rise")
+    width = _positive(p["width"], f"{row.element_id} width")
+    thickness = _finite(p.get("thickness", 0.0), f"{row.element_id} thickness")
+    if thickness < 0.0:
+        raise ElementProducerError(f"{row.element_id}: tread thickness must not be negative")
+    dx, dz = end[0] - start[0], end[1] - start[1]
+    length = math.hypot(dx, dz)
+    if length <= 0.0:
+        raise ElementProducerError(f"{row.element_id}: zero-length flight")
+    ux, uz = dx / length, dz / length
+    nx, nz = uz, -ux
+    if "going" in p:
+        going = _positive(p["going"], f"{row.element_id} going")
+        if abs(count * going - length) > 1e-3:
+            raise ElementProducerError(f"{row.element_id}: {count} steps of {going} m span {round(count * going, 6)} m, not the {round(length, 6)} m between the references")
+    else:
+        going = length / count
+    half, step_height = width / 2.0, thickness if thickness > 0.0 else rise
+    ops, bindings = [], []
+    for k in range(count):
+        a, b = (start[0] + ux * k * going, start[1] + uz * k * going), (start[0] + ux * (k + 1) * going, start[1] + uz * (k + 1) * going)
+        profile = [(a[0] - nx * half, 0.0, a[1] - nz * half), (b[0] - nx * half, 0.0, b[1] - nz * half),
+                   (b[0] + nx * half, 0.0, b[1] + nz * half), (a[0] + nx * half, 0.0, a[1] + nz * half)]
+        op_id = f"{row.element_id}-{k}"
+        ops.append(_extrusion(op_id, profile, step_height, row.binding_id, context.frame_id, base_offset + k * rise))
+        bindings.append(_bind(op_id, base_datum))
+    top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}-0", context.datum_value(base_datum) + base_offset + count * rise, row.basis_refs)
+    context.published[top.datum_id] = top
+    return ProducedElement(tuple(ops), tuple(bindings), (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
+
+
+def produce_wedge(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """A right prism with a sloped top: the box ``from``→``to``, ``depth`` across it, rising from ``low`` to ``high``.
+
+    One loft through the two end faces, each a rectangle of four points, the
+    far one taller, so the top is one plane and no coordinate is invented
+    between them. ``slope_across`` tips that plane across the depth instead
+    of along the length; ``low`` then sits on the −normal side and both end
+    faces are the same rectangle. This is what carries a roof abutment or a
+    roof sector — a pediment's sibling that is not a tympanum. It refuses a
+    zero-length line, a ``low`` below the base datum, and a ``high`` that is
+    not above ``low``: a wedge with a level top is a prism, and says so.
+    """
+
+    p = row.params
+    base_datum, base_offset = _base(row, context)
+    start, end = _plan_point(row, context, "from"), _plan_point(row, context, "to")
+    depth = _positive(p["depth"], f"{row.element_id} depth")
+    low, high = _finite(p["low"], f"{row.element_id} low"), _positive(p["high"], f"{row.element_id} high")
+    if low < 0.0:
+        raise ElementProducerError(f"{row.element_id}: low must stand on or above the base datum")
+    if high <= low:
+        raise ElementProducerError(f"{row.element_id}: high must rise above low")
+    dx, dz = end[0] - start[0], end[1] - start[1]
+    length = math.hypot(dx, dz)
+    if length <= 0.0:
+        raise ElementProducerError(f"{row.element_id}: zero-length wedge")
+    ux, uz = dx / length, dz / length
+    normal, half = (uz, -ux), depth / 2.0
+    across = bool(p.get("slope_across", False))
+    near = (low, high) if across else (low, low)
+    far = (low, high) if across else (high, high)
+    produced = _loft(row, context, _end_face(start, normal, half, *near) + _end_face(end, normal, half, *far), 4, base_datum, base_offset)
+    top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + high, row.basis_refs)
+    context.published[top.datum_id] = top
+    return ProducedElement(produced.operations, produced.bindings, (top,), produced.relations, None)
+
+
+def produce_shell(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """A hollow revolved shell around a plan reference: a cylinder wall, or a dome.
+
+    ``cylinder`` extrudes one annulus — the outer circle of ``segments``
+    points, then the inner circle back — up by ``height``. ``dome`` lofts
+    ``rings`` such annuli up a hemi-ellipsoidal cap of ``height`` over
+    ``outer_radius``, the inner surface being that same cap scaled to
+    ``outer_radius − thickness``. Two approximations are stated rather than
+    hidden: the wall therefore thins towards the crown instead of holding a
+    constant normal thickness, and the top ring closes on a small annulus of
+    outer radius ``thickness / 2`` rather than on a point, so the loft keeps
+    one profile size. Both leave the published ``<id>-top`` at exactly
+    ``base + height``. It refuses a thickness that is not inside the outer
+    radius, fewer than three segments, and a dome of fewer than two rings.
+    """
+
+    p = row.params
+    base_datum, base_offset = _base(row, context)
+    cx, cz = _plan_point(row, context)
+    outer = _positive(p["outer_radius"], f"{row.element_id} outer_radius")
+    thickness = _positive(p["thickness"], f"{row.element_id} thickness")
+    height = _positive(p["height"], f"{row.element_id} height")
+    if thickness >= outer:
+        raise ElementProducerError(f"{row.element_id}: thickness must be smaller than the outer radius")
+    segments = int(p.get("segments", 24))
+    if segments < 3:
+        raise ElementProducerError(f"{row.element_id}: a shell needs at least three segments")
+    kind = p.get("kind")
+    if kind not in ("cylinder", "dome"):
+        raise ElementProducerError(f"{row.element_id}: shell kind must be 'cylinder' or 'dome', not {kind!r}")
+    if kind == "cylinder":
+        op = _extrusion(row.element_id, _annulus(cx, cz, 0.0, outer, outer - thickness, segments), height, row.binding_id, context.frame_id, base_offset)
+        operations, bindings = (op,), (_bind(row.element_id, base_datum),)
+    else:
+        rings = int(p.get("rings", 8))
+        if rings < 2:
+            raise ElementProducerError(f"{row.element_id}: a dome shell needs at least two rings")
+        scale, profiles = (outer - thickness) / outer, []
+        for i in range(rings):
+            phi = (math.pi / 2.0) * (i / (rings - 1))
+            r_out = max(outer * math.cos(phi), thickness / 2.0)
+            profiles.extend(_annulus(cx, cz, height * math.sin(phi), r_out, r_out * scale, segments))
+        lofted = _loft(row, context, profiles, 2 * segments, base_datum, base_offset)
+        operations, bindings = lofted.operations, lofted.bindings
+    top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
+    context.published[top.datum_id] = top
+    return ProducedElement(operations, bindings, (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
+
+
 def produce_declined(row: ElementRow, context: ProductionContext) -> ProducedElement:
     """A typed declination: the component is owned, looked at, and left without geometry for a stated reason."""
 
@@ -519,7 +673,8 @@ def produce_declined(row: ElementRow, context: ProductionContext) -> ProducedEle
 
 PRODUCERS: dict[str, Callable[[ElementRow, ProductionContext], ProducedElement]] = {
     "column-array": produce_column_array, "capitals": produce_capitals, "beam": produce_beam, "pediment": produce_pediment, "wall": produce_wall,
-    "prism": produce_prism, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap, "declined": produce_declined,
+    "prism": produce_prism, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap,
+    "stair": produce_stair, "wedge": produce_wedge, "shell": produce_shell, "declined": produce_declined,
 }
 
 
