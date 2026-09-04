@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, DeclareApiControlsPostData, DeclareApiControlsPostErrors, DeclareApiControlsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadControlApiControlsControlIdGetData, ReadControlApiControlsControlIdGetErrors, ReadControlApiControlsControlIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
+import type { CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, DecideProposalApiProposalsProposalIdDecisionPostData, DecideProposalApiProposalsProposalIdDecisionPostErrors, DecideProposalApiProposalsProposalIdDecisionPostResponses, DeclareApiControlsPostData, DeclareApiControlsPostErrors, DeclareApiControlsPostResponses, ListEpisodesApiEpisodesGetData, ListEpisodesApiEpisodesGetErrors, ListEpisodesApiEpisodesGetResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadControlApiControlsControlIdGetData, ReadControlApiControlsControlIdGetErrors, ReadControlApiControlsControlIdGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetData, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -154,6 +154,20 @@ export const createProposalApiProposalsPost = <ThrowOnError extends boolean = fa
 export const readProposalApiProposalsProposalIdGet = <ThrowOnError extends boolean = false>(options: Options<ReadProposalApiProposalsProposalIdGetData, ThrowOnError>): RequestResult<ReadProposalApiProposalsProposalIdGetResponses, ReadProposalApiProposalsProposalIdGetErrors, ThrowOnError> => (options.client ?? client).get<ReadProposalApiProposalsProposalIdGetResponses, ReadProposalApiProposalsProposalIdGetErrors, ThrowOnError>({ url: '/api/proposals/{proposal_id}', ...options });
 
 /**
+ * Decide Proposal
+ *
+ * Turn one proposal down, or replace it, and keep the judgement.
+ */
+export const decideProposalApiProposalsProposalIdDecisionPost = <ThrowOnError extends boolean = false>(options: Options<DecideProposalApiProposalsProposalIdDecisionPostData, ThrowOnError>): RequestResult<DecideProposalApiProposalsProposalIdDecisionPostResponses, DecideProposalApiProposalsProposalIdDecisionPostErrors, ThrowOnError> => (options.client ?? client).post<DecideProposalApiProposalsProposalIdDecisionPostResponses, DecideProposalApiProposalsProposalIdDecisionPostErrors, ThrowOnError>({
+    url: '/api/proposals/{proposal_id}/decision',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Compile Intent
  *
  * Compile one request against the resolved target, then propose it.
@@ -217,6 +231,20 @@ export const readCandidateApiCandidatesCandidateIdGet = <ThrowOnError extends bo
  * is unavailable rather than guessing one.
  */
 export const compareCandidateApiCandidatesCandidateIdCompareGet = <ThrowOnError extends boolean = false>(options: Options<CompareCandidateApiCandidatesCandidateIdCompareGetData, ThrowOnError>): RequestResult<CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, ThrowOnError> => (options.client ?? client).get<CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, ThrowOnError>({ url: '/api/candidates/{candidate_id}/compare', ...options });
+
+/**
+ * List Episodes
+ *
+ * Every judgement this process holds, in the order it made them.
+ */
+export const listEpisodesApiEpisodesGet = <ThrowOnError extends boolean = false>(options?: Options<ListEpisodesApiEpisodesGetData, ThrowOnError>): RequestResult<ListEpisodesApiEpisodesGetResponses, ListEpisodesApiEpisodesGetErrors, ThrowOnError> => (options?.client ?? client).get<ListEpisodesApiEpisodesGetResponses, ListEpisodesApiEpisodesGetErrors, ThrowOnError>({ url: '/api/episodes', ...options });
+
+/**
+ * Read Episode
+ *
+ * One judgement, or a 404 that says where judgements do not survive.
+ */
+export const readEpisodeApiEpisodesEpisodeIdGet = <ThrowOnError extends boolean = false>(options: Options<ReadEpisodeApiEpisodesEpisodeIdGetData, ThrowOnError>): RequestResult<ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ThrowOnError> => (options.client ?? client).get<ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ThrowOnError>({ url: '/api/episodes/{episode_id}', ...options });
 
 /**
  * Read Validation
