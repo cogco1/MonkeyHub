@@ -484,13 +484,13 @@ def produce_ring(row: ElementRow, context: ProductionContext) -> ProducedElement
 
 
 def _loft(row: ElementRow, context: ProductionContext, profiles, size: int, base_datum: str, base_offset: float = 0.0) -> ProducedElement:
-    op = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.LOFT, output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id, parameters=(
+    op = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.LOFT, output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id, parameters=((GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=round(base_offset, 9), unit=_M),) if base_offset else ()) + (
         GeometryParameter.create(name="cap_ends", kind=GeometryParameterKind.BOOLEAN, value=True),
         GeometryParameter.create(name="loft_type", kind=GeometryParameterKind.TEXT, value=str(row.params.get("loft_type", "straight"))),
         GeometryParameter.create(name="profile_basis", kind=GeometryParameterKind.TEXT, value="polyline"),
         GeometryParameter.create(name="profile_size", kind=GeometryParameterKind.INTEGER, value=size),
         _points("profiles", profiles),
-    ) + ((GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=round(base_offset, 9), unit=_M),) if base_offset else ()),
+    ),
         semantic_binding_ids=(row.binding_id,))
     return ProducedElement((op,), (_bind(row.element_id, base_datum),), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
 
