@@ -3107,7 +3107,8 @@
         "the projection: bound view, component tree, Element@1 rows with their numeric fields, parameters, dependency edges",
         "the honesty lines stating what this projection cannot tell you",
         "the component catalog derived from the record and the reference run's inspection: per component its descendant elements, editable capabilities (value, type, source, confidence, status, validator refs), object coverage and closure; per exported object the element it binds to, or MODEL_VISIBLE_CATALOG_MISSING when no Element@1 row answers for it",
-        "reading PROJECT.md at the project root for names (aliases -> declared components) and the compass; nothing else is read from it"
+        "reading PROJECT.md at the project root for names (aliases -> declared components) and the compass; nothing else is read from it",
+        "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as element_reindex.axis_lines_of reads it), the elements whose own references name it, and the closure of changing it (GET /api/state/frame, POST /api/state/closure); read-only, no grammar rule for editing a level or an axis"
       ],
       "does_not_own": [
         "writing, issuing or advancing anything - the binding is read-only; runtime.project_runner is the only writer and project.issue the only issuer",
@@ -3157,7 +3158,11 @@
         "ObjectBinding",
         "project_conventions",
         "parse_conventions",
-        "ProjectConventions"
+        "ProjectConventions",
+        "GET /api/state/frame",
+        "POST /api/state/closure",
+        "frame_of",
+        "closure_of_refs"
       ],
       "depends_on": [
         "project.inputs",
@@ -3171,7 +3176,9 @@
         "state.operational_state",
         "state.record",
         "state.spatial",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "capabilities.element_reindex",
+        "capabilities.reference_resolver"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -3198,7 +3205,8 @@
         "apps/archflow-studio/api/tests/test_projection.py",
         "apps/archflow-studio/api/tests/test_protocol.py",
         "apps/archflow-studio/api/tests/test_catalog.py",
-        "apps/archflow-studio/api/tests/test_conventions.py"
+        "apps/archflow-studio/api/tests/test_conventions.py",
+        "apps/archflow-studio/api/tests/test_frame.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -3210,7 +3218,8 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/project.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/state.py",
         "apps/archflow-studio/api/archflow_studio_api/application/catalog.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/conventions.py"
+        "apps/archflow-studio/api/archflow_studio_api/application/conventions.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/frame.py"
       ]
     },
     {
