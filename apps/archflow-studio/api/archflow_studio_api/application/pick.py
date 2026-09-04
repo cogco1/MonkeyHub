@@ -58,6 +58,7 @@ OBJECT_NAME_PREFIX = "obj-"
 RESOLVED = "resolved"
 UNBOUND = "unbound"
 UNKNOWN_COMPONENT = "unknown_component"
+MODEL_VISIBLE_CATALOG_MISSING = "MODEL_VISIBLE_CATALOG_MISSING"
 
 # What the file says about itself, in three states. ``unknown`` is not
 # ``current``: a document that claims no digest has not been shown to be either.
@@ -161,12 +162,26 @@ def resolve_pick(
                 f"{projection.state_digest} does not declare"
             ),
         )
+    element_id = _element_id(projection, _object_name(request), component_id)
+    if element_id is None:
+        # The object is on screen and carries its component, and no Element@1
+        # row of that component produced it: visible in the model, missing
+        # from the catalog. The component still answers; no neighbouring
+        # element's field is offered in its place.
+        return answer(
+            MODEL_VISIBLE_CATALOG_MISSING,
+            component_id=component_id,
+            operation_id=_text(request.user_strings.get(PRODUCER_OP_KEY)),
+            detail=(
+                f"the picked object belongs to {component_id} but no Element@1 "
+                "row of that component produced it; it cannot be edited until "
+                "an authored control exists"
+            ),
+        )
     return answer(
         RESOLVED,
         component_id=component_id,
-        element_id=_element_id(
-            projection, _object_name(request), component_id
-        ),
+        element_id=element_id,
         operation_id=_text(request.user_strings.get(PRODUCER_OP_KEY)),
     )
 
@@ -197,6 +212,22 @@ def _object_name(request: PickRequest) -> str | None:
     if ref is not None and ref.startswith(OBJECT_REF_PREFIX):
         return ref[len(OBJECT_REF_PREFIX) :]
     return _text(request.object_name)
+
+
+def element_of_object(
+    projection: StateProjection,
+    object_name: str | None,
+    component_id: str,
+) -> str | None:
+    """The element an exported object belongs to, by the one naming rule.
+
+    The same answer a click gets: ``obj-<elementId>`` or ``obj-<elementId>-…``
+    among the claimed component's own elements, longest prefix winning. The
+    catalog joins every inspected object through this so the tree and the
+    pick never disagree about an object.
+    """
+
+    return _element_id(projection, object_name, component_id)
 
 
 def _element_id(

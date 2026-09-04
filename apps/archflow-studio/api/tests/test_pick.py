@@ -184,10 +184,13 @@ class ResolvedPickTests(PickTestCase):
         )
 
         self.assertEqual(status, 200)
-        self.assertEqual(payload["status"], "resolved")
+        # Visible in the model, missing from the catalog: the component answers,
+        # the element does not, and the word says so rather than "resolved".
+        self.assertEqual(payload["status"], "MODEL_VISIBLE_CATALOG_MISSING")
         self.assertEqual(payload["componentId"], "portico")
         self.assertIsNone(payload["elementId"])
         self.assertEqual(payload["operationId"], "door-leaf-door-0")
+        self.assertIn("no Element@1 row", payload["detail"])
 
     def test_the_object_name_answers_when_the_strings_carry_no_ref(
         self,
@@ -212,6 +215,7 @@ class ResolvedPickTests(PickTestCase):
         )
 
         self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "MODEL_VISIBLE_CATALOG_MISSING")
         self.assertEqual(payload["componentId"], "building")
         self.assertIsNone(payload["elementId"])
 

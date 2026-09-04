@@ -282,6 +282,176 @@ export type CandidateSeatResultDto = {
 };
 
 /**
+ * CapabilityDto
+ *
+ * One number a change can move: its value and whether, and from where.
+ */
+export type CapabilityDto = {
+    /**
+     * Capabilityid
+     */
+    capabilityId: string;
+    /**
+     * Elementid
+     */
+    elementId: string;
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Value
+     */
+    value: number | number;
+    /**
+     * Valuetype
+     *
+     * integer or number
+     */
+    valueType: string;
+    /**
+     * Unit
+     */
+    unit: string | null;
+    /**
+     * Bounds
+     */
+    bounds: [
+        number,
+        number
+    ] | null;
+    /**
+     * Source
+     *
+     * authored, derived or reindexed
+     */
+    source: string;
+    /**
+     * Confidence
+     */
+    confidence: number;
+    /**
+     * Status
+     *
+     * editable, locked, derived or representation
+     */
+    status: string;
+    /**
+     * Validatorrefs
+     */
+    validatorRefs: Array<string>;
+};
+
+/**
+ * CatalogComponentDto
+ *
+ * One component of the tree with what can be asked of it.
+ */
+export type CatalogComponentDto = {
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Parentid
+     */
+    parentId: string | null;
+    /**
+     * Children
+     */
+    children: Array<string>;
+    /**
+     * Elementids
+     */
+    elementIds: Array<string>;
+    /**
+     * Descendantelementids
+     */
+    descendantElementIds: Array<string>;
+    /**
+     * Capabilitycount
+     */
+    capabilityCount: number;
+    /**
+     * States
+     *
+     * editable, locked, derived, missing
+     */
+    states: Array<string>;
+    /**
+     * Objectcount
+     */
+    objectCount: number;
+    /**
+     * Unboundobjectcount
+     */
+    unboundObjectCount: number;
+    /**
+     * Closure
+     */
+    closure: Array<string>;
+};
+
+/**
+ * CatalogDto
+ *
+ * The component catalog: derived from the record and the reference run's inspection.
+ */
+export type CatalogDto = {
+    /**
+     * Components
+     */
+    components: Array<CatalogComponentDto>;
+    /**
+     * Elements
+     */
+    elements: Array<CatalogElementDto>;
+    /**
+     * Objects
+     */
+    objects: Array<ObjectBindingDto>;
+    coverage: CoverageDto;
+    /**
+     * Inspectionrun
+     *
+     * the run whose inspection records the objects came from; null when none
+     */
+    inspectionRun: string | null;
+    /**
+     * Honesty
+     */
+    honesty: Array<string>;
+};
+
+/**
+ * CatalogElementDto
+ *
+ * One realization: the row, its capabilities and the exported objects it names.
+ */
+export type CatalogElementDto = {
+    /**
+     * Elementid
+     */
+    elementId: string;
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Producer
+     */
+    producer: string;
+    /**
+     * Capabilities
+     */
+    capabilities: Array<CapabilityDto>;
+    /**
+     * Objectnames
+     */
+    objectNames: Array<string>;
+};
+
+/**
  * CompareComponentDto
  *
  * A component's objects, counted by what happened to them.
@@ -463,6 +633,32 @@ export type CountsDto = {
      * Dependencyedges
      */
     dependencyEdges: number;
+};
+
+/**
+ * CoverageDto
+ */
+export type CoverageDto = {
+    /**
+     * Objects
+     */
+    objects: number;
+    /**
+     * Bound
+     */
+    bound: number;
+    /**
+     * Unbound
+     */
+    unbound: number;
+    /**
+     * Ambiguous
+     */
+    ambiguous: number;
+    /**
+     * Unknowncomponent
+     */
+    unknownComponent: number;
 };
 
 /**
@@ -864,6 +1060,40 @@ export type JobDto = {
 };
 
 /**
+ * ObjectBindingDto
+ *
+ * One exported object and the element the catalog can name for it.
+ */
+export type ObjectBindingDto = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Componentid
+     */
+    componentId: string | null;
+    /**
+     * Producerop
+     */
+    producerOp: string | null;
+    /**
+     * Elementid
+     */
+    elementId: string | null;
+    /**
+     * Status
+     *
+     * bound, MODEL_VISIBLE_CATALOG_MISSING, AMBIGUOUS or UNKNOWN_COMPONENT
+     */
+    status: string;
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
  * ParameterDto
  *
  * One declared parameter, with its lock and where its value comes from.
@@ -944,9 +1174,9 @@ export type PickResolutionDto = {
     /**
      * Status
      *
-     * resolved, unbound, or unknown_component; the last two are answers about the object, not failures of the request
+     * resolved, MODEL_VISIBLE_CATALOG_MISSING (the component answers, no Element@1 row produced the object), unbound, or unknown_component; the last two are answers about the object, not failures of the request
      */
-    status: 'resolved' | 'unbound' | 'unknown_component';
+    status: 'resolved' | 'MODEL_VISIBLE_CATALOG_MISSING' | 'unbound' | 'unknown_component';
     /**
      * Componentid
      */
@@ -1504,6 +1734,10 @@ export type StateProjectionDto = {
      * Honesty
      */
     honesty: Array<string>;
+    /**
+     * the component catalog; null when the record could not be viewed
+     */
+    catalog?: CatalogDto | null;
 };
 
 /**

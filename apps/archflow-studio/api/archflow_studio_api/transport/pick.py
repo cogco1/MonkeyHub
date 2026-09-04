@@ -66,8 +66,9 @@ class PickResolutionDto(BaseModel):
 
     # The three answers are closed, and closed on the wire: a fourth would fail
     # here rather than reach a client that has no branch for it.
-    status: Literal["resolved", "unbound", "unknown_component"] = Field(
-        description="resolved, unbound, or unknown_component; the last two are "
+    status: Literal["resolved", "MODEL_VISIBLE_CATALOG_MISSING", "unbound", "unknown_component"] = Field(
+        description="resolved, MODEL_VISIBLE_CATALOG_MISSING (the component answers, no "
+        "Element@1 row produced the object), unbound, or unknown_component; the last two are "
         "answers about the object, not failures of the request",
     )
     component_id: str | None = Field(alias="componentId")

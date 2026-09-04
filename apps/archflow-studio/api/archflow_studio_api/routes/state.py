@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query
 from starlette.requests import Request
 
 from ..application.binding import bound_project
+from ..application.catalog import catalog_of
 from ..application.projection import project_state
 from ..transport.state import StateProjectionDto, to_dto
 
@@ -36,6 +37,9 @@ def read_state(
     refuses instead.
     """
 
-    return to_dto(
-        project_state(bound_project(request.app.state), run, require_view=False)
-    )
+    binding = bound_project(request.app.state)
+    projection = project_state(binding, run, require_view=False)
+    # The catalog stands on the bound view; a record the kernel refused to
+    # view has no tree to catalogue, and the honesty line already says so.
+    catalog = None if projection.state is None else catalog_of(binding, projection)
+    return to_dto(projection, catalog)

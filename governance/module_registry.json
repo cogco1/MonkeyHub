@@ -3099,14 +3099,16 @@
         "reading the P036 record-name convention (kind plus sha256) and listing a run's record refs",
         "answering project.inputs' refusals on the wire: 404 STATE_RECORD_NOT_FOUND and 422 STATE_RECORD_INVALID, each naming the file",
         "the projection: bound view, component tree, Element@1 rows with their numeric fields, parameters, dependency edges",
-        "the honesty lines stating what this projection cannot tell you"
+        "the honesty lines stating what this projection cannot tell you",
+        "the component catalog derived from the record and the reference run's inspection: per component its descendant elements, editable capabilities (value, type, source, confidence, status, validator refs), object coverage and closure; per exported object the element it binds to, or MODEL_VISIBLE_CATALOG_MISSING when no Element@1 row answers for it"
       ],
       "does_not_own": [
         "writing, issuing or advancing anything - the binding is read-only; runtime.project_runner is the only writer and project.issue the only issuer",
         "parsing an utterance or making a proposal - studio.intent",
         "running a candidate - studio.candidate",
         "closure and impact - studio.validation, over archflow.state.state_record's one closure rule",
-        "HTTP shapes and error bodies - studio.shell"
+        "HTTP shapes and error bodies - studio.shell",
+        "inventing an element or a field for an object that has none - the catalog reports the gap; an authored control has to exist first (studio.intent's declare-control proposal)"
       ],
       "inputs": [
         "StudioSettings",
@@ -3138,7 +3140,14 @@
         "ReferenceRun",
         "project_state",
         "StateProjection",
-        "ProjectedElement"
+        "ProjectedElement",
+        "catalog_of",
+        "build_catalog",
+        "Catalog",
+        "CatalogComponent",
+        "CatalogElement",
+        "Capability",
+        "ObjectBinding"
       ],
       "depends_on": [
         "project.inputs",
@@ -3170,13 +3179,15 @@
         "every fact on the projection is the kernel's answer: the record is parsed by StateRecord.from_dict and attached by bound_to",
         "a harness run is never chosen as the reference run",
         "the projection is read-only and states, in honesty lines, what it could not compute",
-        "one process answers for one project: the scoped and the unscoped path resolve to the same binding and are shaped by the same function"
+        "one process answers for one project: the scoped and the unscoped path resolve to the same binding and are shaped by the same function",
+        "the catalog derives; it never writes: an object no element names stays MODEL_VISIBLE_CATALOG_MISSING, and no neighbouring element's field is offered in its place"
       ],
       "status": "canonical",
       "tests": [
         "apps/archflow-studio/api/tests/test_binding.py",
         "apps/archflow-studio/api/tests/test_projection.py",
-        "apps/archflow-studio/api/tests/test_protocol.py"
+        "apps/archflow-studio/api/tests/test_protocol.py",
+        "apps/archflow-studio/api/tests/test_catalog.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -3186,7 +3197,8 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/projects.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/state.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/project.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/state.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/state.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/catalog.py"
       ]
     },
     {
@@ -3360,7 +3372,8 @@
         "direction_words",
         "proposal_from",
         "closure_of",
-        "ProposalStore"
+        "ProposalStore",
+        "element_of_object"
       ],
       "depends_on": [
         "contracts.canonical",

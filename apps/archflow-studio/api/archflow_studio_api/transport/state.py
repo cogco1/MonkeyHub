@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.project.layout import AUTHORED_RECORD_PATH
 
+from ..application.catalog import Catalog
 from ..application.projection import StateProjection
 from .project import (
     ProjectVersionDto,
@@ -102,6 +103,94 @@ class DependencyEdgeDto(BaseModel):
     effect: str
 
 
+class CapabilityDto(BaseModel):
+    """One number a change can move: its value and whether, and from where."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    capability_id: str = Field(alias="capabilityId")
+    element_id: str = Field(alias="elementId")
+    key: str
+    value: int | float
+    value_type: str = Field(alias="valueType", description="integer or number")
+    unit: str | None
+    bounds: tuple[float, float] | None
+    source: str = Field(description="authored, derived or reindexed")
+    confidence: float
+    status: str = Field(description="editable, locked, derived or representation")
+    validator_refs: list[str] = Field(alias="validatorRefs")
+
+
+class CatalogElementDto(BaseModel):
+    """One realization: the row, its capabilities and the exported objects it names."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    element_id: str = Field(alias="elementId")
+    component_id: str = Field(alias="componentId")
+    producer: str
+    capabilities: list[CapabilityDto]
+    object_names: list[str] = Field(alias="objectNames")
+
+
+class ObjectBindingDto(BaseModel):
+    """One exported object and the element the catalog can name for it."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    name: str
+    component_id: str | None = Field(alias="componentId")
+    producer_op: str | None = Field(alias="producerOp")
+    element_id: str | None = Field(alias="elementId")
+    status: str = Field(
+        description="bound, MODEL_VISIBLE_CATALOG_MISSING, AMBIGUOUS or UNKNOWN_COMPONENT"
+    )
+    detail: str
+
+
+class CatalogComponentDto(BaseModel):
+    """One component of the tree with what can be asked of it."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    component_id: str = Field(alias="componentId")
+    parent_id: str | None = Field(alias="parentId")
+    children: list[str]
+    element_ids: list[str] = Field(alias="elementIds")
+    descendant_element_ids: list[str] = Field(alias="descendantElementIds")
+    capability_count: int = Field(alias="capabilityCount")
+    states: list[str] = Field(description="editable, locked, derived, missing")
+    object_count: int = Field(alias="objectCount")
+    unbound_object_count: int = Field(alias="unboundObjectCount")
+    closure: list[str]
+
+
+class CoverageDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    objects: int
+    bound: int
+    unbound: int
+    ambiguous: int
+    unknown_component: int = Field(alias="unknownComponent")
+
+
+class CatalogDto(BaseModel):
+    """The component catalog: derived from the record and the reference run's inspection."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    components: list[CatalogComponentDto]
+    elements: list[CatalogElementDto]
+    objects: list[ObjectBindingDto]
+    coverage: CoverageDto
+    inspection_run: str | None = Field(
+        alias="inspectionRun",
+        description="the run whose inspection records the objects came from; null when none",
+    )
+    honesty: list[str]
+
+
 class StateProjectionDto(BaseModel):
     """The wire form of ``GET /api/state``."""
 
@@ -144,9 +233,78 @@ class StateProjectionDto(BaseModel):
     parameters: list[ParameterDto]
     dependency_edges: list[DependencyEdgeDto] = Field(alias="dependencyEdges")
     honesty: list[str]
+    catalog: CatalogDto | None = Field(
+        default=None,
+        description="the component catalog; null when the record could not be viewed",
+    )
 
 
-def to_dto(projection: StateProjection) -> StateProjectionDto:
+def catalog_dto(catalog: Catalog) -> CatalogDto:
+    return CatalogDto(
+        components=[
+            CatalogComponentDto(
+                component_id=item.component_id,
+                parent_id=item.parent_id,
+                children=list(item.children),
+                element_ids=list(item.element_ids),
+                descendant_element_ids=list(item.descendant_element_ids),
+                capability_count=item.capability_count,
+                states=list(item.states),
+                object_count=item.object_count,
+                unbound_object_count=item.unbound_object_count,
+                closure=list(item.closure),
+            )
+            for item in catalog.components
+        ],
+        elements=[
+            CatalogElementDto(
+                element_id=item.element_id,
+                component_id=item.component_id,
+                producer=item.producer,
+                capabilities=[
+                    CapabilityDto(
+                        capability_id=cap.capability_id,
+                        element_id=cap.element_id,
+                        key=cap.key,
+                        value=cap.value,
+                        value_type=cap.value_type,
+                        unit=cap.unit,
+                        bounds=cap.bounds,
+                        source=cap.source,
+                        confidence=cap.confidence,
+                        status=cap.status,
+                        validator_refs=list(cap.validator_refs),
+                    )
+                    for cap in item.capabilities
+                ],
+                object_names=list(item.object_names),
+            )
+            for item in catalog.elements
+        ],
+        objects=[
+            ObjectBindingDto(
+                name=item.name,
+                component_id=item.component_id,
+                producer_op=item.producer_op,
+                element_id=item.element_id,
+                status=item.status,
+                detail=item.detail,
+            )
+            for item in catalog.objects
+        ],
+        coverage=CoverageDto(
+            objects=catalog.coverage.objects,
+            bound=catalog.coverage.bound,
+            unbound=catalog.coverage.unbound,
+            ambiguous=catalog.coverage.ambiguous,
+            unknown_component=catalog.coverage.unknown_component,
+        ),
+        inspection_run=catalog.inspection_run,
+        honesty=list(catalog.honesty),
+    )
+
+
+def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> StateProjectionDto:
     """Shape one projection for the wire; every value is already the kernel's."""
 
     record = projection.record
@@ -229,6 +387,7 @@ def to_dto(projection: StateProjection) -> StateProjectionDto:
             for edge in projection.edges
         ],
         honesty=list(projection.honesty),
+        catalog=None if catalog is None else catalog_dto(catalog),
     )
 
 
