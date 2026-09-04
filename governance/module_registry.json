@@ -1619,7 +1619,8 @@
         "the name constant a writer or reader imports instead of spelling a kind as a literal",
         "the three computed kinds as patterns and their formatters (geometry_proposal_round, geometry_proposal_completion, stage_geometry_program)",
         "membership: is_registered and require_registered, exact or by pattern",
-        "the six kinds no spine module writes, each saying so in its note: the ADR-007 stage envelope, exit binding and closure Wave C will write, the research bridge's ledger, and the component template and catalog confrontation the proposal producer still accepts"
+        "the six kinds no spine module writes, each saying so in its note: the ADR-007 stage envelope, exit binding and closure Wave C will write, the research bridge's ledger, and the component template and catalog confrontation the proposal producer still accepts",
+        "deliberation-episode (DeliberationEpisode@1): written by the studio into the candidate run at accept / reject / modify"
       ],
       "does_not_own": [
         "the file name a record is stored under, and reading a kind back out of one - project.refs",
@@ -3278,7 +3279,8 @@
         "harness_guard",
         "load_seat_pack",
         "seats_of",
-        "seat_from"
+        "seat_from",
+        "JobRegistry.candidates_of"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -3351,7 +3353,9 @@
         "the PendingIntent value and the in-process store that holds it, keyed by continuationToken and bound to one stateDigest",
         "the Proposal value, its closure, and the in-process store that holds it",
         "the camera + compass level of the target resolver (a viewer word read into a side), PROJECT.md aliases as outright names, the catalog as the one directory of editable elements and of what the model shows without a row (MODEL_VISIBLE_CATALOG_MISSING on the authored-control draft)",
-        "declared controls: a confirmed authored-control draft kept in process against its state (POST /api/controls), never a row of the record"
+        "declared controls: a confirmed authored-control draft kept in process against its state (POST /api/controls), never a row of the record",
+        "the DeliberationEpisode value: one judgement of the studio - the intent, the options on the table, the decision on each with its reason, and the run it produced",
+        "the in-process episode store, and the flush that writes judgements made before a run into the next run made against the same state; a judgement is retained only into a run that happened, an episode that met no run says so and is lost on restart; the payload states facts only (ADR-004)"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -3418,7 +3422,12 @@
         "compass_side",
         "declare_control",
         "DeclaredControl",
-        "DeclaredControlStore"
+        "DeclaredControlStore",
+        "POST /api/proposals/{proposal_id}/decision",
+        "GET /api/episodes",
+        "GET /api/episodes/{episode_id}",
+        "DeliberationEpisode",
+        "EpisodeStore"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3427,7 +3436,8 @@
         "state.decision_operator",
         "state.operational_state",
         "state.record",
-        "studio.binding"
+        "studio.binding",
+        "project.record_kinds"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -3465,7 +3475,8 @@
         "apps/archflow-studio/api/tests/test_gestures.py",
         "apps/archflow-studio/api/tests/test_pick.py",
         "apps/archflow-studio/api/tests/test_proposals.py",
-        "apps/archflow-studio/api/tests/test_clarification_catalog.py"
+        "apps/archflow-studio/api/tests/test_clarification_catalog.py",
+        "apps/archflow-studio/api/tests/test_episodes.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -3483,7 +3494,9 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
         "apps/archflow-studio/api/archflow_studio_api/application/controls.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/controls.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/controls.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/controls.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/episodes.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py"
       ]
     },
     {
@@ -3637,7 +3650,8 @@
         "ImpactLock",
         "compare_runs",
         "shapes_of",
-        "Comparison"
+        "Comparison",
+        "ValidationStore.receipt_ids"
       ],
       "depends_on": [
         "archflow.project.refs",
