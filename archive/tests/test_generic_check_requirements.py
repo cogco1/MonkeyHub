@@ -7,7 +7,7 @@ from archive.archflow.control.requirements import StageRequirementProfile
 from archflow.state.stage_workflow import StageClosureFindingCode, StageClosureStatus
 from archive.archflow.control.stage_closure import compile_composite_stage_closure
 from archive.archflow.validation.assembly import check_assembly
-from tests.test_assembly_validation import SHA_A, SHA_B, SHA_C, branch, passing_profile
+from archive.tests.test_assembly_validation import SHA_A, SHA_B, SHA_C, branch, passing_profile
 
 
 class GenericCheckRequirementIntegrationTests(unittest.TestCase):

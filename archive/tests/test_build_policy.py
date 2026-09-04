@@ -33,7 +33,7 @@ from archflow.state.operational_state import FactEpistemicStatus
 from archflow.state.spatial import SiteBounds
 
 
-_SITE_FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "site"
+_SITE_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "site"
 
 
 def _payload(name: str) -> dict[str, object]:

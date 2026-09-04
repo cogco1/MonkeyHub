@@ -56,7 +56,7 @@ from archflow.state.stage_workflow import (
     StageExitBinding,
     StageRunEnvelope,
 )
-from tests.test_sandbox_realization import compiled_room
+from archive.tests.test_sandbox_realization import compiled_room
 
 BASIS = ("evidence:treatise-page", "project://demo/runs/run/records/receipt-aa.json")
 VOTE = CaseVote(project_id="demo", run_id="run", receipt_ref="project://demo/runs/run/records/receipt-aa.json")

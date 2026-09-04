@@ -17,7 +17,7 @@ from archflow.state.model import ArtifactRef, StateRef
 from archive.archflow.workspace.manager import WorkspaceRef
 
 
-FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "voxel"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "voxel"
 ARTIFACT_DIGEST = "a" * 64
 
 

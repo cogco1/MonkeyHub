@@ -17,7 +17,7 @@ from archive.archflow.validation.use_scenarios import (
     evaluate_use_scenarios,
 )
 from archive.archflow.validation.usability import UseZoneEvidence
-from tests.test_usability_validation import UsabilityHarness, program_with
+from archive.tests.test_usability_validation import UsabilityHarness, program_with
 
 
 def _zone(

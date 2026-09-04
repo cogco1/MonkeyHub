@@ -49,7 +49,7 @@ from archive.archflow.validation.architectural import (
     canonical_value,
     evaluate_architectural_usability,
 )
-from tests.test_geometry_compiler import EVIDENCE
+from archive.tests.test_geometry_compiler import EVIDENCE
 from archive.tests.test_production_root_compiler import (
     IDENTITY,
     _MemoryRepository,

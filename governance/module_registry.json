@@ -74,7 +74,7 @@
       "used_by": [
         "archflow/runtime/project_runner.py",
         "tests/test_cad_execution.py",
-        "tests/test_cad_patch.py"
+        "archive/tests/test_cad_patch.py"
       ],
       "invariants": [
         "a successful process exit is never sufficient - the saved file is read back independently and must match the denominator",
@@ -86,7 +86,7 @@
       "status": "canonical",
       "tests": [
         "tests/test_cad_execution.py",
-        "tests/test_cad_patch.py"
+        "archive/tests/test_cad_patch.py"
       ],
       "notes": "Imports CompiledGeometryProgram through the runtime/geometry_compiler shim; that import moves to compilers.geometry when the shim goes."
     },
@@ -130,7 +130,7 @@
       ],
       "used_by": [
         "archflow/adapters/cad_execution.py",
-        "tests/test_cad_patch.py"
+        "archive/tests/test_cad_patch.py"
       ],
       "invariants": [
         "an object is rebuilt only when its structural digest or its analytic bounds actually changed, beyond tolerance",
@@ -139,7 +139,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_cad_patch.py"
+        "archive/tests/test_cad_patch.py"
       ],
       "notes": "P103 incremental export; the only reason a run may reuse a prior .3dm."
     },
@@ -190,11 +190,11 @@
         "archflow/runtime/project_runner.py",
         "tools/verify_state_record.py",
         "tests/test_cad_program.py",
-        "tests/test_base_level_datum.py",
-        "tests/test_cad_patch.py",
-        "tests/test_element_producers.py",
-        "tests/test_wall_window_families.py",
-        "tests/test_type_instance_propagation.py"
+        "archive/tests/test_base_level_datum.py",
+        "archive/tests/test_cad_patch.py",
+        "archive/tests/test_element_producers.py",
+        "archive/tests/test_wall_window_families.py",
+        "archive/tests/test_type_instance_propagation.py"
       ],
       "invariants": [
         "an unsupported operation kind fails CadTranslationError rather than being dropped silently",
@@ -205,7 +205,7 @@
       "status": "canonical",
       "tests": [
         "tests/test_cad_program.py",
-        "tests/test_base_level_datum.py"
+        "archive/tests/test_base_level_datum.py"
       ],
       "notes": "The single CAD translation on the spine; P107's in-process OCCT executor would be a second executor of this program, not a second translation."
     },
@@ -315,8 +315,8 @@
         "archflow/capabilities/discipline_seats.py",
         "tools/run_project.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
-        "tests/test_stage_declarations.py",
-        "tests/test_discipline_seats.py",
+        "archive/tests/test_stage_declarations.py",
+        "archive/tests/test_discipline_seats.py",
         "tests/test_project_runner.py"
       ],
       "invariants": [
@@ -326,7 +326,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_stage_declarations.py"
+        "archive/tests/test_stage_declarations.py"
       ],
       "notes": "On the spine today mainly through DeclarationQuadrant, which scopes what a seat may declare."
     },
@@ -402,8 +402,8 @@
         "archflow/runtime/project_runner.py",
         "tools/run_project.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
-        "tests/test_discipline_seats.py",
-        "tests/test_project_levels.py",
+        "archive/tests/test_discipline_seats.py",
+        "archive/tests/test_project_levels.py",
         "tests/test_project_runner.py"
       ],
       "invariants": [
@@ -415,8 +415,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_discipline_seats.py",
-        "tests/test_project_levels.py",
+        "archive/tests/test_discipline_seats.py",
+        "archive/tests/test_project_levels.py",
         "tests/test_project_runner.py"
       ],
       "notes": "P095/P098; seats are people, not state - they arrive beside the record, never inside it."
@@ -479,8 +479,8 @@
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",
-        "tests/test_element_producers.py",
-        "tests/test_cad_patch.py"
+        "archive/tests/test_element_producers.py",
+        "archive/tests/test_cad_patch.py"
       ],
       "invariants": [
         "no producer computes a plan coordinate itself; every position goes through resolve_plan",
@@ -491,8 +491,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_element_producers.py",
-        "tests/test_cad_patch.py"
+        "archive/tests/test_element_producers.py",
+        "archive/tests/test_cad_patch.py"
       ],
       "notes": "The single geometry-emission owner on the spine; P105 is where monument vocabulary would be added here rather than beside it."
     },
@@ -574,12 +574,12 @@
         "tools/run_project.py",
         "tools/verify_state_record.py",
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
-        "tests/test_geometry_proposal_producer.py",
-        "tests/test_geometry_proposal_contract.py",
-        "tests/test_production_policy.py",
-        "tests/test_production_wiring.py",
-        "tests/test_component_templates.py",
-        "tests/test_state_record.py"
+        "archive/tests/test_geometry_proposal_producer.py",
+        "archive/tests/test_geometry_proposal_contract.py",
+        "archive/tests/test_production_policy.py",
+        "archive/tests/test_production_wiring.py",
+        "archive/tests/test_component_templates.py",
+        "archive/tests/test_state_record.py"
       ],
       "invariants": [
         "no fallback: a round that does not compile is rejected with issues, never patched into acceptance",
@@ -590,11 +590,11 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_geometry_proposal_producer.py",
-        "tests/test_geometry_proposal_contract.py",
-        "tests/test_production_policy.py",
-        "tests/test_production_wiring.py",
-        "tests/test_component_templates.py"
+        "archive/tests/test_geometry_proposal_producer.py",
+        "archive/tests/test_geometry_proposal_contract.py",
+        "archive/tests/test_production_policy.py",
+        "archive/tests/test_production_wiring.py",
+        "archive/tests/test_component_templates.py"
       ],
       "notes": "The runner drives it with an inline RecordedProposalProvider for replay; a live provider enters through studio.intent, which signs its call with the same ports.model receipt."
     },
@@ -647,8 +647,8 @@
       ],
       "used_by": [
         "archflow/capabilities/element_producers.py",
-        "tests/test_wall_window_families.py",
-        "tests/test_type_instance_propagation.py"
+        "archive/tests/test_wall_window_families.py",
+        "archive/tests/test_type_instance_propagation.py"
       ],
       "invariants": [
         "a type carries proportions only - no position, no level, no absolute size",
@@ -657,8 +657,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_wall_window_families.py",
-        "tests/test_type_instance_propagation.py"
+        "archive/tests/test_wall_window_families.py",
+        "archive/tests/test_type_instance_propagation.py"
       ],
       "notes": "P092 filler side; P099 gives the arrayed placement so N identical openings share one member definition."
     },
@@ -720,8 +720,8 @@
         "archflow/capabilities/element_producers.py",
         "archflow/runtime/project_runner.py",
         "tests/test_derivations_and_references.py",
-        "tests/test_element_producers.py",
-        "tests/test_cad_patch.py"
+        "archive/tests/test_element_producers.py",
+        "archive/tests/test_cad_patch.py"
       ],
       "invariants": [
         "resolve_elevation never returns a number - the compiler is the only thing that turns a datum id into one",
@@ -732,7 +732,7 @@
       "status": "canonical",
       "tests": [
         "tests/test_derivations_and_references.py",
-        "tests/test_element_producers.py"
+        "archive/tests/test_element_producers.py"
       ],
       "notes": "The datum namespace boundary: level ids and element-top ids resolve here, so producers stay coordinate-free."
     },
@@ -784,7 +784,7 @@
       ],
       "used_by": [
         "archflow/runtime/project_runner.py",
-        "tests/test_relation_checks.py"
+        "archive/tests/test_relation_checks.py"
       ],
       "invariants": [
         "nothing is healed: a check only measures and reports",
@@ -795,7 +795,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_relation_checks.py",
+        "archive/tests/test_relation_checks.py",
         "tests/test_project_runner.py"
       ],
       "notes": "One checker per kind the record can declare; adding a kind means adding a checker here and an id to CHECK_KINDS in the same change."
@@ -849,8 +849,8 @@
       "used_by": [
         "archflow/capabilities/element_producers.py",
         "archflow/capabilities/opening_solver.py",
-        "tests/test_wall_window_families.py",
-        "tests/test_type_instance_propagation.py"
+        "archive/tests/test_wall_window_families.py",
+        "archive/tests/test_type_instance_propagation.py"
       ],
       "invariants": [
         "the wall is one solid; every opening is a void request the wall hosts, never a separate subtraction chain",
@@ -859,8 +859,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_wall_window_families.py",
-        "tests/test_type_instance_propagation.py"
+        "archive/tests/test_wall_window_families.py",
+        "archive/tests/test_type_instance_propagation.py"
       ],
       "notes": "P092 host side: the wall grants the aperture, the opening type never moves it."
     },
@@ -929,16 +929,16 @@
       "used_by": [
         "archflow/capabilities/geometry_proposal.py",
         "archflow/runtime/geometry_compiler.py",
-        "tests/test_geometry_compiler.py",
-        "tests/test_interface_datums.py",
-        "tests/test_element_producers.py",
-        "tests/test_cad_patch.py",
-        "tests/test_semantic_geometry_tree.py",
-        "tests/test_radial_array.py",
-        "tests/test_geometry_function_evaluators.py",
-        "tests/test_wall_window_families.py",
-        "tests/test_type_instance_propagation.py",
-        "tests/test_state_record.py"
+        "archive/tests/test_geometry_compiler.py",
+        "archive/tests/test_interface_datums.py",
+        "archive/tests/test_element_producers.py",
+        "archive/tests/test_cad_patch.py",
+        "archive/tests/test_semantic_geometry_tree.py",
+        "archive/tests/test_radial_array.py",
+        "archive/tests/test_geometry_function_evaluators.py",
+        "archive/tests/test_wall_window_families.py",
+        "archive/tests/test_type_instance_propagation.py",
+        "archive/tests/test_state_record.py"
       ],
       "invariants": [
         "pure: it reads inputs and returns a result, and never writes or mutates anything",
@@ -949,11 +949,11 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_geometry_compiler.py",
-        "tests/test_interface_datums.py",
-        "tests/test_semantic_geometry_tree.py",
-        "tests/test_radial_array.py",
-        "tests/test_geometry_function_evaluators.py"
+        "archive/tests/test_geometry_compiler.py",
+        "archive/tests/test_interface_datums.py",
+        "archive/tests/test_semantic_geometry_tree.py",
+        "archive/tests/test_radial_array.py",
+        "archive/tests/test_geometry_function_evaluators.py"
       ],
       "notes": "Named canonical in CANONICAL_SPINE 2.2 'Program and compiler'; runtime/geometry_compiler.py is only its shim."
     },
@@ -1052,9 +1052,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_geometry_proposal_contract.py",
-        "tests/test_stage_baseline.py",
-        "tests/test_material_binding.py"
+        "archive/tests/test_geometry_proposal_contract.py",
+        "archive/tests/test_stage_baseline.py",
+        "archive/tests/test_material_binding.py"
       ],
       "notes": "state/geometry_program.py re-implements this as digest_value/require_sha256 rather than importing it: a second digest implementation still on the spine."
     },
@@ -1162,8 +1162,8 @@
         "archflow/capabilities/geometry_proposal.py",
         "archflow/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
-        "tests/test_geometry_proposal_contract.py",
-        "tests/test_geometry_proposal_producer.py",
+        "archive/tests/test_geometry_proposal_contract.py",
+        "archive/tests/test_geometry_proposal_producer.py",
         "apps/archflow-studio/api/tests/test_intent_agent_timeout.py"
       ],
       "invariants": [
@@ -1173,8 +1173,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_geometry_proposal_contract.py",
-        "tests/test_geometry_proposal_producer.py"
+        "archive/tests/test_geometry_proposal_contract.py",
+        "archive/tests/test_geometry_proposal_producer.py"
       ],
       "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts."
     },
@@ -1479,7 +1479,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_hierarchical_search_controller.py"
+        "archive/tests/test_hierarchical_search_controller.py"
       ],
       "notes": "No dedicated test; the one test that imports ProjectManifest does so as a fixture, and real coverage comes through tests/test_project_repository.py."
     },
@@ -1535,7 +1535,7 @@
       "status": "canonical",
       "tests": [
         "tests/test_project_repository.py",
-        "tests/test_geometry_proposal_contract.py"
+        "archive/tests/test_geometry_proposal_contract.py"
       ],
       "notes": "ArtifactSink, CanonicalRepository and ProjectLoader are declared but no module imports them by name; only PersistenceArea/PersistenceDestination/require_destination/RecordSink are actually used."
     },
@@ -1757,10 +1757,10 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_project_restart.py",
+        "archive/tests/integration/test_project_restart.py",
         "tests/test_freeze_project_stage_workflow.py",
         "tests/test_project_repository.py",
-        "tests/test_project_runtime.py",
+        "archive/tests/test_project_runtime.py",
         "tests/test_record_kinds.py"
       ],
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
@@ -1823,9 +1823,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_architectural_relations.py",
-        "tests/test_relation_verification_bridge.py",
-        "tests/test_stage_baseline.py"
+        "archive/tests/test_architectural_relations.py",
+        "archive/tests/test_relation_verification_bridge.py",
+        "archive/tests/test_stage_baseline.py"
       ],
       "notes": "On the spine only because state_record.py imports ArchitecturalRelationKind; the graph types have no spine consumer and §2.2 sends the ArchitecturalRelation graph to the monuments/controller lanes, so this module should shrink to the enum."
     },
@@ -1930,7 +1930,7 @@
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "tests/test_project_runner.py",
-        "tests/test_state_record.py"
+        "archive/tests/test_state_record.py"
       ],
       "invariants": [
         "the record is the only design input; seats arrive beside it and are never part of state",
@@ -1945,7 +1945,7 @@
       "status": "canonical",
       "tests": [
         "tests/test_project_runner.py",
-        "tests/test_state_record.py"
+        "archive/tests/test_state_record.py"
       ],
       "notes": "archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion CANONICAL_SPINE 2.2 folds away."
     },
@@ -2117,8 +2117,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_commitment_contract.py",
-        "tests/test_commitment_monitor.py"
+        "archive/tests/test_commitment_contract.py",
+        "archive/tests/test_commitment_monitor.py"
       ],
       "notes": "Canonical: state.model, operational_state, submission.model, decision_operator and capabilities.declaration all take Commitment from here; the lifecycle transitions are the same type's, not a parallel."
     },
@@ -2309,7 +2309,7 @@
       "status": "canonical",
       "tests": [
         "tests/test_design_portfolio.py",
-        "tests/integration/test_branch_portfolio_reload.py"
+        "archive/tests/integration/test_branch_portfolio_reload.py"
       ],
       "notes": "Canonical for now: the developed-design projection cites a selected schematic (BranchRevisionRef, DesignOptionPortfolio types); retiring the massing view is P102's remaining tail and changes state_digest, so it is a decided change, not a fold."
     },
@@ -2378,9 +2378,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_geometry_compiler.py",
-        "tests/test_discipline_seats.py",
-        "tests/integration/test_design_development_resume.py"
+        "archive/tests/test_geometry_compiler.py",
+        "archive/tests/test_discipline_seats.py",
+        "archive/tests/integration/test_design_development_resume.py"
       ],
       "notes": "Canonical, but 14 of its 19 public types are never imported outside the module, and it depends on two fold targets (design_maturity, design_portfolio); StateRecord reaches it only through developed_design_view."
     },
@@ -2481,11 +2481,11 @@
       "status": "canonical",
       "tests": [
         "tests/test_geometry_program.py",
-        "tests/test_project_levels.py",
-        "tests/test_interface_datums.py",
-        "tests/test_wall_window_families.py",
-        "tests/test_base_level_datum.py",
-        "tests/test_geometry_compiler.py"
+        "archive/tests/test_project_levels.py",
+        "archive/tests/test_interface_datums.py",
+        "archive/tests/test_wall_window_families.py",
+        "archive/tests/test_base_level_datum.py",
+        "archive/tests/test_geometry_compiler.py"
       ],
       "notes": "Defines its own digest_value/require_sha256 instead of using contracts.canonical, a second digest implementation on the spine; at 1564 lines it is the largest contract module."
     },
@@ -2544,8 +2544,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_event_state_rebuild.py",
-        "tests/test_promotion.py",
+        "archive/tests/test_event_state_rebuild.py",
+        "archive/tests/test_promotion.py",
         "tests/test_project_authority_seam.py"
       ],
       "notes": "Canonical; its Obligation is the legacy obligation shape CanonicalState@1 carries. P110 projects DesignObligation into it; until then the two shapes coexist by decision, not by accident."
@@ -2633,7 +2633,7 @@
       "status": "canonical",
       "tests": [
         "tests/test_operational_markov_compiler.py",
-        "tests/test_clarification_authority.py",
+        "archive/tests/test_clarification_authority.py",
         "tests/integration/test_pantheon_compiled_state.py"
       ],
       "notes": "The widest state dependency after project.refs; it carries its own _version_dict/_branch_dict serde parallel to contracts.branch, and require_logical_ref is a second logical-ref validator alongside contracts.fields.logical_ref."
@@ -2675,8 +2675,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_commitment_contract.py",
-        "tests/test_expert_capabilities.py"
+        "archive/tests/test_commitment_contract.py",
+        "archive/tests/test_expert_capabilities.py"
       ],
       "notes": "Canonical: BuildingProgram is the legacy_program_view field of CanonicalState@1 and retained states carry it."
     },
@@ -2772,7 +2772,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_state_record.py",
+        "archive/tests/test_state_record.py",
         "tests/test_project_runner.py",
         "apps/archflow-studio/api/tests/test_projection.py"
       ],
@@ -2854,9 +2854,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_spatial_proposals.py",
-        "tests/test_semantic_geometry_tree.py",
-        "tests/test_geometry_proposal_producer.py",
+        "archive/tests/test_spatial_proposals.py",
+        "archive/tests/test_semantic_geometry_tree.py",
+        "archive/tests/test_geometry_proposal_producer.py",
         "tests/test_design_portfolio.py"
       ],
       "notes": "Carries module-local _branch_to_dict/_branch_from_dict copies of contracts.branch, and depends on two fold targets (design_maturity for DesignPhase, site_context for SiteBounds); SpatialLevel is a third level vocabulary alongside ProjectLevel and MassingLevel@1. The site-context record (ground model, approach, unknowns) is archived with the sandbox lane."
@@ -3537,8 +3537,8 @@
       "status": "canonical",
       "tests": [
         "tests/test_project_authority_seam.py",
-        "tests/test_commitment_contract.py",
-        "tests/test_aesthetic_evaluation.py"
+        "archive/tests/test_commitment_contract.py",
+        "archive/tests/test_aesthetic_evaluation.py"
       ],
       "notes": "Canonical: CandidateSubmission/CandidateDelta are what validate_submission reads; the Studio builds them. P110 replaces the empty CanonicalState they are checked against."
     },
@@ -3839,7 +3839,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_promotion.py",
+        "archive/tests/test_promotion.py",
         "tests/test_project_authority_seam.py"
       ],
       "notes": "No archflow/ module imports it; its only production caller is the Studio API, and it reads CanonicalState@1, the HEAD shape P110 retires."
@@ -3887,7 +3887,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_submission.py"
+        "archive/tests/test_submission.py"
       ],
       "notes": "§2.2 names Finding/ValidationReceipt the one validation result; CheckFinding/CheckReceiptEnvelope in validation/contracts.py is the parallel scheduled for deletion."
     }

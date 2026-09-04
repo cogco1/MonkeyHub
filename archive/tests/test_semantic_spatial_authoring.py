@@ -22,7 +22,7 @@ from archive.archflow.capabilities.semantic_spatial_authoring import (
     semantic_spatial_repair_feedback,
 )
 from archflow.state.spatial import ComponentMaturity, ConstraintResponseStatus, DesignComponent, SpatialConnection, SpatialConstraintResponse
-from tests.test_spatial_proposals import _inputs, _proposal
+from archive.tests.test_spatial_proposals import _inputs, _proposal
 
 
 def _canonical_json(value: object) -> str:

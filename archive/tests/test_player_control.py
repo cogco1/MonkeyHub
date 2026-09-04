@@ -48,7 +48,7 @@ from archive.tests.test_candidate_assembly import (
     EVIDENCE,
     _assembly,
 )
-from tests.test_clarification_authority import (
+from archive.tests.test_clarification_authority import (
     _commitment,
     _receipt,
     _request,

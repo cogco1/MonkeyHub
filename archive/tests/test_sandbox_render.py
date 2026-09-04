@@ -9,7 +9,7 @@ from archive.archflow.adapters.sandbox_render import (
     render_paper_views,
 )
 from archive.archflow.realization.sandbox import realize_geometry
-from tests.test_sandbox_realization import compiled_room
+from archive.tests.test_sandbox_realization import compiled_room
 
 
 class SandboxRenderTests(unittest.TestCase):

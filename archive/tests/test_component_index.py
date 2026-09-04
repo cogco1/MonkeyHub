@@ -24,7 +24,7 @@ from archive.archflow.state.design_state import (
 )
 from archflow.state.spatial import DesignComponent
 from archive.tests.test_design_controller import _tree
-from tests.test_geometry_compiler import COMMITMENT
+from archive.tests.test_geometry_compiler import COMMITMENT
 from archive.tests.test_production_root_compiler import _MemoryRepository
 from archive.tests.test_semantic_geometry_lifecycle import (
     _design_state,

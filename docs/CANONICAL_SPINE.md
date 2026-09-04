@@ -130,8 +130,12 @@ live work items. One entry per concept:
 
 `archcheck` reads it and fails when a symbol listed as owned is defined outside its owner, when
 a module outside the owner defines a function whose normalised body equals an owner's function,
-or when anything under `archflow/`, `tools/` or `apps/` imports `archive`. The registry is the
-map; `docs/ARCHITECTURE.md` is rewritten to describe the one spine and nothing else.
+or when anything under `archflow/`, `tools/`, `apps/` or `tests/` imports `archive`. The spine
+suite is held to the same boundary as the spine: a test that needs an archived lane's code is
+that lane's test and lives in `archive/tests/`, which may import the spine and never the other
+way round (`tests/test_spine_suite_is_the_spines.py` proves it from inside the suite). The
+registry is the map; `docs/ARCHITECTURE.md` is rewritten to describe the one spine and nothing
+else.
 
 ## 5. Order of execution
 

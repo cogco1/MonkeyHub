@@ -21,7 +21,7 @@ from archflow.state.spatial import SiteBounds
 from archive.archflow.state.site_context import GroundModelKind, SiteContext
 
 
-_FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "site"
+_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "site"
 
 
 def _payload(name: str) -> dict[str, object]:

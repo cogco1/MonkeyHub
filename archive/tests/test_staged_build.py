@@ -38,7 +38,7 @@ from archive.archflow.state.build_policy import (
 from archflow.state.operational_state import FactEpistemicStatus
 from archive.tests.test_candidate_assembly import _assembly
 from archive.tests.test_design_development import EVIDENCE
-from tests.test_sandbox_realization import COMMITMENT, compiled_room
+from archive.tests.test_sandbox_realization import COMMITMENT, compiled_room
 
 
 def _candidate_for_base(base: ProjectVersionRef | None = None):

@@ -71,7 +71,7 @@ from archflow.state.geometry_program import (
 from archflow.submission.model import CandidateDelta, CandidateSubmission
 from archflow.validation.engine import ArtifactPresentValidator, validate_submission
 from archive.tests.test_production_root_compiler import _rebase_context
-from tests.test_spatial_proposals import _inputs
+from archive.tests.test_spatial_proposals import _inputs
 
 
 PROJECT_ID = "p058-progressive-pantheon"

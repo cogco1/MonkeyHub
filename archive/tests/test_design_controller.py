@@ -178,7 +178,7 @@ from archive.archflow.validation.stage_control import (
     check_visual_inventory_baseline,
 )
 from archive.archflow.validation.spatial import validate_spatial_layout
-from tests.test_stage_baseline import physical_sources
+from archive.tests.test_stage_baseline import physical_sources
 from archive.tests.test_relation_authoring import (
     _context as relation_context_fixture,
     _proposal as relation_proposal_fixture,

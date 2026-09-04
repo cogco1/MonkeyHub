@@ -4,7 +4,8 @@
   "checked_source_roots": [
     "archflow",
     "tools",
-    "apps/archflow-studio/api"
+    "apps/archflow-studio/api",
+    "tests"
   ],
   "probe_root": "probes",
   "forbidden_instance_literals": [
@@ -131,6 +132,13 @@
         "archive"
       ],
       "reason": "Repository tools cannot acquire implementation or fixtures from the test suite."
+    },
+    {
+      "source": "tests",
+      "targets": [
+        "archive"
+      ],
+      "reason": "The spine suite is the spine's. A test that needs an archived lane's code is that lane's test and lives in archive/tests/, where it still runs against the spine."
     },
     {
       "source": "archflow/contracts",

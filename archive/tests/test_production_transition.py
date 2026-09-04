@@ -42,7 +42,7 @@ from archive.archflow.runtime.semantic_geometry_lifecycle import (
     bind_initial_semantic_geometry,
     compile_semantic_geometry_lifecycle,
 )
-from tests.test_geometry_compiler import COMMITMENT
+from archive.tests.test_geometry_compiler import COMMITMENT
 from archive.tests.test_production_responsibility import (
     RESPONSIBILITY_ID,
     MODEL_IDENTITY,

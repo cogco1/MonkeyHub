@@ -102,7 +102,7 @@ from archive.tests.test_semantic_spatial_authoring import (
     _ScriptedProvider,
     _semantic_proposal,
 )
-from tests.test_spatial_proposals import _inputs as _spatial_inputs
+from archive.tests.test_spatial_proposals import _inputs as _spatial_inputs
 
 
 DECISION_REF = "decision:candidate-convergence"
