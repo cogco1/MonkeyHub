@@ -11,12 +11,15 @@ unimplemented.
 
 ## Commits
 
-- `a757ef9` — Studio web: the capability panel says what a selection can be asked
-  (the panel, the mount, both i18n tables, the styles, and this report)
-- `ac67a9c` — this report, with the hash of the commit above filled in
+- **`a757ef9`** — Studio web: the capability panel says what a selection can be
+  asked. All the code: the panel, its mount in the Composer, both i18n tables,
+  the styles, and the first version of this report. **This is the only commit
+  that touches `apps/`.**
+- `ac67a9c`, `f7ca090`, `b3f0e6e` — this report only, in three follow-ups: the
+  hashes above, and the NUL-byte note in concern 6.
 
 Branch `worktree-agent-a20b32f2d1b09afa6`, based on `main` at `bc605aa`. Nothing
-merged, rebased or pushed.
+merged, rebased or pushed. Only the six files listed below were ever staged.
 
 ## Files
 
