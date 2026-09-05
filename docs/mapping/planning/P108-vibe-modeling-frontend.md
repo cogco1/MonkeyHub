@@ -1,6 +1,7 @@
 # P108 — Vibe modeling client/server frontend (Studio lane)
 
-**Status:** ready — executed by a separate session (新建会话), directed by Kaiwen, not by this repo's main session
+**Status:** ready — the implementation has landed in parts; the round-one acceptance below must be completed before this card closes. Current development order is in [ARCHITECTURE.md](../../ARCHITECTURE.md); P111 records the delivered continuation and remaining user trial. This is not a request to rebuild Studio again.
+**Evidence check (2026-09-05):** verifiable in the repository — the six ports in `api/archflow_studio_api/ports.py`, the tag `studio-preview-slice-01` at 1ef336f, the contract / API / stale-base / cross-project / UI-state tests, archcheck. Not verifiable — no configured external project (the villa, any other workspace project, or the `studio-smoke` copies) retains a `studio-cand-*` run with its validation receipt; the round-one chain is attested only by live smokes on temporary copies. The card stays open for that one retained run and does not authorize developing a new design project to close it.
 **Lane:** productization and componentization
 **Depends on:** P102 (StateRecord is the source of truth), P103 (diff data), and — for the sub-second preview —
 P107; until P107 lands the frontend tolerates the 37-second Rhino path or works over existing candidates.
@@ -39,22 +40,23 @@ ruling has named: the file retires, the protocols migrate verbatim into `api/arc
 2. **DO-NOT-REBUILD inventory** in the brief, precise to module paths, each marked "import, never reimplement".
 3. **Named seams only:** `api/archflow_studio_api/ports.py` (the migrated protocols) and the OpenAPI-generated
    client. Declare a port first, implement by delegation to archflow.
-4. **The AGENTS.md rule binds this lane:** one canonical abstraction in, one parallel abstraction out.
+4. **The AGENTS.md rule binds this lane:** extend the existing owner and remove a superseded
+   production path when replacing it; a genuinely new behavior needs no invented retirement.
 
 One fence the machine cannot hold: **the client never computes geometry** — preview meshes are tessellated by the
 backend and pushed. No client-side CSG.
 
 ## Strict reuse (verified symbol by symbol)
 
-Project identity via `ProjectVersionRef` / `RunRef` / `BranchRef` / `open_located_project()` /
-`FilesystemProjectRepository`; the authored-record binding via `StateRecord.bound_to(run)` — the one sanctioned
-path from a portable record to one that can name its state; the tree via `StateRecord` entities and
-`DesignStateTree`; parameters and dependencies via `StateRecord.dependency_edges()` and
-`OperationalMarkovState.dependencies`; stages via `ProjectStageWorkflow` + `StageEvidencePack`; mutation via
-`DecisionOperator` / `compile_decision_operator()` / `compile_nested_decision()`; impact via kernel closure and
-invalidation receipts; validation via `validate_submission()` / `ValidationReceipt`; candidates via
-`GeometryProgramProposal` and the compiler; commit via `archflow/commit/committer.py` + P036 compare-and-swap (not
-opened in round one); viewing via `ThreeDmViewport` and `ViewerAssetProvider`.
+Current spine mapping (rechecked 2026-09-04; replaces the pre-consolidation symbol list): project identity via
+`ProjectVersionRef` / `RunRef` / `BranchRef` / `open_located_project()` / `FilesystemProjectRepository`; binding
+via `StateRecord.bound_to(run)`; the component tree via `design_components_of`; parameters and dependencies via
+`StateRecord.dependency_edges()` and `StateRecord.closure`; edits via `StateRecordOperator` and
+`apply_state_record_operator`; stages via `ProjectStageWorkflow`, `StageRunEnvelope`, `StageExecutionGuard` and
+`StageExitBinding`; validation via `validate_submission()` / `ValidationReceipt`; candidates via
+`studio.candidate.run_operator` and the existing `run_project` compiler/export chain. Formal issue belongs to
+`project.issue` over P036 (not opened in round one). Viewing reuses `ThreeDmViewport` and `ViewerAssetProvider`.
+Do not restore `DesignStateTree`, `compile_nested_decision` or the archived committer as Studio dependencies.
 
 **A data pitfall the benchmark exposed:** run `workflow-001` holds two records whose names begin with
 `project-stage-workflow-` — the workflow and its freeze receipt. Resolve the workflow by the exact shape
@@ -77,7 +79,9 @@ digest reproduces the reference receipt (`344b2206…` for `runner-002`) only un
 *Resolved in the plan (2026-09-03, verified on the villa by both sessions):* `?run=` → `ARCHFLOW_STUDIO_REFERENCE_RUN`
 → newest complete receipt whose workflow is not a harness (`workflow_id` in {equivalence-harness,
 studio-candidate-harness}; a `RunnerRunReceipt@1` without `workflow_ref` counts). On the villa that leaves
-`runner-002` alone; a Studio candidate can never become the reference by construction.
+`runner-002` alone; a Studio candidate never becomes the default reference by recency. P111's explicit
+"continue this candidate" selection is a separate editing choice over an exact retained StateRecord; it must
+not weaken this default-selection rule or move canonical HEAD.
 
 **Exact reference-record rule:** an existing reference run is projected only from the
 content-addressed `state_record_ref` in its runner receipt, after checking the record's project, run,
@@ -122,6 +126,8 @@ that established this: both models scored 29/29 on the same pinned slice; the on
 
 ## Revision history
 
+- 2026-09-04: updated the strict-reuse list to the current single spine; clarified that P111 owns explicit
+  candidate continuation while this card retains its original round-one stopping line.
 - 2026-09-02: opened for `apps/archflow-studio` (brief + four fences).
 - 2026-09-03 (first): Kaiwen's four decisions — top-level `/client /server /shared`, FastAPI, `SYMMETRIC_WITH`,
   numbered layers. The kernel items (`SYMMETRIC_WITH`, `layer_by_component`) landed and stand.

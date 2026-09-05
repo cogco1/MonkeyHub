@@ -31,6 +31,11 @@ class PickRequestDto(BaseModel):
         description="the stateDigest /api/state answered with; a pick against "
         "any other state is refused as STALE_BASE",
     )
+    source_run_id: str | None = Field(
+        alias="sourceRunId", default=None, min_length=1,
+        description="the retained run selected as the editing base; omitted "
+        "uses the project's default state projection",
+    )
     user_strings: dict[str, str] = Field(
         alias="userStrings",
         description="the picked object's user strings, verbatim",

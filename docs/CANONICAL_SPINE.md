@@ -1,7 +1,10 @@
 # One spine
 
-**Status:** specification, decided 2026-09-03 with Kaiwen. Execution starts when the sessions
-still landing work on `main` (Studio lane, codex) have finished; nothing moves before that.
+**Status:** historical consolidation decision, made 2026-09-03 with Kaiwen.
+The record-driven production spine is now described in [ARCHITECTURE.md](ARCHITECTURE.md).
+The survey, verdicts and execution order below record the migration plan at that time;
+they are not instructions to rerun it. Current ownership and remaining work are in
+[SYSTEM_MAP.md](SYSTEM_MAP.md) and [DYNAMIC_MAP.md](DYNAMIC_MAP.md).
 
 The repository grew five production spines, each with its own vocabulary for the same ideas
 (state, components, geometry emission, relations, levels, validation results, stage exit,

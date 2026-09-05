@@ -112,7 +112,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
 
     binding = bound_project(request.app.state)
     _require_bound_project(binding, body.project_id)
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=body.source_run_id)
     # Fail before resolution or model invocation: no compiler should explore
     # against a historical run whose exact state cannot base new work.
     require_actionable(projection)
@@ -151,7 +151,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     # The project's conventions (PROJECT.md: names for people, the compass) and
     # the request's camera let a viewer word become a side; the catalog is the
     # one directory of editable elements and of what the model shows without a row.
-    conventions = project_conventions(binding)
+    conventions = project_conventions(binding, run_id=body.source_run_id)
     conventions_are_current = conventions.state_digest == projection.state_digest
     camera = (
         body.camera.model_dump()
@@ -260,6 +260,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             None if compilation.receipt is None else compilation.receipt.to_dict()
         ),
         pending=resolution.pending,
+        source_run_id=body.source_run_id,
     )
     request.app.state.proposals.put(proposal)
     type_ms = int((time.perf_counter() - typed_at) * 1000)

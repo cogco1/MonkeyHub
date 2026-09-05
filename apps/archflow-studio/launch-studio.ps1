@@ -64,24 +64,21 @@ $script:Splash = $null
 $script:FaultOpen = $false
 $script:Quitting = $false
 
-# --- the brand, verbatim, and the palette assets/make_icon.py draws the icon in
+# --- the application name and the same semantic palette the web shell uses
 $BrandName = 'MonkeyArch'
-$BrandGlyph = [char]::ConvertFromUtf32(0x1F412)  # the monkey; see Set-SplashBrand for the fallback
-$BrandLineOne = 'Professional modeling environment'
-$BrandLineTwo = 'Powered by the open ArchFlow protocol.'
-$WorkingLine = "猴子正在后台狠狠干 OCCT"
+$BrandLineOne = 'ArchFlow modeling workspace'
 $StepCount = 8
 
-$Ink = [System.Drawing.Color]::FromArgb(18, 38, 63)
-$InkPanel = [System.Drawing.Color]::FromArgb(24, 49, 79)
-$Stone = [System.Drawing.Color]::FromArgb(244, 239, 230)
-$StoneDim = [System.Drawing.Color]::FromArgb(176, 190, 209)
-$Faint = [System.Drawing.Color]::FromArgb(100, 120, 154)
-$Amber = [System.Drawing.Color]::FromArgb(232, 163, 61)
-$Rim = [System.Drawing.Color]::FromArgb(46, 74, 110)
-$FaultInk = [System.Drawing.Color]::FromArgb(58, 18, 20)
-$FaultPanel = [System.Drawing.Color]::FromArgb(38, 12, 13)
-$FaultRed = [System.Drawing.Color]::FromArgb(240, 138, 130)
+$Ink = [System.Drawing.Color]::FromArgb(25, 27, 25)
+$Stone = [System.Drawing.Color]::FromArgb(240, 241, 236)
+$StoneInk = [System.Drawing.Color]::FromArgb(211, 214, 208)
+$StoneDim = [System.Drawing.Color]::FromArgb(179, 184, 177)
+$Accent = [System.Drawing.Color]::FromArgb(127, 166, 210)
+$AccentInk = [System.Drawing.Color]::FromArgb(14, 27, 40)
+$Rim = [System.Drawing.Color]::FromArgb(52, 57, 52)
+$FaultInk = [System.Drawing.Color]::FromArgb(46, 24, 23)
+$FaultPanel = [System.Drawing.Color]::FromArgb(35, 18, 17)
+$FaultRed = [System.Drawing.Color]::FromArgb(210, 123, 114)
 
 function Get-BrandIcon {
     # One icon, drawn by assets\make_icon.py and never written here. The splash and the
@@ -103,9 +100,9 @@ function New-Label([string]$Text, [System.Drawing.Font]$Font, [System.Drawing.Co
 }
 
 function New-Splash {
-    # The splash: borderless, centred, in the icon's three colours. It is built before
-    # runtime.json is even read, because the first thing that can be refused is runtime.json
-    # itself and that refusal has to have somewhere to appear.
+    # This compact launch surface is built before runtime.json is read because the first
+    # refusal needs somewhere to appear. Its rail is determinate: unlike the browser's
+    # network/3DM waits, the launcher knows the eight steps it performs.
     $form = New-Object System.Windows.Forms.Form
     $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
@@ -125,25 +122,91 @@ function New-Splash {
         $pen = New-Object System.Drawing.Pen($script:Splash.Rim, 1)
         $eventArgs.Graphics.DrawRectangle($pen, 0, 0, $sender.ClientSize.Width - 1, $sender.ClientSize.Height - 1)
         $pen.Dispose()
+
+        # A static maker's mark, not a second progress animation: the arch, its
+        # keystone, and the hanging monkey are the same reduced drawing used by
+        # the browser boot surface. The real eight-step rail remains the only
+        # thing that moves.
+        if ($script:Splash.ProgressTrack.Visible) {
+            $graphics = $eventArgs.Graphics
+            $graphicsState = $graphics.Save()
+            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $graphics.TranslateTransform(64, 48)
+            $graphics.ScaleTransform(0.92, 0.92)
+
+            $archPen = New-Object System.Drawing.Pen($script:Splash.MarkArch, 1.6)
+            $figurePen = New-Object System.Drawing.Pen($script:Splash.MarkFigure, 2.1)
+            foreach ($markPen in @($archPen, $figurePen)) {
+                $markPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+                $markPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+                $markPen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
+            }
+            $keyBrush = New-Object System.Drawing.SolidBrush($script:Splash.MarkKeystone)
+            $groundBrush = New-Object System.Drawing.SolidBrush($script:Splash.MarkGround)
+
+            $graphics.DrawArc($archPen, 6, 7, 44, 44, 180, 180)
+            $graphics.DrawLine($archPen, 6, 29, 6, 52)
+            $graphics.DrawLine($archPen, 50, 29, 50, 52)
+
+            [System.Drawing.PointF[]]$keyPoints = @(
+                (New-Object System.Drawing.PointF -ArgumentList 23, 3),
+                (New-Object System.Drawing.PointF -ArgumentList 33, 3),
+                (New-Object System.Drawing.PointF -ArgumentList 31, 17),
+                (New-Object System.Drawing.PointF -ArgumentList 25, 17)
+            )
+            $graphics.FillPolygon($keyBrush, $keyPoints)
+
+            $graphics.DrawLine($figurePen, 28, 16, 26, 25)
+            $graphics.FillEllipse($groundBrush, 13, 26.5, 7, 7)
+            $graphics.DrawEllipse($figurePen, 13, 26.5, 7, 7)
+            $graphics.FillEllipse($groundBrush, 26, 26, 7, 7)
+            $graphics.DrawEllipse($figurePen, 26, 26, 7, 7)
+            $graphics.FillEllipse($groundBrush, 16, 22, 14, 14)
+            $graphics.DrawEllipse($figurePen, 16, 22, 14, 14)
+
+            $bodyPath = New-Object System.Drawing.Drawing2D.GraphicsPath
+            $bodyPath.AddBezier(20.5, 35.5, 18.3, 39, 18.9, 44.1, 22.5, 47.2)
+            $bodyPath.AddLine(22.5, 47.2, 29, 46.5)
+            $bodyPath.AddBezier(29, 46.5, 31.8, 43.1, 31.7, 38.7, 28.8, 35.3)
+            $graphics.DrawPath($figurePen, $bodyPath)
+            $graphics.DrawLine($figurePen, 21, 38, 13, 43)
+            $graphics.DrawLine($figurePen, 23, 47, 18, 52)
+            $graphics.DrawLine($figurePen, 28, 46.5, 32, 50.7)
+            $graphics.DrawBezier($figurePen, 29, 38.5, 39, 33.5, 49, 39.5, 49, 47.5)
+            $graphics.DrawBezier($figurePen, 49, 47.5, 49, 53.5, 44, 56.5, 39, 55.5)
+            $graphics.DrawBezier($figurePen, 39, 55.5, 34, 54.5, 32, 50.5, 34, 46.5)
+            $graphics.DrawBezier($figurePen, 34, 46.5, 36, 43.5, 41, 43.5, 43, 46.5)
+            $graphics.DrawBezier($figurePen, 43, 46.5, 44, 48.5, 43, 50.5, 41, 50.5)
+
+            $bodyPath.Dispose()
+            $groundBrush.Dispose()
+            $keyBrush.Dispose()
+            $figurePen.Dispose()
+            $archPen.Dispose()
+            $graphics.Restore($graphicsState)
+        }
     })
 
     $strip = New-Object System.Windows.Forms.Panel
-    $strip.BackColor = $Amber
-    $strip.Height = 4
+    $strip.BackColor = $Accent
+    $strip.Height = 2
     $strip.Dock = [System.Windows.Forms.DockStyle]::Top
     $form.Controls.Add($strip)
 
-    $title = New-Label ($BrandName + ' ' + $BrandGlyph) (New-Object System.Drawing.Font('Segoe UI', 26, [System.Drawing.FontStyle]::Bold)) $Stone
+    $title = New-Label $BrandName (New-Object System.Drawing.Font('Segoe UI', 18, [System.Drawing.FontStyle]::Bold)) $Stone
     $tagline = New-Label $BrandLineOne (New-Object System.Drawing.Font('Segoe UI', 11)) $StoneDim
-    $protocol = New-Label $BrandLineTwo (New-Object System.Drawing.Font('Segoe UI', 9)) $Faint
-    $working = New-Label $WorkingLine (New-Object System.Drawing.Font('Microsoft YaHei UI', 12, [System.Drawing.FontStyle]::Bold)) $Amber
     $progress = New-Label '' (New-Object System.Drawing.Font('Segoe UI', 9)) $StoneDim
 
-    $stage = New-Object System.Windows.Forms.PictureBox
-    $stage.BackColor = $InkPanel
-    $stage.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
-    $stage.Size = New-Object System.Drawing.Size(300, 150)
-    $stage.Location = New-Object System.Drawing.Point(170, 134)
+    $progressTrack = New-Object System.Windows.Forms.Panel
+    $progressTrack.BackColor = $Rim
+    $progressTrack.Size = New-Object System.Drawing.Size(512, 2)
+    $progressTrack.Location = New-Object System.Drawing.Point(64, 190)
+
+    $progressFill = New-Object System.Windows.Forms.Panel
+    $progressFill.BackColor = $Accent
+    $progressFill.Size = New-Object System.Drawing.Size(0, 2)
+    $progressFill.Location = New-Object System.Drawing.Point(0, 0)
+    $progressTrack.Controls.Add($progressFill)
 
     $fault = New-Object System.Windows.Forms.TextBox
     $fault.Multiline = $true
@@ -162,14 +225,14 @@ function New-Splash {
     $close.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
     $close.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $close.FlatAppearance.BorderSize = 0
-    $close.BackColor = $Amber
-    $close.ForeColor = $Ink
+    $close.BackColor = $Accent
+    $close.ForeColor = $AccentInk
     $close.Size = New-Object System.Drawing.Size(104, 30)
     $close.Location = New-Object System.Drawing.Point(492, 298)
     $close.Visible = $false
     $close.Add_Click({ $script:FaultOpen = $false })
 
-    foreach ($control in @($title, $tagline, $protocol, $stage, $working, $progress, $fault, $close)) {
+    foreach ($control in @($title, $tagline, $progressTrack, $progress, $fault, $close)) {
         $form.Controls.Add($control)
     }
     $form.Add_KeyDown({
@@ -177,76 +240,34 @@ function New-Splash {
         if ($eventArgs.KeyCode -eq [System.Windows.Forms.Keys]::Escape -and $script:FaultOpen) { $script:FaultOpen = $false }
     })
 
-    # Centred by measurement rather than by anchoring: AutoSize labels know their width only
-    # once the font is on them, and a title whose glyph did not render must not leave a hole.
-    $title.Top = 28
-    $tagline.Top = 82
-    $protocol.Top = 110
-    $working.Top = 288
-    $progress.Top = 316
-
-    $frames = New-Object System.Collections.ArrayList
-    $loadingDir = Join-Path $assetRoot 'loading'
-    if (Test-Path -LiteralPath $loadingDir -PathType Container) {
-        foreach ($file in (Get-ChildItem -LiteralPath $loadingDir -Filter 'frame-*.png' | Sort-Object Name)) {
-            try {
-                # Read the bytes first: Image.FromFile would hold the file open for the life
-                # of the image, and these files are redrawn by make_frames.py in place.
-                $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
-                $memory = New-Object System.IO.MemoryStream(,$bytes)
-                [void]$frames.Add([System.Drawing.Image]::FromStream($memory))
-            } catch { }
-        }
-    }
-    if ($frames.Count -gt 0) { $stage.Image = $frames[0] } else { $stage.Visible = $false }
-
-    $timer = New-Object System.Windows.Forms.Timer
-    $timer.Interval = 125  # ~8 fps
-    $timer.Add_Tick({
-        $splash = $script:Splash
-        if (-not $splash) { return }
-        if ($splash.Frames.Count -lt 2) { return }
-        $splash.FrameIndex = ($splash.FrameIndex + 1) % $splash.Frames.Count
-        $splash.Stage.Image = $splash.Frames[$splash.FrameIndex]
-    })
+    $title.Top = 55
+    $tagline.Top = 87
+    $progress.Top = 208
 
     $script:Splash = @{
-        Form = $form; Title = $title; Tagline = $tagline; Protocol = $protocol
-        Stage = $stage; Working = $working; Progress = $progress
-        Fault = $fault; Close = $close; Timer = $timer
-        Frames = $frames; FrameIndex = 0; Rim = $Rim
+        Form = $form; Title = $title; Tagline = $tagline; Progress = $progress
+        ProgressTrack = $progressTrack; ProgressFill = $progressFill
+        Fault = $fault; Close = $close; Rim = $Rim
+        MarkArch = $StoneDim; MarkFigure = $StoneInk; MarkKeystone = $Accent
+        MarkGround = $Ink
     }
 
-    Set-SplashBrand
+    Set-SplashLayout
     $form.Show()
     $form.Activate()
-    $timer.Start()
     return $script:Splash
 }
 
-function Set-SplashBrand {
-    # Segoe UI has no monkey; the glyph comes from whatever font Windows falls back to, which
-    # on Windows 11 is Segoe UI Emoji. A machine with no font for it measures the glyph at
-    # nothing, and the title then reads as the plain wordmark rather than as a wordmark with a
-    # box after it. The measurement is printed so a launch from a console says which happened.
+function Set-SplashLayout {
     $splash = $script:Splash
-    $title = $splash.Title
-    $glyphOnly = [System.Windows.Forms.TextRenderer]::MeasureText($BrandGlyph, $title.Font)
-    if ($glyphOnly.Width -le 4) {
-        $title.Text = $BrandName
+    if ($splash.Fault.Visible) {
+        $splash.Title.Left = 44
+        $splash.Tagline.Left = 44
     } else {
-        $title.Text = $BrandName + ' ' + $BrandGlyph
+        $splash.Title.Left = 124
+        $splash.Tagline.Left = 124
     }
-    Set-SplashCentred
-    Write-Host ("  brand   : the monkey glyph measured " + $glyphOnly.Width + " px wide in " + $title.Font.Name)
-}
-
-function Set-SplashCentred {
-    $splash = $script:Splash
-    $width = $splash.Form.ClientSize.Width
-    foreach ($label in @($splash.Title, $splash.Tagline, $splash.Protocol, $splash.Working, $splash.Progress)) {
-        $label.Left = [int](($width - $label.Width) / 2)
-    }
+    $splash.Progress.Left = 64
 }
 
 function Set-SplashStep([int]$Index, [string]$Text) {
@@ -254,12 +275,14 @@ function Set-SplashStep([int]$Index, [string]$Text) {
     $splash = $script:Splash
     if (-not $splash -or $splash.Form.IsDisposed) { return }
     $splash.Progress.Text = "$Index / $StepCount  ·  $Text"
-    Set-SplashCentred
+    $boundedIndex = [Math]::Max(0, [Math]::Min($StepCount, $Index))
+    $splash.ProgressFill.Width = [int][Math]::Round($splash.ProgressTrack.Width * $boundedIndex / $StepCount)
+    Set-SplashLayout
     Invoke-Pump 0
 }
 
 function Invoke-Pump([int]$Milliseconds) {
-    # The splash animates on this thread, so every wait in this script is a wait that pumps.
+    # The launch surface lives on this thread, so every wait in this script is a wait that pumps.
     [System.Windows.Forms.Application]::DoEvents()
     if ($Milliseconds -le 0) { return }
     $deadline = (Get-Date).AddMilliseconds($Milliseconds)
@@ -277,11 +300,7 @@ function Show-Fault([string]$Message) {
     Write-Host $Message -ForegroundColor Red
     if (-not $script:Splash -or $script:Splash.Form.IsDisposed) { New-Splash | Out-Null }
     $splash = $script:Splash
-    $splash.Timer.Stop()
     $splash.Form.BackColor = $FaultInk
-    $splash.Stage.Visible = $false
-    $splash.Working.Visible = $false
-    $splash.Protocol.Visible = $false
     $splash.Title.Font = New-Object System.Drawing.Font('Segoe UI', 17, [System.Drawing.FontStyle]::Bold)
     $splash.Title.Text = "$BrandName did not start"
     $splash.Title.Top = 30
@@ -289,11 +308,12 @@ function Show-Fault([string]$Message) {
     $splash.Tagline.ForeColor = $FaultRed
     $splash.Tagline.Top = 70
     $splash.Progress.Visible = $false
+    $splash.ProgressTrack.Visible = $false
     $splash.Fault.Text = ($Message -replace "`r`n", "`n") -replace "`n", "`r`n"
     $splash.Fault.Visible = $true
     $splash.Close.Visible = $true
     $splash.Close.BringToFront()
-    Set-SplashCentred
+    Set-SplashLayout
     $splash.Form.TopMost = $true
     $splash.Form.Show()
     $splash.Form.Activate()
@@ -307,7 +327,6 @@ function Show-Fault([string]$Message) {
 function Close-Splash {
     $splash = $script:Splash
     if (-not $splash) { return }
-    $splash.Timer.Stop()
     if (-not $splash.Form.IsDisposed) { $splash.Form.Close() }
     $script:Splash = $null
 }
@@ -451,7 +470,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $webRoot 'node_modules\.bin\vite.cmd
     Write-Host "  web deps missing; running npm install (this takes a few minutes) ..." -ForegroundColor Yellow
     $installLog = Join-Path $logRoot "npm-install-$stamp.log"
     $installErr = Join-Path $logRoot "npm-install-$stamp.err.log"
-    # Started rather than called, so the splash keeps animating through a five-minute install.
+    # Started rather than called, so the launch surface stays responsive through a long install.
     $install = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', 'npm.cmd install') -WorkingDirectory $webRoot -PassThru -NoNewWindow -RedirectStandardOutput $installLog -RedirectStandardError $installErr
     while (-not $install.HasExited) { Invoke-Pump 100 }
     $install.WaitForExit()
@@ -508,7 +527,7 @@ try {
     $script:WebUrl = "http://127.0.0.1:$webPort"
     Set-SplashStep 8 'opening the browser'
     if ($runtime.open_browser -and -not $NoBrowser) { Start-Process $script:WebUrl }
-    # A beat with the last step on screen: the browser takes a moment to paint, and a splash
+    # A beat with the last step on screen: the browser takes a moment to paint, and a surface
     # that vanished before it did would look like the launch had failed.
     Invoke-Pump 1400
     Close-Splash

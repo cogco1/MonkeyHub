@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@2",
-  "phase": "Continuing design deliberation - P111 planned; StateRecord geometry spine implemented",
+  "phase": "Next capability: a whole-stair architectural revision, starting with the existing project's endpoints, functional relationships and a bounded task before implementation (docs/ARCHITECTURE.md). P111 is delivered and tracks user trial only; do not restart it. P108 covers Studio use, P110 actual requirement inputs. Ready means prerequisites are met, not that geometry expansion or another executor has priority. Research and formal issue remain separate.",
   "items": [
     {
       "id": "P094",
@@ -14,7 +14,7 @@
         "P093"
       ],
       "write_scope": [
-        "docs/paper/",
+        "V4_RUNTIME/paper/caadria-2027/",
         "docs/mapping/",
         "governance/work_registry.json"
       ],
@@ -25,31 +25,6 @@
         "Decision records exist for the three-regime comparison and for the two preliminary-result episodes.",
         "Every manuscript number resolves to a retained record; a numbers-to-records table accompanies the draft.",
         "Figures 1-5 and Tables 1-2 carry source manifests; anonymisation, AI-use statement, and manual citation verification complete before submission."
-      ]
-    },
-    {
-      "id": "P104",
-      "stream": "planning",
-      "status": "ready",
-      "goal": "A resident Rhino export host: one COM process across the exports of a run, with exact ownership proven per script and document isolation between exports, so the incremental patch path's saved work turns into saved wall clock. Retires one process per export; the per-export bridge stays as the fallback and the equivalence oracle.",
-      "depends_on": [
-        "P103"
-      ],
-      "write_scope": [
-        "archflow/adapters/",
-        "archflow/runtime/",
-        "tools/",
-        "tests/",
-        "docs/mapping/",
-        "governance/work_registry.json"
-      ],
-      "card": "docs/mapping/planning/P104-resident-rhino-export-host.md",
-      "acceptance": [
-        "One Rhino process runs every seat export of a run; ownership is proven once and re-proven per script.",
-        "Second and later exports cost materially less than the first, measured on the villa and Rocca and reported as a table.",
-        "Per-process export remains available, is what the oracle uses, and a host failure falls back to it with a typed receipt.",
-        "Documents do not leak between exports; a violation fails typed.",
-        "Full unittest suite and the architecture firewall pass."
       ]
     },
     {
@@ -76,35 +51,6 @@
         "The Doric member family is produced from a derivation table in module ratios and reproduces each of the Parthenon's 104-member kinds within 1 mm from grid references.",
         "Roof and entablature fields are arrays over reference lines, not authored per member.",
         "Every producer publishes the datum its neighbour binds; engagements declared, no unexplained epsilon.",
-        "Full unittest suite and the architecture firewall pass."
-      ]
-    },
-    {
-      "id": "P106",
-      "stream": "planning",
-      "status": "blocked",
-      "goal": "Extract Pantheon and Parthenon State Records from their retained records, replay them through the runner with object-by-object equivalence receipts, inventory every monolith entry point against where its behaviour lives afterwards, then retire the per-building tools to typed stubs. Retires the per-building runner monoliths, once their behaviour is reachable without them.",
-      "depends_on": [
-        "P089",
-        "P102",
-        "P103",
-        "P105"
-      ],
-      "write_scope": [
-        "archflow/capabilities/",
-        "archflow/state/",
-        "archflow/runtime/",
-        "tools/",
-        "tests/",
-        "docs/mapping/",
-        "governance/work_registry.json"
-      ],
-      "card": "docs/mapping/planning/P106-monument-replay-and-monolith-retirement.md",
-      "acceptance": [
-        "Pantheon and Parthenon State Records are extracted from retained records and run through the runner.",
-        "Both reproduce their retained programs object by object within tolerance, recorded as equivalence receipts.",
-        "An inventory names every monolith entry point and where its behaviour lives afterwards; anything without a destination is carded before the file is touched.",
-        "The retired tools are typed stubs naming their replacement; their tests move to the runner path.",
         "Full unittest suite and the architecture firewall pass."
       ]
     },
@@ -138,7 +84,7 @@
       "id": "P108",
       "stream": "planning",
       "status": "ready",
-      "goal": "The vibe modeling frontend rebuilt inside the apps/archflow-studio namespace as web/ (Vite+React, OpenAPI-generated client) and api/ (FastAPI + Pydantic + uvicorn as BFF only: request validation, SSE, task lifecycle; state, dependencies, validation, geometry and commit are archflow calls), executed by a separate session under Kaiwen's direction. Retires Preview Slice 01 (stdlib gateway, presence-probe kernel, monolithic shell, old launcher) behind tag studio-preview-slice-01; migrates the viewer assets and the six reserved protocols by moving. Round one stops at the validation receipt with no canonical commit. Bound by the machine-enforced firewall on api/, the DO-NOT-REBUILD inventory, the migrated ports seam, and the AGENTS.md one-in-one-out rule.",
+      "goal": "Close the first usable edit-and-review round in the existing Studio web/API, preserving the landed viewer, launcher and kernel delegation. Verify a real project's intent, affected parts, candidate model and honestly scoped checks. The refoundation is not a new rebuild request; this round does not issue a project version.",
       "depends_on": [
         "P102",
         "P103"
@@ -156,14 +102,15 @@
         "Tag studio-preview-slice-01 marks the last commit where the demo is intact."
       ],
       "notes": [
-        "The remaining kernel gap from the 2026-09-03 calibration is P110 (CanonicalState projection; receipt labelled vacuous until it lands). P108 does not depend on it for round one."
+        "The remaining kernel gap from the 2026-09-03 calibration is P110 (CanonicalState projection; receipt labelled vacuous until it lands). P108 does not depend on it for round one.",
+        "Evidence check 2026-09-05: the six ports, the tag (1ef336f), the contract/API/stale-base/cross-project/UI tests and archcheck are verifiable in the repository. Not verifiable: no configured external project (villa or any other workspace project, nor the studio-smoke copies) retains a studio-cand-* run with its validation receipt, so the round-one chain has only live-smoke claims on temporary copies. The card stays open for that one retained run; it does not authorize developing a new design project to close it."
       ]
     },
     {
       "id": "P110",
       "stream": "planning",
       "status": "ready",
-      "goal": "A CanonicalState projection for State-Record projects: canonical_state_from_dict accepts only CanonicalState@1, while a State-Record project's HEAD (load_current_state) is the ref-based CanonicalProjectState@1 and its snapshot record is CanonicalSnapshot@2, so validate_submission can only be given CanonicalState(ref=head) with empty facts, commitments and obligations, on which ObligationDischargeValidator and AuthorizedCommitmentClaimsValidator have nothing to check. Project open_obligations from record.obligations, commitments from the record's authorized commitments, artifacts and facts from the run's receipts; one named path beside developed_design_view, or canonical_state_from_dict learns the ref-based shape, never both. Retires the labelled-vacuous validation receipt in P108.",
+      "goal": "Connect actual retained obligations and authorized claims to the existing validation input so a violated project requirement cannot disappear behind empty facts. Follow the exact record references through one existing owner; do not treat a reference envelope as design content or invent facts to fill an old schema. Existing relation checks remain in use; candidate continuation need not wait for this entire card.",
       "depends_on": [
         "P102"
       ],
@@ -172,11 +119,14 @@
         "archflow/state/",
         "archflow/validation/",
         "tests/",
+        "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
+        "apps/archflow-studio/api/tests/test_validation.py",
         "docs/mapping/",
         "governance/work_registry.json"
       ],
       "card": "docs/mapping/planning/P110-canonical-state-projection.md",
       "acceptance": [
+        "Identify retained obligation and authorized commitment/claim use cases; preserve provenance and authority rather than turning ordinary parameters or agent assertions into HARD commitments.",
         "Villa HEAD plus bound record projects to a CanonicalState whose ref equals read_head() and whose open obligations equal the record's.",
         "validate_submission on that state exercises ObligationDischargeValidator and AuthorizedCommitmentClaimsValidator on real content; a test shows a finding is reachable.",
         "The Studio drops the 'unavailable' label and the empty-facts construction in the same change.",
@@ -186,12 +136,9 @@
     {
       "id": "P111",
       "stream": "planning",
-      "status": "ready",
-      "goal": "One continuing design cycle in MonkeyArch: retain an unresolved question, compare alternatives, carry human rejection and revision judgments into a second round, recover after a service restart, and explicitly accept a checked result as the next project base. Extend existing owners and retire process-only retention for work that must survive sessions. P108 and P110 gate final acceptance; initial gap inspection can proceed.",
-      "depends_on": [
-        "P108",
-        "P110"
-      ],
+      "status": "active",
+      "goal": "Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; active denotes user trial, not an implementation queue. This does not establish whole-assembly usability or correct architectural dependencies.",
+      "depends_on": [],
       "write_scope": [
         "archflow/state/",
         "archflow/project/",
@@ -203,13 +150,75 @@
       ],
       "card": "docs/mapping/planning/P111-continuing-design-cycle.md",
       "acceptance": [
-        "Two rounds on one project retain an open question, two alternatives, an explicit rejection with its reason, a revision and an explicit acceptance.",
-        "After service restart and model-session reset, the same project recovers questions, proposals and human judgments and can continue without restating saved decisions.",
-        "The second round references the prior judgment and makes preserved or explicitly revised commitments visible; rejected proposals remain inspectable.",
-        "P110 validates real project content; stale bases and failed checks prevent issue. Review readiness never issues a run by itself.",
-        "Explicit acceptance uses project.issue; the next round uses the correct published version, and judgment authorship and reasons are recoverable from P036 records.",
-        "A second differently composed project uses the same path; repeated explanation, rework and waiting are reported as observations, not assumed improvements.",
-        "Affected owner behavior tests, relevant API and UI checks, and python tools/archcheck.py pass."
+        "Explicitly continuing candidate A makes the next proposal and worker use A's exact retained StateRecord, preserves A's changes and does not move canonical HEAD.",
+        "Two distinguishable edits produce B containing both A's retained change and the new change; the displayed result and editing source agree without asking the user for run IDs or repeating prior instructions.",
+        "Existing exact-base, cross-project, protected closure and lock checks remain effective; unrelated parts and authored input stay intact. Unchecked requirements remain visible and review readiness never issues a run.",
+        "Targeted API/UI behavior checks and archcheck pass; hand the usable change back for trial without waiting for restart recovery, all of P110, a second building, a benchmark or formal issue."
+      ],
+      "notes": [
+        "Implementation and isolated verification are complete: A-to-B API regressions and six browser interactions pass, along with web tests, type/build, OpenAPI consistency and archcheck. Handed back for user trial on the existing project after restarting MonkeyArch; stop implementation here. Program-sheet and massing-option generation remain default-base only.",
+        "This card replaces the earlier all-in-one acceptance bundle. P108/P110 retain their own obligations; no architectural check or formal-issue boundary is waived by permitting a local trial.",
+        "The user selected whole-stair usability and revision as the next capability direction. Its bounded task and owner mapping are in docs/ARCHITECTURE.md; the proposed benchmark is in docs/RESEARCH_POSITIONING.md. This card does not expand to implement it.",
+        "Confirmed internal simplification candidates are documented in P111, not made prerequisites: deterministic proposal/provider round trips, fabricated portfolio projection, and unused compiler self-digests. Preserve real validation and retained-data readers.",
+        "Development order lives in docs/ARCHITECTURE.md, not this delivery card. P094 research proceeds independently; reuse existing drawing/environment proposals. Formal issue and cross-project comparisons are separate tasks."
+      ]
+    },
+    {
+      "id": "P112",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "The stage phase belongs to the run: developed_design_view takes its phase from the caller (the runner passes the envelope's phase, the harness its own stage phase) instead of a constant, so a workflow whose stage 0 is schematic_design opens and runs; StageExecutionGuard keeps its equality check. Villa workflow v4 (schematic_design 200, design_development 300, candidate_coordination 350) is frozen and stages 0 and 1 rerun with exports. Retained developed-design-state records are read as they are; no migration.",
+      "depends_on": [],
+      "write_scope": [
+        "archflow/state/",
+        "archflow/runtime/",
+        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
+        "tools/verify_state_record.py",
+        "tests/"
+      ],
+      "card": "docs/mapping/planning/P112-stage-phase-from-envelope.md",
+      "acceptance": [
+        "tests/test_project_runner.py: a workflow whose stage 0 is schematic_design opens and runs to closure SATISFIED; a runner passing the wrong phase is refused by the guard.",
+        "Villa: runs stage-0-003 and stage-1-003 carry the workflow v4 envelope phases and reproduce stage-1-002's geometry (worst 0.0).",
+        "Spine and api suites and archcheck pass; every retained older run still reads in the Studio."
+      ]
+    },
+    {
+      "id": "P113",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "An evidence ledger: a research-evidence-ledger record (EvidenceLedger@1, new owner archflow/state/evidence.py, registered in record_kinds.py) whose entries the record's evidence_refs must resolve against, checked like relationship_refs (dangling refs refused, unsupported entities reported); one import from the villa's five research runs into research-006 and one export to the research-atlas skill's source files. The Studio tab and the stage evidence-coverage check are separate cards.",
+      "depends_on": [],
+      "write_scope": [
+        "archflow/state/",
+        "archflow/project/record_kinds.py",
+        "tools/",
+        "tests/"
+      ],
+      "card": "docs/mapping/planning/P113-evidence-ledger.md",
+      "acceptance": [
+        "A record with a dangling evidence_ref is refused naming the nearest evidence id; a record citing ledger evidence passes.",
+        "Villa: research-006's ledger entry count matches the five research runs' sources; the export directory passes the skill's validate_research_data.py.",
+        "Spine and api suites and archcheck pass; the new registry owner has tests."
+      ]
+    },
+    {
+      "id": "P114",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "User settings the launcher can read: GET/PUT /api/settings/user (language, theme, fontScale, model defaults) backed by %APPDATA%\\MonkeyArch\\settings.json in local mode only (remote mode neither declares the user-settings capability nor serves it), the launcher translating that file into environment variables at start, and the settings panel's save wired to the PUT with a user source badge. No remote multi-user.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/",
+        "apps/archflow-studio/launch-studio.ps1",
+        "apps/archflow-studio/web/src/features/settings/",
+        "governance/architecture_policy.json"
+      ],
+      "card": "docs/mapping/planning/P114-user-settings-bridge.md",
+      "acceptance": [
+        "API tests: local-mode read/write round trip; remote mode answers 404 and its capabilities omit user-settings; a corrupt file returns 422 without crashing.",
+        "Launcher: after writing one setting and restarting, the process environment agrees with it (manual check, recorded in the receipt).",
+        "archcheck with the write site registered, spine and api suites pass; PROTOCOL.md gains the two provisional resource rows."
       ]
     }
   ]

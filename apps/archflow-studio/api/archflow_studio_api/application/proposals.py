@@ -71,6 +71,8 @@ class Proposal:
     # sentence sent straight to ``POST /api/proposals`` opened no pending
     # intent and carries ``None``. Nothing in this module reads it.
     pending: "PendingIntent | None" = None
+    # An explicit editing base; None keeps the project's default projection.
+    source_run_id: str | None = None
 
 
 

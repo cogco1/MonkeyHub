@@ -64,6 +64,13 @@ class ProposalRequestDto(BaseModel):
         description="the project the client believes it is proposing against; "
         "a different one is refused as PROJECT_MISMATCH",
     )
+    source_run_id: str | None = Field(
+        alias="sourceRunId",
+        default=None,
+        min_length=1,
+        description="the retained run selected as the editing base; omitted "
+        "uses the project's default state projection",
+    )
 
     def context_refs(self) -> list[str]:
         """The selection as the ``IntentProvider`` port takes it."""
@@ -138,6 +145,12 @@ class ProposalDto(BaseModel):
         description="the exact base the operator refuses to run without",
     )
     record_digest: str = Field(alias="recordDigest")
+    source_run_id: str | None = Field(
+        alias="sourceRunId",
+        default=None,
+        description="the explicitly selected editing-base run, or null for "
+        "the project's default state projection",
+    )
     target: ProposalTargetDto
     change: ProposalChangeDto
     protected: list[str]
@@ -175,6 +188,7 @@ def to_dto(proposal: Proposal, *, scope: ProposalScopeDto | None = None) -> Prop
         status=proposal.status,
         base_state_digest=proposal.base_state_digest,
         record_digest=proposal.record_digest,
+        source_run_id=proposal.source_run_id,
         target=ProposalTargetDto(
             component_id=proposal.component_id,
             element_id=proposal.element_id,

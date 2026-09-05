@@ -97,6 +97,7 @@ def execute_candidate(
         binding,
         expected_record_digest=proposal.record_digest,
         expected_state_digest=proposal.base_state_digest,
+        source_run_id=proposal.source_run_id,
     )
     operator = StateRecordOperator(
         kind=StateRecordEditKind.SET_SCALAR,
@@ -126,7 +127,10 @@ def execute_candidate(
                 },
             ),
         )
-    return run_operator(binding, settings, operator, run_id, retain=retain)
+    return run_operator(
+        binding, settings, operator, run_id,
+        source_run_id=proposal.source_run_id, retain=retain,
+    )
 
 
 def execute_option_candidate(
@@ -171,6 +175,7 @@ def _operator_base(
     *,
     expected_record_digest: str,
     expected_state_digest: str,
+    source_run_id: str | None = None,
 ) -> StateRecord:
     """Bind a Studio request to the StateRecord exact base on the worker.
 
@@ -179,14 +184,14 @@ def _operator_base(
     are checked rather than replacing either with a fresh value from here.
     """
 
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=source_run_id)
     require_actionable(projection)
     if (
         projection.record_digest != expected_record_digest
         or projection.state_digest != expected_state_digest
     ):
         raise StaleBaseError(
-            "STALE_BASE: the authored record changed after the candidate base "
+            "STALE_BASE: the source record changed after the candidate base "
             f"was captured (record {expected_record_digest[:8]} -> "
             f"{projection.record_digest[:8]}; state "
             f"{expected_state_digest[:8]} -> "
@@ -276,12 +281,13 @@ def run_operator(
     operator: StateRecordOperator,
     run_id: str,
     *,
+    source_run_id: str | None = None,
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
 ) -> Mapping[str, Any]:
-    """Replay one typed operator against the worker's latest bound record and run it."""
+    """Replay a typed operator against its selected or default exact base and run it."""
 
     seat_pack = load_seat_pack(binding.repository)
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=source_run_id)
     require_actionable(projection)
     successor = apply_state_record_operator(projection.record, operator)
     return _run_successor(binding, settings, seat_pack, successor, run_id, retain=retain)

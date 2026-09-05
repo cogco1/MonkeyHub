@@ -5,7 +5,8 @@
 **Depends on:** P100 (references and derivations), P102 (the State Record)
 **Retires:** the classical-order and solid-of-revolution vocabulary as *operation kinds invented inside a
 per-building tool*. After this card that vocabulary exists once, as producers reading references, and the
-per-building emitters become its callers until P106 removes them.
+per-building emitters left with the monument lane (external archive batch `20260905_repo_archive-lanes`;
+P106 retired unbuilt on 2026-09-05), so a monument re-enters only as a State Record these producers can run.
 
 ## Why
 

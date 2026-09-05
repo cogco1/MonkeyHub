@@ -3,6 +3,10 @@
 **Status:** ready (not started)
 **Lane:** productization and componentization
 **Depends on:** P102
+**Write scope:** the existing runtime/state/validation projection owner and its tests, plus
+`apps/archflow-studio/api/archflow_studio_api/application/validation.py` and its API validation tests for the
+same-change integration. Coordinate ownership of those Studio files with P108/P111; do not add a BFF-side
+projection or validator.
 **Retires:** the labelled-vacuous validation receipt in P108 (`canonicalFacts: "unavailable (schema drifted; K2)"`)
 and the Studio's `CanonicalState(ref=head)` empty-facts construction.
 **Raised by:** 新建会话 during P108 calibration (2026-09-03); reproduced by the main session on the villa HEAD.
@@ -22,14 +26,25 @@ fixed.
 
 ## Direction
 
-A projection from a bound `StateRecord@1` plus the HEAD ref to `CanonicalState`: `open_obligations` from
-`record.obligations`, `commitments` from the record's authorized commitments (or the seats' `commitment_ref`
-lineage), `artifacts` from the run's receipts, `facts` from the run's relation checks. Either
-`canonical_state_from_dict` learns `CanonicalSnapshot@2`, or a named `canonical_state_of(record, head)` sits beside
-`developed_design_view` — one of the two, never both.
+Start with an actual requirement and the existing validator that should consume it.
+Follow the exact retained references through the existing project/state owners, then
+provide one view for that consumer: obligations from the record, authorized commitments
+from their verified source, and artifacts/findings from the corresponding run. A HEAD
+or snapshot reference envelope is not itself the design content; accepting its key set
+in a deserializer is not a substitute for reading what it references.
+
+Implement only the projection supported by those sources. Do not manufacture commitments
+from ordinary parameters or build a second validator just to populate CanonicalState.
+Declared relation checks already run independently and remain in use. The P111 candidate
+continuation repair can be tried before this card closes, with unverified requirements
+still explicit; this is not permission to issue an unchecked project version.
 
 ## Acceptance
 
+- [ ] Select one actual retained obligation and one authorized commitment/claim use case before implementing
+      the projection. Preserve their origin and authorization; an ordinary parameter, evidence citation or
+      agent assertion does not become a HARD commitment merely to populate this view. If required source
+      content is absent, identify that concrete gap rather than inventing it.
 - [ ] Villa HEAD + bound record → a `CanonicalState` whose `ref` equals `read_head()` and whose open obligations
       equal the record's.
 - [ ] `validate_submission` on that state exercises `ObligationDischargeValidator` and

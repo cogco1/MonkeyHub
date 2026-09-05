@@ -19,6 +19,8 @@ two unrelated proposals.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from fastapi import APIRouter
 from starlette.datastructures import State
 from starlette.requests import Request
@@ -58,7 +60,7 @@ def create_proposal(
 
     binding = bound_project(request.app.state)
     _require_bound_project(binding, body.project_id)
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=body.source_run_id)
     require_actionable(projection)
     proposal = proposal_from(
         DeterministicIntentProvider(projection).propose(
@@ -70,6 +72,7 @@ def create_proposal(
             context_refs=body.context_refs(),
         )
     )
+    proposal = replace(proposal, source_run_id=body.source_run_id)
     return to_dto(request.app.state.proposals.put(proposal))
 
 
@@ -101,7 +104,7 @@ def decide_proposal(
     # One projection answers both questions this route asks of the record: what
     # evidence it cites, and — for a modification — what the replacement
     # sentence resolves against. Two projections could disagree.
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=proposal.source_run_id)
     read = episodes.validation_refs_read(
         state.jobs, state.validations, (proposal,)
     )
@@ -171,12 +174,15 @@ def _reproposed(
     if proposal.element_id is not None:
         context_refs.append(f"element:{proposal.element_id}")
     return state.proposals.put(
-        proposal_from(
-            DeterministicIntentProvider(projection).propose(
-                session_ref=f"project:{binding.project_id}",
-                message=utterance,
-                context_refs=context_refs,
-            )
+        replace(
+            proposal_from(
+                DeterministicIntentProvider(projection).propose(
+                    session_ref=f"project:{binding.project_id}",
+                    message=utterance,
+                    context_refs=context_refs,
+                )
+            ),
+            source_run_id=proposal.source_run_id,
         )
     )
 

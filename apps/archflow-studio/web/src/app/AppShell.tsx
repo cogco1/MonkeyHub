@@ -1,6 +1,6 @@
 /**
- * The frame: a slim toolbar across the top, the conversation beside the
- * stage, and — when the evidence drawer is pinned — the drawer as a third
+ * The frame: a compact toolbar across the top, an optional conversation beside
+ * the stage, and — when the evidence drawer is pinned — the drawer as the last
  * column. This file decides where things go and nothing else.
  */
 
@@ -19,7 +19,11 @@ export function AppShell({
   pinnedDrawer: ReactNode;
 }) {
   return (
-    <div className="app" data-pinned={String(pinnedDrawer !== null)}>
+    <div
+      className="app"
+      data-conversation={String(conversation !== null)}
+      data-pinned={String(pinnedDrawer !== null)}
+    >
       <header className="toolbar">{toolbar}</header>
       {conversation}
       {stage}

@@ -66,9 +66,8 @@ export function Connected() {
   }
 
   if (server.status !== "ready") {
-    // The handshake is the first half of the same wait the launcher's splash was
-    // showing a moment ago, so it gets the same surface rather than a bare line:
-    // between the splash closing and the shell mounting nothing should look empty.
+    // The handshake continues the launcher's exact-status convention rather than
+    // leaving a blank frame between the launch surface and the mounted shell.
     return (
       <LoadingOverlay
         mode="boot"

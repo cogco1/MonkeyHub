@@ -99,6 +99,14 @@ export function Stage({
   onShowHome,
   home,
   loadedRunId,
+  editingBaseRunId,
+  editingBaseLabel,
+  explicitBase,
+  changingBase,
+  baseError,
+  baseActionBusy,
+  onContinue,
+  onDefaultBase,
   onCompareVersion,
   blend,
   onBlend,
@@ -159,6 +167,14 @@ export function Stage({
   home: HomeModel | null;
   /** The run whose export is on screen, for the strip's comparisons. */
   loadedRunId: string | null;
+  editingBaseRunId: string | null;
+  editingBaseLabel: string | null;
+  explicitBase: boolean;
+  changingBase: boolean;
+  baseError: StudioApiError | null;
+  baseActionBusy: boolean;
+  onContinue(runId: string): void;
+  onDefaultBase(): void;
   onCompareVersion(artifact: ProjectArtifactDto): void;
   /** A cross-fade in progress: before is the loaded run, after the candidate. */
   blend: { candidateId: string; against: string; t: number; meshes: number } | null;
@@ -200,8 +216,8 @@ export function Stage({
         gestures={gestures}
         onGesture={onGesture}
       />
-      {/* Parsing a run's exports is the longest wait in the app after the launch itself, and
-          it is the same wait: the viewport's own status line is what the overlay says. */}
+      {/* The shield preserves the stage's loading boundary while the translucent matte
+          backing leaves the previous picture legible as context. */}
       {status === "loading" && <LoadingOverlay mode="stage" status={message} />}
 
       <div className="hud">
@@ -213,6 +229,31 @@ export function Stage({
             message={message}
             view={view}
           />
+          {editingBaseRunId !== null && (
+            <div className="editing-base">
+              <span role="status" aria-live="polite">
+                {changingBase ? t("stage.base.loading") : t("stage.base.current")} {" "}
+                <span title={editingBaseRunId}>{editingBaseLabel ?? <code>{editingBaseRunId}</code>}</span>
+              </span>
+              {loadedRunId !== null && loadedRunId !== editingBaseRunId && (
+                <button
+                  type="button"
+                  className="btn btn--small"
+                  disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null}
+                  title={t("stage.base.continueTitle")}
+                  onClick={() => onContinue(loadedRunId)}
+                >
+                  {t("stage.base.continue")}
+                </button>
+              )}
+              {explicitBase && (
+                <button type="button" className="btn btn--small" disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"} onClick={onDefaultBase}>
+                  {t("stage.base.default")}
+                </button>
+              )}
+              {baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
+            </div>
+          )}
           {blend && (
             <div className="blend" aria-label={t("stage.blend.ariaLabel")}>
               <span className="label">{t("stage.blend.before")}</span>
@@ -317,7 +358,8 @@ export function Stage({
           <button
             type="button"
             aria-pressed={programOpen}
-            title={t("program.openTitle")}
+            disabled={explicitBase || changingBase}
+            title={t(explicitBase ? "stage.base.programUnavailable" : "program.openTitle")}
             onClick={onToggleProgram}
           >
             {t("program.open")}

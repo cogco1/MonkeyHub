@@ -45,6 +45,25 @@
         "-NoBrowser"
       ],
       "port": 5174
+    },
+    {
+      "name": "studio-api-villa",
+      "runtimeExecutable": "py",
+      "runtimeArgs": [
+        "-3.12",
+        "-c",
+        "import os, sys; os.environ['ARCHFLOW_STUDIO_PROJECT_DIR']='D:/PROJECTS/01_ACTIVE_当前项目/ARCHFLOW CAADRIA 2027/V4_RUNTIME/workspace/projects/villa-rotonda-reconstruction'; os.environ['ARCHFLOW_STUDIO_REFERENCE_RUN']='reindex-compile-008'; os.environ['ARCHFLOW_STUDIO_INTENT_PROVIDER']='deterministic'; sys.path.insert(0, 'apps/archflow-studio/api'); sys.argv=['archflow-studio','--port','8014']; from archflow_studio_api.main import main; main()"
+      ],
+      "port": 8014
+    },
+    {
+      "name": "studio-web-villa",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set ARCHFLOW_STUDIO_API_URL=http://127.0.0.1:8014&& npm --prefix apps/archflow-studio/web run dev -- --port 5184 --strictPort"
+      ],
+      "port": 5184
     }
   ]
 }

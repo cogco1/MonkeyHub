@@ -101,6 +101,13 @@ class IntentRequestDto(BaseModel):
         description="the stateDigest /api/state answered with; a request "
         "against any other state is refused as STALE_BASE",
     )
+    source_run_id: str | None = Field(
+        alias="sourceRunId",
+        default=None,
+        min_length=1,
+        description="the retained run selected as the editing base; omitted "
+        "uses the project's default state projection",
+    )
     utterance: str = Field(
         min_length=1,
         description="what the architect said, in any words; the agent compiles "

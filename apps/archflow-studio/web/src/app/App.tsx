@@ -191,10 +191,12 @@ export default function App({ server }: { server: ServerIdentity }) {
     },
     [append],
   );
-  const { session, stateDigest, recoverFromStaleBase } = useSession(pushNotice);
+  const { session, stateDigest, changingBase, baseError, reload, recoverFromStaleBase } = useSession(pushNotice);
+  const sourceRunId = session.status === "ready" ? session.value.sourceRunId : null;
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [picked, setPicked] = useState<PickedFacts | null>(null);
+  const pickRequestRef = useRef(0);
   const [draft, setDraft] = useState("");
   // The one clarification this tab is in the middle of, as the server described
   // it. A ref rather than state because it is not drawn: the cards show what
@@ -304,10 +306,23 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>("honesty");
   const [eventCount, setEventCount] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [conversationOpen, setConversationOpen] = useState(true);
 
   const projection: StateProjectionDto | null =
     session.status === "ready" ? session.value.projection : null;
   const project = session.status === "ready" ? session.value.project : null;
+  // A new editing base starts a new exchange, without discarding the draft or history.
+  useEffect(() => {
+    pickRequestRef.current += 1;
+    pendingIntentRef.current = null;
+    setSelection(null);
+    setPicked(null);
+    setGestures([]);
+    setTool(null);
+    setGhostProposalId(null);
+    viewportRef.current?.ghost(null);
+    refinePending.current.clear();
+  }, [projection?.stateDigest]);
   const [viewerCatalog, setViewerCatalog] = useState<CatalogDto | null>(null);
   const semanticCatalog = useMemo(() => {
     const runId = loadedArtifact?.runId;
@@ -457,37 +472,35 @@ export default function App({ server }: { server: ServerIdentity }) {
     if (session.status === "ready") void loadArtifacts();
   }, [session.status, loadArtifacts]);
 
-  const loadFrame = useCallback(async () => {
-    setFrame(loading);
-    try {
-      setFrame(ready(await studio.frame()));
-    } catch (cause) {
-      setFrame(failed(asStudioApiError(cause)));
-    }
-  }, []);
-
   // Read while the panel is open, and read again when the record underneath it
   // changes: a frame from a record the tab has left is a picture of a building
   // that is no longer the one on screen.
   useEffect(() => {
     if (!frameOpen || projection === null) return;
-    void loadFrame();
-  }, [frameOpen, projection?.recordDigest, loadFrame]);
+    let current = true;
+    setFrame(loading);
+    void studio.frame(sourceRunId ?? undefined).then(
+      (answer) => { if (current) setFrame(ready(answer)); },
+      (cause) => { if (current) setFrame(failed(asStudioApiError(cause))); },
+    );
+    return () => { current = false; };
+  }, [frameOpen, projection?.recordDigest, sourceRunId]);
 
-  const loadOptions = useCallback(async () => {
+  useEffect(() => {
+    if (!optionsOpen || projection === null) return;
+    let current = true;
     setOptionsTable(loading);
     setVolumes(loading);
-    try {
-      setOptionsTable(ready(await studio.options()));
-    } catch (cause) {
-      setOptionsTable(failed(asStudioApiError(cause)));
-    }
-    try {
-      setVolumes(ready(await studio.volumes()));
-    } catch (cause) {
-      setVolumes(failed(asStudioApiError(cause)));
-    }
-  }, []);
+    void studio.options().then(
+      (answer) => { if (current) setOptionsTable(ready(answer)); },
+      (cause) => { if (current) setOptionsTable(failed(asStudioApiError(cause))); },
+    );
+    void studio.volumes(sourceRunId ?? undefined).then(
+      (answer) => { if (current) setVolumes(ready(answer)); },
+      (cause) => { if (current) setVolumes(failed(asStudioApiError(cause))); },
+    );
+    return () => { current = false; };
+  }, [optionsOpen, projection?.recordDigest, sourceRunId]);
 
   const loadProgram = useCallback(async () => {
     setProgram(loading);
@@ -502,11 +515,6 @@ export default function App({ server }: { server: ServerIdentity }) {
       setProgram(failed(asStudioApiError(cause)));
     }
   }, []);
-
-  useEffect(() => {
-    if (!optionsOpen || projection === null) return;
-    void loadOptions();
-  }, [optionsOpen, projection?.recordDigest, loadOptions]);
 
   useEffect(() => {
     if (!programOpen || projection === null) return;
@@ -535,7 +543,7 @@ export default function App({ server }: { server: ServerIdentity }) {
    */
   const applyProgram = useCallback(
     async (current: ProgramSheetDto, saveInput: boolean) => {
-      if (stateDigest === null) return;
+      if (stateDigest === null || sourceRunId !== null) return;
       setApplyingProgram(true);
       try {
         const answer = await studio.applyProgram({
@@ -567,7 +575,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         setApplyingProgram(false);
       }
     },
-    [append, recoverFromStaleBase, stateDigest],
+    [append, recoverFromStaleBase, sourceRunId, stateDigest],
   );
 
   const openLocalFile = useCallback((file: File) => {
@@ -805,6 +813,7 @@ export default function App({ server }: { server: ServerIdentity }) {
 
   const resolvePick = useCallback(
     async (pick: ViewportPick) => {
+      const request = ++pickRequestRef.current;
       // What the ray met, lit at once: the click has an answer on the model
       // before the server has said what it is. A resolved pick widens the mark
       // to every object of the element below; an unresolved one leaves it here.
@@ -825,11 +834,13 @@ export default function App({ server }: { server: ServerIdentity }) {
       try {
         const resolution = await studio.resolvePick({
           stateDigest,
+          sourceRunId,
           userStrings: pick.userStrings,
           documentUserStrings:
             pick.documentUserStrings ?? receiptDocumentStrings(loadedArtifact),
           objectName: pick.objectName,
         });
+        if (request !== pickRequestRef.current) return;
         const subject =
           resolution.elementId ?? resolution.componentId ?? "nothing resolvable";
         append({
@@ -890,12 +901,13 @@ export default function App({ server }: { server: ServerIdentity }) {
           });
         }
       } catch (cause) {
+        if (request !== pickRequestRef.current) return;
         const error = asStudioApiError(cause);
         recoverFromStaleBase(error);
         append({ kind: "refusal", error, what: "POST /api/pick/resolve" });
       }
     },
-    [append, loadedArtifact, projection, recoverFromStaleBase, semanticCatalog, stateDigest],
+    [append, loadedArtifact, projection, recoverFromStaleBase, semanticCatalog, sourceRunId, stateDigest],
   );
 
   // One proposal in flight at a time. The busy flag renders the button; this
@@ -989,6 +1001,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         // record's, and the agent's reading travels beside it, kept apart.
         const answer = await studio.compileIntent({
           stateDigest,
+          sourceRunId,
           targetComponentId: asked?.componentId ?? null,
           elementId: asked?.elementId ?? null,
           utterance,
@@ -1121,6 +1134,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       semanticCatalog,
       selection,
       sourceLabel,
+      sourceRunId,
       stateDigest,
       t,
     ],
@@ -1159,6 +1173,30 @@ export default function App({ server }: { server: ServerIdentity }) {
     [append, propose, selectSemanticTarget],
   );
 
+  const changeEditingBase = useCallback(async (runId: string | null) => {
+    if (changingBase || proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy) return;
+    pickRequestRef.current += 1;
+    const next = await reload(runId);
+    if (next !== null) {
+      setProgramOpen(false);
+      setDisplayMode("model");
+      viewportRef.current?.showOriginal();
+      viewportRef.current?.clearSecondary();
+      setBlendState(null);
+      if (runId === null) {
+        manualLoadRef.current = true;
+        const rows = artifacts.status === "ready" ? artifacts.value.artifacts.filter(
+          (row) => row.runId === next.projection.referenceRun.runId && row.available && row.sha256 !== null,
+        ) : [];
+        if (rows.length > 0) {
+          void loadRunIntoViewer(rows, runSourceLabel(next.projection.referenceRun.runId, rows));
+        } else {
+          viewportRef.current?.clear();
+        }
+      }
+    }
+  }, [applyingProgram, artifacts, candidateBusy, changingBase, loadRunIntoViewer, optionsBusy, proposalBusy, refiningEntryId, reload, runSourceLabel]);
+
   /**
    * The hand moves a proposal's number. The sentence is the grammar's own —
    * ``set <key> to <n>`` with the proposal's keep clause carried — so the
@@ -1176,6 +1214,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         return;
       }
       const { proposal } = entry;
+      if (proposal.baseStateDigest !== stateDigest) return;
       const keep =
         proposal.protected.length > 0 ? ` keep ${proposal.protected.join(", ")}` : "";
       const utterance = `set ${proposal.target.key} to ${Number(value.toFixed(6))}${keep}`;
@@ -1184,6 +1223,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       try {
         const answer = await studio.compileIntent({
           stateDigest,
+          sourceRunId,
           targetComponentId: proposal.target.componentId,
           elementId: proposal.target.elementId,
           utterance,
@@ -1231,6 +1271,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       recoverFromStaleBase,
       semanticCatalog,
       sourceLabel,
+      sourceRunId,
       stateDigest,
       transcript,
     ],
@@ -1643,7 +1684,9 @@ export default function App({ server }: { server: ServerIdentity }) {
   const hasSubject =
     selection !== null || gestures.some((gesture) => gesture.kind === "circle");
   const disabledReason =
-    session.status === "failed"
+    changingBase
+      ? t("stage.base.loading")
+      : session.status === "failed"
       ? t("shell.bindingRefused", { code: session.error.code })
       : projection === null
         ? t("shell.readingProjection")
@@ -1745,9 +1788,9 @@ export default function App({ server }: { server: ServerIdentity }) {
     />
   );
 
-  // The tab is still starting up until the API has answered for the binding. The launcher's
-  // splash said the same three things while the servers came up; this is the second half of
-  // that wait, and it is over when the shell has a project to name.
+  // The tab is still starting up until the API has answered for the binding. This carries
+  // the launcher's exact-status convention into the browser and ends when the shell has a
+  // project to name.
   const booting = session.status === "idle" || session.status === "loading";
 
   return (
@@ -1820,6 +1863,15 @@ export default function App({ server }: { server: ServerIdentity }) {
             <button
               type="button"
               className="toolbar__btn"
+              aria-controls="conversation-panel"
+              aria-expanded={conversationOpen}
+              onClick={() => setConversationOpen((open) => !open)}
+            >
+              {t("conversation.title")}
+            </button>
+            <button
+              type="button"
+              className="toolbar__btn"
               aria-pressed={evidenceOpen || evidencePinned}
               onClick={() =>
                 evidenceOpen && !evidencePinned
@@ -1840,15 +1892,18 @@ export default function App({ server }: { server: ServerIdentity }) {
             </button>
           </>
         }
-        conversation={
+        conversation={conversationOpen ? (
           <Conversation
             entries={transcript.entries}
             sessionError={session.status === "failed" ? session.error : null}
             projection={projection}
+            editingBaseRunId={projection?.referenceRun.runId ?? null}
+            editingBaseLabel={sentenceOfCandidate(projection?.referenceRun.runId ?? null)}
+            currentStateDigest={stateDigest}
             selection={selection}
             disabledReason={disabledReason}
             busy={proposalBusy}
-            runBusy={candidateBusy}
+            runBusy={candidateBusy || changingBase}
             loadingSha={artifactLoadingSha}
             ghostProposalId={ghostProposalId}
             refiningEntryId={refiningEntryId}
@@ -1913,7 +1968,7 @@ export default function App({ server }: { server: ServerIdentity }) {
               onEvidence: openEvidence,
             }}
           />
-        }
+        ) : null}
         stage={
           <Stage
             viewportRef={viewportRef}
@@ -1931,6 +1986,14 @@ export default function App({ server }: { server: ServerIdentity }) {
             versions={versions}
             loadingSha={artifactLoadingSha}
             loadedShas={loadedShas}
+            editingBaseRunId={projection?.referenceRun.runId ?? null}
+            editingBaseLabel={sentenceOfCandidate(projection?.referenceRun.runId ?? null)}
+            explicitBase={sourceRunId !== null}
+            changingBase={changingBase}
+            baseError={baseError}
+            baseActionBusy={proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy}
+            onContinue={(runId) => void changeEditingBase(runId)}
+            onDefaultBase={() => void changeEditingBase(null)}
             evidenceCounts={evidenceCounts}
             review={review}
             drawer={evidencePinned ? null : drawer}
@@ -1962,9 +2025,10 @@ export default function App({ server }: { server: ServerIdentity }) {
             optionsPanel={
               optionsOpen ? (
                 <OptionsPanel
+                  readOnlyReason={sourceRunId !== null ? t("stage.base.optionsReadOnly") : undefined}
                   table={optionsTable}
                   volumes={volumes}
-                  stateDigest={projection?.stateDigest ?? null}
+                  stateDigest={sourceRunId === null ? stateDigest : null}
                   busy={optionsBusy}
                   onMake={(body) => void makeOption(body)}
                   onSelect={(optionId) => void selectOption(optionId)}

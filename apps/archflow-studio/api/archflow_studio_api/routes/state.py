@@ -70,7 +70,10 @@ def read_state(
     response_model=FrameDto,
     response_model_by_alias=True,
 )
-def read_frame(request: Request) -> FrameDto:
+def read_frame(
+    request: Request,
+    run: str | None = Query(default=None, min_length=1),
+) -> FrameDto:
     """The levels and axes this record positions everything against.
 
     Read off ``projection.record`` and nothing else, so it asks with
@@ -78,13 +81,12 @@ def read_frame(request: Request) -> FrameDto:
     record the kernel would not build a bound view for still declares its own
     frame, and refusing to name it would withhold an answer the record gives.
 
-    There is no ``?run=`` here on purpose. The frame comes from the same record
-    chosen by the default projection rule: an exact retained reference when
-    one exists, otherwise authored work in progress.
+    The optional run selects the same retained record as ``GET /api/state``;
+    omitting it keeps the project's default projection rule.
     """
 
     binding = bound_project(request.app.state)
-    projection = project_state(binding, require_view=False)
+    projection = project_state(binding, run_id=run, require_view=False)
     return frame_dto(frame_of(projection.record))
 
 
@@ -93,7 +95,10 @@ def read_frame(request: Request) -> FrameDto:
     response_model=VolumesDto,
     response_model_by_alias=True,
 )
-def read_volumes(request: Request) -> VolumesDto:
+def read_volumes(
+    request: Request,
+    run: str | None = Query(default=None, min_length=1),
+) -> VolumesDto:
     """The record's massing volumes, and what the massing as a whole measures.
 
     Separate from the frame rather than another field of it: the frame is what
@@ -107,7 +112,7 @@ def read_volumes(request: Request) -> VolumesDto:
     """
 
     binding = bound_project(request.app.state)
-    projection = project_state(binding, require_view=False)
+    projection = project_state(binding, run_id=run, require_view=False)
     return volumes_dto(record_massing(projection.record))
 
 
@@ -126,7 +131,7 @@ def read_closure(request: Request, body: ClosureRequestDto) -> ClosureDto:
     """
 
     binding = bound_project(request.app.state)
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=body.source_run_id)
     if body.state_digest != projection.state_digest:
         raise StudioError(
             409,

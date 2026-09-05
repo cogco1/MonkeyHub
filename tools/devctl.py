@@ -57,7 +57,9 @@ def render(data: dict) -> tuple[str, str]:
     ready = [i["id"] for i in items if is_ready(i, live_ids)]
     blocked = [i["id"] for i in items if i["status"] == "blocked" or (i["status"] == "ready" and i["id"] not in ready)]
     if active:
-        nxt = f"finish active work: {', '.join(active)}"
+        nxt = f"continue active work: {', '.join(active)}"
+        if ready:
+            nxt += f"; independent ready work may start: {', '.join(ready)}"
     elif ready:
         nxt = f"claim one of: {', '.join(ready)}"
     else:

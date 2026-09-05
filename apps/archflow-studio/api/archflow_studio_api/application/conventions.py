@@ -120,7 +120,7 @@ def parse_conventions(text: str, *, declared_components: set[str] | None = None)
     )
 
 
-def project_conventions(binding) -> ProjectConventions:
+def project_conventions(binding, *, run_id: str | None = None) -> ProjectConventions:
     """The bound project's conventions, or none when it has no PROJECT.md."""
 
     path = Path(binding.project_dir) / PROJECT_MARKDOWN
@@ -134,7 +134,7 @@ def project_conventions(binding) -> ProjectConventions:
     try:
         from .projection import project_state
 
-        projection = project_state(binding, require_view=False)
+        projection = project_state(binding, run_id=run_id, require_view=False)
         declared = {entity.entity_id for entity in projection.record.entities_of("Component@1")}
     except Exception:  # noqa: BLE001 - conventions must not fail a request over the record
         declared = None

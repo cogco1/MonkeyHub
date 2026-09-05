@@ -546,6 +546,203 @@ class CandidateRunTests(CandidateTestCase):
         )
 
 
+class CandidateContinuationTests(CandidateTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.before_head = self.repository.read_head()
+        self.authored_inputs = {
+            path: self.repository.layout.resolve_relative(path).read_bytes()
+            for path in (RUNNER_RECORD_PATH, RUNNER_SEATS_PATH)
+        }
+        accepted, job = self.run_candidate(
+            "set height to 2.2", elementId="portico-base"
+        )
+        self.assertEqual(job["status"], "succeeded", job)
+        self.source_run_id = accepted["candidateId"]
+        response = self.client.get(
+            "/api/state", params={"run": self.source_run_id}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.source_state = response.json()
+        self.source_body = {
+            "projectId": PROJECT_ID,
+            "sourceRunId": self.source_run_id,
+            "stateDigest": self.source_state["stateDigest"],
+            "targetComponentId": "portico",
+            "elementId": "portico-cornice",
+            "utterance": "set height to 0.5",
+        }
+
+    def assert_continued_record(self, run_id: str, cornice_height: float) -> None:
+        record = _run_state_record(self.repository, run_id)
+        heights = {
+            entity["entity_id"]: entity["fields"]["params"]["height"]
+            for entity in record["entities"]
+            if entity.get("schema") == "Element@1"
+        }
+        self.assertEqual(heights["portico-base"], 2.2)
+        self.assertEqual(heights["portico-cornice"], cornice_height)
+
+    def test_both_request_routes_continue_the_selected_candidate(self) -> None:
+        self.assertEqual(
+            self.source_state["referenceRun"]["runId"], self.source_run_id
+        )
+        self.assertTrue(self.source_state["matchesReferenceReceipt"])
+        self.assertNotEqual(self.source_state["stateDigest"], self.state_digest)
+        for route in ("/api/intents", "/api/proposals"):
+            with self.subTest(route=route):
+                response = self.client.post(route, json=self.source_body)
+                self.assertEqual(response.status_code, 201, response.text)
+                payload = response.json()
+                proposal = payload.get("proposal", payload)
+                self.assertEqual(proposal["sourceRunId"], self.source_run_id)
+                self.assertEqual(
+                    proposal["baseStateDigest"], self.source_state["stateDigest"]
+                )
+                self.assertEqual(
+                    proposal["recordDigest"], self.source_state["recordDigest"]
+                )
+                accepted = self.start(proposal["proposalId"])
+                job = self.finished(accepted["jobId"])
+                self.assertEqual(job["status"], "succeeded", job)
+                self.assert_continued_record(accepted["candidateId"], 0.5)
+
+        self.assert_continued_record(self.source_run_id, 0.3)
+        self.assertEqual(self.repository.read_head(), self.before_head)
+        for path, content in self.authored_inputs.items():
+            self.assertEqual(
+                self.repository.layout.resolve_relative(path).read_bytes(), content
+            )
+        default = self.client.get("/api/state").json()
+        self.assertEqual(default["referenceRun"]["runId"], REFERENCE_RUN_ID)
+        self.assertEqual(default["stateDigest"], self.state_digest)
+        default_proposal = self.propose("set height to 2.3", elementId="portico-base")
+        self.assertEqual(default_proposal["change"]["old"], 0.6)
+
+    def test_candidate_read_pick_and_closure_use_the_selected_run(self) -> None:
+        for route in ("/api/state/frame", "/api/state/volumes"):
+            with self.subTest(route=route):
+                response = self.client.get(route, params={"run": self.source_run_id})
+                self.assertEqual(response.status_code, 200, response.text)
+                missing = self.client.get(route, params={"run": "missing-source"})
+                self.assertEqual(missing.status_code, 404, missing.text)
+                self.assertEqual(missing.json()["code"], "RUN_NOT_FOUND")
+        selected = {
+            "sourceRunId": self.source_run_id,
+            "stateDigest": self.source_state["stateDigest"],
+        }
+        closure = self.client.post(
+            "/api/state/closure",
+            json={**selected, "changedRefs": ["entity:portico-base"]},
+        )
+        self.assertEqual(closure.status_code, 200, closure.text)
+        self.assertIn("entity:portico-cornice", closure.json()["closure"])
+        pick = self.client.post(
+            "/api/pick/resolve",
+            json={
+                **selected,
+                "userStrings": {
+                    "archflow:component": "portico",
+                    "archflow:object_ref": "cad-object:obj-portico-base",
+                    "archflow:producer_op": "portico-base",
+                },
+                "documentUserStrings": {
+                    "archflow:project_id": PROJECT_ID,
+                    "archflow:run_id": self.source_run_id,
+                    "archflow:design_state_digest": self.source_state["stateDigest"],
+                },
+            },
+        )
+        self.assertEqual(pick.status_code, 200, pick.text)
+        self.assertEqual(pick.json()["elementId"], "portico-base")
+        self.assertEqual(pick.json()["sourceState"], "current")
+
+    def test_modifying_a_continuation_preserves_its_source(self) -> None:
+        proposal = self.propose(**self.source_body)
+        decision = self.client.post(
+            f"/api/proposals/{proposal['proposalId']}/decision",
+            json={
+                "decision": "modified",
+                "reason": "a smaller cornice increase",
+                "modifiedTo": {"utterance": "set height to 0.4"},
+            },
+        )
+        self.assertEqual(decision.status_code, 201, decision.text)
+        replacement_id = decision.json()["proposals"][0]["modifiedTo"]["proposalId"]
+        replacement = self.client.get(f"/api/proposals/{replacement_id}").json()
+        self.assertEqual(replacement["sourceRunId"], self.source_run_id)
+        self.assertEqual(
+            replacement["baseStateDigest"], self.source_state["stateDigest"]
+        )
+        accepted = self.start(replacement_id)
+        job = self.finished(accepted["jobId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assert_continued_record(accepted["candidateId"], 0.4)
+
+    def test_source_selection_does_not_fall_back_on_invalid_requests(self) -> None:
+        for route in ("/api/intents", "/api/proposals"):
+            for changed, status, code in (
+                ({"sourceRunId": "missing-source"}, 404, "RUN_NOT_FOUND"),
+                ({"projectId": "another-project"}, 403, "PROJECT_MISMATCH"),
+                ({"stateDigest": self.state_digest}, 409, "STALE_BASE"),
+            ):
+                with self.subTest(route=route, code=code):
+                    response = self.client.post(
+                        route, json={**self.source_body, **changed}
+                    )
+                    self.assertEqual(response.status_code, status, response.text)
+                    self.assertEqual(response.json()["code"], code)
+
+        advance_head(self.repository, run_id="promotion-after-source")
+        self.assertEqual(
+            self.client.get("/api/state", params={"run": self.source_run_id}).status_code,
+            200,
+        )
+        for route in ("/api/intents", "/api/proposals"):
+            response = self.client.post(route, json=self.source_body)
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertEqual(response.json()["code"], "REFERENCE_BASE_STALE")
+
+    def test_queued_continuation_rechecks_the_selected_record(self) -> None:
+        proposal = self.propose(**self.source_body)
+        release = threading.Event()
+        self.addCleanup(release.set)
+        held = self.app.state.jobs.submit(
+            candidate_id="studio-cand-hold-continuation",
+            proposal_id=proposal["proposalId"],
+            work=release.wait,
+            closure=("entity:portico-cornice",),
+        )
+        accepted = self.start(proposal["proposalId"])
+        self.assertEqual(
+            self.client.get(f"/api/jobs/{accepted['jobId']}").json()["status"],
+            "queued",
+        )
+        receipt = _load_kind(self.repository, self.source_run_id, "runner-run-receipt")
+        receipt["state_record_digest"] = "0" * 64
+        ref = self.repository.put_json(
+            run=self.repository.load_run(self.source_run_id),
+            destination=_run_records(self.source_run_id),
+            record_kind="runner-run-receipt",
+            payload=receipt,
+        )
+        path = self.repository.layout.resolve_record(ref)
+        newest = path.stat().st_mtime + 60.0
+        os.utime(path, (newest, newest))
+        for route in ("/api/intents", "/api/proposals"):
+            response = self.client.post(route, json=self.source_body)
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertEqual(response.json()["code"], "REFERENCE_STATE_NOT_EXACT")
+        release.set()
+        self.assertEqual(self.finished(held.job_id)["status"], "succeeded")
+        job = self.finished(accepted["jobId"])
+        self.assertEqual(job["status"], "failed", job)
+        self.assertIn("state_record_digest does not match", job["error"])
+        self.assertFalse(
+            (self.repository.layout.runs / accepted["candidateId"]).exists()
+        )
+
+
 class CandidateFailureTests(CandidateTestCase):
     def test_a_value_the_runner_refuses_fails_the_job_out_loud(self) -> None:
         accepted, job = self.run_candidate(

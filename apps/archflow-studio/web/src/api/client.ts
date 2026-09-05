@@ -144,8 +144,8 @@ export const studio = {
    * The record's frame: the levels and axes every element is positioned
    * against, each with what stands on it and what changing it would move.
    */
-  frame(): Promise<FrameDto> {
-    return call("GET /api/state/frame", readFrameApiStateFrameGet());
+  frame(run?: string): Promise<FrameDto> {
+    return call("GET /api/state/frame", readFrameApiStateFrameGet({ query: { run } }));
   },
 
   /**
@@ -164,8 +164,8 @@ export const studio = {
    * the frame because a volume is positioned against no level and no axis: it
    * declares its own box.
    */
-  volumes(): Promise<VolumesDto> {
-    return call("GET /api/state/volumes", readVolumesApiStateVolumesGet());
+  volumes(run?: string): Promise<VolumesDto> {
+    return call("GET /api/state/volumes", readVolumesApiStateVolumesGet({ query: { run } }));
   },
 
   /** The baseline and every massing option this server process holds. */

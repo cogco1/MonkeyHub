@@ -3,6 +3,14 @@ import type { MessageCatalog } from "./messages.en";
 export const messagesZhCN = {
   "nav.settings": "设置",
   "nav.evidence": "依据",
+  "stage.base.current": "下次修改起点",
+  "stage.base.loading": "正在读取修改起点…",
+  "stage.base.continue": "从此版本继续",
+  "stage.base.continueTitle": "下一次修改使用画面中这个运行的记录，不代表认可或发布。",
+  "stage.base.default": "返回默认修改起点",
+  "stage.base.programUnavailable": "任务书编辑尚未支持候选续改，请返回默认修改起点后编辑。",
+  "stage.base.optionsReadOnly": "这里可查看候选体量；生成体量选项尚未支持候选续改，请返回默认修改起点。",
+  "proposal.otherBase": "此提案属于另一个修改起点，可调整其语句，在当前起点重新提案。",
 
   "common.apply": "应用",
   "common.cancel": "取消",
@@ -119,7 +127,7 @@ export const messagesZhCN = {
   "shell.askAgain": "重新连接",
   "shell.client": "客户端外壳",
   "shell.reloadPage": "重新加载页面",
-  "shell.wordmarkTitle": "专业建模环境 · 由开放的 ArchFlow 协议驱动。",
+  "shell.wordmarkTitle": "ArchFlow 建模工作区",
   "shell.publishedIssue": "已发布 · 第 {version} 版",
   "shell.proposalOnlyTitle":
     "仅生成提案 · 每次运行都是项目旁的试验框架；不会发布任何内容",
@@ -131,9 +139,6 @@ export const messagesZhCN = {
   "shell.boundViewRefused": "内核拒绝了此记录的绑定视图；请先修复记录再提出改动",
   "shell.pickFirst": "请先在模型中选择对象，或选择一个构件",
 
-  "loading.tagline": "专业建模环境",
-  "loading.protocol": "由开放的 ArchFlow 协议驱动。",
-  "loading.working": "猴子正在后台狠狠干 OCCT",
   "loading.startingSession": "正在启动会话",
   "loading.readingBinding": "正在读取绑定",
   "loading.askingServer": "正在询问服务器",

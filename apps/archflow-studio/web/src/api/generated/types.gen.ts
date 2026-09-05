@@ -615,6 +615,12 @@ export type ClosureRequestDto = {
      */
     stateDigest: string;
     /**
+     * Sourcerunid
+     *
+     * the retained run selected as the editing base; omitted uses the project's default state projection
+     */
+    sourceRunId?: string | null;
+    /**
      * Changedrefs
      *
      * entity:<entityId> or parameter:<key>, as GET /api/state and GET /api/state/frame name them
@@ -1594,6 +1600,12 @@ export type IntentRequestDto = {
      */
     stateDigest: string;
     /**
+     * Sourcerunid
+     *
+     * the retained run selected as the editing base; omitted uses the project's default state projection
+     */
+    sourceRunId?: string | null;
+    /**
      * Utterance
      *
      * what the architect said, in any words; the agent compiles it into the grammar or asks
@@ -2153,6 +2165,12 @@ export type PickRequestDto = {
      * the stateDigest /api/state answered with; a pick against any other state is refused as STALE_BASE
      */
     stateDigest: string;
+    /**
+     * Sourcerunid
+     *
+     * the retained run selected as the editing base; omitted uses the project's default state projection
+     */
+    sourceRunId?: string | null;
     /**
      * Userstrings
      *
@@ -2724,6 +2742,12 @@ export type ProposalDto = {
      * Recorddigest
      */
     recordDigest: string;
+    /**
+     * Sourcerunid
+     *
+     * the explicitly selected editing-base run, or null for the project's default state projection
+     */
+    sourceRunId?: string | null;
     target: ProposalTargetDto;
     change: ProposalChangeDto;
     /**
@@ -2795,6 +2819,12 @@ export type ProposalRequestDto = {
      * the project the client believes it is proposing against; a different one is refused as PROJECT_MISMATCH
      */
     projectId?: string | null;
+    /**
+     * Sourcerunid
+     *
+     * the retained run selected as the editing base; omitted uses the project's default state projection
+     */
+    sourceRunId?: string | null;
 };
 
 /**
@@ -3632,9 +3662,23 @@ export type ReadStateApiStateGetResponse = ReadStateApiStateGetResponses[keyof R
 export type ReadFrameApiStateFrameGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Run
+         */
+        run?: string | null;
+    };
     url: '/api/state/frame';
 };
+
+export type ReadFrameApiStateFrameGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadFrameApiStateFrameGetError = ReadFrameApiStateFrameGetErrors[keyof ReadFrameApiStateFrameGetErrors];
 
 export type ReadFrameApiStateFrameGetResponses = {
     /**
@@ -3648,9 +3692,23 @@ export type ReadFrameApiStateFrameGetResponse = ReadFrameApiStateFrameGetRespons
 export type ReadVolumesApiStateVolumesGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Run
+         */
+        run?: string | null;
+    };
     url: '/api/state/volumes';
 };
+
+export type ReadVolumesApiStateVolumesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadVolumesApiStateVolumesGetError = ReadVolumesApiStateVolumesGetErrors[keyof ReadVolumesApiStateVolumesGetErrors];
 
 export type ReadVolumesApiStateVolumesGetResponses = {
     /**

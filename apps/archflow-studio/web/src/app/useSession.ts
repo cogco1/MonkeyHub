@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { StudioApiError, asStudioApiError, studio } from "../api/client";
 import type { ProjectBindingDto, StateProjectionDto } from "../api/generated";
-import { failed, idle, loading, ready, type Loadable } from "./loadable";
+import { failed, idle, ready, type Loadable } from "./loadable";
 
 const STALE_BASE = "STALE_BASE";
 
@@ -25,34 +25,58 @@ const RE_PROJECTED_NOTICE = "the project moved under you — re-projected";
 export interface Session {
   readonly project: ProjectBindingDto;
   readonly projection: StateProjectionDto;
+  /** Null keeps the server's default reference policy; a run is an explicit choice. */
+  readonly sourceRunId: string | null;
 }
 
 export interface SessionHandle {
   readonly session: Loadable<Session>;
   readonly stateDigest: string | null;
-  reload(): Promise<void>;
+  readonly changingBase: boolean;
+  readonly baseError: StudioApiError | null;
+  reload(runId?: string | null): Promise<Session | null>;
   /** Re-project when the error says the base moved. Answers whether it did. */
   recoverFromStaleBase(error: StudioApiError): boolean;
 }
 
 export function useSession(notice: (line: string) => void): SessionHandle {
   const [session, setSession] = useState<Loadable<Session>>(idle);
+  const [changingBase, setChangingBase] = useState(false);
+  const [baseError, setBaseError] = useState<StudioApiError | null>(null);
+  const sourceRunRef = useRef<string | null>(null);
+  const requestRef = useRef(0);
   const noticeRef = useRef(notice);
   noticeRef.current = notice;
 
-  const reload = useCallback(async () => {
-    setSession(loading);
+  const reload = useCallback(async (runId = sourceRunRef.current) => {
+    const request = ++requestRef.current;
+    setChangingBase(true);
+    setBaseError(null);
     try {
-      const project = await studio.project();
-      const projection = await studio.state();
-      setSession(ready({ project, projection }));
+      const [project, projection] = await Promise.all([
+        studio.project(),
+        studio.state(runId ?? undefined),
+      ]);
+      if (request !== requestRef.current) return null;
+      sourceRunRef.current = runId;
+      const next = { project, projection, sourceRunId: runId };
+      setSession(ready(next));
+      return next;
     } catch (cause) {
-      setSession(failed(asStudioApiError(cause)));
+      if (request !== requestRef.current) return null;
+      const error = asStudioApiError(cause);
+      setBaseError(error);
+      // A failed switch leaves the previous editing base intact.
+      setSession((current) => current.status === "ready" ? current : failed(error));
+      return null;
+    } finally {
+      if (request === requestRef.current) setChangingBase(false);
     }
   }, []);
 
   useEffect(() => {
     void reload();
+    return () => { requestRef.current += 1; };
   }, [reload]);
 
   const recoverFromStaleBase = useCallback(
@@ -68,7 +92,9 @@ export function useSession(notice: (line: string) => void): SessionHandle {
   return {
     session,
     stateDigest:
-      session.status === "ready" ? session.value.projection.stateDigest : null,
+      !changingBase && session.status === "ready" ? session.value.projection.stateDigest : null,
+    changingBase,
+    baseError,
     reload,
     recoverFromStaleBase,
   };

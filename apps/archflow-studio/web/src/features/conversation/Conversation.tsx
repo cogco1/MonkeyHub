@@ -64,6 +64,9 @@ export function Conversation({
   entries,
   sessionError,
   projection,
+  editingBaseRunId,
+  editingBaseLabel,
+  currentStateDigest,
   selection,
   disabledReason,
   busy,
@@ -83,6 +86,9 @@ export function Conversation({
   entries: readonly Entry[];
   sessionError: StudioApiError | null;
   projection: StateProjectionDto | null;
+  editingBaseRunId: string | null;
+  editingBaseLabel: string | null;
+  currentStateDigest: string | null;
   selection: Selection | null;
   disabledReason: string | null;
   busy: boolean;
@@ -113,7 +119,11 @@ export function Conversation({
   }, [entries]);
 
   return (
-    <section className="chat" aria-label={t("conversation.ariaLabel")}>
+    <section
+      id="conversation-panel"
+      className="chat"
+      aria-label={t("conversation.ariaLabel")}
+    >
       <header className="chat__head">
         <span className="label">{t("conversation.title")}</span>
         <span className="chat__head-meta mono">{t("conversation.scope")}</span>
@@ -142,11 +152,15 @@ export function Conversation({
               ghostProposalId,
               refiningEntryId,
               callbacks,
+              currentStateDigest,
               t,
             })}
           </div>
         ))}
       </div>
+      {editingBaseRunId !== null && (
+        <p className="quiet" title={editingBaseRunId}>{t("stage.base.current")} {editingBaseLabel ?? <code>{editingBaseRunId}</code>}</p>
+      )}
       <Composer
         selection={selection}
         projection={projection}
@@ -172,6 +186,7 @@ function renderEntry(
     ghostProposalId,
     refiningEntryId,
     callbacks,
+    currentStateDigest,
     t,
   }: {
     runBusy: boolean;
@@ -179,6 +194,7 @@ function renderEntry(
     ghostProposalId: string | null;
     refiningEntryId: string | null;
     callbacks: ConversationCallbacks;
+    currentStateDigest: string | null;
     t: TFunction;
   },
 ): ReactNode {
@@ -207,6 +223,7 @@ function renderEntry(
             refinements={entry.refinements}
             refining={entry.id === refiningEntryId}
             busy={runBusy}
+            inactive={entry.proposal.baseStateDigest !== currentStateDigest}
             onRun={() => callbacks.onRun(entry.proposal.proposalId)}
             onAdjust={callbacks.onAdjust}
             onRefine={(value) => callbacks.onRefine(entry.id, value)}

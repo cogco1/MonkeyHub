@@ -25,5 +25,7 @@ def resolve(request: Request, pick: PickRequestDto) -> PickResolutionDto:
     a pick is checked against is the digest the client was just given.
     """
 
-    projection = project_state(bound_project(request.app.state))
+    projection = project_state(
+        bound_project(request.app.state), run_id=pick.source_run_id
+    )
     return to_dto(resolve_pick(projection, pick.to_request()))

@@ -13,7 +13,7 @@
  * here that says so. Nothing on this panel writes the authored record.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import type {
   MassingMetricsDto,
@@ -151,6 +151,7 @@ export function OptionsPanel({
   volumes,
   stateDigest,
   busy,
+  readOnlyReason,
   onMake,
   onSelect,
   onClose,
@@ -161,6 +162,7 @@ export function OptionsPanel({
   stateDigest: string | null;
   /** An option or a selection is in flight; the buttons wait rather than queue. */
   busy: boolean;
+  readOnlyReason?: ReactNode;
   onMake(body: MassingOptionRequestDto): void;
   onSelect(optionId: string): void;
   onClose(): void;
@@ -186,6 +188,7 @@ export function OptionsPanel({
         </button>
       </div>
 
+      {readOnlyReason && <p className="options__note quiet">{readOnlyReason}</p>}
       {volumes.status === "failed" ? (
         <ErrorPanel error={volumes.error} what="GET /api/state/volumes" />
       ) : rows.length === 0 ? (

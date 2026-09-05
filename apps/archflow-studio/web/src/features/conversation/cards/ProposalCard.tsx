@@ -55,6 +55,7 @@ export function ProposalCard({
   refinements,
   refining,
   busy,
+  inactive,
   onRun,
   onAdjust,
   onRefine,
@@ -69,6 +70,7 @@ export function ProposalCard({
   /** Whether a refinement of this entry is on the wire. */
   refining: boolean;
   busy: boolean;
+  inactive: boolean;
   onRun(): void;
   onAdjust(utterance: string): void;
   onRefine(value: number): void;
@@ -173,7 +175,8 @@ export function ProposalCard({
           </p>
         </div>
       )}
-      {typeof change.old === "number" &&
+      {inactive && <p className="card__row quiet">{t("proposal.otherBase")}</p>}
+      {!inactive && typeof change.old === "number" &&
         typeof change.new === "number" &&
         change.old > 0 && (
           <Refine
@@ -201,7 +204,7 @@ export function ProposalCard({
         <button
           type="button"
           className="btn btn--primary"
-          disabled={busy}
+          disabled={busy || inactive}
           onClick={onRun}
         >
           {t("common.apply")}

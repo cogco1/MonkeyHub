@@ -3162,7 +3162,7 @@
         "opening the located project on first use and holding that one binding for the process",
         "resolving the project segment of /api/projects/{project_id}: today only the bound project resolves, and every other id is 404 PROJECT_NOT_FOUND",
         "listing the projects this server binds, and which of them the unscoped default-project shortcut answers for",
-        "choosing the reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping the harness workflows state.stage_workflow names",
+        "choosing the default reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping harness workflows; an explicit run selects that run's exact retained record for state, frame, volumes, pick, closure and candidate continuation",
         "reading the P036 record-name convention (kind plus sha256) and listing a run's record refs",
         "loading the reference run's State Record through the state_record_ref carried by its runner receipt, checking its content digest and exact run/base binding; only a project with no eligible reference run reads the authored work-in-progress record",
         "answering project.inputs' refusals on the wire: 404 STATE_RECORD_NOT_FOUND and 422 STATE_RECORD_INVALID, each naming the file",
@@ -3259,7 +3259,7 @@
         "binding happens on the first request that needs it, not at import or app creation",
         "every fact on a reference projection is the kernel's answer from the State Record that run retained; the current authored input is never rebound onto an existing run",
         "a reference whose receipt does not bind a readable State Record, whose record digest differs, or whose run base is not current remains inspectable but cannot be used for a proposal, impact or candidate",
-        "a harness run is never chosen as the reference run",
+        "a harness run is never automatically chosen as the default reference; explicitly continuing it leaves that default and canonical HEAD unchanged",
         "the projection is read-only and states, in honesty lines, what it could not compute",
         "one process answers for one project: the scoped and the unscoped path resolve to the same binding and are shaped by the same function",
         "the catalog derives; it never writes: an object no element names stays MODEL_VISIBLE_CATALOG_MISSING, and no neighbouring element's field is offered in its place"
@@ -3299,7 +3299,7 @@
         "the worker pool and queue: closure-based conflicts, the exclusive Rhino export lane, and per-job lifecycle state",
         "the bounded in-process event log, its replay and its live subscribers",
         "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines",
-        "one arrangement for every kind of candidate: compile or receive a StateRecordOperator, replay it against the worker's latest bound record, then run the successor (run_operator over _run_successor)"
+        "one arrangement for every kind of candidate: compile or receive a StateRecordOperator, replay it against the worker's exact base, then run the successor (run_operator over _run_successor); a proposal's optional source_run_id follows its explicitly selected retained record through queue and worker, while None preserves the default reference policy"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -3418,7 +3418,7 @@
         "the action resolver: change_existing_value / declare_missing_control / clarify / unsupported, and the AuthoredControlDraft the second of those returns",
         "the four closed outcomes of one intent (COMPILED, NEEDS_CLARIFICATION, MISSING_EDITABLE_CONTROL, UNSUPPORTED) and their reason codes",
         "the PendingIntent value and the in-process store that holds it, keyed by continuationToken and bound to one stateDigest",
-        "the Proposal value, its closure, and the in-process store that holds it",
+        "the Proposal value, its closure, optional sourceRunId inherited from the intent or proposal request, and the in-process store that holds it; modifications preserve the same source run",
         "the camera + compass level of the target resolver (a viewer word read into a side), PROJECT.md aliases as outright names, the catalog as the one directory of editable elements and of what the model shows without a row (MODEL_VISIBLE_CATALOG_MISSING on the authored-control draft)",
         "declared controls: a confirmed authored-control draft kept in process against its state (POST /api/controls), never a row of the record",
         "the DeliberationEpisode value: one judgement of the studio - the intent, the options on the table, the decision on each with its reason, and the run it produced",

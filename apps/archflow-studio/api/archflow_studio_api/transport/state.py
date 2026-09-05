@@ -447,6 +447,11 @@ class ClosureRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     state_digest: str = Field(alias="stateDigest", min_length=1)
+    source_run_id: str | None = Field(
+        alias="sourceRunId", default=None, min_length=1,
+        description="the retained run selected as the editing base; omitted "
+        "uses the project's default state projection",
+    )
     changed_refs: list[str] = Field(
         alias="changedRefs",
         min_length=1,

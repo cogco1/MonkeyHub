@@ -74,7 +74,7 @@ def start_candidate(
             "a protection the user named.",
         )
     binding = bound_project(state)
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=proposal.source_run_id)
     require_actionable(projection)
     _require_current_base(binding, projection, proposal)
     registry: JobRegistry = state.jobs

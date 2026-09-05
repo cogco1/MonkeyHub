@@ -5,12 +5,16 @@ instructions.
 
 ## Long-term direction
 
-`docs/VISION.md` defines the direction: help people and AI carry architectural
-design tasks through modeling, related changes, representation and checking.
-Start from concrete work the architect still has to do, including setup,
-handoffs and correction. Existing parametric tools and ArchFlow already propagate
-defined dependencies; neither AI-authored operations nor retained explanations
-alone establish an additional capability to complete the work.
+`docs/VISION.md` defines the direction: remove work imposed by tools so architects
+can develop, inspect and revise ideas more directly with AI. Start from a real
+user action and identify what they should no longer have to explain, transfer or
+repair. Direct modeling can itself be design thinking; do not count every human
+action as waste. Existing tools and ArchFlow already propagate defined dependencies.
+Tests, gates, hashes and module counts are implementation checks, not product progress.
+Editable-object counts likewise do not establish architectural usability. Work on a whole
+building task: its necessary functions and relationships, the conditions governing a change,
+and whether the result can be revised and handed over. Following declared dependencies does
+not prove those dependencies are complete or architecturally correct.
 
 MonkeyArch tests representation and interaction. An independent application or
 geometry engine needs a demonstrated reason. Extend existing owners for concrete
@@ -18,6 +22,8 @@ needs, not one schema or module per vision term. Keep human judgments attributab
 and distinguish continuing a candidate, endorsing a direction and formally issuing
 a project version. Live development is indexed by `governance/work_registry.json`;
 the vision and `docs/RESEARCH_POSITIONING.md` do not themselves authorize new mechanisms.
+Deliver one usable change, then use its results to choose the next. Do not make a
+local repair wait for a full research comparison, another building or formal issue.
 
 ## Framework versus project data
 
@@ -80,39 +86,42 @@ writing it and ask Kevin to decide its ownership.
 
 ## Before implementing anything
 
-The repository has one production spine (`docs/CANONICAL_SPINE.md`) and a module contract
+The repository has one production spine (`docs/ARCHITECTURE.md`) and a module contract
 registry (`governance/module_registry.json`, rendered as `docs/SYSTEM_MAP.md`). Every
-capability has exactly one owner there. Before writing code:
+capability has exactly one owner there. `docs/CANONICAL_SPINE.md` records the earlier
+consolidation decision, not a migration to rerun. Before writing code:
 
-1. Read `docs/SYSTEM_MAP.md` (200 lines), not the tree.
+1. Locate the relevant owner in `docs/SYSTEM_MAP.md`; read that entry, not the whole tree.
 2. Find the capability the request needs in the registry: which module `owns` it, what that
    module `does_not_own`, its contract (`inputs`, `outputs`, `public_api`, `invariants`).
-3. Search the spine for a semantically equivalent implementation (`python tools/archcheck.py`
-   reports duplicate function bodies; grep the owner's `public_api`).
+3. Check that owner's public API and real callers for an existing implementation.
 4. Decide EXTEND (default), REFACTOR, or CREATE. CREATE needs a written reason why no owner
    fits; a second implementation of an owned capability is allowed only behind an interface
    declared in the registry with its implementations listed.
-5. Update the registry entry (owner, `owns`, `public_api`, `tests`) before the code.
-6. Implement; run `python tools/archcheck.py` (import boundaries, no `archive` imports,
-   registry truth, duplicate capability owners) and the owner's tests.
+5. Update the registry in the same change only when ownership, the public contract or
+   its listed tests actually change. An internal fix needs no ceremonial registry edit.
+6. Implement and run the affected behavior tests and `python tools/archcheck.py`.
+   For documentation-only changes, check links, generated maps and the scoped diff;
+   do not run the application suite. Broader checks need an affected boundary or failure.
 
 Code under `archive/` is not extended and not imported; a lane returns only as a fold onto
 the spine.
 
-## One mechanism in, one mechanism out
+## Extend behavior, remove superseded paths
 
-Any new mechanism replaces an old one; it does not stand beside it.
+Extend the existing owner by default. When replacing a mechanism, remove the
+superseded production path in the same change; preserve readers required by
+retained data. An export or a test alone does not prove that a path is needed.
 
-1. A change that introduces a canonical record, protocol, resolver or
-   vocabulary names what it retires and deletes it in the same change.
-2. "Retire" means no production path can reach the old one any more; keeping
-   it "for compatibility" without a caller is not retirement, and a symbol is
-   not protected because it is exported, documented or asserted by a test.
-3. If nothing can be retired, the abstraction is not canonical yet: keep it
-   as a candidate beside its one consumer, not in `archflow/`.
-4. A test is kept when it proves behaviour a user can observe, geometry,
-   persistence and restart, canonical commit, exact-base binding, an external
-   side-effect boundary, or the reading of retained data. A test that only
-   asserts a key set, a schema string, a round trip, a frozen digest or an
-   always-false flag is deleted with the structure it described.
-5. Finished work is Git history. The registry holds live work only.
+A genuinely new requested behavior may have nothing to retire. Implement it
+beside its first real consumer; extract a shared abstraction only when real
+consumers need it. Do not invent a retirement or a parallel framework to satisfy
+a slogan.
+
+Keep tests of observable behavior, geometry, persistence/restart, exact-base,
+external effects and retained-data compatibility. Delete assertions that only
+freeze unused internal packaging with that packaging; do not delete a boundary
+contract merely because its test checks fields or a round trip.
+
+Finished work is Git history. The registry holds live work only. Report the
+usable result and remaining limitation; internal checks support that report.

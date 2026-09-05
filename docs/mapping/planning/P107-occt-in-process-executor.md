@@ -51,5 +51,5 @@ weakening of the Rhino gate to make the lane look equivalent. No client-side geo
 
 ## Consequences
 
-P104 (resident Rhino host) loses most of its value if this lands: one 37-second certification per stage gate is
-tolerable. P104 is annotated accordingly and waits for this card's measurements before anyone builds it.
+P104 (resident Rhino host) was retired unbuilt on 2026-09-05 with the monument lane: one 37-second Rhino
+certification per stage gate is tolerable once this lands, and no second acceleration path is carded.
