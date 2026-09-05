@@ -749,8 +749,12 @@ def _run_references(draft: ElementDraft, frame: Frame, run: str, start: float, e
 def draft_stair(draft: ElementDraft, frame: Frame) -> None:
     """Boxes that climb in a straight line -> a flight of ``count`` steps of one rise and one going.
 
-    Solid steps fill their whole rise; slab steps are thinner and the
-    difference is the row's ``thickness``. The invariants a flight must hold
+    Solid steps fill their whole rise and draft ``thickness`` 0. Steps thinner
+    than their rise are read as the original thin-tread input and draft that
+    height as ``thickness`` so the note and the row say what was seen; this
+    is diagnostic only, because the whole-flight producer refuses a positive
+    ``thickness`` (separate slab treads are not one closed solid) and does not
+    carry it into geometry. The invariants a flight must hold
     are named one by one - ``collinear``, ``going``, ``rise``, ``width`` -
     so a family that is not one (a spiral, whose steps rotate) says which
     reading failed instead of being split into unrelated prisms.

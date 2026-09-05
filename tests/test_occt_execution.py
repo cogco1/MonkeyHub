@@ -12,6 +12,9 @@ started, and the tests refuse any attempt to.
 from __future__ import annotations
 
 import json
+import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -98,7 +101,11 @@ def _stair_record() -> StateRecord:
 
 
 def _compile(record: StateRecord) -> CompiledGeometryProgram:
-    """Producers, then the compiler, exactly as the authored-record tests do it."""
+    """Producers, then the compiler, exactly as the authored-record tests do it.
+
+    The producers' hosted assemblies travel into the proposal as the runner
+    carries them, re-homed onto the fixture's one semantic binding.
+    """
 
     levels = project_levels_of(record)
     context = ProductionContext(
@@ -107,10 +114,11 @@ def _compile(record: StateRecord) -> CompiledGeometryProgram:
     produced = produce_rows(element_rows_of(record), context)
     state = _state()
     operations = tuple(replace(op, semantic_binding_ids=("building-binding",)) for element in produced for op in element.operations)
+    assemblies = tuple(replace(a, semantic_binding_ids=("building-binding",)) for element in produced for a in element.assemblies)
     datums = tuple(sorted(list(context.published.values()) + list(levels.datums()), key=lambda d: d.datum_id))
     result = compile_geometry_program(
         state,
-        _only(_proposal(state, extra_operations=operations), operations, ()),
+        _only(_proposal(state, extra_operations=operations), operations, assemblies),
         active_commitment_refs=(COMMITMENT,),
         interface_datums=datums,
         datum_bindings=tuple(b for element in produced for b in element.bindings),
@@ -118,6 +126,23 @@ def _compile(record: StateRecord) -> CompiledGeometryProgram:
     if result.program is None:
         raise AssertionError([(i.code.value, i.subject_id, i.detail) for i in result.receipt.issues])
     return result.program
+
+
+WINDOW_TYPE = {"schema": "WindowType@1", "type_id": "window-type-1", "frame_width": 0.09, "frame_depth": 0.18,
+               "frame_projection": 0.1, "glazing_thickness": 0.025, "glazing_offset": 0.01}
+
+
+def _window_record(*, count: int = 1, step: float = 0.0, along: float = 3.0) -> StateRecord:
+    """The fixture record with its south window typed (and, with ``count``, repeated along the wall)."""
+
+    payload = json.loads(json.dumps(RECORD_PAYLOAD))
+    wall = next(entity for entity in payload["entities"] if entity["entity_id"] == "wall-south")
+    wall["fields"]["params"]["types"] = [WINDOW_TYPE]
+    opening = wall["fields"]["params"]["openings"][0]
+    opening.update({"type_id": "window-type-1", "along": along})
+    if count > 1:
+        opening.update({"count": count, "step": step})
+    return StateRecord.from_dict(payload)
 
 
 def _persisted_binding(program: CompiledGeometryProgram, stage_id: str) -> RhinoCadProgramBinding:
@@ -149,7 +174,7 @@ def _refuse_process(*args, **kwargs):
     raise AssertionError(f"the OCCT executor must not start a process: {args[:1]}")
 
 
-def _execute(program, binding, workspace: Path, stem: str) -> tuple[OcctExecutionReceipt, float]:
+def _execute(program, binding, workspace: Path, stem: str, **options) -> tuple[OcctExecutionReceipt, float]:
     with _no_process():
         started = time.perf_counter()
         receipt = execute_occt_export(
@@ -158,6 +183,7 @@ def _execute(program, binding, workspace: Path, stem: str) -> tuple[OcctExecutio
             speculative_workspace=workspace,
             artifact_stem=stem,
             provenance={"export_path": "occt-test"},
+            **options,
         )
         return receipt, time.perf_counter() - started
 
@@ -324,6 +350,323 @@ class WallOpeningBooleanTests(unittest.TestCase):
             )
 
 
+FRAME_ID = "obj-frame-wall-south-window-south"
+PANE_ID = "obj-glazing-wall-south-window-south"
+FRAME_VOLUME = (1.2 * 1.5 - 1.02 * 1.32) * 0.18        # the ring between the void and the aperture, 0.18 deep
+PANE_VOLUME = 1.02 * 1.32 * 0.025                        # the aperture's pane, 25 mm thick
+WINDOW_STEP = 1.8
+
+
+def _preview_materials(preview: Path) -> tuple[dict[str, dict], dict[str, tuple[str, int]]]:
+    """The saved ``.3dm`` reopened natively: its material table and each object's material binding."""
+
+    import rhino3dm
+
+    model = rhino3dm.File3dm.Read(str(preview))
+    materials = {
+        material.Name: {
+            "index": index,
+            "diffuse": tuple(material.DiffuseColor)[:3],
+            "transparency": material.Transparency,
+            "material_id": material.GetUserString("archflow:material_id"),
+        }
+        for index, material in enumerate(model.Materials)
+    }
+    bindings = {obj.Attributes.Name: (obj.Attributes.MaterialSource.name, obj.Attributes.MaterialIndex) for obj in model.Objects}
+    return materials, bindings
+
+
+@NEEDS_OCCT
+class WindowFrameExecutionTests(unittest.TestCase):
+    """A typed window: one closed frame with the aperture through it, a separate pane, and a preview that shows glass as glass."""
+
+    def test_the_frame_is_one_closed_solid_with_a_hole_and_the_pane_is_another(self) -> None:
+        program = _compile(_window_record())
+        frame_op = next(op for op in program.proposal.operations if op.op_id == "frame-wall-south-window-south")
+        self.assertEqual((frame_op.kind, len(frame_op.input_object_ids)), (GeometryOperationKind.BOOLEAN_UNION, 4))
+        (assembly,) = program.proposal.assemblies
+        self.assertEqual([m.to_dict()["object_ids"] for m in assembly.members], [[FRAME_ID], [PANE_ID], ["obj-wall-south-aperture-window-south"]])
+        binding = _persisted_binding(program, "stage-occt-window")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, elapsed = _execute(program, binding, workspace, "window@occt")
+            print(f"\n[occt] window frame and pane: {elapsed:.3f} s wall clock; timings={ {k: round(v, 3) for k, v in receipt.timings.items()} }")
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            self.assertEqual(
+                receipt.physical_object_ids,
+                (FRAME_ID, PANE_ID, "obj-plinth", "obj-wall-south-aperture-window-south", "obj-wall-south-cut"),
+            )
+            # the bars were consumed by the union: none of them is a delivered object
+            self.assertFalse(any(name.endswith(("-bottom", "-left", "-right", "-top")) for name in receipt.physical_object_ids))
+
+            entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+            frame = occt_backend.measure_shape(entries[FRAME_ID].shape)
+            self.assertEqual((frame.valid, frame.solid_count, frame.closed), (True, 1, True))
+            self.assertEqual(frame.face_count, 10)                                   # front, back, four outer and four reveal faces
+            self.assertAlmostEqual(frame.volume, FRAME_VOLUME, places=6)
+            _assert_bbox(self, frame, (2.4, -0.08, 0.6 + 0.9), (3.6, 0.1, 0.6 + 2.4))  # the void, 0.18 deep, standing on the plinth
+            plan_z = (frame.bbox_min[1] + frame.bbox_max[1]) / 2.0
+            probes = {
+                (3.0, 2.25, plan_z): "outside",                                      # the aperture: the hole through the frame
+                (3.0, 1.545, plan_z): "inside", (3.0, 2.955, plan_z): "inside",     # bottom rail, top rail
+                (2.445, 2.25, plan_z): "inside", (3.555, 2.25, plan_z): "inside",   # left stile, right stile
+                (2.445, 1.545, plan_z): "inside",                                    # a corner, where two bars overlapped: one body
+            }
+            for point, expected in probes.items():
+                self.assertEqual(occt_backend.classify_program_point(entries[FRAME_ID].shape, point), expected, point)
+
+            pane = occt_backend.measure_shape(entries[PANE_ID].shape)
+            self.assertEqual((pane.valid, pane.solid_count, pane.closed, pane.face_count), (True, 1, True, 6))
+            self.assertAlmostEqual(pane.volume, PANE_VOLUME, places=6)
+            _assert_bbox(self, pane, (2.49, -0.035, 0.6 + 0.99), (3.51, -0.01, 0.6 + 2.31))
+            self.assertEqual(occt_backend.classify_program_point(entries[PANE_ID].shape, (3.0, 2.25, -0.0225)), "inside")
+            self.assertEqual(occt_backend.classify_program_point(entries[FRAME_ID].shape, (3.0, 2.25, -0.0225)), "outside")
+
+            cut = occt_backend.measure_shape(entries["obj-wall-south-cut"].shape)
+            self.assertAlmostEqual(cut.volume, 6.0 * 0.3 * 2.97 - 1.2 * 0.3 * 1.5, places=6)
+            self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south-cut"].shape, (3.0, 2.25, -0.15)), "outside")
+
+            # the receipt's cold read agrees, and the analytic predictor already knew the union's bounds
+            self.assertAlmostEqual(receipt.readback[FRAME_ID]["volume"], FRAME_VOLUME, places=6)
+            self.assertEqual(receipt.expected_bounds[FRAME_ID], {"min": [2.4, -0.08, 1.5], "max": [3.6, 0.1, 3.0]})
+
+            # the preview, reopened natively: distinct frame and glass materials, the glass actually transparent
+            preview = workspace / receipt.preview_artifact["relative_path"]
+            materials, bindings = _preview_materials(preview)
+            self.assertEqual(sorted(materials), ["frame", "glazing"])
+            self.assertEqual(materials["frame"]["transparency"], 0.0)
+            self.assertGreater(materials["glazing"]["transparency"], 0.0)
+            self.assertLess(materials["glazing"]["transparency"], 1.0)
+            self.assertNotEqual(materials["frame"]["diffuse"], materials["glazing"]["diffuse"])
+            self.assertEqual({name: row["material_id"] for name, row in materials.items()}, {"frame": "frame", "glazing": "glazing"})
+            self.assertEqual(bindings[FRAME_ID], ("MaterialFromObject", materials["frame"]["index"]))
+            self.assertEqual(bindings[PANE_ID], ("MaterialFromObject", materials["glazing"]["index"]))
+            for other in ("obj-plinth", "obj-wall-south-cut", "obj-wall-south-aperture-window-south"):
+                self.assertEqual(bindings[other], ("MaterialFromLayer", -1))
+            self.assertEqual(
+                receipt.preview_artifact["materials"],
+                {FRAME_ID: {"name": "frame", "diffuse": [107, 82, 102], "transparency": 0.0},
+                 PANE_ID: {"name": "glazing", "diffuse": [150, 200, 225], "transparency": 0.6}},
+            )
+            self.assertIn("native object materials for assembly frame and glazing members", receipt.preview_artifact["carries"])
+            # the inspector sees the same binding, and everything else the preview always carried
+            inspection = inspect_three_dm(preview)
+            by_name = {row["name"]: row for row in inspection.object_material_bindings}
+            self.assertEqual((by_name[FRAME_ID]["material_source"], by_name[FRAME_ID]["material_name"]), ("MaterialFromObject", "frame"))
+            self.assertEqual((by_name[PANE_ID]["material_source"], by_name[PANE_ID]["archflow_material_id"]), ("MaterialFromObject", "glazing"))
+            # and the inspector reads the stored transparency itself: the glass as declared, the frame opaque
+            table = {row["index"]: row for row in inspection.materials}
+            self.assertEqual(table[by_name[PANE_ID]["material_index"]]["transparency"], 0.6)
+            self.assertEqual((by_name[PANE_ID]["material_transparency"], by_name[FRAME_ID]["material_transparency"]), (0.6, 0.0))
+            self.assertEqual(sorted(row["name"] for row in inspection.named_object_bboxes), list(receipt.physical_object_ids))
+            strings = {row["name"]: {p["key"]: p["value"] for p in row["attributes"]} for row in inspection.object_user_strings}
+            self.assertEqual(strings[FRAME_ID], receipt.expected_semantics["objects"][FRAME_ID]["user_text"])
+            self.assertEqual(strings[FRAME_ID]["archflow:producer_op"], "frame-wall-south-window-south")
+
+    def test_three_repeated_windows_are_three_frames_three_panes_and_three_empty_openings(self) -> None:
+        program = _compile(_window_record(count=3, step=WINDOW_STEP, along=1.2))
+        binding = _persisted_binding(program, "stage-occt-windows")
+        frame_array, pane_array = f"{FRAME_ID}-array", f"{PANE_ID}-array"
+        apertures = tuple(f"obj-wall-south-aperture-window-south-{index}" for index in range(3))
+        centres = tuple(1.2 + index * WINDOW_STEP for index in range(3))                  # 1.2, 3.0, 4.8 along the wall
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, elapsed = _execute(program, binding, workspace, "windows@occt")
+            print(f"\n[occt] three windows: {elapsed:.3f} s wall clock; timings={ {k: round(v, 3) for k, v in receipt.timings.items()} }")
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            self.assertEqual(receipt.physical_object_ids, (frame_array, pane_array, "obj-plinth", *apertures, "obj-wall-south-cut"))
+            self.assertEqual(receipt.expected_bounds[frame_array], {"min": [0.6, -0.08, 1.5], "max": [5.4, 0.1, 3.0]})
+
+            entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+            frames = occt_backend.measure_shape(entries[frame_array].shape)
+            self.assertEqual((frames.valid, frames.solid_count, frames.closed, frames.face_count), (True, 3, True, 30))
+            self.assertAlmostEqual(frames.volume, 3 * FRAME_VOLUME, places=6)
+            _assert_bbox(self, frames, (0.6, -0.08, 1.5), (5.4, 0.1, 3.0))
+            panes = occt_backend.measure_shape(entries[pane_array].shape)
+            self.assertEqual((panes.valid, panes.solid_count, panes.closed, panes.face_count), (True, 3, True, 18))
+            self.assertAlmostEqual(panes.volume, 3 * PANE_VOLUME, places=6)
+            _assert_bbox(self, panes, (0.69, -0.035, 1.59), (5.31, -0.01, 2.91))
+            self.assertEqual(entries[frame_array].layers, ("archflow::building",))
+            self.assertEqual(entries[pane_array].layers, ("archflow::building",))
+
+            # each copy stands where its aperture is: a rail inside, the aperture centre outside, the pane inside
+            frame_shape, pane_shape, wall_shape = entries[frame_array].shape, entries[pane_array].shape, entries["obj-wall-south-cut"].shape
+            for centre in centres:
+                self.assertEqual(occt_backend.classify_program_point(frame_shape, (centre, 1.545, 0.01)), "inside", centre)
+                self.assertEqual(occt_backend.classify_program_point(frame_shape, (centre - 0.555, 2.25, 0.01)), "inside", centre)
+                self.assertEqual(occt_backend.classify_program_point(frame_shape, (centre, 2.25, 0.01)), "outside", centre)
+                self.assertEqual(occt_backend.classify_program_point(pane_shape, (centre, 2.25, -0.0225)), "inside", centre)
+                self.assertEqual(occt_backend.classify_program_point(wall_shape, (centre, 2.25, -0.15)), "outside", centre)  # the opening is empty
+            for between in (2.1, 3.9):                                                   # the pier between two windows
+                self.assertEqual(occt_backend.classify_program_point(wall_shape, (between, 2.25, -0.15)), "inside", between)
+                self.assertEqual(occt_backend.classify_program_point(frame_shape, (between, 2.25, 0.01)), "outside", between)
+            cut = occt_backend.measure_shape(wall_shape)
+            self.assertAlmostEqual(cut.volume, 6.0 * 0.3 * 2.97 - 3 * (1.2 * 0.3 * 1.5), places=6)
+            for aperture, centre in zip(apertures, centres):
+                measure = occt_backend.measure_shape(entries[aperture].shape)
+                self.assertAlmostEqual(measure.volume, 1.2 * 0.3 * 1.5, places=6)
+                self.assertAlmostEqual((measure.bbox_min[0] + measure.bbox_max[0]) / 2.0, centre, places=6)
+
+            # the receipt counted every copy from the cold read
+            self.assertEqual((receipt.readback[frame_array]["solid_count"], receipt.readback[pane_array]["solid_count"]), (3, 3))
+            # the semantic denominator names the families a Rhino build would instance; here they are real copies
+            self.assertEqual(
+                receipt.expected_semantics["blocks"],
+                {"archflow-family-frame-wall-south-window-south-array": 3, "archflow-family-glazing-wall-south-window-south-array": 3},
+            )
+            self.assertEqual(receipt.preview_inspection["instance_definitions"], [])
+            # and the preview carries the arrays as two named meshes wearing frame and glass
+            preview = workspace / receipt.preview_artifact["relative_path"]
+            inspection = inspect_three_dm(preview)
+            self.assertEqual(inspection.top_level_object_count, 7)
+            named = {row["name"]: row for row in inspection.named_object_bboxes}
+            self.assertAlmostEqual(named[frame_array]["bbox"]["min"][0], 0.6, places=5)
+            self.assertAlmostEqual(named[frame_array]["bbox"]["max"][0], 5.4, places=5)
+            materials, bindings = _preview_materials(preview)
+            self.assertEqual(bindings[frame_array], ("MaterialFromObject", materials["frame"]["index"]))
+            self.assertEqual(bindings[pane_array], ("MaterialFromObject", materials["glazing"]["index"]))
+            self.assertGreater(materials["glazing"]["transparency"], 0.0)
+
+    def test_a_declared_component_material_names_the_frame_and_glass_keeps_its_fallback(self) -> None:
+        program = _compile(_window_record())
+        binding = _persisted_binding(program, "stage-occt-window-oak")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(
+                program, binding, workspace, "oak@occt",
+                material_by_component={"building": "oak"}, material_colors={"oak": (120, 80, 40)},
+            )
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            self.assertEqual(receipt.expected_semantics["objects"][FRAME_ID]["user_text"]["archflow:material"], "oak")
+            materials, bindings = _preview_materials(workspace / receipt.preview_artifact["relative_path"])
+            self.assertEqual(sorted(materials), ["glazing", "oak"])
+            self.assertEqual((materials["oak"]["diffuse"], materials["oak"]["transparency"], materials["oak"]["material_id"]), ((120, 80, 40), 0.0, "oak"))
+            self.assertEqual(bindings[FRAME_ID], ("MaterialFromObject", materials["oak"]["index"]))
+            self.assertEqual(bindings[PANE_ID], ("MaterialFromObject", materials["glazing"]["index"]))
+            self.assertEqual(materials["glazing"]["transparency"], 0.6)
+
+    def test_a_preview_whose_material_binding_is_lost_fails_the_readback(self) -> None:
+        program = _compile(_window_record())
+        binding = _persisted_binding(program, "stage-occt-window-unbound")
+        original = occt_backend.write_preview_three_dm
+
+        def forgetting_materials(path, objects, **options):
+            return original(path, tuple(replace(item, material=None) for item in objects), **options)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            with patch("archflow.adapters.cad_execution.write_preview_three_dm", forgetting_materials):
+                receipt, _ = _execute(program, binding, workspace, "unbound@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.FAILED)
+            self.assertEqual(
+                sorted((f["code"], f["detail"]) for f in receipt.failures),
+                [("cad_execution.preview_material_mismatch", f"preview object {FRAME_ID} does not wear material frame"),
+                 ("cad_execution.preview_material_mismatch", f"preview object {PANE_ID} does not wear material glazing")],
+            )
+
+    def test_a_preview_whose_glass_is_written_opaque_fails_the_readback(self) -> None:
+        """Same name, same colour, same user text, but the stored transparency is not the declared one: refused."""
+
+        program = _compile(_window_record())
+        binding = _persisted_binding(program, "stage-occt-window-opaque-glass")
+        original = occt_backend.write_preview_three_dm
+
+        def opaque_glass(path, objects, **options):
+            tampered = tuple(
+                replace(item, material=replace(item.material, transparency=0.0)) if item.object_id == PANE_ID else item
+                for item in objects
+            )
+            return original(path, tampered, **options)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            with patch("archflow.adapters.cad_execution.write_preview_three_dm", opaque_glass):
+                receipt, _ = _execute(program, binding, workspace, "opaque-glass@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.FAILED)
+            self.assertEqual(
+                [(f["code"], f["detail"]) for f in receipt.failures],
+                [("cad_execution.preview_material_mismatch", f"preview object {PANE_ID} does not wear material glazing")],
+            )
+            # the declaration still says 0.6; the file the inspector read says 0.0, and that is what was refused
+            self.assertEqual(receipt.preview_artifact["materials"][PANE_ID]["transparency"], 0.6)
+            by_name = {row["name"]: row for row in inspect_three_dm(workspace / receipt.preview_artifact["relative_path"]).object_material_bindings}
+            self.assertEqual((by_name[PANE_ID]["material_name"], by_name[PANE_ID]["material_transparency"]), ("glazing", 0.0))
+
+
+WEB_ROOT = Path(__file__).resolve().parents[1] / "apps" / "archflow-studio" / "web"
+LOADER_TEST = WEB_ROOT / "test" / "rhino3dmMaterials.test.ts"
+WEB_DEPENDENCIES = (
+    WEB_ROOT / "node_modules" / "three" / "examples" / "jsm" / "loaders" / "3DMLoader.js",
+    WEB_ROOT / "node_modules" / "rhino3dm" / "rhino3dm.wasm",
+)
+
+
+def _node_executable() -> str | None:
+    """The installed Node: PATH first, then the standard install root. No user path is written here."""
+
+    found = shutil.which("node")
+    if found:
+        return found
+    for root in (os.environ.get("ProgramFiles"), os.environ.get("ProgramW6432")):
+        candidate = Path(root) / "nodejs" / "node.exe" if root else None
+        if candidate is not None and candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _tap_count(report: str, field: str) -> int | None:
+    match = re.search(rf"^# {field} (\d+)$", report, re.MULTILINE)
+    return int(match.group(1)) if match else None
+
+
+@NEEDS_OCCT
+class StudioLoaderBridgeTests(unittest.TestCase):
+    """The preview this execution writes, opened by the Studio's installed Rhino3dmLoader in Node.
+
+    The Studio test has no fixture binary: it is handed the path of the
+    preview exported here, into a temporary workspace, and reads that file
+    only. Node is started exactly once, after the exporter has returned and
+    the no-process guard has been lifted; it never calls back into Python.
+    """
+
+    def test_the_current_preview_reaches_the_studio_loader_with_its_materials_and_hidden_aperture(self) -> None:
+        node = _node_executable()
+        if node is None:
+            self.skipTest("Node is not installed (not on PATH, not under the standard install root)")
+        missing = [str(path.relative_to(WEB_ROOT)) for path in WEB_DEPENDENCIES if not path.is_file()]
+        if missing:
+            self.skipTest(f"the Studio web dependencies are not installed under {WEB_ROOT}: {missing}")
+        self.assertTrue(LOADER_TEST.is_file(), LOADER_TEST)
+
+        program = _compile(_window_record())
+        binding = _persisted_binding(program, "stage-occt-window-loader")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, binding, workspace, "loader@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            preview = workspace / receipt.preview_artifact["relative_path"]
+            self.assertTrue(preview.is_file(), preview)
+            self.assertEqual(receipt.expected_semantics["objects"]["obj-wall-south-aperture-window-south"]["visible"], False)
+
+            completed = subprocess.run(
+                [node, "--test", "--test-reporter=tap", str(LOADER_TEST)],
+                cwd=str(WEB_ROOT),
+                env={**os.environ, "ARCHFLOW_PREVIEW_3DM": str(preview)},
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=300,
+                check=False,
+            )
+        report = completed.stdout + completed.stderr
+        self.assertEqual(completed.returncode, 0, report)
+        # both Studio tests ran against the current export; a skip would mean the path never arrived
+        self.assertEqual((_tap_count(report, "pass"), _tap_count(report, "fail"), _tap_count(report, "skipped")), (2, 0, 0), report)
+
+
 @NEEDS_OCCT
 class SolidBoxRoundTripTests(unittest.TestCase):
     def test_a_box_program_round_trips_through_step_and_preview(self) -> None:
@@ -414,10 +757,48 @@ def _intersection_program(*boxes: GeometryOperation) -> CompiledGeometryProgram:
         parameters=(),
         semantic_binding_ids=("body-binding",),
     )
-    operations = (*boxes, meet)
+    return _program_of(*boxes, meet)
+
+
+def _array(op_id: str, source: GeometryOperation, *, count: int, step: list[float]) -> GeometryOperation:
+    return GeometryOperation(
+        op_id=op_id,
+        kind=GeometryOperationKind.ARRAY,
+        output_object_ids=(f"{op_id}-object",),
+        input_object_ids=(source.output_object_ids[0],),
+        frame_id="world",
+        parameters=(
+            GeometryParameter.create(name="count", kind=GeometryParameterKind.INTEGER, value=count),
+            GeometryParameter.create(name="step", kind=GeometryParameterKind.VECTOR3, value=step, unit=LengthUnit.METER),
+        ),
+        semantic_binding_ids=("body-binding",),
+    )
+
+
+def _radial_array(op_id: str, source: GeometryOperation) -> GeometryOperation:
+    return GeometryOperation(
+        op_id=op_id,
+        kind=GeometryOperationKind.RADIAL_ARRAY,
+        output_object_ids=(f"{op_id}-object",),
+        input_object_ids=(source.output_object_ids[0],),
+        frame_id="world",
+        parameters=(
+            GeometryParameter.create(name="angle_step_degrees", kind=GeometryParameterKind.NUMBER, value=90.0),
+            GeometryParameter.create(name="center", kind=GeometryParameterKind.VECTOR3, value=[0.0, 0.0, 0.0], unit=LengthUnit.METER),
+            GeometryParameter.create(name="count", kind=GeometryParameterKind.INTEGER, value=4),
+        ),
+        semantic_binding_ids=("body-binding",),
+    )
+
+
+def _program_of(*operations: GeometryOperation) -> CompiledGeometryProgram:
+    """The synthetic fixture carrying exactly these operations, executed in the given order."""
+
     program = _synthetic_program()
-    binding = replace(program.proposal.semantic_bindings[0], object_ids=tuple(op.output_object_ids[0] for op in operations))
-    proposal = replace(program.proposal, operations=operations, semantic_bindings=(binding,))
+    binding = replace(program.proposal.semantic_bindings[0], object_ids=tuple(sorted(op.output_object_ids[0] for op in operations)))
+    proposal = replace(
+        program.proposal, operations=tuple(sorted(operations, key=lambda op: op.op_id)), semantic_bindings=(binding,)
+    )
     objects = tuple(
         sorted(
             (
@@ -654,10 +1035,53 @@ class CapabilityBoundaryTests(unittest.TestCase):
         self.assertIsInstance(context.exception, CadExecutionError)
         return context.exception
 
-    def test_an_array_is_refused_by_operation_and_kind(self) -> None:
-        error = self._refused(_synthetic_program(array=True))
-        self.assertEqual((error.op_id, error.kind), ("row", "array"))
+    def test_a_radial_array_is_refused_by_operation_and_kind(self) -> None:
+        seed = _box("seed", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        error = self._refused(_program_of(seed, _radial_array("ring", seed)))
+        self.assertEqual((error.op_id, error.kind), ("ring", "radial_array"))
         self.assertIn("block instancing", str(error))
+
+    def test_a_linear_array_is_realized_as_real_copies_at_each_step(self) -> None:
+        """The fixture's ``row``: two copies of the 2 x 3 x 4 body, 3 m apart along x, delivered as one object."""
+
+        program = _synthetic_program(array=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _synthetic_binding(program), workspace, "row@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            self.assertEqual(receipt.physical_object_ids, ("row-object",))                # the seed was consumed
+            self.assertEqual(receipt.expected_bounds["row-object"], {"min": [0.0, 0.0, 0.0], "max": [5.0, 4.0, 3.0]})
+            entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+            self.assertEqual(list(entries), ["row-object"])
+            row = occt_backend.measure_shape(entries["row-object"].shape)
+            self.assertEqual((row.valid, row.solid_count, row.closed, row.face_count), (True, 2, True, 12))
+            self.assertAlmostEqual(row.volume, 48.0, places=9)
+            _assert_bbox(self, row, (0.0, 0.0, 0.0), (5.0, 4.0, 3.0), places=9)          # program x-step 3 stays x in CAD
+            probes = {(1.0, 1.0, 1.0): "inside", (2.5, 1.0, 1.0): "outside", (4.0, 1.0, 1.0): "inside", (6.0, 1.0, 1.0): "outside"}
+            for point, expected in probes.items():
+                self.assertEqual(occt_backend.classify_program_point(entries["row-object"].shape, point), expected, point)
+            self.assertEqual(entries["row-object"].layers, ("archflow::body-component",))
+            self.assertEqual(receipt.readback["row-object"]["solid_count"], 2)
+
+    def test_a_vertical_step_is_converted_to_the_cad_frame_once(self) -> None:
+        seed = _box("seed", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        program = _program_of(seed, _array("stack", seed, count=3, step=[0.0, 2.0, 0.0]))   # up in the program frame
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _synthetic_binding(program), workspace, "stack@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+            stack = occt_backend.measure_shape(entries["stack-object"].shape)
+            self.assertEqual(stack.solid_count, 3)
+            _assert_bbox(self, stack, (0.0, 0.0, 0.0), (1.0, 1.0, 5.0), places=9)          # CAD z is program y-up
+            for height, expected in ((0.5, "inside"), (1.5, "outside"), (2.5, "inside"), (4.5, "inside"), (5.5, "outside")):
+                self.assertEqual(occt_backend.classify_program_point(entries["stack-object"].shape, (0.5, height, 0.5)), expected, height)
+
+    def test_coincident_copies_are_refused(self) -> None:
+        seed = _box("seed", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        error = self._refused(_program_of(seed, _array("heap", seed, count=2, step=[0.0, 0.0, 0.0])))
+        self.assertEqual((error.op_id, error.kind), ("heap", "array"))
+        self.assertIn("zero step", str(error))
 
     def test_an_interpolated_or_uncapped_loft_is_refused(self) -> None:
         error = self._refused(_single_operation_program(_loft("smooth", profile_basis="interpolated")))
@@ -700,9 +1124,10 @@ class ImportBoundaryTests(unittest.TestCase):
     def test_the_backend_names_what_it_does_not_realize(self) -> None:
         self.assertEqual(
             occt_backend.SUPPORTED_OPERATION_KINDS,
-            {"solid", "extrusion", "loft", "boolean_union", "boolean_difference", "boolean_intersection"},
+            {"solid", "extrusion", "loft", "boolean_union", "boolean_difference", "boolean_intersection", "array"},
         )
-        self.assertNotIn("array", occt_backend.SUPPORTED_OPERATION_KINDS)
+        for unsupported in ("radial_array", "transform", "revolve", "sweep", "curve", "asset_instance"):
+            self.assertNotIn(unsupported, occt_backend.SUPPORTED_OPERATION_KINDS)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ from archflow.adapters.occt_backend import (
     OcctBackendError,
     OcctCapabilityError,
     OcctUnavailableError,
+    PreviewMaterial,
     PreviewObject,
     StepObject,
     backend_identity,
@@ -50,7 +51,7 @@ from archflow.adapters.three_dm_inspector import (
 )
 from archflow.project.refs import BranchRef, ProjectRecordRef, require_identifier
 from archflow.compilers.geometry import CompiledGeometryProgram
-from archflow.state.geometry_program import require_sha256
+from archflow.state.geometry_program import AssemblyRole, require_sha256
 from archflow.contracts.canonical import canonical_digest
 
 
@@ -2515,6 +2516,57 @@ _STEP_FORMAT = "STEP AP214 (ISO 10303-21)"
 _PREVIEW_FORMAT = "3dm render-mesh preview"
 _PREVIEW_ANGULAR_DEFLECTION = 0.5
 
+# Preview materials for an assembly's members, by role (P107 lane C).  A
+# FRAME member wears the material its component declares (name and display
+# colour from the caller's assignment), or, with no declaration, an opaque
+# material named after the role in the layer colour darkened by this factor
+# so the frame reads against its wall.  GLAZING has no declared vocabulary
+# yet: it always takes the documented glass fallback, a light tint with
+# non-zero openNURBS transparency.  Objects outside those roles keep the
+# layer's display colour, as before.
+_FRAME_FALLBACK_SHADE = 0.55
+_GLAZING_FALLBACK = PreviewMaterial(name=AssemblyRole.GLAZING.value, diffuse=(150, 200, 225), transparency=0.6)
+# openNURBS stores transparency as a double; the readback compares the
+# inspector's native value with the declared one within this tolerance.
+_PREVIEW_TRANSPARENCY_TOLERANCE = 1.0e-6
+
+
+def _preview_materials(
+    program: CompiledGeometryProgram,
+    *,
+    physical: tuple[str, ...],
+    semantics: Mapping[str, object],
+    layer_colors: Mapping[str, tuple[int, int, int]],
+    material_colors: Mapping[str, tuple[int, int, int]] | None,
+) -> dict[str, PreviewMaterial]:
+    """The native material each delivered assembly member wears, keyed by object id.
+
+    Roles come from ``program.proposal.assemblies`` alone, never from an
+    object's name.  A FRAME member reuses the ``archflow:material`` its
+    semantics already carry (the declared assignment of its component);
+    a GLAZING member takes the glass fallback.
+    """
+
+    objects = semantics["objects"]
+    materials: dict[str, PreviewMaterial] = {}
+    for assembly in program.proposal.assemblies:
+        for object_id in assembly.objects_for(AssemblyRole.GLAZING):
+            if object_id in physical:
+                materials[object_id] = _GLAZING_FALLBACK
+        for object_id in assembly.objects_for(AssemblyRole.FRAME):
+            if object_id not in physical or object_id in materials:
+                continue
+            row = objects[object_id]
+            layer_color = layer_colors.get(row["layer"], (0, 0, 0))
+            declared = row["user_text"].get("archflow:material")
+            if declared:
+                color = (material_colors or {}).get(declared, layer_color)
+                materials[object_id] = PreviewMaterial(name=declared, diffuse=tuple(int(c) for c in color))
+            else:
+                shaded = tuple(int(round(channel * _FRAME_FALLBACK_SHADE)) for channel in layer_color)
+                materials[object_id] = PreviewMaterial(name=AssemblyRole.FRAME.value, diffuse=shaded)
+    return materials
+
 
 class CadCapabilityError(CadExecutionError):
     """The program names an operation this executor does not realize.
@@ -2863,6 +2915,13 @@ def execute_occt_export(
     preview_inspection = None
     if preview:
         linear_deflection = tolerance / 4.0
+        preview_materials = _preview_materials(
+            program,
+            physical=physical,
+            semantics=semantics,
+            layer_colors=layer_colors,
+            material_colors=material_colors,
+        )
         preview_objects = tuple(
             PreviewObject(
                 object_id=object_id,
@@ -2870,6 +2929,7 @@ def execute_occt_export(
                 layer=semantics["objects"][object_id]["layer"],
                 user_text=semantics["objects"][object_id]["user_text"],
                 visible=semantics["objects"][object_id].get("visible", True) is not False,
+                material=preview_materials.get(object_id),
             )
             for object_id in physical
         )
@@ -2885,7 +2945,7 @@ def execute_occt_export(
                 angular_deflection=_PREVIEW_ANGULAR_DEFLECTION,
             )
             preview_artifact = _preview_artifact(
-                preview_path, workspace, linear_deflection, mesh_counts
+                preview_path, workspace, linear_deflection, mesh_counts, preview_materials
             )
         except (OcctBackendError, OSError) as exc:
             failures.append(_failure("cad_execution.preview_write_failed", str(exc)))
@@ -2909,6 +2969,7 @@ def execute_occt_export(
                         },
                         layer_colors=layer_colors,
                         expected_document_user_text=document_user_text,
+                        expected_materials=preview_materials,
                         length_unit=unit,
                         tolerance=tolerance,
                     )
@@ -2954,8 +3015,9 @@ def _preview_artifact(
     workspace: Path,
     linear_deflection: float,
     mesh_counts: Mapping[str, Mapping[str, int]],
+    materials: Mapping[str, PreviewMaterial],
 ) -> dict[str, object]:
-    return {
+    artifact: dict[str, object] = {
         "format": _PREVIEW_FORMAT,
         "relative_path": path.relative_to(workspace).as_posix(),
         "sha256": _sha256_bytes(path.read_bytes()),
@@ -2972,6 +3034,12 @@ def _preview_artifact(
         ],
         "note": "not a NURBS/B-rep delivery; the STEP file is the exact geometry",
     }
+    if materials:
+        artifact["carries"].append("native object materials for assembly frame and glazing members")
+        artifact["materials"] = {
+            object_id: material.to_dict() for object_id, material in sorted(materials.items())
+        }
+    return artifact
 
 
 def _artifact_stem(value: str) -> str:
@@ -3080,6 +3148,7 @@ def _verify_preview_readback(
     expected_document_user_text: Mapping[str, str],
     length_unit: str,
     tolerance: float,
+    expected_materials: Mapping[str, PreviewMaterial] | None = None,
 ) -> list[dict[str, str]]:
     """The mesh preview must carry the viewer denominator and sit on the STEP geometry."""
 
@@ -3149,6 +3218,28 @@ def _verify_preview_readback(
             failures.append(_failure("cad_execution.semantic_user_text_mismatch", f"object {object_id} semantic user text differs"))
         if rows[0].get("layer_path") != expected_semantic["layer"]:
             failures.append(_failure("cad_execution.object_layer_mismatch", f"preview object {object_id} layer differs"))
+    bindings: dict[str, list] = {}
+    for row in inspection.object_material_bindings:
+        if row.get("is_instance_definition_object"):
+            continue
+        bindings.setdefault(str(row.get("name")), []).append(row)
+    for object_id, material in sorted((expected_materials or {}).items()):
+        rows = bindings.get(object_id, [])
+        transparency = rows[0].get("material_transparency") if len(rows) == 1 else None
+        bound = (
+            len(rows) == 1
+            and rows[0].get("material_source") == "MaterialFromObject"
+            and rows[0].get("material_name") == material.name
+            and rows[0].get("archflow_material_id") == material.name
+            and rows[0].get("material_diffuse_color_rgba") == [*material.diffuse, 255]
+            and isinstance(transparency, (int, float))
+            and not isinstance(transparency, bool)
+            and abs(float(transparency) - material.transparency) <= _PREVIEW_TRANSPARENCY_TOLERANCE
+        )
+        if not bound:
+            failures.append(
+                _failure("cad_execution.preview_material_mismatch", f"preview object {object_id} does not wear material {material.name}")
+            )
     return failures
 
 

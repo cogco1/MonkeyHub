@@ -206,7 +206,7 @@ class OpeningIdScopeTests(unittest.TestCase):
         self.assertNotIn("glazing-wall-south-wall-south-window", op_ids)
 
 class StairTests(unittest.TestCase):
-    """A flight is measured by its two plan references: steps on the line, rises above the base, one top."""
+    """A flight is measured by its two plan references: one stepped solid on the line, rises above the base, one top."""
 
     def _row(self, **params) -> ElementRow:
         p = {"count": 10, "rise": 0.18, "width": 1.2}
@@ -236,8 +236,9 @@ class StairTests(unittest.TestCase):
                 flight = replace(row, references={**row.references, "base": base, "top": {"level": PN}},
                                  params={**row.params, "rise": rise})
                 bounds = self._compiled_bounds(flight)
-                self.assertAlmostEqual(bounds["obj-stair-north-0"]["bbox_min"][1], offset)
-                self.assertAlmostEqual(bounds["obj-stair-north-18"]["bbox_max"][1], 3.57)
+                self.assertNotIn("obj-stair-north-0", bounds)                                  # one whole flight, not a step per object
+                self.assertAlmostEqual(bounds["obj-stair-north"]["bbox_min"][1], offset)
+                self.assertAlmostEqual(bounds["obj-stair-north"]["bbox_max"][1], 3.57)
                 self.assertEqual(flight.params["rise"], rise)
 
     def test_declared_top_refuses_a_rise_change_or_an_unaccounted_base_offset(self) -> None:
@@ -255,42 +256,48 @@ class StairTests(unittest.TestCase):
             with self.subTest(top=top):
                 flight = replace(row, references={**row.references, "base": {"level": "level-ground"}, "top": top},
                                  params={**row.params, "rise": (3.57 + 0.18) / 19})
-                self.assertAlmostEqual(self._compiled_bounds(flight)["obj-stair-north-18"]["bbox_max"][1], 3.75)
+                self.assertAlmostEqual(self._compiled_bounds(flight)["obj-stair-north"]["bbox_max"][1], 3.75)
         landing = ElementRow("landing", "monument-landing", "prism", {"base": {"level": "level-ground"}},
                              {"profile": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], "height": 3.57}, BASIS)
         flight = replace(row, references={**row.references, "base": {"level": "level-ground"}, "top": {"datum": "landing-top"}})
         produced, _ = _produce(production_order((flight, landing)))
-        self.assertEqual(len(produced[1].operations), 19)
+        self.assertEqual([op.op_id for op in produced[1].operations], ["stair-north"])
 
-    def test_declared_top_cannot_hide_a_thin_treads_lower_physical_top(self) -> None:
-        row = self._row(count=19, rise=3.57 / 19, thickness=0.05)
+    def test_a_tread_thickness_is_refused_because_separate_treads_are_not_one_solid(self) -> None:
+        row = self._row(count=19, rise=3.57 / 19)
         row = replace(row, references={**row.references, "base": {"level": "level-ground"}})
-        bounds = self._compiled_bounds(row)
-        self.assertAlmostEqual(bounds["obj-stair-north-18"]["bbox_max"][1], 18 * (3.57 / 19) + 0.05)
-        with self.assertRaisesRegex(ElementProducerError, "final tread top.*declared top"):
-            _produce((replace(row, references={**row.references, "top": {"level": PN}}),))
+        for thickness in (0.05, 0.2):
+            with self.subTest(thickness=thickness):
+                with self.assertRaisesRegex(ElementProducerError, "stair-north: tread thickness.*not one closed solid"):
+                    _produce((replace(row, params={**row.params, "thickness": thickness}),))
+        with self.assertRaisesRegex(ElementProducerError, "must not be negative"):
+            _produce((replace(row, params={**row.params, "thickness": -0.05}),))
+        (flight,), _ = _produce((replace(row, params={**row.params, "thickness": 0.0}),))    # a stated zero (a re-indexed solid step) is a solid step
+        self.assertEqual([op.op_id for op in flight.operations], ["stair-north"])
 
-    def test_solid_steps_stack_from_the_base_datum_and_the_flight_publishes_its_top(self) -> None:
+    def test_the_flight_is_one_stepped_solid_on_the_base_datum_and_publishes_its_top(self) -> None:
         (stair,), context = _produce((self._row(),))
-        self.assertEqual([op.op_id for op in stair.operations], [f"stair-north-{k}" for k in range(10)])
-        self.assertTrue(all(op.semantic_binding_ids == ("binding-monument-stair",) for op in stair.operations))
-        self.assertTrue(all(b.datum_id == PN for b in stair.bindings))
+        (op,) = stair.operations
+        self.assertEqual((op.op_id, op.kind, op.output_object_ids), ("stair-north", GeometryOperationKind.LOFT, ("obj-stair-north",)))
+        self.assertEqual(op.semantic_binding_ids, ("binding-monument-stair",))
+        self.assertEqual([(b.op_id, b.datum_id) for b in stair.bindings], [("stair-north", PN)])
         self.assertEqual(stair.datums[0].datum_id, "stair-north-top")
         self.assertAlmostEqual(context.datum_value("stair-north-top"), 3.57 + 10 * 0.18)
-        first, fourth, last = (_op_params(stair.operations[k]) for k in (0, 3, 9))
-        self.assertNotIn("base_offset", first)                                        # the first step stands on the datum itself
-        self.assertAlmostEqual(fourth["base_offset"], 3 * 0.18)                       # every later step rises by whole risers
-        self.assertAlmostEqual(first["vector"][1], 0.18)                              # a solid step fills its rise
-        _assert_bbox(self, first["profile"], ((0.0, 0.3), (0.0, 0.0), (-14.45, -13.25)))     # going 3.0 / 10, width 1.2 across the line
-        _assert_bbox(self, last["profile"], ((2.7, 3.0), (0.0, 0.0), (-14.45, -13.25)))
+        params = _op_params(op)
+        self.assertNotIn("base_offset", params)                                       # the flight stands on the datum itself
+        self.assertEqual((params["cap_ends"], params["loft_type"], params["profile_basis"], params["profile_size"]), (True, "straight", "polyline", 22))
+        profiles = params["profiles"]
+        self.assertEqual(len(profiles), 44)                                           # two sides, each 2 · 10 + 2 vertices
+        _assert_bbox(self, profiles, ((0.0, 3.0), (0.0, 1.8), (-14.45, -13.25)))      # run 3.0 along W, ten rises of 0.18, width 1.2 across the line
+        near, far = profiles[:22], profiles[22:]
+        self.assertEqual(({round(p[2], 9) for p in near}, {round(p[2], 9) for p in far}), ({-13.25}, {-14.45}))
+        section = [(round(p[0], 9), round(p[1], 9)) for p in near]
+        self.assertEqual(section[:4], [(0.0, 0.0), (3.0, 0.0), (3.0, 1.8), (2.7, 1.8)])   # the floor line, then the top tread back
+        self.assertEqual(section, [(round(p[0], 9), round(p[1], 9)) for p in far])          # the far side is the same outline
+        for k in range(1, 11):                                                         # every nosing stands at k · going, k · rise
+            self.assertIn((round(k * 0.3, 9), round(k * 0.18, 9)), section)
         self.assertEqual([(r.relation_id, r.kind, r.subject, r.object, r.datum_id) for r in stair.relations],
                          [("stair-north-stands-on", "support", PN, "stair-north", PN)])
-
-    def test_a_slab_step_carries_only_its_tread_thickness(self) -> None:
-        (stair,), context = _produce((self._row(thickness=0.05),))
-        self.assertAlmostEqual(_op_params(stair.operations[0])["vector"][1], 0.05)
-        self.assertAlmostEqual(_op_params(stair.operations[9])["base_offset"], 9 * 0.18)
-        self.assertAlmostEqual(context.datum_value("stair-north-top"), 3.57 + 10 * 0.18)     # the flight still climbs by its rises
 
     def test_a_flight_refuses_a_zero_length_line_and_a_going_that_does_not_span_it(self) -> None:
         row = self._row()
@@ -299,7 +306,8 @@ class StairTests(unittest.TestCase):
         with self.assertRaises(ElementProducerError):
             _produce((self._row(going=0.4),))                                     # ten steps of 0.4 m span 4 m, not the 3 m line
         (stair,), _ = _produce((self._row(going=0.3),))                           # the declared going that does span it is taken
-        self.assertEqual(len(stair.operations), 10)
+        self.assertEqual([op.op_id for op in stair.operations], ["stair-north"])
+        self.assertEqual(_op_params(stair.operations[0])["profile_size"], 22)
 
     def test_production_order_puts_the_flight_before_what_seats_on_its_top(self) -> None:
         landing = ElementRow("landing", "monument-landing", "prism", {"base": {"datum": "stair-north-top"}},

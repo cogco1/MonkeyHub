@@ -472,6 +472,10 @@ def _materials(
                 material.DiffuseColor,
                 "material diffuse color",
             ),
+            "transparency": _unit_interval(
+                material.Transparency,
+                "material transparency",
+            ),
             "render_material_instance_id": (
                 None if render_material_id == _EMPTY_UUID else render_material_id
             ),
@@ -609,6 +613,9 @@ def _object_material_bindings(
                     None
                     if material is None
                     else material["diffuse_color_rgba"]
+                ),
+                "material_transparency": (
+                    None if material is None else material["transparency"]
                 ),
                 "archflow_material_id": material_user_strings.get(
                     "archflow:material_id"

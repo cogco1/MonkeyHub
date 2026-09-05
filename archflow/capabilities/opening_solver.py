@@ -9,6 +9,12 @@ datum and rides its own seat height as ``base_offset``; the wall's cut
 result is the assembly's HOST_CUT member, so the compiler sees the void,
 the frame and the infill as one hosted assembly at ENVELOPE maturity.
 
+A window frame is delivered whole: its four bars are fused by one
+``boolean_union`` into a single closed solid with the aperture through
+it, and only that solid (or its array) is the assembly's FRAME member.
+The pane stays a separate GLAZING member. A door still delivers its
+jambs and head as separate members.
+
 An opening id is unique inside its wall, not inside the building: three
 facades may each call their opening ``window``. Every id this module
 mints — member operations, the objects they output, the assembly and its
@@ -173,8 +179,27 @@ def _box(void: HostedVoid, op_id: str, binding_id: str, along0: float, along1: f
     )
 
 
+def _union(void: HostedVoid, op_id: str, binding_id: str, parts: tuple[GeometryOperation, ...]) -> GeometryOperation:
+    """One closed member fused from overlapping bars: the parts are consumed, not delivered."""
+
+    return GeometryOperation(
+        op_id=op_id,
+        kind=GeometryOperationKind.BOOLEAN_UNION,
+        output_object_ids=(f"obj-{op_id}",),
+        input_object_ids=tuple(part.output_object_ids[0] for part in parts),
+        frame_id=void.wall.frame_id,
+        parameters=(),
+        semantic_binding_ids=(binding_id,),
+    )
+
+
 def _arrayed(void: HostedVoid, members: tuple[GeometryOperation, ...], binding_id: str) -> tuple[GeometryOperation, ...]:
-    """P099: one member definition, ``void.count`` placements along the wall."""
+    """P099: one member definition, ``void.count`` placements along the wall.
+
+    ``count`` copies of the member's one output, the i-th translated by
+    ``i * step`` where ``step`` is the wall's step vector in the program
+    frame (x, y-up, z-plan); the executor delivers them as one object.
+    """
 
     if void.count <= 1:
         return ()
@@ -223,10 +248,15 @@ def _assembly(void: HostedVoid, scoped: str, kind: AssemblyKind, members: dict[A
 
 
 def solve_window(void: HostedVoid, window: WindowType, *, binding_id: str, interface_ref: str = INTERFACE_INSIDE_OUTSIDE) -> OpeningSolution:
-    """Four frame members on the void's edge and one pane inside them.
+    """One closed frame around the void's edge and one pane inside it.
 
-    ``interface_ref`` names the spatial relation the opening serves (a
-    connection's relationship ref in the selected spatial option).
+    The frame is four overlapping bars (bottom, left, right, top) fused by
+    one ``boolean_union`` into ``frame-<opening>``: a single closed solid
+    with the aperture through it. The bars are consumed intermediates, not
+    delivered objects; the assembly's FRAME member names the fused frame
+    (or its array), its GLAZING member the separate pane. ``interface_ref``
+    names the spatial relation the opening serves (a connection's
+    relationship ref in the selected spatial option).
     """
 
     if not isinstance(void, HostedVoid) or not isinstance(window, WindowType):
@@ -243,25 +273,26 @@ def solve_window(void: HostedVoid, window: WindowType, *, binding_id: str, inter
     a0, a1, sill, head = void.along0, void.along1, void.sill, void.head
     f0, f1 = -window.frame_projection, -window.frame_projection + window.frame_depth
     oid = _scoped(void)
-    frame = (
+    bars = (
         _box(void, f"frame-{oid}-bottom", binding_id, a0, a1, f0, f1, sill, fw),
         _box(void, f"frame-{oid}-left", binding_id, a0, a0 + fw, f0, f1, sill, head - sill),
         _box(void, f"frame-{oid}-right", binding_id, a1 - fw, a1, f0, f1, sill, head - sill),
         _box(void, f"frame-{oid}-top", binding_id, a0, a1, f0, f1, head - fw, fw),
     )
+    frame = _union(void, f"frame-{oid}", binding_id, bars)
     pane = _box(void, f"glazing-{oid}", binding_id, a0 + fw, a1 - fw,
                 window.glazing_offset, window.glazing_offset + window.glazing_thickness,
                 sill + fw, head - sill - 2.0 * fw)
-    members = (*frame, pane)
-    operations = tuple(sorted(members + _arrayed(void, members, binding_id), key=lambda o: o.op_id))
+    placed = (frame, pane)
+    operations = tuple(sorted((*bars, *placed, *_arrayed(void, placed, binding_id)), key=lambda o: o.op_id))
     datum = void.wall.base_level_datum_id
     assembly = _assembly(void, oid, AssemblyKind.WINDOW, {
-        AssemblyRole.FRAME: tuple(sorted(_placed(o, void) for o in frame)),
+        AssemblyRole.FRAME: (_placed(frame, void),),
         AssemblyRole.GLAZING: (_placed(pane, void),),
     }, binding_id, interface_ref)
     return OpeningSolution(
         opening_id=void.opening_id, operations=operations,
-        datum_bindings=tuple(sorted((_bind(o, datum) for o in members), key=lambda b: b.binding_id)),
+        datum_bindings=tuple(sorted((_bind(o, datum) for o in (*bars, pane)), key=lambda b: b.binding_id)),
         assembly=assembly,
     )
 

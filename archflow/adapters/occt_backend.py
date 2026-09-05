@@ -22,9 +22,20 @@ Rhino ``.3dm`` share one frame and one set of expected bounds.
 
 Capability.  Only the operation kinds the initial consumers actually use are
 realized: ``solid`` (box), ``extrusion``, polyline ``loft`` with capped ends,
-and the three booleans.  Anything else fails ``OcctCapabilityError`` naming
-the operation before anything is written.  There is no fallback to Rhino, no
-bounding-box stand-in and no mesh pretending to be a B-rep.
+the three booleans, and the linear ``array`` the opening solver places
+repeated windows with (one input, ``count`` real translated copies at
+``i * step`` delivered as one compound).  Anything else fails
+``OcctCapabilityError`` naming the operation before anything is written.
+There is no fallback to Rhino, no bounding-box stand-in and no mesh
+pretending to be a B-rep.
+
+Preview materials.  The mesh preview may carry native ``rhino3dm``
+materials for the objects the caller names (an assembly's frame and
+glazing): one material per distinct (name, colour, transparency), the
+object's ``MaterialSource`` set to the object, so a viewer that reads the
+document's material table (the three.js ``Rhino3dmLoader``) renders glass
+translucent.  STEP carries no material; both files are written from the
+same shapes.
 
 Units.  OCCT's STEP statics assume millimetre internals; they are
 initialised only when the first STEP controller exists.  ``_step_units``
@@ -96,14 +107,14 @@ SUPPORTED_OPERATION_KINDS: frozenset[str] = frozenset(
         "boolean_union",
         "boolean_difference",
         "boolean_intersection",
+        "array",
     }
 )
 
 _UNSUPPORTED_REASONS: Mapping[str, str] = {
     "curve": "curve objects are not closed-solid deliveries; the OCCT executor writes solids only",
     "transform": "transform has no exact realization (the Rhino translation only copies it)",
-    "array": "block instancing is not realized by the OCCT executor yet",
-    "radial_array": "block instancing is not realized by the OCCT executor yet",
+    "radial_array": "radial block instancing is not realized by the OCCT executor yet",
     "revolve": "revolve is not realized by the OCCT executor yet",
     "sweep": "sweep is not realized by the OCCT executor yet",
     "asset_instance": "asset instances are not realized by the OCCT executor",
@@ -381,7 +392,58 @@ def _build_operation(
             unify.Build()
             result = unify.Shape()
         return result
+    if kind == "array":
+        return _linear_array(occ, op_id, operation, params, shapes)
     raise OcctCapabilityError(op_id, kind, "operation kind is not realized")
+
+
+def _linear_array(occ: SimpleNamespace, op_id: str, operation, params: Mapping[str, object], shapes: Mapping[str, Any]):
+    """``count`` real copies of the one input, the i-th translated by ``i * step``, as one compound.
+
+    ``step`` is stated in the program frame and converted to the CAD frame
+    exactly once, by ``cad_point``, like every other coordinate. The copies
+    are independent shapes (``BRepBuilderAPI_Transform`` with copy), so the
+    compound holds ``count`` distinct solids per input solid - what the
+    analytic predictor counts and the cold read must find.
+    """
+
+    inputs = list(operation.input_object_ids)
+    if len(inputs) != 1:
+        raise OcctCapabilityError(op_id, "array", "a linear array repeats exactly one input object")
+    (source,) = inputs
+    if source not in shapes:
+        raise OcctBuildError(f"{op_id} (array): input not built: {source}")
+    count = params.get("count")
+    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+        raise OcctCapabilityError(op_id, "array", "count must be a positive integer")
+    step = params.get("step")
+    if not isinstance(step, (list, tuple)) or len(step) != 3:
+        raise OcctCapabilityError(op_id, "array", "step must be a three-component vector")
+    step = [float(value) for value in step]
+    if any(not math.isfinite(value) for value in step):
+        raise OcctCapabilityError(op_id, "array", "step must be finite")
+    if count > 1 and not any(step):
+        raise OcctCapabilityError(op_id, "array", "coincident copies (a zero step) are not a delivery")
+    sx, sy, sz = cad_point(step)
+    builder = occ.BRep.BRep_Builder()
+    compound = occ.TopoDS.TopoDS_Compound()
+    builder.MakeCompound(compound)
+    # A boolean result is itself a compound around its solid; the copies are
+    # added solid by solid so the delivered compound is flat.  The STEP
+    # writer files layers on a compound's direct solids only - a nested
+    # compound would lose its layer on the cold read.
+    source_solids = tuple(_explore(occ, shapes[source], occ.TopAbs.TopAbs_SOLID))
+    if not source_solids:
+        raise OcctBuildError(f"{op_id} (array): input {source} holds no solid to repeat")
+    for index in range(count):
+        transform = occ.gp.gp_Trsf()
+        transform.SetTranslation(occ.gp.gp_Vec(sx * index, sy * index, sz * index))
+        for solid in source_solids:
+            placed = occ.BRepBuilderAPI.BRepBuilderAPI_Transform(solid, transform, True)
+            if not placed.IsDone():
+                raise OcctBuildError(f"{op_id} (array): OCCT could not place copy {index}")
+            builder.Add(compound, placed.Shape())
+    return compound
 
 
 def _joint_intersection(occ: SimpleNamespace, op_id: str, inputs: Sequence[str], shapes: Mapping[str, Any]):
@@ -659,23 +721,48 @@ def read_step(path: Path, *, length_unit: str) -> tuple[StepEntry, ...]:
     for index in range(1, labels.Length() + 1):
         label = labels.Value(index)
         shape = shape_tool.GetShape_s(label)
-        layer_labels = occ.TDF.TDF_LabelSequence()
-        layer_tool.GetLayers(label, layer_labels)
-        layers = tuple(
-            _label_name(occ, layer_labels.Value(position)) or ""
-            for position in range(1, layer_labels.Length() + 1)
-        )
-        color = occ.Quantity.Quantity_Color()
-        rgb = None
-        if color_tool.GetColor(shape, occ.XCAFDoc.XCAFDoc_ColorSurf, color):
-            rgb = tuple(
-                int(round(channel * 255.0))
-                for channel in (color.Red(), color.Green(), color.Blue())
-            )
+        layers = _layers_of(occ, layer_tool, label)
+        rgb = _color_of(occ, color_tool, shape)
+        if shape.ShapeType() == occ.TopAbs.TopAbs_COMPOUND:
+            # A compound (an array's copies) is written as one named shape,
+            # but the reader files its layer and colour on each solid, not
+            # on the compound's label.  The entry reports them only when
+            # every solid agrees; a mixed compound stays unlayered and is
+            # refused by the readback verification.
+            solids = tuple(_explore(occ, shape, occ.TopAbs.TopAbs_SOLID))
+            if not layers and solids:
+                per_solid = {_layers_of(occ, layer_tool, solid) for solid in solids}
+                if len(per_solid) == 1:
+                    layers = per_solid.pop()
+            if rgb is None and solids:
+                per_solid_color = {_color_of(occ, color_tool, solid) for solid in solids}
+                if len(per_solid_color) == 1:
+                    rgb = per_solid_color.pop()
         entries.append(
             StepEntry(name=_label_name(occ, label), layers=layers, color=rgb, shape=shape)
         )
     return tuple(entries)
+
+
+def _layers_of(occ: SimpleNamespace, layer_tool, target) -> tuple[str, ...]:
+    """The layer names filed on a label or on a shape, in the reader's order."""
+
+    layer_labels = occ.TDF.TDF_LabelSequence()
+    layer_tool.GetLayers(target, layer_labels)
+    return tuple(
+        _label_name(occ, layer_labels.Value(position)) or ""
+        for position in range(1, layer_labels.Length() + 1)
+    )
+
+
+def _color_of(occ: SimpleNamespace, color_tool, shape) -> tuple[int, int, int] | None:
+    color = occ.Quantity.Quantity_Color()
+    if not color_tool.GetColor(shape, occ.XCAFDoc.XCAFDoc_ColorSurf, color):
+        return None
+    return tuple(
+        int(round(channel * 255.0))
+        for channel in (color.Red(), color.Green(), color.Blue())
+    )
 
 
 def _label_name(occ: SimpleNamespace, label) -> str | None:
@@ -723,6 +810,42 @@ def tessellate_shape(
     return vertices, triangles
 
 
+@dataclass(frozen=True, slots=True)
+class PreviewMaterial:
+    """One native preview material: display name, diffuse colour, openNURBS transparency.
+
+    ``transparency`` is the openNURBS value (0 opaque, 1 invisible); the
+    three.js loader renders it as ``opacity = 1 - transparency``.  The
+    material also carries ``archflow:material_id`` = ``name`` as user text,
+    the key the inspector already reads back.
+    """
+
+    name: str
+    diffuse: tuple[int, int, int]
+    transparency: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name:
+            raise OcctBackendError("preview material name must be non-empty text")
+        if (
+            not isinstance(self.diffuse, tuple)
+            or len(self.diffuse) != 3
+            or any(isinstance(c, bool) or not isinstance(c, int) or c < 0 or c > 255 for c in self.diffuse)
+        ):
+            raise OcctBackendError(f"preview material {self.name}: diffuse must be three 0..255 channels")
+        if (
+            isinstance(self.transparency, bool)
+            or not isinstance(self.transparency, (int, float))
+            or not math.isfinite(self.transparency)
+            or not 0.0 <= float(self.transparency) < 1.0
+        ):
+            raise OcctBackendError(f"preview material {self.name}: transparency must be in [0, 1)")
+        object.__setattr__(self, "transparency", float(self.transparency))
+
+    def to_dict(self) -> dict[str, object]:
+        return {"name": self.name, "diffuse": list(self.diffuse), "transparency": self.transparency}
+
+
 @dataclass(frozen=True)
 class PreviewObject:
     """One object of the mesh preview: the shape plus the semantics the viewer reads."""
@@ -732,6 +855,8 @@ class PreviewObject:
     layer: str
     user_text: Mapping[str, str]
     visible: bool = True
+    #: A native material of the object's own; None leaves the layer's display colour.
+    material: PreviewMaterial | None = None
 
 
 def write_preview_three_dm(
@@ -750,7 +875,9 @@ def write_preview_three_dm(
     NURBS/B-rep delivery.  It carries the object names, nested layer paths
     with their colours, the ``archflow:*`` object user text and the document
     user text, so the viewer treats it exactly like a Rhino-written file.
-    Returns per-object mesh vertex and face counts.
+    An object with a ``PreviewMaterial`` is bound to a native material of
+    the document's table (``MaterialSource`` = from object); equal materials
+    share one table entry.  Returns per-object mesh vertex and face counts.
     """
 
     try:
@@ -787,6 +914,24 @@ def write_preview_three_dm(
 
     for full_path in sorted(layer_colors):
         ensure_layer(full_path)
+    material_index: dict[PreviewMaterial, int] = {}
+
+    def ensure_material(material: PreviewMaterial) -> int:
+        if material in material_index:
+            return material_index[material]
+        native = rhino3dm.Material()
+        native.Name = material.name
+        red, green, blue = material.diffuse
+        native.DiffuseColor = (int(red), int(green), int(blue), 255)
+        native.Transparency = material.transparency
+        native.SetUserString("archflow:material_id", material.name)
+        index = model.Materials.Add(native)
+        material_index[material] = index
+        return index
+
+    for item in objects:
+        if item.material is not None:
+            ensure_material(item.material)
     counts: dict[str, dict[str, int]] = {}
     for item in objects:
         vertices, triangles = tessellate_shape(
@@ -807,6 +952,9 @@ def write_preview_three_dm(
         attributes.Name = item.object_id
         attributes.LayerIndex = ensure_layer(item.layer)
         attributes.Visible = bool(item.visible)
+        if item.material is not None:
+            attributes.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
+            attributes.MaterialIndex = ensure_material(item.material)
         for key in sorted(item.user_text):
             attributes.SetUserString(key, item.user_text[key])
         model.Objects.AddMesh(mesh, attributes)
@@ -828,6 +976,7 @@ __all__ = [
     "OcctObjectBuild",
     "OcctProgramBuild",
     "OcctUnavailableError",
+    "PreviewMaterial",
     "PreviewObject",
     "SUPPORTED_OPERATION_KINDS",
     "ShapeMeasure",

@@ -52,7 +52,7 @@ def _shifted(bounds, object_ids, axis: int, by: float) -> dict:
 
 
 def _stair_row() -> ElementRow:
-    """The real flight the producer builds: ten solid steps along the west facade, standing on the piano nobile."""
+    """The real flight the producer builds: ten solid steps as one stepped solid along the west facade, standing on the piano nobile."""
 
     return ElementRow("stair-north", "monument-stair", "stair",
                       {"from": {"axis_point": {"axis": "W", "along": 0.0}}, "to": {"axis_point": {"axis": "W", "along": 3.0}}, "base": {"level": PN}},
@@ -196,8 +196,10 @@ class SupportSeatInPlanTests(unittest.TestCase):
         (flight,) = report.checks
         self.assertEqual((flight.relation_id, flight.status), ("stair-north-stands-on", "held"))
         self.assertAlmostEqual(flight.measured["element_bottom"], 3.57)
-        self.assertAlmostEqual(bounds["obj-stair-north-9"][0][1], 3.57 + 9 * 0.18)      # later steps rise above the level by construction
-        self.assertNotIn("unseated_members", flight.measured)                           # and are not each pressed onto it
+        self.assertEqual(objects["stair-north"], ["obj-stair-north"])                    # one whole stepped solid, not a box per step
+        self.assertAlmostEqual(bounds["obj-stair-north"][0][1], 3.57)                     # it stands on the level by its lowest tread ...
+        self.assertAlmostEqual(bounds["obj-stair-north"][1][1], 3.57 + 10 * 0.18)         # ... and rises ten treads above it by construction
+        self.assertNotIn("unseated_members", flight.measured)                           # a flight is not pressed onto its level member by member
 
     def test_level_alignment_honours_and_reports_declared_offsets_in_either_orientation(self) -> None:
         for offset in (-0.02, 0.1):

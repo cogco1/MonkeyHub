@@ -42,8 +42,14 @@ import {
 } from "./sceneInspection";
 import {
   captureModelAppearance,
+  fadeOpacity,
+  isDisplayed,
   matchesSemanticCarrier,
+  prepareLoadedModel,
   restoreModelAppearance,
+  restoreOpacity,
+  savedObjectVisible,
+  type MaterialOpacity,
   type ModelAppearance,
   type SemanticHighlightTarget,
 } from "./modelDisplay";
@@ -196,8 +202,8 @@ interface ViewportRuntime {
   appearance: ModelAppearance | null;
   ghost: Group | null;
   secondary: Object3D | null;
-  /** The loaded model's materials as they were before a blend touched them. */
-  restore: Map<Material, { transparent: boolean; opacity: number; depthWrite: boolean }>;
+  /** Each faded material's own opacity, as it was before a blend scaled it. */
+  restore: Map<Material, MaterialOpacity>;
   /** Where the cross-fade stands, so a highlight can be taken off without losing it. */
   blendT: number | null;
   /** The meshes wearing a highlight clone, in the order they were lit. */
@@ -294,15 +300,17 @@ function isUnder(object: Object3D, root: Object3D): boolean {
 /**
  * The material a picked object wears: its own, cloned once, with a restrained
  * drafting-blue lift and a little less transparency. No post-processing glow
- * and no second pass — the same forward render, one material deep.
+ * and no second pass — the same forward render, one material deep. The lift
+ * starts from the material's own opacity (``own``), not from a cross-fade's
+ * scaled one, so the fade applied over the mark scales it exactly once.
  */
-function highlightMaterial(material: Material, accent: Color): Material {
+function highlightMaterial(material: Material, accent: Color, own?: MaterialOpacity): Material {
   const copy = material.clone();
   if (copy instanceof MeshStandardMaterial) {
     copy.emissive = new Color(accent);
     copy.emissiveIntensity = 0.22;
   }
-  copy.opacity = Math.min(1, material.opacity + 0.2);
+  copy.opacity = Math.min(1, (own?.opacity ?? material.opacity) + 0.2);
   copy.transparent = copy.opacity < 1;
   copy.depthWrite = copy.opacity >= 1;
   copy.needsUpdate = true;
@@ -317,7 +325,12 @@ function restoreHighlight(runtime: ViewportRuntime): void {
     runtime.original.delete(mesh);
   }
   runtime.highlighted = [];
-  for (const material of runtime.clones) material.dispose();
+  for (const material of runtime.clones) {
+    // A clone faded by a cross-fade was remembered like any other material;
+    // a disposed clone has nothing to be given back.
+    runtime.restore.delete(material);
+    material.dispose();
+  }
   runtime.clones = [];
 }
 
@@ -328,7 +341,7 @@ function applyHighlight(runtime: ViewportRuntime, objects: readonly Object3D[]):
   const clone = (material: Material): Material => {
     const existing = cloned.get(material);
     if (existing) return existing;
-    const copy = highlightMaterial(material, accent);
+    const copy = highlightMaterial(material, accent, runtime.restore.get(material));
     cloned.set(material, copy);
     runtime.clones.push(copy);
     return copy;
@@ -369,15 +382,6 @@ function materialsUnder(root: Object3D): Material[] {
     for (const item of Array.isArray(material) ? material : [material]) seen.add(item);
   });
   return [...seen];
-}
-
-function setOpacity(materials: readonly Material[], opacity: number): void {
-  for (const material of materials) {
-    material.transparent = opacity < 1;
-    material.opacity = opacity;
-    material.depthWrite = opacity >= 1;
-    material.needsUpdate = true;
-  }
 }
 
 /**
@@ -659,19 +663,15 @@ export const ThreeDmViewport = forwardRef<
   const clearSecondary = useCallback(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    // The loaded model gets its materials back exactly as they were - a pane
+    // the file made translucent as translucent as the file said - before the
+    // comparison's own materials are dropped.
+    restoreOpacity(runtime.restore);
     if (runtime.secondary) {
       runtime.scene.remove(runtime.secondary);
       disposeSecondary(runtime.secondary);
       runtime.secondary = null;
     }
-    // The loaded model gets its materials back exactly as they were.
-    for (const [material, state] of runtime.restore) {
-      material.transparent = state.transparent;
-      material.opacity = state.opacity;
-      material.depthWrite = state.depthWrite;
-      material.needsUpdate = true;
-    }
-    runtime.restore.clear();
     runtime.blendT = null;
     // blend(1) hides the primary root. Removing the comparison must make the
     // original model visible again as well as restoring its material opacity.
@@ -694,18 +694,10 @@ export const ThreeDmViewport = forwardRef<
     if (!runtime?.model || !runtime.secondary) return;
     const mix = Math.min(1, Math.max(0, t));
     runtime.blendT = mix;
-    const primary = materialsUnder(runtime.model);
-    for (const material of primary) {
-      if (!runtime.restore.has(material)) {
-        runtime.restore.set(material, {
-          transparent: material.transparent,
-          opacity: material.opacity,
-          depthWrite: material.depthWrite,
-        });
-      }
-    }
-    setOpacity(primary, 1 - mix);
-    setOpacity(materialsUnder(runtime.secondary), mix);
+    // Each material keeps its own opacity, scaled by its side's weight: the
+    // file's glass stays glass at every blend, and is itself again at 0 / 1.
+    fadeOpacity(materialsUnder(runtime.model), runtime.restore, 1 - mix);
+    fadeOpacity(materialsUnder(runtime.secondary), runtime.restore, mix);
     runtime.model.visible = mix < 1;
     runtime.secondary.visible = mix > 0;
     runtime.render();
@@ -767,6 +759,9 @@ export const ThreeDmViewport = forwardRef<
               return;
             }
             clearSecondary();
+            // The same preparation as the loaded model: what the file hid
+            // stays hidden on the 'after' side too.
+            prepareLoadedModel(model);
             tintSecondary(model, new Color(accentColour()));
             runtime.secondary = model;
             runtime.scene.add(model);
@@ -887,7 +882,9 @@ export const ThreeDmViewport = forwardRef<
         return;
       }
 
-      const model = models.length === 1 ? models[0] : groupOf(models);
+      // The file's own display state, whether one export or a whole run of
+      // them, before the appearance below is remembered as the original.
+      const model = prepareLoadedModel(models.length === 1 ? models[0] : groupOf(models));
       // The mark on a picked object belongs to the picture going away.
       restoreHighlight(runtime);
       if (runtime.model) {
@@ -967,9 +964,11 @@ export const ThreeDmViewport = forwardRef<
       if (!runtime?.model) return null;
       const raycaster = rayAt(clientX, clientY);
       if (!raycaster) return null;
+      // The raycaster meets hidden meshes too; only what is on screen - its
+      // own flag and its ancestors' - can be picked.
       const hit = raycaster
         .intersectObject(runtime.model, true)
-        .find((intersection) => intersection.object.visible);
+        .find((intersection) => isDisplayed(intersection.object));
       if (!hit) return null;
       const carrier = userStringCarrier(hit.object) ?? hit.object;
       const attributes = carrier.userData.attributes as
@@ -1074,7 +1073,8 @@ export const ThreeDmViewport = forwardRef<
         const runtime = runtimeRef.current;
         if (!runtime?.model) return;
         runtime.model.traverse((object) => {
-          if (layerIndexOf(object) === index) object.visible = visible;
+          // A layer switched on shows its objects, not the ones the file hid.
+          if (layerIndexOf(object) === index) object.visible = visible && savedObjectVisible(object);
         });
         const layers = runtime.model.userData.layers;
         if (Array.isArray(layers) && layers[index]) layers[index].visible = visible;

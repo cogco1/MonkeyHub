@@ -201,6 +201,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
             material = rhino3dm.Material()
             material.Name = "archflow-material:stucco"
             material.DiffuseColor = (210, 205, 190, 255)
+            material.Transparency = 0.35
             material.SetUserString("archflow:material_id", "stucco")
             material.ToPhysicallyBased()
             material_index = model.Materials.Add(material)
@@ -226,6 +227,8 @@ class ThreeDmInspectorTests(unittest.TestCase):
             [210, 205, 190, 255],
         )
         self.assertTrue(saved_material["physically_based"])
+        # the native openNURBS transparency the file actually stores, not a default
+        self.assertEqual(saved_material["transparency"], 0.35)
         self.assertEqual(
             saved_material["user_strings"],
             [{"key": "archflow:material_id", "value": "stucco"}],
@@ -239,6 +242,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
         self.assertEqual(binding["material_index"], 0)
         self.assertEqual(binding["material_name"], "archflow-material:stucco")
         self.assertEqual(binding["archflow_material_id"], "stucco")
+        self.assertEqual(binding["material_transparency"], 0.35)
         self.assertIsNone(binding["render_material_instance_id"])
 
     @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")

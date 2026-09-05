@@ -560,21 +560,47 @@ def produce_dome_cap(row: ElementRow, context: ProductionContext) -> ProducedEle
     return _loft(row, context, [pt for section in profiles for pt in section], n, base_datum)
 
 
-def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElement:
-    """A straight flight of ``count`` steps between two plan references.
+def _stair_outline(length: float, count: int, going: float, rise: float) -> list[tuple[float, float]]:
+    """One closed stepped side profile as (along, up) pairs: the floor line, then the treads back down.
 
-    Each step is one box, ``going`` long along the from→to line and ``width``
-    across it, standing on the base datum lifted by ``k · rise``: a solid step
-    fills its whole rise, a slab step only its ``thickness``. The flight
+    ``2 · count + 2`` vertices: the two ends of the floor line, then for each
+    step from the top one down its nosing and the back of its tread. The
+    intermediate nosings stand at ``k · going``; the far end stands on the
+    ``to`` reference itself, so the flight ends exactly where the row says
+    even when a declared going is a fraction of a millimetre off.
+    """
+
+    outline = [(0.0, 0.0), (length, 0.0)]
+    for k in range(count, 0, -1):
+        nosing = length if k == count else k * going
+        outline.append((nosing, k * rise))
+        outline.append(((k - 1) * going, k * rise))
+    return outline
+
+
+def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """A straight flight of ``count`` steps between two plan references, as one closed solid.
+
+    The flight is one stepped side profile — the floor line along the
+    from→to line, then ``count`` treads of ``going`` and ``rise`` back down —
+    lofted straight across ``width`` between its two sides and capped, so
+    the export carries one object ``obj-<id>`` whose faces are the treads
+    and risers themselves. Every step fills its whole rise. The flight
     publishes ``<id>-top`` at ``base + count · rise`` — the datum a landing,
     a podium or a stylobate above it binds, so changing the rise moves what
     the flight carries. It refuses a zero-length line, a count below one, and
     a declared ``going`` whose ``count · going`` misses the line length by
     more than a millimetre: a flight is measured by its references, never
-    stretched to fit them. A declared ``top`` must match both that rise total
-    (including the base offset) and the final tread's physical top within the
-    same millimetre tolerance. A thin tread below that endpoint is refused;
-    neither the declared rise nor the historical tread placement is changed.
+    stretched to fit them. A declared ``top`` must match that rise total
+    (including the base offset) within the same millimetre; the final
+    tread's physical top is that same number by construction.
+
+    A positive ``thickness`` used to mean separate slab treads, each only
+    that thick, floating at its own rise. Separate treads are not one closed
+    solid, and this producer derives no waist or flight slab from them, so
+    that meaning is refused by name rather than reinterpreted. Retained
+    programs compiled from the per-step path stay readable: the compiler
+    and the adapters still realize plain extrusions.
     """
 
     p = row.params
@@ -588,6 +614,12 @@ def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElemen
     thickness = _finite(p.get("thickness", 0.0), f"{row.element_id} thickness")
     if thickness < 0.0:
         raise ElementProducerError(f"{row.element_id}: tread thickness must not be negative")
+    if thickness > 0.0:
+        raise ElementProducerError(
+            f"{row.element_id}: tread thickness {round(thickness, 9)} m asks for separate slab treads, "
+            "which are not one closed solid; a flight is produced as one stepped solid whose treads "
+            "fill their rise, and no waist or slab thickness is derived from a tread thickness"
+        )
     if "top" in row.references:
         top_ref = row.references["top"]
         if isinstance(top_ref, Mapping) and "datum" in top_ref:
@@ -605,14 +637,6 @@ def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElemen
                 f"conflicting with declared top {top_id!r} at {round(target_top, 9)} m "
                 "(tolerance 0.001 m); reconcile count/rise with the endpoint references"
             )
-        tread_top = base_elevation + (count - 1) * rise + (thickness if thickness > 0.0 else rise)
-        if abs(tread_top - target_top) > 1e-3:
-            raise ElementProducerError(
-                f"{row.element_id}: final tread top is {round(tread_top, 9)} m, "
-                f"conflicting with declared top {top_id!r} at {round(target_top, 9)} m "
-                "(tolerance 0.001 m); the current tread thickness and placement "
-                "do not reach the declared endpoint"
-            )
     dx, dz = end[0] - start[0], end[1] - start[1]
     length = math.hypot(dx, dz)
     if length <= 0.0:
@@ -625,18 +649,14 @@ def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElemen
             raise ElementProducerError(f"{row.element_id}: {count} steps of {going} m span {round(count * going, 6)} m, not the {round(length, 6)} m between the references")
     else:
         going = length / count
-    half, step_height = width / 2.0, thickness if thickness > 0.0 else rise
-    ops, bindings = [], []
-    for k in range(count):
-        a, b = (start[0] + ux * k * going, start[1] + uz * k * going), (start[0] + ux * (k + 1) * going, start[1] + uz * (k + 1) * going)
-        profile = [(a[0] - nx * half, 0.0, a[1] - nz * half), (b[0] - nx * half, 0.0, b[1] - nz * half),
-                   (b[0] + nx * half, 0.0, b[1] + nz * half), (a[0] + nx * half, 0.0, a[1] + nz * half)]
-        op_id = f"{row.element_id}-{k}"
-        ops.append(_extrusion(op_id, profile, step_height, row.binding_id, context.frame_id, base_offset + k * rise))
-        bindings.append(_bind(op_id, base_datum))
-    top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}-0", context.datum_value(base_datum) + base_offset + count * rise, row.basis_refs)
+    half = width / 2.0
+    outline = _stair_outline(length, count, going, rise)
+    sides = [(start[0] + ux * along + sign * nx * half, up, start[1] + uz * along + sign * nz * half)
+             for sign in (-1.0, 1.0) for along, up in outline]
+    produced = _loft(row, context, sides, len(outline), base_datum, base_offset)
+    top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + count * rise, row.basis_refs)
     context.published[top.datum_id] = top
-    return ProducedElement(tuple(ops), tuple(bindings), (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
+    return ProducedElement(produced.operations, produced.bindings, (top,), produced.relations, None)
 
 
 def _rise_sense(ux: float, uz: float, across: bool) -> str:

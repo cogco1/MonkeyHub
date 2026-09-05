@@ -460,13 +460,80 @@ class StairTests(unittest.TestCase):
         self.assertEqual({e.entity_id for e in successor.entities_of("Element@1")}, {"main-block-stair-west", "main-block-landing"})
         StateRecord.from_dict(successor.to_dict())
 
-    def test_slab_steps_carry_their_thickness_under_the_rise(self) -> None:
+    def test_thin_separate_treads_are_read_as_such_and_refused_as_a_runnable_row(self) -> None:
+        # slab treads 0.15 m thick floating at a 0.4 m rise: the boxes still say what they are, and the
+        # producer, which builds a flight as one closed stepped solid, refuses to reinterpret them as one
         result = reindex(fixture_record(), [(inspection(straight_flight(thickness=0.15)), "record:base", 0)])
         flight, = [d for d in result.drafts if d.family == "stair"]
-        self.assertEqual((flight.status, flight.producer), (DRAFT, "stair"), flight.notes)
-        self.assertAlmostEqual(flight.params["thickness"], 0.15, places=6)
+        self.assertEqual((flight.status, flight.producer), (ERROR, "stair"), flight.notes)
+        self.assertAlmostEqual(flight.params["thickness"], 0.15, places=6)   # the thin-tread reading is kept, not rewritten as solid steps
         self.assertAlmostEqual(flight.params["rise"], RISE, places=6)
-        self.assertLessEqual(flight.residual_m, 0.001, flight.notes)
+        self.assertEqual(flight.params["count"], STEPS)
+        self.assertEqual([o.name for o in flight.objects], [o["bbox"]["name"] for o in straight_flight()])
+        self.assertTrue(any("slab steps 0.15 m thick under a 0.4 m rise" in n for n in flight.notes), flight.notes)
+        self.assertTrue(any("producer refused" in n and "tread thickness 0.15" in n and "not one closed solid" in n for n in flight.notes), flight.notes)
+        self.assertIsNone(flight.residual_m)                                  # nothing was produced to measure against
+        # no runnable row: the successor gains no element, and the catalog names the refusal under its component
+        successor = apply_state_record_operator(result.record, result.operator(basis_refs=("record:base",)))
+        self.assertEqual(successor.entities_of("Element@1"), ())
+        catalog = result.catalog(run_id="r")
+        self.assertEqual(catalog["summary"]["elements_error"], 1)
+        main_block = {c["component_id"]: c for c in catalog["components"]}["main-block"]
+        self.assertEqual((main_block["catalog_status"], main_block["errors"], main_block["elements"]), (MODEL_VISIBLE_CATALOG_MISSING, [flight.element_id], []))
+        self.assertEqual({o["name"]: (o["status"], o["element_id"]) for o in catalog["objects"]}["obj-stair-west-00"], (BOUND, None))
+
+    def test_a_whole_stepped_solid_is_not_drafted_as_a_flight_from_its_box(self) -> None:
+        # the stair producer emits one closed stepped solid per flight (obj-<id>, 2 + 2·count + 2 faces:
+        # tests/test_whole_stair.py); its bounding box holds the same hull for any count and any rise,
+        # so the re-index names the boundary instead of claiming a step count it cannot read
+        def whole(steps: int, faces: int):
+            return box("obj-stair-east", "main-block", "stair-east", (STAIR_X0, -TREAD_WIDTH / 2, 0.0), (STAIR_X0 + steps * GOING, TREAD_WIDTH / 2, steps * RISE), faces=faces)
+        brep_faces = 2 + 2 * STEPS + 2
+        for label, faces in (("brep faces as the 3dm inspector counts them", brep_faces), ("triangles as the OCCT preview counts them", 2 * brep_faces)):
+            with self.subTest(label):
+                result = reindex(fixture_record(), [(inspection([whole(STEPS, faces)]), "record:base", 0)])
+                flight, = [d for d in result.drafts if d.family == "stair"]
+                self.assertEqual((flight.status, flight.producer, flight.params), (AMBIGUOUS, None, {}), flight.notes)
+                self.assertEqual(flight.notes, [f"1 object(s) of form ['Brep:{faces}']; no producer carries this form from boxes"])
+                self.assertEqual([o.name for o in flight.objects], ["obj-stair-east"])   # identity kept: component, family, side
+                self.assertEqual(result.relations, ())
+                successor = apply_state_record_operator(result.record, result.operator(basis_refs=("record:base",)))
+                self.assertEqual(successor.entities_of("Element@1"), ())
+                catalog = result.catalog(run_id="r")
+                main_block = {c["component_id"]: c for c in catalog["components"]}["main-block"]
+                self.assertEqual((main_block["catalog_status"], main_block["ambiguous"], main_block["elements"]), (MODEL_VISIBLE_CATALOG_MISSING, [flight.element_id], []))
+                obj, = catalog["objects"]
+                self.assertEqual((obj["status"], obj["family"], obj["side"], obj["element_id"]), (BOUND, "stair", "east", None))
+        # a landing over an unread flight stays a prism off the nearest level: no flight top is published to seat it on
+        result = reindex(fixture_record(), [(inspection([whole(STEPS, brep_faces)] + landing()), "record:base", 0)])
+        drafts = {d.element_id: d for d in result.drafts}
+        self.assertEqual(drafts["main-block-stair-east"].status, AMBIGUOUS)
+        landing_draft = drafts["main-block-landing"]
+        self.assertEqual((landing_draft.status, landing_draft.producer), (DRAFT, "prism"), landing_draft.notes)
+        self.assertEqual(landing_draft.references["base"], {"offset_from": {"level": "level-piano", "offset": round(STEPS * RISE - 3.57, 6)}})
+        self.assertEqual(result.relations, ())
+
+    def test_a_whole_stepped_solid_the_record_declares_is_measured_against_its_row(self) -> None:
+        # the record's own stair row re-produces the one loft and the existing reader boxes it: the whole
+        # solid binds to the row and measures at zero residual, exactly as the retained per-step boxes do
+        from dataclasses import replace
+        base = fixture_record()
+        row = Entity("stair-east", "Element@1", {"component_id": "main-block", "producer": "stair",
+                     "references": {"from": {"axis_point": {"axis": "B", "along": STAIR_X0}}, "to": {"axis_point": {"axis": "B", "along": STAIR_X0 + STEPS * GOING}}, "base": {"level": "level-ground"}},
+                     "params": {"count": STEPS, "rise": RISE, "width": TREAD_WIDTH}}, "main-block", (EVIDENCE,))
+        record = replace(base, entities=base.entities + (row,))
+        whole = box("obj-stair-east", "main-block", "stair-east", (STAIR_X0, -TREAD_WIDTH / 2, 0.0), (STAIR_X0 + STEPS * GOING, TREAD_WIDTH / 2, STEPS * RISE), faces=2 + 2 * STEPS + 2)
+        per_step = [box(f"obj-stair-east-{k:02d}", "main-block", f"stair-east-{k:02d}", (STAIR_X0 + k * GOING, -TREAD_WIDTH / 2, k * RISE), (STAIR_X0 + (k + 1) * GOING, TREAD_WIDTH / 2, (k + 1) * RISE)) for k in range(STEPS)]
+        for label, objs in (("one whole solid", [whole]), ("retained per-step boxes", per_step)):
+            with self.subTest(label):
+                result = reindex(record, [(inspection(objs), "record:base", 0)])
+                flight, = [d for d in result.drafts if d.family == "stair"]
+                self.assertEqual((flight.element_id, flight.status, flight.producer), ("stair-east", "EXISTING", "stair"), flight.notes)
+                self.assertEqual([o.name for o in flight.objects], [o["bbox"]["name"] for o in objs])
+                self.assertLessEqual(flight.residual_m, 0.001, flight.notes)
+                catalog = result.catalog(run_id="r")
+                self.assertEqual({c["component_id"]: c["catalog_status"] for c in catalog["components"]}["main-block"], COVERED)
+                self.assertEqual({o["name"]: o["element_id"] for o in catalog["objects"]}, {o["bbox"]["name"]: "stair-east" for o in objs})
 
     def test_a_flight_whose_ends_snap_to_declared_axes_names_the_intersections(self) -> None:
         steps = [box(f"obj-stair-{k:02d}", "main-block", f"stair-{k:02d}", (-11.0, -10.71 + k * 3.57, k * RISE), (-9.0, -10.71 + (k + 1) * 3.57, (k + 1) * RISE)) for k in range(6)]

@@ -61,7 +61,7 @@ this edit affects. They use the existing record, not three competing project sto
 | Understand an architectural request | Studio `application/intent.py`, the intent compiler and target/action resolvers | Ordinary edits compile to one numeric target. A scope names affected parts; it does not yet coordinate an assembly-wide revision. |
 | Express the project and change it | `state/state_record.py`: entities, parameters, relations, obligations and exact-base operators | Its four edit kinds serve scalar, massing, program and reindex consumers. A new architectural action needs only the specific missing operation, not a general patch language or a second state model. |
 | Resolve dependencies | `StateRecord.dependency_edges/closure`, `capabilities/reference_resolver.py` and producer ordering | Traversing declared edges cannot discover a missing architectural dependency or decide which endpoint should govern a revision. |
-| Produce an assembly | `capabilities/element_producers.py`, with existing wall/opening solvers and geometry compiler | The straight-stair producer emits steps and a top datum. Whole-flight support, endpoint constraints and coordination with a passage/landing require a project-backed example; they are not proved by that datum. |
+| Produce an assembly | `capabilities/element_producers.py`, with existing wall/opening solvers and geometry compiler | The straight-stair producer emits one closed stepped solid with a declared endpoint and top datum; windows emit one frame and a separate pane. Synthetic candidate continuation verifies these assemblies. Coordination with the actual project's passage, landing and side supports still requires that project's example. |
 | Check the result | `capabilities/relation_checks.py`, CAD readback and `validation/engine.py` | Declared relations are checked, but omitted requirements can remain unseen. Support-height agreement is not contact-area or structural-capacity analysis. P110 addresses the separate missing requirement input in Studio validation. |
 | Continue, inspect and retain | Studio binding/candidate/viewer, `runtime/project_runner.py`, P036 | Explicit candidate continuation is implemented and handed back for trial. Program-sheet and massing-option generation still use the default base; continuation does not prove architectural correctness. |
 
@@ -101,7 +101,9 @@ the architect changes that decision; ask about a real conflict, not an internal 
    consumers need it and remove the superseded production path together. P105
    follows missing geometry vocabulary. The delivered OCCT export supports the bounded
    solid/loft/boolean slice described in the [Studio README](../apps/archflow-studio/README.md);
-   whole-stair/window production and further operation coverage remain live work.
+   whole-stair/window production and synthetic candidate continuation are implemented.
+   The next project trial requires the original drum, dome and passage loft semantics;
+   their missing thickness is not permission to replace open surfaces with solids.
    P104 and P106 retired unbuilt with the
    monument lane on 2026-09-05. Research under P094 proceeds separately.
 

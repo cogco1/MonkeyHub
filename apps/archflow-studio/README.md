@@ -188,19 +188,28 @@ with each seat's compiled program:
 
 | value | what a candidate leaves | lane |
 | --- | --- | --- |
-| `occt` (default) | per seat, in process and without any host: one **exact STEP** file (`<stage>@<program digest>.step`, ISO 10303-21 B-rep, one named closed solid per object, semantic layers) and one **mesh `.3dm` preview** of the same model (`….preview.3dm`, what the viewer shows; object names, layers and `archflow:*` user text; a render mesh, never a NURBS/B-rep delivery), retained as `seat-occt-execution` with the cold readback of the STEP file | parallel, like any kernel work |
+| `occt` (default) | per seat, in process and without any host: one **exact STEP** file (`<stage>@<program digest>.step`, ISO 10303-21 B-rep, named closed solids and semantic layers; a linear array groups its repeated solids under one object identity) and one **mesh `.3dm` preview** of the same model (`….preview.3dm`, what the viewer shows; object names, layers and `archflow:*` user text; a render mesh, never a NURBS/B-rep delivery), retained as `seat-occt-execution` with the cold readback of the STEP file | parallel, like any kernel work |
 | `rhino` | the supervised Rhino host export (slow — roughly 37 s per seat, and it drives Rhino); needs `ARCHFLOW_STUDIO_POWERSHELL`; retained as `seat-rhino-execution` | exclusive: one Rhino at a time |
 | `off` | nothing written: the candidate is compiled and relation-checked only | parallel |
 
 Rhino is never started unless `rhino` is named. An operation the in-process executor does not
-realize (an instanced array, a revolve, a sweep, an asset) fails that seat's export by name
+realize (a radial array, a revolve, a sweep, an asset) fails that seat's export by name
 before any file is written; nothing falls back to Rhino and no stand-in model is produced.
-The current OCCT slice supports boxes, polyline extrusions, capped polyline lofts and
-union/difference/intersection. Changed programs receive a full rebuild; incremental OCCT
+The current OCCT slice supports boxes, polyline extrusions, capped polyline lofts,
+union/difference/intersection and linear arrays. Changed programs receive a full rebuild; incremental OCCT
 patch execution is not implemented. STEP readback uses a fresh reader over saved bytes in
 the same process. Synthetic geometry and temporary P036 candidate continuation have been
 verified; this delivery has not rerun the real Villa project or established whole-building
 coverage.
+The straight-stair producer now creates one complete stepped solid from its declared
+endpoints, rise, going and width. Positive `thickness` still means separate thin treads
+and is refused by this whole-flight producer. Windows have one closed frame with an
+aperture and a separate pane. Their existing FRAME/GLAZING roles assign native preview
+materials: the frame uses its declared component material or a shaded layer colour;
+glass currently uses a light-tinted fallback with 60% transparency. The viewer reads these
+saved materials and preserves their original opacity through version crossfades. Objects
+saved hidden remain hidden when loading, restoring or comparing models and cannot intercept
+picks, including when an ancestor is hidden.
 Reading or reopening a candidate never runs an export: the listing reads the retained receipts
 and re-hashes the files they certify. The older `ARCHFLOW_STUDIO_RHINO_EXPORT` is still read
 when the new variable is unset — `1` turns export on (through `occt`), anything else it was set

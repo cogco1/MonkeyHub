@@ -75,6 +75,42 @@ export function nextModelDisplayMode(
   return requested !== "model" && requested === current ? "model" : requested;
 }
 
+/**
+ * Whether the file saved this object as visible.
+ *
+ * The loader hangs the object's attributes on ``userData.attributes`` and sets
+ * ``visible`` from the layer alone; the object's own flag is read here. Only
+ * an explicit ``false`` hides: an object without attributes (a group, an
+ * instance root) is as visible as its parent.
+ */
+export function savedObjectVisible(object: Object3D): boolean {
+  const attributes = object.userData.attributes as { visible?: unknown } | undefined;
+  return attributes?.visible !== false;
+}
+
+/**
+ * Give a freshly parsed model the display state its file saved: the layer
+ * visibility the loader applied, and each object's own saved visibility on
+ * top of it. Every loaded model - the reference, a local file, the second
+ * side of a comparison - passes through here before its appearance is
+ * captured, so a hidden construction object is remembered as hidden and no
+ * restoration brings it back.
+ */
+export function prepareLoadedModel<T extends Object3D>(root: T): T {
+  root.traverse((object) => {
+    if (object.visible && !savedObjectVisible(object)) object.visible = false;
+  });
+  return root;
+}
+
+/** Whether this object is actually on screen: its own flag and every ancestor's. */
+export function isDisplayed(object: Object3D): boolean {
+  for (let current: Object3D | null = object; current !== null; current = current.parent) {
+    if (!current.visible) return false;
+  }
+  return true;
+}
+
 export interface ModelAppearance {
   readonly visibility: WeakMap<Object3D, boolean>;
   readonly materials: WeakMap<Mesh, Material | Material[]>;
@@ -102,6 +138,57 @@ export function captureModelAppearance(root: Object3D): ModelAppearance {
     }
   });
   return { visibility, materials, layerVisibility };
+}
+
+/** A material's own opacity state, as the file's loader set it. */
+export interface MaterialOpacity {
+  readonly transparent: boolean;
+  readonly opacity: number;
+  readonly depthWrite: boolean;
+}
+
+/**
+ * Scale each material's own opacity by ``weight`` (0..1) for a cross-fade.
+ *
+ * A material's own state is remembered in ``own`` the first time it is faded
+ * and never overwritten, so a pane the file made translucent stays
+ * proportionally translucent at every blend, and an opaque wall is opaque
+ * again at weight 1. ``restoreOpacity`` gives every remembered material its
+ * own state back.
+ */
+export function fadeOpacity(
+  materials: readonly Material[],
+  own: Map<Material, MaterialOpacity>,
+  weight: number,
+): void {
+  const scale = Math.min(1, Math.max(0, weight));
+  for (const material of materials) {
+    let state = own.get(material);
+    if (state === undefined) {
+      state = {
+        transparent: material.transparent,
+        opacity: material.opacity,
+        depthWrite: material.depthWrite,
+      };
+      own.set(material, state);
+    }
+    const opacity = state.opacity * scale;
+    material.transparent = state.transparent || opacity < 1;
+    material.opacity = opacity;
+    material.depthWrite = state.depthWrite && opacity >= 1;
+    material.needsUpdate = true;
+  }
+}
+
+/** Give every faded material its own opacity state back, and forget them. */
+export function restoreOpacity(own: Map<Material, MaterialOpacity>): void {
+  for (const [material, state] of own) {
+    material.transparent = state.transparent;
+    material.opacity = state.opacity;
+    material.depthWrite = state.depthWrite;
+    material.needsUpdate = true;
+  }
+  own.clear();
 }
 
 /** Restore visibility, layer flags and the exact material references loaded from the file. */
