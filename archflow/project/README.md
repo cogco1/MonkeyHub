@@ -57,5 +57,5 @@ If an output does not fit exactly one row, stop before writing and ask the
 project owner to assign it.
 
 Cache and temp data do not fit this table because they are not project records.
-They live only under the explicit external roots in `config/runtime*.json` and
-may be deleted or rebuilt without changing canonical project state.
+They live outside the project root and may be deleted or rebuilt without
+changing canonical project state.

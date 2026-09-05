@@ -24,7 +24,8 @@ screen stops saying all of them at once.
   are (zero changes). Same three.js + rhino3dm loader, same drag-in / open-file, same SHA-addressed artifact
   download, same picking via `archflow:*` user strings.
 
-## 3. Laws that bind (unchanged; from `.superpowers/sdd/global-constraints.md`)
+## 3. Laws that bind (unchanged; from `global-constraints.md`, archived to
+ARCHFLOW_V4_ARCHIVE/20260905_repo_cloud-config-reports-plans/.superpowers/sdd/)
 
 Browser law: the browser never computes digests, decides verdicts, invents relation states, fabricates
 honesty, hides a server sentence, or commits. Three-state law: `held` / `violated` / `unchecked` are shown as

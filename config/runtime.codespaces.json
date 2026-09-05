@@ -1,6 +1,0 @@
-{
-  "schema": "ArchFlowRuntimeConfig@1",
-  "workspace_root": "/workspaces/archflow-v4-runtime/workspace",
-  "cache_root": "/workspaces/archflow-v4-runtime/cache",
-  "temp_root": "/workspaces/archflow-v4-runtime/temp"
-}

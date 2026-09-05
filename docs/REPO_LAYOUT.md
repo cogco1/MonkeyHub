@@ -23,7 +23,6 @@
 | `probes/` | 脊柱测试要读的 P036 fixture 项目(现只有 `test_pantheon`,待换成合成 fixture 后删除) | 退役线的证据、迁移指针 |
 | `.github/` | CI:spine 套件 + archcheck | |
 | `.codex/` | codex CLI 的项目配置与云环境脚本 | |
-| `config/` | (退役中)归档 controller 线的 runtime 配置 | |
 
 ## 3. 计划只有一种载体
 
