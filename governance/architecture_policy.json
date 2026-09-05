@@ -122,6 +122,17 @@
       "kind": "wip_input",
       "owner": "project.inputs",
       "reason": "writes input/runner/program-sheet.json only when POST /api/program carries saveInput=true in local mode; never writes state-record.json"
+    },
+    {
+      "path": "archflow/project/inputs.py",
+      "function": "write_seat_pack_file",
+      "operations": [
+        "mkdir",
+        "write_bytes"
+      ],
+      "kind": "wip_input",
+      "owner": "project.inputs",
+      "reason": "writes only input/runner/seats.json when the caller explicitly saves the authored seat pack; retaining replaced bytes belongs to the caller through project.repository"
     }
   ],
   "forbidden_layer_imports": [

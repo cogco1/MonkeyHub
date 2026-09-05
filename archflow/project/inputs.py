@@ -17,12 +17,16 @@ digest to take.
 This module reads and refuses. It parses no ``SeatPack@1``, keeps nothing, and
 says nothing about which run may use what it read.
 
-It writes exactly one of the three. The program sheet is the one authored file
-the studio edits — an architect types a brief into a table and expects to find
-it again — so ``write_program_sheet_file`` is its single writer, and the record
-and the seat pack stay files only a person edits. The write is a work-in-
-progress write: it touches nothing under ``runs/``, ``canonical/`` or
-``objects/``, and nothing about it is retained until a run reads it.
+It writes two of the three. The program sheet is an authored file the studio
+edits — an architect types a brief into a table and expects to find it again —
+so ``write_program_sheet_file`` is its single writer. The seat pack is the
+other: a continuation re-reads ``input/runner/seats.json``, so the seats a run
+was generated under have to be the seats the file holds, and
+``write_seat_pack_file`` is its single writer. The record stays a file only a
+person edits. Both writes are work-in-progress writes: they touch nothing under
+``runs/``, ``canonical/`` or ``objects/``, and nothing about them is retained
+until a run reads the file. Keeping the bytes a write replaces is the caller's,
+through the repository; nothing here archives.
 """
 
 from __future__ import annotations
@@ -209,6 +213,55 @@ def write_program_sheet_file(
     except OSError as exc:
         raise ProgramSheetInvalid(_sentence(path, exc), path=path) from exc
     return ProgramSheetFile(
+        path=path,
+        payload=dict(payload),
+        sha256=hashlib.sha256(data).hexdigest(),
+    )
+
+
+def write_seat_pack_file(
+    repository: FilesystemProjectRepository,
+    payload: Mapping[str, Any],
+) -> SeatPackFile:
+    """Write the seat pack to the layout's path; the only writer there is.
+
+    The same work-in-progress write as the program sheet's: one file inside
+    ``input/``, created with its directory, replacing whatever was there. It
+    writes no record, retains nothing, touches no run, and does not move
+    ``HEAD``. Whoever needs the replaced bytes kept retains them through
+    ``project.repository`` before calling this; nothing here keeps a copy.
+
+    The payload is checked exactly as far as the reader checks what it reads:
+    a JSON object, and one that serialises. No seat is parsed — ``SeatPack@1``
+    is somebody else's — so a pack that names no seat is written as authored.
+    The bytes are UTF-8 with LF endings and sorted keys, so the same pack
+    written twice leaves the same file and its ``sha256`` means something.
+    """
+
+    path = repository.layout.seat_pack
+    if not isinstance(payload, Mapping):
+        raise SeatPackInvalid(
+            f"{path.as_posix()}: a seat pack is a JSON object, not "
+            f"{type(payload).__name__}",
+            path=path,
+        )
+    try:
+        data = (
+            json.dumps(dict(payload), indent=2, sort_keys=True, ensure_ascii=False)
+            + "\n"
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        # A value json cannot carry, or keys it cannot sort: refused before
+        # the file is touched, so a bad payload leaves the authored pack as it was.
+        raise SeatPackInvalid(_sentence(path, exc), path=path) from exc
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Bytes, not text, for the same reason as the program sheet: the file's
+        # sha-256 must not depend on which machine wrote it.
+        path.write_bytes(data)
+    except OSError as exc:
+        raise SeatPackInvalid(_sentence(path, exc), path=path) from exc
+    return SeatPackFile(
         path=path,
         payload=dict(payload),
         sha256=hashlib.sha256(data).hexdigest(),

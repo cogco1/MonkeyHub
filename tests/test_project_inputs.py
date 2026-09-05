@@ -26,6 +26,7 @@ from archflow.project.inputs import (
     load_program_sheet_file,
     load_seat_pack_file,
     write_program_sheet_file,
+    write_seat_pack_file,
 )
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.program_sheet import PROGRAM_SHEET_SCHEMA
@@ -219,7 +220,124 @@ class ProjectInputsTests(unittest.TestCase):
 
         self.assertIn("JSON object", str(caught.exception))
 
-    # ---- the program sheet: the one authored file the studio may write
+    # ---- the seat pack writer: the continuation reads what the run was made under
+    def test_the_written_seat_pack_reads_back_as_itself_with_lf_endings(self) -> None:
+        written = write_seat_pack_file(self.repository, SEATS)
+
+        raw = self.layout.seat_pack.read_bytes()
+        self.assertNotIn(b"\r", raw)
+        self.assertEqual(written.path, self.layout.seat_pack)
+        self.assertEqual(written.payload, SEATS)
+        self.assertEqual(written.sha256, hashlib.sha256(raw).hexdigest())
+        read = load_seat_pack_file(self.repository)
+        self.assertEqual(read.payload, SEATS)
+        self.assertEqual(read.sha256, written.sha256)
+
+    def test_writing_the_same_seat_pack_twice_leaves_the_same_bytes(self) -> None:
+        first = write_seat_pack_file(self.repository, SEATS)
+        second = write_seat_pack_file(
+            self.repository, dict(reversed(list(SEATS.items())))
+        )
+
+        self.assertEqual(second.sha256, first.sha256)
+
+    def test_writing_the_seat_pack_replaces_the_authored_file_at_the_same_path(
+        self,
+    ) -> None:
+        """The blocker: a multi-seat pack on disk, a single-seat run to continue."""
+
+        old_path = self.write(self.layout.seat_pack, SEATS)
+        old_sha = hashlib.sha256(old_path.read_bytes()).hexdigest()
+        single = {
+            **SEATS,
+            "seats": [
+                {
+                    "seat_id": "building",
+                    "disciplines": ["architecture"],
+                    "phases": ["design_development"],
+                    "owned_component_ids": ["building"],
+                }
+            ],
+        }
+
+        written = write_seat_pack_file(self.repository, single)
+
+        self.assertEqual(written.path, old_path)
+        self.assertNotEqual(written.sha256, old_sha)
+        read = load_seat_pack_file(self.repository)
+        self.assertEqual(read.payload, single)
+        self.assertEqual(read.payload["seats"][0]["owned_component_ids"], ["building"])
+        self.assertEqual(
+            sorted(p.name for p in self.layout.seat_pack.parent.iterdir()),
+            ["seats.json"],
+        )
+
+    def test_writing_the_seat_pack_touches_nothing_outside_its_own_file(self) -> None:
+        """A work-in-progress write: HEAD, the other inputs and the retained areas stay."""
+
+        self.write(self.layout.authored_record, RECORD.to_dict())
+        write_program_sheet_file(self.repository, SHEET)
+        head_before = self.layout.head.read_bytes()
+        record_before = self.layout.authored_record.read_bytes()
+        sheet_before = self.layout.program_sheet.read_bytes()
+        before = sorted(
+            p.relative_to(self.root).as_posix()
+            for p in self.root.rglob("*")
+            if p.is_file() and "input" not in p.parts
+        )
+
+        write_seat_pack_file(self.repository, SEATS)
+
+        after = sorted(
+            p.relative_to(self.root).as_posix()
+            for p in self.root.rglob("*")
+            if p.is_file() and "input" not in p.parts
+        )
+        self.assertEqual(after, before)
+        self.assertEqual(self.layout.head.read_bytes(), head_before)
+        self.assertEqual(self.layout.authored_record.read_bytes(), record_before)
+        self.assertEqual(self.layout.program_sheet.read_bytes(), sheet_before)
+
+    def test_writing_a_seat_pack_that_is_not_a_mapping_is_refused_before_the_file(
+        self,
+    ) -> None:
+        with self.assertRaises(SeatPackInvalid) as caught:
+            write_seat_pack_file(self.repository, [SEATS])  # type: ignore[arg-type]
+
+        self.assertIsInstance(caught.exception, InputsError)
+        self.assertEqual(caught.exception.path, self.layout.seat_pack)
+        self.assertIn("JSON object", str(caught.exception))
+        self.assertIn("list", str(caught.exception))
+        self.assertFalse(self.layout.seat_pack.exists())
+
+    def test_writing_a_seat_pack_that_will_not_serialise_leaves_the_file_as_it_was(
+        self,
+    ) -> None:
+        old_path = self.write(self.layout.seat_pack, SEATS)
+        old_bytes = old_path.read_bytes()
+
+        with self.assertRaises(SeatPackInvalid) as caught:
+            write_seat_pack_file(self.repository, {**SEATS, "seats": {"a", "b"}})
+
+        self.assertEqual(caught.exception.path, self.layout.seat_pack)
+        self.assertIn("input/runner/seats.json", str(caught.exception))
+        self.assertIn("not JSON serializable", str(caught.exception))
+        self.assertEqual(old_path.read_bytes(), old_bytes)
+
+    def test_a_seat_pack_that_cannot_be_written_is_a_refusal_naming_the_file(
+        self,
+    ) -> None:
+        # A directory where the file goes: write_bytes fails with an OSError.
+        self.layout.seat_pack.mkdir(parents=True)
+
+        with self.assertRaises(SeatPackInvalid) as caught:
+            write_seat_pack_file(self.repository, SEATS)
+
+        self.assertIsInstance(caught.exception, InputsError)
+        self.assertEqual(caught.exception.path, self.layout.seat_pack)
+        self.assertIn("input/runner/seats.json", str(caught.exception))
+
+    # ---- the program sheet: the other authored file the studio may write
     def test_an_absent_program_sheet_names_the_file_it_wanted(self) -> None:
         with self.assertRaises(ProgramSheetMissing) as caught:
             load_program_sheet_file(self.repository)
