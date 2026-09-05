@@ -55,6 +55,9 @@ def _records(repository, run, area: PersistenceArea):
     return result
 
 
+@unittest.skip(
+    "probe evidence archived externally on 2026-09-05: 20260905_repo_probes-orphan-tools-dead-tests"
+)
 class TerrainAdaptationAcceptanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

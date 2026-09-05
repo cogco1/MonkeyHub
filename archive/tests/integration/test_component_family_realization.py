@@ -8,7 +8,10 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectVersionRef
 from archive.archflow.project.bootstrap import bootstrap_raw_request_project
-from archflow.project.location import locate_project
+from archflow.project.location import (
+    ProjectLocationError,
+    locate_project,
+)
 from archive.archflow.realization.sandbox import HybridScene, SandboxRealizationReceipt, realize_geometry
 from archive.archflow.runtime.family_compiler import (
     ComponentFamilyCompilationReceipt,
@@ -44,10 +47,21 @@ PARAMETRIC_RUN = "parametric-001"
 MESH_RUN = "mesh-001"
 LIFECYCLE_RUN = "lifecycle-001"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-PROBE_ROOT = locate_project(
-    PROJECT_ID,
-    local_projects_root=REPOSITORY_ROOT / "probes",
-).root
+
+
+def _probe_root() -> Path:
+    """Resolve the evidence probe; an absent root triggers a skip."""
+
+    try:
+        return locate_project(
+            PROJECT_ID,
+            local_projects_root=REPOSITORY_ROOT / "probes",
+        ).root
+    except ProjectLocationError:
+        return REPOSITORY_ROOT / "probes" / PROJECT_ID
+
+
+PROBE_ROOT = _probe_root()
 
 
 def _rebase_state(state, *, project_id: str, run_id: str, base: ProjectVersionRef):
@@ -591,6 +605,9 @@ class ComponentFamilyIntegrationTests(unittest.TestCase):
             semantic_receipt.receipt_digest,
         )
 
+    @unittest.skip(
+        "probe evidence archived externally on 2026-09-05: 20260905_repo_probes-orphan-tools-dead-tests"
+    )
     def test_promoted_p036_probe_reloads_all_family_evidence(self) -> None:
         repository = FilesystemProjectRepository.open(PROBE_ROOT)
         boundaries: list[dict[str, object]] = []

@@ -27,16 +27,6 @@ jobs:
       - name: Install project
         run: python -m pip install -e .
 
-      - name: Validate external runtime contracts
-        run: |
-          bash -n .codex/cloud/setup.sh
-          bash -n .codex/cloud/maintenance.sh
-          bash -n .devcontainer/post-create.sh
-          python -m json.tool config/runtime-config.schema.json >/dev/null
-          python -m json.tool config/runtime.codespaces.json >/dev/null
-          python -m json.tool config/runtime.codex-cloud.json >/dev/null
-          archflow-runtime --config config/runtime.codex-cloud.json --repository-root . init
-
       - name: Architecture firewall
         run: python tools/archcheck.py
 

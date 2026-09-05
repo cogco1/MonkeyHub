@@ -38,7 +38,10 @@ from archflow.contracts.canonical import canonical_digest
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archive.archflow.project.bootstrap import bootstrap_raw_request_project
-from archflow.project.location import locate_project
+from archflow.project.location import (
+    ProjectLocationError,
+    locate_project,
+)
 from archive.archflow.runtime.family_compiler import (
     bind_component_family_realization,
     compile_component_families,
@@ -84,10 +87,15 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _project_root(project_id: str) -> Path:
-    return locate_project(
-        project_id,
-        local_projects_root=REPOSITORY_ROOT / "probes",
-    ).root
+    try:
+        return locate_project(
+            project_id,
+            local_projects_root=REPOSITORY_ROOT / "probes",
+        ).root
+    except ProjectLocationError as exc:
+        raise unittest.SkipTest(
+            "probe evidence archived externally on 2026-09-05: 20260905_repo_probes-orphan-tools-dead-tests"
+        ) from exc
 
 
 CASE_SPECS = (

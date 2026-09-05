@@ -174,6 +174,9 @@ def _actual_invariant_projection(
     }
 
 
+@unittest.skip(
+    "probe evidence archived externally on 2026-09-05: 20260905_repo_probes-orphan-tools-dead-tests"
+)
 class V3DiagnosticPilotTests(unittest.TestCase):
     def test_two_building_cases_match_named_semantic_invariants(self) -> None:
         if not V3_PYTHON.is_file():

@@ -9,7 +9,10 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectVersionRef
 from archive.archflow.project.bootstrap import bootstrap_raw_request_project
-from archflow.project.location import locate_project
+from archflow.project.location import (
+    ProjectLocationError,
+    locate_project,
+)
 from archive.archflow.realization.sandbox import realize_geometry
 from archive.archflow.runtime.brief_compiler import BriefObservation, compile_design_brief
 from archflow.compilers.geometry import compile_geometry_program
@@ -37,10 +40,21 @@ from archive.tests.test_sandbox_realization import compiled_room
 PROJECT_ID = "p060-architectural-usability"
 RUN_ID = "architectural-usability-001"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-PROBE_ROOT = locate_project(
-    PROJECT_ID,
-    local_projects_root=REPOSITORY_ROOT / "probes",
-).root
+
+
+def _probe_root() -> Path:
+    """Resolve the evidence probe; an absent root triggers a skip."""
+
+    try:
+        return locate_project(
+            PROJECT_ID,
+            local_projects_root=REPOSITORY_ROOT / "probes",
+        ).root
+    except ProjectLocationError:
+        return REPOSITORY_ROOT / "probes" / PROJECT_ID
+
+
+PROBE_ROOT = _probe_root()
 
 
 def _artifact(
@@ -464,6 +478,9 @@ class ProjectDerivedArchitecturalUsabilityTests(unittest.TestCase):
                 brief=brief,
             )
 
+    @unittest.skip(
+        "probe evidence archived externally on 2026-09-05: 20260905_repo_probes-orphan-tools-dead-tests"
+    )
     def test_fresh_p036_probe_reloads_exact_contract_and_receipt(self) -> None:
         repository = FilesystemProjectRepository.open(PROBE_ROOT)
         run = repository.load_run(RUN_ID)
