@@ -10,7 +10,7 @@
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "npm run sync && tsc --noEmit && vite build",
-    "api:dump": "py -3.12 scripts/dump-openapi.py",
+    "api:dump": "python scripts/dump-openapi.py",
     "api:generate": "npm run api:dump && npm --prefix tools/openapi-ts exec -- openapi-ts -i .generated/openapi.json -o src/api/generated",
     "api:check": "node scripts/check-generated.mjs"
   },

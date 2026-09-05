@@ -71,7 +71,7 @@ English statement and sources for the existing-tool comparison.
 
 V4 currently implements a **StateRecord-driven** chain: architectural elements
 become geometry programs, Rhino exports are independently read back, and
-relation checks and run evidence are retained through the P036 project
+relation checks and run evidence are retained through the project
 repository.
 
 Studio provides 3DM inspection, semantic object selection, typed edits,
@@ -106,70 +106,42 @@ See the [continuation handoff](docs/mapping/planning/P111-continuing-design-cycl
 - [Repository layout](docs/REPO_LAYOUT.md) — what lives in the repository, the
   external workspace (building projects and their evidence) and the external archive.
 
+## Team development on GitHub
+
+The team shares two source repositories:
+
+| Repository | What the team changes there |
+| --- | --- |
+| [Shared toolbox](https://github.com/cogco1/huaguoshan-digital-infrastructure) | Research CLI, reusable Skills, experiment record tools and figure/report generators |
+| [ArchFlow](https://github.com/cogco1/ARCHFLOW_V4) | Modeling, MonkeyArch, candidate execution and project storage |
+
+Take one scoped task in the relevant repository, work on a short branch, open a
+pull request, and have another member review the change and its Actions checks
+before integration. Each member has an independent clone and runtime. Shared
+code does not mean sharing one live project directory or another member's credentials.
+See the [team setup and review path](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md).
+
 ## Run Studio
 
-<details>
-<summary>Installation and local development</summary>
+Follow section 8 of the [first-member setup](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md):
+an independent clone, Python 3.12 in an external virtual environment, Node.js 24,
+locked web dependencies, and a synthetic project made from the existing test
+fixture. It includes both server commands, a candidate edit, relevant checks and
+the review handoff. No API key or Rhino installation is needed for that path.
 
-Use Python 3.12 and a Node.js version compatible with the web package's Vite
-and TypeScript dependencies. From the repository root, install the backend
-and optional 3DM reader:
-
-```powershell
-py -3.12 -m pip install -e ".[cad-inspection]"
-py -3.12 -m pip install -r apps/archflow-studio/api/requirements.txt
-```
-
-In one terminal, start the API against an **existing P036 project directory**.
-Replace the placeholder with its absolute path; the server has no default project:
-
-```powershell
-cd apps/archflow-studio/api
-$env:ARCHFLOW_STUDIO_PROJECT_DIR = "<absolute path to a P036 project>"
-py -3.12 -m archflow_studio_api.main
-```
-
-In another terminal, starting from the repository root:
-
-```powershell
-cd apps/archflow-studio/web
-npm install
-npm run dev
-```
-
-Open [Studio](http://127.0.0.1:5174). The web development server proxies API
-requests to port 8000. See the [Studio guide](apps/archflow-studio/README.md)
-for reference-run selection, model providers, and optional Rhino execution.
-Opening retained models does not require launching Rhino; producing Rhino
-exports requires the separately configured executor.
-
-### Development checks
-
-From the repository root, with the backend dependencies installed:
-
-```powershell
-py -3.12 -m pip install pytest httpx2
-py -3.12 tools/archcheck.py
-py -3.12 -m pytest apps/archflow-studio/api/tests -q
-```
-
-For the web client, from `apps/archflow-studio/web`:
-
-```powershell
-npm --prefix tools/openapi-ts install
-npm test
-npm run typecheck
-npm run api:check
-```
-
-</details>
+The synthetic project has editable state but no exported 3DM; a blank model view
+is expected. A real model trial needs a project explicitly shared by its owner.
+The tracked `apps/archflow-studio/runtime.json` contains this workstation's paths
+and provider choice; it is not a portable first-run configuration. Start with the
+manual commands in the setup guide. See the [Studio guide](apps/archflow-studio/README.md)
+for interaction details, reference-run selection and optional providers/exports.
 
 ## Project data
 
 `archflow/` contains reusable mechanisms; `apps/archflow-studio/` contains the
 product interface. Active building projects live in an explicitly configured
 external project root. Promoted regression evidence belongs in `probes/`.
-Both use the same P036 layout and persistence owner.
+Both use the same project layout and persistence owner.
 
 Runtime files, private project models, and machine-specific configuration
 stay outside source commits. Each project's retained state and evidence

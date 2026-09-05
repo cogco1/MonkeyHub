@@ -1,18 +1,17 @@
-# ArchFlow 工作环境与架构搭建方法论
+# ArchFlow 团队接入与开发环境
 
 **用途：** 给在 ArchFlow V4 上开发、联调和保存项目结果的人一条可执行的最短路径。  
-**审计基线：** 2026-09-04，`D:\ARCHFLOW_V4` 的 `main`（`1e4d9cae`）及当时未提交的 Studio 截图工作树。  
+
+**队友从第 8 节开始：GitHub 领任务 → 独立运行 → 小修改 → PR → Actions → 他人审查 → 合并。**
+第 1–7 节供涉及内核和项目存储的开发查阅，首次启动不需要先读完。
+
 **权威边界：** 本文是索引和操作指南，不另建架构。发生冲突时，代码所有权以
 [`governance/module_registry.json`](../governance/module_registry.json) 为准，对外协议以
 [`PROTOCOL.md`](PROTOCOL.md) 为准，项目落盘以
 [`archflow/project/layout.py`](../archflow/project/layout.py) 与
 [`archflow/project/repository.py`](../archflow/project/repository.py) 为准。
 
-本文采用三个状态标签：
-
-- **已验证**：当前主干文件和已登记 owner 能共同证明的行为。
-- **工作树 WIP**：在当前工作树有实现和测试，但尚未进入上述审计基线提交。
-- **规划/历史**：计划、迁移说明或旧规则，不可当作当前接口直接调用。
+下文的实现说明以当前代码和 owner 为依据；本机启动核验与第二位成员实际试用分别报告。
 
 ## 1. 先建立正确的三层物理边界
 
@@ -20,7 +19,7 @@
 
 ```text
 Git 源码仓 / worktree
-  archflow/                  可复用内核与 P036 机制
+  archflow/                  可复用内核与项目存储机制
   apps/archflow-studio/      Studio 产品壳
   governance/                owner、依赖与架构防火墙
   docs/                      人读文档，不是实时项目状态
@@ -28,19 +27,20 @@ Git 源码仓 / worktree
   probes/                    经明确审查后提交的小型机制证据
 
 外部运行根（不进 Git；三个根分别由配置显式给出）
-  <workspace_root>/projects/<project_id>/   活跃 P036 项目
+  <workspace_root>/projects/<project_id>/   活跃项目
   <cache_root>/                             可重建缓存
   <temp_root>/                              可删除临时数据
 ```
 
-**已验证：** 活跃项目与 `probes/` 使用同一种 P036 envelope；它们只因是否被明确提升进
+**已验证：** 活跃项目与 `probes/` 使用同一种项目目录格式；它们只因是否被明确提升进
 Git 而不同，不得为外部项目再建第二个数据库或写入器。通用说明见
 [`archflow/project/README.md`](../archflow/project/README.md)，外部根的配置形状见
 Studio 启动器读取的 [`apps/archflow-studio/runtime.json`](../apps/archflow-studio/runtime.json)
-（`config/runtime.example.json` 已随退役命令归档到外部批次 `20260905_repo_cloud-config-reports-plans`）。
+只配置该应用的 `project_dir` 等设置，不统一配置 workspace/cache/temp；该文件目前仍跟踪本机绝对路径，
+新人使用第 8 节的显式环境变量，不照抄这份配置。
 
 缓存和临时根不是项目记录。能被删除而不改变设计含义的内容才可以进入那里；证据、模型、
-验收回执和恢复所需数据不能借 `temp` 逃离 P036。
+验收回执和恢复所需数据不能借 `temp` 绕过项目存储。
 
 ### 1.2 `main`、Git worktree 和项目 `HEAD` 是三件事
 
@@ -48,7 +48,7 @@ Studio 启动器读取的 [`apps/archflow-studio/runtime.json`](../apps/archflow
 - Git worktree 是同一 Git 仓库历史上的一个独立检出目录。不同 worktree 的未提交文件互不
   自动出现；要进入 `main`，仍需明确提交并合并或摘取。
 - 同一物理检出目录中的多个代理会立即看到彼此的未提交文件，也会互相污染暂存区。
-- 项目根内的 `HEAD` 是 P036 的**已发布设计位置**，不是 Git 分支，也不随源码合并移动。
+- 项目根内的 `HEAD` 是该项目的**已发布设计位置**，不是 Git 分支，也不随源码合并移动。
 
 共享同一物理检出目录时执行以下纪律：
 
@@ -75,7 +75,7 @@ Studio 启动器读取的 [`apps/archflow-studio/runtime.json`](../apps/archflow
 默认决策是 **EXTEND 现有 owner**。只有 registry 中没有能承担该职责的 owner，且能写明原因，
 才 CREATE；不能让“先做个能跑的”变成第二套状态、路径、协议或编译器。
 
-## 3. P036 项目 envelope：每个东西只有一个家
+## 3. 项目目录：每个东西只有一个家
 
 ```text
 <project-root>/
@@ -105,7 +105,7 @@ Studio 启动器读取的 [`apps/archflow-studio/runtime.json`](../apps/archflow
 | `project.json` | 不可变的 `project_id` 和格式版本 | 当前设计状态 |
 | `HEAD` | 唯一已发布版本指针 | Git HEAD、最近 run、最近文件 |
 | `input/runner/` | 设计师正在编写的 State Record、seat pack、program sheet | 已共享或已发布结果 |
-| `objects/sha256/` | 经 P036 导入的不可变二进制内容 | 任意文件仓或浏览器下载目录 |
+| `objects/sha256/` | 经项目存储模块导入的不可变二进制内容 | 任意文件仓或浏览器下载目录 |
 | `events/` | 已接受的 canonical 事件链 | Studio 临时事件流 |
 | `canonical/` | 每次 issue 形成的可验证快照；旧快照保留 | 可手改的“最终版”文件夹 |
 | `runs/<run>/run.json` | run 身份、精确 base 和生命周期 | canonical 版本 |
@@ -135,7 +135,7 @@ Studio 启动器读取的 [`apps/archflow-studio/runtime.json`](../apps/archflow
 | 正要产生的内容 | 当前正确落点 | 权威状态 |
 |---|---|---|
 | 设计师正在编辑的 record / seats / program | `input/runner/` 的三个固定文件；只由对应 owner 读写 | WIP |
-| 外部原始证据或请求 | 项目 `input/`；需要不可变二进制身份时由 P036 `ingest` 进入 `objects/sha256/` | 非 canonical 输入 |
+| 外部原始证据或请求 | 项目 `input/`；需要不可变二进制身份时由项目存储模块的 `ingest` 进入 `objects/sha256/` | 非 canonical 输入 |
 | 推导、检查、模型调用、CAD 执行或验收回执 | 产生它的 `runs/<run>/records/`，通过 `put_json` | Shared record |
 | CAD `.3dm`、IFC、中间模型、脚本和读回文件 | 产生它的 `runs/<run>/workspaces/<seat-or-purpose>/`；适配器只可写调用方显式分配的 workspace | Shared workspace |
 | 与已加载 run 一一对应的 Studio 过程截图 | `runs/<run>/workspaces/studio-captures/viewport-<sha256>.png`，请求只给 `runId` 和 PNG，服务端命名 | 非 canonical inspection |
@@ -150,7 +150,7 @@ Studio 启动器读取的 [`apps/archflow-studio/runtime.json`](../apps/archflow
 工作区的 [`GENERATION_RECORD_SPEC.md`](<file:///D:/PROJECTS/01_ACTIVE_当前项目/ARCHFLOW CAADRIA 2027/V4_RUNTIME/GENERATION_RECORD_SPEC.md>)
 （`D:\PROJECTS\01_ACTIVE_当前项目\ARCHFLOW CAADRIA 2027\V4_RUNTIME\GENERATION_RECORD_SPEC.md`，已随论文材料移出仓库）第八节原本把“预览模型、截图、审查包”统一
 路由到 `V4_RUNTIME/output/`。那是 2026-08-30 的跨项目交付/过手规则，粒度不足以表达后来增加的
-project-bound Studio capture；该表现已按当前 P036、protocol、registry 和 API 工作树实现拆分为：
+project-bound Studio capture；该表现已按当前项目存储、protocol、registry 和 API 工作树实现拆分为：
 
 - 能明确归属于一个已有 run 的过程截图，进入该 run 的 `workspaces/studio-captures/`；
 - 从一个项目正式外化的结果，进入该项目 `exports/`；
@@ -172,9 +172,9 @@ React / Vite / three.js / rhino3dm-wasm
 FastAPI BFF
   apps/archflow-studio/api/archflow_studio_api
   transport → routes → application → adapters
-                │ 调用现有 Python owner / P036 port
+                │ 调用现有 Python owner / 项目存储接口
                 ▼
-ArchFlow kernel + P036
+ArchFlow kernel + 项目存储
   archflow/state, capabilities, compilers, validation, project
                 │
                 ▼
@@ -191,15 +191,15 @@ ArchFlow kernel + P036
 ### 本地 FastAPI BFF `api/`
 
 - 负责请求验证、transport DTO、统一错误体、鉴权/CORS、SSE、任务生命周期和 HTTP 资源。
-- `StudioSettings.project_dir` 或 `--project-dir` 必须显式绑定一个带 `project.json` 的 P036 项目；
+- `StudioSettings.project_dir` 或 `--project-dir` 必须显式绑定一个带 `project.json` 的项目目录；
   代码没有默认项目根。
 - application 层组织用例，但设计状态、依赖闭包、几何、验证和 issue 仍调用 kernel owner。
-- 有项目写入时必须调用 P036 port/repository，不能在 route 或 application 中直接
+- 有项目写入时必须调用 项目存储接口/repository，不能在 route 或 application 中直接
   `Path.write_*`。
 
-### Kernel / P036
+### 内核 / 项目存储
 
-- kernel 决定语义、依赖、编译和验证；P036 是项目文件系统唯一通用 writer。
+- kernel 决定语义、依赖、编译和验证；项目存储模块是项目文件系统唯一通用 writer。
 - `ProjectLayout` 只命名路径，不创建、不写入。
 - `PersistenceDestination` 先绑定 area/run/branch；producer 未获 destination 就停止。
 - CAD adapter 的例外仍受控：它只能在调用方已经分配的 speculative workspace 内写，随后由
@@ -207,13 +207,12 @@ ArchFlow kernel + P036
 
 **已验证：** 当前 Studio 有读取、候选 run、program sheet（仅 local mode 可按请求写 WIP）、
 以及其他 protocol 资源，但没有 issue/canonical API。  
-**工作树 WIP：** `POST /api/captures` 与 P036 `WorkspaceSink.put_workspace_file` 已在当前工作树实现；
-它写命名 run 的 workspace、幂等按内容命名、不进入 `/api/artifacts`、不改变 `HEAD`。在相关提交
-进入 `main` 前，不把它宣称为审计基线已有能力。
+`POST /api/captures` 与项目存储的 `WorkspaceSink.put_workspace_file` 已在上述本地主干实现；
+它写命名 run 的 workspace、按内容命名、不进入 `/api/artifacts`、不改变 `HEAD`。
 
 ## 6. canonical 与 inspection 的边界
 
-P036 使用 ADR-007 的四种 container state：
+项目目录使用 ADR-007 的四种 container state：
 
 ```text
 input/runner           Work in progress
@@ -229,7 +228,7 @@ HEAD                   Published（唯一已发布位置）
 ```
 
 唯一 canonical 路径是
-[`project.issue.issue_run`](../archflow/project/issue.py)：先完整校验 run，再调用 P036
+[`project.issue.issue_run`](../archflow/project/issue.py)：先完整校验 run，再调用项目存储模块的
 `prepare_transition`，最后对 `HEAD` 做 `compare_and_swap`。直接写 `HEAD`、`canonical/`，或因为“测试
 都过了”就把一个 run 当作当前设计，均不成立。
 
@@ -259,14 +258,14 @@ HEAD                   Published（唯一已发布位置）
 - wire shape 只写在 `api/.../transport/` 的 Pydantic DTO；业务值留在 application/kernel 的普通
   domain type。
 - route 只接收调用所需身份和内容，不接收客户端指定的服务器路径。
-- 有持久化时先确认现有 P036 port 是否足够；不够只增加最窄的 area-bound capability，并由
+- 有持久化时先确认现有 项目存储接口 是否足够；不够只增加最窄的 area-bound capability，并由
   `FilesystemProjectRepository` 实现。
 
 ### 第 4 步：按层实现
 
 ```text
 kernel/domain（确有语义缺口时）
-→ P036 port/repository（确有新写入形状时）
+→ 项目存储接口/repository（确有新写入形状时）
 → API application
 → transport DTO + route
 → OpenAPI generated client
@@ -293,91 +292,223 @@ npm run api:check
 最小测试组合：
 
 - owner 的聚焦单元测试；
-- 写项目时，用真实临时 P036 repository 测 wrong project/run、内容身份、重启读回和 `HEAD` 不变；
+- 写项目时，用真实临时项目 repository 测 wrong project/run、内容身份、重启读回和 `HEAD` 不变；
 - API 测成功、错误码和 OpenAPI shape；
 - Web 测交互，再跑 generated-client drift、typecheck 和 build；
 - Python/registry 改动跑 `archcheck`；
 - 最后只检查本次路径的 diff，不把共享工作树其他 WIP 算进结果。
 
-## 8. 开发、联调和验证命令
+## 8. 团队首次接入：从 GitHub 开始
 
-### 仓库与所有权
+完成条件：成员在自己的 clone 和 Runtime 中启动 API/Web，执行一次合成候选修改，跑过相关检查，
+再把一个明确范围的源码修改交给另一人审查。首次试用不需要模型密钥、Rhino 或真实建筑材料。
 
-从源码根运行：
+### 8.1 两个仓库，一条协作路径
+
+| GitHub 仓库 | 任务归属 | 检查入口 |
+|---|---|---|
+| [共享工具箱](https://github.com/cogco1/huaguoshan-digital-infrastructure) | 可复用 CLI、Skills、实验记录工具与图表/报告生成工具 | [工具箱 Actions](https://github.com/cogco1/huaguoshan-digital-infrastructure/actions)，沿用该仓库 README 和 CONTRIBUTING |
+| [ArchFlow](https://github.com/cogco1/ARCHFLOW_V4) | 建模机制、MonkeyArch、候选执行和项目存储 | [ArchFlow Actions](https://github.com/cogco1/ARCHFLOW_V4/actions)，本节说明首次运行 |
+
+两个仓库当前均为私有，默认分支都是 `main`；成员先确认能打开它们。负责人提供首个具体任务和一位
+审查人。任务放在对应仓库的已有 Issue 或 PR，写清输入、预期结果、修改文件和检查方式。
+改共用工具到工具箱，改建模或应用到 ArchFlow；确实涉及两边时，两个 PR 互相链接并标明依赖版本。
+不在其中一个仓库复制另一个仓库的实现。
+
+每个任务使用短分支，例如 `codex/first-setup-fix`；完成后发 PR 到 `main`，在 PR 的 Checks 看 Actions，
+由另一人核对修改与运行结果，再由集成人合并。普通讨论、分工和审查都留在 GitHub，现有模块所有权仍查
+`SYSTEM_MAP.md` 和 registry，不另建一份模块表。成员各自运行，真实项目数据和密钥留在约定的项目目录。
+
+### 8.2 获取代码并在本机运行
+
+维护者提供仓库地址、访问权限和此次试用的源码提交。每人独立 clone；本机只保留 `main` 的约定
+针对维护者的主检出目录，不要求队员共用它。以下两处路径由成员自己选择，Runtime 必须在源码仓外：
 
 ```powershell
+$SourceRoot = 'D:\code\ARCHFLOW_V4'
+$RuntimeRoot = 'D:\ArchFlowRuntime\first-trial'
+git clone https://github.com/cogco1/ARCHFLOW_V4.git $SourceRoot
+Set-Location $SourceRoot
+git rev-parse HEAD
 git status --short
-git branch --show-current
-git worktree list
-py -3.12 tools/devctl.py status
-py -3.12 tools/archcheck.py
 ```
 
-只有修改 `module_registry.json`、work registry 或 `archflow/semantics/` 后才重渲染地图：
+共享工具箱同样独立 clone 到另一个源码目录，再按它的 README 安装；不嵌入 ArchFlow，也不共用 Python venv。
+
+先与维护者核对提交，以 GitHub 上实际可取得的版本为准。本次核验基线与分发状态见 8.8。
+
+需要已安装 Git、Python 3.12 和 Node.js 24；本机核验版本为 Python 3.12.10 / Node.js 24.14.0。
+Vite 声明的 Node 下限为 `^20.19.0 || >=22.12.0`，这里选 Node 24 同时覆盖直接运行 TypeScript 的 Web 测试。
 
 ```powershell
-py -3.12 tools/devctl.py render-map
+py -3.12 --version
+node --version
+py -3.12 -m venv "$RuntimeRoot\venv"
+$Python = "$RuntimeRoot\venv\Scripts\python.exe"
+$env:PATH = "$RuntimeRoot\venv\Scripts;" + $env:PATH
+& $Python -m pip install -e '.[cad-inspection]'
+& $Python -m pip install -r apps/archflow-studio/api/requirements.txt httpx2
+& $Python -m pip check
+npm.cmd ci --prefix apps/archflow-studio/web
+npm.cmd ci --prefix apps/archflow-studio/web/tools/openapi-ts
+python -c "import sys; print(sys.executable)"
 ```
 
-### Studio 一键和手动联调
+最后一行必须指向刚创建的 venv。无需修改系统执行策略或全局安装包；后续 Python 命令使用
+`$Python` 或上述 PATH 中的 `python`。带版本的 `py -3.12` 会选系统解释器，不能用于 venv 内检查。
+两份 npm lockfile 已固定 Web 和 OpenAPI 生成器依赖；Python API 目前使用版本范围，尚无完整锁文件。
+`api:dump` 使用 PATH 中的 `python`，因此生成 SDK 和 API 检查共用这个 venv。
 
-一键启动读取 `apps/archflow-studio/runtime.json`：
+### 8.3 创建可共享的合成试用项目
+
+仓库当前没有随 clone 分发的正式模型项目。复用
+[`make_empty_project`](../apps/archflow-studio/api/tests/support.py) 创建小型项目测试夹具：
+它通过既有项目存储接口写入设计输入和执行分工，不伪造历史执行记录。
+这是开发试用数据；不代表真实设计成果，也不生成 3DM。
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File apps/archflow-studio/launch-studio.ps1
+Set-Location "$SourceRoot\apps\archflow-studio\api"
+$env:ARCHFLOW_ONBOARDING_PROJECTS = "$RuntimeRoot\workspace\projects"
+& $Python -c "import os; from pathlib import Path; from tests.support import make_empty_project; print(make_empty_project(Path(os.environ['ARCHFLOW_ONBOARDING_PROJECTS'])).layout.root)"
 ```
 
-手动启动 API（在 `apps/archflow-studio/api`）：
+结果是 `$RuntimeRoot\workspace\projects\demo-project`。只初始化一次；再次试用可以继续使用该项目，
+要从头开始则换一个 Runtime 目录。测试夹具只在接入命令和测试中使用，不由生产 API 导入。
+
+### 8.4 启动前后端
+
+终端 A，接上一步：
 
 ```powershell
-$env:ARCHFLOW_STUDIO_PROJECT_DIR = "<明确选择的 P036 project root>"
-$env:ARCHFLOW_STUDIO_REFERENCE_RUN = "<可选的 existing run id>"
-py -3.12 -m archflow_studio_api.main
+$env:ARCHFLOW_STUDIO_PROJECT_DIR = "$RuntimeRoot\workspace\projects\demo-project"
+$env:ARCHFLOW_STUDIO_REFERENCE_RUN = ''
+$env:ARCHFLOW_STUDIO_MODE = 'local'
+$env:ARCHFLOW_STUDIO_INTENT_PROVIDER = 'deterministic'
+$env:ARCHFLOW_STUDIO_RHINO_EXPORT = '0'
+& $Python -m archflow_studio_api.main --host 127.0.0.1 --port 18080
 ```
 
-另一个终端在 `apps/archflow-studio/web`：
+终端 B，重新设置自己选择的 `$SourceRoot`：
 
 ```powershell
-npm install
-npm --prefix tools/openapi-ts install
-npm run dev
+$SourceRoot = 'D:\code\ARCHFLOW_V4'
+Set-Location "$SourceRoot\apps\archflow-studio\web"
+$env:ARCHFLOW_STUDIO_API_URL = 'http://127.0.0.1:18080'
+npm.cmd run dev -- --port 15174
 ```
 
-启动后先核验服务身份和 capability，而不是从 404 猜功能：
+打开 `http://127.0.0.1:15174`。这组端口与默认的一键启动端口分开；端口被占用时一起改 API 端口和
+代理地址，不停止别人的服务。合成项目没有导出模型，空视口是预期结果；状态与候选链可用。
+完成后在两个终端分别按 Ctrl+C。
+
+首次路径全部使用进程环境变量。密钥不写源码、runtime.json 或 PR；以后选用模型 provider 时由成员
+按 Studio 指南配置自己的凭据。真实项目必须由其负责人明确提供可共享的项目副本与选定 run，
+不复制维护者的整个 Runtime。运行候选会写入绑定项目的 runs，试用始终绑定自己的副本。
+
+### 8.5 完成一次候选修改
+
+终端 C，通过 Web 的代理检查整个 HTTP 通路：
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/api/health
-Invoke-RestMethod http://127.0.0.1:8000/api/protocol
+$api = 'http://127.0.0.1:15174/api'
+Invoke-RestMethod "$api/health"     # projectBound 应为 true
+Invoke-RestMethod "$api/protocol"   # archflow/2
+$state = Invoke-RestMethod "$api/state"
+$body = @{
+    stateDigest = $state.stateDigest
+    targetComponentId = 'portico'
+    elementId = 'portico-base'
+    utterance = 'set height to 2.2'
+} | ConvertTo-Json
+$proposal = Invoke-RestMethod "$api/proposals" -Method Post -ContentType 'application/json' -Body $body
+$accepted = Invoke-RestMethod "$api/proposals/$($proposal.proposalId)/candidate" -Method Post
+Invoke-RestMethod "$api/jobs/$($accepted.jobId)"
 ```
 
-### 聚焦验证
+若最后仍是 `queued/running`，稍后重读该 job；不重复提交 candidate。`succeeded` 后读取：
 
 ```powershell
-py -3.12 -m unittest discover -s apps/archflow-studio/api/tests -t apps/archflow-studio/api -v
-py -3.12 -m unittest discover -s tests -v
+Invoke-RestMethod "$api/candidates/$($accepted.candidateId)"
+$result = Invoke-RestMethod "$api/state?run=$($accepted.candidateId)"
+($result.elements | Where-Object elementId -eq 'portico-base').numericFields.height  # 2.2
 ```
 
-在 `apps/archflow-studio/web`：
+这一步调用现有执行器并保留候选记录；关闭导出时 `artifacts` 为空，不宣称 Rhino 执行成功。
+项目 `HEAD` 保持原值，下一次查看默认状态也不会自动变成刚做的候选。
+
+### 8.6 GitHub Actions 与本机相关检查
+
+本次扩展既有 [verify.yml](../.github/workflows/verify.yml)：保留内核检查，新增 Ubuntu/Windows 的 Studio
+首次接入检查，运行下面同一套 API、Web、生成客户端和构建命令。提交 PR 后从 Checks 点开失败步骤读取原因；
+不能靠跳过失败检查完成首次接入。这个 workflow 改动目前只在本地，远端两平台结果待实际 Actions 运行。
+
+在另一个终端重新设置 `$SourceRoot`、`$RuntimeRoot`、`$Python` 与 venv PATH，按上述路径运行：
 
 ```powershell
-npm test
-npm run api:check
-npm run typecheck
-npm run build
+Set-Location $SourceRoot
+& $Python tools/archcheck.py
+Set-Location "$SourceRoot\apps\archflow-studio\api"
+& $Python -m unittest tests.test_health tests.test_protocol tests.test_candidate
+Set-Location "$SourceRoot\apps\archflow-studio\web"
+npm.cmd test
+npm.cmd run api:check
+npm.cmd run build  # 包含 typecheck
 ```
 
-候选执行、截图和 program input 保存都会写绑定项目。联调写路径时应绑定明确准备好的测试项目或
-临时 P036 副本；只读查看才可安全指向不准备新增 run/workspace 文件的真实项目。
+之后按真实改动选择检查：纯文档查命令、链接和 diff；内核改动跑 registry 所列的受影响测试与
+`archcheck`；API/DTO 改动检查相应路由与 `api:check`，Web 改动检查交互与 build。
+这套首次接入检查不覆盖所有功能，任务涉及其他模块时仍要补跑该模块相关检查。
+只有 registry 或语义表真的改变时，才用 `python tools/devctl.py render-map` 更新生成地图。
 
-## 9. 当前已发现但本文不替代修复的错位
+### 8.7 从一个小修改到审查与集成
 
-1. **外部 runtime CLI 文档错位。** `config/README.md` 与 `pyproject.toml` 仍声明
-   `archflow-runtime = archflow.project.runtime:main`，但 live tree 没有
-   `archflow/project/runtime.py`，实现已在 `archive/`。因此本文不把该 CLI 列为当前可用的新项目
-   bootstrap 命令；修复前应使用已存在的 P036 项目和显式 `project_dir`，不要重新造 bootstrap。
-2. **计划不是运行时事实。** P108 和 `CANONICAL_SPINE.md` 记录了决定及迁移过程；当前服务接口、
-   owner 和测试应以 protocol、registry、代码与实际生成客户端为准。
-3. **Studio 早期 round-1 描述低估了现有非 canonical 写入。** 当前 protocol 已包括候选 run、
-   local-only program sheet 和工作树 capture；关键不变量仍是“没有 Studio issue/canonical route”。
+1. 先按第 2 节找到现有 owner，查看它的 inputs/outputs/public_api/invariants 和真实调用方。
+   在已有任务或 PR 中约定问题、明确文件范围、接口是否改变、验收动作和审查人；不用另建协调系统。
+2. 成员在自己的 clone 从约定基线建立短分支，如 `git switch -c codex/first-setup-fix`。
+   首次源码修改选一个已经复现的小问题；与其他人重叠同一文件时先交接范围再编辑。
+3. 检查工作 diff，显式暂存自己的文件。例如只修改 README 时：
 
-这些错位应各自通过其现有 owner 做小修，不在本指南旁边再建一份 runtime、artifact 或协议实现。
+   ```powershell
+   git diff -- README.md
+   git add -- README.md
+   git diff --cached --name-only
+   git diff --cached
+   git commit -m "docs: clarify first-run setup"
+   ```
+
+4. 把分支/提交交给约定审查人；已获仓库写权限的成员按团队约定提交 PR。PR 写触发问题、修改后行为、
+   基线、实际检查和影响使用的限制。不能将进程环境、生成文件或他人的 WIP 收进提交。
+5. 审查人核对准确 diff 和受影响接口，在自己的环境重跑相关检查。集成人只合入已审查提交，
+   冲突在该短分支解决后复核；源码合并不改变任何项目的 `HEAD`。维护者本机继续使用 `main`，
+   不要求另开 worktree，也不在这个共享检出目录切换其他成员的分支。
+
+首次交接完成的标准是另一位成员确实拿到相同版本、复跑并审查了一次修改；本机自测不能代签。
+
+### 8.8 本次核验与待提供信息
+
+2026-09-05，在外部 Runtime 的 `temp/team-onboarding-20260905/` 中，用本地 `main`
+（`4a4e196e9a64ac50a4b9f4e23611e1af35888359`）的独立 clone 和新 venv
+完成依赖安装、API/Web 启动、通过 Web 代理的 health/protocol/state 请求及 `portico-base.height = 2.2`
+候选执行。候选重新读取值为 2.2，`HEAD` 前后相同，未生成 CAD artifact。
+Python 实装为 FastAPI 0.141.1、uvicorn 0.52.4、Pydantic 2.13.5、Pillow 12.3.0、httpx2 2.12.0、rhino3dm 8.32.1；
+API 聚焦检查 58 项、其中 1 项真实 villa 输入检查跳过，Web 12 项通过且构建成功。
+该 clone 另外应用了本次两处脚本修正：OpenAPI 使用 venv Python，生成客户端比较忽略 CRLF/LF 差别。
+Windows 换行的 `api:check` 已通过；接口正文差异仍会报错。`archcheck` 通过。
+这些结果属于本机隔离验证；第二位成员、浏览器交互和真实模型试用尚未验证。
+
+同日 GitHub `main` 实查为 `7b3d09f`，本地核验基线比它多 10 笔提交。本次五文件修改仅在本地交付，尚未推送，
+新增 Actions 也尚未在 GitHub 运行。维护者完成审查和分发后，再由首位队友从 GitHub 复现。
+
+首位队友试用前，负责人还需提供：两个 GitHub 仓库的成员访问权限、此次分发版本、首位成员与审查人、
+一个小修改的文件范围。若要看真实建筑，再提供允许共享的项目副本；合成接入不依赖它。
+
+## 9. 与共享工具箱的分工
+
+花果山独立仓库 `D:\huaguoshan-digital-infrastructure` 已有研究初始化、实验运行记录、Atlas、图表、报告、
+论文候选骨架和成员证据入口；协作约定见该仓库 `CONTRIBUTING.md`、`RESEARCH_WORKFLOW.md`。
+这些能力不在 ArchFlow 重写。ArchFlow 保留建模、状态、候选执行和项目事实；ResearchOps 的真实
+thread 放其独立研究工作区，通过明确源码版本与工件引用联系两边。
+
+ResearchOps README 当前明确 ArchFlow/MonkeyArch 执行适配尚未接入，已有合成演示不代表真实科研链已跑通。
+先由第一位成员完成上述开发接入，再由一个真实课题决定需要怎样调用现有执行接口；只有实际重复使用的
+实验步骤才提取共用能力。研究问题、实验解释、claim 与署名仍由研究者判断。

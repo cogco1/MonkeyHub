@@ -32,3 +32,57 @@ jobs:
 
       - name: Unit and integration tests
         run: python -m unittest discover -s tests
+
+  studio:
+    name: Studio first-run (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            apps/archflow-studio/web/package-lock.json
+            apps/archflow-studio/web/tools/openapi-ts/package-lock.json
+
+      - name: Install API and test dependencies
+        run: python -m pip install -e ".[cad-inspection]" -r apps/archflow-studio/api/requirements.txt httpx2
+
+      - name: API binding, protocol and candidate checks
+        working-directory: apps/archflow-studio/api
+        run: python -m unittest tests.test_health tests.test_protocol tests.test_candidate
+
+      - name: Install web dependencies
+        working-directory: apps/archflow-studio/web
+        run: npm ci
+
+      - name: Install schema generator
+        working-directory: apps/archflow-studio/web
+        run: npm ci --prefix tools/openapi-ts
+
+      - name: Web behavior checks
+        working-directory: apps/archflow-studio/web
+        run: npm test
+
+      - name: Generated client matches API
+        working-directory: apps/archflow-studio/web
+        run: npm run api:check
+
+      - name: Typecheck and build
+        working-directory: apps/archflow-studio/web
+        run: npm run build

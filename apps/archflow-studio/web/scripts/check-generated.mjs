@@ -78,8 +78,9 @@ for (const path of fresh) {
     drift.push(`the schema now generates a file that is not committed: ${path}`);
     continue;
   }
-  const a = readFileSync(join(COMMITTED, path), "utf8");
-  const b = readFileSync(join(SCRATCH, path), "utf8");
+  // A Windows checkout may use CRLF while the generator writes LF.
+  const a = readFileSync(join(COMMITTED, path), "utf8").replace(/\r\n/g, "\n");
+  const b = readFileSync(join(SCRATCH, path), "utf8").replace(/\r\n/g, "\n");
   if (a !== b) drift.push(`content differs: ${path}`);
 }
 
