@@ -13,7 +13,7 @@ draft first, then the English manuscript inside the official template.
 Every empirical number carries a record reference and digest; every
 abstract sentence maps to a section with its evidence status recorded;
 gaps between the abstract and delivered evidence are stated, not
-smoothed over. The paper workspace is `docs/paper/caadria-2027/`, which
+smoothed over. The paper workspace is `D:\PROJECTS_ACTIVE_当前项目\ARCHFLOW CAADRIA 2027\V4_RUNTIME\paper\caadria-2027\` (moved out of the repository on 2026-09-05: manuscripts are project output, not code documentation), which
 owns no project or experiment state.
 
 ## Acceptance
@@ -49,7 +49,7 @@ owns no project or experiment state.
 
 ## Write scope
 
-- `docs/paper/`
+- `V4_RUNTIME/paper/caadria-2027/` (workspace; the repository keeps no manuscript files)
 - `docs/mapping/`
 - `governance/work_registry.json`
 
