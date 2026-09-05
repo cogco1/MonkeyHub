@@ -90,7 +90,7 @@ class CandidateTestCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
         self.app = create_app(
-            StudioSettings(project_dir=self.root / PROJECT_ID)
+            StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)
         )
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
@@ -277,7 +277,7 @@ class CandidateRunTests(CandidateTestCase):
         self.assertEqual(job["status"], "succeeded", job)
 
         restarted = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(restarted.close)
 
@@ -301,7 +301,7 @@ class CandidateRunTests(CandidateTestCase):
 
     def test_restart_does_not_relabel_a_project_run_as_a_candidate(self) -> None:
         restarted = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(restarted.close)
 
@@ -316,7 +316,7 @@ class CandidateRunTests(CandidateTestCase):
         empty_run = "studio-cand-empty"
         self.repository.create_run(empty_run)
         restarted = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(restarted.close)
 
@@ -369,10 +369,10 @@ class CandidateRunTests(CandidateTestCase):
             candidate["stateDigest"], projected["stateDigest"]
         )
 
-    def test_a_candidate_says_what_it_did_not_recompute(self) -> None:
-        """An explicit edit must not read as automatic downstream derivation."""
+    def test_a_candidate_says_what_it_recomputed_and_what_it_cannot_know(self) -> None:
+        """What the declared chain did is stated with the values the run built from; what no edge covers is named as unknown."""
 
-        accepted, job = self.run_candidate("set bay to 3")
+        accepted, job = self.run_candidate("set module to 1.5")
         self.assertEqual(job["status"], "succeeded", job)
 
         honesty = self.client.get(
@@ -382,11 +382,35 @@ class CandidateRunTests(CandidateTestCase):
         self.assertEqual(
             honesty,
             [
-                "this candidate applied only the explicit edit at "
-                "parameter:bay; downstream derived values were not "
-                "automatically recomputed and must be assessed in "
-                "validation/review: parameter:span"
+                "this candidate applied the explicit edit at parameter:module "
+                "and the kernel re-evaluated the declared expressions it "
+                "reaches: parameter:bay = 3.0, parameter:span = 6.0",
+                "2 components appear in no dependency edge (building, "
+                "portico): what this edit does to them is unknown, not nothing",
             ],
+        )
+
+    def test_a_derived_parameter_is_refused_before_any_job_starts(self) -> None:
+        """The kernel would refuse the scalar at run time; the proposal boundary refuses it first, naming the source to set."""
+
+        response = self.client.post(
+            "/api/proposals",
+            json={
+                "stateDigest": self.state_digest,
+                "targetComponentId": "portico",
+                "utterance": "set bay to 3",
+            },
+        )
+
+        self.assertEqual(response.status_code, 422, response.text)
+        body = response.json()
+        self.assertEqual(body["code"], "BLOCKED_NEEDS_HUMAN")
+        self.assertIn("parameter bay is derived by '2 * module'", body["question"])
+        self.assertIn("set module (= 1.2 m) instead", body["question"])
+        # nothing was queued: no candidate run directory exists
+        self.assertEqual(
+            [path.name for path in self.repository.layout.runs.iterdir() if path.name.startswith("studio-cand-")],
+            [],
         )
 
     def test_unreadable_runs_are_named_on_the_candidate(self) -> None:
@@ -508,22 +532,33 @@ class CandidateRunTests(CandidateTestCase):
         self.assertEqual(self.repository.read_head(), before_head)
         self.assertEqual(record_path.read_bytes(), before_record)
 
-    def test_parameter_candidates_replace_the_parameter_value(self) -> None:
-        accepted, job = self.run_candidate("set bay to 3")
+    def test_parameter_candidates_replace_the_source_and_the_kernel_recomputes_the_chain(self) -> None:
+        accepted, job = self.run_candidate("set module to 1.5")
         self.assertEqual(job["status"], "succeeded", job)
 
         record = _run_state_record(self.repository, accepted["candidateId"])
-        values = {
-            parameter["key"]: parameter["value"]
-            for parameter in record["parameters"]
+        parameters = {parameter["key"]: parameter for parameter in record["parameters"]}
+        values = {key: parameter["value"] for key, parameter in parameters.items()}
+        self.assertEqual(values["module"], 1.5)
+        # The studio edits the one authored value; what a changed input does
+        # to the values downstream of it is the kernel's answer (kernel card
+        # K1), and the kernel follows the declared expressions: bay = 2 *
+        # module and span = 2 * bay are re-evaluated in the successor record.
+        self.assertEqual(values["bay"], 3.0)
+        self.assertEqual(values["span"], 6.0)
+        # The declarations themselves did not move, and the unrelated locked
+        # literal stands exactly as authored.
+        self.assertEqual(parameters["bay"]["expr"], "2 * module")
+        self.assertEqual(parameters["span"]["expr"], "2 * bay")
+        self.assertEqual(values["plinth"], 0.6)
+        self.assertEqual(parameters["plinth"]["lock_authority"], "client")
+        elements = {
+            entity["entity_id"]: entity["fields"]
+            for entity in record["entities"]
+            if entity.get("schema") == "Element@1"
         }
-        self.assertEqual(values["bay"], 3)
-        # Nothing else was rewritten: the studio edits the one authored value
-        # and leaves every derived one exactly as the record declared it. What
-        # a changed input does to the values downstream of it is the kernel's
-        # answer to give, not this module's to guess (kernel card K1).
-        self.assertEqual(values["module"], 1.2)
-        self.assertEqual(values["span"], 4.8)
+        self.assertEqual(elements["portico-base"]["params"]["height"], 0.6)
+        self.assertEqual(elements["portico-cornice"]["params"]["height"], 0.3)
 
     def test_element_candidates_replace_only_the_named_param(self) -> None:
         accepted, job = self.run_candidate(
@@ -1062,7 +1097,7 @@ class VillaCopyTests(unittest.TestCase):
         self.repository = repository
         self.client = TestClient(
             create_app(
-                StudioSettings(project_dir=self.root / VILLA_PROJECT_ID)
+                StudioSettings(cad_export="off", project_dir=self.root / VILLA_PROJECT_ID)
             )
         )
         self.addCleanup(self.client.close)

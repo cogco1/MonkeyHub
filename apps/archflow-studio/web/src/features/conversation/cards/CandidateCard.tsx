@@ -28,6 +28,7 @@ import {
   type Loadable,
 } from "../../../app/loadable";
 import { candidateSourceLabel } from "../../artifacts/artifactLabels";
+import { artifactKindKey, isViewable } from "../../artifacts/artifactSelection";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
 import { Verbatim } from "./Verbatim";
@@ -293,7 +294,9 @@ function CandidateReadout({
         ) : (
           <div className="actions">
             {candidate.artifacts.map((artifact) =>
-              artifact.available ? (
+              // Only a 3dm goes to the viewer: the Rhino export, or the mesh
+              // preview an in-process export writes beside its exact STEP.
+              artifact.available && isViewable(artifact) ? (
                 <button
                   key={artifact.artifactId}
                   type="button"
@@ -328,10 +331,12 @@ function CandidateReadout({
                 >
                   {t("common.save")} {" "}
                   <span className="mono">{artifact.fileName}</span>
+                  {" "}· {t(artifactKindKey(artifact))}
                 </a>
               ) : (
                 <span key={artifact.artifactId} className="quiet">
-                  <span className="mono">{artifact.fileName}</span>: {" "}
+                  <span className="mono">{artifact.fileName}</span>
+                  {" "}({t(artifactKindKey(artifact))}): {" "}
                   {artifact.unavailableReason ? (
                     <BilingualText source={artifact.unavailableReason} />
                   ) : (

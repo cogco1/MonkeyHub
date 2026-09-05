@@ -199,10 +199,10 @@ class ProgramTestCase(unittest.TestCase):
         self.record_digest = bound_record.digest
         self.sheet_state_digest = bound_record.state_digest
         settings = (
-            StudioSettings(project_dir=self.repository.layout.root)
+            StudioSettings(cad_export="off", project_dir=self.repository.layout.root)
             if self.mode == "local"
             else StudioSettings(
-                project_dir=self.repository.layout.root,
+                cad_export="off", project_dir=self.repository.layout.root,
                 mode="remote",
                 api_token="t" * 32,
                 origins=("http://localhost:5173",),

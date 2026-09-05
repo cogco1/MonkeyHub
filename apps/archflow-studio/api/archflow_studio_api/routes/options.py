@@ -171,7 +171,7 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
             )
             + tuple(f"entity:{item['level_id']}" for item in pack.levels)
             + tuple(f"entity:{item['zone_id']}" for item in pack.zones),
-            exclusive=settings.rhino_export,
+            exclusive=settings.rhino_lane,
         )
     )
 

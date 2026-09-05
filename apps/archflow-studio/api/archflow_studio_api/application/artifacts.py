@@ -1,10 +1,16 @@
 """Receipt-certified model artifacts and non-canonical viewport captures.
 
-A ``.3dm`` file on disk is not an artifact: it is a file. What makes it an
-artifact is a retained ``seat-rhino-execution`` receipt that says which run and
-which program produced it, against which base, and what its bytes hash to. So
-this module never looks for files and then asks what they are — it reads the
-receipts and then asks whether the file they certify is still there.
+A ``.3dm`` or ``.step`` file on disk is not an artifact: it is a file. What
+makes it an artifact is a retained export receipt — a ``seat-occt-execution``
+(the ordinary in-process export: one exact STEP file and one mesh ``.3dm``
+preview of the same model) or a ``seat-rhino-execution`` (the Rhino host
+export) — that says which run and which program produced it, against which
+base, and what its bytes hash to. So this module never looks for files and then
+asks what they are — it reads the receipts and then asks whether the file they
+certify is still there. One OCCT receipt is two rows, because it certifies two
+files; each row says which it is (``representation``: exact or preview) and
+what it is (``format``: step or 3dm), and a preview is never labelled as a
+B-rep.
 
 That order is what lets the listing be honest about the four ways an artifact
 can be absent: the receipt claimed no digest (a failed export), no file of that
@@ -39,7 +45,7 @@ from typing import Any, Mapping, NamedTuple
 
 from PIL import Image
 
-from archflow.project.record_kinds import SEAT_RHINO_EXECUTION
+from archflow.project.record_kinds import SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef
 from archflow.project.repository import ProjectRepositoryError
@@ -61,6 +67,22 @@ FILE_UNREADABLE = "file unreadable"
 DIGEST_MISMATCH = "digest mismatch"
 PNG_MEDIA_TYPE = "image/png"
 PNG_END = b"\x00\x00\x00\x00IEND\xaeB\x60\x82"
+
+# The receipts that certify an exported file, and the schema that tells the
+# two apart. Both are read; nothing is ever regenerated or run by reading them.
+EXPORT_RECEIPT_KINDS = (SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION)
+OCCT_RECEIPT_SCHEMA = "OcctExecutionReceipt@1"
+
+# What a listed file is. ``format`` is the file format a reader has to know
+# to open it: ``step`` (ISO 10303-21) or ``3dm`` (what the viewer loads).
+# ``representation`` is the claim the receipt makes about its geometry:
+# ``exact`` for the delivered model (a STEP B-rep, or a Rhino export that was
+# read back), ``preview`` for a render mesh tessellated from the exact model
+# so a viewer can show it — never a NURBS or B-rep delivery.
+FORMAT_STEP = "step"
+FORMAT_3DM = "3dm"
+EXACT = "exact"
+PREVIEW = "preview"
 
 
 class _Resolution(NamedTuple):
@@ -106,6 +128,11 @@ class ArtifactRecord:
     length_unit: str | None
     up_axis: str | None
     receipt_ref: str
+    # ``step`` or ``3dm``: what a reader must know to open the file.
+    format: str
+    # ``exact`` or ``preview``: what the receipt claims the geometry is. A
+    # preview is a mesh for looking at; the exact file is the delivery.
+    representation: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,7 +258,7 @@ def list_artifacts(binding: ProjectBinding) -> ArtifactListing:
                 if run_id not in skipped:
                     skipped.append(run_id)
                 continue
-            records.append(_artifact(binding, run_id, ref, payload, index))
+            records.extend(_artifacts(binding, run_id, ref, payload, index))
     records.sort(key=lambda item: (item.run_id, item.stage_id or "", item.file_name))
     return ArtifactListing(
         project_id=binding.project_id,
@@ -264,8 +291,9 @@ def artifact_bytes(
         raise StudioError(
             404,
             "ARTIFACT_NOT_FOUND",
-            f"{binding.project_id}: no retained {SEAT_RHINO_EXECUTION} receipt "
-            f"claims an artifact with sha256 {sha256}"
+            f"{binding.project_id}: no retained export receipt "
+            f"({' or '.join(EXPORT_RECEIPT_KINDS)}) claims an artifact with "
+            f"sha256 {sha256}"
             # "Not found" is only true of what was searched. Runs the listing
             # could not read were not searched, so they are named here rather
             # than letting the client read this as "no such artifact exists".
@@ -357,7 +385,7 @@ def _receipt_refs(
     return tuple(
         ref
         for ref in binding.record_refs(run_id)
-        if record_kind(ref) == SEAT_RHINO_EXECUTION
+        if record_kind(ref) in EXPORT_RECEIPT_KINDS
     )
 
 
@@ -385,44 +413,29 @@ def _workspace_index(
     return {name: tuple(sorted(paths)) for name, paths in found.items()}
 
 
-def _artifact(
+def _artifacts(
     binding: ProjectBinding,
     run_id: str,
     ref: ProjectRecordRef,
     receipt: Mapping[str, Any],
     index: Mapping[str, tuple[Path, ...]],
-) -> ArtifactRecord:
-    """One receipt read onto the wire's terms, with its file located or not."""
+) -> tuple[ArtifactRecord, ...]:
+    """One receipt read onto the wire's terms: one row per file it certifies.
+
+    A Rhino receipt certifies one ``.3dm``. An OCCT receipt certifies the
+    exact STEP file and the mesh preview tessellated from the same model, and
+    is two rows sharing the receipt, the stage and the program binding — a
+    client groups them by ``receipt_ref``; they are never two candidates.
+    """
 
     identity = _mapping(receipt.get("identity"))
     program_binding = _mapping(identity.get("binding"))
     base = _mapping(program_binding.get("base"))
-    inspection = _mapping(receipt.get("inspection"))
-    claimed = _text(inspection.get("file_sha256"))
-    file_name = Path(_text(receipt.get("artifact_relative_path")) or "").name
-    resolution = _resolve(binding, index, file_name, claimed)
-    path = resolution.path
-    return ArtifactRecord(
-        # Content addresses the artifact; a receipt whose export claimed no
-        # digest can only be addressed by the receipt itself, and says so.
-        artifact_id=claimed if claimed is not None else f"receipt:{ref.sha256}",
+    bound = dict(
         run_id=run_id,
         stage_id=_text(program_binding.get("stage_id")),
-        file_name=file_name,
-        relative_path=(
-            None
-            if path is None
-            else path.relative_to(binding.repository.layout.root).as_posix()
-        ),
-        path=path,
-        sha256=claimed,
-        size_bytes=_whole(inspection.get("file_bytes")),
-        object_count=_whole(inspection.get("object_count")),
         status=_text(receipt.get("status")),
         readback_verified=_flag(receipt.get("readback_verified")),
-        available=path is not None,
-        unavailable_reason=resolution.reason,
-        unavailable_error=resolution.error,
         base_version=_whole(base.get("version")),
         base_state_sha256=_text(base.get("state_sha256")),
         branch_id=_text(program_binding.get("branch_id")),
@@ -434,6 +447,98 @@ def _artifact(
         up_axis=_text(identity.get("up_axis")),
         receipt_ref=ref.uri,
     )
+
+    def row(
+        file_name: str,
+        claimed: str | None,
+        *,
+        format: str,
+        representation: str,
+        size_bytes: int | None,
+        object_count: int | None,
+    ) -> ArtifactRecord:
+        resolution = _resolve(binding, index, file_name, claimed)
+        path = resolution.path
+        return ArtifactRecord(
+            # Content addresses the artifact; a receipt whose export claimed
+            # no digest can only be addressed by the receipt itself, and says so.
+            artifact_id=claimed if claimed is not None else f"receipt:{ref.sha256}",
+            file_name=file_name,
+            relative_path=(
+                None
+                if path is None
+                else path.relative_to(binding.repository.layout.root).as_posix()
+            ),
+            path=path,
+            sha256=claimed,
+            size_bytes=size_bytes,
+            object_count=object_count,
+            available=path is not None,
+            unavailable_reason=resolution.reason,
+            unavailable_error=resolution.error,
+            format=format,
+            representation=representation,
+            **bound,
+        )
+
+    if receipt.get("schema") != OCCT_RECEIPT_SCHEMA:
+        inspection = _mapping(receipt.get("inspection"))
+        return (
+            row(
+                Path(_text(receipt.get("artifact_relative_path")) or "").name,
+                _text(inspection.get("file_sha256")),
+                format=FORMAT_3DM,
+                representation=EXACT,
+                size_bytes=_whole(inspection.get("file_bytes")),
+                object_count=_whole(inspection.get("object_count")),
+            ),
+        )
+
+    physical = receipt.get("physical_object_ids")
+    object_count = len(physical) if isinstance(physical, list) else None
+    exact = receipt.get("exact_artifact")
+    preview = receipt.get("preview_artifact")
+    rows: list[ArtifactRecord] = []
+    if not isinstance(exact, Mapping) and not isinstance(preview, Mapping):
+        # Nothing was written (the build itself failed): one row, addressed by
+        # the receipt, named by the stem the runner would have used, so the
+        # failure is listed with its reason rather than vanishing.
+        stage_id = _text(program_binding.get("stage_id")) or "export"
+        digest = _text(program_binding.get("program_digest")) or ""
+        rows.append(
+            row(
+                f"{stage_id}@{digest[:12]}.step" if digest else f"{stage_id}.step",
+                None,
+                format=FORMAT_STEP,
+                representation=EXACT,
+                size_bytes=None,
+                object_count=object_count,
+            )
+        )
+    if isinstance(exact, Mapping):
+        rows.append(
+            row(
+                Path(_text(exact.get("relative_path")) or "").name,
+                _text(exact.get("sha256")),
+                format=FORMAT_STEP,
+                representation=EXACT,
+                size_bytes=None,
+                object_count=object_count,
+            )
+        )
+    if isinstance(preview, Mapping):
+        inspected = _whole(_mapping(receipt.get("preview_inspection")).get("object_count"))
+        rows.append(
+            row(
+                Path(_text(preview.get("relative_path")) or "").name,
+                _text(preview.get("sha256")),
+                format=FORMAT_3DM,
+                representation=PREVIEW,
+                size_bytes=None,
+                object_count=inspected if inspected is not None else object_count,
+            )
+        )
+    return tuple(rows)
 
 
 def _resolve(

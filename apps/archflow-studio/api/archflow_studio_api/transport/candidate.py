@@ -60,8 +60,9 @@ class JobDto(BaseModel):
     )
     wall_time_s: float | None = Field(alias="wallTimeS")
     lane: str = Field(
-        description="parallel, or exclusive when the run exports: one Rhino "
-        "export at a time on this machine",
+        description="parallel, or exclusive when the run exports through "
+        "Rhino: one Rhino export at a time on this machine. The ordinary "
+        "in-process (OCCT) export runs in the parallel lane",
     )
     waiting_for: str | None = Field(
         alias="waitingFor",
@@ -105,7 +106,12 @@ class ExportTimingDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     seat_id: str = Field(alias="seatId")
-    path: str | None = Field(description="rebuild | patch, as the runner wrote it")
+    path: str | None = Field(
+        description="as the runner wrote it: occt (an in-process export), "
+        "reused (a prior export of exactly this program, re-verified by "
+        "digest), unsupported (an operation the executor does not realize; "
+        "no file), or the Rhino path's rebuild | patch",
+    )
     seconds: float | None
     status: str | None
     rebuilt_objects: int | None = Field(alias="rebuiltObjects")

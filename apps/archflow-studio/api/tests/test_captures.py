@@ -39,7 +39,7 @@ class ViewportCaptureTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
 
@@ -187,7 +187,7 @@ class UnboundViewportCaptureTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root, True)
         client = TestClient(
-            create_app(StudioSettings(project_dir=root / "no-such-project"))
+            create_app(StudioSettings(cad_export="off", project_dir=root / "no-such-project"))
         )
         self.addCleanup(client.close)
 

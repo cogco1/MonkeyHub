@@ -35,8 +35,8 @@ from archflow.project.record_kinds import (
     RUNNER_RUN_RECEIPT,
     SEAT_RELATION_CHECK,
 )
-from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
-from archflow.runtime.project_runner import RunOptions, run_project
+from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef, record_ref_from_uri
+from archflow.runtime.project_runner import CAD_BACKEND_OCCT, RunOptions, run_project
 from archflow.state.state_record import (
     SchematicPack,
     StateRecord,
@@ -252,13 +252,17 @@ def _run_successor(
             else GeometryProposalProviderIdentity(**declared_provider)
         ),
         branch_id=seat_pack.get("branch_id", BRANCH_ID),
-        export=settings.rhino_export,
+        # The one CAD setting decides both whether a seat exports and which
+        # executor does it: OCCT in process by default, Rhino only when the
+        # process was configured to say so. Nothing here falls back.
+        export=settings.exports,
+        cad_backend=settings.cad_export if settings.exports else CAD_BACKEND_OCCT,
         workspace_root=repository.layout.run(run_id).root / "workspaces",
         powershell=settings.powershell,
     )
     if options.export:
-        # The exporter writes into a directory per seat and expects it to be
-        # there; production's own entry point creates them the same way.
+        # Either exporter writes into a directory per seat and expects it to
+        # be there; production's own entry point creates them the same way.
         for seat in seats:
             if not seat.reviewer:
                 (
@@ -408,6 +412,7 @@ def describe(
     seat_rows = _rows(receipt.get("seat_results"))
     record_digest = _text(receipt.get("state_record_digest"))
     projection = project_state(binding)
+    executed = _executed_record(binding, receipt)
     # One listing answers both questions: which of this run's exports are
     # servable, and which runs could not be read while finding out.
     listing = list_artifacts(binding)
@@ -452,21 +457,48 @@ def describe(
         ),
         skipped_runs=listing.skipped_runs,
         wall_time_s=_number(receipt.get("wall_time_s")),
-        honesty=_honesty(proposal, projection),
+        honesty=_honesty(proposal, projection, executed),
     )
 
 
-def _honesty(
-    proposal: Proposal | None, projection: StateProjection
-) -> tuple[str, ...]:
-    """What this candidate did not do, said out loud.
+def _executed_record(
+    binding: ProjectBinding, receipt: Mapping[str, Any]
+) -> StateRecord | None:
+    """The State Record the run executed, read off the record the receipt names; None when it cannot be.
 
-    The kernel's ``StateRecordOperator`` applies the explicit edit and returns
-    the successor record. It deliberately does not invent new values for the
-    quantities that edit feeds. A candidate whose geometry was built from a
-    record where ``span`` still says what it said before ``bay`` changed is
-    therefore partial, and those unchanged downstream values must be named for
-    validation and human review rather than silently recomputed here.
+    The honesty lines quote the values this record carries for the derived
+    parameters the edit reached, so what they say is what the run built from,
+    not what the current projection or the proposal remembers.
+    """
+
+    uri = receipt.get("state_record_ref")
+    if not isinstance(uri, str):
+        return None
+    try:
+        return StateRecord.from_dict(
+            binding.repository.load_json(
+                record_ref_from_uri(uri, binding.project_id)
+            )
+        )
+    except Exception:  # a readout never fails on a line it can leave out
+        return None
+
+
+def _honesty(
+    proposal: Proposal | None,
+    projection: StateProjection,
+    executed: StateRecord | None = None,
+) -> tuple[str, ...]:
+    """What this candidate did and did not do, said out loud.
+
+    The kernel's ``StateRecordOperator`` applies the explicit edit and then
+    re-evaluates every derived parameter its closure reaches through the
+    declared expressions (``_refresh_derived_parameters``); the run then
+    rebuilds the rows and re-measures the relations the edit reaches through
+    declared references and relations. That is the whole of what is
+    propagated: a dependency nobody declared is not followed, and the
+    components no edge mentions are named as unknown rather than left to
+    read as unaffected.
     """
 
     if proposal is None:
@@ -479,15 +511,7 @@ def _honesty(
             "what it changed is stated by the records its run retained, not "
             "by this readout",
         )
-    if proposal.impact.propagated:
-        return (
-            f"this candidate applied only the explicit edit at "
-            f"{proposal.target_ref}; downstream derived values were not "
-            "automatically recomputed and must be assessed in validation/"
-            "review: "
-            + ", ".join(proposal.impact.propagated),
-        )
-    if not projection.edges:
+    if not projection.edges and not proposal.impact.propagated:
         # Nothing propagated, and nothing could have: the record declares no
         # dependencies at all. Reporting the first without the second would
         # let "nothing downstream" read as "nothing is downstream".
@@ -495,7 +519,67 @@ def _honesty(
             "0 dependency edges: nothing downstream could be recomputed or "
             "checked",
         )
-    return ()
+    lines: list[str] = []
+    if proposal.impact.propagated:
+        parameters = {
+            parameter.key: parameter
+            for parameter in (
+                executed.parameters if executed is not None else projection.parameters
+            )
+        }
+        derived = [
+            ref
+            for ref in proposal.impact.propagated
+            if ref.startswith("parameter:")
+            and ref[len("parameter:"):] in parameters
+            and parameters[ref[len("parameter:"):]].expr is not None
+        ]
+        entities = [
+            ref for ref in proposal.impact.propagated if ref.startswith("entity:")
+        ]
+        other = [
+            ref
+            for ref in proposal.impact.propagated
+            if ref not in derived and ref not in entities
+        ]
+        if derived:
+            shown = ", ".join(
+                f"{ref} = {parameters[ref[len('parameter:'):]].value}"
+                if executed is not None
+                else ref
+                for ref in derived
+            )
+            lines.append(
+                f"this candidate applied the explicit edit at "
+                f"{proposal.target_ref} and the kernel re-evaluated the "
+                f"declared expressions it reaches: {shown}"
+            )
+        if entities:
+            # Membership in the edit's closure says these were handed to the
+            # run, not that every one of them was measured: a relation can stay
+            # unchecked and a seat can fail, and the seat rows and relation
+            # counts above are what say so. The line claims only the handover.
+            lines.append(
+                "elements the edit reaches through declared references and "
+                "relations are included in this run's rebuild and check "
+                "results, not recomputed as stored values; the seat rows and "
+                "relation counts say what was actually rebuilt and measured: "
+                + ", ".join(entities)
+            )
+        if other:
+            lines.append(
+                "reached by the edit, with no declared expression to "
+                "re-evaluate: " + ", ".join(other)
+            )
+    unknown = proposal.impact.unknown_coverage
+    if unknown:
+        count = len(unknown)
+        noun = "component appears" if count == 1 else "components appear"
+        lines.append(
+            f"{count} {noun} in no dependency edge ({', '.join(unknown)}): "
+            "what this edit does to them is unknown, not nothing"
+        )
+    return tuple(lines)
 
 
 def _receipt(

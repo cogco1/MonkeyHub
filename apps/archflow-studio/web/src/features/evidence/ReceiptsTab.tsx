@@ -7,6 +7,7 @@
 import type { CandidateDto, ValidationDto } from "../../api/generated";
 import { BilingualText } from "../../i18n/BilingualText";
 import { useT } from "../../i18n/useT";
+import { artifactKindKey } from "../artifacts/artifactSelection";
 
 export function ReceiptsTab({
   candidate,
@@ -227,6 +228,7 @@ function ArtifactRow({
     <>
       <dt>{artifact.fileName}</dt>
       <dd>
+        {t(artifactKindKey(artifact))} ·{" "}
         {artifact.status ?? t("evidence.receipts.noStatus")} ·{" "}
         {t("evidence.receipts.available")} {String(artifact.available)}
         {artifact.unavailableReason && (

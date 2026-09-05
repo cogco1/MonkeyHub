@@ -16,6 +16,7 @@ import { useState } from "react";
 import type { ProjectArtifactDto } from "../../api/generated";
 import { sha8 } from "../../app/format";
 import { useT } from "../../i18n/useT";
+import { artifactKindKey, isServable, isViewable } from "../artifacts/artifactSelection";
 
 export interface VersionExport {
   readonly artifact: ProjectArtifactDto;
@@ -76,9 +77,12 @@ export function VersionsStrip({
           !loaded &&
           group.exports.some((item) => item.artifact.available);
         const firstAvailable = group.exports.find((item) => item.artifact.available);
-        const servable = group.exports.filter(
-          (item) => item.artifact.available && item.artifact.sha256 !== null,
-        );
+        // What the stage can show: the 3dm rows (a Rhino export, or the mesh
+        // preview beside an exact STEP). The STEP is saved, never parsed, so
+        // an in-process receipt's two files are one seat button and two saves.
+        const viewable = group.exports.filter((item) => isViewable(item.artifact));
+        const servable = viewable.filter((item) => isServable(item.artifact));
+        const saves = group.exports.filter((item) => isServable(item.artifact));
         const referenceIssue =
           group.label === "Reference"
             ? /^based on issue (.+)$/.exec(group.title)?.[1]
@@ -138,7 +142,7 @@ export function VersionsStrip({
                   {t("stage.versions.showRun")}
                 </button>
               )}
-              {group.exports.map(({ artifact, seat, sourceLabel }) => {
+              {viewable.map(({ artifact, seat, sourceLabel }) => {
                 const isLoaded =
                   artifact.sha256 !== null && loadedShas.includes(artifact.sha256);
                 const loadingThis =
@@ -166,20 +170,29 @@ export function VersionsStrip({
                   </button>
                 );
               })}
+              {saves.map(({ artifact, seat }) => (
+                <a
+                  key={`save-${artifact.artifactId}`}
+                  className="vcard__save"
+                  href={`/api/artifacts/${artifact.sha256}/bytes`}
+                  download={artifact.fileName}
+                  title={t("stage.versions.saveTitle", {
+                    fileName: artifact.fileName,
+                  })}
+                >
+                  {t("stage.versions.saveSeat", { seat })} · {t(artifactKindKey(artifact))}
+                </a>
+              ))}
               {group.exports
-                .filter(({ artifact }) => artifact.available && artifact.sha256)
+                .filter(({ artifact }) => !artifact.available && !isViewable(artifact))
                 .map(({ artifact, seat }) => (
-                  <a
-                    key={`save-${artifact.artifactId}`}
-                    className="vcard__save"
-                    href={`/api/artifacts/${artifact.sha256}/bytes`}
-                    download={artifact.fileName}
-                    title={t("stage.versions.saveTitle", {
-                      fileName: artifact.fileName,
-                    })}
+                  <span
+                    key={`unavailable-${artifact.artifactId}`}
+                    className="vcard__export vcard__export--unavailable"
+                    title={artifact.unavailableReason ?? t("stage.versions.unavailableNoReason")}
                   >
-                    {t("stage.versions.saveSeat", { seat })}
-                  </a>
+                    {seat} · {t(artifactKindKey(artifact))} · {t("stage.versions.unavailable")}
+                  </span>
                 ))}
               {comparable && firstAvailable && (
                 <button

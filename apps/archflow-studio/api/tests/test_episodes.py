@@ -60,7 +60,7 @@ class EpisodeTestCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
         self.app = create_app(
-            StudioSettings(project_dir=self.root / PROJECT_ID)
+            StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)
         )
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)

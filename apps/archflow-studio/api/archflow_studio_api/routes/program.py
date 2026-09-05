@@ -122,7 +122,7 @@ def apply_program(
         proposal_id=f"program-sheet:{projection.record_digest}",
         work=work,
         closure=closure_of_sheet(sheet),
-        exclusive=settings.rhino_export,
+        exclusive=settings.rhino_lane,
     )
     saved = False
     if body.save_input:

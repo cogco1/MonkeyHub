@@ -40,13 +40,22 @@ class DerivationError(ValueError):
 
 
 class _Parser:
-    """Recursive-descent evaluator over one expression; names resolve through ``lookup``."""
+    """Recursive-descent evaluator over one expression; names resolve through ``lookup``.
 
-    def __init__(self, expr: str, lookup, label: str) -> None:
+    With ``evaluate=False`` the same descent validates the grammar (tokens,
+    parentheses, known functions and their arity) and collects the names the
+    expression reads, without performing any arithmetic: no division, no
+    function call, no finiteness check. That is what ``expression_names``
+    needs, and it is why a dependency question about ``a / (a - 1)`` cannot
+    fail on a division that only the real readings decide.
+    """
+
+    def __init__(self, expr: str, lookup, label: str, *, evaluate: bool = True) -> None:
         self.tokens = self._tokenize(expr, label)
         self.pos = 0
         self.lookup = lookup
         self.label = label
+        self.evaluate = evaluate
         self.names: list[str] = []
 
     @staticmethod
@@ -97,6 +106,8 @@ class _Parser:
         while (token := self._peek()) and token[0] == "op" and token[1] in "*/":
             self.pos += 1
             right = self._unary()
+            if not self.evaluate:
+                continue                                    # grammar only: nothing is computed
             if token[1] == "/":
                 if right == 0.0:
                     raise DerivationError(f"{self.label}: division by zero")
@@ -137,8 +148,12 @@ class _Parser:
                 self._take("op", ")")
                 if len(args) != arity:
                     raise DerivationError(f"{self.label}: {text} takes {arity} argument(s)")
+                if not self.evaluate:
+                    return 0.0
                 return number(function(*args), f"{self.label}: {text}")
             self.names.append(text)
+            if not self.evaluate:
+                return 0.0
             return self.lookup(text)
         if token == ("op", "("):
             self.pos += 1
@@ -149,16 +164,18 @@ class _Parser:
 
 
 def expression_names(expr: str, label: str = "expression") -> tuple[str, ...]:
-    """The names an expression reads, in order of first use (no evaluation)."""
+    """The names an expression reads, in order of first use.
 
-    found: list[str] = []
+    The restricted grammar is validated in full (a stray character, an unknown
+    function, a wrong arity or unbalanced parentheses fail typed here), and
+    nothing is computed: ``a / (a - 1)`` names ``a`` whatever ``a`` turns out
+    to be, and whether it divides by zero is decided by ``evaluate`` with the
+    actual readings, not by a placeholder.
+    """
 
-    def lookup(name: str) -> float:
-        found.append(name)
-        return 1.0
-
-    _Parser(expr, lookup, label).parse()
-    return tuple(dict.fromkeys(found))
+    parser = _Parser(expr, lambda name: 0.0, label, evaluate=False)
+    parser.parse()
+    return tuple(dict.fromkeys(parser.names))
 
 
 @dataclass(frozen=True, slots=True)

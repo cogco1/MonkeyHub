@@ -5,6 +5,9 @@ file, which base that run stood on, and the digest its bytes must hash to. A
 client that showed the file name alone could not tell a current export from a
 stale one — so ``available`` and ``unavailableReason`` travel beside them, and
 ``available: false`` is a state the UI must render, never an empty list.
+``format`` and ``representation`` say what the file is and what it claims to
+be, so a client hands only a ``3dm`` to its viewer and never labels a preview
+mesh as the exact model.
 """
 
 from __future__ import annotations
@@ -55,7 +58,23 @@ class ProjectArtifactDto(BaseModel):
     design_state_digest: str | None = Field(alias="designStateDigest")
     length_unit: str | None = Field(alias="lengthUnit")
     up_axis: str | None = Field(alias="upAxis")
-    receipt_ref: str = Field(alias="receiptRef")
+    receipt_ref: str = Field(
+        alias="receiptRef",
+        description="the retained export receipt this row was read from; an "
+        "in-process (OCCT) receipt certifies two files and is two rows sharing "
+        "this ref — one exact STEP, one 3dm preview — never two candidates",
+    )
+    format: str = Field(
+        description="what a reader must know to open the file: 'step' (an "
+        "exact B-rep, ISO 10303-21; download it, the viewer cannot load it) or "
+        "'3dm' (what the viewer loads)",
+    )
+    representation: str = Field(
+        description="what the receipt claims the geometry is: 'exact' for the "
+        "delivered model (a STEP B-rep, or a Rhino export that was read back), "
+        "'preview' for a render mesh tessellated from the exact model so it can "
+        "be looked at — never a NURBS or B-rep delivery",
+    )
 
 
 class ArtifactListDto(BaseModel):
@@ -125,6 +144,8 @@ def artifact_dto(record: ArtifactRecord) -> ProjectArtifactDto:
         length_unit=record.length_unit,
         up_axis=record.up_axis,
         receipt_ref=record.receipt_ref,
+        format=record.format,
+        representation=record.representation,
     )
 
 

@@ -424,6 +424,33 @@ class DeterministicIntentProvider:
 
         if key not in element.numeric_fields:
             raise self._unknown_element_field(element, key)
+        bound_to = element.bindings.get(key)
+        if bound_to is not None:
+            # The row does not own this number: it reads the parameter, and
+            # the kernel refuses a scalar written over a binding. The question
+            # names the control that does own it, before any job is started.
+            parameter = next(
+                (item for item in self.projection.parameters if item.key == bound_to),
+                None,
+            )
+            raise BlockedNeedsHuman(
+                "the element field is bound to a parameter",
+                question=(
+                    f"{key} on {element.element_id} is bound to parameter "
+                    f"{bound_to}"
+                    + (
+                        f" (= {_shown(element.numeric_fields[key])}"
+                        + (f" {parameter.unit}" if parameter is not None and parameter.unit else "")
+                        + ")"
+                    )
+                    + "; "
+                    + (
+                        self._source_sentence(parameter)
+                        if parameter is not None
+                        else f"set {bound_to} instead."
+                    )
+                ),
+            )
         if parsed.unit is not None:
             raise BlockedNeedsHuman(
                 "the element field is a unit-less number",
@@ -491,6 +518,7 @@ class DeterministicIntentProvider:
                     "Which did you mean?"
                 ),
             )
+        self._require_source(parameter)
         self._require_unlocked(parameter)
         self._require_unit(parameter, parsed.unit)
         return _Target(
@@ -501,6 +529,60 @@ class DeterministicIntentProvider:
             old=parameter.value,
             unit=parameter.unit or None,
             element_id=None,
+        )
+
+    def _require_source(self, parameter: Parameter) -> None:
+        """A derived quantity is not a control: its value is its expression's.
+
+        The kernel refuses a scalar written over an expression as a
+        conflicting declaration (``apply_state_record_operator``), so a
+        candidate started on such a proposal is doomed before it runs. The
+        refusal is made here instead, and it is actionable: it names the
+        parameters the expression reads, with their values and locks, and
+        the file a re-declaration would go into. Nothing is guessed: a source
+        that is itself derived is said to be, not silently walked past.
+        """
+
+        if parameter.expr is None:
+            return
+        raise BlockedNeedsHuman(
+            "the parameter is derived, not a control",
+            question=(
+                f"parameter {parameter.key} is derived by {parameter.expr!r}; "
+                f"{self._source_sentence(parameter)}"
+            ),
+        )
+
+    def _source_sentence(self, parameter: Parameter) -> str:
+        """What to set instead of ``parameter``: its declared sources, each with its value and lock."""
+
+        if parameter.expr is None:
+            lock = f" (locked by {parameter.lock_authority})" if parameter.lock_authority else ""
+            return f"set {parameter.key}{lock} instead."
+        by_key = {item.key: item for item in self.projection.parameters}
+        sources = parameter.reads()
+        named = []
+        for key in sources:
+            source = by_key.get(key)
+            if source is None:
+                named.append(f"{key} (undeclared)")
+                continue
+            notes = []
+            if source.expr is not None:
+                notes.append(f"itself derived by {source.expr!r}")
+            if source.lock_authority:
+                notes.append(f"locked by {source.lock_authority}")
+            unit = f" {source.unit}" if source.unit else ""
+            named.append(
+                f"{key} (= {_shown(source.value)}{unit}"
+                + (", " + ", ".join(notes) if notes else "")
+                + ")"
+            )
+        verb = "set" if len(sources) == 1 else "set one of"
+        return (
+            f"its value follows {_listed(list(sources))}. {verb} "
+            f"{', '.join(named)} instead, or re-declare {parameter.key} "
+            f"without an expression in {AUTHORED_RECORD_PATH}."
         )
 
     def _require_unlocked(self, parameter: Parameter) -> None:
@@ -703,3 +785,9 @@ def _listed(values: Sequence[str]) -> str:
     """A list a person can read, or a statement that there is nothing to list."""
 
     return ", ".join(values) if values else "none"
+
+
+def _shown(value: int | float) -> str:
+    """A number as the record holds it: ``3`` stays ``3``, ``2.4`` stays ``2.4``."""
+
+    return str(value)

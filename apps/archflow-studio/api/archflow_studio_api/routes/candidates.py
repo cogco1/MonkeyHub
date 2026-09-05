@@ -119,9 +119,10 @@ def start_candidate(
             # calls ``asyncio.run`` and would refuse to start on the loop.
             work=work,
             # The queue's two facts about this run: what it touches, and
-            # whether it needs the one Rhino this machine can export with.
+            # whether it needs the one Rhino this machine can export with. An
+            # OCCT export is ordinary worker work and takes no lane of its own.
             closure=closure_of(proposal),
-            exclusive=settings.rhino_export,
+            exclusive=settings.rhino_lane,
         )
     )
 

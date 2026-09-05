@@ -24,7 +24,7 @@ GET /api/protocol
   "server": "monkeyarch-api",
   "serverVersion": "0.1.0",
   "mode": "local",
-  "capabilities": ["artifacts", "candidates", "captures", "compare", "events", "gestures",
+  "capabilities": ["artifacts", "cad-export", "candidates", "captures", "compare", "events", "gestures",
                    "intents", "pick", "program", "projection", "proposals",
                    "validation"]
 }
@@ -32,7 +32,8 @@ GET /api/protocol
 
 `protocol` is `archflow/<major>`. `server` and `serverVersion` name the implementation, never the
 protocol. `mode` is `local` or `remote` (§10.1). `capabilities` are the feature names this process
-actually serves now, sorted; `rhino-export` appears only where an export can really happen.
+actually serves now, sorted; `cad-export` appears when geometry export is enabled, and
+`rhino-export` only when the configured export backend is explicitly Rhino.
 `/api/health`, `/api/protocol` and `/api/projects` are not capabilities — a conforming server
 always has them. The route opens no project, so a client can tell "this is not a server I speak
 to" from "this server cannot find its project": different problems, different people.
@@ -96,7 +97,7 @@ tolerate it.
 | GET | `/api/projects/{projectId}` | that project's binding: `head`, `referenceRun`, `intentProvider` | reads published + shared | stable |
 | GET | `/api/project` | the same, for the default project (§10.2) | reads published + shared | stable |
 | GET | `/api/state?run=` | the projection: component tree, `Element@1` rows and their numeric fields, parameters and their locks, dependency edges, `stateDigest`, `recordDigest`, `honesty[]` | reads work in progress + shared + published | stable |
-| GET | `/api/artifacts` | what the seat execution receipts certify, each row keeping its own `available` / `unavailableReason` | reads shared | stable |
+| GET | `/api/artifacts` | one row per certified file, with `format`, `representation`, `available` / `unavailableReason`; an OCCT STEP (`step` / `exact`) and mesh preview (`3dm` / `preview`) share one producing `receiptRef` | reads shared | stable |
 | GET | `/api/artifacts/{sha256}/bytes` | the certified bytes, re-hashed before they are served; `ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store` | reads shared | stable |
 | POST | `/api/captures` → 201 | a viewport PNG retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest | **writes shared workspace** | stable |
 | POST | `/api/pick/resolve` | what the object a user clicked actually is (§6) | reads work in progress + shared | stable |
@@ -430,7 +431,10 @@ wherever a server offers it.
 `capabilities` is how a client hides what a server cannot do instead of discovering it as a 404.
 A capability name is a feature, not a route: `projection`, `pick`, `gestures`, `intents`,
 `proposals`, `candidates`, `captures`, `compare`, `artifacts`, `program`, `validation`, `events`, and
-`rhino-export` where a server can really drive one. The list is sorted and reflects the running configuration,
+`cad-export` when geometry export is enabled, and `rhino-export` when Rhino is explicitly selected.
+OCCT exports an exact STEP and a mesh 3DM preview from the same program. Clients load only the
+3DM in the viewer and offer the STEP as a download; two files sharing a receipt are one export.
+The list is sorted and reflects the running configuration,
 not the build.
 
 A client must tolerate a capability it does not know — that is how a minor version adds one —

@@ -2,7 +2,7 @@
   "schema_version": "archflow-studio-runtime@1",
   "project_dir": "D:\\PROJECTS\\01_ACTIVE_当前项目\\ARCHFLOW CAADRIA 2027\\V4_RUNTIME\\workspace\\projects\\villa-rotonda-reconstruction",
   "reference_run": "",
-  "rhino_export": false,
+  "cad_export": "occt",
   "powershell": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
   "intent_provider": "codex",
   "codex": "C:\\Users\\asus\\AppData\\Roaming\\npm\\codex.cmd",

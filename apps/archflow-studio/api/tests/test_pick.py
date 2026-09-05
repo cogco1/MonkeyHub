@@ -125,7 +125,7 @@ class PickTestCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
         # Computed from the kernel with the runner's own view kwargs, so the
@@ -261,7 +261,7 @@ class ElementTieBreakTests(unittest.TestCase):
             record_payload=payload,
         )
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
         state = self.client.get("/api/state")

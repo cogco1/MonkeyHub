@@ -84,7 +84,7 @@ class PorticoTestCase(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, self.state_digest = make_portico_project(self.root)
-        self.app = create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        self.app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
 

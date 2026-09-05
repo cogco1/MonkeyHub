@@ -23,10 +23,25 @@ from typing import Callable, Mapping
 
 from archflow.adapters.cad_patch import CadPatchError, build_patch_prelude, select_patch_operations
 from archflow.adapters.cad_program import (
+    CadTranslationError,
     _physical_ids,
+    _resolved_layer_colors,
     expected_object_bounds,
     expected_object_semantics,
     translate_to_rhino_python,
+)
+from archflow.adapters.occt_backend import (
+    OcctBackendError,
+    OcctCapabilityError,
+    OcctUnavailableError,
+    PreviewObject,
+    StepObject,
+    backend_identity,
+    build_program_shapes,
+    measure_shape,
+    read_step,
+    write_preview_three_dm,
+    write_step,
 )
 from archflow.adapters.three_dm_inspector import (
     ThreeDmInspection,
@@ -2207,11 +2222,15 @@ def _run_exact_rhino_cleanup(
 
 
 def _provenance(
-    identity: RhinoCadExportIdentity,
+    identity: "RhinoCadExportIdentity | OcctCadExportIdentity",
     extra: Mapping[str, str] | None,
+    *,
+    export_schema: str | None = None,
 ) -> dict[str, str]:
     binding = identity.binding
     base = binding.branch.run.base
+    if export_schema is None:
+        export_schema = RhinoCadExecutionReceipt.SCHEMA
     values = {
         "project_id": binding.project_id,
         "run_id": binding.run_id,
@@ -2229,7 +2248,7 @@ def _provenance(
         ),
         "length_unit": identity.length_unit,
         "up_axis": identity.up_axis,
-        "export_schema": RhinoCadExecutionReceipt.SCHEMA,
+        "export_schema": export_schema,
     }
     if extra is not None:
         if not isinstance(extra, Mapping):
@@ -2476,9 +2495,672 @@ def _json_copy(value: object):
     )
 
 
+# ---------------------------------------------------------------- OCCT in-process executor (P107)
+#
+# A second executor of the same CompiledGeometryProgram behind this owner.
+# It shares the P036 binding (RhinoCadProgramBinding, aliased below as
+# CadProgramBinding), the analytic predictor (expected_object_bounds), the
+# semantic denominator (expected_object_semantics) and the workspace rules;
+# it does not share the Rhino plan, its completion token, host witness or
+# cleanup receipt, because no host process exists.  Evidence tier is
+# ``self_measured_cold_read``: the STEP file is re-read from disk by a fresh
+# reader and measured; the Rhino gate remains the independent instrument.
+
+CadProgramBinding = RhinoCadProgramBinding
+"""The P036 program binding, named without the host it was first written for."""
+
+OCCT_ADAPTER_ID = "occt-in-process"
+OCCT_EVIDENCE_TIER = "self_measured_cold_read"
+_STEP_FORMAT = "STEP AP214 (ISO 10303-21)"
+_PREVIEW_FORMAT = "3dm render-mesh preview"
+_PREVIEW_ANGULAR_DEFLECTION = 0.5
+
+
+class CadCapabilityError(CadExecutionError):
+    """The program names an operation this executor does not realize.
+
+    Raised before anything is written.  There is no fallback to another
+    executor: the caller chooses one explicitly.
+    """
+
+    def __init__(self, message: str, *, op_id: str, kind: str) -> None:
+        super().__init__(message)
+        self.op_id = op_id
+        self.kind = kind
+
+
+@dataclass(frozen=True, slots=True)
+class OcctCadExportIdentity:
+    """Execution identity of one in-process export: the binding, the unit, the frame."""
+
+    binding: RhinoCadProgramBinding
+    length_unit: str
+    up_axis: str = "Z-up"
+
+    SCHEMA = "OcctCadExportIdentity@1"
+    COORDINATE_FRAME = (
+        "program (x, y-up, z-plan) written as CAD (x, z, y): the one Z-up "
+        "conversion the Rhino translation applies, applied once here"
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.binding, RhinoCadProgramBinding):
+            raise TypeError("binding must be RhinoCadProgramBinding")
+        if self.length_unit not in _UNIT_TO_RHINO:
+            raise CadExecutionError(
+                "length_unit must be millimeter, meter, inch, or foot"
+            )
+        if self.up_axis != "Z-up":
+            raise CadExecutionError("OCCT CAD externalization requires Z-up")
+
+    @property
+    def project_id(self) -> str:
+        return self.binding.project_id
+
+    @property
+    def run_id(self) -> str:
+        return self.binding.run_id
+
+    @property
+    def program_digest(self) -> str:
+        return self.binding.program_digest
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.SCHEMA,
+            "binding": self.binding.to_dict(),
+            "length_unit": self.length_unit,
+            "up_axis": self.up_axis,
+            "coordinate_frame": self.COORDINATE_FRAME,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class OcctExecutionReceipt:
+    """What crossed the file boundary and what the cold read found there.
+
+    ``exact_artifact`` names the STEP file (exact B-rep, object names and
+    layers); ``preview_artifact`` names the mesh ``.3dm`` tessellated from
+    the same model (viewer semantics, not a B-rep delivery).  ``readback``
+    is the per-object measurement of the STEP file re-read from disk.
+    """
+
+    status: CadExecutionStatus
+    identity: OcctCadExportIdentity
+    adapter_id: str
+    backend: dict[str, object]
+    evidence_tier: str
+    exact_artifact: dict[str, object] | None
+    preview_artifact: dict[str, object] | None
+    physical_object_ids: tuple[str, ...]
+    expected_semantics: dict[str, object]
+    expected_bounds: dict[str, dict[str, object]]
+    readback: dict[str, dict[str, object]] | None
+    preview_inspection: dict[str, object] | None
+    readback_tolerance: float
+    timings: dict[str, float]
+    failures: tuple[dict[str, str], ...]
+
+    SCHEMA = "OcctExecutionReceipt@1"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, CadExecutionStatus):
+            raise TypeError("status must be CadExecutionStatus")
+        if not isinstance(self.identity, OcctCadExportIdentity):
+            raise TypeError("identity must be OcctCadExportIdentity")
+        require_identifier(self.adapter_id, "adapter_id")
+        if not isinstance(self.backend, dict):
+            raise TypeError("backend must be dict")
+        if not isinstance(self.evidence_tier, str) or not self.evidence_tier:
+            raise CadExecutionError("evidence_tier must be non-empty text")
+        for field in ("exact_artifact", "preview_artifact"):
+            value = getattr(self, field)
+            if value is not None:
+                if not isinstance(value, dict):
+                    raise TypeError(f"{field} must be dict or None")
+                _portable_relative_path(str(value.get("relative_path")))
+                require_sha256(str(value.get("sha256")), f"{field} sha256")
+        if self.physical_object_ids != tuple(sorted(set(self.physical_object_ids))):
+            raise CadExecutionError("physical_object_ids must be sorted and unique")
+        for value in self.physical_object_ids:
+            require_identifier(value, "physical_object_ids")
+        if not isinstance(self.expected_semantics, dict) or set(
+            self.expected_semantics
+        ) != {"objects", "blocks"}:
+            raise CadExecutionError("expected_semantics schema drifted")
+        if not isinstance(self.expected_bounds, dict) or set(
+            self.expected_bounds
+        ) != set(self.physical_object_ids):
+            raise CadExecutionError("bounds and physical denominators differ")
+        if self.readback is not None and not isinstance(self.readback, dict):
+            raise TypeError("readback must be dict or None")
+        if self.preview_inspection is not None and not isinstance(
+            self.preview_inspection, dict
+        ):
+            raise TypeError("preview_inspection must be dict or None")
+        object.__setattr__(
+            self,
+            "readback_tolerance",
+            _positive_finite(self.readback_tolerance, "readback_tolerance"),
+        )
+        if not isinstance(self.timings, dict) or any(
+            not isinstance(value, float) for value in self.timings.values()
+        ):
+            raise TypeError("timings must be dict[str, float]")
+        if not isinstance(self.failures, tuple) or any(
+            not isinstance(item, dict) for item in self.failures
+        ):
+            raise TypeError("failures must be tuple[dict, ...]")
+        succeeded = self.status is CadExecutionStatus.SUCCEEDED
+        if succeeded != (
+            not self.failures
+            and self.exact_artifact is not None
+            and self.readback is not None
+            and set(self.readback) == set(self.physical_object_ids)
+        ):
+            raise CadExecutionError(
+                "successful execution requires a written STEP file, a complete cold readback and no failures"
+            )
+
+    @property
+    def readback_verified(self) -> bool:
+        return self.status is CadExecutionStatus.SUCCEEDED
+
+    def to_dict(self) -> dict[str, object]:
+        return _json_copy(
+            {
+                "schema": self.SCHEMA,
+                "status": self.status.value,
+                "identity": self.identity.to_dict(),
+                "adapter_id": self.adapter_id,
+                "backend": self.backend,
+                "evidence_tier": self.evidence_tier,
+                "exact_artifact": self.exact_artifact,
+                "preview_artifact": self.preview_artifact,
+                "physical_object_ids": list(self.physical_object_ids),
+                "expected_semantics": self.expected_semantics,
+                "expected_bounds": self.expected_bounds,
+                "readback": self.readback,
+                "preview_inspection": self.preview_inspection,
+                "readback_tolerance": self.readback_tolerance,
+                "timings": self.timings,
+                "failures": list(self.failures),
+                "readback_verified": self.readback_verified,
+            }
+        )
+
+
+def execute_occt_export(
+    program: CompiledGeometryProgram,
+    *,
+    binding: RhinoCadProgramBinding,
+    speculative_workspace: Path,
+    artifact_stem: str,
+    readback_tolerance: float = 0.003,
+    provenance: Mapping[str, str] | None = None,
+    material_by_component: Mapping[str, str] | None = None,
+    material_colors: Mapping[str, tuple[int, int, int]] | None = None,
+    layer_by_component: Mapping[str, str] | None = None,
+    preview: bool = True,
+) -> OcctExecutionReceipt:
+    """Realize the bound program in process, write STEP and a mesh preview, cold-read the STEP.
+
+    Writes ``<artifact_stem>.step`` (exact B-rep, one named closed solid per
+    physical object) and ``<artifact_stem>.preview.3dm`` (a render mesh of
+    the same model with the viewer's names, layers, colours and
+    ``archflow:*`` user text) into the caller-supplied workspace; neither may
+    exist beforehand.  The STEP file is then re-read by a fresh reader and
+    every physical object is checked: present exactly once under its id,
+    valid, exactly the expected number of closed solids, bounds within
+    ``readback_tolerance`` of the analytic predictor, on its semantic layer.
+    The preview is read back through ``inspect_three_dm`` and checked
+    against the same denominator.  No process is started.
+
+    Raises ``CadCapabilityError`` (a ``CadExecutionError``) before writing
+    when the program uses an operation this executor does not realize, and
+    ``CadExecutionError`` when the binding, workspace or backend is unusable.
+    Build, write and readback failures come back as a FAILED receipt.
+
+    Integration recipe (runtime.project_runner._export, once released):
+
+        program_ref = repository.put_json(run=run, destination=branch_destination,
+                                          record_kind=stage_geometry_program(stage_id),
+                                          payload=program.to_dict())          # P036 first, as today
+        binding = CadProgramBinding(program_ref=program_ref, branch=branch, stage_id=stage_id,
+                                    program_digest=program.program_digest,
+                                    design_state_digest=program.proposal.design_state_digest,
+                                    predecessor_program_digest=None)
+        receipt = execute_occt_export(program, binding=binding, speculative_workspace=workspace,
+                                      artifact_stem=f"{stage_id}@{program.program_digest[:12]}",
+                                      readback_tolerance=0.003, provenance={**provenance, "export_path": "occt"})
+        repository.put_json(run=run, destination=destination, record_kind=<new occt execution kind>,
+                            payload=receipt.to_dict())
+        # receipt.preview_artifact["relative_path"] is what the viewer loads;
+        # receipt.exact_artifact["relative_path"] is the STEP delivery.
+        # The Rhino path stays opt-in behind its own flag and is never
+        # launched by create/save/reopen/preview.
+    """
+
+    if not isinstance(binding, RhinoCadProgramBinding):
+        raise TypeError("binding must be RhinoCadProgramBinding")
+    binding.bind_program(program)
+    unit = program.proposal.length_unit.value
+    identity = OcctCadExportIdentity(binding=binding, length_unit=unit)
+    tolerance = _positive_finite(readback_tolerance, "readback_tolerance")
+    workspace = _strict_workspace(speculative_workspace)
+    stem = _artifact_stem(artifact_stem)
+    step_path = workspace / f"{stem}.step"
+    preview_path = workspace / f"{stem}.preview.3dm"
+    for target in (step_path, preview_path):
+        _strict_child(workspace, target, require_exists=False)
+        if target.exists() or target.is_symlink():
+            raise CadExecutionError(f"speculative output already exists: {target.name}")
+    try:
+        semantics = _json_copy(
+            expected_object_semantics(
+                program,
+                material_by_component=material_by_component,
+                layer_by_component=layer_by_component,
+            )
+        )
+        raw_bounds = expected_object_bounds(program)
+    except CadTranslationError as exc:
+        raise CadExecutionError(f"program denominator is not analytically determined: {exc}") from exc
+    physical = tuple(sorted(semantics["objects"]))
+    if set(raw_bounds) != set(physical):
+        raise CadExecutionError("analytic bounds and physical denominators differ")
+    bounds = {object_id: _bounds_to_rhino(raw_bounds[object_id]) for object_id in physical}
+    counts = {object_id: int(raw_bounds[object_id]["brep_count"]) for object_id in physical}
+    layer_colors = dict(
+        _resolved_layer_colors(
+            {row["layer"] for row in semantics["objects"].values()},
+            material_by_component=material_by_component,
+            material_colors=material_colors,
+        )
+    )
+    supplied = _provenance(identity, provenance, export_schema=OcctExecutionReceipt.SCHEMA)
+    document_user_text = {f"archflow:{key}": value for key, value in supplied.items()}
+    timings: dict[str, float] = {}
+    started = time.perf_counter()
+
+    def failure_receipt(code: str, detail: str, **artifacts) -> OcctExecutionReceipt:
+        timings["total_seconds"] = time.perf_counter() - started
+        return OcctExecutionReceipt(
+            status=CadExecutionStatus.FAILED,
+            identity=identity,
+            adapter_id=OCCT_ADAPTER_ID,
+            backend=backend,
+            evidence_tier=OCCT_EVIDENCE_TIER,
+            exact_artifact=artifacts.get("exact_artifact"),
+            preview_artifact=artifacts.get("preview_artifact"),
+            physical_object_ids=physical,
+            expected_semantics=semantics,
+            expected_bounds=bounds,
+            readback=artifacts.get("readback"),
+            preview_inspection=artifacts.get("preview_inspection"),
+            readback_tolerance=tolerance,
+            timings=dict(timings),
+            failures=(_failure(code, detail),),
+        )
+
+    try:
+        backend = backend_identity()
+    except OcctUnavailableError as exc:
+        raise CadExecutionError(str(exc)) from exc
+    try:
+        build = build_program_shapes(program)
+    except OcctCapabilityError as exc:
+        raise CadCapabilityError(
+            f"OCCT executor cannot realize {exc.op_id} ({exc.kind}): {exc.reason}",
+            op_id=exc.op_id,
+            kind=exc.kind,
+        ) from exc
+    except OcctBackendError as exc:
+        return failure_receipt("cad_execution.occt_build_failed", str(exc))
+    timings["build_seconds"] = build.elapsed_seconds
+    if set(build.physical_object_ids) != set(physical):
+        return failure_receipt(
+            "cad_execution.physical_identity_mismatch",
+            "built physical objects differ from the semantic denominator",
+        )
+
+    step_objects = tuple(
+        StepObject(
+            object_id=object_id,
+            shape=build.objects[object_id].shape,
+            layer=semantics["objects"][object_id]["layer"],
+            color=layer_colors.get(semantics["objects"][object_id]["layer"]),
+        )
+        for object_id in physical
+    )
+    phase = time.perf_counter()
+    try:
+        write_step(step_path, step_objects, length_unit=unit)
+        exact_artifact = _exact_artifact(step_path, workspace)
+    except (OcctBackendError, OSError) as exc:
+        return failure_receipt("cad_execution.step_write_failed", str(exc))
+    timings["step_write_seconds"] = time.perf_counter() - phase
+
+    phase = time.perf_counter()
+    try:
+        entries = read_step(step_path, length_unit=unit)
+    except (OcctBackendError, OSError) as exc:
+        return failure_receipt(
+            "cad_execution.step_readback_failed", str(exc), exact_artifact=exact_artifact
+        )
+    readback, failures = _verify_step_readback(
+        entries,
+        physical=physical,
+        semantics=semantics,
+        expected_bounds=bounds,
+        expected_counts=counts,
+        layer_colors=layer_colors,
+        tolerance=tolerance,
+    )
+    timings["step_read_seconds"] = time.perf_counter() - phase
+
+    preview_artifact = None
+    preview_inspection = None
+    if preview:
+        linear_deflection = tolerance / 4.0
+        preview_objects = tuple(
+            PreviewObject(
+                object_id=object_id,
+                shape=build.objects[object_id].shape,
+                layer=semantics["objects"][object_id]["layer"],
+                user_text=semantics["objects"][object_id]["user_text"],
+                visible=semantics["objects"][object_id].get("visible", True) is not False,
+            )
+            for object_id in physical
+        )
+        phase = time.perf_counter()
+        try:
+            mesh_counts = write_preview_three_dm(
+                preview_path,
+                preview_objects,
+                layer_colors=layer_colors,
+                document_user_text=document_user_text,
+                length_unit=unit,
+                linear_deflection=linear_deflection,
+                angular_deflection=_PREVIEW_ANGULAR_DEFLECTION,
+            )
+            preview_artifact = _preview_artifact(
+                preview_path, workspace, linear_deflection, mesh_counts
+            )
+        except (OcctBackendError, OSError) as exc:
+            failures.append(_failure("cad_execution.preview_write_failed", str(exc)))
+        timings["preview_write_seconds"] = time.perf_counter() - phase
+        if preview_artifact is not None:
+            phase = time.perf_counter()
+            try:
+                _strict_child(workspace, preview_path, require_exists=True)
+                inspection = inspect_three_dm(preview_path)
+            except (CadExecutionError, ThreeDmInspectionError, OSError) as exc:
+                failures.append(_failure("cad_execution.preview_readback_failed", str(exc)))
+            else:
+                preview_inspection = inspection.to_dict()
+                failures.extend(
+                    _verify_preview_readback(
+                        inspection,
+                        physical=physical,
+                        semantics=semantics,
+                        readback_bounds={
+                            object_id: row["bbox"] for object_id, row in readback.items() if "bbox" in row
+                        },
+                        layer_colors=layer_colors,
+                        expected_document_user_text=document_user_text,
+                        length_unit=unit,
+                        tolerance=tolerance,
+                    )
+                )
+            timings["preview_read_seconds"] = time.perf_counter() - phase
+    timings["total_seconds"] = time.perf_counter() - started
+    return OcctExecutionReceipt(
+        status=CadExecutionStatus.FAILED if failures else CadExecutionStatus.SUCCEEDED,
+        identity=identity,
+        adapter_id=OCCT_ADAPTER_ID,
+        backend=backend,
+        evidence_tier=OCCT_EVIDENCE_TIER,
+        exact_artifact=exact_artifact,
+        preview_artifact=preview_artifact,
+        physical_object_ids=physical,
+        expected_semantics=semantics,
+        expected_bounds=bounds,
+        readback=readback,
+        preview_inspection=preview_inspection,
+        readback_tolerance=tolerance,
+        timings=timings,
+        failures=tuple(failures),
+    )
+
+
+def _exact_artifact(path: Path, workspace: Path) -> dict[str, object]:
+    return {
+        "format": _STEP_FORMAT,
+        "relative_path": path.relative_to(workspace).as_posix(),
+        "sha256": _sha256_bytes(path.read_bytes()),
+        "exact_brep": True,
+        "carries": [
+            "one named shape per physical object (name = object id)",
+            "the semantic layer path and its colour per object",
+            "closed solids in the CAD frame and the program unit",
+        ],
+        "does_not_carry": ["archflow:* object user text", "archflow:* document user text"],
+    }
+
+
+def _preview_artifact(
+    path: Path,
+    workspace: Path,
+    linear_deflection: float,
+    mesh_counts: Mapping[str, Mapping[str, int]],
+) -> dict[str, object]:
+    return {
+        "format": _PREVIEW_FORMAT,
+        "relative_path": path.relative_to(workspace).as_posix(),
+        "sha256": _sha256_bytes(path.read_bytes()),
+        "exact_brep": False,
+        "geometry": "render mesh tessellated from the same OCCT model as the STEP file",
+        "tessellator": "BRepMesh_IncrementalMesh",
+        "linear_deflection": linear_deflection,
+        "angular_deflection": _PREVIEW_ANGULAR_DEFLECTION,
+        "mesh_counts": {key: dict(value) for key, value in sorted(mesh_counts.items())},
+        "carries": [
+            "object names, nested layer paths and layer colours",
+            "archflow:* object user text",
+            "archflow:* document user text",
+        ],
+        "note": "not a NURBS/B-rep delivery; the STEP file is the exact geometry",
+    }
+
+
+def _artifact_stem(value: str) -> str:
+    _portable_relative_path(value)
+    path = PurePosixPath(value)
+    if len(path.parts) != 1 or value.lower().endswith((".step", ".stp", ".3dm")):
+        raise CadExecutionError("artifact_stem must be one portable file stem without a suffix")
+    return value
+
+
+def _verify_step_readback(
+    entries,
+    *,
+    physical: tuple[str, ...],
+    semantics: Mapping[str, object],
+    expected_bounds: Mapping[str, Mapping[str, object]],
+    expected_counts: Mapping[str, int],
+    layer_colors: Mapping[str, tuple[int, int, int]],
+    tolerance: float,
+) -> tuple[dict[str, dict[str, object]], list[dict[str, str]]]:
+    """Measure every named entry of the cold read against the denominator."""
+
+    failures: list[dict[str, str]] = []
+    by_name: dict[str, list] = {}
+    unnamed = 0
+    for entry in entries:
+        if entry.name is None:
+            unnamed += 1
+            continue
+        by_name.setdefault(entry.name, []).append(entry)
+    if unnamed:
+        failures.append(
+            _failure("cad_execution.step_object_unnamed", f"{unnamed} shape(s) carry no object name")
+        )
+    missing = sorted(set(physical) - set(by_name))
+    extra = sorted(set(by_name) - set(physical))
+    if missing or extra:
+        failures.append(
+            _failure(
+                "cad_execution.step_object_set_mismatch",
+                f"missing={missing} extra={extra}",
+            )
+        )
+    readback: dict[str, dict[str, object]] = {}
+    for object_id in physical:
+        rows = by_name.get(object_id, [])
+        if len(rows) != 1:
+            if rows:
+                failures.append(
+                    _failure("cad_execution.step_object_duplicate", f"{object_id} appears {len(rows)} times")
+                )
+            continue
+        entry = rows[0]
+        try:
+            measure = measure_shape(entry.shape)
+        except OcctBackendError as exc:
+            failures.append(_failure("cad_execution.step_shape_invalid", f"{object_id}: {exc}"))
+            continue
+        row = measure.to_dict()
+        row["name"] = entry.name
+        row["layers"] = list(entry.layers)
+        row["color"] = list(entry.color) if entry.color is not None else None
+        readback[object_id] = row
+        if not measure.valid:
+            failures.append(_failure("cad_execution.step_shape_invalid", f"{object_id} is not a valid shape"))
+        if measure.solid_count != expected_counts[object_id]:
+            failures.append(
+                _failure(
+                    "cad_execution.step_solid_count_mismatch",
+                    f"{object_id} has {measure.solid_count} solid(s), expected {expected_counts[object_id]}",
+                )
+            )
+        if not measure.closed:
+            failures.append(_failure("cad_execution.step_not_closed_solid", f"{object_id} is not a closed solid"))
+        if not _bbox_close(row["bbox"], expected_bounds[object_id], tolerance):
+            failures.append(_failure("cad_execution.named_bounds_mismatch", f"object {object_id} bounds differ"))
+        expected_layer = semantics["objects"][object_id]["layer"]
+        if tuple(entry.layers) != (expected_layer,):
+            failures.append(
+                _failure("cad_execution.object_layer_mismatch", f"object {object_id} layer differs from semantic contract")
+            )
+        expected_color = layer_colors.get(expected_layer)
+        if expected_color is not None and (
+            entry.color is None
+            or any(abs(int(a) - int(b)) > 1 for a, b in zip(entry.color, expected_color))
+        ):
+            failures.append(
+                _failure("cad_execution.layer_color_mismatch", f"object {object_id} colour differs from layer contract")
+            )
+    if set(readback) == set(physical) and physical:
+        aggregate = _aggregate_bounds(readback[object_id]["bbox"] for object_id in physical)
+        if not _bbox_close(aggregate, _aggregate_bounds(expected_bounds.values()), tolerance):
+            failures.append(
+                _failure("cad_execution.aggregate_bounds_mismatch", "aggregate STEP bounds differ")
+            )
+    return readback, failures
+
+
+def _verify_preview_readback(
+    inspection: ThreeDmInspection,
+    *,
+    physical: tuple[str, ...],
+    semantics: Mapping[str, object],
+    readback_bounds: Mapping[str, Mapping[str, object]],
+    layer_colors: Mapping[str, tuple[int, int, int]],
+    expected_document_user_text: Mapping[str, str],
+    length_unit: str,
+    tolerance: float,
+) -> list[dict[str, str]]:
+    """The mesh preview must carry the viewer denominator and sit on the STEP geometry."""
+
+    failures: list[dict[str, str]] = []
+    if not inspection.read_only or inspection.rhino_process_started:
+        failures.append(
+            _failure("cad_execution.inspector_not_read_only", "verification must be independent and read-only")
+        )
+    if inspection.units.get("name") != _UNIT_TO_RHINO[length_unit][1]:
+        failures.append(_failure("cad_execution.unit_mismatch", "preview units differ"))
+    actual_document = {
+        row["key"]: row["value"]
+        for row in inspection.document_user_strings
+        if str(row["key"]).startswith("archflow:")
+    }
+    if actual_document != dict(expected_document_user_text):
+        failures.append(
+            _failure("cad_execution.provenance_mismatch", "archflow document user-text key/value set differs")
+        )
+    actual_layers: dict[str, list] = {}
+    for row in inspection.layers:
+        actual_layers.setdefault(str(row.get("full_path")), []).append(row)
+    for full_path, color in sorted(layer_colors.items()):
+        rows = actual_layers.get(full_path, [])
+        if len(rows) != 1:
+            failures.append(_failure("cad_execution.layer_set_mismatch", f"layer {full_path} is missing or duplicated"))
+            continue
+        if rows[0].get("color_rgba") != [*color, 255]:
+            failures.append(_failure("cad_execution.layer_color_mismatch", f"layer {full_path} RGBA differs"))
+    if inspection.top_level_object_count != len(physical):
+        failures.append(
+            _failure("cad_execution.object_count_mismatch", "preview object count differs from physical denominator")
+        )
+    named: dict[str, list] = {}
+    for row in inspection.named_object_bboxes:
+        named.setdefault(str(row["name"]), []).append(row)
+    if set(named) != set(physical) or any(len(rows) != 1 for rows in named.values()):
+        failures.append(
+            _failure("cad_execution.named_object_mismatch", "preview named-object set has missing, duplicate, or extra identities")
+        )
+    for object_id in sorted(set(named) & set(physical)):
+        row = named[object_id][0]
+        if len(named[object_id]) != 1:
+            continue
+        if row.get("type") != "Mesh":
+            failures.append(_failure("cad_execution.preview_not_mesh", f"object {object_id} is not a preview mesh"))
+        expected = readback_bounds.get(object_id)
+        if expected is None or not _bbox_close(row["bbox"], expected, tolerance):
+            failures.append(_failure("cad_execution.named_bounds_mismatch", f"preview object {object_id} bounds differ from STEP"))
+    observed: dict[str, list] = {}
+    for row in inspection.object_user_strings:
+        if row.get("is_instance_definition_object"):
+            continue
+        observed.setdefault(str(row.get("name")), []).append(row)
+    for object_id in physical:
+        expected_semantic = semantics["objects"][object_id]
+        rows = observed.get(object_id, [])
+        if len(rows) != 1:
+            failures.append(_failure("cad_execution.semantic_witness_count_mismatch", f"object {object_id} has {len(rows)} semantic witnesses"))
+            continue
+        pairs = {
+            pair["key"]: pair["value"]
+            for pair in rows[0].get("attributes", ())
+            if str(pair["key"]).startswith("archflow:")
+        }
+        if pairs != dict(expected_semantic["user_text"]):
+            failures.append(_failure("cad_execution.semantic_user_text_mismatch", f"object {object_id} semantic user text differs"))
+        if rows[0].get("layer_path") != expected_semantic["layer"]:
+            failures.append(_failure("cad_execution.object_layer_mismatch", f"preview object {object_id} layer differs"))
+    return failures
+
+
 __all__ = [
+    "CadCapabilityError",
     "CadExecutionError",
     "CadExecutionStatus",
+    "CadProgramBinding",
+    "OCCT_ADAPTER_ID",
+    "OCCT_EVIDENCE_TIER",
+    "OcctCadExportIdentity",
+    "OcctExecutionReceipt",
     "RhinoCadExecutionReceipt",
     "RhinoCadExportIdentity",
     "RhinoCadExportPlan",
@@ -2486,6 +3168,7 @@ __all__ = [
     "build_rhino_com_powershell_command",
     "build_rhino_com_powershell_source",
     "discover_rhino_executables",
+    "execute_occt_export",
     "execute_rhino_three_dm_export",
     "prepare_rhino_three_dm_export",
     "verify_rhino_export_readback",

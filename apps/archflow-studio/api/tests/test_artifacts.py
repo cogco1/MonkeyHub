@@ -29,10 +29,13 @@ from .support import (
     RHINO_PROGRAM_DIGEST,
     add_unreadable_run,
     make_project,
+    retain_occt_receipt,
     retain_rhino_receipt,
 )
 
 MODEL_BYTES = b"3dm-bytes"
+STEP_BYTES = b"ISO-10303-21;step-bytes"
+PREVIEW_BYTES = b"3dm-preview-bytes"
 MOVED_BYTES = b"moved-3dm"
 FAILED_BYTES = b"failed-3dm"
 GONE_BYTES = b"gone-3dm"
@@ -104,7 +107,7 @@ class ArtifactTests(unittest.TestCase):
             b"someone-edited-this-in-rhino"
         )
 
-        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID)
+        self.settings = StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)
         self.client = TestClient(create_app(self.settings))
         self.addCleanup(self.client.close)
         self.payload = self.client.get("/api/artifacts").json()
@@ -180,6 +183,9 @@ class ArtifactTests(unittest.TestCase):
             ),
             item["receiptRef"],
         )
+        # A Rhino export is the delivered model in the one format it comes in.
+        self.assertEqual(item["format"], "3dm")
+        self.assertEqual(item["representation"], "exact")
 
     def test_a_file_outside_the_convention_resolves_by_its_content(self) -> None:
         # Two receipts name ``model.3dm``; each one resolves to the copy whose
@@ -492,6 +498,125 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(response.json()["code"], "ARTIFACT_DIGEST_MISMATCH")
 
 
+class OcctArtifactTests(unittest.TestCase):
+    """One in-process receipt is two rows: the exact STEP and the mesh preview, told apart on the wire."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root)
+        self.run = self.repository.load_run(REFERENCE_RUN_ID)
+        self.workspaces = self.repository.layout.run(REFERENCE_RUN_ID).workspaces
+        self.receipt_ref = retain_occt_receipt(
+            self.repository, self.run, stage_id="occt-stage",
+            step_bytes=STEP_BYTES, preview_bytes=PREVIEW_BYTES,
+        )
+        # A Rhino export beside it: the historical receipt keeps its one row.
+        retain_rhino_receipt(
+            self.repository, self.run, stage_id="rhino-stage",
+            file_name="rhino.3dm", payload_bytes=MODEL_BYTES,
+        )
+        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID)
+        self.client = TestClient(create_app(self.settings))
+        self.addCleanup(self.client.close)
+        self.payload = self.client.get("/api/artifacts").json()
+
+    def rows(self, stage_id: str) -> list[dict]:
+        return [item for item in self.payload["artifacts"] if item["stageId"] == stage_id]
+
+    def test_the_receipt_lists_two_rows_sharing_its_ref_stage_and_program(self) -> None:
+        rows = self.rows("occt-stage")
+        self.assertEqual(len(rows), 2, rows)
+        by_kind = {row["representation"]: row for row in rows}
+        exact, preview = by_kind["exact"], by_kind["preview"]
+        self.assertEqual((exact["format"], preview["format"]), ("step", "3dm"))
+        self.assertEqual(exact["fileName"], f"occt-stage@{RHINO_PROGRAM_DIGEST[:12]}.step")
+        self.assertEqual(preview["fileName"], f"occt-stage@{RHINO_PROGRAM_DIGEST[:12]}.preview.3dm")
+        self.assertEqual(exact["sha256"], sha256_of(STEP_BYTES))
+        self.assertEqual(preview["sha256"], sha256_of(PREVIEW_BYTES))
+        for row in (exact, preview):
+            self.assertEqual(row["receiptRef"], self.receipt_ref.uri)
+            self.assertIn("/records/seat-occt-execution-", row["receiptRef"])
+            self.assertIs(row["available"], True)
+            self.assertEqual(row["status"], "succeeded")
+            self.assertIs(row["readbackVerified"], True)
+            self.assertEqual(row["objectCount"], 1)
+            self.assertEqual(row["programDigest"], RHINO_PROGRAM_DIGEST)
+            self.assertEqual(row["designStateDigest"], RHINO_DESIGN_STATE_DIGEST)
+            self.assertEqual(row["branchId"], RHINO_BRANCH_ID)
+            self.assertEqual(row["base"]["version"], self.run.base.version)
+            self.assertEqual(row["lengthUnit"], "meter")
+        self.assertEqual(
+            exact["relativePath"],
+            f"runs/{REFERENCE_RUN_ID}/workspaces/cad-occt-stage/{exact['fileName']}",
+        )
+
+    def test_a_rhino_receipt_is_still_one_exact_3dm_row(self) -> None:
+        (row,) = self.rows("rhino-stage")
+        self.assertEqual((row["format"], row["representation"]), ("3dm", "exact"))
+        self.assertEqual(row["sha256"], sha256_of(MODEL_BYTES))
+
+    def test_both_files_are_served_under_their_own_digests(self) -> None:
+        for data, name in ((STEP_BYTES, ".step"), (PREVIEW_BYTES, ".preview.3dm")):
+            with self.subTest(name=name):
+                response = self.client.get(f"/api/artifacts/{sha256_of(data)}/bytes")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.content, data)
+                self.assertIn(name, response.headers["content-disposition"])
+                self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_a_corrupted_step_is_a_mismatch_while_the_preview_still_answers(self) -> None:
+        step = self.workspaces / "cad-occt-stage" / f"occt-stage@{RHINO_PROGRAM_DIGEST[:12]}.step"
+        step.write_bytes(b"edited")
+
+        payload = self.client.get("/api/artifacts").json()
+        rows = {row["representation"]: row for row in payload["artifacts"] if row["stageId"] == "occt-stage"}
+        self.assertIs(rows["exact"]["available"], False)
+        self.assertEqual(rows["exact"]["unavailableReason"], "digest mismatch")
+        self.assertIs(rows["preview"]["available"], True)
+        self.assertEqual(self.client.get(f"/api/artifacts/{sha256_of(STEP_BYTES)}/bytes").status_code, 409)
+        self.assertEqual(self.client.get(f"/api/artifacts/{sha256_of(PREVIEW_BYTES)}/bytes").status_code, 200)
+
+    def test_a_deleted_preview_is_missing_and_the_exact_file_still_answers(self) -> None:
+        (self.workspaces / "cad-occt-stage" / f"occt-stage@{RHINO_PROGRAM_DIGEST[:12]}.preview.3dm").unlink()
+
+        payload = self.client.get("/api/artifacts").json()
+        rows = {row["representation"]: row for row in payload["artifacts"] if row["stageId"] == "occt-stage"}
+        self.assertIs(rows["preview"]["available"], False)
+        self.assertEqual(rows["preview"]["unavailableReason"], "file missing")
+        self.assertIs(rows["exact"]["available"], True)
+        self.assertEqual(self.client.get(f"/api/artifacts/{sha256_of(PREVIEW_BYTES)}/bytes").status_code, 404)
+
+    def test_a_receipt_that_wrote_nothing_is_one_unavailable_row_named_by_the_receipt(self) -> None:
+        ref = retain_occt_receipt(
+            self.repository, self.run, stage_id="failed-occt-stage",
+            step_bytes=None, preview_bytes=None, status="failed",
+        )
+
+        payload = self.client.get("/api/artifacts").json()
+        (row,) = [item for item in payload["artifacts"] if item["stageId"] == "failed-occt-stage"]
+        self.assertEqual(row["artifactId"], f"receipt:{ref.sha256}")
+        self.assertIs(row["available"], False)
+        self.assertEqual(row["unavailableReason"], "no inspection digest")
+        self.assertEqual(row["status"], "failed")
+        self.assertIs(row["readbackVerified"], False)
+        self.assertEqual((row["format"], row["representation"]), ("step", "exact"))
+        self.assertIsNone(row["sha256"])
+
+    def test_a_receipt_whose_step_was_written_but_failed_readback_lists_the_file_with_its_status(self) -> None:
+        retain_occt_receipt(
+            self.repository, self.run, stage_id="failed-readback-stage",
+            step_bytes=b"step-but-wrong", preview_bytes=None, status="failed",
+        )
+
+        payload = self.client.get("/api/artifacts").json()
+        (row,) = [item for item in payload["artifacts"] if item["stageId"] == "failed-readback-stage"]
+        self.assertIs(row["available"], True)
+        self.assertEqual(row["status"], "failed")
+        self.assertIs(row["readbackVerified"], False)
+        self.assertEqual(row["representation"], "exact")
+
+
 class UnboundArtifactTests(unittest.TestCase):
     """With no project to bind, artifacts refuse in the binding's own words."""
 
@@ -499,7 +624,7 @@ class UnboundArtifactTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root, True)
         client = TestClient(
-            create_app(StudioSettings(project_dir=root / "no-such-project"))
+            create_app(StudioSettings(cad_export="off", project_dir=root / "no-such-project"))
         )
         self.addCleanup(client.close)
 

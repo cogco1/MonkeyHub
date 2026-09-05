@@ -58,6 +58,7 @@ import {
   receiptDocumentStrings,
   seatOf,
 } from "../features/artifacts/artifactLabels";
+import { isViewable, viewableArtifacts } from "../features/artifacts/artifactSelection";
 import { Conversation } from "../features/conversation/Conversation";
 import type { Choice } from "../features/conversation/cards/QuestionCard";
 import type { Selection } from "../features/conversation/Composer";
@@ -610,6 +611,20 @@ export default function App({ server }: { server: ServerIdentity }) {
         );
         return;
       }
+      if (!isViewable(artifact)) {
+        // The exact STEP is the delivery, and the viewer cannot parse it. It
+        // is saved from its card; the picture on the stage is the 3dm preview.
+        setArtifactError(
+          asStudioApiError(
+            new Error(
+              `${artifact.fileName} is the exact ${artifact.format.toUpperCase()} file; ` +
+                "the viewer shows the 3dm preview of the same model. Save the " +
+                "exact file to open it in CAD.",
+            ),
+          ),
+        );
+        return;
+      }
       setArtifactLoadingSha(artifact.sha256);
       try {
         const file = await studio.artifactFile(
@@ -637,10 +652,8 @@ export default function App({ server }: { server: ServerIdentity }) {
   const loadRunIntoViewer = useCallback(
     async (rows: readonly ProjectArtifactDto[], label: string) => {
       setArtifactError(null);
-      const servable = rows.filter(
-        (row): row is ProjectArtifactDto & { sha256: string } =>
-          row.available && row.sha256 !== null,
-      );
+      // The previews: one per seat, never the exact STEP beside them.
+      const servable = viewableArtifacts(rows);
       if (servable.length === 0) return;
       if (servable.length === 1) {
         await loadArtifactIntoViewer(servable[0], label);
@@ -682,14 +695,13 @@ export default function App({ server }: { server: ServerIdentity }) {
     [transcript.entries],
   );
 
-  /** Every export of the reference run this project can serve, as listed. */
+  /** Every export of the reference run the viewer can show, as listed. */
   const referenceExports = useMemo<readonly ProjectArtifactDto[]>(() => {
     if (artifacts.status !== "ready" || projection === null || artifacts.value.projectId !== projection.projectId) return [];
-    return artifacts.value.artifacts.filter(
-      (row) =>
-        row.runId === projection.referenceRun.runId &&
-        row.available &&
-        row.sha256 !== null,
+    return viewableArtifacts(
+      artifacts.value.artifacts.filter(
+        (row) => row.runId === projection.referenceRun.runId,
+      ),
     );
   }, [artifacts, projection]);
 
@@ -717,9 +729,7 @@ export default function App({ server }: { server: ServerIdentity }) {
     }
     // A restored explicit choice must never show an unrelated fallback export.
     if (sourceRunId !== null) return null;
-    const rows = artifacts.value.artifacts.filter(
-      (row) => row.available && row.sha256 !== null,
-    );
+    const rows = viewableArtifacts(artifacts.value.artifacts);
     if (rows.length === 0) return null;
     const pick = rows[rows.length - 1];
     return {
@@ -1210,8 +1220,10 @@ export default function App({ server }: { server: ServerIdentity }) {
       setBlendState(null);
       if (runId === null) {
         manualLoadRef.current = true;
-        const rows = artifacts.status === "ready" ? artifacts.value.artifacts.filter(
-          (row) => row.runId === next.projection.referenceRun.runId && row.available && row.sha256 !== null,
+        const rows = artifacts.status === "ready" ? viewableArtifacts(
+          artifacts.value.artifacts.filter(
+            (row) => row.runId === next.projection.referenceRun.runId,
+          ),
         ) : [];
         if (rows.length > 0) {
           void loadRunIntoViewer(rows, runSourceLabel(next.projection.referenceRun.runId, rows));
@@ -1348,12 +1360,10 @@ export default function App({ server }: { server: ServerIdentity }) {
         return;
       }
       const rows = artifacts.status === "ready" ? artifacts.value.artifacts : [];
-      const twin = rows.find(
+      const twin = viewableArtifacts(rows).find(
         (row) =>
           row.runId === comparison.candidateId &&
-          row.stageId === shown.stageId &&
-          row.available &&
-          row.sha256 !== null,
+          row.stageId === shown.stageId,
       );
       if (!twin || !twin.sha256) {
         append({
@@ -1544,8 +1554,8 @@ export default function App({ server }: { server: ServerIdentity }) {
     if (candidateId === null || artifacts.status !== "ready") return;
     const validation = validations[candidateId];
     if (!validation) return;
-    const rows = artifacts.value.artifacts.filter(
-      (row) => row.runId === candidateId && row.available && row.sha256 !== null,
+    const rows = viewableArtifacts(
+      artifacts.value.artifacts.filter((row) => row.runId === candidateId),
     );
     if (rows.length === 0) return;
     const twin =
@@ -1556,7 +1566,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       append({
         kind: "system",
         ...systemText([
-          { kind: "prose", text: "the exact model is ready · " },
+          { kind: "prose", text: "the candidate's model is ready · " },
           { kind: "technical", text: twin.fileName },
           { kind: "prose", text: " · not shown: you chose " },
           { kind: "technical", text: loadedArtifact.fileName },
@@ -1571,7 +1581,7 @@ export default function App({ server }: { server: ServerIdentity }) {
     append({
       kind: "system",
       ...systemText([
-        { kind: "prose", text: "the exact model is on screen · " },
+        { kind: "prose", text: "the candidate's model is on screen · " },
         { kind: "technical", text: twin.fileName },
         {
           kind: "prose",

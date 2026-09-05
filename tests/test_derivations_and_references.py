@@ -76,6 +76,20 @@ class DerivationTests(unittest.TestCase):
         self.assertEqual(DerivationTable.from_dict(_table().to_dict()), _table())
         self.assertEqual(expression_names("a + b * (c - a)"), ("a", "b", "c"))
 
+    def test_names_are_read_off_the_grammar_without_computing_anything(self) -> None:
+        """``a / (a - 1)`` names ``a``; whether it divides by zero is the readings' question, asked at evaluation."""
+
+        self.assertEqual(expression_names("source / (source - 1)"), ("source",))            # used to raise division by zero on a placeholder
+        self.assertEqual(expression_names("sqrt(a - b) / min(c, 0)"), ("a", "b", "c"))          # no sqrt of a negative, no division by zero: nothing ran
+        table = DerivationTable("demo", (DerivedQuantity("ratio", "source / (source - 1)", "-"),))
+        self.assertAlmostEqual(evaluate(table, {"source": 3.0})["ratio"], 1.5)
+        with self.assertRaisesRegex(DerivationError, "division by zero"):
+            evaluate(table, {"source": 1.0})                                                    # the real reading still fails, where it should
+        # the grammar is still validated in full while names are read
+        for bad in ("a +", "a $ b", "unknownfn(a)", "min(a)", "(a", "a b"):
+            with self.assertRaises(DerivationError):
+                expression_names(bad)
+
     def test_gaps_fail_typed(self) -> None:
         with self.assertRaises(DerivationError):
             evaluate(_table())                                              # service_top / risers unknown

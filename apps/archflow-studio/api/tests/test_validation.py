@@ -120,6 +120,8 @@ def _export_artifact(
         length_unit=None,
         up_axis=None,
         receipt_ref=receipt_ref,
+        format="3dm",
+        representation="exact",
     )
 
 
@@ -1006,7 +1008,7 @@ class ValidationRefusalTests(ValidationTestCase):
         self.assertEqual(job["status"], "succeeded", job)
         before = self.validation_of(accepted["candidateId"])
         restarted = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(restarted.close)
 
@@ -1031,7 +1033,7 @@ class ValidationRefusalTests(ValidationTestCase):
     def test_a_finished_non_proposal_job_validates_its_retained_run(self) -> None:
         accepted, _ = self.finished_candidate()
         restarted = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(restarted.close)
         state = restarted.app.state
@@ -1168,7 +1170,7 @@ class VillaValidationTests(unittest.TestCase):
         self.repository = repository
         self.client = TestClient(
             create_app(
-                StudioSettings(project_dir=self.root / VILLA_PROJECT_ID)
+                StudioSettings(cad_export="off", project_dir=self.root / VILLA_PROJECT_ID)
             )
         )
         self.addCleanup(self.client.close)

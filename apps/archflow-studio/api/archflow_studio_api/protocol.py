@@ -21,8 +21,9 @@ Three constants and one function, and nothing else belongs here:
 ``server_capabilities`` is the honest half. A capability names a feature this
 process actually serves *now*, so a client can hide what a server cannot do
 instead of discovering it as a 404. It is computed from settings rather than
-written down, which is why ``rhino-export`` appears only where an export can
-really happen.
+written down, which is why ``cad-export`` appears only where a candidate
+actually writes geometry, and ``rhino-export`` only where that geometry comes
+from Rhino.
 """
 
 from __future__ import annotations
@@ -54,7 +55,11 @@ BASE_CAPABILITIES: tuple[str, ...] = (
     "validation",
 )
 
-# The one feature that depends on this machine rather than on this build.
+# The two features that depend on this process's configuration rather than on
+# this build. ``cad-export``: a candidate leaves exported geometry (an exact
+# file and a preview per seat) that ``artifacts`` will list. ``rhino-export``:
+# that geometry is produced by the Rhino host on this machine.
+CAD_EXPORT_CAPABILITY = "cad-export"
 RHINO_EXPORT_CAPABILITY = "rhino-export"
 
 
@@ -68,6 +73,8 @@ def server_capabilities(settings: StudioSettings) -> tuple[str, ...]:
     """
 
     capabilities = list(BASE_CAPABILITIES)
-    if settings.rhino_export:
+    if settings.exports:
+        capabilities.append(CAD_EXPORT_CAPABILITY)
+    if settings.rhino_lane:
         capabilities.append(RHINO_EXPORT_CAPABILITY)
     return tuple(sorted(capabilities))

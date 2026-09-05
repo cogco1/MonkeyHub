@@ -26,6 +26,15 @@ from typing import Any, Mapping, cast
 
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.refs import ProjectVersionRef, RunRef, require_identifier
+from archflow.state.derivation import (
+    DerivationError,
+    DerivationTable,
+    DerivedQuantity,
+    EvaluatedDerivations,
+    evaluate,
+    expression_names,
+    substitute,
+)
 from archflow.state.operational_state import DependencyEdge, DependencyEffect, DesignObligation
 from archflow.relations.contracts import ArchitecturalRelationKind
 from archflow.semantics.conditions import CONDITION_IDS
@@ -170,6 +179,23 @@ class Parameter:
     @property
     def ref(self) -> str:
         return f"parameter:{self.key}"
+
+    def reads(self) -> tuple[str, ...]:
+        """The parameters this one depends on, as declared: what its expression names.
+
+        The expression is the declaration; ``inputs`` may restate it (and is
+        refused where it disagrees) but an empty ``inputs`` does not make an
+        expression's dependencies vanish. Without an expression the declared
+        ``inputs`` are all there is. A malformed expression is a typed error
+        naming the parameter, never an empty answer.
+        """
+
+        if self.expr is None:
+            return self.inputs
+        try:
+            return expression_names(self.expr, f"parameter {self.key}")
+        except DerivationError as exc:
+            raise _located(exc) from exc
 
     def to_dict(self) -> dict[str, object]:
         return {"key": self.key, "value": self.value, "unit": self.unit, "expr": self.expr, "inputs": list(self.inputs), "epistemic_status": self.epistemic_status,
@@ -323,6 +349,10 @@ class StateRecord:
             for item in p.inputs:
                 if item not in set(keys):
                     raise StateRecordError(f"parameter {p.key}: unknown input {item!r}")
+        for e in self.entities:
+            for path, name in parameter_bindings_of(e):
+                if name not in set(keys):
+                    raise StateRecordError(f"entity {e.entity_id}: {path} binds @{name}, which names no parameter (parameters: {', '.join(sorted(keys)) or 'none'})")
         rids = [r.relation_id for r in self.relations]
         if len(set(rids)) != len(rids):
             raise StateRecordError("relation ids must be unique")
@@ -397,11 +427,18 @@ class StateRecord:
         raise StateRecordError(f"unknown parameter {key!r}")
 
     def dependency_edges(self) -> tuple[DependencyEdge, ...]:
-        """Relations and parameter inputs as kernel edges (closure input)."""
+        """Relations, parameter expressions and entity references as kernel edges (closure input).
+
+        A derived parameter depends on exactly the names its expression reads
+        (``Parameter.reads``), so the closure, the protected-ref and lock checks
+        and the recomputation after an edit all follow one declaration; a
+        parameter whose ``inputs`` array was left empty is not thereby cut off
+        from its sources.
+        """
 
         edges = [e for e in (r.dependency_edge() for r in self.relations) if e is not None]
         for p in self.parameters:
-            for item in p.inputs:
+            for item in p.reads():
                 edges.append(DependencyEdge(upstream_ref=f"parameter:{item}", downstream_ref=p.ref, relation="derives",
                                             source_ref=p.source_ref or f"parameter:{p.key}", effect=DependencyEffect.REQUIRES_REVALIDATION))
         for e in self.entities:
@@ -410,6 +447,9 @@ class StateRecord:
                     continue
                 effect = DependencyEffect.INVALIDATES if key in ("host", "type_ref") or target in {x.entity_id for x in self.entities_of("Element@1")} else DependencyEffect.REQUIRES_REVALIDATION
                 edges.append(DependencyEdge(upstream_ref=f"entity:{target}", downstream_ref=e.ref, relation=key, source_ref=e.ref, effect=effect))
+            for path, name in parameter_bindings_of(e):
+                # an explicit "@key" binding: the parameter's value is the row's value, so a change there rebuilds the row
+                edges.append(DependencyEdge(upstream_ref=f"parameter:{name}", downstream_ref=e.ref, relation="binds", source_ref=e.ref, effect=DependencyEffect.INVALIDATES))
         return tuple(edges)
 
     def closure(self, changed_refs: tuple[str, ...]) -> tuple[str, ...]:
@@ -625,6 +665,150 @@ def project_grids_of(record: StateRecord, *, published_by: str = "seat-coordinat
     return ProjectGrids(project_id=record.project_id, published_by=published_by, axes=axes)
 
 
+# ---------------------------------------------------------------- parameters: declared expressions, explicit bindings, one evaluator
+_BINDING_PREFIX = "@"
+
+
+def _binding_paths(value: object, path: str) -> list[tuple[str, str]]:
+    """(field path, parameter key) for every ``"@key"`` string inside a JSON-like value."""
+
+    if isinstance(value, str):
+        return [(path, value[len(_BINDING_PREFIX):])] if value.startswith(_BINDING_PREFIX) else []
+    if isinstance(value, Mapping):
+        return [b for key, item in value.items() for b in _binding_paths(item, f"{path}.{key}")]
+    if isinstance(value, (list, tuple)):
+        return [b for index, item in enumerate(value) for b in _binding_paths(item, f"{path}[{index}]")]
+    return []
+
+
+def parameter_bindings_of(entity: Entity) -> tuple[tuple[str, str], ...]:
+    """Every explicit ``"@key"`` binding on an ``Element@1``'s ``params`` / ``references``, as (field path, parameter key).
+
+    A binding is the only way a row reads a parameter. A numeric literal in a
+    row is a literal: nothing here guesses that a ``height`` of 2.97 "means"
+    the parameter that happens to evaluate to 2.97, and no retained row is
+    rebound. Other schemas carry no bindings.
+    """
+
+    if entity.schema != "Element@1":
+        return ()
+    out: list[tuple[str, str]] = []
+    for field_name in ("params", "references"):
+        out.extend(_binding_paths(entity.fields.get(field_name, {}), field_name))
+    return tuple(out)
+
+
+def _located(exc: DerivationError) -> StateRecordError:
+    text = str(exc).replace("quantities", "parameters").replace("quantity", "parameter")
+    return StateRecordError(f"parameters: {text}")
+
+
+def derivation_table_of(record: StateRecord) -> tuple[DerivationTable, dict[str, float]]:
+    """The record's parameters as the derivation engine reads them: an ``expr`` makes a quantity, no ``expr`` makes a reading.
+
+    A parameter that declares ``inputs`` must declare exactly the names its
+    expression reads; the two are one dependency stated twice, and a
+    disagreement is a conflicting declaration, refused here naming the key.
+    An empty ``inputs`` beside an expression is accepted: the expression is
+    the declaration, and ``Parameter.reads`` is what every dependency reader
+    (edges, closure, locks, recomputation) takes off it.
+    """
+
+    quantities: list[DerivedQuantity] = []
+    readings: dict[str, float] = {}
+    for p in record.parameters:
+        if p.expr is None:
+            readings[p.key] = float(p.value)
+            continue
+        try:
+            reads = expression_names(p.expr, f"parameter {p.key}")
+            if p.inputs and set(p.inputs) != set(reads):
+                raise StateRecordError(f"parameter {p.key}: declared inputs {list(p.inputs)} disagree with its expression {p.expr!r}, which reads {list(reads)}")
+            quantities.append(DerivedQuantity(p.key, p.expr, p.unit or "-", (p.source_ref,) if p.source_ref else (), p.epistemic_status))
+        except DerivationError as exc:
+            raise _located(exc) from exc
+    try:
+        return DerivationTable(record.project_id, tuple(quantities)), readings
+    except DerivationError as exc:
+        raise _located(exc) from exc
+
+
+def evaluate_parameters(record: StateRecord) -> EvaluatedDerivations:
+    """Every parameter's value by its declaration: readings as stored, derived ones re-evaluated in dependency order.
+
+    The one evaluator is ``state.derivation.evaluate``; a cycle, an unknown
+    name, a division by zero or a conflicting ``inputs`` declaration is a
+    typed ``StateRecordError`` naming the parameter.
+    """
+
+    table, readings = derivation_table_of(record)
+    try:
+        return evaluate(table, readings)
+    except DerivationError as exc:
+        raise _located(exc) from exc
+
+
+def stale_parameters(record: StateRecord, evaluated: EvaluatedDerivations | None = None) -> tuple[str, ...]:
+    """The derived parameters whose stored value disagrees with what their expression evaluates to, by key.
+
+    A stored derived value is what the expression last evaluated to; the
+    expression is the declaration. Nothing is repaired here - an edit that
+    reaches the parameter recomputes it (``apply_state_record_operator``),
+    and a producer refuses to read a stale bound value.
+    """
+
+    evaluated = evaluated if evaluated is not None else evaluate_parameters(record)
+    return tuple(sorted(p.key for p in record.parameters
+                        if p.expr is not None and not math.isclose(float(p.value), evaluated[p.key], rel_tol=1e-9, abs_tol=1e-9)))
+
+
+def resolve_element_bindings(record: StateRecord) -> dict[str, dict[str, Any]]:
+    """Every ``Element@1``'s fields with its explicit ``@key`` bindings replaced by the evaluated parameter value, by entity id.
+
+    This is the producers' input projection of the record's parameters.
+    Bindings only: a literal stays exactly what the row said, and a record
+    with no binding is returned as authored without evaluating anything.
+    Where a binding exists, the bound parameter and every parameter its
+    expression needs must agree with their declarations; a stale stored
+    value among them is refused here, located at the binding, rather than
+    read as either number.
+    """
+
+    elements = record.entities_of("Element@1")
+    bindings = {e.entity_id: parameter_bindings_of(e) for e in elements}
+    if not any(bindings.values()):
+        return {e.entity_id: dict(e.fields) for e in elements}
+    evaluated = evaluate_parameters(record)
+    stale = set(stale_parameters(record, evaluated))
+    by_key = {p.key: p for p in record.parameters}
+    needed_at: dict[str, str] = {}                  # parameter key -> the first binding that needs it
+
+    def need(name: str, at: str) -> None:
+        if name in needed_at:
+            return
+        needed_at[name] = at
+        for item in by_key[name].reads():
+            need(item, at)
+
+    for e in elements:
+        for path, name in bindings[e.entity_id]:
+            need(name, f"element {e.entity_id}: {path} binds @{name}")
+    for name in sorted(needed_at):
+        if name in stale:
+            p = by_key[name]
+            raise StateRecordError(f"{needed_at[name]}: stored value {p.value} of derived parameter {name} disagrees with its expression {p.expr!r} = {evaluated[name]}; "
+                                   "apply the change through its inputs (which recomputes it) or correct the declaration")
+    out: dict[str, dict[str, Any]] = {}
+    for e in elements:
+        fields = dict(e.fields)
+        if bindings[e.entity_id]:
+            for field_name in ("params", "references"):
+                if field_name in fields:
+                    fields[field_name] = substitute(fields[field_name], evaluated)
+        out[e.entity_id] = fields
+    return out
+
+
 # ---------------------------------------------------------------- adapter to the legacy model (scheduled for retirement)
 # ---------------------------------------------------------------- schematic pack -> developed state
 @dataclass(frozen=True, slots=True)
@@ -804,7 +988,29 @@ def apply_state_record_operator(
         raise StateRecordError(
             "state-record operator reaches locked parameters: " + ", ".join(locks)
         )
-    return successor
+    return _refresh_derived_parameters(successor, changed)
+
+
+def _refresh_derived_parameters(record: StateRecord, changed: tuple[str, ...]) -> StateRecord:
+    """The successor with every derived parameter downstream of the edit re-evaluated; nothing else moves.
+
+    The expression is the declaration and the stored value is what it last
+    evaluated to, so an edit upstream re-evaluates it through the one
+    derivation engine and the successor says one thing. A derived parameter
+    the edit does not reach keeps its stored value: an unrelated edit does
+    not silently rewrite a locked or otherwise stale declaration elsewhere.
+    """
+
+    if not changed:
+        return record
+    downstream = set(record.closure(changed))
+    targets = {p.key for p in record.parameters if p.expr is not None and p.ref in downstream}
+    if not targets:
+        return record
+    evaluated = evaluate_parameters(record)
+    return replace(record, parameters=tuple(
+        replace(p, value=round(evaluated[p.key], 9)) if p.key in targets else p for p in record.parameters
+    ))
 
 
 def _require_declared_protections(record: StateRecord, protected: tuple[str, ...]) -> None:
@@ -828,7 +1034,13 @@ def _apply_scalar_operator(
         parameter_key = target_ref.removeprefix("parameter:")
         if parameter_key != key:
             raise StateRecordError("parameter target and scalar key disagree")
-        record.parameter(parameter_key)
+        parameter = record.parameter(parameter_key)
+        if parameter.expr is not None:
+            # a value stated directly against its own expression is a conflicting declaration
+            raise StateRecordError(
+                f"parameter {parameter_key} is derived by {parameter.expr!r} from {list(parameter.reads())}: "
+                "edit its inputs, or re-declare it without an expression"
+            )
         parameters = tuple(
             replace(item, value=value)
             if item.key == parameter_key
@@ -847,6 +1059,10 @@ def _apply_scalar_operator(
             f"element {entity_id}: params has no field {key!r}"
         )
     old = params[key]
+    if isinstance(old, str) and old.startswith(_BINDING_PREFIX):
+        raise StateRecordError(
+            f"element {entity_id}: params.{key} is bound to parameter {old[len(_BINDING_PREFIX):]}; edit that parameter"
+        )
     if isinstance(old, bool) or not isinstance(old, (int, float)):
         raise StateRecordError(
             f"element {entity_id}: params.{key} is not numeric"
@@ -1138,16 +1354,29 @@ def schematic_pack_of(record: StateRecord, *, option_id: str | None = None, evid
     )
 
 
-def bootstrap_developed_state(pack: SchematicPack, *, run: RunRef, portfolio_id: str, branch_id: str, selection_decision_ref: str) -> DevelopedDesignState:
+def bootstrap_developed_state(pack: SchematicPack, *, run: RunRef, portfolio_id: str, branch_id: str, selection_decision_ref: str,
+                              phase: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT) -> DevelopedDesignState:
     """A developed-design state whose selected schematic is the pack.
 
     The portfolio ceremony (branches, votes, handoff) is replaced by one
     declared selection: the pack *is* the selected option, and the record
     that carries it says so. Everything downstream is the real state.
+
+    ``phase`` is the run's, not the record's (ADR-007, P112): the runner
+    passes its envelope's phase, a harness its own stage's. It enters the
+    state digest, so the same record executed in a schematic stage and in a
+    development stage yields two binding identities - that is what a stage
+    envelope binds. The default keeps every reader that projects a record
+    without an envelope (``StateRecord.state_digest``, the Studio's
+    read-only projection, retained older runs) on the phase they always had;
+    it is not a second authority over the phase, which the envelope states.
+    ``DevelopedDesignState`` admits schematic_design and design_development.
     """
 
     if run.project_id != pack.project_id:
         raise StateRecordError("schematic pack belongs to another project")
+    if not isinstance(phase, DesignPhase):
+        raise StateRecordError("phase must be a DesignPhase")
     proposal = schematic_proposal(pack)
     option = SchematicOption(proposal=proposal, footprint_area=float(len(proposal.footprint_cells)),
                              topology_signature=canonical_digest({"components": [c.to_dict() for c in proposal.components], "option_id": proposal.option_id}))
@@ -1159,13 +1388,14 @@ def bootstrap_developed_state(pack: SchematicPack, *, run: RunRef, portfolio_id:
         option=option, selection_transition_id="select-by-declared-record", selection_decision_ref=selection_decision_ref,
     )
     return DevelopedDesignState(
-        selected_schematic=selected, active_phase=DesignPhase.DESIGN_DEVELOPMENT, coordination_status=DevelopmentCoordinationStatus.IN_PROGRESS,
+        selected_schematic=selected, active_phase=phase, coordination_status=DevelopmentCoordinationStatus.IN_PROGRESS,
         obligations=(), components=(), dependencies=(), advice=(), decisions=(), transitions=(), assumption_refs=tuple(sorted(set(pack.assumption_refs))),
     )
 
 
 def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | None = None, evidence_ref: str | None = None, portfolio_id: str = "declared-state-record",
-                          branch_id: str = "state-record", selection_decision_ref: str = "decision:state-record-declared"):
+                          branch_id: str = "state-record", selection_decision_ref: str = "decision:state-record-declared",
+                          phase: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT):
     """Forward a State Record to the legacy ``DevelopedDesignState`` the compiler still takes.
 
     With massing entities (MassingLevel@1, Volume@1, Space@1 zones,
@@ -1174,6 +1404,9 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
     block spanning the record's levels. This view exists only until the
     compiler, the seats and the handovers read the record directly; each
     call is a lineage event, not a second source of truth.
+
+    ``phase`` is the executing run's (its stage envelope's); see
+    ``bootstrap_developed_state``. The record itself states no phase.
     """
 
     from dataclasses import replace as _replace
@@ -1193,7 +1426,7 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
         raise StateRecordError("a developed-design view needs an option id (record.option, record.decision_ref, or the caller)")
     pack = schematic_pack_of(record, option_id=option_id, evidence_refs=evidence)
     if pack is not None:
-        return bootstrap_developed_state(pack, run=run, portfolio_id=portfolio_id, branch_id=branch_id, selection_decision_ref=selection_decision_ref)
+        return bootstrap_developed_state(pack, run=run, portfolio_id=portfolio_id, branch_id=branch_id, selection_decision_ref=selection_decision_ref, phase=phase)
     evidence_ref = evidence[0]
     levels = record.entities_of("Level@1")
     elevations = sorted(float(l.fields.get("elevation", 0.0)) for l in levels) or [0.0, 1.0]
@@ -1205,4 +1438,4 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
                          volumes=({"volume_id": "block", "min": [-1, int(elevations[0]), -1], "max": [1, int(top + 0.999), 1], "level_ids": ["record"]},),
                          zones=({"zone_id": "record-zone", "program_node_refs": ["program-node:record"], "level_ids": ["record"], "volume_ids": ["block"]},),
                          connections=(), components=tuple(design_components), footprint_cells=((0, 0),), assumption_refs=("assumption:state-record-view",))
-    return bootstrap_developed_state(pack, run=run, portfolio_id=portfolio_id, branch_id=branch_id, selection_decision_ref=selection_decision_ref)
+    return bootstrap_developed_state(pack, run=run, portfolio_id=portfolio_id, branch_id=branch_id, selection_decision_ref=selection_decision_ref, phase=phase)

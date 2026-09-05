@@ -242,7 +242,7 @@ class StackedTestCase(unittest.TestCase):
             ],
         )
         self.app = create_app(
-            StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=run_id)
+            StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID, reference_run=run_id)
         )
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)

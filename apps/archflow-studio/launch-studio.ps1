@@ -495,7 +495,25 @@ if ([string]$runtime.codex -and -not (Test-Path -LiteralPath ([string]$runtime.c
 # --- environment the API reads (settings.py and intent_agent.py name these; no default project in code)
 $env:ARCHFLOW_STUDIO_PROJECT_DIR = $projectDir
 if ([string]$runtime.reference_run) { $env:ARCHFLOW_STUDIO_REFERENCE_RUN = [string]$runtime.reference_run } else { Remove-Item Env:ARCHFLOW_STUDIO_REFERENCE_RUN -ErrorAction SilentlyContinue }
-if ($runtime.rhino_export) { $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '1' } else { $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '0' }
+# CAD export is one setting, `cad_export` (occt | rhino | off), forwarded as ARCHFLOW_STUDIO_CAD_EXPORT.
+# A runtime.json that still carries the older `rhino_export` boolean and no `cad_export` keeps being
+# read as it always was (true turns export on, false keeps it off; the API maps "on" to its ordinary
+# OCCT export and never to Rhino). A file naming neither leaves both variables unset, so the API's own
+# default applies. Nothing is left over from a previous launch in either case. A `cad_export` that
+# is only whitespace names nothing: it is trimmed before it counts as present, so it neither
+# forwards a blank the API would read as its default nor silences an explicit `rhino_export`.
+$cadExport = ([string]$runtime.cad_export).Trim()
+if ($cadExport) {
+    $env:ARCHFLOW_STUDIO_CAD_EXPORT = $cadExport
+    Remove-Item Env:ARCHFLOW_STUDIO_RHINO_EXPORT -ErrorAction SilentlyContinue
+} else {
+    Remove-Item Env:ARCHFLOW_STUDIO_CAD_EXPORT -ErrorAction SilentlyContinue
+    if ($null -ne $runtime.rhino_export) {
+        if ($runtime.rhino_export) { $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '1' } else { $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '0' }
+    } else {
+        Remove-Item Env:ARCHFLOW_STUDIO_RHINO_EXPORT -ErrorAction SilentlyContinue
+    }
+}
 if ([string]$runtime.powershell) { $env:ARCHFLOW_STUDIO_POWERSHELL = [string]$runtime.powershell }
 if ([string]$runtime.intent_provider) { $env:ARCHFLOW_STUDIO_INTENT_PROVIDER = [string]$runtime.intent_provider }
 if ([string]$runtime.intent_model) { $env:ARCHFLOW_STUDIO_INTENT_MODEL = [string]$runtime.intent_model }

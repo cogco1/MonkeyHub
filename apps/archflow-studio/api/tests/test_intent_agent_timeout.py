@@ -86,7 +86,7 @@ class CodexReceiptTestCase(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         make_project(self.root)
-        app = create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         self.projection = project_state(bound_project(app.state))
 
 

@@ -23,11 +23,18 @@ A project enters as one ``StateRecord@1`` plus the discipline seats:
 The runner owns orchestration only: seat rounds from ``schedule_seats``,
 producers in reference order, one proposal per seat through the real
 producer, coverage and datum gates, relation checks against the compiled
-bounds, handovers to consuming seats (published datums and realized bounds
-as exclusions), optional CAD export that reuses, restamps, patches or
-rebuilds (P103), and receipts with per-seat wall time.  It will not run
-without a retained ``ProjectStageWorkflow@1`` and exact
-``StageRunEnvelope@1``.
+bounds (each relation measured once, in the seat where the last input its
+declared checker reads appears - endpoint extent, or the named datum a
+``support_contact`` check compares against - on compiler-predicted boxes,
+never on a saved CAD box; what no seat can measure is retained as
+unchecked), handovers to consuming
+seats (published datums and realized bounds as exclusions), optional CAD
+export - in process through OCCT by default (exact STEP plus a mesh ``.3dm``
+preview, retained as ``seat-occt-execution``), or through Rhino when the
+caller names that backend (reuse, restamp, patch or rebuild, P103) - and
+receipts with per-seat wall time.  It will not run without a retained
+``ProjectStageWorkflow@1`` and exact ``StageRunEnvelope@1``; the record is
+projected in the phase that envelope states (P112).
 
 At the end of the run the runner closes the stage, because it is the only
 thing that measured anything (ADR-007 rule 3): a
@@ -67,7 +74,7 @@ from archflow.capabilities.geometry_proposal import (
 )
 from archflow.capabilities.element_producers import ElementProducerError, ProductionContext, element_rows_of, produce_rows
 from archflow.capabilities.reference_resolver import ReferenceContext
-from archflow.capabilities.relation_checks import check_relations
+from archflow.capabilities.relation_checks import RelationCheck, RelationCheckReport, check_relations
 from archflow.contracts.authority import no_authority
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus
@@ -82,6 +89,7 @@ from archflow.project.record_kinds import (
     SEAT_AUTHORING_CONTEXT,
     SEAT_GEOMETRY_PROGRAM,
     SEAT_HANDOVER,
+    SEAT_OCCT_EXECUTION,
     SEAT_RELATION_CHECK,
     SEAT_RHINO_EXECUTION,
     SEAT_ROUND_RECEIPT,
@@ -91,7 +99,7 @@ from archflow.project.record_kinds import (
     STATE_RECORD,
     stage_geometry_program,
 )
-from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.repository import FilesystemProjectRepository, ProjectIntegrityError
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef, record_ref_from_uri
 from archflow.state.stage_workflow import (
@@ -103,6 +111,7 @@ from archflow.state.stage_workflow import (
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.design_portfolio import BranchRevisionRef
 from archflow.state.developed_design import (
+    DevelopedDesignError,
     DevelopedDesignState,
     DevelopmentCoordinationStatus,
     SelectedSchematicInput,
@@ -145,6 +154,26 @@ from archflow.state.spatial import (
 _AUTH = ("canonical_write_authority", "design_authority", "stage_acceptance_authority")
 _M = LengthUnit.METER
 FRAME_ID = "building-local"
+# The two executors of a compiled program this runner can hand a seat's program to.
+# ``occt`` is the ordinary one: in process, no host, an exact STEP file plus a mesh
+# ``.3dm`` preview of the same model (``cad_execution.execute_occt_export``). ``rhino``
+# is the supervised host export (P103) and is only ever taken when a caller names it;
+# nothing here falls back from one to the other.
+CAD_BACKEND_OCCT = "occt"
+CAD_BACKEND_RHINO = "rhino"
+CAD_BACKENDS = (CAD_BACKEND_OCCT, CAD_BACKEND_RHINO)
+# What every relation check in a run is measured on. ``expected_object_bounds`` predicts an
+# axis-aligned box per compiled object from the program itself; no exported solid and no saved
+# CAD bounding box is consulted. A held check therefore says the compiled prediction satisfies
+# the declared condition, not that a produced solid does. The label travels on every retained
+# ``seat-relation-check`` record and on the run receipt so a reader never has to infer it.
+RELATION_CHECK_BASIS = "compiled-predicted-bounds"
+# The checkers that read a relation's ``datum_role`` out of ``datum_values`` (``relation_checks``):
+# ``check_support_contact`` compares the measured face with the named datum, the other two never
+# look at it. A relation bound to one of these is not ready to measure until that datum has been
+# published - a level the record declares, or a ``<element>-top`` some seat's producer publishes -
+# because measuring it earlier would silently skip the comparison and never return to it.
+_DATUM_READING_CHECKS = frozenset({"support_contact"})
 
 
 class ProjectRunnerError(ValueError):
@@ -233,9 +262,24 @@ class RunOptions:
     selection_decision_ref: str = "decision:declared-schematic-selection"
     strict_coverage: bool = True
     export: bool = False
+    # Which executor an enabled export goes to. OCCT unless the caller says
+    # ``rhino``. ``powershell`` is Rhino's launcher and is carried unread by OCCT;
+    # ``patch_oracle`` is Rhino's patch check and is refused under any other backend.
+    cad_backend: str = CAD_BACKEND_OCCT
     workspace_root: Path | None = None
     powershell: Path | None = None
     patch_oracle: bool = False
+
+    def __post_init__(self) -> None:
+        if self.cad_backend not in CAD_BACKENDS:
+            raise ProjectRunnerError(f"cad_backend must be one of {CAD_BACKENDS}, not {self.cad_backend!r}")
+        if self.patch_oracle and self.cad_backend != CAD_BACKEND_RHINO:
+            # the oracle is the Rhino patch check (P103): a full rebuild beside a patch. OCCT never
+            # patches, so an oracle asked of it would either run Rhino unasked or be reported as an
+            # oracle that never ran; neither is done, the request is refused by name instead
+            raise ProjectRunnerError(
+                f"patch_oracle is the Rhino patch check and runs only under cad_backend {CAD_BACKEND_RHINO!r} "
+                f"(--cad-backend {CAD_BACKEND_RHINO}); the {self.cad_backend!r} backend neither patches nor runs an oracle")
 
 
 @dataclass(frozen=True, slots=True)
@@ -413,8 +457,149 @@ def _prior_export(records_dir: Path, workspace: Path, stage_id: str, program_dig
     return None
 
 
+def _export_workspace(options: RunOptions, stage_id: str) -> Path:
+    """The caller-prepared stage workspace an export may write into; the runner never creates it."""
+
+    workspace = (options.workspace_root or Path(".")) / f"cad-{stage_id}"
+    if not workspace.is_dir():
+        raise ProjectRunnerError(f"export workspace {workspace} does not exist: the caller prepares workspaces; the runner never creates files outside records")
+    return workspace
+
+
 def _export(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict) -> dict:
-    """Export one seat program: reuse an identical prior export, patch a different one, or rebuild (P103).
+    """Export one seat program through the executor the options name; no fallback between the two."""
+
+    if options.cad_backend == CAD_BACKEND_RHINO:
+        return _export_rhino(repository, run, branch, branch_destination, program, stage_id, options, provenance)
+    return _export_occt(repository, run, branch, branch_destination, program, stage_id, options, provenance)
+
+
+def _sha256_file(path: Path) -> str:
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def _prior_occt_export(repository, run: RunRef, workspace: Path, binding, *, preview: bool) -> tuple[dict, ProjectRecordRef] | None:
+    """A retained succeeded OCCT export of exactly this binding whose files are still the bytes it certified.
+
+    Each candidate is read back as the P036 record its file name claims to
+    be: the ref is built from the run's own record URI and loaded through
+    ``repository.load_json``, which refuses bytes that no longer hash to the
+    name. A receipt edited in place - even one that kept its binding and its
+    artifact digests - is therefore not a receipt and is skipped, not
+    repaired. Exact means the whole ``identity.binding`` block - run, base,
+    branch, stage, the program record and its digest, the design-state
+    digest - equals the binding this export would be made under, and the
+    receipt itself says succeeded, readback verified, no failure. With
+    ``preview`` the receipt must also name a preview: an exact-only receipt
+    (``execute_occt_export(..., preview=False)``) is a real export of the
+    same binding and still not what a caller who needs the preview asked
+    for. Every artifact the receipt names is then re-hashed; a missing,
+    replaced or corrupted file disqualifies the receipt, so nothing is
+    reused on its mtime or on the mere existence of a file with the right
+    name. Returns the payload and the verified record ref it was read as.
+    """
+
+    expected = binding.to_dict()
+    records_dir = Path(repository.layout.run(run.run_id).records)
+    for path in sorted(records_dir.glob(f"{SEAT_OCCT_EXECUTION}-*.json")):
+        try:
+            ref = record_ref_from_uri(f"project://{run.project_id}/runs/{run.run_id}/records/{path.name}", run.project_id)
+            if ref.record_kind != SEAT_OCCT_EXECUTION:
+                continue
+            payload = repository.load_json(ref)
+        except (ValueError, ProjectIntegrityError):
+            continue
+        if payload.get("schema") != "OcctExecutionReceipt@1" or payload.get("status") != "succeeded":
+            continue
+        if payload.get("readback_verified") is not True or payload.get("failures") != []:
+            continue
+        if (payload.get("identity") or {}).get("binding") != expected:
+            continue
+        exact, preview_artifact = payload.get("exact_artifact"), payload.get("preview_artifact")
+        if not isinstance(exact, dict) or (preview and not isinstance(preview_artifact, dict)):
+            continue
+        intact = True
+        for artifact in (a for a in (exact, preview_artifact) if a is not None):
+            file = workspace / str(artifact.get("relative_path") or "")
+            try:
+                if not file.is_file() or _sha256_file(file) != artifact.get("sha256"):
+                    intact = False
+                    break
+            except OSError:
+                intact = False
+                break
+        if intact:
+            return payload, ref
+    return None
+
+
+def _occt_artifact_summary(artifact: dict | None) -> dict | None:
+    if artifact is None:
+        return None
+    return {"relative_path": artifact.get("relative_path"), "sha256": artifact.get("sha256"), "format": artifact.get("format")}
+
+
+def _export_occt(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict) -> dict:
+    """Export one seat program in process: exact STEP plus mesh preview, retained as ``seat-occt-execution``.
+
+    The program is retained on the branch first (P036), the binding is made
+    from that record, and a prior receipt of exactly that binding - read back
+    through P036 under its own digest, succeeded and readback-verified,
+    naming both the STEP and the preview this export asks for, with files
+    that still hash to what it certified - is reused instead of re-exported;
+    what the reused receipt reports is what it retained, not a restatement.
+    Files are named by program digest inside the caller-supplied stage
+    workspace and are never overwritten: a stem a previous attempt left
+    behind gets an attempt suffix. An operation the executor does not realize
+    is a seat-level export failure with the operation named; it is never
+    handed to Rhino and no stand-in model is written.
+    """
+
+    from archflow.adapters.cad_execution import CadCapabilityError, CadProgramBinding, execute_occt_export
+
+    workspace = _export_workspace(options, stage_id)
+    destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
+    program_ref = repository.put_json(run=run, destination=branch_destination, record_kind=stage_geometry_program(stage_id), payload=program.to_dict())
+    binding = CadProgramBinding(program_ref=program_ref, branch=branch, stage_id=stage_id, program_digest=program.program_digest,
+                                design_state_digest=program.proposal.design_state_digest, predecessor_program_digest=None)
+    prior = _prior_occt_export(repository, run, workspace, binding, preview=True)
+    if prior is not None:
+        payload, ref = prior
+        out = {"execution_ref": ref.uri, "status": payload["status"], "readback_verified": payload["readback_verified"],
+               "failures": list(payload["failures"]), "path": "reused", "backend": CAD_BACKEND_OCCT, "evidence_tier": payload.get("evidence_tier"),
+               "exact_artifact": _occt_artifact_summary(payload.get("exact_artifact")), "preview_artifact": _occt_artifact_summary(payload.get("preview_artifact")),
+               "model": str(workspace / str(payload["exact_artifact"]["relative_path"]))}
+        if isinstance(payload.get("preview_inspection"), dict):
+            out["inspection_ref"] = repository.put_json(run=run, destination=destination, record_kind=SEAT_3DM_INSPECTION, payload=payload["preview_inspection"]).uri
+        return out
+    base_stem = f"{stage_id}@{program.program_digest[:12]}"
+    stem, attempt = base_stem, 1
+    while (workspace / f"{stem}.step").exists() or (workspace / f"{stem}.preview.3dm").exists():
+        attempt += 1
+        stem = f"{base_stem}.r{attempt}"
+    t0 = time.perf_counter()
+    try:
+        receipt = execute_occt_export(program, binding=binding, speculative_workspace=workspace, artifact_stem=stem, readback_tolerance=0.003,
+                                      provenance={**provenance, "export_path": CAD_BACKEND_OCCT}, preview=True)
+    except CadCapabilityError as exc:
+        return {"execution_ref": None, "status": "unsupported", "readback_verified": False, "path": CAD_BACKEND_OCCT, "backend": CAD_BACKEND_OCCT,
+                "seconds": round(time.perf_counter() - t0, 3),
+                "failures": [{"code": "cad_execution.unsupported_operation", "detail": str(exc), "op_id": exc.op_id, "kind": exc.kind}]}
+    seconds = round(time.perf_counter() - t0, 3)
+    execution_ref = repository.put_json(run=run, destination=destination, record_kind=SEAT_OCCT_EXECUTION, payload=receipt.to_dict())
+    out = {"execution_ref": execution_ref.uri, "status": receipt.status.value, "readback_verified": receipt.readback_verified,
+           "failures": [dict(f) for f in receipt.failures], "path": CAD_BACKEND_OCCT, "backend": CAD_BACKEND_OCCT, "seconds": seconds,
+           "evidence_tier": receipt.evidence_tier, "exact_artifact": _occt_artifact_summary(receipt.exact_artifact),
+           "preview_artifact": _occt_artifact_summary(receipt.preview_artifact),
+           "model": None if receipt.exact_artifact is None else str(workspace / str(receipt.exact_artifact["relative_path"]))}
+    if receipt.status.value == "succeeded" and receipt.preview_inspection is not None:
+        out["inspection_ref"] = repository.put_json(run=run, destination=destination, record_kind=SEAT_3DM_INSPECTION, payload=receipt.preview_inspection).uri
+    return out
+
+
+def _export_rhino(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict) -> dict:
+    """Export one seat program through Rhino: reuse an identical prior export, patch a different one, or rebuild (P103).
 
     Artifacts are named by program digest inside the stage workspace, so a
     changed program never collides with a prior one and the runner never
@@ -427,9 +612,7 @@ def _export(repository, run, branch, branch_destination, program, stage_id: str,
     from archflow.adapters.cad_execution import CadExecutionError, RhinoCadProgramBinding, RhinoPatchBase, execute_rhino_three_dm_export, prepare_rhino_three_dm_export
     from archflow.adapters.three_dm_inspector import inspect_three_dm
 
-    workspace = (options.workspace_root or Path(".")) / f"cad-{stage_id}"
-    if not workspace.is_dir():
-        raise ProjectRunnerError(f"export workspace {workspace} does not exist: the caller prepares workspaces; the runner never creates files outside records")
+    workspace = _export_workspace(options, stage_id)
     destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
     records_dir = Path(repository.layout.run(run.run_id).records)
     prior = _prior_export(records_dir, workspace, stage_id, program.program_digest)
@@ -525,7 +708,14 @@ def run_project(
     # an authored record is portable; this run binds it to its own identity and canonical base,
     # and that binding is exactly what the compiler checks against every proposal (P102)
     record = record.bound_to(run)
-    state = developed_design_view(record, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+    # the phase is the stage's, stated by the envelope this run opened (ADR-007, P112): the
+    # projection carries it into the state digest, and the guard then checks that the envelope
+    # binds exactly this state - so an envelope opened under another phase is refused below
+    try:
+        state = developed_design_view(record, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref,
+                                      phase=stage_guard.envelope.phase)
+    except DevelopedDesignError as exc:
+        raise ProjectRunnerError(f"the developed-design projection cannot carry the envelope phase {stage_guard.envelope.phase.value!r}: {exc}") from exc
     stage_guard.require(
         repository,
         run=run,
@@ -556,6 +746,9 @@ def run_project(
     # digests of the records they were retained as.
     relation_reports: list[Any] = []
     check_receipt_digests: list[str] = []
+    # Relations wait here until every endpoint has extent, then are measured once against
+    # everything realized so far (this seat and the seats before it, in the normal order).
+    ledger = _RelationLedger.open(record, levels)
     frame = CoordinateFrame(frame_id=FRAME_ID, parent_frame_id=None, transform_from_parent=AffineTransform.identity(), source_refs=tuple(record.evidence_refs[:1]) or (record_ref.uri,))
     try:
         for round_index, round_seats in enumerate(rounds):
@@ -617,9 +810,12 @@ def run_project(
                 programs[seat_id] = program
                 bounds = expected_object_bounds(program)
                 realized = {oid: (tuple(row["bbox_min"]), tuple(row["bbox_max"])) for oid, row in bounds.items()}
-                # the relations the producers materialized are checked against the compiled bounds; nothing is healed
-                relation_report = _check_produced_relations(record, own, elements_produced, produced, realized, levels)
-                relation_check_record = put(SEAT_RELATION_CHECK, {**relation_report.to_dict(), "seat_id": seat_id, "program_ref": program_ref.uri, **no_authority(_AUTH)})
+                # this seat's compiled bounds join what earlier seats realized; every relation whose
+                # endpoints now all have extent - the producers' own and the record's, including one
+                # that spans this seat and an earlier one - is measured here, once; nothing is healed
+                ledger.realize(own, elements_produced, produced, realized)
+                relation_report = ledger.check(elements_produced)
+                relation_check_record = put(SEAT_RELATION_CHECK, {**relation_report.to_dict(), "seat_id": seat_id, "program_ref": program_ref.uri, "basis": RELATION_CHECK_BASIS, **no_authority(_AUTH)})
                 relation_check_ref = relation_check_record.uri
                 relation_reports.append(relation_report)
                 check_receipt_digests.append(relation_check_record.sha256)
@@ -658,6 +854,16 @@ def run_project(
                                    "error": type(exc).__name__, "detail": str(exc)[:2000],
                                    "seat_results": [_seat_dict(r) for r in results], "wall_time_s": round(time.perf_counter() - started, 3)})
         raise
+    # What no seat could measure: a relation whose endpoint never acquired extent in this run
+    # (an element nobody produced, a declined component, an entity with no geometry). It is
+    # retained as its own unchecked report so the closure reads it, instead of being dropped.
+    unmeasured = ledger.unmeasured()
+    unmeasured_ref = None
+    if unmeasured is not None:
+        unmeasured_record = put(SEAT_RELATION_CHECK, {**unmeasured.to_dict(), "seat_id": None, "scope": "stage-unmeasured", "basis": RELATION_CHECK_BASIS, **no_authority(_AUTH)})
+        unmeasured_ref = unmeasured_record.uri
+        relation_reports.append(unmeasured)
+        check_receipt_digests.append(unmeasured_record.sha256)
     owned_any = set()
     for seat in seats:
         owned_any.update(owned_subtree(proposal_tree, seat.owned_component_ids))
@@ -703,6 +909,10 @@ def run_project(
         "provider": provider_block,
         "rounds": [list(r) for r in rounds], "seat_results": [_seat_dict(s) for s in results],
         "seat_execution_complete": seat_execution_complete,
+        # Every relation check this run made was measured on compiler-predicted bounds; the
+        # relations no seat could measure are named, so an OPEN closure can be read back to them.
+        "relation_checks": {"basis": RELATION_CHECK_BASIS, "unmeasured_check_ref": unmeasured_ref,
+                            "unmeasured_relation_ids": [] if unmeasured is None else [c.relation_id for c in unmeasured.checks]},
         "wall_time_s": round(time.perf_counter() - started, 3), **no_authority(_AUTH),
     }
     payload["receipt_ref"] = put(RUNNER_RUN_RECEIPT, payload).uri
@@ -712,15 +922,29 @@ def run_project(
 def _stage_closure(stage_guard: StageExecutionGuard, *, branch: BranchRef, results, relation_reports, check_receipt_digests, seat_execution_complete: bool) -> CompositeStageClosureReceipt:
     """The stage's closure, compiled from this run's own checks (ADR-007 r3).
 
-    One finding per problem and nothing else: a required check kind no
-    relation measured, a relation of a required kind that did not hold, a
-    seat that did not finish, or a seat whose owned leaves remain undeclared
-    or explicitly declined. No finding is SATISFIED, and only a SATISFIED
-    closure may become a ``StageExitBinding``.
+    ``envelope.required_checks`` are checker ids (``state_record.CHECK_KINDS``:
+    ``support_contact``, ``clearance_interval``, ``aperture_exists``), matched
+    against each check's ``check_kind`` - the validator the relation binds -
+    and never against ``Relation.kind``. A relation that binds no validator
+    reports ``check_kind`` ``none``; it is attributed to no requirement,
+    stays ``unchecked`` in its seat report, and neither satisfies nor fails a
+    required checker. Nothing here guesses a checker or a threshold for it
+    from the relation's kind.
 
-    A relation the record declares is measured by every seat, so the same
-    problem arrives more than once; findings are therefore kept by identity,
-    not by arrival.
+    One finding per problem and nothing else: a required checker no relation
+    is bound to, a relation bound to a required checker that stayed unchecked
+    (no seat could supply what the checker reads), a relation bound to a
+    required checker that did not hold, a seat that did not finish, or a seat
+    whose owned leaves remain undeclared or explicitly declined. No finding is
+    SATISFIED, and only a SATISFIED closure may become a ``StageExitBinding``.
+    SATISFIED therefore says: every relation bound to a required checker was
+    measured and held, and every seat finished - not that every relation the
+    record declares was proved.
+
+    Requirements are read relation by relation, never by kind alone: a
+    required checker is not satisfied because *some* relation bound to it was
+    measured while another bound to the same checker was never measured.
+    Findings are kept by identity, not by arrival.
     """
 
     envelope = stage_guard.envelope
@@ -729,19 +953,22 @@ def _stage_closure(stage_guard: StageExecutionGuard, *, branch: BranchRef, resul
     def note(finding: StageClosureFinding) -> None:
         findings.setdefault(finding.identity, finding)
 
-    measured: dict[str, list] = {}
+    by_kind: dict[str, list] = {}
     for report in relation_reports:
         for check in report.checks:
-            if check.status != "unchecked":                 # unchecked is not a measurement
-                measured.setdefault(check.check_kind, []).append(check)
+            by_kind.setdefault(check.check_kind, []).append(check)
     for required in envelope.required_checks:
-        checks = measured.get(required, ())
+        checks = by_kind.get(required, ())
         if not checks:
             note(StageClosureFinding(code=StageClosureFindingCode.MISSING_CHECK, requirement_id=required))
             continue
         for check in checks:
             if check.status == "violated":
                 note(StageClosureFinding(code=StageClosureFindingCode.CHECK_FAILED, requirement_id=required, receipt_id=check.relation_id))
+            elif check.status == "unchecked":
+                # an unchecked relation of a required kind is a missing check with a name; a
+                # measured sibling of the same kind says nothing about it
+                note(StageClosureFinding(code=StageClosureFindingCode.MISSING_CHECK, requirement_id=required, receipt_id=check.relation_id))
     incomplete = tuple(r for r in results if r.status not in ("proposal_accepted", "empty"))
     for result in incomplete:
         note(StageClosureFinding(code=StageClosureFindingCode.SEAT_INCOMPLETE, requirement_id=result.seat_id))
@@ -790,47 +1017,148 @@ def _gather(elements) -> Produced:
                     tuple(sorted((a for e in elements for a in e.assemblies), key=lambda a: a.assembly_id)), tuple(sorted((d for e in elements for d in e.datums), key=lambda d: d.datum_id)))
 
 
-def _check_produced_relations(record: StateRecord, rows, elements, produced: Produced, realized, levels: ProjectLevels):
-    """Support relations the producers built, measured against the compiled bounds (RelationCheck@1).
+@dataclass
+class _RelationLedger:
+    """The relations a run owes a measurement, and what has been realized to measure them on.
 
-    A zone is measured too. The record's declared relations are largely between
-    ``Space@1`` zones — corridor to hall clearance, a portico's voids — and a
-    zone produces no geometry of its own, so a checker had nothing to measure
-    and every such relation reported ``unchecked``. A zone's objects are its
-    volumes: each ``Space@1`` enters ``objects_by_element`` under its own
-    entity id, with one synthetic bound per ``volume_ids`` entry taken from
-    that ``Volume@1``'s declared ``min`` / ``max``. Realized geometry always
-    wins — a produced object with the same id is never overwritten.
+    A relation is *ready* when every input its declared checker reads is
+    there: each endpoint has extent - a ``Level@1`` (an unbounded datum), a
+    ``Space@1`` zone (its volumes' declared boxes), or an element some seat
+    has produced objects for - and, for a checker that compares against the
+    relation's ``datum_role`` (``_DATUM_READING_CHECKS``), that named datum
+    has been published. The record's own relations and the ``support``
+    relations the producers build wait in ``pending`` until they are ready
+    and are then measured once, by ``check_relations`` against everything
+    realized so far - so a relation between the structure seat's columns and
+    the envelope seat's wall is measured when the wall exists, in the
+    envelope seat's own report; a wall's support on the ground is not asked
+    of the structure seat, which has no wall to measure; and a support
+    between two structure members whose ``datum_role`` names a datum the
+    envelope seat publishes waits for the envelope seat, where a datum that
+    disagrees with the measured face fails the check instead of being
+    skipped. The seat order itself is untouched: a relation waits, nothing
+    is reordered.
+
+    What is still pending when the run ends is ``unmeasured``: reported as
+    ``unchecked`` with the endpoint that never acquired extent or the datum
+    no seat published, never discarded, so the closure can refuse to exit
+    over it.
+
+    A zone is measurable from the start: each ``Space@1`` enters ``objects``
+    under its own entity id, with one synthetic bound per ``volume_ids`` entry
+    taken from that ``Volume@1``'s declared ``min`` / ``max`` (the one reader
+    of that box is ``volume_boxes_of``). Realized geometry always wins over a
+    synthetic bound with the same id. All bounds are compiler-predicted
+    (``RELATION_CHECK_BASIS``); nothing here reads a saved CAD box.
     """
 
-    import json as _json
+    record: StateRecord
+    pending: dict[str, Relation]
+    bounds: dict[str, tuple[list[float], list[float]]]
+    objects: dict[str, list[str]]
+    datum_values: dict[str, float]
+    seen: set[str]
 
-    known = {e.entity_id for e in record.entities}
-    relations = list(record.relations)          # what the record declares is checked (or reported unchecked) too
-    seen = {r.relation_id for r in relations}
-    for element in elements:
-        for r in element.relations:
-            if r.kind != "support" or r.subject not in known or r.object not in known or r.relation_id in seen:
-                continue
-            seen.add(r.relation_id)
-            relations.append(Relation(r.relation_id, r.kind, r.subject, r.object, datum_role=r.datum_id, propagation="revalidate",
-                                      validator=ValidatorBinding("support_contact", tolerance=0.001), parameters=dict(r.parameters)))
-    objects = {row.element_id: [oid for op in element.operations for oid in op.output_object_ids] for row, element in zip(rows, elements)}
-    datum_values = {d.datum_id: float(_json.loads(d.value_json)) for d in produced.datums}
-    datum_values.update({l.level_id: l.elevation for l in levels.levels})
-    bounds = {oid: (list(low), list(high)) for oid, (low, high) in realized.items()}
-    volumes = volume_boxes_of(record)   # one reader of the Volume@1 box, in state.record
-    for zone in record.entities_of("Space@1"):
-        zone_objects = []
-        for volume_id in zone.fields.get("volume_ids", ()):
-            box = volumes.get(volume_id)
-            if box is None:
-                continue
-            bounds.setdefault(volume_id, ([*box[0]], [*box[1]]))
-            zone_objects.append(volume_id)
-        if zone_objects:
-            objects.setdefault(zone.entity_id, zone_objects)
-    return check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datum_values, relations=tuple(relations))
+    @classmethod
+    def open(cls, record: StateRecord, levels: ProjectLevels) -> "_RelationLedger":
+        bounds: dict[str, tuple[list[float], list[float]]] = {}
+        objects: dict[str, list[str]] = {}
+        volumes = volume_boxes_of(record)
+        for zone in record.entities_of("Space@1"):
+            zone_objects = []
+            for volume_id in zone.fields.get("volume_ids", ()):
+                box = volumes.get(volume_id)
+                if box is None:
+                    continue
+                bounds.setdefault(volume_id, ([*box[0]], [*box[1]]))
+                zone_objects.append(volume_id)
+            if zone_objects:
+                objects.setdefault(zone.entity_id, zone_objects)
+        return cls(record, {r.relation_id: r for r in record.relations}, bounds, objects,
+                   {l.level_id: l.elevation for l in levels.levels}, {r.relation_id for r in record.relations})
+
+    def realize(self, rows, elements, produced: Produced, realized) -> None:
+        """Add one seat's production: its compiled bounds, its objects per element, its published datums, its support relations."""
+
+        import json as _json
+
+        self.bounds.update({oid: ([*low], [*high]) for oid, (low, high) in realized.items()})
+        for row, element in zip(rows, elements):
+            # what the compiled program keeps: a wall's cut body and its aperture fills, not the
+            # uncut body or the void tool a boolean consumed (those have no compiled bounds)
+            object_ids = [oid for op in element.operations for oid in op.output_object_ids if oid in realized]
+            if object_ids:                              # a declined row has no extent and stays unmeasurable
+                self.objects[row.element_id] = object_ids
+        self.datum_values.update({d.datum_id: float(_json.loads(d.value_json)) for d in produced.datums})
+        known = {e.entity_id for e in self.record.entities}
+        for element in elements:
+            for r in element.relations:
+                if r.kind != "support" or r.subject not in known or r.object not in known or r.relation_id in self.seen:
+                    continue                            # a relation the record declares itself keeps the record's validator
+                self.seen.add(r.relation_id)
+                self.pending[r.relation_id] = Relation(r.relation_id, r.kind, r.subject, r.object, datum_role=r.datum_id, propagation="revalidate",
+                                                       validator=ValidatorBinding("support_contact", tolerance=0.001), parameters=dict(r.parameters))
+
+    def _missing_inputs(self, relation: Relation) -> tuple[str, ...]:
+        """What the relation's checker would read and nothing has supplied yet: endpoints without extent, then the unpublished datum.
+
+        Only the inputs the *declared* checker actually reads count. A relation
+        without a validator, or bound to a checker that never looks at
+        ``datum_values``, waits for its endpoints alone; guessing a checker or
+        a datum need from ``relation.kind`` is exactly what this does not do.
+        """
+
+        missing = []
+        for end in (relation.subject, relation.object):
+            entity = self.record.entity(end)
+            if entity.schema != "Level@1" and end not in self.objects:
+                missing.append(end)
+        if (relation.validator is not None and relation.validator.check_kind in _DATUM_READING_CHECKS
+                and relation.datum_role is not None and relation.datum_role not in self.datum_values):
+            missing.append(f"datum {relation.datum_role}")
+        return tuple(missing)
+
+    def check(self, elements=()) -> RelationCheckReport:
+        """Measure every pending relation whose checker inputs are all present now; the rest keep waiting."""
+
+        ready = tuple(r for r in self.pending.values() if not self._missing_inputs(r))
+        for relation in ready:
+            del self.pending[relation.relation_id]
+        return check_relations(self.record, bounds=self.bounds, objects_by_element=self.objects, datum_values=self.datum_values, relations=ready)
+
+    def unmeasured(self) -> RelationCheckReport | None:
+        """Every relation still pending, as ``unchecked`` naming the endpoint no seat gave extent or the datum none published; None when nothing is pending."""
+
+        if not self.pending:
+            return None
+        checks = []
+        for relation in self.pending.values():
+            missing = self._missing_inputs(relation)
+            extents = [m for m in missing if not m.startswith("datum ")]
+            datums = [m.removeprefix("datum ") for m in missing if m.startswith("datum ")]
+            reasons = []
+            if extents:
+                reasons.append(f"no seat realized extent for {', '.join(extents)}")
+            if datums:
+                reasons.append(f"no seat published datum {', '.join(datums)}, which its {relation.validator.check_kind} check compares against")
+            checks.append(RelationCheck(relation.relation_id, relation.kind, relation.validator.check_kind if relation.validator else "none", "unchecked", 0.0, {},
+                                        f"not measurable in this run: {'; '.join(reasons)} ({RELATION_CHECK_BASIS})"))
+        return RelationCheckReport(self.record.digest, tuple(checks))
+
+
+def _check_produced_relations(record: StateRecord, rows, elements, produced: Produced, realized, levels: ProjectLevels):
+    """One seat's production measured on its own: the ready relations checked, the rest reported unchecked (RelationCheck@1).
+
+    The single-seat reading of ``_RelationLedger``; the runner itself keeps one
+    ledger across all seats so a cross-seat relation is measured when its second
+    endpoint appears.
+    """
+
+    ledger = _RelationLedger.open(record, levels)
+    ledger.realize(rows, elements, produced, realized)
+    report = ledger.check(elements)
+    leftover = ledger.unmeasured()
+    return RelationCheckReport(record.digest, report.checks + (leftover.checks if leftover is not None else ()))
 
 
 def _load_json(path: Path) -> dict:

@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@2",
-  "phase": "Next capability: a whole-stair architectural revision, starting with the existing project's endpoints, functional relationships and a bounded task before implementation (docs/ARCHITECTURE.md). P111 is delivered and tracks user trial only; do not restart it. P108 covers Studio use, P110 actual requirement inputs. Ready means prerequisites are met, not that geometry expansion or another executor has priority. Research and formal issue remain separate.",
+  "phase": "Next authorized implementation: whole-stair and window production through the existing producers and OCCT backend, followed by an actual retained requirement check, a coordinated architectural edit and model-derived elevation/section. Claude implements the scoped packages; one coordinator owns shared registries and integration. Ordinary create/save/reopen/preview must not launch Rhino. Synthetic project tests precede any separately authorized real-project trial. P111 remains delivered; research and formal issue remain separate.",
   "items": [
     {
       "id": "P094",
@@ -51,32 +51,6 @@
         "The Doric member family is produced from a derivation table in module ratios and reproduces each of the Parthenon's 104-member kinds within 1 mm from grid references.",
         "Roof and entablature fields are arrays over reference lines, not authored per member.",
         "Every producer publishes the datum its neighbour binds; engagements declared, no unexplained epsilon.",
-        "Full unittest suite and the architecture firewall pass."
-      ]
-    },
-    {
-      "id": "P107",
-      "stream": "planning",
-      "status": "ready",
-      "goal": "An in-process OCCT executor interprets the same CompiledGeometryProgram the Rhino path runs, tessellates preview meshes, measures bounds against the analytic predictor, exports STEP always and mesh .3dm via rhino3dm, and drives incremental re-execution from the patch selector. Receipts carry an evidence tier (self-measured cold-read vs independent instrument). Retires Rhino as the only execution path; the Rhino executor becomes the stage-gate certifier.",
-      "depends_on": [
-        "P102",
-        "P103"
-      ],
-      "write_scope": [
-        "archflow/adapters/",
-        "archflow/runtime/",
-        "tools/",
-        "tests/",
-        "docs/mapping/",
-        "governance/work_registry.json"
-      ],
-      "card": "docs/mapping/planning/P107-occt-in-process-executor.md",
-      "acceptance": [
-        "Villa and Rocca records execute in-process within 3 mm of analytic bounds; full-rebuild and one-object wall clocks reported as measurements.",
-        "First certification compares both lanes object by object on both projects.",
-        "Receipts carry evidence tier and tessellator identity; STEP opens in Rhino with identity preserved.",
-        "Coplanar boolean edge cases have a tuning receipt.",
         "Full unittest suite and the architecture firewall pass."
       ]
     },
@@ -161,26 +135,6 @@
         "The user selected whole-stair usability and revision as the next capability direction. Its bounded task and owner mapping are in docs/ARCHITECTURE.md; the proposed benchmark is in docs/RESEARCH_POSITIONING.md. This card does not expand to implement it.",
         "Confirmed internal simplification candidates are documented in P111, not made prerequisites: deterministic proposal/provider round trips, fabricated portfolio projection, and unused compiler self-digests. Preserve real validation and retained-data readers.",
         "Development order lives in docs/ARCHITECTURE.md, not this delivery card. P094 research proceeds independently; reuse existing drawing/environment proposals. Formal issue and cross-project comparisons are separate tasks."
-      ]
-    },
-    {
-      "id": "P112",
-      "stream": "planning",
-      "status": "ready",
-      "goal": "The stage phase belongs to the run: developed_design_view takes its phase from the caller (the runner passes the envelope's phase, the harness its own stage phase) instead of a constant, so a workflow whose stage 0 is schematic_design opens and runs; StageExecutionGuard keeps its equality check. Villa workflow v4 (schematic_design 200, design_development 300, candidate_coordination 350) is frozen and stages 0 and 1 rerun with exports. Retained developed-design-state records are read as they are; no migration.",
-      "depends_on": [],
-      "write_scope": [
-        "archflow/state/",
-        "archflow/runtime/",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
-        "tools/verify_state_record.py",
-        "tests/"
-      ],
-      "card": "docs/mapping/planning/P112-stage-phase-from-envelope.md",
-      "acceptance": [
-        "tests/test_project_runner.py: a workflow whose stage 0 is schematic_design opens and runs to closure SATISFIED; a runner passing the wrong phase is refused by the guard.",
-        "Villa: runs stage-0-003 and stage-1-003 carry the workflow v4 envelope phases and reproduce stage-1-002's geometry (worst 0.0).",
-        "Spine and api suites and archcheck pass; every retained older run still reads in the Studio."
       ]
     },
     {

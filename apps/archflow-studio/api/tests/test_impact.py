@@ -35,7 +35,7 @@ class ImpactTestCase(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
-        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID)
+        self.settings = StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)
         self.projection = project_state(ProjectBinding.open(self.settings))
 
     def reproject(self) -> None:
@@ -149,17 +149,21 @@ class LockTests(ImpactTestCase):
     def test_a_locked_parameter_in_the_closure_is_reported_with_its_authority(
         self,
     ) -> None:
-        answer = impact(self.projection, "parameter:module", ())
+        answer = impact(self.projection, "parameter:plinth", ())
 
         self.assertEqual(
             [(lock.ref, lock.authority) for lock in answer.locks],
-            [("parameter:module", "client")],
+            [("parameter:plinth", "client")],
         )
 
     def test_a_closure_that_does_not_reach_the_lock_reports_none(self) -> None:
-        answer = impact(self.projection, "parameter:bay", ())
+        # the whole module -> bay -> span chain is unlocked; the lock sits on
+        # plinth, which nothing in the chain reaches
+        for target in ("parameter:module", "parameter:bay"):
+            with self.subTest(target=target):
+                answer = impact(self.projection, target, ())
 
-        self.assertEqual(answer.locks, ())
+                self.assertEqual(answer.locks, ())
 
 
 class UnknownCoverageTests(ImpactTestCase):

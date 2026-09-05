@@ -16,6 +16,7 @@ from archflow_studio_api.settings import StudioSettings
 
 from archflow.project.refs import RunRef
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import StateRecord, developed_design_view
 
 from .support import (
@@ -32,7 +33,9 @@ from .support import (
     make_empty_project,
     make_project,
     missing_workflow_ref,
+    retain_runner_receipt,
     run_records,
+    runner_state_digest,
     unlistable_run,
     write_runner_record,
 )
@@ -47,7 +50,7 @@ class StateProjectionTests(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
-        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID)
+        self.settings = StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)
         self.client = TestClient(create_app(self.settings))
         self.addCleanup(self.client.close)
         self.payload = self.client.get("/api/state").json()
@@ -107,7 +110,7 @@ class StateProjectionTests(unittest.TestCase):
             {
                 "entities": 6,
                 "components": 2,
-                "parameters": 3,
+                "parameters": 4,
                 "relations": 1,
                 "obligations": 0,
                 "dependencyEdges": 5,
@@ -160,11 +163,13 @@ class StateProjectionTests(unittest.TestCase):
             item["key"]: item for item in self.payload["parameters"]
         }
 
-        self.assertEqual(parameters["module"]["lockAuthority"], "client")
+        self.assertIsNone(parameters["module"]["lockAuthority"])
         self.assertEqual(parameters["module"]["unit"], "m")
         self.assertEqual(parameters["module"]["value"], 1.2)
         self.assertIsNone(parameters["module"]["expr"])
         self.assertEqual(parameters["module"]["inputs"], [])
+        self.assertEqual(parameters["plinth"]["lockAuthority"], "client")
+        self.assertIsNone(parameters["plinth"]["expr"])
         self.assertIsNone(parameters["bay"]["lockAuthority"])
         self.assertEqual(parameters["bay"]["expr"], "2 * module")
         self.assertEqual(parameters["bay"]["inputs"], ["module"])
@@ -275,7 +280,7 @@ class DisagreeingReceiptTests(unittest.TestCase):
             self.root, design_state_digest="0" * 64
         )
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
 
@@ -316,7 +321,7 @@ class MissingExactReferenceTests(unittest.TestCase):
         path = repository.layout.resolve_record(ref)
         newest = path.stat().st_mtime + 60.0
         os.utime(path, (newest, newest))
-        client = TestClient(create_app(StudioSettings(project_dir=root / PROJECT_ID)))
+        client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID)))
         self.addCleanup(client.close)
 
         state = client.get("/api/state")
@@ -342,7 +347,7 @@ class ProjectionWithoutAnyRunTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository = make_empty_project(self.root)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
 
@@ -403,7 +408,7 @@ class UnreadableRunTests(unittest.TestCase):
         self.repository, _ = make_project(self.root)
         self.broken = add_unreadable_run(self.repository)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
 
@@ -496,7 +501,7 @@ class MalformedRecordTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository = make_empty_project(self.root)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
 
@@ -612,7 +617,7 @@ class UnviewableRecordTests(unittest.TestCase):
         payload["evidence_refs"] = []
         write_runner_record(self.repository, payload)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
 
@@ -629,7 +634,7 @@ class UnviewableRecordTests(unittest.TestCase):
         self.assertEqual(payload["counts"]["entities"], 6)
         self.assertEqual(payload["counts"]["components"], 2)
         self.assertEqual(len(payload["elements"]), 2)
-        self.assertEqual(len(payload["parameters"]), 3)
+        self.assertEqual(len(payload["parameters"]), 4)
         self.assertEqual(len(payload["dependencyEdges"]), 5)
         self.assertIn(
             f"component tree unavailable: {NO_EVIDENCE}", payload["honesty"]
@@ -680,7 +685,7 @@ class HarnessRuleTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
 
@@ -732,7 +737,7 @@ class ReceiptWithoutADigestTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root, design_state_digest=None)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
 
@@ -770,6 +775,161 @@ class ReceiptWithoutADigestTests(unittest.TestCase):
         self.assertEqual(response.json()["code"], "REFERENCE_STATE_MISMATCH")
 
 
+def _bound_payload(binding: str = "@bay", bay_value: float = 2.4) -> dict[str, object]:
+    """The fixture with the cornice's height bound to a parameter instead of a literal."""
+
+    payload = json.loads(json.dumps(RECORD_PAYLOAD))
+    for entity in payload["entities"]:
+        if entity["entity_id"] == "portico-cornice":
+            entity["fields"]["params"]["height"] = binding
+    for parameter in payload["parameters"]:
+        if parameter["key"] == "bay":
+            parameter["value"] = bay_value
+    return payload
+
+
+class BoundElementTests(unittest.TestCase):
+    """A row that binds ``"@key"`` shows the value the kernel evaluates for it, and names the binding.
+
+    No evaluator of the API's: the number is ``resolve_element_bindings``'s,
+    the same input projection the producers read. A stored derived value the
+    kernel refuses is not shown as either number; the field is left out and
+    the kernel's sentence travels in ``honesty``.
+    """
+
+    def _project(self, payload: dict[str, object]) -> tuple[TestClient, dict]:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        repository, _ = make_project(root)
+        write_runner_record(repository, payload)
+        retain_runner_receipt(
+            repository,
+            repository.load_run(REFERENCE_RUN_ID),
+            design_state_digest=runner_state_digest(repository, REFERENCE_RUN_ID, payload),
+            record_payload=payload,
+        )
+        client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID)))
+        self.addCleanup(client.close)
+        state = client.get("/api/state")
+        self.assertEqual(state.status_code, 200, state.text)
+        return client, state.json()
+
+    def test_a_bound_field_shows_the_kernels_evaluated_value(self) -> None:
+        client, payload = self._project(_bound_payload())
+        elements = {item["elementId"]: item for item in payload["elements"]}
+
+        self.assertEqual(elements["portico-cornice"]["numericFields"], {"height": 2.4})     # bay = 2 * module, evaluated by the kernel
+        self.assertEqual(elements["portico-base"]["numericFields"], {"height": 0.6})        # the literal next to it is the literal
+        self.assertFalse(any("bound element values" in line for line in payload["honesty"]))
+        # the bound field is not a target: the proposal names the parameter that owns the number
+        response = client.post(
+            "/api/proposals",
+            json={
+                "stateDigest": payload["stateDigest"],
+                "targetComponentId": "portico",
+                "elementId": "portico-cornice",
+                "utterance": "set height to 0.5",
+            },
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "BLOCKED_NEEDS_HUMAN")
+        self.assertEqual(
+            response.json()["question"],
+            "height on portico-cornice is bound to parameter bay (= 2.4 m); its "
+            "value follows module. set module (= 1.2 m) instead, or re-declare "
+            "bay without an expression in input/runner/state-record.json.",
+        )
+
+    def test_a_stale_bound_value_is_left_out_and_named_rather_than_shown(self) -> None:
+        _, payload = self._project(_bound_payload(bay_value=99.0))       # stored 99 while 2 * module says 2.4
+        elements = {item["elementId"]: item for item in payload["elements"]}
+
+        self.assertEqual(elements["portico-cornice"]["numericFields"], {})
+        self.assertEqual(elements["portico-base"]["numericFields"], {"height": 0.6})
+        self.assertTrue(
+            any(
+                line.startswith("bound element values unavailable: ")
+                and "stored value 99.0 of derived parameter bay disagrees" in line
+                for line in payload["honesty"]
+            ),
+            payload["honesty"],
+        )
+
+
+class ReferencePhaseTests(unittest.TestCase):
+    """The projection reads the reference run's exact record in the phase that run's stage states (P112).
+
+    The runner projects the record in its envelope's phase and writes that
+    phase on the receipt under ``stage.phase``. A projection fixed to
+    design_development would call a schematic run's own digest a mismatch
+    and refuse every proposal against it.
+    """
+
+    def test_a_schematic_reference_run_is_projected_in_its_own_phase(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        repository, _ = make_project(root, phase=DesignPhase.SCHEMATIC_DESIGN)
+        client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID)))
+        self.addCleanup(client.close)
+
+        state = client.get("/api/state")
+        self.assertEqual(state.status_code, 200, state.text)
+        payload = state.json()
+        self.assertEqual(payload["activePhase"], "schematic_design")
+        self.assertIs(payload["matchesReferenceReceipt"], True)
+        self.assertEqual(
+            payload["stateDigest"],
+            runner_state_digest(repository, REFERENCE_RUN_ID, phase=DesignPhase.SCHEMATIC_DESIGN),
+        )
+        self.assertNotEqual(payload["stateDigest"], runner_state_digest(repository, REFERENCE_RUN_ID))
+        # actionable: a proposal against the schematic run's own state is accepted
+        response = client.post(
+            "/api/proposals",
+            json={
+                "stateDigest": payload["stateDigest"],
+                "targetComponentId": "portico",
+                "elementId": "portico-base",
+                "utterance": "set height to 2.2",
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+
+    def test_a_receipt_that_names_no_phase_keeps_the_reading_it_always_had(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        repository, _ = make_project(root)                      # no stage block on the receipt
+        client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID)))
+        self.addCleanup(client.close)
+
+        payload = client.get("/api/state").json()
+        self.assertEqual(payload["activePhase"], "design_development")
+        self.assertIs(payload["matchesReferenceReceipt"], True)
+
+    def test_a_phase_the_projection_cannot_carry_leaves_the_comparison_unmade_and_says_so(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        repository, _ = make_project(root)
+        run = repository.load_run(REFERENCE_RUN_ID)
+        ref = retain_runner_receipt(
+            repository, run,
+            design_state_digest=runner_state_digest(repository, REFERENCE_RUN_ID),
+            phase=DesignPhase.CANDIDATE_COORDINATION,
+        )
+        path = repository.layout.resolve_record(ref)
+        newest = path.stat().st_mtime + 60.0
+        os.utime(path, (newest, newest))
+        client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID)))
+        self.addCleanup(client.close)
+
+        payload = client.get("/api/state").json()
+        self.assertEqual(payload["activePhase"], "design_development")
+        self.assertIsNone(payload["matchesReferenceReceipt"])
+        self.assertTrue(
+            any("candidate_coordination" in line and "cannot carry" in line for line in payload["honesty"]),
+            payload["honesty"],
+        )
+
+
 class HistoricalReferenceTests(unittest.TestCase):
     def test_old_run_remains_readable_but_cannot_base_new_work(self) -> None:
         root = Path(tempfile.mkdtemp())
@@ -777,7 +937,7 @@ class HistoricalReferenceTests(unittest.TestCase):
         repository, _ = make_project(root)
         original = repository.load_run(REFERENCE_RUN_ID)
         advance_head(repository)
-        client = TestClient(create_app(StudioSettings(project_dir=root / PROJECT_ID)))
+        client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID)))
         self.addCleanup(client.close)
 
         state = client.get("/api/state")

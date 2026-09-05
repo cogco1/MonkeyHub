@@ -16,12 +16,14 @@ from fastapi.testclient import TestClient
 
 from archflow_studio_api.main import create_app
 from archflow_studio_api.protocol import (
+    CAD_EXPORT_CAPABILITY,
     PROTOCOL,
     RHINO_EXPORT_CAPABILITY,
     SERVER_NAME,
     SERVER_VERSION,
 )
 from archflow_studio_api.settings import (
+    CAD_EXPORT_RHINO,
     LOCAL_MODE,
     REMOTE_MODE,
     SettingsError,
@@ -38,7 +40,7 @@ class ProtocolRouteTests(unittest.TestCase):
     """``GET /api/protocol`` answers without a project and names the server."""
 
     def setUp(self) -> None:
-        self.settings = StudioSettings(project_dir=Path("unbound-placeholder"))
+        self.settings = StudioSettings(cad_export="off", project_dir=Path("unbound-placeholder"))
         self.client = TestClient(create_app(self.settings))
         self.addCleanup(self.client.close)
 
@@ -75,20 +77,29 @@ class ProtocolRouteTests(unittest.TestCase):
         ):
             self.assertIn(feature, capabilities)
         self.assertNotIn(RHINO_EXPORT_CAPABILITY, capabilities)
+        # This process was built with export off, and says so by omission.
+        self.assertNotIn(CAD_EXPORT_CAPABILITY, capabilities)
 
-    def test_rhino_export_is_a_capability_only_where_it_is_enabled(self) -> None:
+    def capabilities_of(self, **settings: object) -> list[str]:
         client = TestClient(
             create_app(
-                StudioSettings(
-                    project_dir=Path("unbound-placeholder"), rhino_export=True
-                )
+                StudioSettings(project_dir=Path("unbound-placeholder"), **settings)
             )
         )
         self.addCleanup(client.close)
-        self.assertIn(
-            RHINO_EXPORT_CAPABILITY,
-            client.get("/api/protocol").json()["capabilities"],
-        )
+        return client.get("/api/protocol").json()["capabilities"]
+
+    def test_a_process_nothing_configured_exports_and_does_not_need_rhino(self) -> None:
+        # The default: geometry is written (in process), and no Rhino lane is
+        # claimed. A client may expect artifacts and must not expect Rhino.
+        capabilities = self.capabilities_of()
+        self.assertIn(CAD_EXPORT_CAPABILITY, capabilities)
+        self.assertNotIn(RHINO_EXPORT_CAPABILITY, capabilities)
+
+    def test_rhino_export_is_a_capability_only_where_it_is_named(self) -> None:
+        capabilities = self.capabilities_of(cad_export=CAD_EXPORT_RHINO)
+        self.assertIn(CAD_EXPORT_CAPABILITY, capabilities)
+        self.assertIn(RHINO_EXPORT_CAPABILITY, capabilities)
 
     def test_the_server_version_is_the_applications_own(self) -> None:
         # One constant, so the OpenAPI document and the handshake cannot
@@ -105,7 +116,7 @@ class ProjectsRouteTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         make_project(self.root)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
 
@@ -148,23 +159,23 @@ class RemoteModeSettingsTests(unittest.TestCase):
 
     def test_remote_without_a_token_refuses_before_the_app_is_built(self) -> None:
         with self.assertRaises(SettingsError) as raised:
-            StudioSettings(project_dir=Path("p"), mode=REMOTE_MODE)
+            StudioSettings(cad_export="off", project_dir=Path("p"), mode=REMOTE_MODE)
         self.assertIn("ARCHFLOW_STUDIO_TOKEN", str(raised.exception))
 
     def test_remote_without_origins_refuses(self) -> None:
         with self.assertRaises(SettingsError) as raised:
             StudioSettings(
-                project_dir=Path("p"), mode=REMOTE_MODE, api_token=TOKEN
+                cad_export="off", project_dir=Path("p"), mode=REMOTE_MODE, api_token=TOKEN
             )
         self.assertIn("ARCHFLOW_STUDIO_ORIGINS", str(raised.exception))
 
     def test_an_unknown_mode_is_refused_by_name(self) -> None:
         with self.assertRaises(SettingsError) as raised:
-            StudioSettings(project_dir=Path("p"), mode="sideways")
+            StudioSettings(cad_export="off", project_dir=Path("p"), mode="sideways")
         self.assertIn("sideways", str(raised.exception))
 
     def test_local_mode_needs_nothing_and_binds_loopback(self) -> None:
-        settings = StudioSettings(project_dir=Path("p"))
+        settings = StudioSettings(cad_export="off", project_dir=Path("p"))
         self.assertEqual(settings.mode, LOCAL_MODE)
         self.assertEqual(settings.bind_host, "127.0.0.1")
         self.assertIsNone(settings.api_token)
@@ -181,7 +192,7 @@ class RemoteModeGateTests(unittest.TestCase):
         self.remote = TestClient(
             create_app(
                 StudioSettings(
-                    project_dir=self.root / PROJECT_ID,
+                    cad_export="off", project_dir=self.root / PROJECT_ID,
                     mode=REMOTE_MODE,
                     api_token=TOKEN,
                     origins=(ORIGIN,),
@@ -190,7 +201,7 @@ class RemoteModeGateTests(unittest.TestCase):
         )
         self.addCleanup(self.remote.close)
         self.local = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.local.close)
 

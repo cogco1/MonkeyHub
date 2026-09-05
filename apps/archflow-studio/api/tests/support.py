@@ -24,6 +24,7 @@ from archflow.project.record_kinds import (
     PROJECT_STAGE_WORKFLOW,
     PROMOTION_DECISION,
     RUNNER_RUN_RECEIPT,
+    SEAT_OCCT_EXECUTION,
     SEAT_RHINO_EXECUTION,
     STATE_RECORD,
 )
@@ -89,9 +90,10 @@ VIEW_KWARGS = {
 }
 
 # Two components (one nested), one level, one grid axis, two elements with real
-# references, three parameters (one locked, two derived) and one support
-# relation with a validator: closure, locks and three-state checks all have
-# something to say about this record.
+# references, four parameters (a declared source, two derived from it in a
+# chain, and one locked declared quantity nothing depends on) and one support
+# relation with a validator: closure, locks, derived-parameter recomputation
+# and three-state checks all have something to say about this record.
 RECORD_PAYLOAD: dict[str, object] = {
     "schema": "StateRecord@1",
     "project_id": PROJECT_ID,
@@ -177,7 +179,7 @@ RECORD_PAYLOAD: dict[str, object] = {
             "key": "module",
             "value": 1.2,
             "unit": "m",
-            "lock_authority": "client",
+            "epistemic_status": "declared",
         },
         {
             "key": "bay",
@@ -192,6 +194,13 @@ RECORD_PAYLOAD: dict[str, object] = {
             "unit": "m",
             "expr": "2 * bay",
             "inputs": ["bay"],
+        },
+        {
+            "key": "plinth",
+            "value": 0.6,
+            "unit": "m",
+            "epistemic_status": "declared",
+            "lock_authority": "client",
         },
     ],
     "relations": [
@@ -309,6 +318,8 @@ def runner_state_digest(
     repository: FilesystemProjectRepository,
     run_id: str,
     payload: object = RECORD_PAYLOAD,
+    *,
+    phase: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT,
 ) -> str:
     """The ``design_state_digest`` the runner would write for that run.
 
@@ -316,12 +327,13 @@ def runner_state_digest(
     test comparing the API against it is comparing against production, not
     against the API repeating itself. ``payload`` names which record the
     project authored, for a fixture that authored something other than the
-    default one.
+    default one; ``phase`` is the phase the run's stage envelope stated, which
+    the runner projects the record in (P112).
     """
 
     run = RunRef(PROJECT_ID, run_id, repository.read_head())
     record = StateRecord.from_dict(payload).bound_to(run)
-    return developed_design_view(record, run=run, **VIEW_KWARGS).state_digest
+    return developed_design_view(record, run=run, phase=phase, **VIEW_KWARGS).state_digest
 
 
 def write_runner_record(
@@ -360,13 +372,17 @@ def retain_runner_receipt(
     workflow_ref: str | None = None,
     record_payload: object | None = None,
     seat_results: object | None = None,
+    phase: DesignPhase | None = None,
 ) -> ProjectRecordRef:
     """Retain the receipt a completed runner run leaves behind.
 
     ``design_state_digest=None`` writes a receipt that claims no digest, which
     is what an older or interrupted runner can leave.  Like the production
     runner, the fixture first retains the State Record bound to this exact run
-    and base, then points the receipt at that immutable record.
+    and base, then points the receipt at that immutable record. ``phase``
+    writes the ``stage`` block a ``RunnerRunReceipt@3`` carries, naming the
+    phase the run's envelope stated; ``None`` leaves it out, as a receipt
+    written before that block did.
     """
 
     authored = (
@@ -395,6 +411,14 @@ def retain_runner_receipt(
         payload["workflow_ref"] = workflow_ref
     if seat_results is not None:
         payload["seat_results"] = seat_results
+    if phase is not None:
+        payload["stage"] = {
+            "stage_id": "stage-0",
+            "stage_index": 0,
+            "phase": phase.value,
+            "status": "OPEN",
+            "close_obligation_id": "close-stage-0",
+        }
     return repository.put_json(
         run=run,
         destination=run_records(run.run_id),
@@ -495,16 +519,127 @@ def retain_rhino_receipt(
     )
 
 
+def retain_occt_receipt(
+    repository: FilesystemProjectRepository,
+    run: RunRef,
+    *,
+    stage_id: str,
+    step_bytes: bytes | None,
+    preview_bytes: bytes | None,
+    status: str = "succeeded",
+    stem: str | None = None,
+    workspace_subdir: str | None = None,
+    object_ids: tuple[str, ...] = ("body",),
+) -> ProjectRecordRef:
+    """Write what an in-process (OCCT) export leaves and retain its receipt.
+
+    Two files in the run's export workspace — the exact STEP and the mesh
+    preview tessellated from the same model — and one ``seat-occt-execution``
+    record of the ``OcctExecutionReceipt@1`` shape naming both by digest, the
+    run's base and the program that produced them. ``None`` for either byte
+    string writes no such file and no such block, which is what a receipt
+    whose build failed before writing looks like. The listing reads these
+    receipts; it never runs anything to produce them.
+    """
+
+    directory = repository.layout.run(run.run_id).workspaces / Path(
+        workspace_subdir or f"cad-{stage_id}"
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = stem or f"{stage_id}@{RHINO_PROGRAM_DIGEST[:12]}"
+    program_path = (
+        f"runs/{run.run_id}/branches/{RHINO_BRANCH_ID}/records/"
+        f"{stage_id}-geometry-program-{PROGRAM_RECORD_SHA}.json"
+    )
+
+    def artifact(name: str, data: bytes | None, **extra: object) -> dict | None:
+        if data is None:
+            return None
+        (directory / name).write_bytes(data)
+        return {
+            "relative_path": name,
+            "sha256": hashlib.sha256(data).hexdigest(),
+            **extra,
+        }
+
+    exact = artifact(
+        f"{stem}.step",
+        step_bytes,
+        format="STEP AP214 (ISO 10303-21)",
+        exact_brep=True,
+    )
+    preview = artifact(
+        f"{stem}.preview.3dm",
+        preview_bytes,
+        format="3dm render-mesh preview",
+        exact_brep=False,
+        note="not a NURBS/B-rep delivery; the STEP file is the exact geometry",
+    )
+    payload: dict[str, object] = {
+        "schema": "OcctExecutionReceipt@1",
+        "status": status,
+        "identity": {
+            "schema": "OcctCadExportIdentity@1",
+            "length_unit": "meter",
+            "up_axis": "Z-up",
+            "binding": {
+                "schema": "RhinoCadProgramBinding@1",
+                "project_id": PROJECT_ID,
+                "run_id": run.run_id,
+                "stage_id": stage_id,
+                "branch_id": RHINO_BRANCH_ID,
+                "branch_epoch": RHINO_BRANCH_EPOCH,
+                "design_state_digest": RHINO_DESIGN_STATE_DIGEST,
+                "program_digest": RHINO_PROGRAM_DIGEST,
+                "program_ref": {
+                    "media_type": "application/json",
+                    "project_id": PROJECT_ID,
+                    "relative_path": program_path,
+                    "sha256": PROGRAM_RECORD_SHA,
+                    "uri": f"project://{PROJECT_ID}/{program_path}",
+                },
+                "base": {
+                    "project_id": PROJECT_ID,
+                    "version": run.base.version,
+                    "state_sha256": run.base.state_sha256,
+                },
+            },
+        },
+        "adapter_id": "occt-in-process",
+        "backend": {"name": "fixture"},
+        "evidence_tier": "self_measured_cold_read",
+        "exact_artifact": exact,
+        "preview_artifact": preview,
+        "physical_object_ids": list(object_ids),
+        "preview_inspection": (
+            None if preview is None else {"object_count": len(object_ids)}
+        ),
+        "readback_verified": status == "succeeded",
+        "failures": [] if status == "succeeded" else [
+            {"code": "cad_execution.fixture_failed", "detail": "fixture"}
+        ],
+    }
+    return repository.put_json(
+        run=run,
+        destination=run_records(run.run_id),
+        record_kind=SEAT_OCCT_EXECUTION,
+        payload=payload,
+    )
+
+
 def make_project(
     root: Path,
     *,
     design_state_digest: object = COMPUTED,
+    phase: DesignPhase | None = None,
 ) -> tuple[FilesystemProjectRepository, ProjectRecordRef]:
     """One initialized project with the authored record and one finished run.
 
     ``design_state_digest`` replaces what the retained receipt claims the run
     executed — another digest, or ``None`` for a receipt that claims none — so
     a test can watch the projection disagree with a receipt, or decline to.
+    ``phase`` makes the run's receipt state the phase its stage ran in and
+    computes the claimed digest in that phase, as the runner does.
     """
 
     project_dir = Path(root) / PROJECT_ID
@@ -520,10 +655,15 @@ def make_project(
         repository,
         run,
         design_state_digest=(
-            runner_state_digest(repository, REFERENCE_RUN_ID)
+            runner_state_digest(
+                repository,
+                REFERENCE_RUN_ID,
+                phase=phase or DesignPhase.DESIGN_DEVELOPMENT,
+            )
             if design_state_digest is COMPUTED
             else design_state_digest
         ),
+        phase=phase,
     )
     record_ref = next(
         ref

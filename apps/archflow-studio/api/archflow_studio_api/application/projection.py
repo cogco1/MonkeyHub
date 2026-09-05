@@ -14,7 +14,7 @@ Two identities travel, not three: ``record.digest`` is the record's content and
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from archflow.project.inputs import (
@@ -24,15 +24,18 @@ from archflow.project.inputs import (
 )
 from archflow.project.layout import AUTHORED_RECORD_PATH
 from archflow.project.refs import ProjectVersionRef, RunRef
-from archflow.state.developed_design import DevelopedDesignState
+from archflow.state.developed_design import DevelopedDesignError, DevelopedDesignState
 from archflow.state.operational_state import DependencyEdge
 from archflow.state.spatial import DesignComponent
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import (
     Parameter,
     StateRecord,
     StateRecordError,
     design_components_of,
     developed_design_view,
+    parameter_bindings_of,
+    resolve_element_bindings,
 )
 
 from ..transport.errors import StudioError, error_sentence
@@ -44,15 +47,30 @@ PORTFOLIO_ID = "declared-schematic"
 BRANCH_ID = "runner-v1"
 SELECTION_DECISION_REF = "decision:declared-schematic-selection"
 
+# The phase a record is projected in when nothing states one: a project with
+# no run, a WIP fallback, or a receipt older than ``stage.phase``. It is the
+# phase every such projection always had (P112), not a second authority over
+# the phase a run's envelope states.
+DEFAULT_PHASE = DesignPhase.DESIGN_DEVELOPMENT
+
 
 @dataclass(frozen=True, slots=True)
 class ProjectedElement:
-    """One ``Element@1`` row, with the scalars the intent grammar can target."""
+    """One ``Element@1`` row, with the scalars the intent grammar can target.
+
+    ``numeric_fields`` are the values the producers read: a literal as
+    authored, a ``"@key"`` binding as the kernel evaluates it
+    (``resolve_element_bindings``). ``bindings`` says which of them are
+    bound and to which parameter, so a change to a bound field is routed to
+    that parameter instead of being proposed against a number the row does
+    not own.
+    """
 
     element_id: str
     component_id: str
     producer: str
     numeric_fields: Mapping[str, int | float]
+    bindings: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +85,10 @@ class StateProjection:
     record_source: str
     reference_state_exact: bool
     reference_state_error: str | None
+    # The phase the record was projected in: the reference run's own stage
+    # phase when its receipt states one and the record is that run's exact
+    # retained record; ``DEFAULT_PHASE`` otherwise. It enters ``state_digest``.
+    phase: DesignPhase
     # ``None`` when the kernel refused to build the bound view. Only
     # ``GET /api/state`` is served such a projection; see ``project_state``.
     state: DevelopedDesignState | None
@@ -157,22 +179,31 @@ def project_state(
             except (StateRecordError, KeyError, TypeError, ValueError) as exc:
                 raise _record_invalid(exc) from exc
             reference_state_error = exc.detail
+    # The phase is the run's, stated by its retained receipt (ADR-007, P112).
+    # It is read only for the exact retained record of that run: a WIP
+    # fallback is a current projection under the studio run id and is never
+    # rebound to the phase of a historical run it did not come from.
+    phase, phase_error = _reference_phase(reference, exact=reference_state_exact)
     try:
         state, components, component_tree_error = _bound_view(
             record,
             run,
+            phase=phase,
             require_view=require_view,
             record_source=record_source,
         )
         edges = record.dependency_edges()
-        elements = _elements(record)
+        elements, binding_error = _elements(record)
     except (StateRecordError, KeyError, TypeError, ValueError) as exc:
         # A record that parsed and cannot be read is the operator's to fix,
         # and the sentence that says which field is the one worth repeating.
         raise _record_invalid(exc) from exc
     # Three states, not two: a receipt that names no digest leaves the
     # comparison unchecked, and unchecked is never reported as a mismatch. A
-    # projection with no bound view has no digest to compare either.
+    # projection with no bound view has no digest to compare either, and a
+    # receipt whose phase this projection cannot carry was not projected in
+    # the phase it names, so its digest is not compared to a number computed
+    # under another one.
     claimed = (
         None
         if reference.receipt is None
@@ -181,6 +212,8 @@ def project_state(
     matches = (
         False
         if reference.source != "none" and not reference_state_exact
+        else None
+        if phase_error is not None
         else state.state_digest == claimed
         if state is not None and isinstance(claimed, str)
         else None
@@ -194,6 +227,7 @@ def project_state(
         record_source=record_source,
         reference_state_exact=reference_state_exact,
         reference_state_error=reference_state_error,
+        phase=phase,
         state=state,
         matches_reference_receipt=matches,
         components=components,
@@ -210,8 +244,47 @@ def project_state(
             reference_state_exact=reference_state_exact,
             reference_state_error=reference_state_error,
             head=head,
+            phase_error=phase_error,
+            binding_error=binding_error,
         ),
     )
+
+
+def _reference_phase(
+    reference: ReferenceRun, *, exact: bool
+) -> tuple[DesignPhase, str | None]:
+    """The phase the reference run's stage ran in, or the default with the reason it was not used.
+
+    ``RunnerRunReceipt@3`` carries the envelope's phase under ``stage.phase``.
+    A receipt older than that key states none and is read in the phase every
+    projection had then, which is what its digest was computed in. A phase the
+    developed-design projection cannot carry is not mapped to one it can: the
+    default is used and the sentence says so, so the digest comparison stays
+    unmade rather than reporting a mismatch about a number nobody computed.
+    """
+
+    if not exact or reference.receipt is None:
+        return DEFAULT_PHASE, None
+    stage = reference.receipt.get("stage")
+    value = stage.get("phase") if isinstance(stage, Mapping) else None
+    if not isinstance(value, str):
+        return DEFAULT_PHASE, None
+    try:
+        phase = DesignPhase(value)
+    except ValueError:
+        return DEFAULT_PHASE, (
+            f"reference run {reference.run.run_id} names stage phase "
+            f"{value!r}, which is not a design phase; projected in "
+            f"{DEFAULT_PHASE.value}, so its digest is not compared to the receipt"
+        )
+    if phase not in (DesignPhase.SCHEMATIC_DESIGN, DesignPhase.DESIGN_DEVELOPMENT):
+        return DEFAULT_PHASE, (
+            f"reference run {reference.run.run_id} ran its stage in phase "
+            f"{phase.value}, which the developed-design projection cannot "
+            f"carry; projected in {DEFAULT_PHASE.value}, so its digest is not "
+            "compared to the receipt"
+        )
+    return phase, None
 
 
 def require_actionable(projection: StateProjection) -> None:
@@ -293,6 +366,7 @@ def _bound_view(
     record: StateRecord,
     run: RunRef,
     *,
+    phase: DesignPhase,
     require_view: bool,
     record_source: str,
 ) -> tuple[
@@ -305,6 +379,10 @@ def _bound_view(
     The two are taken together because they are one answer: the view builds
     the component tree itself, so a record the kernel will not view is one
     whose tree this projection has no business arranging on its own.
+
+    ``phase`` is the run's (``_reference_phase``): the same view kwargs the
+    runner uses, in the same phase its envelope stated, or the digest is a
+    number no receipt carries.
 
     When the caller can live without them the sentence is returned rather than
     raised. Failing to arrange a record's components is not a claim that they
@@ -320,24 +398,54 @@ def _bound_view(
             portfolio_id=PORTFOLIO_ID,
             branch_id=BRANCH_ID,
             selection_decision_ref=SELECTION_DECISION_REF,
+            phase=phase,
         )
         return state, design_components_of(record), None
-    except StateRecordError as exc:
+    except (StateRecordError, DevelopedDesignError) as exc:
         if require_view:
             raise _record_invalid(exc, record_source=record_source) from exc
         return None, None, str(exc)
 
 
-def _elements(record: StateRecord) -> tuple[ProjectedElement, ...]:
+def _elements(
+    record: StateRecord,
+) -> tuple[tuple[ProjectedElement, ...], str | None]:
+    """Every ``Element@1`` row with the numbers the producers would read, and the kernel's refusal if it would read none.
+
+    The values are the kernel's own input projection
+    (``resolve_element_bindings``): a literal as authored and a ``"@key"``
+    binding as the evaluated parameter, with no evaluator of this module's.
+    When the kernel refuses the projection — a bound derived value whose
+    stored number disagrees with its expression, a cycle — the rows are still
+    listed with their literals, the bound fields are left out rather than
+    shown as either number, and the sentence travels in ``honesty``.
+    """
+
+    entities = record.entities_of("Element@1")
+    bindings = {
+        entity.entity_id: {
+            path[len("params."):]: key
+            for path, key in parameter_bindings_of(entity)
+            if path.startswith("params.") and "[" not in path[len("params."):] and "." not in path[len("params."):]
+        }
+        for entity in entities
+    }
+    error: str | None = None
+    try:
+        resolved = resolve_element_bindings(record)
+    except StateRecordError as exc:
+        error = str(exc)
+        resolved = {entity.entity_id: dict(entity.fields) for entity in entities}
     return tuple(
         ProjectedElement(
             element_id=entity.entity_id,
             component_id=entity.fields["component_id"],
             producer=entity.fields["producer"],
-            numeric_fields=_numeric_fields(entity.fields),
+            numeric_fields=_numeric_fields(resolved[entity.entity_id]),
+            bindings=bindings[entity.entity_id],
         )
-        for entity in record.entities_of("Element@1")
-    )
+        for entity in entities
+    ), error
 
 
 def _numeric_fields(fields: Mapping[str, Any]) -> dict[str, int | float]:
@@ -361,6 +469,8 @@ def _honesty(
     reference_state_exact: bool,
     reference_state_error: str | None,
     head: ProjectVersionRef,
+    phase_error: str | None = None,
+    binding_error: str | None = None,
 ) -> tuple[str, ...]:
     """The lines the UI shows verbatim: what this projection cannot tell you."""
 
@@ -370,6 +480,13 @@ def _honesty(
         # panel that renders only the tree would otherwise be the sole place
         # this refusal appeared.
         lines.append(f"component tree unavailable: {component_tree_error}")
+    if phase_error is not None:
+        lines.append(phase_error)
+    if binding_error is not None:
+        # The kernel refused to resolve the rows' parameter bindings; the bound
+        # fields are absent from ``elements`` rather than shown as a number
+        # the producers would refuse to read.
+        lines.append(f"bound element values unavailable: {binding_error}")
     if not record.parameters:
         lines.append(
             "0 parameters declared: parameter intents will be "

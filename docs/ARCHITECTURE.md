@@ -99,8 +99,10 @@ the architect changes that decision; ask about a real conflict, not an internal 
    another whole building to avoid examining the first failure.
 3. **Consolidate demonstrated reuse and bottlenecks.** Extract shared code when real
    consumers need it and remove the superseded production path together. P105
-   follows missing geometry vocabulary; P107 follows measured waiting, not the
-   assumption that a new executor is required. P104 and P106 retired unbuilt with the
+   follows missing geometry vocabulary. The delivered OCCT export supports the bounded
+   solid/loft/boolean slice described in the [Studio README](../apps/archflow-studio/README.md);
+   whole-stair/window production and further operation coverage remain live work.
+   P104 and P106 retired unbuilt with the
    monument lane on 2026-09-05. Research under P094 proceeds separately.
 
 The [benchmark proposal](RESEARCH_POSITIONING.md) evaluates task completion,

@@ -439,11 +439,25 @@ def _rel(reference: Mapping[str, Any], base_datum: str, context: ProductionConte
 
 
 def element_rows_of(record) -> tuple[ElementRow, ...]:
-    """The record's Element@1 entities as producer rows, in production order."""
+    """The record's Element@1 entities as producer rows, in production order.
 
+    A row's explicit ``"@key"`` bindings are resolved to the record's evaluated
+    parameter values by ``state_record.resolve_element_bindings`` (the one
+    derivation engine); a numeric literal stays the literal the row stated. A
+    binding that names no parameter, a bound derived value whose stored number
+    disagrees with its expression, a cycle or an unknown name fails typed here,
+    before any producer runs.
+    """
+
+    from archflow.state.state_record import StateRecordError, resolve_element_bindings
+
+    try:
+        resolved = resolve_element_bindings(record)
+    except StateRecordError as exc:
+        raise ElementProducerError(str(exc)) from exc
     rows = []
     for e in record.entities_of("Element@1"):
-        fields = dict(e.fields)
+        fields = dict(resolved[e.entity_id])
         component_id = fields.get("component_id") or e.parent_id
         if not component_id:
             raise ElementProducerError(f"element {e.entity_id}: no component (field component_id or parent)")

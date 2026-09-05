@@ -311,9 +311,9 @@ def candidate_honesty(saved: bool, settings: StudioSettings) -> tuple[str, ...]:
             f"{PROGRAM_SHEET_PATH} was not written: this sheet lives in the "
             "run it produced and in your browser, nowhere else"
         )
-    if settings.rhino_export:
+    if settings.rhino_lane:
         lines.append(
-            "this run exports, so it waits for the one Rhino lane on this "
-            "machine"
+            "this run exports through Rhino, so it waits for the one Rhino "
+            "lane on this machine"
         )
     return tuple(lines)

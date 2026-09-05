@@ -132,7 +132,7 @@ class OptionsTestCase(unittest.TestCase):
                 self.repository, REFERENCE_RUN_ID, self.payload
             ),
         )
-        self.app = create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        self.app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
         self.state_digest = runner_state_digest(
@@ -204,7 +204,7 @@ class MakingOptionsTests(OptionsTestCase):
         first = self.option("add_floor")
         self.client.close()
         restarted = create_app(
-            StudioSettings(project_dir=self.app.state.settings.project_dir)
+            StudioSettings(cad_export="off", project_dir=self.app.state.settings.project_dir)
         )
         with TestClient(restarted) as client:
             response = client.post(

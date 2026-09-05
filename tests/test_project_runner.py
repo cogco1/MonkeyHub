@@ -18,7 +18,7 @@ from pathlib import Path
 
 from archflow.capabilities.declaration import DeclarationQuadrant
 from archflow.capabilities.discipline_seats import SeatSpec
-from archflow.capabilities.geometry_proposal import GeometryProposalProviderIdentity
+from archflow.capabilities.geometry_proposal import GeometryProposalProviderIdentity, load_compiled_geometry_program
 from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -41,6 +41,7 @@ from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopmentDiscipline
 from archflow.state.state_record import (
     Entity,
+    Parameter,
     Relation,
     StateRecord,
     StateRecordError,
@@ -80,7 +81,7 @@ def _component(cid, parent, kind, intent, volumes=()):
             "maturity": "schematic", "revision": 1, "volume_ids": list(volumes), "unresolved_child_roles": [], "source_refs": [EVIDENCE]}
 
 
-def _record(opening_along: float = 6.0, extra_components=(), elements=("portico-columns", "wall-south")) -> StateRecord:
+def _record(opening_along: float = 6.0, extra_components=(), elements=("portico-columns", "wall-south"), extra_entities=(), relations=(), parameters=()) -> StateRecord:
     """The demo block as one State Record: components + massing, three levels, four grid lines, two element rows."""
 
     components = [
@@ -112,7 +113,8 @@ def _record(opening_along: float = 6.0, extra_components=(), elements=("portico-
                              parent_id="exterior-walls", basis_refs=BASIS),
     }
     entities += [rows[name] for name in elements]
-    return StateRecord("demo", "run-1", tuple(entities), evidence_refs=(EVIDENCE,), decision_ref="decision:declared-option",
+    entities += list(extra_entities)
+    return StateRecord("demo", "run-1", tuple(entities), parameters=tuple(parameters), relations=tuple(relations), evidence_refs=(EVIDENCE,), decision_ref="decision:declared-option",
                        option={"option_id": "declared-option", "label": "demo declared schematic", "typology": "test block with a portico", "rationale": "declared from the survey record",
                                "footprint_cells": [[0, 0], [1, 0], [0, 1], [1, 1]], "assumption_refs": ["assumption:declared-schematic"]})
 
@@ -131,12 +133,14 @@ def _options(**overrides) -> RunOptions:
     return RunOptions(**fields)
 
 
-def _state(record, run, options):
-    return developed_design_view(record, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+def _state(record, run, options, phase: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT):
+    return developed_design_view(record, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref, phase=phase)
 
 
-def _stage_guard(repository, run, record, options, required_checks=("support_contact",)) -> StageExecutionGuard:
-    state = _state(record, run, options)
+def _stage_guard(repository, run, record, options, required_checks=("support_contact",), *, phase: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT, state=None) -> StageExecutionGuard:
+    """A retained one-stage workflow in ``phase`` and its envelope, bound to ``state`` (by default the record projected in that same phase)."""
+
+    state = state if state is not None else _state(record, run, options, phase)
     workflow = ProjectStageWorkflow(
         project_id=run.project_id,
         workflow_id="runner-test-workflow",
@@ -144,7 +148,7 @@ def _stage_guard(repository, run, record, options, required_checks=("support_con
             ProjectStage(
                 stage_id="stage-0-test-production",
                 stage_index=0,
-                phase=DesignPhase.DESIGN_DEVELOPMENT,
+                phase=phase,
                 required_roles=("geometry-program", "model-inspection"),
                 required_checks=required_checks,
                 close_obligation_id="close-stage-0-test-production",
@@ -218,17 +222,19 @@ class BootstrapTests(unittest.TestCase):
                 developed_design_view(_record(), run=repository.create_run("run-1"), portfolio_id="declared", branch_id="b", selection_decision_ref="decision:x")
 
 
-class RunTests(unittest.TestCase):
-    def _run(self, record: StateRecord, *, required_checks=("support_contact",), **overrides):
+class _RunMixin:
+    def _run(self, record: StateRecord, *, required_checks=("support_contact",), phase: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT, **overrides):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         repository = FilesystemProjectRepository.initialize(Path(self.temporary.name) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
         run = repository.create_run("run-1")
         options = _options(**overrides)
-        state = _state(record, run, options)
-        guard = _stage_guard(repository, run, record, options, required_checks=required_checks)
+        state = _state(record, run, options, phase)
+        guard = _stage_guard(repository, run, record, options, required_checks=required_checks, phase=phase)
         return repository, run_project(repository, run=run, stage_guard=guard, record=record, seats=_seats(state.active_phase), options=options)
 
+
+class RunTests(_RunMixin, unittest.TestCase):
     def test_two_seats_run_through_the_producer_with_receipts(self) -> None:
         repository, receipt = self._run(_record())
         self.assertTrue(receipt["seat_execution_complete"], receipt["seat_results"])
@@ -561,6 +567,369 @@ class RunTests(unittest.TestCase):
             self.assertEqual(receipt["stage"]["status"], "OPEN")
 
 
+def _podium(component: str = "exterior-walls", x0: float = 10.6) -> Entity:
+    """A prism in the envelope seat, standing 0.45 m east of the last column (x 10.15) at the columns' own height."""
+
+    return Entity("podium-east", "Element@1", {"component_id": component, "producer": "prism",
+                  "references": {"base": {"level": "level-piano-nobile"}},
+                  "params": {"profile": [[x0, -1.0], [x0 + 1.0, -1.0], [x0 + 1.0, 1.0], [x0, 1.0]], "height": 6.0}},
+                  parent_id=component, basis_refs=BASIS)
+
+
+def _lintel(x0: float = 9.35) -> Entity:
+    """A prism in the structure seat standing on the columns' published top, over the last column (x 9.35..10.15, top 9.5)."""
+
+    return Entity("lintel-east", "Element@1", {"component_id": "portico-columns", "producer": "prism",
+                  "references": {"base": {"datum": "columns-front-top"}},
+                  "params": {"profile": [[x0, -1.0], [x0 + 0.8, -1.0], [x0 + 0.8, 1.0], [x0, 1.0]], "height": 0.5}},
+                  parent_id="portico-columns", basis_refs=BASIS)
+
+
+def _columns_carry_lintel(validator=ValidatorBinding("support_contact", tolerance=0.001)) -> Relation:
+    """The record's own support of the lintel on the columns, whose datum role names the envelope seat's podium top."""
+
+    return Relation("columns-carry-lintel", "support", "columns-front", "lintel-east", datum_role="podium-east-top", validator=validator)
+
+
+def _relation_checks(repository, receipt) -> dict[str, dict]:
+    """Every retained relation check of the run, by relation id, with the seat that measured it."""
+
+    out: dict[str, dict] = {}
+    for seat in receipt["seat_results"]:
+        if seat["relation_check_ref"]:
+            for check in repository.load_json(_ref(seat["relation_check_ref"]))["checks"]:
+                out[check["relation_id"]] = {**check, "seat_id": seat["seat_id"]}
+    unmeasured_ref = receipt["relation_checks"]["unmeasured_check_ref"]
+    if unmeasured_ref:
+        payload = repository.load_json(_ref(unmeasured_ref))
+        for check in payload["checks"]:
+            out[check["relation_id"]] = {**check, "seat_id": payload["seat_id"], "scope": payload["scope"]}
+    return out
+
+
+class CrossSeatRelationTests(_RunMixin, unittest.TestCase):
+    """A relation is measured once every endpoint has extent, in whichever seat that happens; never before, never dropped.
+
+    Every check here is on compiler-predicted bounds (``expected_object_bounds``):
+    the receipts say so, and none of these assertions is about a produced solid.
+    """
+
+    def test_a_record_support_on_a_later_seat_waits_for_that_seat(self) -> None:
+        """The wall's support on the ground is the envelope seat's to measure; the structure seat has no wall."""
+
+        record = _record(relations=(Relation("ground-supports-wall-south", "support", "level-ground", "wall-south",
+                                             validator=ValidatorBinding("support_contact", tolerance=0.001)),))
+        repository, receipt = self._run(record)                                            # used to raise RelationCheckError in the structure seat
+        self.assertEqual(receipt["closure_status"], "SATISFIED", receipt["seat_results"])
+        checks = _relation_checks(repository, receipt)
+        self.assertEqual(checks["ground-supports-wall-south"]["seat_id"], "seat-envelope")
+        self.assertEqual(checks["ground-supports-wall-south"]["status"], "held")
+        structure = repository.load_json(_ref({s["seat_id"]: s for s in receipt["seat_results"]}["seat-structure"]["relation_check_ref"]))
+        self.assertNotIn("ground-supports-wall-south", {c["relation_id"] for c in structure["checks"]})
+        self.assertEqual(structure["basis"], "compiled-predicted-bounds")
+        self.assertEqual(receipt["relation_checks"], {"basis": "compiled-predicted-bounds", "unmeasured_check_ref": None, "unmeasured_relation_ids": []})
+
+    def test_a_cross_seat_clearance_is_measured_when_its_second_endpoint_is_produced(self) -> None:
+        """Columns (structure seat) to podium (envelope seat): measured in the envelope seat, against both seats' bounds."""
+
+        record = _record(extra_entities=(_podium(),), relations=(
+            Relation("columns-clear-of-podium", "clearance", "columns-front", "podium-east", validator=ValidatorBinding("clearance_interval", interval_m=(0.4, 0.5))),))
+        repository, receipt = self._run(record, required_checks=("clearance_interval",))
+        self.assertEqual(receipt["closure_status"], "SATISFIED", receipt["seat_results"])
+        self.assertIsNotNone(receipt["exit_binding_ref"])
+        check = _relation_checks(repository, receipt)["columns-clear-of-podium"]
+        self.assertEqual((check["seat_id"], check["status"]), ("seat-envelope", "held"))
+        self.assertAlmostEqual(check["measured"]["gap"], 0.45, places=6)
+
+    def test_a_cross_seat_clearance_that_does_not_hold_fails_the_closure(self) -> None:
+        record = _record(extra_entities=(_podium(),), relations=(
+            Relation("columns-clear-of-podium", "clearance", "columns-front", "podium-east", validator=ValidatorBinding("clearance_interval", interval_m=(0.6, 1.0))),))
+        repository, receipt = self._run(record, required_checks=("clearance_interval",))
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        self.assertIsNone(receipt["exit_binding_ref"])
+        closure = repository.load_json(_ref(receipt["closure_ref"]))
+        self.assertEqual(closure["findings"], [{"code": "check_failed", "requirement_id": "clearance_interval", "receipt_id": "columns-clear-of-podium", "refs": []}])
+        envelope = {s["seat_id"]: s for s in receipt["seat_results"]}["seat-envelope"]
+        self.assertEqual(envelope["status"], "proposal_accepted")
+        self.assertEqual([i["relation_id"] for i in envelope["issues"] if i.get("code") == "relation_violated"], ["columns-clear-of-podium"])
+
+    def test_an_unmeasured_required_relation_is_not_hidden_by_a_measured_one_of_its_kind(self) -> None:
+        """One clearance is measured (hall to court, zones) and held; another of the same kind names an element no seat produces.
+
+        The stage requires ``clearance_interval``. Aggregating by kind would call
+        the requirement met on the zone gap alone; the closure must instead name
+        the relation nobody measured and stay OPEN.
+        """
+
+        record = _record(
+            extra_components=(_component("garden-wall", "building", "weather-enclosure-and-opening-host", "an unowned garden wall", ("yard",)),),
+            extra_entities=(
+                Entity("yard", "Volume@1", {"min": [14, 0, 0], "max": [20, 12, 12], "level_ids": ["ground"]}),
+                Entity("court", "Space@1", {"program_node_refs": ["program-node:court"], "level_ids": ["ground"], "volume_ids": ["yard"]}),
+                Entity("garden-wall-north", "Element@1", {"component_id": "garden-wall", "producer": "prism", "references": {"base": {"level": "level-ground"}},
+                                                          "params": {"profile": [[0, 20], [12, 20], [12, 20.4], [0, 20.4]], "height": 2.0}}, parent_id="garden-wall", basis_refs=BASIS),
+            ),
+            relations=(
+                Relation("hall-to-court-clearance", "clearance", "hall", "court", validator=ValidatorBinding("clearance_interval", interval_m=(1.0, 3.0))),
+                Relation("columns-clear-of-garden-wall", "clearance", "columns-front", "garden-wall-north", validator=ValidatorBinding("clearance_interval", interval_m=(0.0, 100.0))),
+            ))
+        repository, receipt = self._run(record, required_checks=("clearance_interval",))
+        self.assertTrue(receipt["seat_execution_complete"], receipt["seat_results"])
+        self.assertEqual(receipt["unowned_components"], ["garden-wall"])
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        self.assertIsNone(receipt["exit_binding_ref"])
+        closure = repository.load_json(_ref(receipt["closure_ref"]))
+        self.assertEqual(closure["findings"], [{"code": "missing_check", "requirement_id": "clearance_interval", "receipt_id": "columns-clear-of-garden-wall", "refs": []}])
+        checks = _relation_checks(repository, receipt)
+        self.assertEqual(checks["hall-to-court-clearance"]["status"], "held")
+        self.assertAlmostEqual(checks["hall-to-court-clearance"]["measured"]["gap"], 2.0)
+        unmeasured = checks["columns-clear-of-garden-wall"]
+        self.assertEqual((unmeasured["status"], unmeasured["seat_id"], unmeasured["scope"]), ("unchecked", None, "stage-unmeasured"))
+        self.assertIn("garden-wall-north", unmeasured["detail"])
+        self.assertEqual(receipt["relation_checks"]["unmeasured_relation_ids"], ["columns-clear-of-garden-wall"])
+        self.assertIn(_ref(receipt["relation_checks"]["unmeasured_check_ref"]).sha256, closure["check_receipt_digests"])
+
+    def test_a_support_whose_datum_a_later_seat_publishes_waits_for_that_datum_and_holds(self) -> None:
+        """Both members are the structure seat's; the datum the check compares against is the envelope seat's podium top.
+
+        Measured in the structure seat the datum comparison would be skipped
+        and the relation dropped as held. It waits instead, and is measured
+        in the envelope seat with the published value: 9.5, the columns' top.
+        """
+
+        record = _record(extra_entities=(_lintel(), _podium()), relations=(_columns_carry_lintel(),))
+        repository, receipt = self._run(record)
+        self.assertEqual(receipt["closure_status"], "SATISFIED", receipt["seat_results"])
+        check = _relation_checks(repository, receipt)["columns-carry-lintel"]
+        self.assertEqual((check["seat_id"], check["status"], check["check_kind"]), ("seat-envelope", "held", "support_contact"))
+        self.assertAlmostEqual(check["measured"]["datum_value"], 9.5)
+        self.assertAlmostEqual(check["measured"]["subject_top"], 9.5)
+        structure = repository.load_json(_ref({s["seat_id"]: s for s in receipt["seat_results"]}["seat-structure"]["relation_check_ref"]))
+        self.assertNotIn("columns-carry-lintel", {c["relation_id"] for c in structure["checks"]})
+        self.assertEqual(receipt["relation_checks"]["unmeasured_relation_ids"], [])
+
+    def test_a_late_datum_that_disagrees_with_the_measured_face_fails_the_check_and_the_closure(self) -> None:
+        """The podium is a metre lower, so its top (8.5) does not hold the columns' top (9.5): violated, not silently held."""
+
+        podium = replace(_podium(), fields={**_podium().fields, "params": {**_podium().fields["params"], "height": 5.0}})
+        record = _record(extra_entities=(_lintel(), podium), relations=(_columns_carry_lintel(),))
+        repository, receipt = self._run(record)                                            # used to close SATISFIED on a check that never compared the datum
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        self.assertIsNone(receipt["exit_binding_ref"])
+        check = _relation_checks(repository, receipt)["columns-carry-lintel"]
+        self.assertEqual((check["seat_id"], check["status"]), ("seat-envelope", "violated"))
+        self.assertAlmostEqual(check["measured"]["datum_value"], 8.5)
+        self.assertIn("podium-east-top=8.5000 does not hold the measured face 9.5000", check["detail"])
+        closure = repository.load_json(_ref(receipt["closure_ref"]))
+        self.assertEqual(closure["findings"], [{"code": "check_failed", "requirement_id": "support_contact", "receipt_id": "columns-carry-lintel", "refs": []}])
+        envelope = {s["seat_id"]: s for s in receipt["seat_results"]}["seat-envelope"]
+        self.assertEqual([i["relation_id"] for i in envelope["issues"] if i.get("code") == "relation_violated"], ["columns-carry-lintel"])
+
+    def test_a_datum_no_seat_publishes_leaves_the_check_unmeasured_and_the_stage_open(self) -> None:
+        record = _record(extra_entities=(_lintel(),), relations=(_columns_carry_lintel(),))      # no podium: nothing publishes podium-east-top
+        repository, receipt = self._run(record)
+        self.assertTrue(receipt["seat_execution_complete"], receipt["seat_results"])
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        self.assertIsNone(receipt["exit_binding_ref"])
+        check = _relation_checks(repository, receipt)["columns-carry-lintel"]
+        self.assertEqual((check["status"], check["seat_id"], check["scope"]), ("unchecked", None, "stage-unmeasured"))
+        self.assertIn("no seat published datum podium-east-top", check["detail"])
+        self.assertIn("support_contact", check["detail"])
+        self.assertEqual(receipt["relation_checks"]["unmeasured_relation_ids"], ["columns-carry-lintel"])
+        closure = repository.load_json(_ref(receipt["closure_ref"]))
+        self.assertEqual(closure["findings"], [{"code": "missing_check", "requirement_id": "support_contact", "receipt_id": "columns-carry-lintel", "refs": []}])
+
+    def test_an_unbound_relation_waits_for_no_datum_and_is_attributed_to_no_required_checker(self) -> None:
+        """No validator: no checker reads the datum role, so the relation is measured as soon as its endpoints exist -
+        as ``check_kind`` ``none``, ``unchecked`` - and the required ``support_contact`` neither counts it nor guesses a checker for it."""
+
+        record = _record(extra_entities=(_lintel(), _podium()), relations=(_columns_carry_lintel(validator=None),))
+        repository, receipt = self._run(record)
+        check = _relation_checks(repository, receipt)["columns-carry-lintel"]
+        self.assertEqual((check["seat_id"], check["check_kind"], check["status"], check["detail"]), ("seat-structure", "none", "unchecked", "no validator bound"))
+        self.assertEqual(receipt["closure_status"], "SATISFIED", receipt["seat_results"])      # the producers' bound support relations satisfy the required checker
+        self.assertEqual(repository.load_json(_ref(receipt["closure_ref"]))["findings"], [])
+        structure = repository.load_json(_ref({s["seat_id"]: s for s in receipt["seat_results"]}["seat-structure"]["relation_check_ref"]))
+        self.assertFalse(structure["fully_checked"])                                             # the readout still says something went unchecked
+
+    def test_a_relation_to_a_declined_element_is_reported_unmeasured(self) -> None:
+        record = _record(elements=("declined-portico-columns", "wall-south"), relations=(
+            Relation("declined-columns-clear-of-wall", "clearance", "columns-front-declined", "wall-south", validator=ValidatorBinding("clearance_interval", interval_m=(0.0, 1.0))),))
+        repository, receipt = self._run(record, required_checks=("clearance_interval",))
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        check = _relation_checks(repository, receipt)["declined-columns-clear-of-wall"]
+        self.assertEqual(check["status"], "unchecked")
+        self.assertIn("columns-front-declined", check["detail"])
+        codes = {(f["code"], f["requirement_id"], f["receipt_id"]) for f in repository.load_json(_ref(receipt["closure_ref"]))["findings"]}
+        self.assertIn(("missing_check", "clearance_interval", "declined-columns-clear-of-wall"), codes)
+        self.assertIn(("seat_incomplete", "seat-structure:declined_components", None), codes)
+
+
+class ParameterBindingRunTests(unittest.TestCase):
+    """A source parameter edit reaches the geometry through the declared chain and nothing else (B3).
+
+    ``storey`` is declared, ``podium_height = 2 * storey`` is derived, and the
+    podium's ``height`` binds ``@podium_height``. The columns' literal height
+    is a literal. The successor is saved and read back before it runs, as a
+    continued project would be.
+    """
+
+    def _record(self):
+        podium = replace(_podium(), fields={**_podium().fields, "params": {**_podium().fields["params"], "height": "@podium_height"}})
+        return _record(extra_entities=(podium,), parameters=(
+            Parameter("storey", 3.0, "m", epistemic_status="declared", source_ref=EVIDENCE),
+            Parameter("podium_height", 6.0, "m", expr="2 * storey", inputs=("storey",)),
+        ))
+
+    def _bounds(self, repository, receipt, seat_id: str):
+        from archflow.adapters.cad_program import expected_object_bounds
+        from archflow.capabilities.geometry_proposal import load_compiled_geometry_program
+
+        seat = {s["seat_id"]: s for s in receipt["seat_results"]}[seat_id]
+        return expected_object_bounds(load_compiled_geometry_program(repository.load_json(record_ref_from_uri(seat["program_ref"], "demo"))))
+
+    def test_a_source_edit_moves_the_bound_geometry_and_leaves_the_literal_alone(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            options = _options()
+            base_run = repository.create_run("run-1")
+            record = self._record().bound_to(base_run)
+            receipt = run_project(repository, run=base_run, stage_guard=_stage_guard(repository, base_run, record, options), record=record, seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=options)
+            self.assertEqual(receipt["closure_status"], "SATISFIED", receipt["seat_results"])
+            before = self._bounds(repository, receipt, "seat-envelope")["obj-podium-east"]
+            self.assertAlmostEqual(before["bbox_max"][1] - before["bbox_min"][1], 6.0)
+            columns_before = self._bounds(repository, receipt, "seat-structure")["obj-columns-front-0"]
+
+            successor = apply_state_record_operator(record, StateRecordOperator(
+                kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+                target_ref="parameter:storey", key="storey", value=3.5))
+            self.assertEqual(successor.parameter("podium_height").value, 7.0)
+            saved = StateRecord.from_dict(successor.to_dict())                                 # the continued project reads the record back
+            run = repository.create_run("run-2")
+            saved = saved.bound_to(run)
+            receipt = run_project(repository, run=run, stage_guard=_stage_guard(repository, run, saved, options), record=saved, seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=options)
+            self.assertEqual(receipt["closure_status"], "SATISFIED", receipt["seat_results"])
+            after = self._bounds(repository, receipt, "seat-envelope")["obj-podium-east"]
+            self.assertAlmostEqual(after["bbox_max"][1] - after["bbox_min"][1], 7.0)               # the bound geometry followed the source
+            self.assertEqual(self._bounds(repository, receipt, "seat-structure")["obj-columns-front-0"], columns_before)   # the literal did not
+            retained = repository.load_json(record_ref_from_uri(receipt["state_record_ref"], "demo"))
+            self.assertEqual({p["key"]: p["value"] for p in retained["parameters"]}, {"storey": 3.5, "podium_height": 7.0})
+            self.assertEqual({e["entity_id"]: e["fields"]["params"]["height"] for e in retained["entities"] if e["entity_id"] == "podium-east"}, {"podium-east": "@podium_height"})
+
+    def test_a_stale_bound_derived_value_stops_the_run_before_its_first_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            options = _options()
+            run = repository.create_run("run-1")
+            record = self._record()
+            record = replace(record, parameters=(record.parameters[0], replace(record.parameters[1], value=99.0))).bound_to(run)
+            with self.assertRaisesRegex(ProjectRunnerError, "podium-east: params.height binds @podium_height: stored value 99.0 of derived parameter podium_height disagrees"):
+                run_project(repository, run=run, stage_guard=_stage_guard(repository, run, record, options), record=record, seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=options)
+            names = [path.name for path in repository.layout.run("run-1").records.glob("*.json")]
+            self.assertFalse(any(name.startswith(("state-record-", "seat-")) for name in names), names)
+
+
+class StagePhaseTests(_RunMixin, unittest.TestCase):
+    """The phase is the stage's (ADR-007, P112): the runner projects the record in the envelope's phase.
+
+    The record states no phase. The envelope does, the projection carries it
+    into the state digest, and the guard's equality check now says "this run
+    projected the record in the phase its envelope binds" instead of holding
+    by construction because the projection was hard-wired to one phase.
+    """
+
+    def test_a_schematic_design_stage_runs_to_a_satisfied_closure(self) -> None:
+        repository, receipt = self._run(_record(), phase=DesignPhase.SCHEMATIC_DESIGN)
+        self.assertEqual(receipt["stage"]["phase"], "schematic_design")
+        self.assertEqual(receipt["closure_status"], "SATISFIED", receipt["seat_results"])
+        self.assertIsNotNone(receipt["exit_binding_ref"])
+        retained = repository.load_json(_ref(receipt["design_state_ref"]))
+        self.assertEqual(retained["active_phase"], "schematic_design")
+        # binding identity: the same record executed under the development phase is another state
+        run = repository.load_run("run-1")
+        developed = _state(_record().bound_to(run), run, _options(), DesignPhase.DESIGN_DEVELOPMENT)
+        self.assertNotEqual(receipt["design_state_digest"], developed.state_digest)
+        self.assertEqual(receipt["design_state_digest"], _state(_record().bound_to(run), run, _options(), DesignPhase.SCHEMATIC_DESIGN).state_digest)
+
+    def test_an_envelope_bound_under_another_phase_is_refused_before_any_write(self) -> None:
+        """A schematic stage whose envelope digest was projected in design_development (what a caller
+        that ignores the stage phase produces) does not bind the state this run projects."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            options, record = _options(), _record()
+            guard = _stage_guard(repository, run, record, options, phase=DesignPhase.SCHEMATIC_DESIGN,
+                                 state=_state(record.bound_to(run), run, options, DesignPhase.DESIGN_DEVELOPMENT))
+            with self.assertRaisesRegex(ProjectRunnerError, "does not bind the exact developed state"):
+                run_project(repository, run=run, stage_guard=guard, record=record, seats=_seats(DesignPhase.SCHEMATIC_DESIGN), options=options)
+            names = [path.name for path in repository.layout.run("run-1").records.glob("*.json")]
+            self.assertFalse(any(name.startswith(("state-record-", "seat-", "stage-closure-")) for name in names), names)
+
+    def test_seats_not_admitted_in_the_envelope_phase_are_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            options, record = _options(), _record()
+            guard = _stage_guard(repository, run, record, options, phase=DesignPhase.SCHEMATIC_DESIGN)
+            with self.assertRaisesRegex(ProjectRunnerError, "not admitted in the envelope phase"):
+                run_project(repository, run=run, stage_guard=guard, record=record, seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=options)
+
+    def test_a_phase_the_projection_cannot_carry_is_refused_typed(self) -> None:
+        """The developed-design projection admits schematic_design and design_development; a later
+        phase in the envelope is a typed refusal before the first write, not a manufactured mapping."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            options, record = _options(), _record()
+            guard = _stage_guard(repository, run, record, options, phase=DesignPhase.CANDIDATE_COORDINATION,
+                                 state=_state(record.bound_to(run), run, options, DesignPhase.DESIGN_DEVELOPMENT))
+            with self.assertRaisesRegex(ProjectRunnerError, "cannot carry the envelope phase 'candidate_coordination'"):
+                run_project(repository, run=run, stage_guard=guard, record=record, seats=_seats(DesignPhase.CANDIDATE_COORDINATION), options=options)
+            names = [path.name for path in repository.layout.run("run-1").records.glob("*.json")]
+            self.assertFalse(any(name.startswith(("state-record-", "runner-run-failure-")) for name in names), names)
+
+
+def _ladder_project(root: Path, phases: tuple[DesignPhase, ...], workflow_id: str = "demo-two-stage") -> tuple[FilesystemProjectRepository, str]:
+    """A project holding the demo record as its WIP and a frozen workflow with one stage per phase; answers the workflow ref."""
+
+    repository = FilesystemProjectRepository.initialize(root, project_id="demo", initial_state={"schema": "TestState@1"})
+    authored = repository.layout.authored_record
+    authored.parent.mkdir(parents=True, exist_ok=True)
+    authored.write_text(json.dumps(_record().to_dict()), encoding="utf-8")
+    workflow = ProjectStageWorkflow(
+        project_id="demo",
+        workflow_id=workflow_id,
+        stages=tuple(
+            ProjectStage(
+                stage_id=f"stage-{index}-{'production' if index == 0 else 'coordination'}",
+                stage_index=index,
+                phase=phase,
+                required_roles=("geometry-program",),
+                required_checks=() if index == 0 else ("support_contact",),
+                close_obligation_id=f"close-stage-{index}",
+            )
+            for index, phase in enumerate(phases)
+        ),
+        basis_refs=("decision:demo-two-stage",),
+    )
+    source = root.parent / f"workflow-{root.name}.json"
+    source.write_text(json.dumps(workflow.to_dict()), encoding="utf-8")
+    frozen = freeze_workflow(project_root=root, run_id="workflow-001", workflow_path=source, create_run=True)
+    return repository, str(frozen["workflow_ref"])
+
+
+def _run_opened_stage(root: Path, workflow_ref: str, opened: dict) -> dict:
+    """Execute a stage ``tools/open_stage_run`` opened, in the phase its retained envelope states."""
+
+    repository = FilesystemProjectRepository.open(root)
+    run = repository.load_run(str(opened["run_id"]))
+    guard = tool_stage_guard(repository, run, workflow_uri=workflow_ref, envelope_uri=str(opened["stage_envelope_ref"]))
+    record = load_authored_record(repository).record
+    return run_project(repository, run=run, stage_guard=guard, record=record, seats=_seats(guard.envelope.phase), options=_options())
+
+
 class StageLadderRunTests(unittest.TestCase):
     """Stage 0 closes; stage 1 opens against that close and closes too.
 
@@ -571,58 +940,16 @@ class StageLadderRunTests(unittest.TestCase):
     and derives the exit binding the next stage is allowed to cite.
     """
 
+    PHASES = (DesignPhase.DESIGN_DEVELOPMENT, DesignPhase.DESIGN_DEVELOPMENT)
+
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name) / "demo"
-        self.repository = FilesystemProjectRepository.initialize(
-            self.root, project_id="demo", initial_state={"schema": "TestState@1"}
-        )
-        authored = self.repository.layout.authored_record
-        authored.parent.mkdir(parents=True, exist_ok=True)
-        authored.write_text(json.dumps(_record().to_dict()), encoding="utf-8")
-        workflow = ProjectStageWorkflow(
-            project_id="demo",
-            workflow_id="demo-two-stage",
-            stages=(
-                ProjectStage(
-                    stage_id="stage-0-production",
-                    stage_index=0,
-                    phase=DesignPhase.DESIGN_DEVELOPMENT,
-                    required_roles=("geometry-program",),
-                    required_checks=(),
-                    close_obligation_id="close-stage-0-production",
-                ),
-                ProjectStage(
-                    stage_id="stage-1-coordination",
-                    stage_index=1,
-                    phase=DesignPhase.DESIGN_DEVELOPMENT,
-                    required_roles=("geometry-program",),
-                    required_checks=("support_contact",),
-                    close_obligation_id="close-stage-1-coordination",
-                ),
-            ),
-            basis_refs=("decision:demo-two-stage",),
-        )
-        source = Path(temporary.name) / "workflow.json"
-        source.write_text(json.dumps(workflow.to_dict()), encoding="utf-8")
-        frozen = freeze_workflow(
-            project_root=self.root, run_id="workflow-001", workflow_path=source, create_run=True
-        )
-        self.workflow_ref = frozen["workflow_ref"]
+        self.repository, self.workflow_ref = _ladder_project(self.root, self.PHASES)
 
     def _run_stage(self, opened: dict) -> dict:
-        repository = FilesystemProjectRepository.open(self.root)
-        run = repository.load_run(str(opened["run_id"]))
-        guard = tool_stage_guard(
-            repository, run, workflow_uri=self.workflow_ref, envelope_uri=str(opened["stage_envelope_ref"])
-        )
-        record = load_authored_record(repository).record
-        options = _options()
-        state = _state(record, run, options)
-        return run_project(
-            repository, run=run, stage_guard=guard, record=record, seats=_seats(state.active_phase), options=options
-        )
+        return _run_opened_stage(self.root, self.workflow_ref, opened)
 
     def test_stage_zero_closes_and_stage_one_opens_against_its_exit_binding(self) -> None:
         stage0 = open_stage_run(
@@ -678,6 +1005,55 @@ class StageLadderRunTests(unittest.TestCase):
             )
 
 
+class StagePhaseLadderTests(unittest.TestCase):
+    """``tools/open_stage_run`` binds each envelope to the record projected in that stage's own phase (P112).
+
+    A schematic stage followed by a development stage: the opener used to
+    project every stage in design_development, so a schematic envelope bound a
+    digest the runner - projecting in the envelope's phase - could never
+    reproduce, and the stage refused to run before its first write.
+    """
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.temporary = Path(temporary.name)
+
+    def test_a_schematic_stage_then_a_development_stage_open_and_close_through_the_real_entrypoint(self) -> None:
+        root = self.temporary / "demo"
+        repository, workflow_ref = _ladder_project(root, (DesignPhase.SCHEMATIC_DESIGN, DesignPhase.DESIGN_DEVELOPMENT))
+        stage0 = open_stage_run(project_root=root, workflow_uri=workflow_ref, stage_index=0, run_id="stage-0-001")
+        self.assertEqual(stage0["phase"], "schematic_design")
+        run0 = repository.load_run("stage-0-001")
+        record = load_authored_record(repository).record
+        self.assertEqual(stage0["state_digest"], _state(record, run0, _options(), DesignPhase.SCHEMATIC_DESIGN).state_digest)
+        self.assertNotEqual(stage0["state_digest"], _state(record, run0, _options(), DesignPhase.DESIGN_DEVELOPMENT).state_digest)
+
+        first = _run_opened_stage(root, workflow_ref, stage0)                                  # used to raise "does not bind the exact developed state"
+        self.assertEqual(first["stage"]["phase"], "schematic_design")
+        self.assertEqual(first["design_state_digest"], stage0["state_digest"])
+        self.assertEqual(first["closure_status"], "SATISFIED", first["seat_results"])
+        self.assertIsNotNone(first["exit_binding_ref"])
+
+        stage1 = open_stage_run(project_root=root, workflow_uri=workflow_ref, stage_index=1, run_id="stage-1-001", predecessor_run_id="stage-0-001")
+        self.assertEqual(stage1["phase"], "design_development")
+        self.assertEqual(stage1["predecessor_exit_binding_ref"], first["exit_binding_ref"])
+        second = _run_opened_stage(root, workflow_ref, stage1)
+        self.assertEqual(second["stage"]["phase"], "design_development")
+        self.assertEqual(second["design_state_digest"], stage1["state_digest"])
+        self.assertEqual(second["closure_status"], "SATISFIED", second["seat_results"])
+        # the same record, two binding identities: one per stage phase
+        self.assertNotEqual(first["design_state_digest"], second["design_state_digest"])
+        self.assertEqual(first["state_record_digest"], second["state_record_digest"])
+
+    def test_a_stage_phase_the_projection_cannot_carry_is_refused_before_the_run_exists(self) -> None:
+        root = self.temporary / "demo"
+        repository, workflow_ref = _ladder_project(root, (DesignPhase.CANDIDATE_COORDINATION,), workflow_id="demo-coordination")
+        with self.assertRaisesRegex(StageRunError, "candidate_coordination.*cannot carry"):
+            open_stage_run(project_root=root, workflow_uri=workflow_ref, stage_index=0, run_id="stage-0-001")
+        self.assertFalse(repository.layout.run("stage-0-001").manifest.exists())
+
+
 class ZoneRelationTests(unittest.TestCase):
     """A zone's objects are its volumes, so a zone relation is measurable.
 
@@ -723,6 +1099,403 @@ class ZoneRelationTests(unittest.TestCase):
         self.assertEqual(check.status, "violated")
         self.assertAlmostEqual(check.measured["gap"], 0.5)
         self.assertIn("outside", check.detail)
+
+
+def _prism_row(component_id: str = "portico-columns", element_id: str = "columns-plinth") -> Entity:
+    """One extruded plinth for a component, so a seat has an OCCT-realizable program instead of a column array."""
+
+    return Entity(element_id, "Element@1", {"component_id": component_id, "producer": "prism",
+                  "references": {"base": {"level": "level-piano-nobile"}},
+                  "params": {"profile": [[0, -1.5], [12, -1.5], [12, -0.5], [0, -0.5]], "height": 0.5}}, parent_id=component_id, basis_refs=BASIS)
+
+
+def _refuse_rhino(*args, **kwargs):
+    raise AssertionError(f"the OCCT export path must never reach Rhino or start a process: {args[:1]}")
+
+
+def _no_rhino():
+    """Fail the test if the run reaches a Rhino entry point or starts any process."""
+
+    import subprocess
+    from unittest.mock import patch
+
+    return (patch.multiple("archflow.adapters.cad_execution", prepare_rhino_three_dm_export=_refuse_rhino, execute_rhino_three_dm_export=_refuse_rhino),
+            patch.multiple(subprocess, Popen=_refuse_rhino, run=_refuse_rhino))
+
+
+def _sha256_of(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+class _ExportProject:
+    """One project, one run and the caller-prepared per-seat workspaces an export writes into."""
+
+    def __init__(self, case: unittest.TestCase, record: StateRecord, **overrides) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        case.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.repository = FilesystemProjectRepository.initialize(self.root / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+        self.run = self.repository.create_run("run-1")
+        self.workspace_root = self.root / "workspaces"
+        for seat in ("seat-structure", "seat-envelope"):
+            (self.workspace_root / f"cad-stage-0-test-production-{seat}").mkdir(parents=True, exist_ok=True)
+        self.options = _options(export=True, workspace_root=self.workspace_root, **overrides)
+        self.record = record
+
+    def workspace(self, seat_id: str) -> Path:
+        return self.workspace_root / f"cad-stage-0-test-production-{seat_id}"
+
+    def files(self, seat_id: str) -> list[str]:
+        return sorted(p.name for p in self.workspace(seat_id).iterdir() if p.is_file())
+
+    def run_once(self, record: StateRecord | None = None) -> dict:
+        record = record if record is not None else self.record
+        guard = _stage_guard(self.repository, self.run, record, self.options)
+        return run_project(self.repository, run=self.run, stage_guard=guard, record=record, seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=self.options)
+
+    def records(self, prefix: str) -> list[Path]:
+        return sorted(self.repository.layout.run("run-1").records.glob(f"{prefix}-*.json"))
+
+
+try:
+    from archflow.adapters import occt_backend as _occt_backend
+    _OCCT = _occt_backend.occt_available()
+except Exception:  # the backend is optional; the tests below say so
+    _OCCT = False
+NEEDS_OCCT = unittest.skipUnless(_OCCT, "cadquery-ocp is not installed")
+
+
+@NEEDS_OCCT
+class OcctExportTests(unittest.TestCase):
+    """``RunOptions(export=True)`` goes to OCCT: exact STEP and mesh preview per seat, retained and reusable by exact identity."""
+
+    def setUp(self) -> None:
+        for patcher in _no_rhino():
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_the_default_export_writes_step_and_preview_and_retains_the_receipt_bound_to_the_run(self) -> None:
+        project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
+        receipt = project.run_once()
+        self.assertTrue(receipt["seat_execution_complete"], receipt["seat_results"])
+        self.assertEqual(receipt["closure_status"], "SATISFIED")
+        seats = {s["seat_id"]: s for s in receipt["seat_results"]}
+        for seat_id in ("seat-structure", "seat-envelope"):
+            with self.subTest(seat=seat_id):
+                cad = seats[seat_id]["cad"]
+                self.assertEqual((cad["status"], cad["backend"], cad["path"], cad["readback_verified"]), ("succeeded", "occt", "occt", True))
+                self.assertEqual(cad["failures"], [])
+                self.assertIn("/records/seat-occt-execution-", cad["execution_ref"])
+                self.assertIn("/records/seat-3dm-inspection-", cad["inspection_ref"])
+                stem = f"stage-0-test-production-{seat_id}@{seats[seat_id]['program_digest'][:12]}"
+                self.assertEqual(project.files(seat_id), [f"{stem}.preview.3dm", f"{stem}.step"])
+                self.assertEqual(cad["exact_artifact"]["relative_path"], f"{stem}.step")
+                self.assertEqual(cad["preview_artifact"]["relative_path"], f"{stem}.preview.3dm")
+                # the retained receipt is the adapter's own, bound to this run, base, branch and program
+                retained = project.repository.load_json(record_ref_from_uri(cad["execution_ref"], "demo"))
+                self.assertEqual(retained["schema"], "OcctExecutionReceipt@1")
+                binding = retained["identity"]["binding"]
+                self.assertEqual((binding["project_id"], binding["run_id"], binding["branch_id"], binding["branch_epoch"], binding["stage_id"]),
+                                 ("demo", "run-1", "runner-v1", 1, f"stage-0-test-production-{seat_id}"))
+                self.assertEqual(binding["base"]["state_sha256"], project.run.base.state_sha256)
+                self.assertEqual(binding["program_digest"], seats[seat_id]["program_digest"])
+                self.assertEqual(binding["design_state_digest"], receipt["design_state_digest"])
+                program = load_compiled_geometry_program(project.repository.load_json(record_ref_from_uri(binding["program_ref"]["uri"], "demo")))
+                self.assertEqual(program.program_digest, seats[seat_id]["program_digest"])
+                # the files are the bytes the receipt certifies, and the STEP reads back as the seat's objects
+                self.assertEqual(_sha256_of(project.workspace(seat_id) / f"{stem}.step"), retained["exact_artifact"]["sha256"])
+                self.assertEqual(_sha256_of(project.workspace(seat_id) / f"{stem}.preview.3dm"), retained["preview_artifact"]["sha256"])
+                entries = _occt_backend.read_step(project.workspace(seat_id) / f"{stem}.step", length_unit="meter")
+                self.assertEqual(sorted(e.name for e in entries), sorted(retained["physical_object_ids"]))
+                inspection = project.repository.load_json(record_ref_from_uri(cad["inspection_ref"], "demo"))
+                self.assertEqual(inspection["schema"], "ThreeDmInspectionSummary@4")
+                self.assertEqual({row["name"] for row in inspection["named_object_bboxes"]}, set(retained["physical_object_ids"]))
+        self.assertEqual(len(project.records("seat-occt-execution")), 2)
+        self.assertEqual(project.records("seat-rhino-execution"), [])
+        structure = project.repository.load_json(record_ref_from_uri(seats["seat-structure"]["cad"]["execution_ref"], "demo"))
+        (plinth,) = structure["readback"].values()
+        self.assertAlmostEqual(plinth["volume"], 12.0 * 1.0 * 0.5, places=6)
+
+    def test_the_same_program_in_the_same_run_reuses_the_verified_files_and_nothing_else(self) -> None:
+        project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
+        first = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        second = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        for seat_id in first:
+            with self.subTest(seat=seat_id):
+                self.assertEqual(second[seat_id]["path"], "reused")
+                self.assertEqual(second[seat_id]["execution_ref"], first[seat_id]["execution_ref"])
+                self.assertEqual(second[seat_id]["exact_artifact"], first[seat_id]["exact_artifact"])
+                self.assertEqual(second[seat_id]["inspection_ref"], first[seat_id]["inspection_ref"])
+        self.assertEqual(len(project.records("seat-occt-execution")), 2)
+        self.assertEqual(len(project.files("seat-structure")), 2)
+
+        # a certified file that no longer hashes to its receipt is not reused: a fresh export under a new stem
+        stem = first["seat-structure"]["exact_artifact"]["relative_path"]
+        (project.workspace("seat-structure") / stem).write_bytes(b"ISO-10303-21; someone edited this")
+        third = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        self.assertEqual(third["seat-envelope"]["path"], "reused")
+        self.assertEqual(third["seat-structure"]["path"], "occt")
+        self.assertNotEqual(third["seat-structure"]["execution_ref"], first["seat-structure"]["execution_ref"])
+        self.assertTrue(third["seat-structure"]["exact_artifact"]["relative_path"].endswith(".r2.step"))
+        self.assertEqual(len(project.files("seat-structure")), 4)                     # nothing overwritten, nothing deleted
+        self.assertEqual(len(project.records("seat-occt-execution")), 3)
+
+        # a changed record is a new design state and a new program: a new export for every seat,
+        # never a reuse of the old model (the binding carries the design-state digest, so even the
+        # envelope seat, whose own rows did not change, is bound to a different state now)
+        taller = replace(project.record, entities=tuple(
+            replace(e, fields={**e.fields, "params": {**e.fields["params"], "height": 0.8}}) if e.entity_id == "columns-plinth" else e
+            for e in project.record.entities))
+        fourth = {s["seat_id"]: s["cad"] for s in project.run_once(taller)["seat_results"]}
+        self.assertEqual((fourth["seat-structure"]["path"], fourth["seat-envelope"]["path"]), ("occt", "occt"))
+        self.assertNotEqual(fourth["seat-structure"]["exact_artifact"]["sha256"], third["seat-structure"]["exact_artifact"]["sha256"])
+        self.assertNotEqual(fourth["seat-structure"]["exact_artifact"]["relative_path"], third["seat-structure"]["exact_artifact"]["relative_path"])
+
+    def test_a_receipt_edited_under_its_own_file_name_is_not_reused_even_though_its_files_still_hash(self) -> None:
+        """A prior receipt is read back only as the P036 record its file name claims to be.
+
+        The edit below keeps the whole binding and both artifact digests, so a
+        reader that only re-hashed the STEP and the preview would accept it;
+        the file name's digest no longer matches the bytes, and that is what
+        ``repository.load_json`` refuses. The damaged receipt is left exactly
+        where it is; the seat is exported afresh under a new stem and the
+        next run reuses that fresh receipt, never the edited one.
+        """
+
+        project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
+        first = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        original_ref = record_ref_from_uri(first["seat-structure"]["execution_ref"], "demo")
+        receipt_path = project.repository.layout.resolve_record(original_ref)
+        edited = json.loads(receipt_path.read_text(encoding="utf-8"))
+        edited["readback"] = {oid: {**row, "volume": 0.0} for oid, row in edited["readback"].items()}    # a different claim about the same files
+        edited_text = json.dumps(edited)
+        receipt_path.write_text(edited_text, encoding="utf-8")
+        # what the edit kept: the binding, the certified digests, and files that still hash to them
+        self.assertEqual((edited["schema"], edited["status"], edited["readback_verified"], edited["failures"]), ("OcctExecutionReceipt@1", "succeeded", True, []))
+        self.assertTrue(first["seat-structure"]["exact_artifact"]["relative_path"].startswith(f"stage-0-test-production-seat-structure@{edited['identity']['binding']['program_digest'][:12]}"))
+        for artifact in ("exact_artifact", "preview_artifact"):
+            self.assertEqual(_sha256_of(project.workspace("seat-structure") / edited[artifact]["relative_path"]), edited[artifact]["sha256"])
+        with self.assertRaises(Exception):
+            project.repository.load_json(original_ref)                                                       # P036 itself refuses the edited bytes
+
+        second = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+
+        self.assertEqual(second["seat-envelope"]["path"], "reused")
+        self.assertEqual(second["seat-structure"]["path"], "occt")
+        self.assertEqual((second["seat-structure"]["status"], second["seat-structure"]["readback_verified"], second["seat-structure"]["failures"]), ("succeeded", True, []))
+        self.assertNotEqual(second["seat-structure"]["execution_ref"], first["seat-structure"]["execution_ref"])
+        self.assertTrue(second["seat-structure"]["exact_artifact"]["relative_path"].endswith(".r2.step"))
+        self.assertTrue(second["seat-structure"]["preview_artifact"]["relative_path"].endswith(".r2.preview.3dm"))
+        self.assertEqual(len(project.files("seat-structure")), 4)                                           # the certified files stay; nothing overwritten
+        self.assertEqual(len(project.records("seat-occt-execution")), 3)
+        self.assertEqual(receipt_path.read_text(encoding="utf-8"), edited_text)                            # the damaged evidence is neither repaired nor re-certified
+        # the fresh receipt carries the same binding: one identity, a second retained execution of it
+        fresh = project.repository.load_json(record_ref_from_uri(second["seat-structure"]["execution_ref"], "demo"))
+        self.assertEqual(fresh["identity"]["binding"], edited["identity"]["binding"])
+
+        third = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        self.assertEqual(third["seat-structure"]["path"], "reused")
+        self.assertEqual(third["seat-structure"]["execution_ref"], second["seat-structure"]["execution_ref"])
+        self.assertEqual(len(project.records("seat-occt-execution")), 3)
+
+    def test_an_exact_only_receipt_of_the_same_binding_is_not_reused_for_an_export_that_needs_the_preview(self) -> None:
+        """``execute_occt_export(..., preview=False)`` is a legitimate export whose receipt certifies the STEP alone.
+
+        The runner's export asks for the exact STEP and the mesh preview of the
+        same model. A retained exact-only receipt of exactly this binding is
+        real, succeeded and intact, and still not what this caller needs: the
+        export is made in full under the next stem, the exact-only STEP is
+        left untouched, and the complete receipt is what later runs reuse.
+        """
+
+        from unittest.mock import patch
+        from archflow.adapters import cad_execution
+
+        real = cad_execution.execute_occt_export
+
+        def exact_only(program, *, binding, **kwargs):
+            return real(program, binding=binding, **{**kwargs, "preview": False})
+
+        project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
+        with patch.object(cad_execution, "execute_occt_export", side_effect=exact_only):
+            first = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        stem = first["seat-structure"]["exact_artifact"]["relative_path"].removesuffix(".step")
+        for seat_id in first:
+            with self.subTest(seat=seat_id, run="exact-only"):
+                self.assertEqual((first[seat_id]["status"], first[seat_id]["readback_verified"], first[seat_id]["path"]), ("succeeded", True, "occt"))
+                self.assertIsNone(first[seat_id]["preview_artifact"])
+                self.assertNotIn("inspection_ref", first[seat_id])
+        self.assertEqual(project.files("seat-structure"), [f"{stem}.step"])
+        exact_only_receipt = project.repository.load_json(record_ref_from_uri(first["seat-structure"]["execution_ref"], "demo"))
+        self.assertIsNone(exact_only_receipt["preview_artifact"])
+
+        second = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+
+        for seat_id in second:
+            with self.subTest(seat=seat_id, run="full"):
+                cad = second[seat_id]
+                self.assertEqual((cad["path"], cad["status"], cad["readback_verified"], cad["failures"]), ("occt", "succeeded", True, []))
+                self.assertNotEqual(cad["execution_ref"], first[seat_id]["execution_ref"])
+                self.assertTrue(cad["exact_artifact"]["relative_path"].endswith(".r2.step"))
+                self.assertTrue(cad["preview_artifact"]["relative_path"].endswith(".r2.preview.3dm"))
+                self.assertIn("/records/seat-3dm-inspection-", cad["inspection_ref"])
+                retained = project.repository.load_json(record_ref_from_uri(cad["execution_ref"], "demo"))
+                prior = project.repository.load_json(record_ref_from_uri(first[seat_id]["execution_ref"], "demo"))
+                # the same binding and the same model: no second cache identity was invented for the preview
+                self.assertEqual(retained["identity"]["binding"], prior["identity"]["binding"])
+                self.assertEqual(retained["physical_object_ids"], prior["physical_object_ids"])
+                self.assertEqual({k: v["volume"] for k, v in retained["readback"].items()}, {k: v["volume"] for k, v in prior["readback"].items()})
+                self.assertEqual(_sha256_of(project.workspace(seat_id) / cad["preview_artifact"]["relative_path"]), retained["preview_artifact"]["sha256"])
+        self.assertEqual(project.files("seat-structure"), [f"{stem}.r2.preview.3dm", f"{stem}.r2.step", f"{stem}.step"])
+        self.assertEqual(_sha256_of(project.workspace("seat-structure") / f"{stem}.step"), exact_only_receipt["exact_artifact"]["sha256"])    # untouched
+        self.assertEqual(len(project.records("seat-occt-execution")), 4)
+
+        third = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        for seat_id in third:
+            with self.subTest(seat=seat_id, run="reuse"):
+                self.assertEqual(third[seat_id]["path"], "reused")
+                self.assertEqual(third[seat_id]["execution_ref"], second[seat_id]["execution_ref"])
+                self.assertEqual(third[seat_id]["preview_artifact"], second[seat_id]["preview_artifact"])
+        self.assertEqual(len(project.records("seat-occt-execution")), 4)
+
+    def test_an_operation_occt_does_not_realize_fails_that_seat_by_name_with_no_file_and_no_fallback(self) -> None:
+        """The executor's ``CadCapabilityError`` (its own tests raise it for a real array) is a seat-level export failure here.
+
+        Every producer today emits extrusions and lofts, so no record reaches
+        that boundary through the runner; the refusal is raised at the
+        executor for the structure seat exactly as the adapter raises it, and
+        what is tested is what the runner does with it.
+        """
+
+        from unittest.mock import patch
+        from archflow.adapters import cad_execution
+        from archflow.adapters.cad_execution import CadCapabilityError
+
+        real = cad_execution.execute_occt_export
+
+        def refuse_the_structure_seat(program, *, binding, **kwargs):
+            if binding.stage_id.endswith("seat-structure"):
+                raise CadCapabilityError("OCCT executor cannot realize columns-front (array): block instancing is not realized", op_id="columns-front", kind="array")
+            return real(program, binding=binding, **kwargs)
+
+        project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
+        with patch.object(cad_execution, "execute_occt_export", side_effect=refuse_the_structure_seat):
+            receipt = project.run_once()
+        seats = {s["seat_id"]: s for s in receipt["seat_results"]}
+        self.assertEqual(seats["seat-structure"]["status"], "export_failed")
+        cad = seats["seat-structure"]["cad"]
+        self.assertEqual((cad["status"], cad["backend"], cad["execution_ref"]), ("unsupported", "occt", None))
+        self.assertEqual((cad["failures"][0]["op_id"], cad["failures"][0]["kind"]), ("columns-front", "array"))
+        self.assertEqual(project.files("seat-structure"), [])
+        # the envelope seat (a wall with a cut opening) is unaffected and exported
+        self.assertEqual(seats["seat-envelope"]["status"], "proposal_accepted")
+        self.assertEqual(seats["seat-envelope"]["cad"]["status"], "succeeded")
+        self.assertFalse(receipt["seat_execution_complete"])
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        self.assertEqual(len(project.records("seat-occt-execution")), 1)
+        self.assertEqual(project.records("seat-rhino-execution"), [])
+
+
+class CadBackendSelectionTests(unittest.TestCase):
+    def test_run_options_refuse_a_backend_nobody_implements(self) -> None:
+        with self.assertRaisesRegex(ProjectRunnerError, "cad_backend"):
+            _options(cad_backend="freecad")
+        self.assertEqual(_options().cad_backend, "occt")
+
+    def test_the_patch_oracle_is_refused_by_name_under_occt_and_only_taken_with_rhino(self) -> None:
+        """OCCT never patches: an oracle asked of it is refused naming the backend that has one, never ignored or run through Rhino unasked."""
+
+        with self.assertRaisesRegex(ProjectRunnerError, r"patch_oracle.*--cad-backend rhino"):
+            _options(export=True, patch_oracle=True)
+        with self.assertRaisesRegex(ProjectRunnerError, r"patch_oracle.*--cad-backend rhino"):
+            _options(export=True, cad_backend="occt", patch_oracle=True)
+        self.assertTrue(_options(export=True, cad_backend="rhino", patch_oracle=True).patch_oracle)
+        # the default PowerShell path is Rhino's launcher carried unread; it is not an error under OCCT
+        self.assertEqual(_options(export=True, powershell=Path("powershell.exe")).cad_backend, "occt")
+
+    def test_rhino_is_taken_only_when_named_and_occt_is_not_touched(self) -> None:
+        from unittest.mock import patch
+
+        class RhinoReached(Exception):
+            pass
+
+        def reached(*args, **kwargs):
+            raise RhinoReached("prepare_rhino_three_dm_export was called")
+
+        project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)), cad_backend="rhino")
+        with patch("archflow.adapters.cad_execution.prepare_rhino_three_dm_export", side_effect=reached), \
+             patch("archflow.adapters.cad_execution.execute_occt_export", side_effect=AssertionError("OCCT must not run for the rhino backend")):
+            with self.assertRaises(RhinoReached):
+                project.run_once()
+        self.assertEqual(project.files("seat-structure"), [])
+        self.assertEqual(len(project.records("runner-run-failure")), 1)
+        self.assertEqual(project.records("seat-occt-execution"), [])
+
+
+class RunProjectCliTests(unittest.TestCase):
+    """``tools/run_project.py --export`` goes to OCCT unless ``--cad-backend rhino`` is named."""
+
+    def _opened(self) -> tuple[Path, str, dict]:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name) / "demo"
+        repository, workflow_ref = _ladder_project(root, (DesignPhase.DESIGN_DEVELOPMENT,))
+        # the ladder project's WIP record has a column array; give the structure seat a prism the OCCT executor realizes
+        repository.layout.authored_record.write_text(json.dumps(_record(elements=("wall-south",), extra_entities=(_prism_row(),)).to_dict()), encoding="utf-8")
+        seats = repository.layout.authored_record.parent / "seats.json"
+        seats.write_text(json.dumps({
+            "schema": "RunnerSeats@1", "commitment_ref": "commitment:demo-survey",
+            "seats": [
+                {"seat_id": "seat-structure", "disciplines": ["structure_support"], "owned_component_ids": ["portico-columns"], "phases": ["design_development"], "quadrants": ["structure"]},
+                {"seat_id": "seat-envelope", "disciplines": ["envelope_openings"], "owned_component_ids": ["exterior-walls"], "phases": ["design_development"], "quadrants": ["openings"], "consumes": ["seat-structure"]},
+            ],
+        }), encoding="utf-8")
+        opened = open_stage_run(project_root=root, workflow_uri=workflow_ref, stage_index=0, run_id="stage-0-001")
+        return root, workflow_ref, opened
+
+    def _argv(self, root: Path, workflow_ref: str, opened: dict, *extra: str) -> list[str]:
+        return ["--project", str(root), "--run", "stage-0-001", "--workflow-ref", workflow_ref,
+                "--stage-envelope-ref", str(opened["stage_envelope_ref"]), "--export", *extra]
+
+    @NEEDS_OCCT
+    def test_export_defaults_to_occt_and_leaves_step_and_preview_in_the_run_workspaces(self) -> None:
+        from unittest.mock import patch
+        from tools.run_project import main
+
+        root, workflow_ref, opened = self._opened()
+        patchers = _no_rhino()
+        for patcher in patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.assertEqual(main(self._argv(root, workflow_ref, opened)), 0)
+        repository = FilesystemProjectRepository.open(root)
+        workspaces = repository.layout.run("stage-0-001").workspaces
+        names = sorted(p.name for p in workspaces.rglob("*") if p.is_file())
+        self.assertEqual(len(names), 4, names)
+        self.assertTrue(any(n.endswith(".step") for n in names) and any(n.endswith(".preview.3dm") for n in names))
+        records = [p.name for p in repository.layout.run("stage-0-001").records.glob("*.json")]
+        self.assertEqual(sum(n.startswith("seat-occt-execution-") for n in records), 2)
+        self.assertFalse(any(n.startswith("seat-rhino-execution-") for n in records))
+
+    def test_the_rhino_backend_is_an_explicit_choice(self) -> None:
+        from unittest.mock import patch
+        import tools.run_project as cli
+
+        root, workflow_ref, opened = self._opened()
+        seen = []
+
+        def capture(repository, *, run, stage_guard, record, seats, options):
+            seen.append(options)
+            return {"seat_results": [], "unowned_components": [], "seat_execution_complete": True, "stage": {"status": "OPEN"}, "wall_time_s": 0.0,
+                    "receipt_ref": "project://demo/x", "closure_status": "OPEN", "closure_ref": "project://demo/y", "exit_binding_ref": None}
+
+        with patch.object(cli, "run_project", side_effect=capture):
+            cli.main(self._argv(root, workflow_ref, opened, "--cad-backend", "rhino"))
+            cli.main(self._argv(root, workflow_ref, opened))
+        self.assertEqual([o.cad_backend for o in seen], ["rhino", "occt"])
+        self.assertTrue(all(o.export for o in seen))
+        with self.assertRaises(SystemExit):
+            cli.main(self._argv(root, workflow_ref, opened, "--cad-backend", "freecad"))
 
 
 class PriorExportTests(unittest.TestCase):

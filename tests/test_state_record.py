@@ -75,8 +75,11 @@ class StateRecordTests(unittest.TestCase):
         self.assertEqual(first.digest, second.digest)
         self.assertNotEqual(first.digest, record.digest)
         self.assertEqual(first.entities, record.entities)
-        self.assertEqual(first.parameter("column_height"), record.parameter("column_height"))
         self.assertEqual(first.parameter("column_diameter").value, 0.72)
+        # the declared dependency is followed: column_height = 9 * column_diameter is re-evaluated,
+        # and nothing about the declaration itself (expr, inputs, basis) moves
+        self.assertAlmostEqual(first.parameter("column_height").value, 6.48)
+        self.assertEqual(replace(first.parameter("column_height"), value=record.parameter("column_height").value), record.parameter("column_height"))
 
     def test_typed_operator_refuses_an_old_complete_record_base(self) -> None:
         source = _record()
@@ -429,6 +432,179 @@ class StateRecordTests(unittest.TestCase):
             ids = [c.component_id for c in state.selected_schematic.option.proposal.components]
             self.assertEqual(ids, ["building", "portico-columns", "portico-entablature", "portico-west"])
             self.assertEqual(len(state.state_digest), 64)
+
+    # ---- parameters: declared expressions, explicit bindings, one evaluator (B3)
+    def _bound_record(self, *, derived_value: float = 6.0, height_binding="@derived", inputs=("source",), expr="source * 2") -> StateRecord:
+        """source=3 declared; derived = source * 2; the beam's height binds @derived, the column's height is the literal 2."""
+
+        base = _record()
+        entities = tuple(
+            replace(e, fields={**e.fields, "params": {"height": height_binding, "depth": 0.4}}) if e.entity_id == "entablature-west"
+            else replace(e, fields={**e.fields, "params": {"height": 2, "radius": 0.3}}) if e.entity_id == "columns-west"
+            else e for e in base.entities)
+        parameters = (
+            Parameter("source", 3.0, "m", epistemic_status="declared", source_ref="reading:plan"),
+            Parameter("derived", derived_value, "m", expr=expr, inputs=inputs),
+        )
+        return replace(base, entities=entities, parameters=parameters, base=ProjectVersionRef("demo", 0, "0" * 64))
+
+    def _edit(self, record: StateRecord, key: str, value: float, **extra) -> StateRecordOperator:
+        return StateRecordOperator(kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+                                   target_ref=f"parameter:{key}", key=key, value=value, **extra)
+
+    def test_a_source_edit_recomputes_the_derived_parameter_and_the_row_bound_to_it(self) -> None:
+        from archflow.state.state_record import evaluate_parameters, resolve_element_bindings, stale_parameters
+
+        record = self._bound_record()
+        self.assertEqual(stale_parameters(record), ())
+        self.assertEqual(resolve_element_bindings(record)["entablature-west"]["params"], {"height": 6.0, "depth": 0.4})
+        self.assertEqual(resolve_element_bindings(record)["columns-west"]["params"], {"height": 2, "radius": 0.3})        # a literal is a literal
+
+        successor = apply_state_record_operator(record, self._edit(record, "source", 10))
+        self.assertEqual(successor.parameter("source").value, 10)
+        self.assertEqual(successor.parameter("derived").value, 20.0)                                                      # declared downstream recomputed
+        self.assertEqual(evaluate_parameters(successor)["derived"], 20.0)
+        self.assertEqual(resolve_element_bindings(successor)["entablature-west"]["params"]["height"], 20.0)               # the bound row follows
+        self.assertEqual(successor.entity("entablature-west").fields["params"]["height"], "@derived")                       # the binding itself is kept, not baked
+        self.assertEqual(resolve_element_bindings(successor)["columns-west"]["params"]["height"], 2)                      # the unrelated literal stands
+        self.assertEqual(successor.entity("columns-west"), record.entity("columns-west"))
+        # the binding is a dependency edge: the change reaches the row, so protecting the row refuses the edit
+        edges = {(e.upstream_ref, e.downstream_ref, e.relation, e.effect) for e in record.dependency_edges()}
+        self.assertIn(("parameter:derived", "entity:entablature-west", "binds", DependencyEffect.INVALIDATES), edges)
+        self.assertEqual(record.closure(("parameter:source",)), ("entity:entablature-west", "parameter:derived", "parameter:source"))
+        with self.assertRaisesRegex(StateRecordError, "reaches protected refs: entity:entablature-west"):
+            apply_state_record_operator(record, self._edit(record, "source", 10, protected=("entity:entablature-west",)))
+
+    def test_recomputation_is_deterministic_across_save_reload_and_continuation(self) -> None:
+        from archflow.state.state_record import resolve_element_bindings, stale_parameters
+
+        record = self._bound_record()
+        first = apply_state_record_operator(record, self._edit(record, "source", 10))
+        again = apply_state_record_operator(record, self._edit(record, "source", 10))
+        self.assertEqual(first.digest, again.digest)
+        reloaded = StateRecord.from_dict(first.to_dict())                                    # saved and read back: the same record
+        self.assertEqual(reloaded.digest, first.digest)
+        self.assertEqual(stale_parameters(reloaded), ())
+        self.assertEqual(resolve_element_bindings(reloaded)["entablature-west"]["params"]["height"], 20.0)
+        continued = apply_state_record_operator(reloaded, self._edit(reloaded, "source", 4))     # continuing from the reloaded successor
+        self.assertEqual(continued.parameter("derived").value, 8.0)
+        self.assertEqual(StateRecord.from_dict(continued.to_dict()).digest, continued.digest)
+
+    def test_a_stale_serialized_derived_value_is_refused_at_the_binding_and_repaired_by_an_edit(self) -> None:
+        from archflow.state.state_record import evaluate_parameters, resolve_element_bindings, stale_parameters
+
+        stale = self._bound_record(derived_value=99.0)                                          # source=3, derived says 99, expr says 6
+        self.assertEqual(stale.parameter("derived").value, 99.0)                                 # readable: no migration of what was written
+        self.assertEqual(evaluate_parameters(stale)["derived"], 6.0)
+        self.assertEqual(stale_parameters(stale), ("derived",))
+        with self.assertRaisesRegex(StateRecordError, r"element entablature-west: params.height binds @derived: stored value 99.0 of derived parameter derived disagrees with its expression 'source \* 2' = 6.0"):
+            resolve_element_bindings(stale)                                                      # neither 99 nor 6 is read behind the author's back
+        repaired = apply_state_record_operator(stale, self._edit(stale, "source", 10))
+        self.assertEqual(repaired.parameter("derived").value, 20.0)
+        self.assertEqual(stale_parameters(repaired), ())
+        self.assertEqual(resolve_element_bindings(repaired)["entablature-west"]["params"]["height"], 20.0)
+        # a stale derived value no row binds does not stop the rows that bind nothing
+        unbound = self._bound_record(derived_value=99.0, height_binding=1.5)
+        self.assertEqual(resolve_element_bindings(unbound)["entablature-west"]["params"]["height"], 1.5)
+
+    def test_cycles_missing_names_and_conflicting_declarations_are_located(self) -> None:
+        from archflow.state.state_record import evaluate_parameters
+
+        entities = _record().entities
+        with self.assertRaisesRegex(StateRecordError, r"cycle among parameters: a -> b -> a"):
+            evaluate_parameters(StateRecord("demo", "run-1", entities, (Parameter("a", 1.0, "m", expr="b * 2"), Parameter("b", 1.0, "m", expr="a / 2"))))
+        with self.assertRaisesRegex(StateRecordError, r"parameter a reads unknown name 'missing'"):
+            evaluate_parameters(StateRecord("demo", "run-1", entities, (Parameter("a", 1.0, "m", expr="missing * 2"),)))
+        with self.assertRaisesRegex(StateRecordError, r"parameter b: declared inputs \['c'\] disagree with its expression 'a \* 2', which reads \['a'\]"):
+            evaluate_parameters(StateRecord("demo", "run-1", entities, (Parameter("a", 1.0, "m"), Parameter("c", 1.0, "m"), Parameter("b", 2.0, "m", expr="a * 2", inputs=("c",)))))
+        with self.assertRaisesRegex(StateRecordError, r"entity entablature-west: params.height binds @nothing, which names no parameter \(parameters: column_diameter, column_height\)"):
+            replace(_record(), entities=tuple(replace(e, fields={**e.fields, "params": {"height": "@nothing"}}) if e.entity_id == "entablature-west" else e for e in _record().entities))
+
+    def test_a_derived_parameter_and_a_bound_row_value_are_edited_through_their_source(self) -> None:
+        record = self._bound_record()
+        with self.assertRaisesRegex(StateRecordError, r"parameter derived is derived by 'source \* 2' from \['source'\]: edit its inputs, or re-declare it without an expression"):
+            apply_state_record_operator(record, self._edit(record, "derived", 7))
+        with self.assertRaisesRegex(StateRecordError, r"element entablature-west: params.height is bound to parameter derived; edit that parameter"):
+            apply_state_record_operator(record, StateRecordOperator(kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+                                                                    target_ref="entity:entablature-west", key="height", value=7))
+        # a locked derived parameter downstream still refuses the source edit before anything is recomputed
+        locked = replace(record, parameters=(record.parameters[0], replace(record.parameters[1], lock_authority="architect")))
+        with self.assertRaisesRegex(StateRecordError, "locked parameters: parameter:derived"):
+            apply_state_record_operator(locked, self._edit(locked, "source", 10))
+
+    def test_an_expression_declares_its_dependencies_even_when_inputs_is_empty(self) -> None:
+        """The expression is the declaration: closure, protection, locks and recomputation follow it with ``inputs=()``."""
+
+        from archflow.state.state_record import evaluate_parameters, resolve_element_bindings, stale_parameters
+
+        record = self._bound_record(inputs=())
+        self.assertEqual(record.parameter("derived").inputs, ())                                                       # the authored array is not rewritten
+        self.assertEqual(record.parameter("derived").reads(), ("source",))
+        edges = {(e.upstream_ref, e.downstream_ref, e.relation) for e in record.dependency_edges()}
+        self.assertIn(("parameter:source", "parameter:derived", "derives"), edges)                                     # used to be absent with inputs=()
+        self.assertEqual(record.closure(("parameter:source",)), ("entity:entablature-west", "parameter:derived", "parameter:source"))
+
+        successor = apply_state_record_operator(record, self._edit(record, "source", 10))
+        self.assertEqual(successor.parameter("derived").value, 20.0)                                                   # used to keep 6 while the expression said 20
+        self.assertEqual(evaluate_parameters(successor)["derived"], 20.0)
+        self.assertEqual(stale_parameters(successor), ())
+        self.assertEqual(resolve_element_bindings(successor)["entablature-west"]["params"]["height"], 20.0)            # the producer reads the recomputed value
+        self.assertEqual(resolve_element_bindings(successor)["columns-west"]["params"]["height"], 2)                   # the literal stands
+        self.assertEqual(successor.parameter("derived").inputs, ())
+        reloaded = StateRecord.from_dict(successor.to_dict())                                                          # persisted and continued
+        self.assertEqual(reloaded.digest, successor.digest)
+        continued = apply_state_record_operator(reloaded, self._edit(reloaded, "source", 4))
+        self.assertEqual(continued.parameter("derived").value, 8.0)
+        self.assertEqual(resolve_element_bindings(continued)["entablature-west"]["params"]["height"], 8.0)
+        # protection and locks read the same declaration: both refuse the source edit before anything moves
+        with self.assertRaisesRegex(StateRecordError, "reaches protected refs: entity:entablature-west"):
+            apply_state_record_operator(record, self._edit(record, "source", 10, protected=("entity:entablature-west",)))
+        with self.assertRaisesRegex(StateRecordError, "reaches protected refs: parameter:derived"):
+            apply_state_record_operator(record, self._edit(record, "source", 10, protected=("parameter:derived",)))
+        locked = replace(record, parameters=(record.parameters[0], replace(record.parameters[1], lock_authority="architect")))
+        with self.assertRaisesRegex(StateRecordError, "locked parameters: parameter:derived"):
+            apply_state_record_operator(locked, self._edit(locked, "source", 10))
+        # a stale stored derived value is still refused at the binding, and the direct edit of the derived value is still a conflict
+        with self.assertRaisesRegex(StateRecordError, r"binds @derived: stored value 99.0 of derived parameter derived disagrees"):
+            resolve_element_bindings(self._bound_record(inputs=(), derived_value=99.0))
+        with self.assertRaisesRegex(StateRecordError, r"parameter derived is derived by 'source \* 2' from \['source'\]"):
+            apply_state_record_operator(record, self._edit(record, "derived", 7))
+
+    def test_a_dependency_question_never_evaluates_the_expression(self) -> None:
+        """``source / (source - 1)`` with source=3 is 1.5 and depends on source; the division is only judged with the real reading."""
+
+        from archflow.state.state_record import evaluate_parameters, resolve_element_bindings, stale_parameters
+
+        record = self._bound_record(inputs=(), expr="source / (source - 1)", derived_value=1.5)
+        self.assertEqual(record.parameter("derived").reads(), ("source",))                                              # used to raise division by zero here
+        self.assertEqual(stale_parameters(record), ())
+        self.assertEqual(evaluate_parameters(record)["derived"], 1.5)
+        self.assertEqual(resolve_element_bindings(record)["entablature-west"]["params"]["height"], 1.5)
+        self.assertIn(("parameter:source", "parameter:derived"), {(e.upstream_ref, e.downstream_ref) for e in record.dependency_edges()})
+        self.assertEqual(apply_state_record_operator(record, self._edit(record, "source", 5)).parameter("derived").value, 1.25)
+        with self.assertRaisesRegex(StateRecordError, "parameters: parameter derived: division by zero"):
+            apply_state_record_operator(record, self._edit(record, "source", 1))                                       # the real evaluation still refuses
+        with self.assertRaisesRegex(StateRecordError, "parameters: parameter broken"):
+            Parameter("broken", 1.0, "m", expr="source +").reads()                                                     # a malformed expression is a typed error, not an empty answer
+
+    def test_the_view_carries_the_callers_phase_into_the_binding_identity(self) -> None:
+        """The record states no phase; the caller (a run's envelope) does, and it binds the state digest."""
+
+        from archflow.state.stage_workflow import DesignPhase
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            record = _record()
+            developed = developed_design_view(record, run=run)
+            schematic = developed_design_view(record, run=run, phase=DesignPhase.SCHEMATIC_DESIGN)
+            self.assertIs(developed.active_phase, DesignPhase.DESIGN_DEVELOPMENT)               # the historical reading, unchanged
+            self.assertIs(schematic.active_phase, DesignPhase.SCHEMATIC_DESIGN)
+            self.assertNotEqual(developed.state_digest, schematic.state_digest)
+            self.assertEqual(developed.selected_schematic.option.option_digest, schematic.selected_schematic.option.option_digest)   # same content
+            self.assertEqual(record.bound_to(run).state_digest, developed.state_digest)          # the record's own binding identity keeps its phase
+            with self.assertRaises(StateRecordError):
+                developed_design_view(record, run=run, phase="schematic_design")                 # a phase is a DesignPhase, not text
 
     def test_binding_changes_state_digest_but_not_content_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

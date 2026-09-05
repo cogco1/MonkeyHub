@@ -1243,7 +1243,7 @@ export type ExportTimingDto = {
     /**
      * Path
      *
-     * rebuild | patch, as the runner wrote it
+     * as the runner wrote it: occt (an in-process export), reused (a prior export of exactly this program, re-verified by digest), unsupported (an operation the executor does not realize; no file), or the Rhino path's rebuild | patch
      */
     path: string | null;
     /**
@@ -1722,7 +1722,7 @@ export type JobDto = {
     /**
      * Lane
      *
-     * parallel, or exclusive when the run exports: one Rhino export at a time on this machine
+     * parallel, or exclusive when the run exports through Rhino: one Rhino export at a time on this machine. The ordinary in-process (OCCT) export runs in the parallel lane
      */
     lane: string;
     /**
@@ -2576,8 +2576,22 @@ export type ProjectArtifactDto = {
     upAxis: string | null;
     /**
      * Receiptref
+     *
+     * the retained export receipt this row was read from; an in-process (OCCT) receipt certifies two files and is two rows sharing this ref — one exact STEP, one 3dm preview — never two candidates
      */
     receiptRef: string;
+    /**
+     * Format
+     *
+     * what a reader must know to open the file: 'step' (an exact B-rep, ISO 10303-21; download it, the viewer cannot load it) or '3dm' (what the viewer loads)
+     */
+    format: string;
+    /**
+     * Representation
+     *
+     * what the receipt claims the geometry is: 'exact' for the delivered model (a STEP B-rep, or a Rhino export that was read back), 'preview' for a render mesh tessellated from the exact model so it can be looked at — never a NURBS or B-rep delivery
+     */
+    representation: string;
 };
 
 /**

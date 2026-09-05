@@ -1,7 +1,12 @@
 """Prove a State Record reproduces a reference runner run (P102 migration receipt).
 
     python tools/verify_state_record.py --project <project root> \\
-        --reference-run runner-002 --run equivalence-001 [--rename old=new ...]
+        --reference-run runner-002 --run equivalence-001 [--rename old=new ...] \\
+        [--export [--cad-backend occt|rhino]]
+
+``--export`` goes through OCCT unless ``--cad-backend rhino`` is named, exactly
+as ``tools/run_project.py`` does; ``--patch-oracle`` is Rhino's patch check and
+is refused under OCCT rather than ignored.
 
 The record and the seats are the project's own work in progress, read by
 ``archflow.project.inputs`` at ``input/runner/`` under ``--project``; there is
@@ -15,9 +20,9 @@ Two checks, both recorded in ``--run`` as ``state-record-equivalence``:
    selection) has the same digest the reference run recorded.
 2. Geometry — the record is run through the real runner (``run_project``,
    canonical producers, seats, handovers) inside ``--run`` under an
-   *equivalence-harness* workflow frozen in that run (one stage in
-   design_development, clearly labelled; it is not the project's own stage
-   workflow and grants nothing), and every seat program's analytic bounds
+   *equivalence-harness* workflow frozen in that run (one stage in the
+   phase the reference run's stage ran in, clearly labelled; it is not the
+   project's own stage workflow and grants nothing), and every seat program's analytic bounds
    are compared object by object with the reference run's seat programs.
    ``--rename old=new`` maps element ids the record had to rename (an
    element id may not collide with a component id inside one record).
@@ -46,7 +51,14 @@ from archflow.project.record_kinds import (  # noqa: E402
     STATE_RECORD_EQUIVALENCE,
 )
 from archflow.project.refs import parse_record_file_name, record_ref_from_uri  # noqa: E402
-from archflow.runtime.project_runner import RunOptions, StageExecutionGuard, run_project  # noqa: E402
+from archflow.runtime.project_runner import (  # noqa: E402
+    CAD_BACKEND_OCCT,
+    CAD_BACKEND_RHINO,
+    CAD_BACKENDS,
+    RunOptions,
+    StageExecutionGuard,
+    run_project,
+)
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import DesignObligation  # noqa: E402
 from archflow.state.stage_workflow import ProjectStage, ProjectStageWorkflow, open_stage_run_envelope  # noqa: E402
@@ -74,6 +86,14 @@ def _latest(records_dir: Path, record_kind: str) -> Path:
     return paths[-1]
 
 
+def _receipt_phase(receipt: dict) -> DesignPhase:
+    """The phase a runner receipt says its stage ran in; design_development for a receipt that states none."""
+
+    stage = receipt.get("stage")
+    phase = stage.get("phase") if isinstance(stage, dict) else None
+    return DesignPhase(phase) if isinstance(phase, str) else DesignPhase.DESIGN_DEVELOPMENT
+
+
 def _harness_guard(repository, run, state, options) -> StageExecutionGuard:
     """The harness stage this comparison runs under; it closes nothing.
 
@@ -83,11 +103,16 @@ def _harness_guard(repository, run, state, options) -> StageExecutionGuard:
     as ``state-record-equivalence``, not a relation the runner measured. So
     the harness names no requirement and its closure states only that the
     seats ran — which is all a harness ever closes.
+
+    The stage's phase is the one ``state`` was projected in (the reference
+    run's, see ``main``): the runner projects the record in the envelope's
+    phase and admits only seats named for it, so a harness fixed to one phase
+    could never verify a reference run made in another.
     """
 
     workflow = ProjectStageWorkflow(
         project_id=run.project_id, workflow_id="equivalence-harness",
-        stages=(ProjectStage(stage_id="equivalence-check", stage_index=0, phase=DesignPhase.DESIGN_DEVELOPMENT, required_roles=("geometry-program",),
+        stages=(ProjectStage(stage_id="equivalence-check", stage_index=0, phase=state.active_phase, required_roles=("geometry-program",),
                              required_checks=(), close_obligation_id="close-equivalence-check"),),
         basis_refs=("decision:state-record-equivalence-harness",))
     destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
@@ -111,10 +136,20 @@ def main() -> int:
     parser.add_argument("--rename", action="append", default=[], help="old=new element id mapping")
     parser.add_argument("--tolerance", type=float, default=1e-6)
     parser.add_argument("--compare-only", action="store_true", help="compare the latest runner receipt already in --run instead of running again")
-    parser.add_argument("--export", action="store_true", help="also export each seat program through Rhino (full rebuild, or a patch when a prior export exists)")
-    parser.add_argument("--patch-oracle", action="store_true", help="with --export: rebuild in full beside every patch and compare")
-    parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+    parser.add_argument("--export", action="store_true", help="also export each seat program through --cad-backend")
+    parser.add_argument("--cad-backend", choices=CAD_BACKENDS, default=CAD_BACKEND_OCCT,
+                        help="which executor an --export goes to: occt (default; in process, exact STEP plus a mesh .3dm preview, reused when an "
+                             "intact retained export of the same binding exists) or rhino (the supervised host export: full rebuild, or a patch "
+                             "when a prior export exists; never started unless named here)")
+    parser.add_argument("--patch-oracle", action="store_true",
+                        help="with --export --cad-backend rhino: rebuild in full beside every patch and compare; refused under occt, which never patches")
+    parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", help="used by --cad-backend rhino only")
     args = parser.parse_args()
+    if args.patch_oracle and args.cad_backend != CAD_BACKEND_RHINO:
+        # the oracle is Rhino's patch check; under OCCT it would either start Rhino unasked or be
+        # reported as an oracle that never ran, so the request is refused naming the backend that has one
+        parser.error(f"--patch-oracle is the Rhino patch check: name --cad-backend {CAD_BACKEND_RHINO} to request it "
+                     f"(the {args.cad_backend} backend neither patches nor runs an oracle)")
     renames = dict(item.split("=", 1) for item in args.rename)
     repository = FilesystemProjectRepository.open(Path(args.project).resolve())
     record = load_authored_record(repository).record
@@ -130,14 +165,18 @@ def main() -> int:
     options = RunOptions(commitment_ref=seats_payload["commitment_ref"], live_provider_identity=identity, branch_id=seats_payload.get("branch_id", "runner-v1"))
     if args.export:
         workspace_root = Path(args.project).resolve() / "runs" / args.run / "workspaces"
-        options = RunOptions(commitment_ref=options.commitment_ref, live_provider_identity=identity, branch_id=options.branch_id, export=True, workspace_root=workspace_root, powershell=Path(args.powershell),
-                             patch_oracle=args.patch_oracle)
+        options = RunOptions(commitment_ref=options.commitment_ref, live_provider_identity=identity, branch_id=options.branch_id, export=True, cad_backend=args.cad_backend,
+                             workspace_root=workspace_root, powershell=Path(args.powershell), patch_oracle=args.patch_oracle)
         for seat in seats:
             if not seat.reviewer:
                 (workspace_root / f"cad-equivalence-check-{seat.seat_id}").mkdir(parents=True, exist_ok=True)
 
-    # 1. state identity against the reference run
-    reference_state = developed_design_view(record, run=reference, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+    # 1. state identity against the reference run, projected in the phase that run's stage states
+    #    (RunnerRunReceipt@3 carries it under ``stage.phase``); an older receipt that names no phase
+    #    was written when the projection was fixed to design_development, so that is what it is read in
+    reference_phase = _receipt_phase(reference_receipt)
+    reference_state = developed_design_view(record, run=reference, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref,
+                                            phase=reference_phase)
     state_equal = reference_state.state_digest == reference_receipt.get("design_state_digest")
 
     # 2. geometry through the real runner in the equivalence run
@@ -148,7 +187,10 @@ def main() -> int:
     if args.compare_only:
         receipt = json.loads(_latest(Path(repository.layout.run(run.run_id).records), RUNNER_RUN_RECEIPT).read_text(encoding="utf-8"))
     else:
-        state = developed_design_view(record, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref)
+        # the same phase as the identity check above: the harness stage is opened in it and the
+        # runner projects the record in it, so the seat pack is admitted exactly as it was in the reference run
+        state = developed_design_view(record, run=run, portfolio_id=options.portfolio_id, branch_id=options.branch_id, selection_decision_ref=options.selection_decision_ref,
+                                      phase=reference_phase)
         guard = _harness_guard(repository, run, state, options)
         receipt = run_project(repository, run=run, stage_guard=guard, record=record, seats=seats, options=options)
     # RunnerRunReceipt@1 (first cut) listed seats under "stages"; @2/@3 under "seat_results"
@@ -183,6 +225,7 @@ def main() -> int:
     payload = {"schema": "StateRecordEquivalence@1", "project_id": run.project_id, "run_id": run.run_id, "reference_run_id": reference.run_id,
                "state_record_digest": record.digest, "state_record_ref": receipt["state_record_ref"], "renames": renames, "tolerance_m": args.tolerance,
                "state_digest_equal": state_equal, "state_digest": reference_state.state_digest, "reference_state_digest": reference_receipt.get("design_state_digest"),
+               "reference_phase": reference_phase.value,
                "geometry_equal": geometry_equal, "worst_m": round(worst, 9), "seats": comparisons, "runner_receipt_ref": receipt.get("receipt_ref"),
                "harness": "equivalence-harness workflow frozen in this run; grants no stage authority", **no_authority(_AUTH)}
     ref = repository.put_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id), record_kind=STATE_RECORD_EQUIVALENCE, payload=payload)

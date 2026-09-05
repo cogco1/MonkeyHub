@@ -13,13 +13,30 @@ from unittest.mock import patch
 import venv
 
 from archflow_studio_api.settings import (
+    CAD_EXPORT_ENV,
+    CAD_EXPORT_OCCT,
+    CAD_EXPORT_OFF,
+    CAD_EXPORT_RHINO,
     LOCAL_MODE,
     REMOTE_MODE,
+    RHINO_EXPORT_ENV,
     SettingsError,
     StudioSettings,
+    cad_export_from_env,
 )
 
 from .support import make_empty_project
+
+# The launcher is a Windows PowerShell 5.1 script; its env forwarding is read
+# through the interpreter itself. Found by its system path so a shell with a
+# stripped PATH still finds it, and skipped where there is none.
+POWERSHELL = shutil.which("powershell.exe") or str(
+    Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+)
+LAUNCHER = Path(__file__).resolve().parents[2] / "launch-studio.ps1"
+ENV_BLOCK_START = "# --- environment the API reads"
+ENV_BLOCK_END = "$env:PYTHONUNBUFFERED"
 
 
 class SettingsTests(unittest.TestCase):
@@ -89,6 +106,55 @@ class SettingsTests(unittest.TestCase):
             settings.origins, ("https://a.example", "https://b.example")
         )
 
+    # ---- the one CAD export setting
+
+    def test_a_process_nothing_configured_exports_through_occt(self) -> None:
+        self.assertEqual(cad_export_from_env({}), CAD_EXPORT_OCCT)
+        self.assertEqual(StudioSettings(project_dir=Path("p")).cad_export, CAD_EXPORT_OCCT)
+        settings = StudioSettings(project_dir=Path("p"))
+        self.assertTrue(settings.exports)
+        self.assertFalse(settings.rhino_lane)
+
+    def test_the_legacy_boolean_only_enables_or_disables_and_never_selects_rhino(self) -> None:
+        # An explicit ``0`` written by an older launcher stays effective: no export.
+        self.assertEqual(cad_export_from_env({RHINO_EXPORT_ENV: "0"}), CAD_EXPORT_OFF)
+        # ``1`` meant "export"; export now means the ordinary OCCT path, not Rhino.
+        self.assertEqual(cad_export_from_env({RHINO_EXPORT_ENV: "1"}), CAD_EXPORT_OCCT)
+        self.assertEqual(cad_export_from_env({RHINO_EXPORT_ENV: ""}), CAD_EXPORT_OCCT)
+        self.assertEqual(cad_export_from_env({RHINO_EXPORT_ENV: "yes"}), CAD_EXPORT_OFF)
+
+    def test_the_new_variable_wins_over_the_legacy_one(self) -> None:
+        for value, expected in (("rhino", CAD_EXPORT_RHINO), (" OCCT ", CAD_EXPORT_OCCT), ("off", CAD_EXPORT_OFF)):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    cad_export_from_env({CAD_EXPORT_ENV: value, RHINO_EXPORT_ENV: "0"}), expected
+                )
+
+    def test_an_unknown_cad_export_is_refused_by_name(self) -> None:
+        with self.assertRaises(SettingsError) as raised:
+            cad_export_from_env({CAD_EXPORT_ENV: "sideways"})
+        self.assertIn(CAD_EXPORT_ENV, str(raised.exception))
+        self.assertIn("sideways", str(raised.exception))
+        with self.assertRaises(SettingsError):
+            StudioSettings(project_dir=Path("p"), cad_export="sideways")
+
+    def test_from_env_reads_the_cad_export_through_the_same_rule(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"ARCHFLOW_STUDIO_PROJECT_DIR": "some/project", RHINO_EXPORT_ENV: "0"},
+            clear=False,
+        ):
+            os.environ.pop(CAD_EXPORT_ENV, None)
+            self.assertEqual(StudioSettings.from_env().cad_export, CAD_EXPORT_OFF)
+        with patch.dict(
+            os.environ,
+            {"ARCHFLOW_STUDIO_PROJECT_DIR": "some/project", CAD_EXPORT_ENV: "rhino", RHINO_EXPORT_ENV: "0"},
+            clear=False,
+        ):
+            settings = StudioSettings.from_env()
+        self.assertEqual(settings.cad_export, CAD_EXPORT_RHINO)
+        self.assertTrue(settings.rhino_lane)
+
     def test_remote_mode_from_the_environment_refuses_without_a_token(
         self,
     ) -> None:
@@ -104,6 +170,96 @@ class SettingsTests(unittest.TestCase):
             with self.assertRaises(SettingsError) as raised:
                 StudioSettings.from_env()
         self.assertIn("ARCHFLOW_STUDIO_TOKEN", str(raised.exception))
+
+
+@unittest.skipUnless(Path(POWERSHELL).is_file(), "Windows launcher")
+class LauncherCadExportForwardingTests(unittest.TestCase):
+    """The launcher's environment block, run by itself over a runtime.json of each shape.
+
+    Only the statements between the environment marker and the unbuffered
+    flag are executed, with ``$runtime`` and ``$projectDir`` set as the
+    launcher would have them; no server, install or UI is touched. What is
+    read back is the two variables the API's settings read.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        text = LAUNCHER.read_text(encoding="utf-8")
+        start = text.index(ENV_BLOCK_START)
+        end = text.index(ENV_BLOCK_END, start)
+        cls.block = text[start:end]
+        cls.temporary = tempfile.TemporaryDirectory(prefix="studio launcher env ")
+        cls.addClassCleanup(cls.temporary.cleanup)
+        cls.harness = Path(cls.temporary.name) / "forward env.ps1"
+        cls.harness.write_text(
+            "param([string]$RuntimeJson)\n"
+            "$ErrorActionPreference = 'Stop'\n"
+            "$runtime = $RuntimeJson | ConvertFrom-Json\n"
+            "$projectDir = [string]$runtime.project_dir\n"
+            + cls.block
+            + "\n[pscustomobject]@{ Cad = $env:ARCHFLOW_STUDIO_CAD_EXPORT; Rhino = $env:ARCHFLOW_STUDIO_RHINO_EXPORT } | ConvertTo-Json -Compress\n",
+            encoding="utf-8-sig",
+        )
+
+    def forwarded(self, runtime: dict) -> tuple[str | None, str | None]:
+        environment = {
+            key: value for key, value in os.environ.items()
+            if key not in ("ARCHFLOW_STUDIO_CAD_EXPORT", "ARCHFLOW_STUDIO_RHINO_EXPORT")
+        }
+        # A stale value from a previous launch must be cleared, not inherited.
+        environment["ARCHFLOW_STUDIO_CAD_EXPORT"] = "stale"
+        environment["ARCHFLOW_STUDIO_RHINO_EXPORT"] = "stale"
+        result = subprocess.run(
+            [
+                POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass",
+                "-File", str(self.harness), "-RuntimeJson", json.dumps({"project_dir": "unused", **runtime}),
+            ],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, env=environment,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        answer = json.loads(result.stdout)
+        return answer["Cad"], answer["Rhino"]
+
+    @staticmethod
+    def as_environ(forwarded: tuple[str | None, str | None]) -> dict[str, str]:
+        """The two variables as the API process would see them: unset ones absent."""
+        cad, rhino = forwarded
+        return {
+            name: value
+            for name, value in ((CAD_EXPORT_ENV, cad), (RHINO_EXPORT_ENV, rhino))
+            if value is not None
+        }
+
+    def test_a_file_naming_neither_leaves_the_api_to_its_default(self) -> None:
+        self.assertEqual(self.forwarded({}), (None, None))
+
+    def test_a_legacy_explicit_false_still_arrives_as_disabled(self) -> None:
+        self.assertEqual(self.forwarded({"rhino_export": False}), (None, "0"))
+
+    def test_a_legacy_true_still_arrives_as_enabled(self) -> None:
+        self.assertEqual(self.forwarded({"rhino_export": True}), (None, "1"))
+
+    def test_cad_export_is_forwarded_and_wins_over_the_legacy_key(self) -> None:
+        self.assertEqual(self.forwarded({"cad_export": "occt", "rhino_export": False}), ("occt", None))
+        self.assertEqual(self.forwarded({"cad_export": "rhino"}), ("rhino", None))
+        self.assertEqual(self.forwarded({"cad_export": "off"}), ("off", None))
+
+    def test_a_blank_cad_export_does_not_silence_an_explicit_legacy_false(self) -> None:
+        # A `cad_export` of nothing but whitespace names no export mode. Forwarded as-is
+        # it would be stripped to empty by the API and fall to the OCCT default, while
+        # the launcher had already dropped the `rhino_export: false` that meant "off".
+        for blank in ("", "   ", " \t "):
+            with self.subTest(cad_export=repr(blank)):
+                forwarded = self.forwarded({"cad_export": blank, "rhino_export": False})
+                self.assertEqual(forwarded, (None, "0"))
+                self.assertEqual(cad_export_from_env(self.as_environ(forwarded)), CAD_EXPORT_OFF)
+
+    def test_a_padded_mixed_case_cad_export_still_arrives_as_that_mode(self) -> None:
+        # Trimming for the presence decision must not lose an ordinary value that the
+        # API accepts after its own strip-and-lower.
+        forwarded = self.forwarded({"cad_export": "  Rhino ", "rhino_export": False})
+        self.assertEqual(forwarded, ("Rhino", None))
+        self.assertEqual(cad_export_from_env(self.as_environ(forwarded)), CAD_EXPORT_RHINO)
 
 
 @unittest.skipUnless(shutil.which("powershell.exe"), "Windows launcher")

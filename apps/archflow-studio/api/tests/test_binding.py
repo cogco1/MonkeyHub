@@ -28,7 +28,7 @@ class UnboundProjectTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
-        self.settings = StudioSettings(project_dir=self.root / "no-project")
+        self.settings = StudioSettings(cad_export="off", project_dir=self.root / "no-project")
 
     def test_open_refuses_a_directory_that_is_not_a_project(self) -> None:
         with self.assertRaises(StudioError) as raised:
@@ -58,7 +58,7 @@ class BoundProjectTests(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
-        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID)
+        self.settings = StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)
         self.client = TestClient(create_app(self.settings))
         self.addCleanup(self.client.close)
 
@@ -114,7 +114,7 @@ class BoundProjectTests(unittest.TestCase):
         add_harness_run(self.repository)
         binding = ProjectBinding.open(
             StudioSettings(
-                project_dir=self.root / PROJECT_ID,
+                cad_export="off", project_dir=self.root / PROJECT_ID,
                 reference_run=HARNESS_RUN_ID,
             )
         )
@@ -128,7 +128,7 @@ class BoundProjectTests(unittest.TestCase):
         self,
     ) -> None:
         settings = StudioSettings(
-            project_dir=self.root / PROJECT_ID,
+            cad_export="off", project_dir=self.root / PROJECT_ID,
             reference_run="run-nowhere",
         )
         with TestClient(create_app(settings)) as client:
@@ -163,7 +163,7 @@ class ProjectWithoutRunsTests(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository = make_empty_project(self.root)
-        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID)
+        self.settings = StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)
         self.client = TestClient(create_app(self.settings))
         self.addCleanup(self.client.close)
 

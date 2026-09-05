@@ -189,6 +189,9 @@ export const messagesEn = {
     "this candidate exported no model — a file that was not written, not a failure",
   "candidate.loadingBytes": "loading bytes…",
   "candidate.preview": "Preview",
+  "artifact.kind.exactStep": "exact STEP",
+  "artifact.kind.previewMesh": "3dm preview (mesh, not the exact model)",
+  "artifact.kind.exact3dm": "3dm",
   "candidate.saveCertifiedTitle":
     "Save the certified bytes named by the receipt",
   "candidate.unavailableNoReason":

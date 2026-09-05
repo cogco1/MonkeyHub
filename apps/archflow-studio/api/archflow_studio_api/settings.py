@@ -10,8 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+from typing import Mapping
 
 PROJECT_DIR_ENV = "ARCHFLOW_STUDIO_PROJECT_DIR"
+CAD_EXPORT_ENV = "ARCHFLOW_STUDIO_CAD_EXPORT"
+# The variable the launcher forwarded before ``cad_export`` existed. It is read
+# only when ``ARCHFLOW_STUDIO_CAD_EXPORT`` is unset, and it can do two things:
+# ``1`` enables the ordinary (OCCT) export, anything else it was set to keeps
+# export off. It never selects Rhino; that backend is named explicitly or not at all.
 RHINO_EXPORT_ENV = "ARCHFLOW_STUDIO_RHINO_EXPORT"
 WORKERS_ENV = "ARCHFLOW_STUDIO_WORKERS"
 POWERSHELL_ENV = "ARCHFLOW_STUDIO_POWERSHELL"
@@ -34,6 +40,20 @@ LOCAL_MODE = "local"
 REMOTE_MODE = "remote"
 MODES = (LOCAL_MODE, REMOTE_MODE)
 
+# What a candidate run does with each seat's compiled program. One setting,
+# three values, and it is the only word the process has for it:
+#
+# * ``occt`` - the ordinary export: in process, no host, an exact STEP file and
+#   a mesh ``.3dm`` preview of the same model per seat, on the ordinary worker
+#   lanes. The default of a process nothing configured.
+# * ``rhino`` - the supervised Rhino host export, one at a time on this
+#   machine. Only ever chosen by name.
+# * ``off`` - no export: the candidate is compiled and checked, no file is written.
+CAD_EXPORT_OCCT = "occt"
+CAD_EXPORT_RHINO = "rhino"
+CAD_EXPORT_OFF = "off"
+CAD_EXPORTS = (CAD_EXPORT_OCCT, CAD_EXPORT_RHINO, CAD_EXPORT_OFF)
+
 DEFAULT_BIND_HOST = "127.0.0.1"
 
 # The compiler a process runs when nothing names one: the grammar alone, no
@@ -54,13 +74,17 @@ class StudioSettings:
     """Everything the API is allowed to know before a request arrives."""
 
     project_dir: Path
-    rhino_export: bool = False
+    # What a candidate does with its geometry: ``occt`` (the default), ``rhino``
+    # or ``off``. Read once, here; every caller that asks "does this run
+    # export" or "does it need the Rhino lane" asks this one field.
+    cad_export: str = CAD_EXPORT_OCCT
     powershell: Path | None = None
     # Which run the projection answers for. Unset means "let the rule choose";
     # it is never a run id written into the code.
     reference_run: str | None = None
-    # How many candidates may run at once. Exports still take the exclusive
-    # lane one at a time; this bounds the kernel-only runs beside them.
+    # How many candidates may run at once. An OCCT export runs on these lanes
+    # like any other kernel work; only a Rhino export takes the exclusive lane
+    # one at a time.
     workers: int = 2
     # Who compiles an architect's sentence into the grammar in this process:
     # deterministic (no model at all), codex, or anthropic. These four were
@@ -93,6 +117,11 @@ class StudioSettings:
         settings directly all pass through this one constructor.
         """
 
+        if self.cad_export not in CAD_EXPORTS:
+            raise SettingsError(
+                f"{CAD_EXPORT_ENV} must be one of {', '.join(CAD_EXPORTS)}, not "
+                f"{self.cad_export!r}."
+            )
         if self.mode not in MODES:
             raise SettingsError(
                 f"{MODE_ENV} must be one of {', '.join(MODES)}, not "
@@ -112,6 +141,18 @@ class StudioSettings:
                 "separated list of the origins a browser client is served "
                 "from. A remote API never guesses which sites may call it."
             )
+
+    @property
+    def exports(self) -> bool:
+        """Whether a candidate run writes geometry at all."""
+
+        return self.cad_export != CAD_EXPORT_OFF
+
+    @property
+    def rhino_lane(self) -> bool:
+        """Whether a candidate needs the one Rhino this machine can export with."""
+
+        return self.cad_export == CAD_EXPORT_RHINO
 
     @classmethod
     def from_env(cls) -> StudioSettings:
@@ -152,7 +193,7 @@ class StudioSettings:
             )
         return cls(
             project_dir=Path(project_dir),
-            rhino_export=os.environ.get(RHINO_EXPORT_ENV) == "1",
+            cad_export=cad_export_from_env(os.environ),
             powershell=Path(powershell) if powershell else None,
             reference_run=reference_run or None,
             workers=workers,
@@ -179,3 +220,28 @@ class StudioSettings:
                 if origin
             ),
         )
+
+
+def cad_export_from_env(environ: Mapping[str, str]) -> str:
+    """The one CAD export setting, from the new variable or the legacy one.
+
+    ``ARCHFLOW_STUDIO_CAD_EXPORT`` names it outright and wins. Without it the
+    legacy ``ARCHFLOW_STUDIO_RHINO_EXPORT`` is still honoured as what it always
+    meant - ``1`` turns export on, any other value it was set to keeps it off -
+    except that "on", which previously ran Rhino, now means the ordinary OCCT
+    export. Rhino now requires explicit ``cad_export=rhino``. A process with
+    neither variable exports through OCCT.
+    """
+
+    explicit = environ.get(CAD_EXPORT_ENV, "").strip().lower()
+    if explicit:
+        if explicit not in CAD_EXPORTS:
+            raise SettingsError(
+                f"{CAD_EXPORT_ENV} must be one of {', '.join(CAD_EXPORTS)}, not "
+                f"{explicit!r}."
+            )
+        return explicit
+    legacy = environ.get(RHINO_EXPORT_ENV)
+    if legacy is None or not legacy.strip():
+        return CAD_EXPORT_OCCT
+    return CAD_EXPORT_OCCT if legacy.strip() == "1" else CAD_EXPORT_OFF

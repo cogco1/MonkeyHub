@@ -26,7 +26,7 @@ BUG_MARKER = "a-bug-nobody-anticipated"
 
 class ErrorShapeTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.app = create_app(StudioSettings(project_dir=Path("unbound-placeholder")))
+        self.app = create_app(StudioSettings(cad_export="off", project_dir=Path("unbound-placeholder")))
 
         @self.app.get("/api/raises-not-bound")
         def raises_not_bound() -> None:
@@ -111,7 +111,7 @@ class RefusalDetailTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
         # The exact string the API itself would publish for this binding.
@@ -142,7 +142,7 @@ class RefusalDetailTests(unittest.TestCase):
         # authored-input refusals on a second project with no eligible run.
         no_run = make_empty_project(self.root / "no-run")
         no_run_client = TestClient(
-            create_app(StudioSettings(project_dir=no_run.layout.root))
+            create_app(StudioSettings(cad_export="off", project_dir=no_run.layout.root))
         )
         self.addCleanup(no_run_client.close)
         record = no_run.layout.resolve_relative(RUNNER_RECORD_PATH)
@@ -166,7 +166,7 @@ class RefusalDetailTests(unittest.TestCase):
     def test_an_unbindable_project_names_no_path_either(self) -> None:
         client = TestClient(
             create_app(
-                StudioSettings(project_dir=self.root / "never-initialized")
+                StudioSettings(cad_export="off", project_dir=self.root / "never-initialized")
             )
         )
         self.addCleanup(client.close)

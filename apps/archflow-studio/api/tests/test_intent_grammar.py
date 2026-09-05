@@ -180,13 +180,25 @@ BLOCKED: tuple[tuple[str | None, str, tuple[str, ...]], ...] = (
     ),
     (
         None,
-        "set module to 1.5",
-        ("module", "client"),
+        "set plinth to 0.7",
+        ("plinth", "client"),
     ),
     (
         None,
-        "set parameter:module to 1.5",
-        ("module", "client"),
+        "set parameter:plinth to 0.7",
+        ("plinth", "client"),
+    ),
+    (
+        # a derived parameter is not a control: the question names the
+        # expression, the source to set instead and the file to re-declare in
+        None,
+        "set bay to 3",
+        ("bay", "'2 * module'", "set module (= 1.2 m)", "input/runner/state-record.json"),
+    ),
+    (
+        None,
+        "set span to 6",
+        ("span", "'2 * bay'", "bay (= 2.4 m, itself derived by '2 * module')"),
     ),
     (
         None,
@@ -195,17 +207,17 @@ BLOCKED: tuple[tuple[str | None, str, tuple[str, ...]], ...] = (
     ),
     (
         None,
-        "set bay to 3000 mm",
-        ("bay", "mm", "m"),
+        "set module to 1500 mm",
+        ("module", "mm", "m"),
     ),
     (
         None,
-        "set bay to 3 keep parameter:column-spacing",
+        "set module to 1.5 keep parameter:column-spacing",
         ("column-spacing",),
     ),
     (
         None,
-        "set bay to 3 keep east-loggia",
+        "set module to 1.5 keep east-loggia",
         ("east-loggia",),
     ),
 )
@@ -220,7 +232,7 @@ class ProviderRefusalTests(unittest.TestCase):
         make_project(self.root)
         self.projection = project_state(
             ProjectBinding.open(
-                StudioSettings(project_dir=self.root / PROJECT_ID)
+                StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)
             )
         )
         self.provider = DeterministicIntentProvider(self.projection)

@@ -123,7 +123,7 @@ class IntentTimingsTests(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
-        self.client = TestClient(create_app(StudioSettings(project_dir=self.root / PROJECT_ID)))
+        self.client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)))
         self.addCleanup(self.client.close)
         self.state_digest = runner_state_digest(self.repository, REFERENCE_RUN_ID)
 

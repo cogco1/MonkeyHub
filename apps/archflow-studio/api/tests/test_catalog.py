@@ -103,7 +103,7 @@ class CatalogTestCase(unittest.TestCase):
             seat_results=self.seat_results,
         )
         self.app = create_app(
-            StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=self.run_id)
+            StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID, reference_run=self.run_id)
         )
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
@@ -241,7 +241,7 @@ class NoInspectionTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root, True)
         make_project(root)
-        app = create_app(StudioSettings(project_dir=root / PROJECT_ID))
+        app = create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID))
         client = TestClient(app)
         self.addCleanup(client.close)
         response = client.get("/api/state")

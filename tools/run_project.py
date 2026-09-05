@@ -2,7 +2,11 @@
 
     python tools/run_project.py --project <project root> --run <run id> \
       --workflow-ref project://... --stage-envelope-ref project://... \
-      [--export] [--workspace <dir>]
+      [--export [--cad-backend occt|rhino]] [--workspace <dir>]
+
+``--export`` goes through OCCT unless ``--cad-backend rhino`` is named: an
+exact STEP file and a mesh ``.3dm`` preview per seat, in process, retained as
+``seat-occt-execution``. Rhino is never started by the default.
 
 The design and the seats come from the project's own work-in-progress files —
 ``input/runner/state-record.json`` (``StateRecord@1``: components and massing,
@@ -39,6 +43,8 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.refs import record_ref_from_uri  # noqa: E402
 from archflow.state.state_record import StateRecord  # noqa: E402
 from archflow.runtime.project_runner import (  # noqa: E402
+    CAD_BACKEND_OCCT,
+    CAD_BACKENDS,
     RunOptions,
     StageExecutionGuard,
     run_project,
@@ -104,7 +110,7 @@ def _seat(payload: dict) -> SeatSpec:
     )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run a project's authored State Record and seat pack, read from the "
                     "project root at input/runner/ (ADR-007), inside an already-retained stage.",
@@ -113,14 +119,17 @@ def main() -> int:
     parser.add_argument("--run", required=True)
     parser.add_argument("--workflow-ref", required=True)
     parser.add_argument("--stage-envelope-ref", required=True)
-    parser.add_argument("--export", action="store_true")
+    parser.add_argument("--export", action="store_true", help="export every seat's compiled program through --cad-backend")
+    parser.add_argument("--cad-backend", choices=CAD_BACKENDS, default=CAD_BACKEND_OCCT,
+                        help="which executor an --export goes to: occt (default; in process, exact STEP plus a mesh .3dm preview) "
+                             "or rhino (the supervised host export; never started unless named here)")
     parser.add_argument("--workspace")
-    parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+    parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", help="used by --cad-backend rhino only")
     parser.add_argument("--relaxed-coverage", action="store_true")
-    parser.add_argument("--patch-oracle", action="store_true", help="when an export is patched, also rebuild in full and compare the two readbacks")
+    parser.add_argument("--patch-oracle", action="store_true", help="rhino only: when an export is patched, also rebuild in full and compare the two readbacks")
     parser.add_argument("--record-ref", help="run this state-record record (a candidate successor held in a run) instead of the authored record; the authored record is not touched")
     parser.add_argument("--seats-file", help="a seat pack JSON to partition this run by, instead of input/runner/seats.json (a compile partition for a candidate); the authored pack is not touched")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     project_root = Path(args.project).resolve()
     repository = FilesystemProjectRepository.open(project_root)
     if args.record_ref:
@@ -154,6 +163,7 @@ def main() -> int:
         envelope_uri=args.stage_envelope_ref,
     )
     options = RunOptions(commitment_ref=seats_payload["commitment_ref"], live_provider_identity=identity, strict_coverage=not args.relaxed_coverage, export=args.export,
+                         cad_backend=args.cad_backend,
                          workspace_root=Path(args.workspace).resolve() if args.workspace else repository.layout.run(args.run).root / "workspaces", powershell=Path(args.powershell),
                          branch_id=stage_guard.envelope.branch_id, branch_epoch=stage_guard.envelope.branch_epoch, patch_oracle=args.patch_oracle)
     if options.export:
@@ -164,7 +174,12 @@ def main() -> int:
     for seat_result in receipt["seat_results"]:
         cad = seat_result.get("cad") or {}
         print(f"[{seat_result['seat_id']}] round {seat_result['round']} {seat_result['status']} objects={seat_result['objects']} covered={len(seat_result['covered_components'])} "
-              f"undeclared={seat_result['undeclared_components']} t={seat_result['wall_time_s']}s cad={cad.get('status')} readback={cad.get('readback_verified')}")
+              f"undeclared={seat_result['undeclared_components']} t={seat_result['wall_time_s']}s cad={cad.get('status')} readback={cad.get('readback_verified')}"
+              + (f" backend={cad.get('backend')} path={cad.get('path')}" if cad else ""))
+        for artifact_key in ("exact_artifact", "preview_artifact"):
+            artifact = cad.get(artifact_key)
+            if artifact:
+                print(f"    {artifact_key}: {artifact.get('relative_path')} sha256={str(artifact.get('sha256'))[:12]}... ({artifact.get('format')})")
         for issue in seat_result["issues"][:6]:
             print("    ", issue.get("code"), "|", str(issue.get("detail"))[:200])
     print(f"unowned components: {receipt.get('unowned_components')}")

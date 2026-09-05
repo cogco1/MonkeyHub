@@ -75,10 +75,14 @@ that same window red**, with the launcher's own sentence in it and a Close butto
 in a console for a keypress.
 
 Its one input is `runtime.json` beside it, and the line you normally change is the first:
-`project_dir`, the P036 project the API binds. The rest are `reference_run`, `rhino_export`,
-`powershell`, `intent_provider` and `codex` (the environment variables the sections below
-describe), `python` (the interpreter command, `py -3.12`), `api_port`, `web_port` and
-`open_browser`. Two optional keys name the agent more exactly: `intent_model` (the model the
+`project_dir`, the P036 project the API binds. The rest are `reference_run`, `cad_export`
+(`occt` | `rhino` | `off`; forwarded as `ARCHFLOW_STUDIO_CAD_EXPORT`, see "Exported
+candidates" below), `powershell`, `intent_provider` and `codex` (the environment variables
+the sections below describe), `python` (the interpreter command, `py -3.12`), `api_port`,
+`web_port` and `open_browser`. A `runtime.json` written before `cad_export` existed may still
+carry `rhino_export: true|false`; the launcher keeps forwarding that boolean as it always did
+(`true` turns export on, `false` keeps it off) until the line is replaced by `cad_export`, and
+a file naming neither leaves the API to its default, which is `occt`. Two optional keys name the agent more exactly: `intent_model` (the model the
 provider runs, forwarded as `ARCHFLOW_STUDIO_INTENT_MODEL`) and `intent_timeout_s` (how long one
 compile may take, default 120, forwarded as `ARCHFLOW_STUDIO_INTENT_TIMEOUT_S`). **The paths in
 it are absolute and machine-specific**; it is not a file to copy between machines unchanged.
@@ -127,8 +131,13 @@ No raster loading assets or React animation timer are involved.
 
 ```powershell
 py -3.12 -m pip install -r apps/archflow-studio/api/requirements.txt
+py -3.12 -m pip install -e ".[cad-occt]"   # the ordinary export: cadquery-ocp and rhino3dm
 py -3.12 -m pip install httpx2        # tests only, for fastapi.testclient
 ```
+
+The `cad-occt` extra is what the default candidate export runs on (OCCT in process, no Rhino);
+without it a candidate with `cad_export` at its default fails its export and says so in the
+job's own sentence, and `cad_export: off` runs candidates with no geometry written at all.
 
 **The API** — from `apps/archflow-studio/api`:
 
@@ -174,10 +183,31 @@ protocol major is not 2 gets a refusal screen. `archflow/2` replaces the validat
 field `advance` with `reviewReady`; client and server must both speak this major before the
 client reads design responses.
 
-Exported candidates (optional, slow — roughly 37 s per seat, and it drives Rhino):
+**Exported candidates.** One setting, `ARCHFLOW_STUDIO_CAD_EXPORT`, says what a candidate does
+with each seat's compiled program:
+
+| value | what a candidate leaves | lane |
+| --- | --- | --- |
+| `occt` (default) | per seat, in process and without any host: one **exact STEP** file (`<stage>@<program digest>.step`, ISO 10303-21 B-rep, one named closed solid per object, semantic layers) and one **mesh `.3dm` preview** of the same model (`….preview.3dm`, what the viewer shows; object names, layers and `archflow:*` user text; a render mesh, never a NURBS/B-rep delivery), retained as `seat-occt-execution` with the cold readback of the STEP file | parallel, like any kernel work |
+| `rhino` | the supervised Rhino host export (slow — roughly 37 s per seat, and it drives Rhino); needs `ARCHFLOW_STUDIO_POWERSHELL`; retained as `seat-rhino-execution` | exclusive: one Rhino at a time |
+| `off` | nothing written: the candidate is compiled and relation-checked only | parallel |
+
+Rhino is never started unless `rhino` is named. An operation the in-process executor does not
+realize (an instanced array, a revolve, a sweep, an asset) fails that seat's export by name
+before any file is written; nothing falls back to Rhino and no stand-in model is produced.
+The current OCCT slice supports boxes, polyline extrusions, capped polyline lofts and
+union/difference/intersection. Changed programs receive a full rebuild; incremental OCCT
+patch execution is not implemented. STEP readback uses a fresh reader over saved bytes in
+the same process. Synthetic geometry and temporary P036 candidate continuation have been
+verified; this delivery has not rerun the real Villa project or established whole-building
+coverage.
+Reading or reopening a candidate never runs an export: the listing reads the retained receipts
+and re-hashes the files they certify. The older `ARCHFLOW_STUDIO_RHINO_EXPORT` is still read
+when the new variable is unset — `1` turns export on (through `occt`), anything else it was set
+to keeps it off — and it never selects Rhino.
 
 ```powershell
-$env:ARCHFLOW_STUDIO_RHINO_EXPORT = "1"
+$env:ARCHFLOW_STUDIO_CAD_EXPORT = "rhino"            # only to export through Rhino
 $env:ARCHFLOW_STUDIO_POWERSHELL = "<path to powershell.exe>"
 ```
 
@@ -348,12 +378,19 @@ answering from a tree it does not have. A record that parses and then cannot be 
 an `Element@1` with no `component_id`, bytes in another encoding — is the same refusal: the
 authored file is what is wrong, and no such record is ever answered with a 500.
 
-**Artifacts.** `GET /api/artifacts` lists what the `seat-rhino-execution` receipts certify,
-each row keeping the receipt's own `available` / `unavailableReason` rather than being
-filtered out. Bytes are content-addressed: `GET /api/artifacts/{sha256}/bytes` re-hashes the
-file on disk and refuses with `ARTIFACT_DIGEST_MISMATCH` if it does not hash to the digest in
-the path. A `.3dm` in this list is a file that was written — never a claim that anything about
-it passed.
+**Artifacts.** `GET /api/artifacts` lists what the export receipts certify — the
+`seat-occt-execution` receipts of the ordinary in-process export and the `seat-rhino-execution`
+receipts of the Rhino export — each row keeping the receipt's own `available` /
+`unavailableReason` rather than being filtered out. One OCCT receipt is **two rows** sharing its
+`receiptRef`, stage and program binding: the exact STEP and the mesh preview of the same
+model. Every row says what it is in two words: `format` (`step` or `3dm`, what a reader must
+know to open it) and `representation` (`exact`, the delivered geometry — a STEP B-rep or a
+Rhino export that was read back — or `preview`, a render mesh for looking at, never a
+NURBS/B-rep delivery). The browser hands only a `3dm` to its viewer and offers the STEP as a
+download; a version is one card per run, never one per file. Bytes are content-addressed:
+`GET /api/artifacts/{sha256}/bytes` re-hashes the file on disk and refuses with
+`ARTIFACT_DIGEST_MISMATCH` if it does not hash to the digest in the path. A file in this list
+is a file that was written — never a claim that anything about it passed.
 
 **Viewport captures.** `POST /api/captures` accepts the loaded model's existing `runId` and
 PNG bytes, then P036 retains the image at
@@ -552,7 +589,8 @@ a lint. The API tests run on real fixtures — a real P036 project via
 `FilesystemProjectRepository.initialize` — and there are no mocks in them.
 
 The web shell has focused unit tests for restoring the original model after display projections,
-semantic carrier matching, and viewport PNG encoding. Its end-to-end acceptance remains a live
+semantic carrier matching, viewport PNG encoding, and which listed artifact the viewer is handed
+(the `3dm` preview, never the exact STEP). Its end-to-end acceptance remains a live
 smoke against a **temporary copy** of a project with export on: bind → choose or pick a component → propose → run the candidate →
 preview its export under the `CANDIDATE` chip → read the review-readiness card → send an abstract
 sentence and get a question card → open the evidence drawer; then the light theme and the

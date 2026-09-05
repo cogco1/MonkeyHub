@@ -19,7 +19,7 @@ from .support import PROJECT_ID, make_project
 class HealthRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=Path("unbound-placeholder")))
+            create_app(StudioSettings(cad_export="off", project_dir=Path("unbound-placeholder")))
         )
         self.addCleanup(self.client.close)
 
@@ -43,7 +43,7 @@ class BoundHealthTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         make_project(self.root)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
 

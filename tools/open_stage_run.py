@@ -40,9 +40,10 @@ from archflow.project.record_kinds import (  # noqa: E402
     STAGE_EXIT_BINDING,
     STAGE_RUN_ENVELOPE,
 )
-from archflow.project.refs import parse_record_file_name, record_ref_from_uri  # noqa: E402
+from archflow.project.refs import RunRef, parse_record_file_name, record_ref_from_uri  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository  # noqa: E402
 from archflow.runtime.project_runner import RunOptions  # noqa: E402
+from archflow.state.developed_design import DevelopedDesignError  # noqa: E402
 from archflow.state.operational_state import DesignObligation  # noqa: E402
 from archflow.state.stage_workflow import (  # noqa: E402
     HARNESS_WORKFLOW_IDS,
@@ -145,20 +146,36 @@ def open_stage_run(
             repository.load_json(record_ref_from_uri(predecessor_ref, project_id))
         )
 
-    run = repository.create_run(run_id, base=repository.read_head())
     options = RunOptions(commitment_ref=f"commitment:{workflow.workflow_id}")
     if record_ref:
         # a candidate held in a run (a re-indexed successor): the envelope binds *its* developed state
         record = StateRecord.from_dict(repository.load_json(record_ref_from_uri(record_ref, repository.read_head().project_id)))
     else:
         record = load_authored_record(repository).record
-    state = developed_design_view(
-        record,
-        run=run,
-        portfolio_id=options.portfolio_id,
-        branch_id=options.branch_id,
-        selection_decision_ref=options.selection_decision_ref,
-    )
+    # The record is projected in the stage's own phase (ADR-007, P112): the runner projects it
+    # in the phase the envelope states and refuses the run if the digests differ, so an envelope
+    # bound under any other phase would open a run that can never execute. A phase the
+    # developed-design projection cannot carry is refused here, before the run exists: the
+    # projection is bound to the run this command is about to create, against current HEAD.
+    head = repository.read_head()
+    prospective = RunRef(project_id, run_id, head)
+    try:
+        state = developed_design_view(
+            record,
+            run=prospective,
+            portfolio_id=options.portfolio_id,
+            branch_id=options.branch_id,
+            selection_decision_ref=options.selection_decision_ref,
+            phase=stage.phase,
+        )
+    except DevelopedDesignError as exc:
+        raise StageRunError(
+            f"stage {stage.stage_id!r} is in phase {stage.phase.value!r}, which the "
+            f"developed-design projection cannot carry: {exc}"
+        ) from exc
+    run = repository.create_run(run_id, base=head)
+    if run != prospective:
+        raise StageRunError("the created run does not bind the HEAD the envelope was projected against")
     envelope = open_stage_run_envelope(
         workflow,
         workflow_ref=workflow_ref.uri,

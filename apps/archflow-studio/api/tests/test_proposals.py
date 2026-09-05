@@ -38,6 +38,18 @@ from .support import (
 OTHER_DIGEST = "0" * 64
 PERSISTENCE = "in-memory (not version history)"
 
+# The fixture with its one source parameter locked: the chain bay -> span then
+# has no control anybody may set, and the refusal has to say so.
+LOCKED_SOURCE_PAYLOAD: dict[str, object] = {
+    **RECORD_PAYLOAD,
+    "parameters": [
+        {**parameter, "lock_authority": "client"}  # type: ignore[dict-item]
+        if parameter["key"] == "module"  # type: ignore[index]
+        else parameter
+        for parameter in RECORD_PAYLOAD["parameters"]  # type: ignore[union-attr]
+    ],
+}
+
 # The exact question a record with no parameters has to ask, verbatim: it names
 # the count and the file somebody would have to author into.
 NO_PARAMETERS = (
@@ -55,7 +67,7 @@ class ProposalTestCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.repository, _ = make_project(self.root)
         self.client = TestClient(
-            create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+            create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
         )
         self.addCleanup(self.client.close)
         self.state_digest = runner_state_digest(
@@ -210,48 +222,98 @@ class ParameterProposalTests(ProposalTestCase):
     def test_a_parameter_change_propagates_along_the_records_expressions(
         self,
     ) -> None:
-        payload = self.accepted("set bay to 3")
+        payload = self.accepted("set module to 1.5")
 
-        self.assertEqual(payload["target"]["ref"], "parameter:bay")
+        self.assertEqual(payload["target"]["ref"], "parameter:module")
         self.assertEqual(payload["target"]["elementId"], None)
-        self.assertEqual(payload["target"]["key"], "bay")
+        self.assertEqual(payload["target"]["key"], "module")
         self.assertEqual(
-            payload["change"], {"old": 2.4, "new": 3, "unit": "m"}
+            payload["change"], {"old": 1.2, "new": 1.5, "unit": "m"}
         )
+        # the whole declared chain: bay = 2 * module, span = 2 * bay
         self.assertEqual(
-            payload["impact"]["propagated"], ["parameter:span"]
+            payload["impact"]["propagated"], ["parameter:bay", "parameter:span"]
         )
         operator = DecisionOperator.from_dict(payload["decisionOperator"])
         self.assertEqual(operator.decision_type, "studio.parameter_change")
-        self.assertEqual(operator.bindings[0].key, "bay")
-        self.assertEqual(operator.invalidates, ("parameter:span",))
+        self.assertEqual(operator.bindings[0].key, "module")
+        self.assertEqual(operator.invalidates, ("parameter:bay", "parameter:span"))
 
     def test_the_parameter_prefix_names_a_parameter_and_never_a_field(
         self,
     ) -> None:
         payload = self.accepted(
-            "set parameter:bay to 3", elementId="portico-base"
+            "set parameter:module to 1.5", elementId="portico-base"
         )
 
-        self.assertEqual(payload["target"]["ref"], "parameter:bay")
+        self.assertEqual(payload["target"]["ref"], "parameter:module")
 
     def test_a_matching_unit_is_accepted(self) -> None:
-        payload = self.accepted("set bay to 3 m")
+        payload = self.accepted("set module to 1.5 m")
 
         self.assertEqual(payload["change"]["unit"], "m")
 
     def test_a_unit_the_parameter_does_not_use_is_a_question(self) -> None:
-        payload = self.blocked("set bay to 3000 mm")
+        payload = self.blocked("set module to 1500 mm")
 
         self.assertIn("mm", payload["question"])
-        self.assertIn("bay", payload["question"])
+        self.assertIn("module", payload["question"])
+
+
+class DerivedParameterTests(ProposalTestCase):
+    """A derived parameter is not a control, and the refusal says what is.
+
+    The kernel refuses a scalar written over an expression as a conflicting
+    declaration; asking that of a candidate job would fail it after the fact.
+    The proposal boundary refuses first, naming the expression, the source
+    parameter to set instead with its current value, and the file a
+    re-declaration would go into.
+    """
+
+    def test_a_derived_parameter_is_refused_with_its_source_named(self) -> None:
+        payload = self.blocked("set bay to 3")
+
+        self.assertEqual(payload["detail"], "the parameter is derived, not a control")
+        self.assertEqual(
+            payload["question"],
+            "parameter bay is derived by '2 * module'; its value follows "
+            "module. set module (= 1.2 m) instead, or re-declare bay without "
+            "an expression in input/runner/state-record.json.",
+        )
+
+    def test_a_source_that_is_itself_derived_is_said_to_be(self) -> None:
+        payload = self.blocked("set span to 6")
+
+        self.assertIn("parameter span is derived by '2 * bay'", payload["question"])
+        self.assertIn("bay (= 2.4 m, itself derived by '2 * module')", payload["question"])
+
+    def test_the_parameter_prefix_is_refused_the_same_way(self) -> None:
+        payload = self.blocked("set parameter:bay to 3", elementId="portico-base")
+
+        self.assertIn("parameter bay is derived by '2 * module'", payload["question"])
+
+    def test_a_locked_source_is_named_as_locked(self) -> None:
+        write_runner_record(self.repository, LOCKED_SOURCE_PAYLOAD)
+        retain_runner_receipt(
+            self.repository,
+            self.repository.load_run(REFERENCE_RUN_ID),
+            design_state_digest=runner_state_digest(
+                self.repository, REFERENCE_RUN_ID, LOCKED_SOURCE_PAYLOAD
+            ),
+            record_payload=LOCKED_SOURCE_PAYLOAD,
+        )
+        self.state_digest = self.client.get("/api/state").json()["stateDigest"]
+
+        payload = self.blocked("set bay to 3")
+
+        self.assertIn("module (= 1.2 m, locked by client)", payload["question"])
 
 
 class ProtectionTests(ProposalTestCase):
     def test_keeping_something_downstream_makes_the_proposal_a_conflict(
         self,
     ) -> None:
-        payload = self.accepted("set bay to 3 keep parameter:span")
+        payload = self.accepted("set module to 1.5 keep parameter:span")
 
         self.assertEqual(payload["status"], "conflict")
         self.assertEqual(payload["protected"], ["parameter:span"])
@@ -260,7 +322,7 @@ class ProtectionTests(ProposalTestCase):
         )
         # A conflict is still a proposal: the user resolves it, the server
         # does not silently drop the change.
-        self.assertEqual(payload["change"]["new"], 3)
+        self.assertEqual(payload["change"]["new"], 1.5)
 
     def test_keeping_the_very_thing_being_changed_is_a_conflict(self) -> None:
         payload = self.accepted(
@@ -280,9 +342,9 @@ class ProtectionTests(ProposalTestCase):
         self,
     ) -> None:
         for utterance, element_id in (
-            ("set bay to 3 keep parameter:span", None),
+            ("set module to 1.5 keep parameter:span", None),
             ("set height to 2.2 keep entity:portico-base", "portico-base"),
-            ("set bay to 3 keep entity:portico-base", None),
+            ("set module to 1.5 keep entity:portico-base", None),
             ("set height to 2.2", "portico-base"),
         ):
             with self.subTest(utterance=utterance):
@@ -297,7 +359,7 @@ class ProtectionTests(ProposalTestCase):
     def test_keeping_something_out_of_reach_leaves_the_proposal_proposed(
         self,
     ) -> None:
-        payload = self.accepted("set bay to 3 keep entity:portico-base")
+        payload = self.accepted("set module to 1.5 keep entity:portico-base")
 
         self.assertEqual(payload["status"], "proposed")
         self.assertEqual(payload["impact"]["conflicts"], [])
@@ -305,7 +367,7 @@ class ProtectionTests(ProposalTestCase):
     def test_a_protected_ref_becomes_a_lock_the_operator_would_add(
         self,
     ) -> None:
-        payload = self.accepted("set bay to 3 keep parameter:span")
+        payload = self.accepted("set module to 1.5 keep parameter:span")
         operator = DecisionOperator.from_dict(payload["decisionOperator"])
 
         self.assertEqual(operator.add_locks[0].target_ref, "parameter:span")
@@ -314,14 +376,14 @@ class ProtectionTests(ProposalTestCase):
     def test_a_bare_ref_resolves_to_the_one_thing_that_answers_to_it(
         self,
     ) -> None:
-        payload = self.accepted("set bay to 3 keep span")
+        payload = self.accepted("set module to 1.5 keep span")
 
         self.assertEqual(payload["protected"], ["parameter:span"])
 
     def test_a_keep_ref_the_record_does_not_declare_is_a_question(
         self,
     ) -> None:
-        payload = self.blocked("set bay to 3 keep parameter:column-spacing")
+        payload = self.blocked("set module to 1.5 keep parameter:column-spacing")
 
         self.assertIn("column-spacing", payload["question"])
 
@@ -371,11 +433,11 @@ class RefusalTests(ProposalTestCase):
     def test_a_locked_parameter_is_a_question_about_its_authority(
         self,
     ) -> None:
-        payload = self.blocked("set module to 1.5")
+        payload = self.blocked("set plinth to 0.7")
 
         self.assertEqual(
             payload["question"],
-            "parameter module is locked by client; release it explicitly?",
+            "parameter plinth is locked by client; release it explicitly?",
         )
 
     def test_an_element_of_another_component_asks_which_was_meant(
@@ -411,7 +473,7 @@ class RefusalTests(ProposalTestCase):
 class BaseTests(ProposalTestCase):
     def test_a_proposal_against_another_state_is_refused(self) -> None:
         status, payload = self.propose(
-            "set bay to 3", stateDigest=OTHER_DIGEST
+            "set module to 1.5", stateDigest=OTHER_DIGEST
         )
 
         self.assertEqual(status, 409)
@@ -421,7 +483,7 @@ class BaseTests(ProposalTestCase):
 
     def test_a_proposal_naming_another_project_is_refused(self) -> None:
         status, payload = self.propose(
-            "set bay to 3", projectId="villa-rotonda-reconstruction"
+            "set module to 1.5", projectId="villa-rotonda-reconstruction"
         )
 
         self.assertEqual(status, 403)
@@ -430,7 +492,7 @@ class BaseTests(ProposalTestCase):
         self.assertIn(PROJECT_ID, payload["detail"])
 
     def test_naming_the_bound_project_is_accepted(self) -> None:
-        payload = self.accepted("set bay to 3", projectId=PROJECT_ID)
+        payload = self.accepted("set module to 1.5", projectId=PROJECT_ID)
 
         self.assertEqual(payload["status"], "proposed")
 
@@ -461,7 +523,7 @@ class NoParametersTests(ProposalTestCase):
     def test_a_bare_field_with_no_element_selected_asks_the_same_question(
         self,
     ) -> None:
-        payload = self.blocked("set module to 1.5")
+        payload = self.blocked("set plinth to 0.7")
 
         self.assertEqual(payload["question"], NO_PARAMETERS)
 
@@ -519,7 +581,7 @@ class ZeroValueTests(ProposalTestCase):
 
 class ProposalStoreTests(ProposalTestCase):
     def test_a_proposal_can_be_read_back_by_its_id(self) -> None:
-        created = self.accepted("set bay to 3")
+        created = self.accepted("set module to 1.5")
 
         response = self.client.get(f"/api/proposals/{created['proposalId']}")
 
@@ -534,8 +596,8 @@ class ProposalStoreTests(ProposalTestCase):
         self.assertIn("studio-000000000000", response.json()["detail"])
 
     def test_two_proposals_are_two_ids(self) -> None:
-        first = self.accepted("set bay to 3")
-        second = self.accepted("set bay to 4")
+        first = self.accepted("set module to 1.5")
+        second = self.accepted("set module to 1.6")
 
         self.assertNotEqual(first["proposalId"], second["proposalId"])
 
@@ -566,9 +628,9 @@ class ProposalOnlyTests(ProposalTestCase):
         # One of each kind: an element field, a parameter, a conflict, and a
         # refusal — no path through this route may touch the project.
         self.accepted("set height to 2.2", elementId="portico-base")
-        self.accepted("set bay to 3 keep parameter:span")
-        self.blocked("set module to 1.5")
-        stored = self.accepted("set bay to 4")
+        self.accepted("set module to 1.5 keep parameter:span")
+        self.blocked("set plinth to 0.7")
+        stored = self.accepted("set module to 1.6")
         self.client.get(f"/api/proposals/{stored['proposalId']}")
 
         self.assertEqual(self._project_files(), before)
@@ -579,7 +641,7 @@ class ProposalOnlyTests(ProposalTestCase):
 class RequestShapeTests(ProposalTestCase):
     def test_a_malformed_state_digest_is_a_request_error(self) -> None:
         status, payload = self.propose(
-            "set bay to 3", stateDigest="not-a-digest"
+            "set module to 1.5", stateDigest="not-a-digest"
         )
 
         self.assertEqual(status, 422)

@@ -51,7 +51,7 @@ class FrameTestCase(unittest.TestCase):
         self.repository, self.state_digest = make_portico_project(self.root)
         self.client = TestClient(
             create_app(
-                StudioSettings(project_dir=self.repository.layout.root)
+                StudioSettings(cad_export="off", project_dir=self.repository.layout.root)
             )
         )
         self.addCleanup(self.client.close)
@@ -247,7 +247,7 @@ class FrameTestCase(unittest.TestCase):
         repository = make_empty_project(self.root / "unviewable")
         write_runner_record(repository, _unviewable(PORTICO_RECORD_PAYLOAD))
         client = TestClient(
-            create_app(StudioSettings(project_dir=repository.layout.root))
+            create_app(StudioSettings(cad_export="off", project_dir=repository.layout.root))
         )
         self.addCleanup(client.close)
         state = client.get("/api/state").json()

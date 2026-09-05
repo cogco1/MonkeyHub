@@ -464,6 +464,31 @@ class AuthoredRecordTests(unittest.TestCase):
         self.assertAlmostEqual(bounds["obj-wall-south-cut"]["bbox_max"][1] - bounds["obj-wall-south-cut"]["bbox_min"][1], 2.97)
 
 
+class BoundRowTests(unittest.TestCase):
+    """A row reads a parameter only through an explicit ``@key`` binding; a literal is never rebound."""
+
+    def _bound(self, height="@wall_height", wall_height: float = 2.97):
+        record = authored_record()
+        entities = tuple(replace(e, fields={**e.fields, "params": {**e.fields["params"], "height": height}}) if e.entity_id == "wall-south" else e for e in record.entities)
+        parameters = tuple(replace(p, value=wall_height) if p.key == "wall_height" else p for p in record.parameters)
+        return replace(record, entities=entities, parameters=parameters)
+
+    def test_a_bound_height_is_the_evaluated_parameter_and_the_literal_next_to_it_stays(self) -> None:
+        rows = {r.element_id: r for r in element_rows_of(self._bound())}
+        self.assertAlmostEqual(rows["wall-south"].params["height"], 2.97)                           # 3 * module - 0.63, from the record's own module
+        self.assertEqual(rows["wall-south"].params["thickness"], 0.3)
+        self.assertEqual(rows["plinth"].params["height"], 0.6)                                      # a literal is a literal
+        context = ProductionContext(references=ReferenceContext(grids=project_grids_of(self._bound()), levels=project_levels_of(self._bound())), published={}, frame_id="world")
+        plinth, wall = produce_rows(element_rows_of(self._bound()), context)
+        body = {op.op_id: _op_params(op)["vector"][1] for op in wall.operations if "vector" in _op_params(op)}
+        self.assertAlmostEqual(body["wall-south"], 2.97)                                            # the wall body rises by the bound height; the void keeps its own
+
+    def test_a_stale_bound_derived_value_fails_typed_before_any_producer_runs(self) -> None:
+        with self.assertRaisesRegex(ElementProducerError, r"element wall-south: params.height binds @wall_height: stored value 2.5 of derived parameter wall_height disagrees"):
+            element_rows_of(self._bound(wall_height=2.5))
+        self.assertEqual([r.element_id for r in element_rows_of(self._bound(height=2.5, wall_height=2.5))], ["plinth", "wall-south"])   # unbound: the literal runs
+
+
 class StatedRowsThroughTheProposalTests(ProducerFixture):
     """A wedge row and a shell row travel the whole way: producer, contract, export.
 
