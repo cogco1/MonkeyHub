@@ -3291,7 +3291,7 @@ export type ValidationDto = {
     /**
      * Canonicalfacts
      *
-     * what the checked canonical state could supply; a ref-only published state supplies no facts, and this says so rather than letting an empty state read as a clean one
+     * the published references and candidate's exact retained StateRecord, including declared obligations; source presence does not mean project conditions were checked
      */
     canonicalFacts: string;
     /**

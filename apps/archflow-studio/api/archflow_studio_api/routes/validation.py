@@ -87,6 +87,7 @@ def read_validation(request: Request, candidate_id: str) -> ValidationDto:
             lambda: validate_candidate(
                 head,
                 candidate,
+                binding=binding,
                 events=state.events,
             ),
         )

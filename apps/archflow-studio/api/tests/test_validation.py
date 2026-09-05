@@ -22,6 +22,7 @@ the thing it is measuring.
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 import os
 from pathlib import Path
 import shutil
@@ -29,6 +30,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -40,7 +42,6 @@ from archflow_studio_api.application.candidate import (
     describe,
 )
 from archflow_studio_api.application.validation import (
-    CANONICAL_FACTS,
     EFFECTIVE_CHECKS,
     EXPORTS_CLAUSE,
     VALIDATOR_NAMES,
@@ -51,9 +52,16 @@ from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
 from archflow.project.refs import ProjectVersionRef
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import PROMOTION_DECISION, STATE_RECORD
 from archflow.project.repository import FilesystemProjectRepository
+from archflow.state.operational_state import DesignObligation, ObligationStatus
+from archflow.state.state_record import StateRecord
 
-from .support import PROJECT_ID, RUNNER_RECORD_PATH, advance_head
+from .support import (
+    PROJECT_ID, RUNNER_RECORD_PATH, advance_head, retain_runner_receipt,
+    runner_state_digest,
+)
 from .test_candidate import (
     JOB_DEADLINE,
     TERMINAL,
@@ -150,6 +158,7 @@ class ValidationTestCase(CandidateTestCase):
         return validate_candidate(
             bound_project(state).head(),
             candidate,
+            binding=bound_project(state),
             events=state.events,
         )
 
@@ -205,7 +214,10 @@ class ValidationReceiptTests(ValidationTestCase):
 
         validation = self.validation_of(accepted["candidateId"])
 
-        self.assertEqual(validation["canonicalFacts"], CANONICAL_FACTS)
+        self.assertIn("Published version 0", validation["canonicalFacts"])
+        self.assertIn("does not declare authoritative_record_refs", validation["canonicalFacts"])
+        self.assertIn(f"Candidate {accepted['candidateId']}", validation["canonicalFacts"])
+        self.assertIn("declares 0 obligation(s)", validation["canonicalFacts"])
         self.assertIn("P110", validation["canonicalFacts"])
         self.assertEqual(validation["effectiveChecks"], ["artifact-present"])
         self.assertEqual(validation["validatorNote"], VALIDATOR_NOTE)
@@ -387,6 +399,163 @@ class ValidationReceiptTests(ValidationTestCase):
             ).json()["receiptRef"],
             candidate.receipt_ref,
         )
+
+
+class ConditionSourceCoverageTests(ValidationTestCase):
+    """Synthetic duties exercise source reporting, not real project compliance."""
+
+    def _source_payload(self, obligation_id: str, status=ObligationStatus.OPEN):
+        payload = json.loads(
+            self.repository.layout.resolve_relative(RUNNER_RECORD_PATH).read_text(
+                encoding="utf-8"
+            )
+        )
+        payload["obligations"] = [
+            DesignObligation(
+                obligation_id=obligation_id,
+                statement="Synthetic review duty; no architectural criterion is supplied.",
+                source_ref="test:declared-duty",
+                status=status,
+            ).to_dict()
+        ]
+        return payload
+
+    def _candidate_with_duty(self):
+        payload = self._source_payload("candidate-duty", ObligationStatus.SATISFIED)
+        run = self.repository.create_run("condition-source")
+        retain_runner_receipt(
+            self.repository,
+            run,
+            record_payload=payload,
+            design_state_digest=runner_state_digest(self.repository, run.run_id, payload),
+        )
+        binding = bound_project(self.app.state)
+        binding.settings = replace(binding.settings, reference_run=run.run_id)
+        self.state_digest = self.client.get("/api/state").json()["stateDigest"]
+        return self.finished_candidate()
+
+    def _publish(self, *, payload=None, references=None):
+        """Retain a source and issue a test snapshot through the existing P036 seam."""
+
+        run = self.repository.create_run("published-source")
+        destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
+        if payload is not None:
+            record = StateRecord.from_dict(payload).bound_to(run)
+            ref = self.repository.put_json(
+                run=run, destination=destination, record_kind=STATE_RECORD,
+                payload=record.to_dict(),
+            )
+            references = [ref.uri]
+        decision = self.repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run.run_id),
+            record_kind=PROMOTION_DECISION,
+            payload={
+                "schema": "PromotionDecision@1", "status": "accepted",
+                "project_id": PROJECT_ID, "run_id": run.run_id,
+                "checked_state": run.base.to_dict(), "candidate_ref": "test:snapshot",
+            },
+        )
+        prepared = self.repository.prepare_transition(
+            run=run, expected=run.base, decision_receipt=decision,
+            replacement_state={
+                "schema": "CanonicalProjectState@1",
+                "authoritative_record_refs": references,
+                "derived_record_refs": [], "phase": "test",
+            },
+        )
+        self.repository.compare_and_swap(
+            expected=prepared.expected, event=prepared.event, replacement=prepared.replacement,
+        )
+
+    def test_a_retained_satisfied_duty_is_reported_but_remains_unchecked(self):
+        accepted, _ = self._candidate_with_duty()
+        before = self.repository.read_head()
+
+        validation = self.validation_of(accepted["candidateId"])
+
+        sources = validation["canonicalFacts"]
+        self.assertIn("candidate-duty [satisfied]", sources)
+        self.assertIn("source test:declared-duty; validator not declared", sources)
+        self.assertIn("Recorded obligation statuses are declarations", sources)
+        self.assertIn("project conditions remain unchecked", sources)
+        self.assertIn("No source-backed authorized commitment", validation["validatorNote"])
+        self.assertEqual(validation["effectiveChecks"], ["artifact-present"])
+        self.assertTrue(validation["receipt"]["passed"])
+        self.assertEqual(validation["receipt"]["findings"], [])
+        self.assertEqual(self.repository.read_head(), before)
+
+    def test_published_and_candidate_duties_keep_their_own_sources(self):
+        accepted, _ = self._candidate_with_duty()
+        self._publish(payload=self._source_payload("published-duty"))
+
+        validation = self.validation_of(accepted["candidateId"])
+
+        published, candidate = validation["canonicalFacts"].split("Candidate ", 1)
+        self.assertIn("Published version 1", published)
+        self.assertIn("published-duty [open]", published)
+        self.assertIn("runs/published-source/records/state-record-", published)
+        self.assertNotIn("candidate-duty", published)
+        self.assertIn("candidate-duty [satisfied]", candidate)
+        self.assertIn(f"runs/{accepted['candidateId']}/records/state-record-", candidate)
+        self.assertIn("based on version 0", candidate)
+        self.assertNotIn("published-duty", candidate)
+        self.assertEqual(validation["effectiveChecks"], ["artifact-present"])
+        self.assertEqual(
+            [item["code"] for item in validation["receipt"]["findings"]],
+            ["state.base_mismatch"],
+        )
+
+    def test_empty_published_references_do_not_mean_conditions_passed(self):
+        accepted, _ = self.finished_candidate()
+        self._publish(references=[])
+
+        validation = self.validation_of(accepted["candidateId"])
+
+        self.assertIn("No authoritative record references are published", validation["canonicalFacts"])
+        self.assertIn("remain unchecked", validation["canonicalFacts"])
+        self.assertEqual(validation["effectiveChecks"], ["artifact-present"])
+
+    def test_unreadable_published_source_is_named_without_claiming_coverage(self):
+        accepted, _ = self.finished_candidate()
+        missing = f"project://{PROJECT_ID}/runs/missing/records/state-record-{'a' * 64}.json"
+        self._publish(references=[missing])
+
+        validation = self.validation_of(accepted["candidateId"])
+
+        self.assertIn(f"Published source {missing} could not be verified", validation["canonicalFacts"])
+        self.assertIn("remain unchecked", validation["canonicalFacts"])
+        self.assertEqual(validation["effectiveChecks"], ["artifact-present"])
+
+    def test_another_runs_receipt_cannot_describe_the_candidate_duties(self):
+        accepted, job = self._candidate_with_duty()
+        candidate = self.candidate_run(accepted, job)
+        binding = bound_project(self.app.state)
+        other_ref, _ = binding.newest_runner_receipt("condition-source")
+
+        validation = self.validated(replace(candidate, receipt_ref=other_ref.uri))
+
+        self.assertIn("could not be verified", validation.canonical_facts)
+        self.assertIn("different project or run", validation.canonical_facts)
+        self.assertNotIn("candidate-duty [satisfied]", validation.canonical_facts)
+
+    def test_a_head_move_during_source_read_is_not_cached_under_the_old_head(self):
+        accepted, _ = self.finished_candidate()
+        binding = bound_project(self.app.state)
+        load = binding.repository.load_current_state
+
+        def read_then_move():
+            value = load()
+            advance_head(self.repository)
+            return value
+
+        with patch.object(binding.repository, "load_current_state", side_effect=read_then_move):
+            response = self.client.get(f"/api/candidates/{accepted['candidateId']}/validation")
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "VALIDATION_HEAD_CHANGED")
+        self.assertEqual(self.app.state.validations.receipt_ids(accepted["candidateId"]), ())
+        validation = self.validation_of(accepted["candidateId"])
+        self.assertIn("Published version 1", validation["canonicalFacts"])
 
 
 class ReviewReadinessTests(ValidationTestCase):

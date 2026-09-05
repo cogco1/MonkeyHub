@@ -25,12 +25,11 @@ blocks review readiness. It is vacuous only for a candidate no seat of which
 attempted an export, which is now something the records say rather than
 something an empty list was taken to mean.
 
-What the receipt could *not* prove is stated rather than implied. The published
-state of a P036 project is a ref-based ``CanonicalProjectState@1``: it carries
-no facts, no commitments and no open obligations, so two of the three
-validators run over an empty state and find nothing to object to. That is not
-the same as passing them, and ``effective_checks`` and the validator note say
-which check the receipt actually stands on (kernel card P110).
+The coverage description reads the published references and the candidate's
+exact retained StateRecord. A record can declare obligations without supplying
+an executable criterion or an authorized commitment. These sources are shown
+separately from the receipt: project conditions are not yet projected into its
+two normative gates (P110), and their empty input is not a successful check.
 
 Nothing here writes. A validation is a reading of records the run already
 retained; the published position, ``canonical/`` and ``input/`` are untouched,
@@ -45,6 +44,7 @@ import threading
 from typing import Any, Callable, Mapping
 
 from archflow.state.model import ArtifactRef, CanonicalState
+from archflow.state.state_record import StateRecord
 from archflow.submission.model import CandidateDelta, CandidateSubmission, Claim
 from archflow.validation.engine import (
     ArtifactPresentValidator,
@@ -54,9 +54,18 @@ from archflow.validation.engine import (
 )
 from archflow.validation.model import ValidationReceipt
 
-from archflow.project.refs import ProjectVersionRef, parse_record_file_name
+from archflow.project.refs import (
+    ProjectRecordRef,
+    ProjectVersionRef,
+    parse_record_file_name,
+    record_ref_from_uri,
+)
+from archflow.project.record_kinds import STATE_RECORD
+from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
+from ..transport.errors import StudioError, error_sentence
+from .binding import ProjectBinding, ReferenceRun
 from .candidate import CandidateRun, RelationTotals, SeatOutcome
 
 # The claim a candidate makes about itself: this run happened, and here is the
@@ -100,15 +109,15 @@ MISSING_PROGRAM_DIGEST = (
     "submitted for validation"
 )
 
-CANONICAL_FACTS = (
-    "unavailable: the published state is a ref-based "
-    "CanonicalProjectState@1 (card P110)"
-)
-
 VALIDATOR_NOTE = (
-    "obligation-discharge and authorized-commitment-claims have no facts to "
-    "check on a ref-only canonical state (P110); this receipt effectively "
-    "proves artifact presence and base match only"
+    "Project conditions remain unchecked (P110): retained obligations are not "
+    "projected into obligation-discharge, and this submission carries no "
+    "obligation discharge. No source-backed authorized commitment and matching "
+    "claim are supplied to authorized-commitment-claims. Record declarations, "
+    "parameters and evidence citations do not establish that authorization. "
+    "These gates check discharge IDs and claim/evidence presence; they do not "
+    "execute architectural criteria. This receipt checks artifact presence "
+    "and base match only. Declared relation results are reported separately."
 )
 
 # The five clauses of review readiness, named exactly as they travel.
@@ -161,6 +170,93 @@ class CandidateValidation:
     blocked_by: tuple[str, ...]
     # What the submission could not carry. Normally empty; never absent.
     honesty: tuple[str, ...]
+    # Source description, not a claim that the receipt checked these duties.
+    canonical_facts: str
+
+
+def _record_conditions(ref: ProjectRecordRef, record: StateRecord) -> str:
+    """Describe retained duties without interpreting them as check results."""
+
+    details = "; ".join(
+        f"{item.obligation_id} [{item.status.value}]: {item.statement} "
+        f"(source {item.source_ref}; validator {item.validator_ref or 'not declared'})"
+        for item in record.obligations
+    )
+    return (
+        f"{ref.uri} declares {len(record.obligations)} obligation(s)"
+        + (f": {details}." if details else ".")
+    )
+
+
+def _condition_sources(
+    binding: ProjectBinding,
+    head: ProjectVersionRef,
+    candidate: CandidateRun,
+) -> str:
+    """Read only the published refs and this candidate's bound record.
+
+    The strings are coverage information, not a CanonicalState projection.
+    Existing P036 readers verify bytes and the binding owner verifies the
+    candidate's record, run, base and content digest.
+    """
+
+    repository = binding.repository
+    published = repository.load_current_state()
+    if binding.head() != head:
+        raise StudioError(
+            409,
+            "VALIDATION_HEAD_CHANGED",
+            "The published version changed while reading validation sources; "
+            "request validation again against the current version.",
+        )
+    lines = [f"Published version {head.version} ({head.state_sha256})."]
+    references = published.get("authoritative_record_refs")
+    if references is None:
+        lines.append("This published state does not declare authoritative_record_refs.")
+    elif not isinstance(references, list):
+        lines.append("Published authoritative_record_refs cannot be read as a list.")
+    elif not references:
+        lines.append("No authoritative record references are published.")
+    else:
+        for uri in references:
+            try:
+                ref = record_ref_from_uri(uri, head.project_id)
+                payload = repository.load_json(ref)
+                if ref.record_kind == STATE_RECORD and payload.get("schema") == StateRecord.SCHEMA:
+                    record = StateRecord.from_dict(payload)
+                    if record.project_id != head.project_id:
+                        raise ValueError("published StateRecord belongs to another project")
+                    lines.append("Published StateRecord: " + _record_conditions(ref, record))
+                else:
+                    lines.append(f"Published source {ref.uri}: condition content is not inspected.")
+            except (ProjectRepositoryError, OSError, TypeError, ValueError) as exc:
+                lines.append(
+                    f"Published source {uri} could not be verified: {error_sentence(exc)}."
+                )
+
+    try:
+        run = binding.load_run(candidate.candidate_id)
+        receipt = repository.load_json(
+            record_ref_from_uri(candidate.receipt_ref, head.project_id)
+        )
+        ref, record = binding.exact_state_record(
+            ReferenceRun(run=run, source="validation", receipt=receipt)
+        )
+        lines.append(
+            f"Candidate {run.run_id}, based on version {run.base.version} "
+            f"({run.base.state_sha256}): " + _record_conditions(ref, record)
+        )
+    except (ProjectRepositoryError, StudioError, OSError, TypeError, ValueError) as exc:
+        lines.append(
+            f"Candidate source named by {candidate.receipt_ref} could not be "
+            f"verified: {error_sentence(exc)}."
+        )
+    lines.append(
+        "The candidate record is not substituted for the published sources. "
+        "Recorded obligation statuses are declarations, not results of this "
+        "validation; project conditions remain unchecked (P110)."
+    )
+    return " ".join(lines)
 
 
 def _submission(
@@ -295,6 +391,7 @@ def validate_candidate(
     head: ProjectVersionRef,
     candidate: CandidateRun,
     *,
+    binding: ProjectBinding,
     events: StudioEventSink,
 ) -> CandidateValidation:
     """Ask the kernel about one finished candidate, then assess review readiness.
@@ -305,14 +402,13 @@ def validate_candidate(
     different one would be able to serve an answer about a version the project
     has left.
 
-    The state the submission is checked against is that published version as a
-    ``CanonicalState`` carrying nothing but its ref: the canonical document a
-    P036 project holds is not a facts-and-commitments state, and inventing
-    facts to fill it would be inventing the very things the validators check.
-    An empty state is honest and it is why ``effective_checks`` is narrower
-    than ``validators``.
+    Source coverage follows the published references and the candidate's own
+    bound record. P110's requirement-to-result projection remains incomplete:
+    the normative gates still receive no obligations or commitments. Source
+    descriptions therefore never expand ``effective_checks``.
     """
 
+    canonical_facts = _condition_sources(binding, head, candidate)
     artifacts, honesty = _artifacts_of(candidate)
     honesty = honesty + _exports_of(candidate)
     receipt = validate_submission(
@@ -340,6 +436,7 @@ def validate_candidate(
         review_ready=readiness.review_ready,
         blocked_by=readiness.blocked_by,
         honesty=honesty,
+        canonical_facts=canonical_facts,
     )
 
 

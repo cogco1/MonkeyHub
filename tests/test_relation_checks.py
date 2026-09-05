@@ -12,12 +12,14 @@ Bounds are program coordinates (x, y-up, z-plan): plan is x and z.
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from archflow.adapters.cad_program import expected_object_bounds
+from archflow.capabilities.element_producers import ElementRow
 from archflow.capabilities.relation_checks import CHECKERS, RelationCheckError, check_relations
 from archflow.state.state_record import CHECK_KINDS, Entity, Relation, StateRecord, StateRecordError, ValidatorBinding
 from tests.test_cad_patch import _compile
-from tests.test_element_producers import _levels, _produce, _rows
+from tests.test_element_producers import BASIS, PN, _levels, _produce, _rows
 
 
 def _record_and_bounds(rows=None, *, program_rows=None):
@@ -35,6 +37,26 @@ def _record_and_bounds(rows=None, *, program_rows=None):
     objects = {e.element_id: [o for op in p.operations for o in op.output_object_ids] for e, p in zip(rows, produced)}
     datums = {d.datum_id: context.datum_value(d.datum_id) for e in produced for d in e.datums}
     return record, bounds, objects, datums
+
+
+def _shifted(bounds, object_ids, axis: int, by: float) -> dict:
+    """The same bounds with the named objects translated along one program axis (0 = x, 1 = y up, 2 = z)."""
+
+    out = dict(bounds)
+    for object_id in object_ids:
+        low, high = (list(v) for v in bounds[object_id])
+        low[axis] += by
+        high[axis] += by
+        out[object_id] = (low, high)
+    return out
+
+
+def _stair_row() -> ElementRow:
+    """The real flight the producer builds: ten solid steps along the west facade, standing on the piano nobile."""
+
+    return ElementRow("stair-north", "monument-stair", "stair",
+                      {"from": {"axis_point": {"axis": "W", "along": 0.0}}, "to": {"axis_point": {"axis": "W", "along": 3.0}}, "base": {"level": PN}},
+                      {"count": 10, "rise": 0.18, "width": 1.2}, BASIS)
 
 
 class RelationCheckTests(unittest.TestCase):
@@ -78,6 +100,185 @@ class RelationCheckTests(unittest.TestCase):
         self.assertTrue(report.held)                                                     # not violated ...
         self.assertFalse(report.fully_checked)                                           # ... but no green light either
         self.assertFalse(report.to_dict()["fully_checked"])
+
+
+class SupportSeatInPlanTests(unittest.TestCase):
+    """A support that is nowhere beneath what it carries is not a support, however well the heights agree.
+
+    These run the real producers (the west portico, a real flight) and only move
+    the compiled bounds afterwards, so the record, its datums and the declared
+    engagement stay exactly what the producers wrote.
+    """
+
+    def test_capitals_moved_a_hundred_metres_off_their_columns_are_violated_on_either_plan_axis(self) -> None:
+        for axis in (0, 2):                                                             # program x and program z: both are plan
+            with self.subTest(axis="xz"[axis // 2]):
+                record, bounds, objects, datums = _record_and_bounds()
+                bounds = _shifted(bounds, objects["capitals-west"], axis, 100.0)      # heights and the other plan axis untouched
+                report = check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datums)
+                self.assertFalse(report.held)
+                self.assertTrue(report.fully_checked)
+                by_id = {c.relation_id: c for c in report.checks}
+                self.assertEqual(by_id["columns-west-support-capitals-west"].status, "violated")
+                self.assertEqual(by_id["capitals-west-support-entablature-west"].status, "violated")   # the beam is no longer over its capitals either
+                self.assertEqual(by_id["entablature-west-support-pediment-west"].status, "held")        # the pediment moved with nothing: still on its beam
+                self.assertEqual(by_id["columns-west-stands-on"].status, "held")                       # a level has no plan extent to leave
+                capitals = by_id["columns-west-support-capitals-west"]
+                self.assertAlmostEqual(capitals.measured["gap"], 0.0)                                  # the heights still agree ...
+                self.assertEqual(capitals.measured["unseated_members"], 6)                             # ... and no capital has a column under it
+                self.assertIn("plan", capitals.detail)
+                self.assertIn("obj-capitals-west-0", capitals.detail)
+
+    def test_one_capital_between_two_columns_is_not_hidden_by_the_group_extent(self) -> None:
+        rows = _rows()
+        rows = (rows[0], replace(rows[1], params={**rows[1].params, "half_extent": 0.3}), *rows[2:])   # narrow enough to fit between shafts
+        record, bounds, objects, datums = _record_and_bounds(rows)
+        centre_x = bounds["obj-capitals-west-2"][0][0] + 0.3
+        bounds = _shifted(bounds, ["obj-capitals-west-2"], 0, -centre_x)                # to x = 0, midway between axes 3 and 4, same height
+        report = check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datums)
+        by_id = {c.relation_id: c for c in report.checks}
+        capitals = by_id["columns-west-support-capitals-west"]
+        self.assertEqual(capitals.status, "violated")                                   # the six columns' union covers x = 0; no column does
+        self.assertAlmostEqual(capitals.measured["gap"], 0.0)
+        self.assertEqual(capitals.measured["unseated_members"], 1)
+        self.assertIn("obj-capitals-west-2", capitals.detail)
+        self.assertNotIn("obj-capitals-west-1", capitals.detail)
+        self.assertEqual([c.relation_id for c in report.checks if c.status == "violated"], ["columns-west-support-capitals-west"])
+
+    def test_one_lifted_capital_is_not_hidden_by_the_lowest(self) -> None:
+        record, bounds, objects, datums = _record_and_bounds()
+        bounds = _shifted(bounds, ["obj-capitals-west-2"], 1, 0.5)                      # one capital floats half a metre above its column
+        report = check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datums)
+        capitals = next(c for c in report.checks if c.relation_id == "columns-west-support-capitals-west")
+        self.assertEqual(capitals.status, "violated")
+        self.assertAlmostEqual(capitals.measured["object_bottom"], 9.996)               # the group's lowest bottom still meets the columns ...
+        self.assertAlmostEqual(capitals.measured["gap"], 0.0)
+        self.assertEqual(capitals.measured["unseated_members"], 1)                      # ... and that no longer passes for the lifted one
+        self.assertAlmostEqual(capitals.measured["seat_seam_max"], 0.5)
+        self.assertIn("+0.5000", capitals.detail)
+        beam = next(c for c in report.checks if c.relation_id == "capitals-west-support-entablature-west")
+        self.assertEqual(beam.measured["unseated_members"], 0)                          # the beam still has capitals under it ...
+        self.assertEqual(beam.status, "violated")                                       # ... but the lifted one now rises through its underside,
+        self.assertIn("subject top", beam.detail)                                       # which the group's top face and the datum both say
+
+    def test_a_beam_spans_several_supports_and_may_overhang_them(self) -> None:
+        rows = _rows()
+        long_overhang = (*rows[:2], replace(rows[2], params={**rows[2].params, "end_overhang": 3.0}), rows[3])
+        record, bounds, objects, datums = _record_and_bounds(long_overhang)
+        report = check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datums)
+        self.assertTrue(report.held and report.fully_checked, [c.to_dict() for c in report.checks if c.status != "held"])
+        beam = next(c for c in report.checks if c.relation_id == "capitals-west-support-entablature-west")
+        self.assertEqual((beam.measured["object_members"], beam.measured["unseated_members"]), (1, 0))   # one beam; not asked to fit inside its supports
+        two_bays = (*rows[:2], replace(rows[2], references={**rows[2].references, "to": {"grid": ["2", "W"]}}), rows[3])
+        record, bounds, objects, datums = _record_and_bounds(two_bays)                # the beam reaches only the first two capitals
+        report = check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datums)
+        beam = next(c for c in report.checks if c.relation_id == "capitals-west-support-entablature-west")
+        self.assertEqual(beam.status, "held")                                           # a support member carrying nothing is not a failure
+
+    def test_declared_engagement_is_honoured_member_by_member(self) -> None:
+        record, bounds, objects, datums = _record_and_bounds(_rows(engagement=0.02))
+        report = check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datums)
+        capitals = next(c for c in report.checks if c.relation_id == "columns-west-support-capitals-west")
+        self.assertEqual((capitals.status, capitals.measured["unseated_members"]), ("held", 0))
+        self.assertAlmostEqual(capitals.measured["seat_seam_max"], 0.0)                 # each capital sits 0.02 into its own column, as declared
+        self.assertIn("bounding-box", capitals.detail)                                  # and the held detail claims no more than the boxes show
+        self.assertNotIn("contact by construction", capitals.detail)
+
+    def test_a_level_needs_no_plan_extent_and_a_flight_stands_by_its_lowest_step(self) -> None:
+        record, bounds, objects, datums = _record_and_bounds()
+        bounds = _shifted(bounds, objects["columns-west"], 2, 100.0)                    # the whole array walks 100 m along z
+        report = check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datums)
+        by_id = {c.relation_id: c for c in report.checks}
+        self.assertEqual(by_id["columns-west-stands-on"].status, "held")                # the piano nobile is everywhere in plan
+        self.assertEqual(by_id["columns-west-support-capitals-west"].status, "violated")   # the capitals it left are not
+        record, bounds, objects, datums = _record_and_bounds((_stair_row(),))
+        report = check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datums)
+        (flight,) = report.checks
+        self.assertEqual((flight.relation_id, flight.status), ("stair-north-stands-on", "held"))
+        self.assertAlmostEqual(flight.measured["element_bottom"], 3.57)
+        self.assertAlmostEqual(bounds["obj-stair-north-9"][0][1], 3.57 + 9 * 0.18)      # later steps rise above the level by construction
+        self.assertNotIn("unseated_members", flight.measured)                           # and are not each pressed onto it
+
+    def test_level_alignment_honours_and_reports_declared_offsets_in_either_orientation(self) -> None:
+        for offset in (-0.02, 0.1):
+            row = _stair_row()
+            row = replace(row, references={**row.references, "base": {"datum": PN, "offset": offset}})
+            record, bounds, objects, datums = _record_and_bounds((row,))
+            relation = record.relations[0]
+            for reverse in (False, True):
+                with self.subTest(offset=offset, reverse=reverse):
+                    oriented = replace(relation, subject=relation.object, object=relation.subject) if reverse else relation
+                    checked_record = replace(record, relations=(oriented,))
+                    check = check_relations(checked_record, bounds=bounds, objects_by_element=objects, datum_values=datums).checks[0]
+                    self.assertEqual(check.status, "held")
+                    self.assertAlmostEqual(check.measured["gap"], 0.0)
+                    self.assertAlmostEqual(check.measured["element_bottom"], check.measured["level_elevation"] + offset)
+                    self.assertIn(f"engagement {max(-offset, 0):.4f} m", check.detail)
+                    self.assertIn(f"rise {max(offset, 0):.4f} m", check.detail)
+                    self.assertIn("datum alignment only", check.detail)
+                    moved = _shifted(bounds, objects[row.element_id], 1, 0.01)
+                    self.assertEqual(check_relations(checked_record, bounds=moved, objects_by_element=objects, datum_values=datums).checks[0].status,
+                                     "violated")
+
+
+SEAT_ELEMENTS = (
+    Entity("piers", "Element@1", {"component_id": "arcade", "producer": "column-array"}),
+    Entity("lintel", "Element@1", {"component_id": "arcade", "producer": "beam"}),
+)
+
+
+def _seat(subject_boxes: dict, object_boxes: dict, **parameters) -> tuple:
+    """Hand-built boxes: two supports of different heights, one thing carried. Returns (check, report)."""
+
+    relation = Relation("piers-support-lintel", "support", "piers", "lintel", validator=ValidatorBinding("support_contact", tolerance=0.001), parameters=parameters)
+    record = StateRecord("arcade", "run-1", SEAT_ELEMENTS, relations=(relation,))
+    report = check_relations(record, bounds={**subject_boxes, **object_boxes}, objects_by_element={"piers": list(subject_boxes), "lintel": list(object_boxes)})
+    return report.checks[0], report
+
+
+class SupportSeatCandidateTests(unittest.TestCase):
+    """Synthetic boxes for the rule itself: plan overlap and the vertical seam must be met by one and the same subject member."""
+
+    TALL = ([0.0, 0.0, 0.0], [1.0, 10.0, 1.0])       # top at 10, footprint x 0..1
+    SHORT = ([5.0, 0.0, 0.0], [6.0, 9.0, 1.0])       # top at 9, footprint x 5..6
+
+    def test_the_seam_on_one_member_and_the_footprint_on_another_is_not_a_seat(self) -> None:
+        over_short_at_tall_height = {"obj-lintel": ([5.0, 10.0, 0.0], [6.0, 10.5, 1.0])}
+        check, report = _seat({"obj-tall": self.TALL, "obj-short": self.SHORT}, over_short_at_tall_height)
+        self.assertEqual(check.status, "violated")
+        self.assertAlmostEqual(check.measured["subject_top"], 10.0)                    # the group's highest top meets the lintel bottom ...
+        self.assertAlmostEqual(check.measured["gap"], 0.0)
+        self.assertEqual(check.measured["unseated_members"], 1)                         # ... but not under it; the pier under it is a metre short
+        self.assertIn("obj-short", check.detail)
+        self.assertIn("+1.0000", check.detail)
+        self.assertFalse(report.held)
+
+    def test_the_same_lintel_over_the_tall_pier_is_seated(self) -> None:
+        check, report = _seat({"obj-tall": self.TALL, "obj-short": self.SHORT}, {"obj-lintel": ([0.5, 10.0, 0.0], [3.0, 10.5, 1.0])})
+        self.assertEqual((check.status, check.measured["unseated_members"]), ("held", 0))
+        self.assertTrue(report.held and report.fully_checked)
+
+    def test_a_footprint_that_only_touches_the_edge_is_still_a_candidate(self) -> None:
+        check, _ = _seat({"obj-tall": self.TALL}, {"obj-lintel": ([1.0, 10.0, 0.0], [3.0, 10.5, 1.0])})   # shares the x = 1 edge line
+        self.assertEqual(check.status, "held")
+        self.assertAlmostEqual(check.measured["seat_plan_gap_max"], 0.0)
+
+    def test_a_declared_rise_or_engagement_moves_each_member_seam(self) -> None:
+        raised = {"obj-lintel": ([0.0, 10.1, 0.0], [1.0, 10.5, 1.0])}
+        self.assertEqual(_seat({"obj-tall": self.TALL}, raised)[0].status, "violated")             # 0.1 above the pier and nothing declared
+        check, _ = _seat({"obj-tall": self.TALL}, raised, rise=0.1)
+        self.assertEqual((check.status, check.measured["rise"], check.measured["unseated_members"]), ("held", 0.1, 0))
+        embedded = {"obj-lintel": ([0.0, 9.95, 0.0], [1.0, 10.5, 1.0])}
+        self.assertEqual(_seat({"obj-tall": self.TALL}, embedded)[0].status, "violated")           # 0.05 into the pier and nothing declared
+        check, _ = _seat({"obj-tall": self.TALL}, embedded, engagement_depth=0.05)
+        self.assertEqual((check.status, check.measured["unseated_members"]), ("held", 0))
+
+    def test_a_missing_subject_member_bound_is_still_a_typed_failure(self) -> None:
+        with self.assertRaises(RelationCheckError):
+            relation = Relation("piers-support-lintel", "support", "piers", "lintel", validator=ValidatorBinding("support_contact"))
+            check_relations(StateRecord("arcade", "run-1", SEAT_ELEMENTS, relations=(relation,)),
+                            bounds={"obj-tall": self.TALL, "obj-lintel": ([0.0, 10.0, 0.0], [1.0, 10.5, 1.0])},
+                            objects_by_element={"piers": ["obj-tall", "obj-gone"], "lintel": ["obj-lintel"]})
 
 
 ELEMENTS = (

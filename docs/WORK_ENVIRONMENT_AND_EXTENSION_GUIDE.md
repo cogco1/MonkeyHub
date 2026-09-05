@@ -377,9 +377,61 @@ $env:ARCHFLOW_ONBOARDING_PROJECTS = "$RuntimeRoot\workspace\projects"
 
 ### 8.4 启动前后端
 
-终端 A，接上一步：
+#### 使用自己的启动配置
+
+首次安装按 8.2 完成。之后可复用现有启动器的 `-RuntimeConfig` 参数：配置保存在自己的 Runtime，
+不修改仓库中带本机路径的 `apps/archflow-studio/runtime.json`。目前没有另一个便携 sample，以下直接使用
+现有配置格式；在已设置 `$SourceRoot`、`$RuntimeRoot`、`$Python` 的 PowerShell 中执行一次：
 
 ```powershell
+$RuntimeConfig = Join-Path $RuntimeRoot 'config\studio.json'
+if (Test-Path -LiteralPath $RuntimeConfig) { throw '配置已存在，请编辑自己的配置或另选文件名。' }
+New-Item -ItemType Directory -Force -Path (Split-Path $RuntimeConfig) | Out-Null
+@{
+    schema_version = 'archflow-studio-runtime@1'
+    project_dir = "$RuntimeRoot\workspace\projects\demo-project"
+    reference_run = ''
+    python = $Python
+    intent_provider = 'deterministic'
+    rhino_export = $false
+    api_port = 18080
+    web_port = 15174
+    open_browser = $true
+} | ConvertTo-Json | Set-Content -LiteralPath $RuntimeConfig -Encoding UTF8
+```
+
+`python` 填虚拟环境中 `python.exe` 的完整路径，路径含空格也可直接写入；若需要附加简单参数，
+写成 `"完整路径\python.exe" -I`。原来的 `py -3.12` 与省略该字段时的默认行为保留，
+但这两种方式选择系统 Python，不会自动选择自己的 venv。
+
+以后从同一组路径启动：
+
+```powershell
+$config = Get-Content -LiteralPath $RuntimeConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+$env:ARCHFLOW_STUDIO_MODE = 'local'
+$env:ARCHFLOW_STUDIO_API_URL = "http://127.0.0.1:$($config.api_port)"
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "$SourceRoot\apps\archflow-studio\launch-studio.ps1" -RuntimeConfig $RuntimeConfig
+```
+
+前端代理地址需与配置的 `api_port` 一致；当前启动器不会替自定义端口设置该环境变量。
+使用 Windows PowerShell 5.1 启动；`-ExecutionPolicy Bypass` 仅作用于这次进程。
+需要暂不打开浏览器时加 `-NoBrowser`，它仍会启动应用窗口和两个服务。结束时通过托盘的
+`Quit MonkeyArch` 关闭这次启动的服务。不要与下面手动启动方式同时运行同一组端口。
+
+真实模型首轮试用前，项目负责人需提供允许共享的完整项目副本，包含设计输入、选定 run 的记录及其引用的
+模型文件，并说明源码版本、run 和材料使用范围；`project_dir` 改为这份副本的路径，`reference_run`
+填选定的 run。单独一份 3DM 不等于可继续修改的完整项目，合成项目的空视口也不作为建筑功能验收。
+
+本轮已用临时项目和真实临时 venv 验证外部配置读取、含空格/带引号的 Python 路径、参数传递和
+Python 子进程启动；保留了 `py -3.12` 的兼容检查。测试没有运行启动器窗口、前后端服务或浏览器。
+新队友完整启动、真实模型与远端环境仍需实际试用。
+
+#### 手动联调
+
+终端 A：
+
+```powershell
+Set-Location "$SourceRoot\apps\archflow-studio\api"
 $env:ARCHFLOW_STUDIO_PROJECT_DIR = "$RuntimeRoot\workspace\projects\demo-project"
 $env:ARCHFLOW_STUDIO_REFERENCE_RUN = ''
 $env:ARCHFLOW_STUDIO_MODE = 'local'

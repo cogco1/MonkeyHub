@@ -12,11 +12,13 @@
  * shows it; re-projecting is not the same as recovering.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { StudioApiError, asStudioApiError, studio } from "../api/client";
+import { connection } from "../api/connection";
 import type { ProjectBindingDto, StateProjectionDto } from "../api/generated";
-import { failed, idle, ready, type Loadable } from "./loadable";
+import { editingBasePreferences } from "../features/settings/preferences";
+import { failed, idle, loading, ready, type Loadable } from "./loadable";
 
 const STALE_BASE = "STALE_BASE";
 
@@ -29,55 +31,120 @@ export interface Session {
   readonly sourceRunId: string | null;
 }
 
-export interface SessionHandle {
+interface SessionSnapshot {
   readonly session: Loadable<Session>;
-  readonly stateDigest: string | null;
   readonly changingBase: boolean;
   readonly baseError: StudioApiError | null;
+  readonly persistenceFailed: boolean;
+}
+
+export interface SessionHandle extends SessionSnapshot {
   reload(runId?: string | null): Promise<Session | null>;
   /** Re-project when the error says the base moved. Answers whether it did. */
   recoverFromStaleBase(error: StudioApiError): boolean;
 }
 
+/** The hook's async transitions, also usable by isolated tests without a browser. */
+export function createSessionController(serverBaseUrl = connection.baseUrl) {
+  let snapshot: SessionSnapshot = {
+    session: idle, changingBase: false, baseError: null, persistenceFailed: false,
+  };
+  let request = 0;
+  const listeners = new Set<() => void>();
+  const publish = (next: SessionSnapshot) => {
+    snapshot = next;
+    listeners.forEach((listener) => listener());
+  };
+
+  const reload = async (requestedRunId?: string | null): Promise<Session | null> => {
+    const currentRequest = ++request;
+    const previous = snapshot.session;
+    let project: ProjectBindingDto | null = null;
+    publish({ ...snapshot, changingBase: true, baseError: null });
+    try {
+      // The server may now bind a different project. Never send the old run before
+      // learning which project it would be read in.
+      project = await studio.project();
+      if (currentRequest !== request) return null;
+      const sameProject = previous.status === "ready" && previous.value.project.projectId === project.projectId;
+      if (!sameProject) publish({ ...snapshot, session: loading });
+      if (previous.status === "ready" && !sameProject && requestedRunId != null) {
+        throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail:
+          "The server now binds another project. Retry to read that project's own editing choice." });
+      }
+      const runId = requestedRunId !== undefined ? requestedRunId
+        : sameProject && previous.status === "ready" ? previous.value.sourceRunId
+          : editingBasePreferences.read(serverBaseUrl, project.projectId);
+      const projection = await studio.state(runId ?? undefined);
+      if (currentRequest !== request) return null;
+      if (projection.projectId !== project.projectId ||
+          projection.published.version !== project.published.version ||
+          projection.published.stateSha256 !== project.published.stateSha256 ||
+          (runId !== null && projection.referenceRun.runId !== runId)) {
+        throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail:
+          "The state response does not match the requested project and run. Retry to read the current binding." });
+      }
+      if (runId !== null && (projection.stateDigest === null ||
+          projection.matchesReferenceReceipt !== true ||
+          projection.referenceRun.baseVersion !== projection.published.version ||
+          projection.referenceRun.baseSha256 !== projection.published.stateSha256)) {
+        throw new StudioApiError({ status: 0, code: "EDITING_BASE_UNAVAILABLE", detail:
+          `Run ${runId} cannot currently be restored as an editing base. Its verified state must match its receipt and current published base. ` + projection.honesty.join(" ") });
+      }
+      const next = { project, projection, sourceRunId: runId };
+      // Reading a model or refreshing a session never records consent. Only the
+      // explicit continuation/default action reaches the existing preference writer.
+      let persistenceFailed = snapshot.persistenceFailed;
+      if (requestedRunId !== undefined) {
+        try { persistenceFailed = !editingBasePreferences.write(serverBaseUrl, project.projectId, runId); }
+        catch { persistenceFailed = true; }
+      }
+      publish({ session: ready(next), changingBase: false, baseError: null, persistenceFailed });
+      return next;
+    } catch (cause) {
+      if (currentRequest !== request) return null;
+      const error = asStudioApiError(cause);
+      // A failed explicit switch can leave the old, same-project choice intact.
+      // A failed restoration/revalidation cannot silently become the default.
+      const retainPrevious = requestedRunId !== undefined && previous.status === "ready" &&
+        project?.projectId === previous.value.project.projectId && error.code !== "EDITING_PROJECT_CHANGED";
+      publish({ ...snapshot, session: retainPrevious ? previous : failed(error), changingBase: false, baseError: error });
+      return null;
+    }
+  };
+
+  return {
+    getSnapshot: () => snapshot,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    reload,
+    cancel() { request += 1; },
+  };
+}
+
+/** Looking at another run (or a local file) never selects it as an editing base. */
+export function editingDigestForView(
+  session: Loadable<Session>, changingBase: boolean,
+  viewedRunId: string | null, localFile: boolean, modelLoading: boolean,
+): string | null {
+  if (changingBase || modelLoading || localFile || session.status !== "ready") return null;
+  if (viewedRunId !== null && viewedRunId !== session.value.projection.referenceRun.runId) return null;
+  return session.value.projection.stateDigest;
+}
+
 export function useSession(notice: (line: string) => void): SessionHandle {
-  const [session, setSession] = useState<Loadable<Session>>(idle);
-  const [changingBase, setChangingBase] = useState(false);
-  const [baseError, setBaseError] = useState<StudioApiError | null>(null);
-  const sourceRunRef = useRef<string | null>(null);
-  const requestRef = useRef(0);
+  const [controller] = useState(() => createSessionController());
+  const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const { reload } = controller;
   const noticeRef = useRef(notice);
   noticeRef.current = notice;
 
-  const reload = useCallback(async (runId = sourceRunRef.current) => {
-    const request = ++requestRef.current;
-    setChangingBase(true);
-    setBaseError(null);
-    try {
-      const [project, projection] = await Promise.all([
-        studio.project(),
-        studio.state(runId ?? undefined),
-      ]);
-      if (request !== requestRef.current) return null;
-      sourceRunRef.current = runId;
-      const next = { project, projection, sourceRunId: runId };
-      setSession(ready(next));
-      return next;
-    } catch (cause) {
-      if (request !== requestRef.current) return null;
-      const error = asStudioApiError(cause);
-      setBaseError(error);
-      // A failed switch leaves the previous editing base intact.
-      setSession((current) => current.status === "ready" ? current : failed(error));
-      return null;
-    } finally {
-      if (request === requestRef.current) setChangingBase(false);
-    }
-  }, []);
-
   useEffect(() => {
     void reload();
-    return () => { requestRef.current += 1; };
-  }, [reload]);
+    return () => controller.cancel();
+  }, [controller, reload]);
 
   const recoverFromStaleBase = useCallback(
     (error: StudioApiError) => {
@@ -90,11 +157,7 @@ export function useSession(notice: (line: string) => void): SessionHandle {
   );
 
   return {
-    session,
-    stateDigest:
-      !changingBase && session.status === "ready" ? session.value.projection.stateDigest : null,
-    changingBase,
-    baseError,
+    ...snapshot,
     reload,
     recoverFromStaleBase,
   };

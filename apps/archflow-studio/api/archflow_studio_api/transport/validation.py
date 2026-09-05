@@ -26,7 +26,6 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..application.validation import (
-    CANONICAL_FACTS,
     EFFECTIVE_CHECKS,
     VALIDATOR_NAMES,
     VALIDATOR_NOTE,
@@ -78,9 +77,9 @@ class ValidationDto(BaseModel):
     receipt: ValidationReceiptDto
     canonical_facts: str = Field(
         alias="canonicalFacts",
-        description="what the checked canonical state could supply; a "
-        "ref-only published state supplies no facts, and this says so "
-        "rather than letting an empty state read as a clean one",
+        description="the published references and candidate's exact retained "
+        "StateRecord, including declared obligations; source presence does "
+        "not mean project conditions were checked",
     )
     validators: list[str] = Field(
         description="every gate that ran, in the order it ran",
@@ -123,7 +122,7 @@ def to_dto(validation: CandidateValidation) -> ValidationDto:
     return ValidationDto(
         candidate_id=validation.candidate_id,
         receipt=_receipt_dto(validation.receipt),
-        canonical_facts=CANONICAL_FACTS,
+        canonical_facts=validation.canonical_facts,
         validators=list(VALIDATOR_NAMES),
         effective_checks=list(EFFECTIVE_CHECKS),
         validator_note=VALIDATOR_NOTE,

@@ -445,8 +445,16 @@ if (-not (Test-Path -LiteralPath (Join-Path $projectDir 'project.json') -PathTyp
 $apiPort = if ($runtime.api_port) { [int]$runtime.api_port } else { 8000 }
 $webPort = if ($runtime.web_port) { [int]$runtime.web_port } else { 5174 }
 
-# "py -3.12" is a command plus its arguments; the executable itself must not contain spaces.
-$pythonParts = @(([string]$runtime.python) -split '\s+' | Where-Object { $_ })
+# An existing executable path stays intact, including spaces in a venv path.
+# A quoted executable may also have simple flags; retain the legacy "py -3.12" form.
+$pythonCommand = ([string]$runtime.python).Trim()
+if ($pythonCommand -match '^"([^"]+)"(?:\s+(.*))?$') {
+    $pythonParts = @($Matches[1]) + @($Matches[2] -split '\s+' | Where-Object { $_ })
+} elseif ($pythonCommand -and (Test-Path -LiteralPath $pythonCommand -PathType Leaf)) {
+    $pythonParts = @($pythonCommand)
+} else {
+    $pythonParts = @($pythonCommand -split '\s+' | Where-Object { $_ })
+}
 if ($pythonParts.Count -eq 0) { $pythonParts = @('py', '-3.12') }
 $pythonExe = $pythonParts[0]
 $pythonArgs = @()

@@ -112,9 +112,71 @@ def _axis_gap(a: Box, b: Box) -> float:
     return max(0.0, max(max(a[0][i] - b[1][i], b[0][i] - a[1][i]) for i in range(3)))
 
 
+def _plan_gap(a: Box, b: Box) -> float:
+    """The largest plan-axis (x, z) separation between two boxes; 0 when their plan footprints overlap or touch."""
+
+    return max(0.0, max(max(a[0][i] - b[1][i], b[0][i] - a[1][i]) for i, _ in _PLAN_AXES))
+
+
+def _box(object_id: str, bounds: Mapping[str, Bounds]) -> Box:
+    low, high = bounds[object_id]
+    return (tuple(float(v) for v in low), tuple(float(v) for v in high))
+
+
+def _seat_members(subject_objects: Sequence[str], object_objects: Sequence[str], bounds: Mapping[str, Bounds], seat_offset: float,
+                  tolerance: float) -> tuple[list[tuple[str, str, float, float]], float, float]:
+    """Each object member against every subject member, one bounding box at a time.
+
+    A member is *seated* when one and the same subject member both overlaps it in
+    plan (x, z) and meets it vertically: subject top == member bottom + declared
+    engagement - declared rise, within tolerance. Plan overlap on one member and
+    a vertical match on another do not add up to a seat, and the group's union is
+    never consulted, so a member moved out from over its support, or lifted off
+    it, is not hidden by the members that stayed. A subject member that carries
+    nothing is not a failure: a beam may span some of its supports and overhang.
+
+    Returns the unseated members as (object member, nearest subject member, plan
+    gap, seam) plus the largest plan gap and seam among the members' best
+    candidates. Bounding boxes only: a seat here is a candidate contact, not a
+    measured face contact and not a bearing check.
+    """
+
+    unseated: list[tuple[str, str, float, float]] = []
+    worst_plan, worst_seam = 0.0, 0.0
+    for member in object_objects:
+        member_box = _box(member, bounds)
+        best: tuple[float, str, float, float] | None = None
+        for support in subject_objects:
+            support_box = _box(support, bounds)
+            plan = _plan_gap(support_box, member_box)
+            seam = (member_box[0][_VERTICAL_AXIS] + seat_offset) - support_box[1][_VERTICAL_AXIS]
+            candidate = (max(plan, abs(seam)), support, plan, seam)
+            if best is None or candidate[0] < best[0]:
+                best = candidate
+        assert best is not None                       # _extent already refused an empty subject
+        _, support, plan, seam = best
+        worst_plan, worst_seam = max(worst_plan, plan), max(worst_seam, abs(seam))
+        if plan > tolerance or abs(seam) > tolerance:
+            unseated.append((member, support, plan, seam))
+    return unseated, worst_plan, worst_seam
+
+
 def check_support_contact(relation: Relation, *, record: StateRecord, bounds: Mapping[str, Bounds], objects_by_element: Mapping[str, Sequence[str]],
                           datum_values: Mapping[str, float]) -> RelationCheck:
-    """subject top == object bottom + declared engagement (and == the datum, when one is named)."""
+    """subject top == object bottom + declared engagement - declared rise (and == a named datum).
+
+    Between two elements the seam is also required member by member in plan:
+    every object member must have one subject member under it (plan overlap
+    and vertical seam on the same candidate), so a support that is nowhere
+    beneath what it claims to carry is violated even when the heights agree.
+    On a level nothing is required in plan: a level is an unbounded datum, and
+    the element's lowest member is what stands on it (a stair's later steps
+    rise above it by construction).
+
+    Everything here is measured on axis-aligned bounding boxes. A held check
+    says the boxes are in candidate contact at the declared seam; it does not
+    say two solid faces touch, and it is not a bearing or capacity check.
+    """
 
     tolerance = relation.validator.tolerance if relation.validator and relation.validator.tolerance is not None else _DEFAULT_TOLERANCE
     measured: dict[str, float] = {}
@@ -137,15 +199,31 @@ def check_support_contact(relation: Relation, *, record: StateRecord, bounds: Ma
         measured["gap"] = gap
         if abs(gap) > tolerance:
             problems.append(f"element bottom {element_bottom:.4f} is {gap:+.4f} from level {level.entity_id} at {elevation:.4f} (declared engagement {engagement:.4f}, rise {rise:.4f})")
+        held_detail = (f"element {element} lowest bound matches level {level.entity_id} with declared engagement {engagement:.4f} m "
+                       f"and rise {rise:.4f} m within {tolerance:.4f} m (datum alignment only; no finite support or bearing measured)")
     else:
-        _, subject_top = _extent(objects_by_element.get(relation.subject, ()), bounds, f"{relation.relation_id} subject {relation.subject}")
+        subject_objects = objects_by_element.get(relation.subject, ())
+        object_objects = objects_by_element.get(relation.object, ())
+        _, subject_top = _extent(subject_objects, bounds, f"{relation.relation_id} subject {relation.subject}")
         measured["subject_top"] = subject_top
-        object_bottom, _ = _extent(objects_by_element.get(relation.object, ()), bounds, f"{relation.relation_id} object {relation.object}")
+        object_bottom, _ = _extent(object_objects, bounds, f"{relation.relation_id} object {relation.object}")
         measured["object_bottom"] = object_bottom
         gap = (object_bottom + engagement - rise) - subject_top
         measured["gap"] = gap
         if abs(gap) > tolerance:
-            problems.append(f"object bottom {object_bottom:.4f} + engagement {engagement:.4f} is {gap:+.4f} from subject top {subject_top:.4f}")
+            problems.append(f"object bottom {object_bottom:.4f} + engagement {engagement:.4f} - rise {rise:.4f} is {gap:+.4f} from subject top {subject_top:.4f}")
+        unseated, worst_plan, worst_seam = _seat_members(subject_objects, object_objects, bounds, engagement - rise, tolerance)
+        measured["object_members"] = float(len(object_objects))
+        measured["unseated_members"] = float(len(unseated))
+        measured["seat_plan_gap_max"] = worst_plan
+        measured["seat_seam_max"] = worst_seam
+        if unseated:
+            named = "; ".join(f"{member} nearest {support} is {plan:.4f} m away in plan (x/z) and {seam:+.4f} m off its top" for member, support, plan, seam in unseated[:3])
+            more = f" (+{len(unseated) - 3} more)" if len(unseated) > 3 else ""
+            problems.append(f"{len(unseated)} of {len(object_objects)} object members of {relation.object} have no subject member of {relation.subject} "
+                            f"under them in plan at the seam: {named}{more}")
+        held_detail = (f"all {len(object_objects)} object members of {relation.object} have a subject member of {relation.subject} under them within {tolerance:.4f} m: "
+                       f"plan (x/z) overlap and vertical seam on the same member (bounding-box candidate contact, not face contact or bearing)")
     if relation.datum_role and relation.datum_role in datum_values:
         datum = float(datum_values[relation.datum_role])
         measured["datum_value"] = datum
@@ -153,7 +231,7 @@ def check_support_contact(relation: Relation, *, record: StateRecord, bounds: Ma
         if abs(datum - reference) > tolerance:
             problems.append(f"datum {relation.datum_role}={datum:.4f} does not hold the measured face {reference:.4f}")
     status = "violated" if problems else "held"
-    return RelationCheck(relation.relation_id, relation.kind, "support_contact", status, tolerance, measured, "; ".join(problems) or "contact by construction holds")
+    return RelationCheck(relation.relation_id, relation.kind, "support_contact", status, tolerance, measured, "; ".join(problems) or held_detail)
 
 
 def check_clearance_interval(relation: Relation, *, record: StateRecord, bounds: Mapping[str, Bounds], objects_by_element: Mapping[str, Sequence[str]],

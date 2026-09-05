@@ -32,6 +32,8 @@ const STORAGE_VERSION = 1 as const;
 
 type StoredPreferences = UserPreferences & {
   readonly version: typeof STORAGE_VERSION;
+  /** Personal edit choices, never project state. Older preferences omit this. */
+  readonly editingBases?: unknown;
 };
 
 const UserPreferencesContext = createContext<UserPreferencesContextValue | null>(
@@ -50,7 +52,7 @@ function isFontScale(value: unknown): value is FontScale {
   return value === 0.9 || value === 1 || value === 1.1;
 }
 
-function readStoredPreferences(): UserPreferences | null {
+function readStoredPreferences(requireReadable = false): StoredPreferences | null {
   if (typeof window === "undefined") return null;
 
   try {
@@ -71,12 +73,17 @@ function readStoredPreferences(): UserPreferences | null {
     }
 
     return {
+      version: STORAGE_VERSION,
       language: stored.language,
       theme: stored.theme,
       fontScale: stored.fontScale,
       eventStreamVisible: stored.eventStreamVisible,
+      editingBases: stored.editingBases,
     };
   } catch {
+    if (requireReadable) {
+      throw new Error("The saved editing choices could not be read. Retry or explicitly return to the default editing base.");
+    }
     return null;
   }
 }
@@ -114,19 +121,55 @@ function initialPreferences(): UserPreferences {
   };
 }
 
-function persistPreferences(preferences: UserPreferences): void {
-  if (typeof window === "undefined") return;
-  const stored: StoredPreferences = {
-    version: STORAGE_VERSION,
-    ...preferences,
-  };
+function persistPreferences(
+  preferences: UserPreferences,
+  editingBases?: unknown,
+): boolean {
+  if (typeof window === "undefined") return false;
 
   try {
+    const stored: StoredPreferences = {
+      version: STORAGE_VERSION,
+      ...preferences,
+      // Display preferences may default in memory, but must not erase an
+      // editing choice when the existing record cannot be read.
+      editingBases: editingBases === undefined ? readStoredPreferences(true)?.editingBases : editingBases,
+    };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    return true;
   } catch {
     // Site data may be disabled; the current tab still keeps the preference.
+    return false;
   }
 }
+
+/** The same preference record owns these pointers; clearing site data clears them too. */
+export const editingBasePreferences = {
+  read(serverBaseUrl: string, projectId: string): string | null {
+    const bases = readStoredPreferences(true)?.editingBases;
+    if (bases === undefined) return null;
+    if (typeof bases !== "object" || bases === null || Array.isArray(bases)) {
+      throw new Error("The saved editing choices are unreadable. Retry or explicitly return to the default editing base.");
+    }
+    const key = JSON.stringify([serverBaseUrl, projectId]);
+    if (!Object.hasOwn(bases, key)) return null;
+    const runId: unknown = (bases as Record<string, unknown>)[key];
+    if (typeof runId !== "string" || runId.trim() === "") {
+      throw new Error("The saved editing choice is unreadable. Retry or explicitly return to the default editing base.");
+    }
+    return runId;
+  },
+  write(serverBaseUrl: string, projectId: string, runId: string | null): boolean {
+    const stored = readStoredPreferences(true);
+    const bases = stored?.editingBases;
+    const next: Record<string, unknown> =
+      typeof bases === "object" && bases !== null && !Array.isArray(bases) ? { ...bases } : {};
+    const key = JSON.stringify([serverBaseUrl, projectId]);
+    if (runId === null) delete next[key];
+    else next[key] = runId;
+    return persistPreferences(stored ?? initialPreferences(), next);
+  },
+};
 
 export function UserPreferencesProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState<UserPreferences>(initialPreferences);

@@ -3686,7 +3686,7 @@
       "owns": [
         "building the CandidateSubmission and asking archflow.validation.engine.validate_submission about it",
         "the five-clause review-readiness verdict (receipt, seat execution, relations held, relations fully checked, exports available) and its blocked_by list",
-        "the honesty lines about what this receipt effectively proves on a ref-only published state",
+        "source coverage from published references and the candidate's exact StateRecord; normative requirement-to-result projection remains incomplete (P110)",
         "memoizing one validation per candidate and issue, computed once in this process",
         "the impact arrangement around StateRecord.closure: direct, propagated, protected, conflicts, locks and unknown coverage",
         "the before/after/why comparison of two runs' exported objects, joined by name from retained seat-3dm-inspection records"
@@ -3701,6 +3701,7 @@
       "inputs": [
         "ProjectVersionRef (HEAD)",
         "CandidateRun",
+        "ProjectBinding",
         "Proposal",
         "ArtifactRecord tuple",
         "StateProjection",
@@ -3739,7 +3740,9 @@
         "archflow.validation.model",
         "project.record_kinds",
         "project.refs",
+        "project.repository",
         "state.model",
+        "state.record",
         "submission.model",
         "validation.engine",
         "validation.model"

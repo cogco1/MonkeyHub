@@ -95,10 +95,11 @@ import {
   type ModelDisplayMode,
 } from "../viewer/modelDisplay";
 import { AppShell } from "./AppShell";
+import { ErrorPanel } from "./ErrorPanel";
 import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
-import { useSession } from "./useSession";
+import { editingDigestForView, useSession } from "./useSession";
 import { useTranscript, type SystemTextPart } from "./transcript";
 
 /** The three refusing outcomes of an intent, and the two that end an exchange. */
@@ -191,7 +192,7 @@ export default function App({ server }: { server: ServerIdentity }) {
     },
     [append],
   );
-  const { session, stateDigest, changingBase, baseError, reload, recoverFromStaleBase } = useSession(pushNotice);
+  const { session, changingBase, baseError, persistenceFailed, reload, recoverFromStaleBase } = useSession(pushNotice);
   const sourceRunId = session.status === "ready" ? session.value.sourceRunId : null;
 
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -235,6 +236,14 @@ export default function App({ server }: { server: ServerIdentity }) {
   // wanted: the run it belongs to, the receipt a pick is resolved against,
   // the seat a cross-fade is loaded beside.
   const loadedArtifact = loadedArtifacts[0] ?? null;
+  const viewingAnotherBase = sourceLabel === LOCAL_SOURCE_LABEL ||
+    (loadedArtifact !== null && session.status === "ready" &&
+      loadedArtifact.runId !== session.value.projection.referenceRun.runId);
+  const modelLoading = artifactLoadingSha !== null || viewerStatus === "loading";
+  const stateDigest = editingDigestForView(
+    session, changingBase, loadedArtifact?.runId ?? null,
+    sourceLabel === LOCAL_SOURCE_LABEL, modelLoading,
+  );
   // Every digest on screen, for the strip to say which of its buttons is the
   // picture: one seat's, or all of a run's.
   const loadedShas = loadedArtifacts
@@ -470,7 +479,7 @@ export default function App({ server }: { server: ServerIdentity }) {
 
   useEffect(() => {
     if (session.status === "ready") void loadArtifacts();
-  }, [session.status, loadArtifacts]);
+  }, [session.status, project?.projectId, loadArtifacts]);
 
   // Read while the panel is open, and read again when the record underneath it
   // changes: a frame from a record the tab has left is a picture of a building
@@ -675,7 +684,7 @@ export default function App({ server }: { server: ServerIdentity }) {
 
   /** Every export of the reference run this project can serve, as listed. */
   const referenceExports = useMemo<readonly ProjectArtifactDto[]>(() => {
-    if (artifacts.status !== "ready" || projection === null) return [];
+    if (artifacts.status !== "ready" || projection === null || artifacts.value.projectId !== projection.projectId) return [];
     return artifacts.value.artifacts.filter(
       (row) =>
         row.runId === projection.referenceRun.runId &&
@@ -683,6 +692,10 @@ export default function App({ server }: { server: ServerIdentity }) {
         row.sha256 !== null,
     );
   }, [artifacts, projection]);
+
+  const missingChosenModel = sourceRunId !== null &&
+    (artifacts.status === "failed" || (artifacts.status === "ready" &&
+      artifacts.value.projectId === project?.projectId && referenceExports.length === 0));
 
   /**
    * Home: the picture the stage opens on, and the one thing that brings it
@@ -693,7 +706,7 @@ export default function App({ server }: { server: ServerIdentity }) {
    * the Reference card cannot disagree about what going back means.
    */
   const homeArtifacts = useMemo<HomeArtifacts | null>(() => {
-    if (artifacts.status !== "ready" || projection === null) return null;
+    if (artifacts.status !== "ready" || projection === null || artifacts.value.projectId !== projection.projectId) return null;
     if (referenceExports.length > 0) {
       return {
         kind: "reference",
@@ -702,6 +715,8 @@ export default function App({ server }: { server: ServerIdentity }) {
         referenceRunId: projection.referenceRun.runId,
       };
     }
+    // A restored explicit choice must never show an unrelated fallback export.
+    if (sourceRunId !== null) return null;
     const rows = artifacts.value.artifacts.filter(
       (row) => row.available && row.sha256 !== null,
     );
@@ -713,7 +728,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       artifacts: [pick],
       referenceRunId: projection.referenceRun.runId,
     };
-  }, [artifacts, projection, referenceExports]);
+  }, [artifacts, projection, referenceExports, sourceRunId]);
 
   /**
    * Back home, from wherever the stage got to — one seat of another run, a
@@ -782,6 +797,16 @@ export default function App({ server }: { server: ServerIdentity }) {
   // home turned out to be. A file from this machine stays a secondary door;
   // it is the one with no receipt.
   const autoLoadedRef = useRef(false);
+  const displayedProjectRef = useRef<string | null>(null);
+  useEffect(() => {
+    const projectId = project?.projectId ?? null;
+    if (session.status !== "ready" || missingChosenModel || displayedProjectRef.current !== projectId) {
+      autoLoadedRef.current = false;
+      setLoadedArtifacts([]);
+      setSourceLabel(null);
+    }
+    displayedProjectRef.current = projectId;
+  }, [session.status, project?.projectId, missingChosenModel]);
   useEffect(() => {
     if (autoLoadedRef.current) return;
     if (homeArtifacts === null) return;
@@ -1686,6 +1711,10 @@ export default function App({ server }: { server: ServerIdentity }) {
   const disabledReason =
     changingBase
       ? t("stage.base.loading")
+      : viewingAnotherBase
+        ? t("stage.base.viewOnly")
+      : modelLoading
+        ? t("stage.base.loading")
       : session.status === "failed"
       ? t("shell.bindingRefused", { code: session.error.code })
       : projection === null
@@ -1793,6 +1822,32 @@ export default function App({ server }: { server: ServerIdentity }) {
   // project to name.
   const booting = session.status === "idle" || session.status === "loading";
 
+  if (session.status === "failed" || missingChosenModel) {
+    const error = session.status === "failed" ? session.error
+      : artifacts.status === "failed" ? artifacts.error : baseError;
+    return (
+      <div className="refusal">
+        <div className="refusal__card">
+          <p className="label">MonkeyArch</p>
+          <h1 className="refusal__title">{t("stage.base.restoreFailed")}</h1>
+          <p className="refusal__lead">
+            {missingChosenModel ? t("stage.base.modelUnavailable") : t("stage.base.restoreHelp")}
+          </p>
+          {sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
+          {error && <ErrorPanel error={error} />}
+          <button type="button" className="btn" disabled={changingBase}
+            onClick={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>
+            {t("stage.base.retry")}
+          </button>
+          <button type="button" className="btn" disabled={changingBase}
+            onClick={() => void changeEditingBase(null)}>
+            {t("stage.base.default")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       {booting && (
@@ -1831,6 +1886,7 @@ export default function App({ server }: { server: ServerIdentity }) {
               MonkeyArch
             </span>
             <span className="toolbar__sep" />
+            {persistenceFailed && <span className="toolbar__item" role="status">{t("stage.base.notSaved")}</span>}
             {project ? (
               <>
                 <span className="mono toolbar__item" title={project.projectDir}>
@@ -1844,13 +1900,6 @@ export default function App({ server }: { server: ServerIdentity }) {
                   title={t("shell.proposalOnlyTitle")}
                 >
                   {t("shell.proposalOnly")}
-                </span>
-                <span className="toolbar__spacer" />
-              </>
-            ) : session.status === "failed" ? (
-              <>
-                <span className="toolbar__item">
-                  {t("shell.notBound", { code: session.error.code })}
                 </span>
                 <span className="toolbar__spacer" />
               </>
@@ -1895,7 +1944,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         conversation={conversationOpen ? (
           <Conversation
             entries={transcript.entries}
-            sessionError={session.status === "failed" ? session.error : null}
+            sessionError={null}
             projection={projection}
             editingBaseRunId={projection?.referenceRun.runId ?? null}
             editingBaseLabel={sentenceOfCandidate(projection?.referenceRun.runId ?? null)}
@@ -1971,6 +2020,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         ) : null}
         stage={
           <Stage
+            key={project?.projectId ?? "unbound"}
             viewportRef={viewportRef}
             sourceLabel={sourceLabel}
             message={viewerMessage}
