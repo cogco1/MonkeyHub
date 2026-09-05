@@ -46,6 +46,11 @@ this contract before reuse.
    inference, proposal, and limitation.
 
 The current source boundaries are defined by
-[EXPERIMENT_PROTOCOL.md](../../EXPERIMENT_PROTOCOL.md),
-[P062](../../mapping/planning/P062-multi-building-experiments-and-ablations.md),
+[P062](../../mapping/planning/P062-multi-building-experiments-and-ablations.md)
 and [ARCHITECTURE.md](../../ARCHITECTURE.md).
+
+`EXPERIMENT_PROTOCOL.md` is historical, not a current boundary: the P062/P063
+experiment lane is archived. Its runner is `archive/tools/run_experiment.py`,
+and the protocol text moved out of the repository to
+`D:\PROJECTS\99_ARCHIVE_旧项目归档\ARCHFLOW_V4_ARCHIVE\20260905_repo_done-plans-and-stale-docs\docs\EXPERIMENT_PROTOCOL.md`
+(recover the in-repo history with `git log --all --full-history -- docs/EXPERIMENT_PROTOCOL.md`).

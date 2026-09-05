@@ -191,5 +191,9 @@ IFC 导出回执(`ifc-export-receipt`)、渲染清单
 执行层读项目 `index/contracts/`,不读代码字面量。
 
 **执行状态**(2026-08-30):p066-live-monument 已迁工作区(锚留 repo);
-PANTHEON_RECONSTRUCTION_PLAN.md 已迁 pantheon 项目(repo 留 stub);
+万神殿复原计划已迁 pantheon 项目,权威版本在
+`V4_RUNTIME\workspace\projects\pantheon-reconstruction\PLAN.md`;
+repo 的 `docs/PANTHEON_RECONSTRUCTION_PLAN.md` 指针 stub 已于 2026-09-05 移出
+(P069 已作为 superseded 关闭,见 `docs/CANONICAL_SPINE.md` §2.1;
+stub 原文在 `ARCHFLOW_V4_ARCHIVE\20260905_repo_done-plans-and-stale-docs\`)。
 `run_decision_research` 已改为 `--project-id` 必填。

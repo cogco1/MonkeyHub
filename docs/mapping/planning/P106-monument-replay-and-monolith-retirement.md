@@ -12,10 +12,10 @@ Two things stood in the way, and only one of them is P105's.
 
 **The vocabulary** is P105.
 
-**The monoliths are not only geometry.** `tools/run_pantheon_reconstruction.py` (5,516 lines) carries stage plans,
+**The monoliths are not only geometry.** `archive/tools/run_pantheon_reconstruction.py` (5,516 lines) carries stage plans,
 stage contracts, stage-closure gates, detail enrichment plans, STL ingestion, Rhino overlay scripts, symmetry
-findings, realized declaration values and candidate structure issues. `tools/run_parthenon_reconstruction.py`
-(3,390) and `tools/run_parthenon_stage4_reconstruction.py` (5,818) carry their own, plus roughly 13,000 further
+findings, realized declaration values and candidate structure issues. `archive/tools/run_parthenon_reconstruction.py`
+(3,390) and `archive/tools/run_parthenon_stage4_reconstruction.py` (5,818) carry their own, plus roughly 13,000 further
 lines in the stage-4 helpers. Every one of those capabilities has to be reachable another way before the file that
 holds it can become a stub, or the retirement is a deletion.
 
