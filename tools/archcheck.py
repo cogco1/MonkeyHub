@@ -448,6 +448,12 @@ def check_commit_soft_gate_leak(
 
 
 def check_probe_boundary(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
+    # The probe root left the repository on 2026-09-05: the one fixture project
+    # under it is now built by the spine test itself, and retained records live
+    # in the workspace. Both probe findings are existence-guarded, so a missing
+    # directory is not a finding; they stay as the guard against the directory
+    # coming back as anything but data. The root run-store check below is
+    # independent of it and always runs.
     probe_root = root / policy["probe_root"]
     if (probe_root / "__init__.py").exists():
         yield PolicyFinding(

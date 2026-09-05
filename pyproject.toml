@@ -14,7 +14,7 @@ cad-inspection = ["rhino3dm==8.32.1"]
 
 [tool.setuptools.packages.find]
 include = ["archflow*"]
-exclude = ["tests*", "probes*", "governance*", "docs*", "tools*"]
+exclude = ["tests*", "governance*", "docs*", "tools*"]
 
 [tool.archflow]
 phase = "P1"

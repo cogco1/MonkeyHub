@@ -24,7 +24,8 @@ explicit absolute roots for workspace, rebuildable cache, and temporary data.
 An active project resolves to `workspace/projects/<project_id>/` and is then
 created by the unchanged P036 repository. The runtime layer does not store an
 absolute path in `project.json`, add another writer, or change `HEAD` authority.
-Committed probes use the same envelope and remain explicitly promoted evidence.
+Every project lives outside the repository under that workspace root; a test
+that needs one bootstraps its own through this repository under `tempfile`.
 
 Canonical crash order is:
 

@@ -32,6 +32,10 @@ def _records(repository, run, area: PersistenceArea):
     return result
 
 
+@unittest.skip(
+    "probes/test_pantheon moved to the workspace on 2026-09-05 "
+    "(V4_RUNTIME/workspace/projects/test-pantheon)"
+)
 class PantheonLongitudinalAcceptanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

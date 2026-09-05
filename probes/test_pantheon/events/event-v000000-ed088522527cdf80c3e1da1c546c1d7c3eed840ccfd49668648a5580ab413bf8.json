@@ -1,1 +1,0 @@
-{"decision":"accepted","decision_receipt":null,"event_type":"project.initialized","from":null,"previous_event":null,"project_id":"test_pantheon","run_id":null,"schema":"ProjectEvent@1","to":{"project_id":"test_pantheon","state_sha256":"11b7d97cb3baa6ec421b1fc0fc63ea2404becf7fd3f04d0eff4c5f9b1f8408c8","version":0}}

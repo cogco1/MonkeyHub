@@ -17,10 +17,9 @@
 | `archflow/` | 生产脊柱,一个包一个职责,每个模块在 `governance/module_registry.json` 有 owner 条目 | 退役线、实验脚本、项目数据 |
 | `apps/archflow-studio/` | MonkeyArch:`api/`(FastAPI)、`web/`(React)、启动器、图标、loading 帧 | 用户设置、项目文件 |
 | `tools/` | 脊柱 CLI(run / verify / freeze / open / issue / reindex)与治理 CLI(archcheck、devctl) | 一次性脚本(进工作区 `temp/` 或外部归档) |
-| `tests/` | 脊柱测试,唯一进 CI 的套件;`tests/support.py` 是 fixture 的唯一入口 | import archive 的测试(archcheck 会拦)、数据文件 |
+| `tests/` | 脊柱测试,唯一进 CI 的套件;`tests/support.py` 是 fixture 的唯一入口;要读 P036 项目的测试自建临时项目,不读仓库里的数据 | import archive 的测试(archcheck 会拦)、数据文件、fixture 项目 |
 | `governance/` | 模块注册表、架构策略、工作注册表(活着的工作,一项一张卡) | 已完成的卡(完成即删) |
 | `docs/` | `adr/`(裁决)、canonical 文档(ARCHITECTURE、CANONICAL_SPINE、PROTOCOL、VISION、RESEARCH_POSITIONING)、devctl 渲染的四份图(SYSTEM_MAP、DYNAMIC_MAP、SEMANTIC_REGISTRY、mapping/planning/INDEX)、工作卡 `mapping/planning/P###-*.md`、本文 | 论文、示意图、计划备忘、会话报告、工作区规范 |
-| `probes/` | 脊柱测试要读的 P036 fixture 项目(现只有 `test_pantheon`,待换成合成 fixture 后删除) | 退役线的证据、迁移指针 |
 | `.github/` | CI:spine 套件 + archcheck | |
 | `.codex/` | codex CLI 的项目配置与云环境脚本 | |
 

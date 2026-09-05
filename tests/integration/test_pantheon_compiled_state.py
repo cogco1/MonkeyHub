@@ -4,10 +4,11 @@ import hashlib
 import io
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-from archflow.project.refs import BranchRef, RunRef
+from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef, record_file_name
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef
@@ -16,13 +17,25 @@ from archflow.state.operational_state import DependencyEffect, DependencyEdge, D
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PROBE_ROOT = REPO_ROOT / "probes" / "test_pantheon"
+PROJECT_ID = "test_pantheon"
+BOOTSTRAP_RUN_ID = "bootstrap-001"
 RUN_ID = "compiled-state-001"
 M009_RUN_ID = "compiled-state-002"
 BRANCH_ID = "research-primary"
 AGENT_ID = "agent:pantheon-source-research"
 AGENT_AUTHORITY = "architect-agent-pantheon-research"
 ACCESSED_ON = "2026-07-25"
+
+# The one case-specific input this fixture is allowed to carry. Everything the
+# tests assert about is derived from it by the builders below; no case answer
+# is read from a checked-in project.
+RAW_REQUEST_PROMPT = (
+    "In a voxel sandbox, design and build the Pantheon step "
+    "by step. First retrieve reliable evidence, then derive "
+    "its use, scale, spatial relations, construction, and "
+    "materials from the current state without preset "
+    "building data."
+)
 
 
 SOURCES = (
@@ -284,6 +297,126 @@ def _ref_payload(ref: object) -> dict[str, str]:
         "sha256": ref.sha256,
         "media_type": ref.media_type,
     }
+
+
+def _put_retired_lane_json(
+    repository: FilesystemProjectRepository,
+    *,
+    run: RunRef,
+    destination: PersistenceDestination,
+    record_kind: str,
+    payload: dict[str, object],
+) -> ProjectRecordRef:
+    """Install one retained record whose kind the spine never writes.
+
+    These two runs are a retired lane's vocabulary (P042, then its M009
+    successor). ADR-004 keeps reads unrestricted so a run like this stays
+    readable, but ``put_json`` writes only kinds
+    ``archflow.project.record_kinds`` holds, and a case's kinds do not belong
+    in the spine's table -- registering ``pantheon-evidence`` there is exactly
+    the leakage the guard below forbids. So the fixture lays these records
+    down the way an archived lane's run already sits on disk, byte-for-byte as
+    the repository would have written them, and reads every one of them back
+    through the repository.
+    """
+
+    run_layout = repository.layout.run(run.run_id)
+    if destination.area is PersistenceArea.INPUT:
+        directory = repository.layout.inputs
+    elif destination.area is PersistenceArea.RUN_RECORD:
+        directory = run_layout.records
+    elif destination.area is PersistenceArea.RUN_BRANCH:
+        if destination.branch_id is None:
+            raise ValueError("run branch destination lacks branch_id")
+        directory = run_layout.branches / destination.branch_id / "records"
+    else:
+        raise ValueError(
+            f"the fixture retains no records in {destination.area.value}"
+        )
+    data = (
+        json.dumps(
+            dict(payload),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    digest = hashlib.sha256(data).hexdigest()
+    path = directory / record_file_name(record_kind, digest)
+    if path.exists():
+        raise RuntimeError(f"refusing to overwrite retained record: {path}")
+    directory.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return ProjectRecordRef(
+        project_id=run.project_id,
+        relative_path=path.relative_to(repository.layout.root).as_posix(),
+        sha256=digest,
+        media_type="application/json",
+    )
+
+
+def _put_p042_record(
+    repository: FilesystemProjectRepository,
+    *,
+    run: RunRef,
+    destination: PersistenceDestination,
+    record_kind: str,
+    payload: dict[str, object],
+) -> ProjectRecordRef:
+    """One retained record of the P042 run, in the schema of its own day."""
+
+    return _put_retired_lane_json(
+        repository,
+        run=run,
+        destination=destination,
+        record_kind=record_kind,
+        payload=_as_p042_legacy(payload),
+    )
+
+
+# The compiled-state run is a retired lane's output: it was written before the
+# OperationalMarkovState@3 bump gave a fact its epistemic status, made an
+# obligation conditional and blockable, and gave a dependency edge an effect.
+# The successor run below exists to prove that such a source is explicitly
+# recompiled and never silently migrated, so the fixture has to lay the P042
+# run down in its own schema rather than today's. This is the whole
+# difference: four schema literals, and six fields the later schema added.
+_P042_SCHEMA_AT_THE_TIME = {
+    "OperationalMarkovState@3": "OperationalMarkovState@2",
+    "DecisionOperator@2": "DecisionOperator@1",
+    "StateDelta@2": "StateDelta@1",
+    "DesignStateClosureReceipt@2": "DesignStateClosureReceipt@1",
+}
+_P042_FIELDS_NOT_YET_INTRODUCED = frozenset(
+    {
+        "epistemic_status",
+        "confidence",
+        "qualification",
+        "condition",
+        "blocked_by",
+        "effect",
+    }
+)
+
+
+def _as_p042_legacy(value: object) -> object:
+    """One record as the P042 run wrote it, before the @3 state bump."""
+
+    if isinstance(value, dict):
+        return {
+            key: (
+                _P042_SCHEMA_AT_THE_TIME.get(item, item)
+                if key == "schema" and isinstance(item, str)
+                else _as_p042_legacy(item)
+            )
+            for key, item in value.items()
+            if key not in _P042_FIELDS_NOT_YET_INTRODUCED
+        }
+    if isinstance(value, list):
+        return [_as_p042_legacy(item) for item in value]
+    return value
 
 
 def _tree_digest(root: Path) -> str:
@@ -1342,15 +1475,70 @@ def _build_transitions(
     )
 
 
-def build_probe() -> dict[str, object]:
-    repository = FilesystemProjectRepository.open(PROBE_ROOT)
+def bootstrap_fixture_envelope(root: Path) -> None:
+    """Create the P036 envelope the compiled-state runs are derived from.
+
+    Generic raw-request bootstrap: one project, one run, one raw request, one
+    receipt that denies generation authority. No building knowledge.
+    """
+
+    repository = FilesystemProjectRepository.initialize(
+        root,
+        project_id=PROJECT_ID,
+        initial_state={
+            "schema": "CanonicalProjectState@1",
+            "phase": "project_initialized",
+            "authoritative_record_refs": [],
+            "derived_record_refs": [],
+        },
+    )
+    run = repository.create_run(BOOTSTRAP_RUN_ID)
+    request = _put_retired_lane_json(
+        repository,
+        run=run,
+        destination=PersistenceDestination(PersistenceArea.INPUT),
+        record_kind="raw-request",
+        payload={
+            "schema": "RawProjectRequest@1",
+            "prompt": RAW_REQUEST_PROMPT,
+        },
+    )
+    _put_retired_lane_json(
+        repository,
+        run=run,
+        destination=PersistenceDestination(
+            PersistenceArea.RUN_RECORD,
+            run_id=run.run_id,
+        ),
+        record_kind="project-bootstrap",
+        payload={
+            "schema": "ProjectBootstrapReceipt@1",
+            "project_id": PROJECT_ID,
+            "run_id": run.run_id,
+            "base": {
+                "project_id": run.base.project_id,
+                "version": run.base.version,
+                "state_sha256": run.base.require_digest(),
+            },
+            "request_ref": request.uri,
+            "synthetic_test": True,
+            "generation_authority": False,
+            "architectural_usability_proven": False,
+            "derived_design_available": False,
+        },
+    )
+    repository.verify()
+
+
+def build_probe(project_root: Path) -> dict[str, object]:
+    repository = FilesystemProjectRepository.open(project_root)
     head_before = repository.read_head()
-    run_path = PROBE_ROOT / "runs" / RUN_ID / "run.json"
+    run_path = project_root / "runs" / RUN_ID / "run.json"
     if run_path.exists():
         raise RuntimeError(
             f"refusing to overwrite existing run: {run_path}"
         )
-    bootstrap_run = repository.load_run("bootstrap-001")
+    bootstrap_run = repository.load_run(BOOTSTRAP_RUN_ID)
     input_refs = repository.list_json(
         run=bootstrap_run,
         destination=PersistenceDestination(PersistenceArea.INPUT),
@@ -1417,7 +1605,8 @@ def build_probe() -> dict[str, object]:
         PersistenceArea.OBJECT
     )
 
-    protocol_ref = repository.put_json(
+    protocol_ref = _put_p042_record(
+        repository,
         run=run,
         destination=record_destination,
         record_kind="v3-protocol-reference",
@@ -1493,7 +1682,8 @@ def build_probe() -> dict[str, object]:
             ),
         },
     )
-    evidence_ref = repository.put_json(
+    evidence_ref = _put_p042_record(
+        repository,
         run=run,
         destination=record_destination,
         record_kind="pantheon-evidence",
@@ -1524,7 +1714,8 @@ def build_probe() -> dict[str, object]:
             "generation_authority": False,
         },
     )
-    mapping_ref = repository.put_json(
+    mapping_ref = _put_p042_record(
+        repository,
         run=run,
         destination=record_destination,
         record_kind="agent-compiler-mapping",
@@ -1594,7 +1785,8 @@ def build_probe() -> dict[str, object]:
             "geometry_materialized": False,
         },
     )
-    initial_ref = repository.put_json(
+    initial_ref = _put_p042_record(
+        repository,
         run=run,
         destination=branch_destination,
         record_kind="state-epoch-000",
@@ -1677,7 +1869,8 @@ def build_probe() -> dict[str, object]:
         start=1,
     ):
         round_refs.append(
-            repository.put_json(
+            _put_p042_record(
+                repository,
                 run=run,
                 destination=branch_destination,
                 record_kind=f"agent-round-{index:02d}",
@@ -1712,7 +1905,8 @@ def build_probe() -> dict[str, object]:
             )
         )
 
-    facts_ref = repository.put_json(
+    facts_ref = _put_p042_record(
+        repository,
         run=run,
         destination=record_destination,
         record_kind="building-facts",
@@ -1725,11 +1919,12 @@ def build_probe() -> dict[str, object]:
             "invalidated_refs": list(
                 final_state.invalidated_refs
             ),
-            "case_scope": "project:test_pantheon",
+            "case_scope": f"project:{PROJECT_ID}",
             "framework_default_authority": False,
         },
     )
-    obligations_ref = repository.put_json(
+    obligations_ref = _put_p042_record(
+        repository,
         run=run,
         destination=record_destination,
         record_kind="building-obligations",
@@ -1751,7 +1946,8 @@ def build_probe() -> dict[str, object]:
     state_chain = [state0.state_digest] + [
         transition.state.state_digest for transition in transitions
     ]
-    derivation_ref = repository.put_json(
+    derivation_ref = _put_p042_record(
+        repository,
         run=run,
         destination=record_destination,
         record_kind="derivation",
@@ -1833,7 +2029,8 @@ The probe retains facts, obligations, evidence, derivation, and a manifest. V3 P
         initial_ref,
         *round_refs,
     ]
-    manifest_ref = repository.put_json(
+    manifest_ref = _put_p042_record(
+        repository,
         run=run,
         destination=record_destination,
         record_kind="compiled-dossier-manifest",
@@ -1891,7 +2088,7 @@ The probe retains facts, obligations, evidence, derivation, and a manifest. V3 P
         },
     )
 
-    reopened = FilesystemProjectRepository.open(PROBE_ROOT)
+    reopened = FilesystemProjectRepository.open(project_root)
     reopened_run = reopened.load_run(RUN_ID)
     for destination in (
         record_destination,
@@ -1907,7 +2104,7 @@ The probe retains facts, obligations, evidence, derivation, and a manifest. V3 P
     if reopened.load_json(input_ref) != raw_request:
         raise RuntimeError("compiled probe changed its raw request")
     object_bytes = (
-        PROBE_ROOT / human_ref.relative_path
+        project_root / human_ref.relative_path
     ).read_bytes()
     if hashlib.sha256(object_bytes).hexdigest() != human_ref.sha256:
         raise RuntimeError("human derivation artifact digest mismatch")
@@ -1919,17 +2116,17 @@ The probe retains facts, obligations, evidence, derivation, and a manifest. V3 P
     }
 
 
-def build_m009_successor_probe() -> dict[str, object]:
+def build_m009_successor_probe(project_root: Path) -> dict[str, object]:
     """Explicitly recompile P042 evidence without mutating its legacy run."""
 
-    repository = FilesystemProjectRepository.open(PROBE_ROOT)
+    repository = FilesystemProjectRepository.open(project_root)
     head_before = repository.read_head()
-    run_path = PROBE_ROOT / "runs" / M009_RUN_ID / "run.json"
+    run_path = project_root / "runs" / M009_RUN_ID / "run.json"
     if run_path.exists():
         raise RuntimeError(
             f"refusing to overwrite existing run: {run_path}"
         )
-    source_run_root = PROBE_ROOT / "runs" / RUN_ID
+    source_run_root = project_root / "runs" / RUN_ID
     source_tree_digest = _tree_digest(source_run_root)
     source_run = repository.load_run(RUN_ID)
     source_record_destination = PersistenceDestination(
@@ -1971,7 +2168,7 @@ def build_m009_successor_probe() -> dict[str, object]:
     if not isinstance(legacy_state, LegacyOperationalMarkovStateV2):
         raise RuntimeError("P042 source state is no longer a V2 record")
 
-    bootstrap_run = repository.load_run("bootstrap-001")
+    bootstrap_run = repository.load_run(BOOTSTRAP_RUN_ID)
     input_refs = repository.list_json(
         run=bootstrap_run,
         destination=PersistenceDestination(PersistenceArea.INPUT),
@@ -2225,7 +2422,8 @@ def build_m009_successor_probe() -> dict[str, object]:
         run_id=M009_RUN_ID,
         branch_id=BRANCH_ID,
     )
-    migration_ref = repository.put_json(
+    migration_ref = _put_retired_lane_json(
+        repository,
         run=run,
         destination=record_destination,
         record_kind="explicit-recompile-receipt",
@@ -2244,7 +2442,8 @@ def build_m009_successor_probe() -> dict[str, object]:
             ),
         },
     )
-    initial_ref = repository.put_json(
+    initial_ref = _put_retired_lane_json(
+        repository,
         run=run,
         destination=branch_destination,
         record_kind="state-epoch-000",
@@ -2254,7 +2453,8 @@ def build_m009_successor_probe() -> dict[str, object]:
             "state": state0.to_dict(),
         },
     )
-    round_ref = repository.put_json(
+    round_ref = _put_retired_lane_json(
+        repository,
         run=run,
         destination=branch_destination,
         record_kind="decision-round-01",
@@ -2272,7 +2472,8 @@ def build_m009_successor_probe() -> dict[str, object]:
             ),
         },
     )
-    final_ref = repository.put_json(
+    final_ref = _put_retired_lane_json(
+        repository,
         run=run,
         destination=record_destination,
         record_kind="operational-state-final",
@@ -2295,7 +2496,8 @@ def build_m009_successor_probe() -> dict[str, object]:
             "current_deliverables": [unrelated_output.ref],
         },
     )
-    manifest_ref = repository.put_json(
+    manifest_ref = _put_retired_lane_json(
+        repository,
         run=run,
         destination=record_destination,
         record_kind="m009-successor-manifest",
@@ -2327,7 +2529,7 @@ def build_m009_successor_probe() -> dict[str, object]:
         },
     )
 
-    reopened = FilesystemProjectRepository.open(PROBE_ROOT)
+    reopened = FilesystemProjectRepository.open(project_root)
     reopened_run = reopened.load_run(M009_RUN_ID)
     for destination in (record_destination, branch_destination):
         for record_ref in reopened.list_json(
@@ -2347,10 +2549,55 @@ def build_m009_successor_probe() -> dict[str, object]:
     }
 
 
+def build_fixture_project(project_root: Path) -> dict[str, object]:
+    """Materialise the whole fixture project: envelope, P042 run, M009 run."""
+
+    bootstrap_fixture_envelope(project_root)
+    return {
+        "project_id": PROJECT_ID,
+        "root": str(project_root),
+        RUN_ID: build_probe(project_root),
+        M009_RUN_ID: build_m009_successor_probe(project_root),
+    }
+
+
+_FIXTURE_TEMPDIR: tempfile.TemporaryDirectory | None = None
+_FIXTURE_ROOT: Path | None = None
+
+
+def fixture_project_root() -> Path:
+    """Build the fixture once per interpreter and reuse it across classes.
+
+    The two classes read one project: the M009 run is derived from the
+    compiled-state run in the same envelope, so they cannot be bootstrapped
+    independently.
+    """
+
+    global _FIXTURE_TEMPDIR, _FIXTURE_ROOT
+    if _FIXTURE_ROOT is None:
+        _FIXTURE_TEMPDIR = tempfile.TemporaryDirectory(
+            prefix="archflow-pantheon-fixture-",
+            ignore_cleanup_errors=True,
+        )
+        root = Path(_FIXTURE_TEMPDIR.name) / PROJECT_ID
+        build_fixture_project(root)
+        _FIXTURE_ROOT = root
+    return _FIXTURE_ROOT
+
+
+def tearDownModule() -> None:
+    global _FIXTURE_TEMPDIR, _FIXTURE_ROOT
+    if _FIXTURE_TEMPDIR is not None:
+        _FIXTURE_TEMPDIR.cleanup()
+    _FIXTURE_TEMPDIR = None
+    _FIXTURE_ROOT = None
+
+
 class PantheonCompiledStateProbeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.repository = FilesystemProjectRepository.open(PROBE_ROOT)
+        cls.project_root = fixture_project_root()
+        cls.repository = FilesystemProjectRepository.open(cls.project_root)
         cls.run_ref = cls.repository.load_run(RUN_ID)
         cls.record_destination = PersistenceDestination(
             PersistenceArea.RUN_RECORD,
@@ -2537,7 +2784,7 @@ class PantheonCompiledStateProbeTests(unittest.TestCase):
         for retained in (
             manifest["records"] + manifest["artifacts"]
         ):
-            path = PROBE_ROOT / retained["relative_path"]
+            path = self.project_root / retained["relative_path"]
             self.assertTrue(path.is_file())
             self.assertEqual(
                 hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -2565,12 +2812,26 @@ class PantheonCompiledStateProbeTests(unittest.TestCase):
     def test_case_answers_do_not_enter_framework_or_generation_areas(
         self,
     ) -> None:
+        # Tokens the synthetic fixture actually writes. The guard is one-way:
+        # the fixture may name the case, framework code may not.
         banned = (
+            "pantheon",
             "43.30",
             "oculus-reading-mit",
             "P041-PANTHEON",
             "current-portico-columns",
         )
+        fixture_text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted(self.project_root.rglob("*"))
+            if path.is_file()
+        )
+        for token in banned:
+            self.assertIn(
+                token,
+                fixture_text,
+                f"guard token {token!r} is no longer written by the fixture",
+            )
         for path in (REPO_ROOT / "archflow").rglob("*"):
             if path.suffix.lower() not in {".py", ".json", ".md"}:
                 continue
@@ -2578,10 +2839,10 @@ class PantheonCompiledStateProbeTests(unittest.TestCase):
             for token in banned:
                 self.assertNotIn(token, text, str(path))
         self.assertFalse(
-            any(PROBE_ROOT.rglob("*.py")),
+            any(self.project_root.rglob("*.py")),
             "the data probe must not contain executable case code",
         )
-        run_root = PROBE_ROOT / "runs" / RUN_ID
+        run_root = self.project_root / "runs" / RUN_ID
         self.assertFalse(any((run_root / "candidates").rglob("*.json")))
         self.assertFalse(any((run_root / "reviews").rglob("*.json")))
 
@@ -2589,7 +2850,8 @@ class PantheonCompiledStateProbeTests(unittest.TestCase):
 class PantheonM009SuccessorProbeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.repository = FilesystemProjectRepository.open(PROBE_ROOT)
+        cls.project_root = fixture_project_root()
+        cls.repository = FilesystemProjectRepository.open(cls.project_root)
         cls.run_ref = cls.repository.load_run(M009_RUN_ID)
         cls.record_destination = PersistenceDestination(
             PersistenceArea.RUN_RECORD,
@@ -2619,7 +2881,7 @@ class PantheonM009SuccessorProbeTests(unittest.TestCase):
 
     def test_successor_preserves_p042_and_canonical_head(self) -> None:
         manifest = self.records["PantheonM009SuccessorManifest@1"][1]
-        source_root = PROBE_ROOT / "runs" / RUN_ID
+        source_root = self.project_root / "runs" / RUN_ID
 
         self.assertEqual(
             _tree_digest(source_root),
@@ -2634,7 +2896,7 @@ class PantheonM009SuccessorProbeTests(unittest.TestCase):
         self.assertFalse(manifest["geometry_materialized"])
         self.assertFalse(manifest["architectural_usability_proven"])
         for retained in manifest["records"]:
-            path = PROBE_ROOT / retained["relative_path"]
+            path = self.project_root / retained["relative_path"]
             self.assertTrue(path.is_file())
             self.assertEqual(
                 hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -2769,18 +3031,17 @@ class PantheonM009SuccessorProbeTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    if "--generate-m009" in sys.argv:
+    # `--generate <dir>` materialises the same project the tests build, into a
+    # directory of your choosing, for inspection or for seeding a workspace
+    # copy. The tests never read it; they build their own under tempfile.
+    if "--generate" in sys.argv:
+        index = sys.argv.index("--generate")
+        if index + 1 >= len(sys.argv):
+            raise SystemExit("--generate requires a target directory")
+        target = Path(sys.argv[index + 1]).resolve() / PROJECT_ID
         print(
             json.dumps(
-                build_m009_successor_probe(),
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-    elif "--generate" in sys.argv:
-        print(
-            json.dumps(
-                build_probe(),
+                build_fixture_project(target),
                 ensure_ascii=False,
                 indent=2,
             )
