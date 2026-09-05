@@ -44,7 +44,7 @@
         "supervising the blocking worker, collecting its output, and independently cleaning the Rhino host it started",
         "readback verification: the saved file's physical objects, semantics, bounds, counts, layer colours and document user text against the denominator",
         "the execution receipt and its status",
-        "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, capped polyline loft, boolean and linear array operations; exact STEP write/readback and tessellated .3dm preview from one model",
+        "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, capped or uncapped polyline loft, boolean and linear array operations; exact STEP write/readback and tessellated .3dm preview from one model",
         "native preview material assignment and readback for existing FRAME and GLAZING assembly roles, including actual glass transparency",
         "CadProgramBinding (the retained RhinoCadProgramBinding alias), OcctCadExportIdentity, OcctExecutionReceipt and explicit CadCapabilityError for unsupported operations"
       ],
@@ -67,7 +67,7 @@
         "RhinoCadExportPlan",
         "RhinoCadExecutionReceipt",
         "ThreeDmInspection (embedded)",
-        "OcctExecutionReceipt: exact STEP and preview artifact identities, saved solid readback, preview inspection, backend identity and measured timings"
+        "OcctExecutionReceipt: exact STEP and preview artifact identities, saved B-rep readback matched to declared solid or open-surface geometry, preview inspection, backend identity and measured timings"
       ],
       "public_api": [
         "prepare_rhino_three_dm_export",
@@ -116,7 +116,7 @@
         "discovery is read-only: it never launches or attaches to Rhino",
         "OCCT execution never starts Rhino and never silently falls back; unsupported operations are named before file writes",
         "STEP carries exact B-rep geometry; mesh .3dm is explicitly a tessellated preview, with the same program/object semantics and one x-y-up-z-plan to Z-up coordinate conversion",
-        "OCCT saved geometry is re-read with a fresh STEP reader and checked for named closed solids, semantic layers and predicted bounds; this is not a separate geometry instrument or a structural bearing proof"
+        "OCCT saved geometry is re-read with a fresh STEP reader and checked for named shapes, semantic layers and predicted bounds; solids retain closure and count checks, explicitly uncapped lofts retain open boundaries and report no volume; this is not a separate geometry instrument or a structural bearing proof"
       ],
       "status": "canonical",
       "tests": [
@@ -536,7 +536,8 @@
         "an overlap into a support exists only as a declared ENGAGEMENT parameter, recorded on the relation",
         "a row fact the export needs but the geometry does not is a statement, never a parameter: the function contract for the operation's kind still sees exactly the parameters it names",
         "a stair's explicit top must match base plus offset plus count times rise within 0.001 m; the closed profile has that physical top by construction, and a conflict fails without adjusting inputs",
-        "the stair emits one whole solid and retains its declared endpoint, width and top datum; positive thin-tread thickness is refused rather than reinterpreted as a whole-flight slab"
+        "the stair emits one whole solid and retains its declared endpoint, width and top datum; positive thin-tread thickness is refused rather than reinterpreted as a whole-flight slab",
+        "a direct loft row preserves its explicit cap_ends boolean, defaulting to true, without changing closure of other producers; declared profile_basis is passed through and unsupported open section profiles are refused"
       ],
       "status": "canonical",
       "tests": [

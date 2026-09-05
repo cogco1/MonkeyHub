@@ -188,19 +188,24 @@ with each seat's compiled program:
 
 | value | what a candidate leaves | lane |
 | --- | --- | --- |
-| `occt` (default) | per seat, in process and without any host: one **exact STEP** file (`<stage>@<program digest>.step`, ISO 10303-21 B-rep, named closed solids and semantic layers; a linear array groups its repeated solids under one object identity) and one **mesh `.3dm` preview** of the same model (`….preview.3dm`, what the viewer shows; object names, layers and `archflow:*` user text; a render mesh, never a NURBS/B-rep delivery), retained as `seat-occt-execution` with the cold readback of the STEP file | parallel, like any kernel work |
+| `occt` (default) | per seat, in process and without any host: one **exact STEP** file (`<stage>@<program digest>.step`, ISO 10303-21 B-rep, named solids or explicitly uncapped loft surfaces and semantic layers; a linear array groups its repeated solids under one object identity) and one **mesh `.3dm` preview** of the same model (`….preview.3dm`, what the viewer shows; object names, layers and `archflow:*` user text; a render mesh, never a NURBS/B-rep delivery), retained as `seat-occt-execution` with the cold readback of the STEP file | parallel, like any kernel work |
 | `rhino` | the supervised Rhino host export (slow — roughly 37 s per seat, and it drives Rhino); needs `ARCHFLOW_STUDIO_POWERSHELL`; retained as `seat-rhino-execution` | exclusive: one Rhino at a time |
 | `off` | nothing written: the candidate is compiled and relation-checked only | parallel |
 
 Rhino is never started unless `rhino` is named. An operation the in-process executor does not
 realize (a radial array, a revolve, a sweep, an asset) fails that seat's export by name
 before any file is written; nothing falls back to Rhino and no stand-in model is produced.
-The current OCCT slice supports boxes, polyline extrusions, capped polyline lofts,
+The current OCCT slice supports boxes, polyline extrusions, capped or uncapped polyline lofts,
 union/difference/intersection and linear arrays. Changed programs receive a full rebuild; incremental OCCT
 patch execution is not implemented. STEP readback uses a fresh reader over saved bytes in
 the same process. Synthetic geometry and temporary P036 candidate continuation have been
 verified; this delivery has not rerun the real Villa project or established whole-building
 coverage.
+A direct `loft` Element can set `cap_ends: false` to retain an open surface with no
+invented thickness. Its profiles are closed polygons in the building's x/z plan and
+y-up frame, with y relative to its base datum. Saved readback distinguishes these
+surfaces from closed solids and reports their volume as unavailable. Interpolated
+profiles remain unsupported; the short demo defers those details in its input.
 The straight-stair producer now creates one complete stepped solid from its declared
 endpoints, rise, going and width. Positive `thickness` still means separate thin treads
 and is refused by this whole-flight producer. Windows have one closed frame with an

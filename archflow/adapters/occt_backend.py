@@ -21,13 +21,16 @@ mapping at point construction (``cad_point``), so STEP, preview and the
 Rhino ``.3dm`` share one frame and one set of expected bounds.
 
 Capability.  Only the operation kinds the initial consumers actually use are
-realized: ``solid`` (box), ``extrusion``, polyline ``loft`` with capped ends,
-the three booleans, and the linear ``array`` the opening solver places
-repeated windows with (one input, ``count`` real translated copies at
-``i * step`` delivered as one compound).  Anything else fails
-``OcctCapabilityError`` naming the operation before anything is written.
-There is no fallback to Rhino, no bounding-box stand-in and no mesh
-pretending to be a B-rep.
+realized: ``solid`` (box), ``extrusion``, polyline ``loft`` (capped into a
+closed solid, or with ``cap_ends`` false the lofted surface itself, open at
+both end sections, for a source that gives a drum or a dome as a surface
+without thickness), the three booleans, and the linear ``array`` the
+opening solver places repeated windows with (one input, ``count`` real
+translated copies at ``i * step`` delivered as one compound).  Anything
+else fails ``OcctCapabilityError`` naming the operation before anything is
+written.  There is no fallback to Rhino, no bounding-box stand-in and no
+mesh pretending to be a B-rep.  Booleans and arrays still consume solids
+only; an open surface fed to one fails as a build error, never as a solid.
 
 Preview materials.  The mesh preview may carry native ``rhino3dm``
 materials for the objects the caller names (an assembly's frame and
@@ -111,8 +114,13 @@ SUPPORTED_OPERATION_KINDS: frozenset[str] = frozenset(
     }
 )
 
+#: What an operation declares it delivers: a closed solid, or (an uncapped
+#: loft) the lofted surface open at its end sections.
+CLOSED_SOLID = "closed_solid"
+OPEN_SURFACE = "open_surface"
+
 _UNSUPPORTED_REASONS: Mapping[str, str] = {
-    "curve": "curve objects are not closed-solid deliveries; the OCCT executor writes solids only",
+    "curve": "curve objects are not B-rep deliveries; the OCCT executor writes solids and lofted surfaces only",
     "transform": "transform has no exact realization (the Rhino translation only copies it)",
     "radial_array": "radial block instancing is not realized by the OCCT executor yet",
     "revolve": "revolve is not realized by the OCCT executor yet",
@@ -294,7 +302,7 @@ def build_program_shapes(program: CompiledGeometryProgram) -> OcctProgramBuild:
             raise
         except Exception as exc:  # OCCT failures surface as Standard_Failure
             raise OcctBuildError(f"{op_id} ({kind}): {exc}") from exc
-        _require_built_shape(occ, shape, op_id, kind)
+        _require_built_shape(occ, shape, op_id, kind, delivery=declared_delivery(operation))
         shapes[output] = shape
         built[output] = OcctObjectBuild(
             object_id=output,
@@ -307,6 +315,20 @@ def build_program_shapes(program: CompiledGeometryProgram) -> OcctProgramBuild:
         physical_object_ids=tuple(sorted(_physical_ids(proposal))),
         elapsed_seconds=time.perf_counter() - started,
     )
+
+
+def declared_delivery(operation) -> str:
+    """``CLOSED_SOLID`` or ``OPEN_SURFACE``: what the operation itself says it delivers.
+
+    Read off the operation's own parameters, never off a built shape: a
+    ``loft`` whose ``cap_ends`` is false is the open lofted surface; every
+    other realized kind is a closed solid.  The readback verification uses
+    the same word to decide which checks a saved object must pass.
+    """
+
+    if operation.kind.value == "loft" and _params(operation).get("cap_ends", True) is False:
+        return OPEN_SURFACE
+    return CLOSED_SOLID
 
 
 def _build_operation(
@@ -340,17 +362,23 @@ def _build_operation(
         size = int(params["profile_size"])
         loft_type = params.get("loft_type", "normal")
         profile_basis = params.get("profile_basis", "polyline")
-        cap_ends = bool(params.get("cap_ends", True))
+        cap_ends = params.get("cap_ends", True)
+        closed_profile = params.get("closed_profile", True)
         if profile_basis != "polyline":
             raise OcctCapabilityError(op_id, kind, f"profile_basis {profile_basis!r} is not realized; polyline only")
         if loft_type not in ("normal", "straight"):
             raise OcctCapabilityError(op_id, kind, f"loft_type {loft_type!r} is not realized")
-        if not cap_ends:
-            raise OcctCapabilityError(op_id, kind, "an uncapped loft is not a closed-solid delivery")
+        if not isinstance(cap_ends, bool):
+            raise OcctCapabilityError(op_id, kind, f"cap_ends must be true or false, not {cap_ends!r}")
+        if closed_profile is not True:
+            raise OcctCapabilityError(op_id, kind, "open section profiles are not realized; every section is a closed polygon")
         if size < 3 or len(profiles) % size != 0 or len(profiles) // size < 2:
             raise OcctCapabilityError(op_id, kind, "loft needs at least two closed sections of at least three points")
+        # cap_ends is ThruSections' isSolid, as stated: capped sections close
+        # into one solid; uncapped ones deliver the lofted surface open at
+        # both end sections, with no thickness invented.
         loft = occ.BRepOffsetAPI.BRepOffsetAPI_ThruSections(
-            True, loft_type == "straight", _LOFT_PRECISION
+            cap_ends, loft_type == "straight", _LOFT_PRECISION
         )
         for start in range(0, len(profiles), size):
             loft.AddWire(_polygon(occ, profiles[start : start + size], op_id))
@@ -503,13 +531,29 @@ def _shape_list(occ: SimpleNamespace, shapes):
     return items
 
 
-def _require_built_shape(occ: SimpleNamespace, shape, op_id: str, kind: str) -> None:
+def _require_built_shape(occ: SimpleNamespace, shape, op_id: str, kind: str, *, delivery: str = CLOSED_SOLID) -> None:
+    """The built shape is what the operation declared: a solid, or a non-empty open surface."""
+
     if shape is None or shape.IsNull():
         raise OcctBuildError(f"{op_id} ({kind}): OCCT produced no shape")
-    if _count(occ, shape, occ.TopAbs.TopAbs_SOLID) == 0:
+    solids = _count(occ, shape, occ.TopAbs.TopAbs_SOLID)
+    if delivery == OPEN_SURFACE:
+        if _count(occ, shape, occ.TopAbs.TopAbs_FACE) == 0:
+            raise OcctBuildError(f"{op_id} ({kind}): OCCT produced no surface")
+        if solids or _free_edge_count(occ, shape) == 0:
+            raise OcctBuildError(f"{op_id} ({kind}): the uncapped loft closed into a solid instead of an open surface")
+    elif solids == 0:
         raise OcctBuildError(f"{op_id} ({kind}): OCCT produced no solid")
     if not occ.BRepCheck.BRepCheck_Analyzer(shape).IsValid():
         raise OcctBuildError(f"{op_id} ({kind}): OCCT produced an invalid shape")
+
+
+def _free_edge_count(occ: SimpleNamespace, shape) -> int:
+    """Edges bounding exactly one face: the open boundary of a shell, zero for a closed solid."""
+
+    ancestors = occ.TopTools.TopTools_IndexedDataMapOfShapeListOfShape()
+    occ.TopExp.TopExp.MapShapesAndAncestors_s(shape, occ.TopAbs.TopAbs_EDGE, occ.TopAbs.TopAbs_FACE, ancestors)
+    return sum(1 for index in range(1, ancestors.Extent() + 1) if ancestors.FindFromIndex(index).Extent() == 1)
 
 
 def _count(occ: SimpleNamespace, shape, shape_type) -> int:
@@ -533,15 +577,23 @@ def _explore(occ: SimpleNamespace, shape, shape_type):
 
 @dataclass(frozen=True, slots=True)
 class ShapeMeasure:
-    """What the kernel reports about one shape, in the CAD frame."""
+    """What the kernel reports about one shape, in the CAD frame.
+
+    ``volume`` is ``None`` for a shape holding no solid: an open surface
+    encloses nothing, and ``VolumeProperties`` on it would report the
+    signed volume its faces happen to sweep against the origin - a number,
+    not a measurement.  ``free_edge_count`` is the open boundary: edges
+    bounding exactly one face, zero for every closed solid.
+    """
 
     valid: bool
     solid_count: int
     closed: bool
     face_count: int
-    volume: float
+    volume: float | None
     bbox_min: tuple[float, float, float]
     bbox_max: tuple[float, float, float]
+    free_edge_count: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -549,13 +601,14 @@ class ShapeMeasure:
             "solid_count": self.solid_count,
             "closed": self.closed,
             "face_count": self.face_count,
+            "free_edge_count": self.free_edge_count,
             "volume": self.volume,
             "bbox": {"min": list(self.bbox_min), "max": list(self.bbox_max)},
         }
 
 
 def measure_shape(shape) -> ShapeMeasure:
-    """Validity, solid/shell closure, volume and tight bounds of one shape."""
+    """Validity, solid/shell closure, open boundary, volume (solids only) and tight bounds of one shape."""
 
     occ = _occt()
     if shape is None or shape.IsNull():
@@ -571,8 +624,11 @@ def measure_shape(shape) -> ShapeMeasure:
                 closed = False
     if _count(occ, shape, occ.TopAbs.TopAbs_SHELL) != shells_in_solids:
         closed = False  # a free shell or face outside every solid
-    properties = occ.GProp.GProp_GProps()
-    occ.BRepGProp.BRepGProp.VolumeProperties_s(shape, properties)
+    volume = None
+    if solids:
+        properties = occ.GProp.GProp_GProps()
+        occ.BRepGProp.BRepGProp.VolumeProperties_s(shape, properties)
+        volume = float(properties.Mass())
     box = occ.Bnd.Bnd_Box()
     occ.BRepBndLib.BRepBndLib.AddOptimal_s(shape, box, False, False)
     if box.IsVoid():
@@ -583,9 +639,10 @@ def measure_shape(shape) -> ShapeMeasure:
         solid_count=len(solids),
         closed=closed,
         face_count=_count(occ, shape, occ.TopAbs.TopAbs_FACE),
-        volume=float(properties.Mass()),
+        volume=volume,
         bbox_min=(float(xmin), float(ymin), float(zmin)),
         bbox_max=(float(xmax), float(ymax), float(zmax)),
+        free_edge_count=_free_edge_count(occ, shape),
     )
 
 
@@ -616,7 +673,7 @@ def classify_program_point(shape, program_xyz: Sequence[float]) -> str:
 
 @dataclass(frozen=True)
 class StepObject:
-    """One named solid to write: identity, layer and display colour."""
+    """One named shape to write (a solid, or an open lofted surface): identity, layer and display colour."""
 
     object_id: str
     shape: Any
@@ -646,7 +703,7 @@ def _step_units(occ: SimpleNamespace, length_unit: str) -> None:
 
 
 def write_step(path: Path, objects: Sequence[StepObject], *, length_unit: str) -> None:
-    """Write the objects as named, layered, coloured solids in the program's unit.
+    """Write the objects as named, layered, coloured B-rep shapes in the program's unit.
 
     The name is the object id; the layer is the semantic layer path; the
     colour is the layer colour.  ``archflow:*`` user text has no STEP home
@@ -970,6 +1027,8 @@ def write_preview_three_dm(
 
 
 __all__ = [
+    "CLOSED_SOLID",
+    "OPEN_SURFACE",
     "OcctBackendError",
     "OcctBuildError",
     "OcctCapabilityError",
@@ -987,6 +1046,7 @@ __all__ = [
     "cad_point",
     "classify_point",
     "classify_program_point",
+    "declared_delivery",
     "measure_shape",
     "occt_available",
     "read_step",

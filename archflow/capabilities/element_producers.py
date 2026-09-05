@@ -518,11 +518,22 @@ def produce_ring(row: ElementRow, context: ProductionContext) -> ProducedElement
     return ProducedElement(tuple(ops), tuple(bindings), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
 
 
-def _loft(row: ElementRow, context: ProductionContext, profiles, size: int, base_datum: str, base_offset: float = 0.0) -> ProducedElement:
+def _loft(row: ElementRow, context: ProductionContext, profiles, size: int, base_datum: str, base_offset: float = 0.0,
+          *, cap_ends: bool = True, profile_basis: str = "polyline", closed_profile: bool | None = None) -> ProducedElement:
+    """One loft operation through closed polyline sections of ``size`` points each.
+
+    Every producer that builds its own sections (stair, wedge, shell, dome
+    cap) keeps the defaults: a capped polyline loft, one closed solid. Only
+    ``produce_loft`` forwards what its row states, so a row cannot reach
+    into another producer's closure.
+    """
+
+    stated = ((GeometryParameter.create(name="closed_profile", kind=GeometryParameterKind.BOOLEAN, value=closed_profile),) if closed_profile is not None else ())
     op = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.LOFT, output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id, parameters=((GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=round(base_offset, 9), unit=_M),) if base_offset else ()) + (
-        GeometryParameter.create(name="cap_ends", kind=GeometryParameterKind.BOOLEAN, value=True),
+        GeometryParameter.create(name="cap_ends", kind=GeometryParameterKind.BOOLEAN, value=cap_ends),
+    ) + stated + (
         GeometryParameter.create(name="loft_type", kind=GeometryParameterKind.TEXT, value=str(row.params.get("loft_type", "straight"))),
-        GeometryParameter.create(name="profile_basis", kind=GeometryParameterKind.TEXT, value="polyline"),
+        GeometryParameter.create(name="profile_basis", kind=GeometryParameterKind.TEXT, value=profile_basis),
         GeometryParameter.create(name="profile_size", kind=GeometryParameterKind.INTEGER, value=size),
         _points("profiles", profiles),
     ),
@@ -530,15 +541,42 @@ def _loft(row: ElementRow, context: ProductionContext, profiles, size: int, base
     return ProducedElement((op,), (_bind(row.element_id, base_datum),), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
 
 
+def _stated_bool(row: ElementRow, key: str, default: bool) -> bool:
+    """A row's boolean, as a boolean: ``0``, ``"false"`` or ``None`` are refused, not coerced."""
+
+    value = row.params.get(key, default)
+    if not isinstance(value, bool):
+        raise ElementProducerError(f"{row.element_id}: {key} must be true or false, not {value!r}")
+    return value
+
+
 def produce_loft(row: ElementRow, context: ProductionContext) -> ProducedElement:
-    """A loft through declared section profiles (each point relative to the base datum)."""
+    """A loft through declared section profiles (each point relative to the base datum).
+
+    The row's ``cap_ends`` (default true) passes to the operation as stated:
+    ``false`` delivers the lofted surface open at both end sections - a drum
+    or a dome that the source gives as a surface with no thickness - rather
+    than a solid with an invented thickness. ``profile_basis`` passes through
+    when the IR names it (``polyline`` today; ``interpolated`` travels and is
+    refused by the executor that cannot realize it) and fails here for any
+    other value. ``closed_profile`` travels when the row states it; ``false``
+    is refused, because every section is built as a closed polygon and an
+    open section would be closed silently.
+    """
 
     p = row.params
     base_datum, base_offset = _base(row, context)
     if base_offset:
         raise ElementProducerError(f"{row.element_id}: a loft's sections carry their own heights; no base offset")
+    cap_ends = _stated_bool(row, "cap_ends", True)
+    profile_basis = p.get("profile_basis", "polyline")
+    if profile_basis not in ("polyline", "interpolated"):
+        raise ElementProducerError(f"{row.element_id}: profile_basis must be 'polyline' or 'interpolated', not {profile_basis!r}")
+    closed_profile = _stated_bool(row, "closed_profile", True) if "closed_profile" in p else None
+    if closed_profile is False:
+        raise ElementProducerError(f"{row.element_id}: an open section profile is not produced; every loft section is a closed polygon")
     profiles = [[_finite(c, f"{row.element_id} profile coordinate") for c in pt] for section in p["profiles"] for pt in section]
-    return _loft(row, context, profiles, int(p["profile_size"]), base_datum)
+    return _loft(row, context, profiles, int(p["profile_size"]), base_datum, cap_ends=cap_ends, profile_basis=profile_basis, closed_profile=closed_profile)
 
 
 def produce_dome_cap(row: ElementRow, context: ProductionContext) -> ProducedElement:

@@ -31,6 +31,8 @@ from archflow.adapters.cad_program import (
     translate_to_rhino_python,
 )
 from archflow.adapters.occt_backend import (
+    CLOSED_SOLID,
+    OPEN_SURFACE,
     OcctBackendError,
     OcctCapabilityError,
     OcctUnavailableError,
@@ -39,6 +41,7 @@ from archflow.adapters.occt_backend import (
     StepObject,
     backend_identity,
     build_program_shapes,
+    declared_delivery,
     measure_shape,
     read_step,
     write_preview_three_dm,
@@ -2757,16 +2760,19 @@ def execute_occt_export(
 ) -> OcctExecutionReceipt:
     """Realize the bound program in process, write STEP and a mesh preview, cold-read the STEP.
 
-    Writes ``<artifact_stem>.step`` (exact B-rep, one named closed solid per
+    Writes ``<artifact_stem>.step`` (exact B-rep, one named shape per
     physical object) and ``<artifact_stem>.preview.3dm`` (a render mesh of
     the same model with the viewer's names, layers, colours and
     ``archflow:*`` user text) into the caller-supplied workspace; neither may
     exist beforehand.  The STEP file is then re-read by a fresh reader and
-    every physical object is checked: present exactly once under its id,
-    valid, exactly the expected number of closed solids, bounds within
-    ``readback_tolerance`` of the analytic predictor, on its semantic layer.
-    The preview is read back through ``inspect_three_dm`` and checked
-    against the same denominator.  No process is started.
+    every physical object is checked against what its producer operation
+    declared: present exactly once under its id, valid, bounds within
+    ``readback_tolerance`` of the analytic predictor, on its semantic layer,
+    and either exactly the expected number of closed solids (every
+    operation but an uncapped loft) or an open surface - no solid, an
+    actual open boundary, no volume claimed.  The preview is read back
+    through ``inspect_three_dm`` and checked against the same denominator.
+    No process is started.
 
     Raises ``CadCapabilityError`` (a ``CadExecutionError``) before writing
     when the program uses an operation this executor does not realize, and
@@ -2823,6 +2829,7 @@ def execute_occt_export(
         raise CadExecutionError("analytic bounds and physical denominators differ")
     bounds = {object_id: _bounds_to_rhino(raw_bounds[object_id]) for object_id in physical}
     counts = {object_id: int(raw_bounds[object_id]["brep_count"]) for object_id in physical}
+    deliveries = _declared_deliveries(program, physical)
     layer_colors = dict(
         _resolved_layer_colors(
             {row["layer"] for row in semantics["objects"].values()},
@@ -2888,7 +2895,7 @@ def execute_occt_export(
     phase = time.perf_counter()
     try:
         write_step(step_path, step_objects, length_unit=unit)
-        exact_artifact = _exact_artifact(step_path, workspace)
+        exact_artifact = _exact_artifact(step_path, workspace, deliveries)
     except (OcctBackendError, OSError) as exc:
         return failure_receipt("cad_execution.step_write_failed", str(exc))
     timings["step_write_seconds"] = time.perf_counter() - phase
@@ -2906,6 +2913,7 @@ def execute_occt_export(
         semantics=semantics,
         expected_bounds=bounds,
         expected_counts=counts,
+        expected_deliveries=deliveries,
         layer_colors=layer_colors,
         tolerance=tolerance,
     )
@@ -2995,7 +3003,28 @@ def execute_occt_export(
     )
 
 
-def _exact_artifact(path: Path, workspace: Path) -> dict[str, object]:
+def _declared_deliveries(program: CompiledGeometryProgram, physical: tuple[str, ...]) -> dict[str, str]:
+    """Per physical object, what its producer operation declared: ``closed_solid`` or ``open_surface``.
+
+    A plain value read off the compiled program's operations; the verifier
+    takes it as the denominator for closure, next to the predictor's bounds
+    and B-rep counts.
+    """
+
+    producers = {
+        object_id: operation
+        for operation in program.proposal.operations
+        for object_id in operation.output_object_ids
+    }
+    return {object_id: declared_delivery(producers[object_id]) for object_id in physical}
+
+
+def _exact_artifact(path: Path, workspace: Path, deliveries: Mapping[str, str]) -> dict[str, object]:
+    solids = sum(1 for delivery in deliveries.values() if delivery == CLOSED_SOLID)
+    surfaces = sum(1 for delivery in deliveries.values() if delivery == OPEN_SURFACE)
+    geometry = f"exact B-rep in the CAD frame and the program unit: {solids} closed solid object(s)"
+    if surfaces:
+        geometry += f", {surfaces} open surface object(s) from uncapped lofts"
     return {
         "format": _STEP_FORMAT,
         "relative_path": path.relative_to(workspace).as_posix(),
@@ -3004,8 +3033,9 @@ def _exact_artifact(path: Path, workspace: Path) -> dict[str, object]:
         "carries": [
             "one named shape per physical object (name = object id)",
             "the semantic layer path and its colour per object",
-            "closed solids in the CAD frame and the program unit",
+            geometry,
         ],
+        "deliveries": {object_id: deliveries[object_id] for object_id in sorted(deliveries)},
         "does_not_carry": ["archflow:* object user text", "archflow:* document user text"],
     }
 
@@ -3059,10 +3089,25 @@ def _verify_step_readback(
     expected_counts: Mapping[str, int],
     layer_colors: Mapping[str, tuple[int, int, int]],
     tolerance: float,
+    expected_deliveries: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, dict[str, object]], list[dict[str, str]]]:
-    """Measure every named entry of the cold read against the denominator."""
+    """Measure every named entry of the cold read against the denominator.
+
+    ``expected_deliveries`` says per object whether its producer declared a
+    closed solid (the default for every object it does not name) or an open
+    surface.  A closed solid must hold exactly ``expected_counts`` solids,
+    all closed.  An open surface must hold no solid, at least one face and an
+    actual open boundary (free edges); its volume is not a measurement and
+    is reported as ``None``.  A shape of the other closure fails by name in
+    either direction.
+    """
 
     failures: list[dict[str, str]] = []
+    deliveries = dict(expected_deliveries or {})
+    for object_id in physical:
+        delivery = deliveries.setdefault(object_id, CLOSED_SOLID)
+        if delivery not in (CLOSED_SOLID, OPEN_SURFACE):
+            raise CadExecutionError(f"{object_id}: unknown declared delivery {delivery!r}")
     by_name: dict[str, list] = {}
     unnamed = 0
     for entry in entries:
@@ -3102,18 +3147,31 @@ def _verify_step_readback(
         row["name"] = entry.name
         row["layers"] = list(entry.layers)
         row["color"] = list(entry.color) if entry.color is not None else None
+        row["declared_delivery"] = deliveries[object_id]
         readback[object_id] = row
         if not measure.valid:
             failures.append(_failure("cad_execution.step_shape_invalid", f"{object_id} is not a valid shape"))
-        if measure.solid_count != expected_counts[object_id]:
-            failures.append(
-                _failure(
-                    "cad_execution.step_solid_count_mismatch",
-                    f"{object_id} has {measure.solid_count} solid(s), expected {expected_counts[object_id]}",
+        if deliveries[object_id] == OPEN_SURFACE:
+            if measure.solid_count or measure.closed or measure.free_edge_count == 0 or measure.face_count == 0:
+                failures.append(
+                    _failure(
+                        "cad_execution.step_not_open_surface",
+                        f"{object_id} was declared an open surface but holds {measure.solid_count} solid(s), "
+                        f"{measure.face_count} face(s) and {measure.free_edge_count} free edge(s)",
+                    )
                 )
-            )
-        if not measure.closed:
-            failures.append(_failure("cad_execution.step_not_closed_solid", f"{object_id} is not a closed solid"))
+            if measure.volume is not None:
+                failures.append(_failure("cad_execution.step_not_open_surface", f"{object_id} reports a volume for an open surface"))
+        else:
+            if measure.solid_count != expected_counts[object_id]:
+                failures.append(
+                    _failure(
+                        "cad_execution.step_solid_count_mismatch",
+                        f"{object_id} has {measure.solid_count} solid(s), expected {expected_counts[object_id]}",
+                    )
+                )
+            if not measure.closed:
+                failures.append(_failure("cad_execution.step_not_closed_solid", f"{object_id} is not a closed solid"))
         if not _bbox_close(row["bbox"], expected_bounds[object_id], tolerance):
             failures.append(_failure("cad_execution.named_bounds_mismatch", f"object {object_id} bounds differ"))
         expected_layer = semantics["objects"][object_id]["layer"]

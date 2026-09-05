@@ -444,6 +444,71 @@ class ShellTests(unittest.TestCase):
             _produce((self._row(kind="vault"),))
 
 
+def _ring(radius: float, y: float, n: int = 8) -> list[list[float]]:
+    """One closed ring section of ``n`` points at height ``y`` over the base datum, in the building frame."""
+
+    return [[round(radius * math.cos(2 * math.pi * j / n), 9), y, round(radius * math.sin(2 * math.pi * j / n), 9)] for j in range(n)]
+
+
+def _loft_row(**params) -> ElementRow:
+    return ElementRow("drum", "rotunda-drum", "loft", {"base": {"level": "level-ground"}},
+                      {"profiles": [_ring(1.0, 0.0), _ring(1.0, 1.0)], "profile_size": 8, **params}, BASIS)
+
+
+class DirectLoftTests(unittest.TestCase):
+    """A loft row states its own closure: capped into a solid unless it says ``cap_ends: false``.
+
+    A drum or a dome the source gives as a surface without thickness is
+    lofted open at both end rings rather than closed with an invented
+    thickness; the row's word travels to the operation as it was stated.
+    """
+
+    def test_a_loft_row_is_capped_unless_it_says_otherwise(self) -> None:
+        (drum,), _ = _produce((_loft_row(),))
+        (op,) = drum.operations
+        self.assertEqual((op.kind, op.output_object_ids, op.semantic_binding_ids), (GeometryOperationKind.LOFT, ("obj-drum",), ("binding-rotunda-drum",)))
+        params = _op_params(op)
+        self.assertEqual((params["cap_ends"], params["loft_type"], params["profile_basis"], params["profile_size"]), (True, "straight", "polyline", 8))
+        self.assertNotIn("closed_profile", params)
+        (drum,), _ = _produce((_loft_row(cap_ends=False, loft_type="normal"),))
+        params = _op_params(drum.operations[0])
+        self.assertEqual((params["cap_ends"], params["loft_type"], params["profile_basis"]), (False, "normal", "polyline"))
+        self.assertEqual(len(params["profiles"]), 16)
+        _assert_bbox(self, params["profiles"], ((-1.0, 1.0), (0.0, 1.0), (-1.0, 1.0)))
+        self.assertEqual([(b.op_id, b.datum_id) for b in drum.bindings], [("drum", "level-ground")])
+
+    def test_closure_is_a_boolean_not_a_word_or_a_number(self) -> None:
+        for value in ("false", 0, 1, None):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ElementProducerError, "drum: cap_ends must be true or false"):
+                    _produce((_loft_row(cap_ends=value),))
+
+    def test_a_stated_closed_profile_travels_and_an_open_one_is_refused(self) -> None:
+        (drum,), _ = _produce((_loft_row(closed_profile=True),))
+        self.assertIs(_op_params(drum.operations[0])["closed_profile"], True)
+        with self.assertRaisesRegex(ElementProducerError, "drum: an open section profile is not produced"):
+            _produce((_loft_row(closed_profile=False),))
+        with self.assertRaisesRegex(ElementProducerError, "closed_profile must be true or false"):
+            _produce((_loft_row(closed_profile="yes"),))
+
+    def test_profile_basis_passes_through_the_ir_vocabulary_and_refuses_the_rest(self) -> None:
+        (drum,), _ = _produce((_loft_row(profile_basis="interpolated"),))
+        self.assertEqual(_op_params(drum.operations[0])["profile_basis"], "interpolated")   # the executor that cannot realize it refuses it by name
+        with self.assertRaisesRegex(ElementProducerError, "drum: profile_basis must be 'polyline' or 'interpolated'"):
+            _produce((_loft_row(profile_basis="bezier"),))
+
+    def test_the_producers_that_build_their_own_sections_stay_closed_whatever_the_row_carries(self) -> None:
+        stair = ElementRow("stair-north", "monument-stair", "stair",
+                           {"from": _on("W", 0.0), "to": _on("W", 3.0), "base": {"level": PN}},
+                           {"count": 10, "rise": 0.18, "width": 1.2, "cap_ends": False}, BASIS)
+        produced, _ = _produce((stair, _wedge_row(cap_ends=False), _shell_row(kind="dome", height=3.0, cap_ends=False, closed_profile=False)))
+        for element in produced:
+            (op,) = element.operations
+            params = _op_params(op)
+            self.assertIs(params["cap_ends"], True, op.op_id)
+            self.assertNotIn("closed_profile", params, op.op_id)
+
+
 class AuthoredRecordTests(unittest.TestCase):
     """A record is producible from its own levels, grids and references."""
 

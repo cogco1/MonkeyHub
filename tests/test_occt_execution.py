@@ -12,6 +12,7 @@ started, and the tests refuse any attempt to.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -87,13 +88,39 @@ STAIR_ELEMENT = {
 }
 
 
+def _ring(radius: float, y: float, n: int = 8) -> list[list[float]]:
+    """One closed ring section of ``n`` points at height ``y`` over the base datum."""
+
+    return [[round(radius * math.cos(2 * math.pi * j / n), 9), y, round(radius * math.sin(2 * math.pi * j / n), 9)] for j in range(n)]
+
+
+DRUM_ELEMENT = {
+    "entity_id": "drum-east",
+    "schema": "Element@1",
+    "parent_id": "primary-support",
+    "fields": {
+        "component_id": "primary-support",
+        "producer": "loft",
+        "references": {"base": {"level": "level-ground"}},
+        "params": {"profiles": [_ring(1.0, 0.0), _ring(1.0, 1.0)], "profile_size": 8, "cap_ends": False},
+    },
+    "basis_refs": [EVIDENCE],
+}
+
+
 def _stair_record() -> StateRecord:
     """The fixture record with its plinth and wall replaced by one lofted flight."""
+
+    return _record_with(STAIR_ELEMENT)
+
+
+def _record_with(element: dict) -> StateRecord:
+    """The fixture record with its plinth and wall replaced by one element row."""
 
     payload = json.loads(json.dumps(RECORD_PAYLOAD))
     payload["entities"] = [
         entity for entity in payload["entities"] if entity["entity_id"] not in ("plinth", "wall-south")
-    ] + [STAIR_ELEMENT]
+    ] + [element]
     payload["relations"] = [
         relation for relation in payload["relations"] if relation["relation_id"] != "plinth-supports-wall-south"
     ]
@@ -126,6 +153,86 @@ def _compile(record: StateRecord) -> CompiledGeometryProgram:
     if result.program is None:
         raise AssertionError([(i.code.value, i.subject_id, i.detail) for i in result.receipt.issues])
     return result.program
+
+
+@NEEDS_OCCT
+class OpenLoftExecutionTests(unittest.TestCase):
+    """A loft row with ``cap_ends: false`` is delivered as the lofted surface, open at both rings, with no volume claimed.
+
+    The drum and the shallow dome the source gives as surfaces without a
+    thickness travel this way: the producer forwards the row's word, the
+    kernel lofts uncapped, the STEP cold read finds an open shell, and the
+    preview is the same shape tessellated.
+    """
+
+    def test_an_uncapped_ring_loft_is_an_open_surface_in_step_and_preview(self) -> None:
+        program = _compile(_record_with(DRUM_ELEMENT))
+        loft = next(op for op in program.proposal.operations if op.op_id == "drum-east")
+        params = {p.name: json.loads(p.value_json) for p in loft.parameters}
+        self.assertEqual((params["cap_ends"], params["profile_basis"], params["profile_size"], len(params["profiles"])), (False, "polyline", 8, 16))
+        binding = _persisted_binding(program, "stage-occt-drum")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, binding, workspace, "drum@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            self.assertEqual(receipt.physical_object_ids, ("obj-drum-east",))
+            self.assertEqual(receipt.exact_artifact["deliveries"], {"obj-drum-east": "open_surface"})
+            self.assertEqual(receipt.exact_artifact["carries"][2],
+                             "exact B-rep in the CAD frame and the program unit: 0 closed solid object(s), 1 open surface object(s) from uncapped lofts")
+            self.assertEqual(receipt.expected_bounds["obj-drum-east"], {"min": [-1.0, -1.0, 0.0], "max": [1.0, 1.0, 1.0]})
+
+            # the exact delivery: an open shell of eight ruled faces, sixteen free edges (two open rings), no solid, no volume
+            entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+            entry = entries["obj-drum-east"]
+            self.assertEqual(entry.layers, ("archflow::building",))
+            measure = occt_backend.measure_shape(entry.shape)
+            self.assertEqual((measure.valid, measure.solid_count, measure.closed, measure.face_count, measure.free_edge_count), (True, 0, False, 8, 16))
+            self.assertIsNone(measure.volume)
+            _assert_bbox(self, measure, (-1.0, -1.0, 0.0), (1.0, 1.0, 1.0), places=6)
+            row = receipt.readback["obj-drum-east"]
+            self.assertEqual((row["solid_count"], row["closed"], row["valid"], row["free_edge_count"], row["volume"], row["declared_delivery"]),
+                             (0, False, True, 16, None, "open_surface"))
+
+            # the preview: the same open shape as a mesh, on the STEP bounds, with the viewer's semantics
+            inspection = inspect_three_dm(workspace / receipt.preview_artifact["relative_path"])
+            self.assertEqual(inspection.top_level_object_count, 1)
+            (named,) = inspection.named_object_bboxes
+            self.assertEqual((named["name"], named["type"]), ("obj-drum-east", "Mesh"))
+            self.assertEqual(receipt.preview_artifact["mesh_counts"]["obj-drum-east"]["mesh_face_count"], 16)     # eight ruled quads
+            for axis in range(3):
+                self.assertAlmostEqual(named["bbox"]["min"][axis], row["bbox"]["min"][axis], places=3)
+                self.assertAlmostEqual(named["bbox"]["max"][axis], row["bbox"]["max"][axis], places=3)
+
+    def test_a_shape_of_the_other_closure_fails_the_readback_in_either_direction(self) -> None:
+        """A declared solid that reads back open, and a declared surface that reads back closed, are both refused by name."""
+
+        from archflow.adapters.cad_execution import _verify_step_readback
+
+        drum, flight = _compile(_record_with(DRUM_ELEMENT)), _compile(_stair_record())
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            open_receipt, _ = _execute(drum, _persisted_binding(drum, "stage-occt-drum-swap"), workspace, "drum@swap", preview=False)
+            solid_receipt, _ = _execute(flight, _persisted_binding(flight, "stage-occt-stair-swap"), workspace, "stair@swap", preview=False)
+            self.assertIs(open_receipt.status, CadExecutionStatus.SUCCEEDED, open_receipt.failures)
+            self.assertIs(solid_receipt.status, CadExecutionStatus.SUCCEEDED, solid_receipt.failures)
+            for receipt, object_id, declared, codes in (
+                (open_receipt, "obj-drum-east", "closed_solid", {"cad_execution.step_solid_count_mismatch", "cad_execution.step_not_closed_solid"}),
+                (solid_receipt, "obj-stair-east", "open_surface", {"cad_execution.step_not_open_surface"}),
+            ):
+                with self.subTest(declared=declared):
+                    entries = occt_backend.read_step(workspace / receipt.exact_artifact["relative_path"], length_unit="meter")
+                    readback, failures = _verify_step_readback(
+                        entries, physical=(object_id,), semantics=receipt.expected_semantics, expected_bounds=receipt.expected_bounds,
+                        expected_counts={object_id: 1}, expected_deliveries={object_id: declared}, layer_colors={}, tolerance=0.003,
+                    )
+                    self.assertEqual({f["code"] for f in failures}, codes, failures)
+                    self.assertEqual(readback[object_id]["declared_delivery"], declared)
+                    _, agreed = _verify_step_readback(
+                        entries, physical=(object_id,), semantics=receipt.expected_semantics, expected_bounds=receipt.expected_bounds,
+                        expected_counts={object_id: 1}, expected_deliveries=receipt.exact_artifact["deliveries"], layer_colors={}, tolerance=0.003,
+                    )
+                    self.assertEqual(agreed, [])
 
 
 WINDOW_TYPE = {"schema": "WindowType@1", "type_id": "window-type-1", "frame_width": 0.09, "frame_depth": 0.18,
@@ -1083,11 +1190,10 @@ class CapabilityBoundaryTests(unittest.TestCase):
         self.assertEqual((error.op_id, error.kind), ("heap", "array"))
         self.assertIn("zero step", str(error))
 
-    def test_an_interpolated_or_uncapped_loft_is_refused(self) -> None:
+    def test_an_interpolated_loft_is_refused(self) -> None:
         error = self._refused(_single_operation_program(_loft("smooth", profile_basis="interpolated")))
         self.assertEqual((error.op_id, error.kind), ("smooth", "loft"))
-        error = self._refused(_single_operation_program(_loft("open", cap_ends=False)))
-        self.assertIn("closed-solid", str(error))
+        self.assertIn("polyline only", str(error))
 
     def test_a_capped_polyline_loft_is_realized(self) -> None:
         program = _single_operation_program(_loft("prism"))
@@ -1096,6 +1202,48 @@ class CapabilityBoundaryTests(unittest.TestCase):
             receipt, _ = _execute(program, _synthetic_binding(program), workspace, "prism@occt")
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             self.assertAlmostEqual(receipt.readback["prism-object"]["volume"], 2.0, places=9)
+            self.assertEqual((receipt.readback["prism-object"]["free_edge_count"], receipt.readback["prism-object"]["declared_delivery"]), (0, "closed_solid"))
+            self.assertEqual(receipt.exact_artifact["deliveries"], {"prism-object": "closed_solid"})
+            self.assertEqual(receipt.exact_artifact["carries"][2], "exact B-rep in the CAD frame and the program unit: 1 closed solid object(s)")
+
+    def test_an_uncapped_polyline_loft_is_realized_as_the_open_lofted_surface(self) -> None:
+        """``cap_ends`` false is ThruSections' isSolid false: the four side faces, open at both squares, no volume."""
+
+        program = _single_operation_program(_loft("tube", cap_ends=False))
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _synthetic_binding(program), workspace, "tube@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            row = receipt.readback["tube-object"]
+            self.assertEqual((row["valid"], row["solid_count"], row["closed"], row["face_count"], row["free_edge_count"], row["volume"], row["declared_delivery"]),
+                             (True, 0, False, 4, 8, None, "open_surface"))
+            for axis, (low, high) in enumerate(((0.0, 1.0), (0.0, 1.0), (0.0, 2.0))):               # program y 0..2 is CAD z
+                self.assertAlmostEqual(row["bbox"]["min"][axis], low, places=6)
+                self.assertAlmostEqual(row["bbox"]["max"][axis], high, places=6)
+            self.assertEqual(receipt.exact_artifact["deliveries"], {"tube-object": "open_surface"})
+            self.assertIn("1 open surface object(s) from uncapped lofts", receipt.exact_artifact["carries"][2])
+
+    def test_an_open_surface_is_not_a_solid_for_the_array_or_the_booleans(self) -> None:
+        """The solid-only checks stay: repeating or fusing an open loft is a build failure, never a solid."""
+
+        tube = _loft("tube", cap_ends=False)
+        program = _program_of(tube, _array("tubes", tube, count=2, step=[3.0, 0.0, 0.0]))
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _synthetic_binding(program), workspace, "tubes@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.FAILED)
+            self.assertEqual([f["code"] for f in receipt.failures], ["cad_execution.occt_build_failed"])
+            self.assertIn("holds no solid to repeat", receipt.failures[0]["detail"])
+            self.assertEqual(list(workspace.iterdir()), [])
+        union = GeometryOperation(op_id="fused", kind=GeometryOperationKind.BOOLEAN_UNION, output_object_ids=("fused-object",),
+                                  input_object_ids=("seed-object", "tube-object"), frame_id="world", parameters=(), semantic_binding_ids=("body-binding",))
+        program = _program_of(tube, _box("seed", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]), union)
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _synthetic_binding(program), workspace, "fused@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.FAILED)
+            self.assertEqual([f["code"] for f in receipt.failures], ["cad_execution.occt_build_failed"])
+            self.assertEqual(list(workspace.iterdir()), [])
 
     def test_a_binding_for_another_program_is_refused_mechanically(self) -> None:
         program, other = _synthetic_program(), _synthetic_program(array=True)
