@@ -23,6 +23,7 @@ from archflow.state.operational_state import DesignObligation
 ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_ROOT = (
     ROOT
+    / "archive"
     / "archflow"
     / "skills"
     / "packages"

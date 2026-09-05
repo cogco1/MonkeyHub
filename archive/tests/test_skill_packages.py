@@ -33,6 +33,7 @@ from archflow.state.operational_state import (
 ROOT = Path(__file__).resolve().parents[2]
 BUILTIN = (
     ROOT
+    / "archive"
     / "archflow"
     / "skills"
     / "packages"
