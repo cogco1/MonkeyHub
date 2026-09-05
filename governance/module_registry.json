@@ -494,12 +494,14 @@
         "an element referencing another is produced after it; a reference cycle or a missing element fails ElementProducerError",
         "an unknown producer name fails typed rather than being skipped",
         "an overlap into a support exists only as a declared ENGAGEMENT parameter, recorded on the relation",
-        "a row fact the export needs but the geometry does not is a statement, never a parameter: the function contract for the operation's kind still sees exactly the parameters it names"
+        "a row fact the export needs but the geometry does not is a statement, never a parameter: the function contract for the operation's kind still sees exactly the parameters it names",
+        "a stair's explicit top must match both base plus offset plus count times rise and the final tread's physical top within 0.001 m; a conflict fails before emission without adjusting inputs; stairs without top retain historical semantics"
       ],
       "status": "canonical",
-      "tests": [
+    "tests": [
         "tests/test_element_producers.py",
-        "tests/test_cad_patch.py"
+        "tests/test_cad_patch.py",
+        "tests/test_project_runner.py"
       ],
       "notes": "The single geometry-emission owner on the spine; P105 is where monument vocabulary would be added here rather than beside it."
     },

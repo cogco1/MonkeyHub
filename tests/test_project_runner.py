@@ -13,6 +13,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from archflow.capabilities.declaration import DeclarationQuadrant
@@ -43,7 +44,10 @@ from archflow.state.state_record import (
     Relation,
     StateRecord,
     StateRecordError,
+    StateRecordEditKind,
+    StateRecordOperator,
     ValidatorBinding,
+    apply_state_record_operator,
     developed_design_view,
     project_levels_of,
 )
@@ -254,6 +258,50 @@ class RunTests(unittest.TestCase):
         checks = repository.load_json(_ref(seats["seat-structure"]["relation_check_ref"]))
         self.assertTrue(checks["held"])                                                        # columns stand on the piano nobile by construction
         self.assertEqual(checks["counts"]["violated"], 0)
+
+    def test_stair_rise_conflicting_with_protected_end_levels_cannot_close(self) -> None:
+        # Same endpoint failure as the villa probe; these are diagnostic inputs.
+        record = _record(elements=(), extra_components=(
+            _component("exterior-stairs", "building", "arrival-and-buttress", "entry stair"),
+        ))
+        record = replace(record, entities=tuple(
+            replace(entity, fields={**entity.fields, "elevation": 3.57})
+            if entity.entity_id == "level-piano-nobile" else entity for entity in record.entities
+        ) + (Entity("stair-west", "Element@1", {
+            "component_id": "exterior-stairs", "producer": "stair",
+            "references": {"base": {"level": "level-ground"}, "top": {"level": "level-piano-nobile"},
+                           "from": {"axis_point": {"axis": "F", "along": -22.5125}},
+                           "to": {"axis_point": {"axis": "F", "along": -14.994}}},
+            "params": {"count": 19, "rise": 3.57 / 19, "width": 10.71},
+        }, parent_id="exterior-stairs", basis_refs=BASIS),))
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = FilesystemProjectRepository.initialize(Path(temporary) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            original_head = repository.read_head()
+            base_run = repository.create_run("stair-base")
+            record = record.bound_to(base_run)
+            options = _options(export=False)
+            seats = (SeatSpec(seat_id="seat-stair", disciplines=(DevelopmentDiscipline.STRUCTURE_SUPPORT,),
+                              owned_component_ids=("exterior-stairs",), phases=(DesignPhase.DESIGN_DEVELOPMENT,),
+                              quadrants=(DeclarationQuadrant.STRUCTURE,)),)
+            receipt = run_project(repository, run=base_run, stage_guard=_stage_guard(repository, base_run, record, options),
+                                  record=record, seats=seats, options=options)
+            self.assertEqual(receipt["closure_status"], "SATISFIED")
+            successor = apply_state_record_operator(record, StateRecordOperator(
+                kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+                protected=("entity:level-ground", "entity:level-piano-nobile"),
+                target_ref="entity:stair-west", key="rise", value=3.57 / 19 * 1.1,
+            ))
+            self.assertEqual(successor.entity("level-ground"), record.entity("level-ground"))
+            self.assertEqual(successor.entity("level-piano-nobile"), record.entity("level-piano-nobile"))
+            run = repository.create_run("stair-conflict")
+            with self.assertRaisesRegex(ProjectRunnerError, "stair-west:.*declared top.*3.57"):
+                run_project(repository, run=run, stage_guard=_stage_guard(repository, run, successor, options),
+                            record=successor, seats=seats, options=options)
+            records = repository.layout.run(run.run_id).records
+            self.assertEqual(list(records.glob("stage-closure-*.json")), [])
+            self.assertEqual(list(records.glob("stage-exit-binding-*.json")), [])
+            self.assertEqual(len(list(records.glob("runner-run-failure-*.json"))), 1)
+            self.assertEqual(repository.read_head(), original_head)
 
     def test_a_completed_stage_closes_and_the_exit_binding_names_that_closure(self) -> None:
         """ADR-007 rule 3: the runner closes the stage from its own checks.

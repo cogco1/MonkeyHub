@@ -214,6 +214,62 @@ class StairTests(unittest.TestCase):
         return ElementRow("stair-north", "monument-stair", "stair",
                           {"from": {"axis_point": {"axis": "W", "along": 0.0}}, "to": {"axis_point": {"axis": "W", "along": 3.0}}, "base": {"level": PN}}, p, BASIS)
 
+    def _compiled_bounds(self, row):
+        context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
+        (stair,) = produce_rows((row,), context)
+        operations = tuple(replace(op, semantic_binding_ids=("building-binding",)) for op in stair.operations)
+        datums = tuple(sorted(list(context.published.values()) + list(_levels().datums()), key=lambda d: d.datum_id))
+        state = _state()
+        result = compile_geometry_program(state, _only(_proposal(state, extra_operations=operations), operations, ()),
+                                          active_commitment_refs=(COMMITMENT,), interface_datums=datums, datum_bindings=stair.bindings)
+        self.assertIsNotNone(result.program, [(i.code.value, i.detail) for i in result.receipt.issues])
+        return expected_object_bounds(result.program)
+
+    def test_declared_top_matches_the_compiled_flight_including_base_offset(self) -> None:
+        # Synthetic endpoint regression, not measured dimensions of the villa.
+        row = self._row(count=19)
+        for base, offset in (({"level": "level-ground"}, 0.0),
+                             ({"offset_from": {"level": "level-ground", "offset": 0.18}}, 0.18),
+                             ({"datum": "level-ground", "offset": 0.18}, 0.18)):
+            with self.subTest(base=base):
+                rise = (3.57 - offset) / 19
+                flight = replace(row, references={**row.references, "base": base, "top": {"level": PN}},
+                                 params={**row.params, "rise": rise})
+                bounds = self._compiled_bounds(flight)
+                self.assertAlmostEqual(bounds["obj-stair-north-0"]["bbox_min"][1], offset)
+                self.assertAlmostEqual(bounds["obj-stair-north-18"]["bbox_max"][1], 3.57)
+                self.assertEqual(flight.params["rise"], rise)
+
+    def test_declared_top_refuses_a_rise_change_or_an_unaccounted_base_offset(self) -> None:
+        row = self._row(count=19, rise=3.57 / 19)
+        references = {**row.references, "base": {"level": "level-ground"}, "top": {"level": PN}}
+        for flight in (replace(row, references=references, params={**row.params, "rise": row.params["rise"] * 1.1}),
+                       replace(row, references={**references, "base": {"offset_from": {"level": "level-ground", "offset": 0.18}}})):
+            with self.subTest(flight=flight):
+                with self.assertRaisesRegex(ElementProducerError, "stair-north:.*declared top.*level-piano-nobile"):
+                    _produce((flight,))
+
+    def test_declared_top_resolves_offsets_and_published_datums(self) -> None:
+        row = self._row(count=19, rise=3.57 / 19)
+        for top in ({"offset_from": {"level": PN, "offset": 0.18}}, {"datum": PN, "offset": 0.18}):
+            with self.subTest(top=top):
+                flight = replace(row, references={**row.references, "base": {"level": "level-ground"}, "top": top},
+                                 params={**row.params, "rise": (3.57 + 0.18) / 19})
+                self.assertAlmostEqual(self._compiled_bounds(flight)["obj-stair-north-18"]["bbox_max"][1], 3.75)
+        landing = ElementRow("landing", "monument-landing", "prism", {"base": {"level": "level-ground"}},
+                             {"profile": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], "height": 3.57}, BASIS)
+        flight = replace(row, references={**row.references, "base": {"level": "level-ground"}, "top": {"datum": "landing-top"}})
+        produced, _ = _produce(production_order((flight, landing)))
+        self.assertEqual(len(produced[1].operations), 19)
+
+    def test_declared_top_cannot_hide_a_thin_treads_lower_physical_top(self) -> None:
+        row = self._row(count=19, rise=3.57 / 19, thickness=0.05)
+        row = replace(row, references={**row.references, "base": {"level": "level-ground"}})
+        bounds = self._compiled_bounds(row)
+        self.assertAlmostEqual(bounds["obj-stair-north-18"]["bbox_max"][1], 18 * (3.57 / 19) + 0.05)
+        with self.assertRaisesRegex(ElementProducerError, "final tread top.*declared top"):
+            _produce((replace(row, references={**row.references, "top": {"level": PN}}),))
+
     def test_solid_steps_stack_from_the_base_datum_and_the_flight_publishes_its_top(self) -> None:
         (stair,), context = _produce((self._row(),))
         self.assertEqual([op.op_id for op in stair.operations], [f"stair-north-{k}" for k in range(10)])

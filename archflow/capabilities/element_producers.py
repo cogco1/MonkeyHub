@@ -557,7 +557,10 @@ def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElemen
     the flight carries. It refuses a zero-length line, a count below one, and
     a declared ``going`` whose ``count · going`` misses the line length by
     more than a millimetre: a flight is measured by its references, never
-    stretched to fit them.
+    stretched to fit them. A declared ``top`` must match both that rise total
+    (including the base offset) and the final tread's physical top within the
+    same millimetre tolerance. A thin tread below that endpoint is refused;
+    neither the declared rise nor the historical tread placement is changed.
     """
 
     p = row.params
@@ -571,6 +574,31 @@ def produce_stair(row: ElementRow, context: ProductionContext) -> ProducedElemen
     thickness = _finite(p.get("thickness", 0.0), f"{row.element_id} thickness")
     if thickness < 0.0:
         raise ElementProducerError(f"{row.element_id}: tread thickness must not be negative")
+    if "top" in row.references:
+        top_ref = row.references["top"]
+        if isinstance(top_ref, Mapping) and "datum" in top_ref:
+            top_id = str(top_ref["datum"])
+            top_offset = _finite(top_ref.get("offset", 0.0), f"{row.element_id} top offset")
+        else:
+            top_id, top_offset = resolve_elevation(parse_reference(top_ref), context.references)
+        target_top = context.datum_value(top_id) + top_offset
+        base_elevation = context.datum_value(base_datum) + base_offset
+        flight_top = base_elevation + count * rise
+        if abs(flight_top - target_top) > 1e-3:
+            raise ElementProducerError(
+                f"{row.element_id}: {count} rises of {round(rise, 9)} m from base "
+                f"{base_datum!r} at {round(base_elevation, 9)} m reach {round(flight_top, 9)} m, "
+                f"conflicting with declared top {top_id!r} at {round(target_top, 9)} m "
+                "(tolerance 0.001 m); reconcile count/rise with the endpoint references"
+            )
+        tread_top = base_elevation + (count - 1) * rise + (thickness if thickness > 0.0 else rise)
+        if abs(tread_top - target_top) > 1e-3:
+            raise ElementProducerError(
+                f"{row.element_id}: final tread top is {round(tread_top, 9)} m, "
+                f"conflicting with declared top {top_id!r} at {round(target_top, 9)} m "
+                "(tolerance 0.001 m); the current tread thickness and placement "
+                "do not reach the declared endpoint"
+            )
     dx, dz = end[0] - start[0], end[1] - start[1]
     length = math.hypot(dx, dz)
     if length <= 0.0:
