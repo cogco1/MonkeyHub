@@ -15,7 +15,9 @@
     "docs/mapping/",
     "governance/module_registry.json",
     "governance/work_registry.json",
-    "tests/"
+    "tests/",
+    "apps/archflow-studio/api/tests/",
+    "docs/PROTOCOL.md"
   ],
   "probe_root": "probes",
   "forbidden_instance_literals": [

@@ -37,13 +37,16 @@
         "P102"
       ],
       "write_scope": [
-        "archflow/capabilities/",
-        "archflow/state/",
-        "archflow/runtime/",
-        "tools/",
+        "archflow/capabilities/element_producers.py",
+        "archflow/capabilities/opening_solver.py",
+        "archflow/capabilities/wall_solver.py",
+        "archflow/state/geometry_program.py",
+        "archflow/adapters/cad_program.py",
+        "archflow/adapters/occt_backend.py",
         "tests/",
         "docs/mapping/",
-        "governance/work_registry.json"
+        "governance/work_registry.json",
+        "governance/module_registry.json"
       ],
       "card": "docs/mapping/planning/P105-classical-order-producers.md",
       "acceptance": [
@@ -64,7 +67,59 @@
         "P103"
       ],
       "write_scope": [
-        "apps/archflow-studio/"
+        "apps/archflow-studio/web/src/app/",
+        "apps/archflow-studio/web/src/features/conversation/",
+        "apps/archflow-studio/web/src/features/stage/",
+        "apps/archflow-studio/web/src/features/evidence/",
+        "apps/archflow-studio/web/src/features/events/",
+        "apps/archflow-studio/web/src/features/artifacts/",
+        "apps/archflow-studio/web/src/api/",
+        "apps/archflow-studio/web/src/viewer/",
+        "apps/archflow-studio/web/src/i18n/",
+        "apps/archflow-studio/web/src/styles.css",
+        "apps/archflow-studio/web/src/main.tsx",
+        "apps/archflow-studio/web/index.html",
+        "apps/archflow-studio/web/package.json",
+        "apps/archflow-studio/web/scripts/",
+        "apps/archflow-studio/web/vite.config.ts",
+        "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/candidates.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/pick.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/state.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/events.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/controls.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/program.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/options.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/",
+        "apps/archflow-studio/api/archflow_studio_api/adapters/",
+        "apps/archflow-studio/api/tests/",
+        "docs/PROTOCOL.md",
+        "docs/mapping/",
+        "governance/work_registry.json",
+        "governance/module_registry.json",
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/catalog.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/clarification.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/compare.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/controls.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/conventions.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/episodes.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/events.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/frame.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/impact.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/jobs.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/options.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/pick.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/program.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/proposals.py"
       ],
       "card": "docs/mapping/planning/P108-vibe-modeling-frontend.md",
       "acceptance": [
@@ -89,14 +144,16 @@
         "P102"
       ],
       "write_scope": [
-        "archflow/runtime/",
-        "archflow/state/",
         "archflow/validation/",
-        "tests/",
+        "archflow/state/commitments.py",
+        "archflow/state/operational_state.py",
+        "archflow/state/model.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
         "apps/archflow-studio/api/tests/test_validation.py",
+        "tests/",
         "docs/mapping/",
-        "governance/work_registry.json"
+        "governance/work_registry.json",
+        "governance/module_registry.json"
       ],
       "card": "docs/mapping/planning/P110-canonical-state-projection.md",
       "acceptance": [
@@ -114,12 +171,7 @@
       "goal": "Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; active denotes user trial, not an implementation queue. This does not establish whole-assembly usability or correct architectural dependencies.",
       "depends_on": [],
       "write_scope": [
-        "archflow/state/",
-        "archflow/project/",
-        "apps/archflow-studio/",
-        "tests/",
         "docs/mapping/",
-        "governance/module_registry.json",
         "governance/work_registry.json"
       ],
       "card": "docs/mapping/planning/P111-continuing-design-cycle.md",
@@ -134,7 +186,8 @@
         "This card replaces the earlier all-in-one acceptance bundle. P108/P110 retain their own obligations; no architectural check or formal-issue boundary is waived by permitting a local trial.",
         "The user selected whole-stair usability and revision as the next capability direction. Its bounded task and owner mapping are in docs/ARCHITECTURE.md; the proposed benchmark is in docs/RESEARCH_POSITIONING.md. This card does not expand to implement it.",
         "Confirmed internal simplification candidates are documented in P111, not made prerequisites: deterministic proposal/provider round trips, fabricated portfolio projection, and unused compiler self-digests. Preserve real validation and retained-data readers.",
-        "Development order lives in docs/ARCHITECTURE.md, not this delivery card. P094 research proceeds independently; reuse existing drawing/environment proposals. Formal issue and cross-project comparisons are separate tasks."
+        "Development order lives in docs/ARCHITECTURE.md, not this delivery card. P094 research proceeds independently; reuse existing drawing/environment proposals. Formal issue and cross-project comparisons are separate tasks.",
+        "2026-09-06: write_scope narrowed to the ledgers only — the implementation is delivered; problems found in the trial go to the owning card, not this one."
       ]
     },
     {
@@ -144,10 +197,15 @@
       "goal": "An evidence ledger: a research-evidence-ledger record (EvidenceLedger@1, new owner archflow/state/evidence.py, registered in record_kinds.py) whose entries the record's evidence_refs must resolve against, checked like relationship_refs (dangling refs refused, unsupported entities reported); one import from the villa's five research runs into research-006 and one export to the research-atlas skill's source files. The Studio tab and the stage evidence-coverage check are separate cards.",
       "depends_on": [],
       "write_scope": [
-        "archflow/state/",
+        "archflow/state/evidence.py",
+        "archflow/state/state_record.py",
         "archflow/project/record_kinds.py",
-        "tools/",
-        "tests/"
+        "tools/import_research_evidence.py",
+        "tools/export_research_atlas.py",
+        "tests/",
+        "docs/mapping/",
+        "governance/work_registry.json",
+        "governance/module_registry.json"
       ],
       "card": "docs/mapping/planning/P113-evidence-ledger.md",
       "acceptance": [
@@ -163,10 +221,16 @@
       "goal": "User settings the launcher can read: GET/PUT /api/settings/user (language, theme, fontScale, model defaults) backed by %APPDATA%\\MonkeyArch\\settings.json in local mode only (remote mode neither declares the user-settings capability nor serves it), the launcher translating that file into environment variables at start, and the settings panel's save wired to the PUT with a user source badge. No remote multi-user.",
       "depends_on": [],
       "write_scope": [
-        "apps/archflow-studio/api/",
+        "apps/archflow-studio/api/archflow_studio_api/settings.py",
+        "apps/archflow-studio/api/archflow_studio_api/protocol.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/settings.py",
+        "apps/archflow-studio/api/tests/test_settings.py",
         "apps/archflow-studio/launch-studio.ps1",
         "apps/archflow-studio/web/src/features/settings/",
-        "governance/architecture_policy.json"
+        "governance/architecture_policy.json",
+        "docs/PROTOCOL.md",
+        "docs/mapping/",
+        "governance/work_registry.json"
       ],
       "card": "docs/mapping/planning/P114-user-settings-bridge.md",
       "acceptance": [
