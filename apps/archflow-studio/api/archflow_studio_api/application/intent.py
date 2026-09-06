@@ -234,6 +234,16 @@ def component_edit_proposal(
         "summary", "entities", "parameters", "relations", "removeEntityIds",
         "removeParameterKeys", "removeRelationIds", "protected", "kept",
     }
+
+    def ref_set(values: object, field: str) -> tuple[str, ...]:
+        # These domain fields are sets. Model JSON ordering and repetition
+        # carry no design meaning; the kernel still validates their contents.
+        if not isinstance(values, (list, tuple)) or any(
+            not isinstance(item, str) or not item for item in values
+        ):
+            raise ValueError(f"{field} must be a list of nonempty text")
+        return tuple(sorted(set(values)))
+
     try:
         if not isinstance(edit, Mapping) or set(edit) != allowed:
             raise ValueError("semantic edit must contain the declared design fields")
@@ -261,6 +271,7 @@ def component_edit_proposal(
                     **previous.to_dict(), **value,
                     "fields": {**previous.fields, **value.get("fields", {})},
                 }
+            value["basis_refs"] = ref_set(value.get("basis_refs", ()), "entity basis_refs")
             entity = Entity.from_dict(value)
             entities.append(entity)
         parameters = []
@@ -271,9 +282,9 @@ def component_edit_proposal(
             }:
                 raise ValueError("a parameter edit contains undeclared fields")
             previous = current_parameters.get(payload.get("key"))
-            parameters.append(Parameter.from_dict({
-                **({} if previous is None else previous.to_dict()), **payload,
-            }))
+            value = {**({} if previous is None else previous.to_dict()), **payload}
+            value["inputs"] = ref_set(value.get("inputs", ()), "parameter inputs")
+            parameters.append(Parameter.from_dict(value))
         relations = []
         current_relations = {relation.relation_id: relation for relation in record.relations}
         for payload in edit["relations"]:
@@ -283,18 +294,16 @@ def component_edit_proposal(
             }:
                 raise ValueError("a relation edit contains undeclared fields")
             previous = current_relations.get(payload.get("relation_id"))
-            relations.append(Relation.from_dict({
-                **({} if previous is None else previous.to_dict()), **payload,
-            }))
+            value = {**({} if previous is None else previous.to_dict()), **payload}
+            value["basis_refs"] = ref_set(value.get("basis_refs", ()), "relation basis_refs")
+            relations.append(Relation.from_dict(value))
         removed = {}
         for wire, internal in (
             ("removeEntityIds", "remove_entity_ids"),
             ("removeParameterKeys", "remove_parameter_keys"),
             ("removeRelationIds", "remove_relation_ids"),
         ):
-            if any(not isinstance(item, str) or not item for item in edit[wire]):
-                raise ValueError(f"{wire} must name existing design items")
-            removed[internal] = tuple(edit[wire])
+            removed[internal] = ref_set(edit[wire], wire)
         provider = DeterministicIntentProvider(projection)
         protected = provider._protected(tuple(edit["protected"]) + tuple(keep_refs))
         operator = compile_component_edit(

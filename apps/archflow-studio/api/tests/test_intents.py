@@ -274,6 +274,76 @@ class RecordSheetTests(IntentTestCase):
 
 
 class SemanticIntentTests(IntentTestCase):
+    def test_unordered_repeated_reference_sets_compile_without_changing_the_design(self) -> None:
+        from archflow.state.state_record import apply_state_record_operator
+
+        edit = semantic_wall_edit()
+        basis = ["studio:intent", "evidence:demo", "studio:intent"]
+        edit["entities"][0]["basis_refs"] = basis
+        edit["parameters"][2].update(
+            expr="passage_width / 2 + passage_thickness + 1.2",
+            inputs=["passage_width", "passage_thickness", "passage_width"],
+        )
+        edit["relations"] = [{"relation_id": "rel-cornice-on-base", "basis_refs": basis}]
+        edit["protected"] = ["entity:level-ground", "entity:level-ground"]
+        compiler = scripted(semantic_edit=edit, component_id="portico")
+        self.app.state.intent_compiler = compiler
+
+        status, body = self.ask("Add the passage wall and retain the ground level.", targetComponentId=None)
+
+        self.assertEqual(status, 201, body)
+        self.assertEqual(body["proposal"]["status"], "proposed")
+        proposal = self.app.state.proposals.get(body["proposal"]["proposalId"])
+        operator = proposal.state_record_operator
+        self.assertEqual(operator.entities[0].basis_refs, ("evidence:demo", "studio:intent"))
+        self.assertEqual(operator.relations[0].basis_refs, ("evidence:demo", "studio:intent"))
+        self.assertEqual(operator.parameters[2].inputs, ("passage_thickness", "passage_width"))
+        self.assertEqual(operator.protected, ("entity:level-ground",))
+        base = compiler.calls[0]["projection"].record
+        successor = apply_state_record_operator(base, operator)
+        self.assertEqual(successor.entity("passage-wall").fields, edit["entities"][0]["fields"])
+        self.assertEqual(successor.entity("portico-base"), base.entity("portico-base"))
+        self.assertEqual(next(p.value for p in successor.parameters if p.key == "passage_head"), 2.5)
+        self.assertEqual(edit["entities"][0]["basis_refs"], basis)
+
+    def test_repeated_removal_ids_are_one_removal_of_each_named_item(self) -> None:
+        from archflow.state.state_record import apply_state_record_operator
+
+        edit = semantic_wall_edit()
+        edit.update(
+            removeEntityIds=["portico-cornice", "portico-base", "portico-cornice"],
+            removeParameterKeys=["span", "bay", "span"],
+            removeRelationIds=["rel-cornice-on-base", "rel-cornice-on-base"],
+            protected=["entity:level-ground"], kept=["The ground level remains unchanged."],
+        )
+        compiler = scripted(semantic_edit=edit, component_id="portico")
+        self.app.state.intent_compiler = compiler
+        status, body = self.ask("Replace the old base and cornice with the passage wall.")
+        self.assertEqual(status, 201, body)
+        operator = self.app.state.proposals.get(body["proposal"]["proposalId"]).state_record_operator
+        self.assertEqual(operator.remove_entity_ids, ("portico-base", "portico-cornice"))
+        self.assertEqual(operator.remove_parameter_keys, ("bay", "span"))
+        self.assertEqual(operator.remove_relation_ids, ("rel-cornice-on-base",))
+        successor = apply_state_record_operator(compiler.calls[0]["projection"].record, operator)
+        self.assertNotIn("portico-base", {entity.entity_id for entity in successor.entities})
+        self.assertEqual(successor.relations, ())
+
+    def test_reference_set_normalisation_retains_content_validation(self) -> None:
+        for field, value in (("basis_refs", ["studio:intent", 7]), ("basis_refs", "studio:intent")):
+            edit = semantic_wall_edit()
+            edit["entities"][0][field] = value
+            self.app.state.intent_compiler = scripted(semantic_edit=edit)
+            status, body = self.ask("Add the passage wall.")
+            self.assertEqual(status, 422, body)
+            self.assertEqual(body["code"], "SEMANTIC_EDIT_INVALID")
+        edit = semantic_wall_edit()
+        edit["parameters"][2]["inputs"] = ["passage_thickness", "passage_thickness"]
+        self.app.state.intent_compiler = scripted(semantic_edit=edit)
+        status, body = self.ask("Add the passage wall.")
+        self.assertEqual(status, 422, body)
+        self.assertEqual(body["code"], "SEMANTIC_EDIT_INVALID")
+        self.assertIn("disagree with its expression", body["detail"])
+
     def test_missing_members_reach_the_agent_without_a_scalar_target(self) -> None:
         from archflow.state.state_record import StateRecordEditKind, apply_state_record_operator
 
