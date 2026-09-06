@@ -749,6 +749,89 @@ export type CompareObjectDto = {
 };
 
 /**
+ * ComponentChangeDto
+ */
+export type ComponentChangeDto = {
+    /**
+     * Action
+     */
+    action: 'add' | 'update' | 'remove';
+    /**
+     * Entityid
+     */
+    entityId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Description
+     */
+    description: string;
+};
+
+/**
+ * ComponentEditChangeDto
+ */
+export type ComponentEditChangeDto = {
+    /**
+     * Kind
+     */
+    kind?: 'edit_components';
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Changes
+     */
+    changes: Array<ComponentChangeDto>;
+    /**
+     * Kept
+     */
+    kept: Array<string>;
+    edits: ComponentEditsDto;
+};
+
+/**
+ * ComponentEditsDto
+ *
+ * The typed design edits shown only in the proposal's details.
+ */
+export type ComponentEditsDto = {
+    /**
+     * Entities
+     */
+    entities: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Parameters
+     */
+    parameters: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Relations
+     */
+    relations: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Removeentityids
+     */
+    removeEntityIds: Array<string>;
+    /**
+     * Removeparameterkeys
+     */
+    removeParameterKeys: Array<string>;
+    /**
+     * Removerelationids
+     */
+    removeRelationIds: Array<string>;
+};
+
+/**
  * ComponentNodeDto
  *
  * One node of the kernel's component tree.
@@ -1080,6 +1163,10 @@ export type EnvelopeFindingDto = {
  */
 export type EpisodeChangeDto = {
     /**
+     * Kind
+     */
+    kind?: 'set_scalar';
+    /**
      * Key
      */
     key: string;
@@ -1200,7 +1287,14 @@ export type EpisodeProposalDto = {
      * Target
      */
     target: string;
-    change: EpisodeChangeDto;
+    /**
+     * Change
+     */
+    change: ({
+        kind: 'set_scalar';
+    } & EpisodeChangeDto) | ({
+        kind: 'edit_components';
+    } & ComponentEditChangeDto);
     /**
      * Closure
      *
@@ -2092,7 +2186,7 @@ export type PendingIntentDto = {
     /**
      * Actionkind
      */
-    actionKind: 'change_existing_value' | 'declare_missing_control' | 'clarify' | 'unsupported';
+    actionKind: 'change_existing_value' | 'declare_missing_control' | 'edit_components' | 'clarify' | 'unsupported';
     /**
      * Targetcomponentid
      */
@@ -2686,6 +2780,10 @@ export type ProjectVersionDto = {
  */
 export type ProposalChangeDto = {
     /**
+     * Kind
+     */
+    kind?: 'set_scalar';
+    /**
      * Old
      */
     old: number | number;
@@ -2763,7 +2861,14 @@ export type ProposalDto = {
      */
     sourceRunId?: string | null;
     target: ProposalTargetDto;
-    change: ProposalChangeDto;
+    /**
+     * Change
+     */
+    change: ({
+        kind: 'set_scalar';
+    } & ProposalChangeDto) | ({
+        kind: 'edit_components';
+    } & ComponentEditChangeDto);
     /**
      * Protected
      */
@@ -2775,7 +2880,7 @@ export type ProposalDto = {
      */
     decisionOperator: {
         [key: string]: unknown;
-    };
+    } | null;
     impact: ImpactDto;
     /**
      * Utterance
@@ -2887,7 +2992,7 @@ export type ProposalTargetDto = {
     /**
      * Key
      */
-    key: string;
+    key: string | null;
 };
 
 /**

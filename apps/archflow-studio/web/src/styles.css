@@ -573,6 +573,19 @@ button.chip:hover {
   border-top: 0;
 }
 
+.card__details > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.card__details[open] > summary {
+  margin-bottom: 9px;
+}
+
+.card__details {
+  overflow-wrap: anywhere;
+}
+
 .card p {
   margin: 0;
 }

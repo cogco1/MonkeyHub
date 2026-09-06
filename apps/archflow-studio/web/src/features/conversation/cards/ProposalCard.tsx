@@ -1,12 +1,9 @@
 /**
  * A proposed change, in design-review language.
  *
- * Change is the record's number and the proposed one; Will update is the
- * kernel's closure, listed not re-derived; Keep is what the sentence protected.
- * When an agent compiled the sentence, its reading is printed above the card as
- * the agent's — provider, model, its own "why" — so the reader can tell the
- * agent's words from the record's answer. Apply runs the candidate; Adjust puts
- * the compiled sentence back in the composer.
+ * The proposed result stays visible. Compiler metadata and the kernel's
+ * detailed closure remain available on demand; neither becomes a form the
+ * architect must complete. Apply runs a candidate, not a project issue.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -79,48 +76,76 @@ export function ProposalCard({
   const t = useT();
   const { target, change, impact } = proposal;
   const subject = target.elementId ?? target.componentId;
-  const compiled = agent?.compiledUtterance ?? proposal.utterance;
+  const compiled = change.kind === "edit_components"
+    ? proposal.utterance
+    : agent?.compiledUtterance ?? proposal.utterance;
   const readByAgent = agent !== null && agent.provider !== "deterministic";
   return (
     <article className="card card--proposal">
-      {readByAgent && (
-        <div className="card__row card__agent">
-          <p className="label">
-            {t("proposal.readBy")} {" "}
-            <span className="mono">{agent.provider}</span>
-            {agent.model ? ` · ${agent.model}` : ""} ·{" "}
-            {(agent.latencyMs / 1000).toFixed(1)} s
-          </p>
-          {agent.why && (
-            <p className="verbatim-line">
-              <BilingualText source={agent.why} />
-            </p>
-          )}
-          <p className="quiet">
-            {t("proposal.compiledTo")} {" "}
-            <code>{agent.compiledUtterance}</code>
-          </p>
-        </div>
-      )}
       <div className="card__row">
         <p className="label">{t("proposal.title")}</p>
+        {change.kind === "edit_components" ? (
+          <p className="verbatim-line">
+            <BilingualText source={change.summary} />
+          </p>
+        ) : readByAgent && agent.why && (
+          <p className="verbatim-line">
+            <BilingualText source={agent.why} />
+          </p>
+        )}
+      </div>
+      {(change.kind !== "edit_components" || change.kept.length > 0) && <div className="card__row">
+        <dl className="kv kv--review">
+          {change.kind === "edit_components" ? (
+            change.kept.length > 0 && (
+              <>
+                <dt>{t("proposal.keep")}</dt>
+                <dd>
+                  <ul className="reflist">
+                    {change.kept.map((line) => (
+                      <li key={line}><BilingualText source={line} /></li>
+                    ))}
+                  </ul>
+                </dd>
+              </>
+            )
+          ) : (
+            <>
+              <dt>{t("proposal.change")}</dt>
+              <dd className="delta">
+                {target.key} {String(change.old)} → <b>{String(change.new)}</b>
+                {change.unit ? ` ${change.unit}` : ""}
+                {change.unit === null && (
+                  <span className="quiet"> {t("proposal.recordUnits")}</span>
+                )}
+              </dd>
+            </>
+          )}
+        </dl>
+      </div>}
+      <details className="card__row card__details">
+        <summary>{t("common.technicalDetails")}</summary>
         <p className="card__title">
           <span className="mono">{subject}</span>
           {target.elementId && (
             <span className="quiet"> · {target.componentId}</span>
           )}
         </p>
-      </div>
-      <div className="card__row">
+        {readByAgent && (
+          <div className="card__agent">
+            <p className="label">
+              {t("proposal.readBy")} {" "}
+              <span className="mono">{agent.provider}</span>
+              {agent.model ? ` · ${agent.model}` : ""} ·{" "}
+              {(agent.latencyMs / 1000).toFixed(1)} s
+            </p>
+            <p className="quiet">
+              {t("proposal.compiledTo")} {" "}
+              <code>{agent.compiledUtterance}</code>
+            </p>
+          </div>
+        )}
         <dl className="kv kv--review">
-          <dt>{t("proposal.change")}</dt>
-          <dd className="delta">
-            {target.key} {String(change.old)} → <b>{String(change.new)}</b>
-            {change.unit ? ` ${change.unit}` : ""}
-            {change.unit === null && (
-              <span className="quiet"> {t("proposal.recordUnits")}</span>
-            )}
-          </dd>
           <dt>{t("proposal.willUpdate")}</dt>
           <dd>
             {impact.propagated.length === 0 ? (
@@ -166,7 +191,20 @@ export function ProposalCard({
           </dd>
         </dl>
         <Verbatim lines={impact.honesty} />
-      </div>
+        {change.kind === "edit_components" && (
+          <>
+            <ul className="reflist">
+              {change.changes.map((item, index) => (
+                <li key={`${item.entityId}:${index}`}>
+                  <BilingualText source={item.label} />
+                  {" · "}<BilingualText source={item.description} />
+                </li>
+              ))}
+            </ul>
+            <pre>{JSON.stringify(change.edits, null, 2)}</pre>
+          </>
+        )}
+      </details>
       {proposal.status === "conflict" && (
         <div className="card__row">
           <p className="card__conflict">
@@ -176,19 +214,23 @@ export function ProposalCard({
         </div>
       )}
       {inactive && <p className="card__row quiet">{t("proposal.otherBase")}</p>}
-      {!inactive && typeof change.old === "number" &&
+      {!inactive && change.kind !== "edit_components" && target.key !== null &&
+        typeof change.old === "number" &&
         typeof change.new === "number" &&
         change.old > 0 && (
-          <Refine
-            fieldKey={target.key}
-            old={change.old}
-            current={change.new}
-            refinements={refinements}
-            refining={refining}
-            onRefine={onRefine}
-          />
+          <details className="card__row card__details">
+            <summary>{t("proposal.refine.ariaLabel")}</summary>
+            <Refine
+              fieldKey={target.key}
+              old={change.old}
+              current={change.new}
+              refinements={refinements}
+              refining={refining}
+              onRefine={onRefine}
+            />
+          </details>
         )}
-      {ghostShown && (
+      {ghostShown && change.kind !== "edit_components" && (
         <div className="card__row">
           <p className="quiet">
             <span className="ghost-mark">{t("proposal.ghostShown")}</span> · {" "}
@@ -204,7 +246,7 @@ export function ProposalCard({
         <button
           type="button"
           className="btn btn--primary"
-          disabled={busy || inactive}
+          disabled={busy || inactive || proposal.status === "conflict"}
           onClick={onRun}
         >
           {t("common.apply")}

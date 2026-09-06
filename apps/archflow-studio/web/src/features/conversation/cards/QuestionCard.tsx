@@ -9,8 +9,8 @@
  * are templates**: they fill the composer, because a form is a shape to type a
  * number into and sending it verbatim would only earn the same question back.
  *
- * The question is verbatim, and the slots still open are named in the server's
- * own words. Nothing here asks for an `elementId`.
+ * The question and its choices stay visible. Compiler slots and grammar
+ * templates are available on demand, not presented as work for the architect.
  */
 
 import type { PendingIntentDto } from "../../../api/generated";
@@ -38,22 +38,12 @@ export function QuestionCard({
   const pending: PendingIntentDto | null = error.pendingIntent;
   const candidates = pending?.candidates ?? [];
   return (
-    <article className="card card--question">
+    <article className="card card--question" aria-live="polite">
       <div className="card__row">
         <p className="card__word card__word--ask">{t("question.title")}</p>
         <p className="verbatim-line">
           <BilingualText source={error.question ?? error.detail} />
         </p>
-        {error.question && (
-          <p className="quiet">
-            <BilingualText source={error.detail} />
-          </p>
-        )}
-        {pending && pending.missingSlots.length > 0 && (
-          <p className="quiet mono">
-            {t("question.stillOpen", { slots: pending.missingSlots.join(", ") })}
-          </p>
-        )}
       </div>
       {candidates.length > 0 && (
         <div className="card__row chips">
@@ -74,26 +64,39 @@ export function QuestionCard({
           ))}
         </div>
       )}
-      {error.acceptedForms.length > 0 && (
-        <div className="card__row chips">
-          {error.acceptedForms.map((form) => (
-            <button
-              key={form}
-              type="button"
-              className="chip"
-              onClick={() => onReply(form)}
-            >
-              <code>{form}</code>
-            </button>
-          ))}
-        </div>
-      )}
-      {pending && pending.rejectedCandidates.length > 0 && (
-        <p className="card__row quiet mono">
-          {t("question.ruledOut", {
-            refs: pending.rejectedCandidates.join(", "),
-          })}
-        </p>
+      {(error.question || error.acceptedForms.length > 0 || pending) && (
+        <details className="card__row card__details">
+          <summary>{t("common.technicalDetails")}</summary>
+          {error.question && (
+            <p className="quiet">
+              <BilingualText source={error.detail} />
+            </p>
+          )}
+          {pending && pending.missingSlots.length > 0 && (
+            <p className="quiet mono">
+              {t("question.stillOpen", { slots: pending.missingSlots.join(", ") })}
+            </p>
+          )}
+          <div className="chips">
+            {error.acceptedForms.map((form) => (
+              <button
+                key={form}
+                type="button"
+                className="chip"
+                onClick={() => onReply(form)}
+              >
+                <code>{form}</code>
+              </button>
+            ))}
+          </div>
+          {pending && pending.rejectedCandidates.length > 0 && (
+            <p className="quiet mono">
+              {t("question.ruledOut", {
+                refs: pending.rejectedCandidates.join(", "),
+              })}
+            </p>
+          )}
+        </details>
       )}
     </article>
   );

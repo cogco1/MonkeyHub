@@ -21,6 +21,7 @@ export const messagesZhCN = {
   "common.apply": "应用",
   "common.cancel": "取消",
   "common.close": "关闭",
+  "common.technicalDetails": "技术详情",
   "common.off": "关闭",
   "common.on": "开启",
   "common.save": "保存",
@@ -296,6 +297,7 @@ export const messagesZhCN = {
 
   "composer.context.talkingAbout": "当前对象",
   "composer.context.nothingSelected": "尚未选择 — 请在模型中点选，或",
+  "composer.context.describe": "可直接描述，也可点选或圈选",
   "composer.context.change": "更改",
   "composer.context.chooseComponent": "选择构件",
   "composer.marks.ariaLabel": "模型上的标记",
@@ -313,7 +315,7 @@ export const messagesZhCN = {
   "composer.proposing": "正在提议…",
   "composer.propose": "提出改动",
   "composer.hint.agent":
-    "用你自己的话描述所选对象。{provider} 会依据当前记录理解它并提出一项精确改动；若记录不包含你要求的信息，它会询问。模型上的标记会随这句话一并提交。",
+    "描述要改什么、保持什么；也可以点选或画笔指示位置。",
   "composer.hint.exactPrefix": "当前未接入 Agent：Studio 只接受四种精确写法 —",
   "composer.hint.exactOptional": "并可选附加",
   "composer.hint.exactSuffix":

@@ -19,6 +19,7 @@ export const messagesEn = {
   "common.apply": "Apply",
   "common.cancel": "Cancel",
   "common.close": "Close",
+  "common.technicalDetails": "Technical details",
   "common.off": "Off",
   "common.on": "On",
   "common.save": "Save",
@@ -316,6 +317,7 @@ export const messagesEn = {
 
   "composer.context.talkingAbout": "talking about",
   "composer.context.nothingSelected": "nothing yet — pick in the model, or",
+  "composer.context.describe": "describe it directly, pick, or circle it",
   "composer.context.change": "change",
   "composer.context.chooseComponent": "choose a component",
   "composer.marks.ariaLabel": "marks on the model",
@@ -334,7 +336,7 @@ export const messagesEn = {
   "composer.proposing": "Proposing…",
   "composer.propose": "Propose",
   "composer.hint.agent":
-    "Say it in your words, about the thing you picked. {provider} reads it against the record and proposes one exact change; if the record does not carry what you asked for, it asks. Marks on the model go with the sentence.",
+    "Describe what to change and what to keep. You can also point to the location in the model.",
   "composer.hint.exactPrefix":
     "No agent is wired here: the studio types four exact forms —",
   "composer.hint.exactOptional": "with an optional",

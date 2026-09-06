@@ -1,8 +1,6 @@
 /**
- * Where an intent is typed: one line in the grammar, against the selection
- * the context chip shows. The chip is the server's resolution or the
- * projection's own id, never a guess; the grammar hint names the four forms
- * the server understands today.
+ * The architect's words, with an optional selection and marks. An agent can
+ * resolve a subject from the record; the manual grammar still needs one.
  *
  * Beside the tree that chooses the selection sits the capability panel, which
  * says what that selection can be asked: the box is no longer typed into the
@@ -44,9 +42,8 @@ export interface Selection {
 }
 
 /**
- * The examples an architect would actually say. The studio's round-1 grammar
- * answers most of them with a question — which field, which number — and the
- * hint under the box says so rather than teaching the grammar first.
+ * The examples an architect would actually say, without requiring the person
+ * to name an internal parameter or construction operation.
  */
 export function Composer({
   selection,
@@ -79,6 +76,7 @@ export function Composer({
   const t = useT();
   const [pickerOpen, setPickerOpen] = useState(false);
   const disabled = disabledReason !== null || busy;
+  const hasAgent = intentProvider === "codex" || intentProvider === "anthropic";
 
   const send = () => {
     const utterance = draft.trim();
@@ -100,7 +98,9 @@ export function Composer({
             {selection.elementId ?? selection.componentId}
           </span>
         ) : (
-          <span className="quiet">{t("composer.context.nothingSelected")}</span>
+          <span className="quiet">
+            {t(hasAgent ? "composer.context.describe" : "composer.context.nothingSelected")}
+          </span>
         )}
         <button
           type="button"
@@ -181,9 +181,9 @@ export function Composer({
         <p className="composer__hint composer__hint--why">{disabledReason}</p>
       ) : (
         <p className="composer__hint">
-          {intentProvider === "codex" || intentProvider === "anthropic" ? (
+          {hasAgent ? (
             <>
-              {t("composer.hint.agent", { provider: intentProvider })}
+              {t("composer.hint.agent")}
             </>
           ) : (
             <>

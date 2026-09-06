@@ -162,6 +162,7 @@ function ghostSpecFor(
   catalog: CatalogDto | null,
   proposal: ProposalDto,
 ): GhostSpec | null {
+  if (proposal.change.kind === "edit_components") return null;
   if (proposal.target.elementId === null || catalog === null) return null;
   const target = ghostTarget(projection, catalog, proposal.target.elementId);
   if (target === null) return null;
@@ -1047,17 +1048,8 @@ export default function App({ server }: { server: ServerIdentity }) {
         // COMPILED, the one outcome that is a proposal: the exchange is over
         // and the token that got here is spent.
         pendingIntentRef.current = null;
-        // What the server read off the marks, in the record's names — printed
-        // before the proposal so the reader sees what the sentence was said with.
-        for (const fact of answer.gestures ?? []) {
-          append({
-            kind: "system",
-            ...systemText([
-              { kind: "prose", text: "read from the model: " },
-              { kind: "technical", text: fact },
-            ]),
-          });
-        }
+        // The marks were included in the request and its retained compilation.
+        // The proposal expresses their effect; don't repeat every hit id in chat.
         append({
           kind: "proposal",
           proposal: answer.proposal,
@@ -1095,24 +1087,7 @@ export default function App({ server }: { server: ServerIdentity }) {
           }
         }
         const { target } = answer.proposal;
-        const targetChanged =
-          selection === null ||
-          target.componentId !== selection.componentId ||
-          target.elementId !== selection.elementId;
         selectSemanticTarget(target.componentId, target.elementId);
-        if (targetChanged) {
-          append({
-            kind: "system",
-            ...systemText([
-              { kind: "prose", text: "Now talking about " },
-              {
-                kind: "technical",
-                text: target.elementId ?? target.componentId,
-              },
-              { kind: "prose", text: " · the proposal's target" },
-            ]),
-          });
-        }
         setDraft("");
         // The marks were said; a new sentence starts clean. A question keeps
         // them, so the reply is made with the same marks.
@@ -1251,6 +1226,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         return;
       }
       const { proposal } = entry;
+      if (proposal.change.kind === "edit_components" || proposal.target.key === null) return;
       if (proposal.baseStateDigest !== stateDigest) return;
       const keep =
         proposal.protected.length > 0 ? ` keep ${proposal.protected.join(", ")}` : "";
@@ -1713,11 +1689,11 @@ export default function App({ server }: { server: ServerIdentity }) {
     });
   }, [artifacts, candidateEntries, projection, utteranceOf, validations]);
 
-  // A sentence needs a subject: the pick, the picker, or a circle on the
-  // model (the server makes a circle the selection). With none of them the
-  // agent would choose the subject, which is the guessing the owner ruled out.
+  // An agent can resolve the subject from the architect's words and the record.
+  // A pick or circle supplies context, but is not a prerequisite for speaking.
   const hasSubject =
-    selection !== null || gestures.some((gesture) => gesture.kind === "circle");
+    selection !== null || gestures.some((gesture) => gesture.kind === "circle") ||
+    project?.intentProvider === "codex" || project?.intentProvider === "anthropic";
   const disabledReason =
     changingBase
       ? t("stage.base.loading")
@@ -1994,7 +1970,8 @@ export default function App({ server }: { server: ServerIdentity }) {
               onReply: setDraft,
               onChoose: chooseCandidate,
               onAdjust: (sentence) => {
-                // Adjust puts the compiled sentence in the composer to edit.
+                // Adjust puts the sentence in the composer to edit, never the
+                // internal component-edit payload.
                 // Text already there is not lost silently, and the ghost of
                 // the proposal being adjusted comes off the model.
                 if (draft.trim() !== "" && draft !== sentence) {
