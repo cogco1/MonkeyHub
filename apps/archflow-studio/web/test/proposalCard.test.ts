@@ -16,6 +16,8 @@ test("design cards distinguish component edits from scalar controls and fold com
   t.after(() => vite.close());
   const { ProposalCard } = await vite.ssrLoadModule("/src/features/conversation/cards/ProposalCard.tsx");
   const { QuestionCard } = await vite.ssrLoadModule("/src/features/conversation/cards/QuestionCard.tsx");
+  const { Composer } = await vite.ssrLoadModule("/src/features/conversation/Composer.tsx");
+  const { ErrorPanel } = await vite.ssrLoadModule("/src/app/ErrorPanel.tsx");
   const { UserPreferencesProvider } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
   const { StudioApiError } = await vite.ssrLoadModule("/src/api/error.ts");
   const base = {
@@ -91,4 +93,30 @@ test("design cards distinguish component edits from scalar controls and fold com
   assert.doesNotMatch(questionHtml.split("<details")[0], /internal slot|set height/);
   assert.match(questionHtml, /<details class="card__row card__details">/);
   assert.match(questionHtml, /set height to/);
+
+  const errorHtml = renderToStaticMarkup(createElement(UserPreferencesProvider, null,
+    createElement(ErrorPanel, {
+      error: new StudioApiError({ status: 422, code: "SEMANTIC_EDIT_INVALID", detail: "entity wall basis_refs must be sorted and unique" }),
+      what: "POST /api/intents",
+    }),
+  ));
+  assert.match(errorHtml.split("<details")[0], /No model was generated|尚未生成模型/);
+  assert.doesNotMatch(errorHtml.split("<details")[0], /basis_refs|SEMANTIC_EDIT_INVALID|POST/);
+  assert.match(errorHtml, /basis_refs must be sorted and unique/);
+
+  const composerProps = {
+    selection: { componentId: "passages", elementId: null }, projection: { catalog: null },
+    disabledReason: null, busy: false, gestures: [], draft: "Add an arched opening.",
+    onRemoveGesture() {}, onDraft() {}, onSubmit() {}, onSelect() {},
+  };
+  for (const provider of ["codex", "deterministic"]) {
+    const composerHtml = renderToStaticMarkup(createElement(UserPreferencesProvider, null,
+      createElement(Composer, { ...composerProps, intentProvider: provider }),
+    ));
+    if (provider === "codex") {
+      assert.match(composerHtml, /<details class="card__details"><summary>(?:View editable parameters|查看可编辑参数)<\/summary>/);
+    } else {
+      assert.doesNotMatch(composerHtml, /<details/);
+    }
+  }
 });

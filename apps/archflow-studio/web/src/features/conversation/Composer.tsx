@@ -77,6 +77,9 @@ export function Composer({
   const [pickerOpen, setPickerOpen] = useState(false);
   const disabled = disabledReason !== null || busy;
   const hasAgent = intentProvider === "codex" || intentProvider === "anthropic";
+  const controls = projection && selection && (
+    <CapabilityPanel projection={projection} selection={selection} onPrefill={onDraft} />
+  );
 
   const send = () => {
     const utterance = draft.trim();
@@ -125,13 +128,12 @@ export function Composer({
           onClose={() => setPickerOpen(false)}
         />
       )}
-      {projection && selection && (
-        <CapabilityPanel
-          projection={projection}
-          selection={selection}
-          onPrefill={onDraft}
-        />
-      )}
+      {controls && (hasAgent ? (
+        <details className="card__details">
+          <summary>{t("composer.controls")}</summary>
+          {controls}
+        </details>
+      ) : controls)}
       {gestures.length > 0 && (
         <div className="marks" aria-label={t("composer.marks.ariaLabel")}>
           <span className="quiet">{t("composer.marks.with")}</span>

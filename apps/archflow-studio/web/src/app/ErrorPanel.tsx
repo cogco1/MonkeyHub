@@ -9,6 +9,7 @@
 
 import type { StudioApiError } from "../api/client";
 import { BilingualText } from "../i18n/BilingualText";
+import { useT } from "../i18n/useT";
 
 const PROTECTED_TEXT =
   /(`[^`]+`|https?:\/\/[^\s]+|(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+\/[^\s,;]+|[A-Za-z]:\\[^\r\n]+|\/api\/[^\s,;]+|[0-9a-fA-F]{32,}|[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}|\b[A-Z][A-Z0-9_]{2,}\b|\b(?=[A-Za-z0-9_-]*\d)(?:[A-Za-z0-9]+[-_])+(?:[A-Za-z0-9_-]+)\b|[^\s,;]+\.(?:3dm|json|toml|ya?ml|txt|md)\b)/g;
@@ -55,6 +56,23 @@ export function ErrorPanel({
   error: StudioApiError;
   what?: string;
 }) {
+  const t = useT();
+  if (error.code === "SEMANTIC_EDIT_INVALID") {
+    return (
+      <div className="error-panel" role="alert">
+        <p className="error-panel__detail">{t("error.semanticEditInvalid")}</p>
+        <details className="card__details">
+          <summary>{t("common.technicalDetails")}</summary>
+          <p className="error-panel__head">
+            <span className="error-panel__code">{error.code}</span>
+            <span className="error-panel__status">HTTP {error.status}</span>
+            {what && <span className="error-panel__what">{what}</span>}
+          </p>
+          <p className="error-panel__detail"><BilingualProse source={error.detail} /></p>
+        </details>
+      </div>
+    );
+  }
   return (
     <div className="error-panel" role="alert">
       <p className="error-panel__head">
