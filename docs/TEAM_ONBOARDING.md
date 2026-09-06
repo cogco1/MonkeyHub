@@ -2,6 +2,8 @@
 
 先完成一件事：**在自己的电脑、源码目录和运行目录里跑通一个现有任务，让另一人能按同一版本复现。** 不需要先理解整个 ArchFlow，也不用先新增模块。
 
+若从尚未合并的 PR 进入本页，直接把本页链接交给 Agent；此时从 `main` clone 的源码里可能还没有这份清单，不必为了取得文档而更换约定的代码基线。
+
 ## 先看这一屏
 
 | 你要做什么 | 从哪里进入 | 第一个结果 |
@@ -219,7 +221,8 @@ npm.cmd run build
 ## 6. 把这段发给她的 Agent
 
 ```text
-请按 ArchFlow 的 docs/TEAM_ONBOARDING.md 帮我完成首次接入。
+请先读取这份 GitHub 接入清单，帮我完成首次接入（代码版本仍按负责人指定）：
+https://github.com/cogco1/ARCHFLOW_V4/blob/ebb7c9b6441132d29c95a3a3ca28f8d54ebedd99/docs/TEAM_ONBOARDING.md
 先读两个目标仓库的 AGENTS.md、这份清单和所选仓库 README，报告：
 当前能访问的仓库与提交、我今天先跑哪个入口、成功时应看到什么。
 不要从旧会话或维护者个人路径猜环境，也不要把本地开发功能当作 GitHub 已发布功能。
