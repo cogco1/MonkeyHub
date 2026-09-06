@@ -1,4 +1,16 @@
-"""Fast policy-as-code checks for ArchFlow V4 architecture boundaries."""
+"""Fast policy-as-code checks for ArchFlow V4 architecture boundaries.
+
+Two modes. Without arguments it checks the tree: layer imports, filesystem
+write ownership, state authorities, the probe boundary, the module registry,
+and -- since people now develop in parallel -- that no two live work cards claim
+the same path.
+
+With ``--changed <base>`` it checks one branch instead: every commit in
+``<base>..HEAD`` declares which card it belongs to by writing that card's id
+(``P###``) in the commit subject, or in the body when the subject names none,
+and the commit may write only that card's ``write_scope`` plus the shared
+ledgers. This is the mode CI runs on a pull request.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +18,7 @@ import argparse
 import ast
 import json
 import re
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -98,6 +111,8 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
         "probe_executable_suffixes",
         "authority_symbol_patterns",
         "forbidden_commit_symbols",
+        "import_only_source_roots",
+        "shared_write_scope",
     ):
         _require_string_list(policy, field)
     checked_roots = policy["checked_source_roots"]
@@ -109,6 +124,15 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
         raise ArchitecturePolicyError(
             "checked_source_roots must include source_root"
         )
+    for import_only in policy["import_only_source_roots"]:
+        if import_only not in checked_roots:
+            raise ArchitecturePolicyError(
+                "checked_source_roots must include every import_only_source_root"
+            )
+        if import_only == policy["source_root"]:
+            raise ArchitecturePolicyError(
+                "source_root cannot be import-only"
+            )
 
     write_sites = policy.get("allowed_write_sites")
     if not isinstance(write_sites, list):
@@ -243,6 +267,24 @@ def _source_matches(relative: str, prefix: str) -> bool:
     normalized = prefix.rstrip("/")
     return relative == normalized + ".py" or relative.startswith(
         normalized + "/"
+    )
+
+
+def _is_import_only(relative: str, policy: dict[str, Any]) -> bool:
+    """Is this file in a root that is checked for imports and nothing else?
+
+    ``labs/`` is such a root. A lab is interest-driven exploration: it may
+    import ``archflow`` and must therefore be walked by the import check, which
+    is what keeps the spine from importing it back. It is deliberately outside
+    every other check: no module-registry owner, no write-site registration, no
+    duplicate-authority or instance-literal rule. Scoping it here, rather than
+    by leaving ``labs`` out of ``checked_source_roots``, keeps one file list and
+    states the exemption in one predicate.
+    """
+
+    return any(
+        _source_matches(relative, root)
+        for root in policy["import_only_source_roots"]
     )
 
 
@@ -573,7 +615,10 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
             yield PolicyFinding(rel_registry, 1, "REGISTRY_UNTESTED_OWNER", f"{module_id} lists no test and gives no untested_reason")
     owner_paths = {root / f for e in entries for f in (e.get("files") or [e.get("owner_path", "")])}
     for path in _checked_python_files(root, policy):
+        relative_path = path.relative_to(root).as_posix()
         if path in owner_paths or "/tests/" in path.as_posix() or path.name == "__init__.py":
+            continue
+        if _is_import_only(relative_path, policy):
             continue
         try:
             src = path.read_text(encoding="utf-8")
@@ -587,10 +632,207 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
                     yield PolicyFinding(path.relative_to(root).as_posix(), node.lineno, "DUPLICATE_OWNED_FUNCTION", f"{node.name} duplicates {hit[0]}.{hit[1]}; import the owner")
 
 
+WORK_REGISTRY = "governance/work_registry.json"
+LIVE_SCOPE_STATUSES = frozenset({"active", "ready"})
+CARD_ID = re.compile(r"P\d{3}")
+# Governance paths a commit may touch without naming a card. Everything else
+# belongs to exactly one card, whose write_scope says so.
+UNCARDED_WRITE_SCOPE = ("docs/adr/", "docs/REPO_LAYOUT.md", "CONTRIBUTING.md")
+
+
+def load_work_registry(root: Path) -> dict[str, Any] | None:
+    """The live work registry, or None when the repository has none."""
+
+    path = root / WORK_REGISTRY
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ArchitecturePolicyError(f"invalid work registry: {path}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        raise ArchitecturePolicyError(f"invalid work registry: {path}")
+    return data
+
+
+def _scope_parts(entry: str) -> tuple[str, ...]:
+    """One write-scope entry as path segments; a file and a directory look alike."""
+
+    cleaned = entry.strip().replace("\\", "/").strip("/")
+    return tuple(part for part in cleaned.split("/") if part and part != ".")
+
+
+def _scope_covers(scope: str, path: str) -> bool:
+    """Does one write-scope entry contain this path (or equal it)?"""
+
+    prefix = _scope_parts(scope)
+    parts = _scope_parts(path)
+    return bool(prefix) and parts[: len(prefix)] == prefix
+
+
+def _scopes_overlap(left: str, right: str) -> bool:
+    """Two write-scope entries overlap when either contains the other."""
+
+    return _scope_covers(left, right) or _scope_covers(right, left)
+
+
+def _covered_by_any(path: str, scopes: Iterable[str]) -> bool:
+    return any(_scope_covers(scope, path) for scope in scopes)
+
+
+def check_scopes(
+    root: Path,
+    policy: dict[str, Any],
+    registry: dict[str, Any] | None,
+) -> Iterator[PolicyFinding]:
+    """Two live cards cannot own the same path.
+
+    ``write_scope`` is what a card may write, and it is the only boundary
+    between people developing in parallel. If two cards that are active or
+    ready claim the same directory, or one claims a directory inside the
+    other's, nobody can say whose change a conflict is. The shared ledgers
+    (``shared_write_scope`` in the policy: the suite, the card directory and the
+    two registries) are exempt because every card must be able to write them.
+    """
+
+    if registry is None:
+        return
+    shared = policy["shared_write_scope"]
+    live = [
+        item
+        for item in registry["items"]
+        if isinstance(item, dict) and item.get("status") in LIVE_SCOPE_STATUSES
+    ]
+    live.sort(key=lambda item: str(item.get("id", "")))
+    for index, first in enumerate(live):
+        for second in live[index + 1 :]:
+            pairs = sorted(
+                {
+                    (left, right)
+                    for left in first.get("write_scope", ())
+                    for right in second.get("write_scope", ())
+                    if isinstance(left, str)
+                    and isinstance(right, str)
+                    and not _covered_by_any(left, shared)
+                    and not _covered_by_any(right, shared)
+                    and _scopes_overlap(left, right)
+                }
+            )
+            for left, right in pairs:
+                yield PolicyFinding(
+                    WORK_REGISTRY,
+                    1,
+                    "SCOPE_OVERLAP",
+                    f"{first.get('id')} write_scope {left!r} overlaps "
+                    f"{second.get('id')} write_scope {right!r}; "
+                    "narrow one card or make the path a shared ledger",
+                )
+
+
+def _git(root: Path, *args: str) -> str:
+    try:
+        completed = subprocess.run(
+            ("git", *args),
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", "") or str(exc)
+        raise ArchitecturePolicyError(
+            f"git {' '.join(args)} failed: {detail.strip()}"
+        ) from exc
+    return completed.stdout
+
+
+def _commit_card(message: str) -> str | None:
+    """The card a commit declares: a ``P###`` in the subject, else in the body.
+
+    The subject wins because a body says things about other cards -- what this
+    change unblocks, which card a finding belongs to -- and a commit would
+    otherwise be filed under whichever card it mentioned last. Within one part
+    of the message the last id still wins, so a subject or a body naming its
+    card twice is unambiguous.
+    """
+
+    subject = message.splitlines()[0] if message.strip() else ""
+    found = CARD_ID.findall(subject) or CARD_ID.findall(message)
+    return found[-1] if found else None
+
+
+def check_changed_scopes(
+    root: Path,
+    policy: dict[str, Any],
+    registry: dict[str, Any] | None,
+    base: str,
+) -> Iterator[PolicyFinding]:
+    """Did this branch write only what its cards allow?
+
+    Every commit between ``base`` and ``HEAD`` declares its card by writing the
+    card id (``P###``) in the subject, or in the body when the subject names
+    none; the last id in whichever part decides wins. That card's
+    ``write_scope`` plus the shared ledgers is what the commit may touch,
+    deletions included. A commit that declares no card -- or an id no
+    live card carries, ``P000`` for governance work included -- may still touch
+    the shared ledgers, ``docs/adr/``, ``docs/REPO_LAYOUT.md`` and
+    ``CONTRIBUTING.md``; anything else is undeclared.
+    """
+
+    shared = list(policy["shared_write_scope"])
+    cards = {
+        str(item.get("id")): item
+        for item in (registry or {}).get("items", ())
+        if isinstance(item, dict)
+    }
+    revisions = [
+        line.strip()
+        for line in _git(root, "rev-list", "--reverse", f"{base}..HEAD").splitlines()
+        if line.strip()
+    ]
+    for revision in revisions:
+        message = _git(root, "show", "-s", "--format=%B", revision)
+        files = sorted(
+            {
+                line.strip()
+                for line in _git(
+                    root, "show", "--pretty=format:", "--name-only", revision
+                ).splitlines()
+                if line.strip()
+            }
+        )
+        card_id = _commit_card(message)
+        card = cards.get(card_id) if card_id else None
+        if card is None:
+            allowed = shared + list(UNCARDED_WRITE_SCOPE)
+            code = "SCOPE_UNDECLARED"
+            named = (
+                f"commit {revision[:8]} names no live card"
+                if card_id is None
+                else f"commit {revision[:8]} names {card_id}, which is not a live card"
+            )
+        else:
+            allowed = list(card.get("write_scope", ())) + shared
+            code = "SCOPE_VIOLATION"
+            named = f"commit {revision[:8]} is {card_id}"
+        for path in files:
+            if _covered_by_any(path, allowed):
+                continue
+            yield PolicyFinding(
+                path,
+                1,
+                code,
+                f"{named}; {path} is outside its write scope",
+            )
+
+
 def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     validate_policy(policy, root)
     findings: list[PolicyFinding] = list(check_probe_boundary(root, policy))
     findings.extend(check_registry(root, policy))
+    findings.extend(check_scopes(root, policy, load_work_registry(root)))
     for path in _checked_python_files(root, policy):
         relative = path.relative_to(root).as_posix()
         tree, parse_finding = _parse(path, root)
@@ -603,7 +845,7 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
             check_imports(relative, index, policy)
         ]
         in_tests = "/tests/" in relative or relative.startswith("tests/")
-        if not in_tests and any(_source_matches(relative, root_prefix) for root_prefix in policy["checked_source_roots"]):
+        if not in_tests and not _is_import_only(relative, policy) and any(_source_matches(relative, root_prefix) for root_prefix in policy["checked_source_roots"]):
             checks.extend(
                 (
                     check_instance_answers(relative, index, policy),
@@ -618,7 +860,13 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Architecture boundaries as code. Without --changed it checks the "
+            "tree; with --changed it checks one branch against the write "
+            "scopes its commits declare."
+        )
+    )
     parser.add_argument(
         "--root",
         type=Path,
@@ -626,6 +874,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--policy", type=Path)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--changed",
+        metavar="BASE",
+        help=(
+            "Check only the commits in BASE..HEAD against their declared card "
+            "write scopes. Each commit names its card by writing P### in the "
+            "subject, or in the body when the subject names none."
+        ),
+    )
     return parser
 
 
@@ -640,7 +897,21 @@ def main(argv: list[str] | None = None) -> int:
     started = time.perf_counter()
     try:
         policy = load_policy(policy_path)
-        findings = run_checks(root, policy)
+        if args.changed:
+            validate_policy(policy, root)
+            findings = tuple(
+                sorted(
+                    set(
+                        check_changed_scopes(
+                            root, policy, load_work_registry(root), args.changed
+                        )
+                    )
+                )
+            )
+            checked = 0
+        else:
+            findings = run_checks(root, policy)
+            checked = len(_checked_python_files(root, policy))
     except ArchitecturePolicyError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -651,7 +922,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "schema": "ArchFlowArchitectureCheck@1",
                     "passed": not findings,
-                    "files_checked": len(_checked_python_files(root, policy)),
+                    "files_checked": checked,
                     "elapsed_seconds": round(elapsed, 6),
                     "findings": [item.to_dict() for item in findings],
                 },
@@ -666,10 +937,12 @@ def main(argv: list[str] | None = None) -> int:
                 f"{finding.path}:{finding.line}: "
                 f"{finding.code}: {finding.message}"
             )
+    elif args.changed:
+        print(f"WRITE SCOPE PASS ({args.changed}..HEAD, {elapsed:.3f}s)")
     else:
         print(
             "ARCHITECTURE PASS "
-            f"({len(_checked_python_files(root, policy))} files, "
+            f"({checked} files, "
             f"{elapsed:.3f}s)"
         )
     return 1 if findings else 0

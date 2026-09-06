@@ -5,7 +5,17 @@
     "archflow",
     "tools",
     "apps/archflow-studio/api",
-    "tests"
+    "tests",
+    "labs"
+  ],
+  "import_only_source_roots": [
+    "labs"
+  ],
+  "shared_write_scope": [
+    "docs/mapping/",
+    "governance/module_registry.json",
+    "governance/work_registry.json",
+    "tests/"
   ],
   "probe_root": "probes",
   "forbidden_instance_literals": [
@@ -136,6 +146,34 @@
     }
   ],
   "forbidden_layer_imports": [
+    {
+      "source": "archflow",
+      "targets": [
+        "labs"
+      ],
+      "reason": "labs/ is interest-driven exploration: a lab may import the spine, the spine may never import a lab. A lab graduates by becoming a card with an owner in the module registry, and the lab copy is retired in the same change (labs/README.md)."
+    },
+    {
+      "source": "tools",
+      "targets": [
+        "labs"
+      ],
+      "reason": "Spine and governance CLIs are the repository's, not an exploration's; a tool that needs a lab's code is asking for that lab to graduate."
+    },
+    {
+      "source": "apps",
+      "targets": [
+        "labs"
+      ],
+      "reason": "The Studio ships to users; a lab is not shipped."
+    },
+    {
+      "source": "tests",
+      "targets": [
+        "labs"
+      ],
+      "reason": "The spine suite is the spine's. A lab's own checks live in that lab."
+    },
     {
       "source": "archflow",
       "targets": [
