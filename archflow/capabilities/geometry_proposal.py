@@ -297,6 +297,10 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
             _function_parameter(
                 "start_radius", GeometryParameterKind.NUMBER, unit=_METER
             ),
+            _function_parameter(
+                "base_offset", GeometryParameterKind.NUMBER, unit=_METER,
+                required=False,
+            ),
         ),
     ),
     "solid": _function_contract(

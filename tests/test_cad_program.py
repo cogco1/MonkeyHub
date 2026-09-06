@@ -397,6 +397,28 @@ class ExpectedBoundsTest(unittest.TestCase):
         self.assertEqual([0.0, 0.0, 1.0], beam["bbox_min"])
         self.assertEqual([10.0, 4.0, 5.0], beam["bbox_max"])
 
+    def test_revolve_keeps_its_radius_minimum_and_moves_its_axis_with_the_base_datum(self):
+        build = program(op("arch-axis", "revolve", ["arch-object"],
+                           axis_start=[0.0, 0.0, 0.0], axis_end=[0.0, 0.0, -0.4],
+                           start_radius=0.005, end_radius=0.005,
+                           base_level=4.0, base_offset=1.2))
+        bounds = expected_object_bounds(build)["arch-object"]
+        self.assertEqual([-0.01, 5.19, -0.4], bounds["bbox_min"])
+        self.assertEqual([0.01, 5.21, 0.0], bounds["bbox_max"])
+        script = translate_to_rhino_python(build).script
+        self.assertIn("(0.0,0.0,5.2)", script)
+        self.assertIn(", 0.01)", script)
+
+    def test_revolve_rejects_degenerate_axes_and_nonfinite_radii(self):
+        params = dict(axis_start=[0.0, 0.0, 0.0], axis_end=[0.0, 1.0, 0.0],
+                      start_radius=1.0, end_radius=1.0)
+        for change in ({"axis_end": [0.0, 0.0, 0.0]}, {"start_radius": float("inf")}):
+            with self.subTest(change=change):
+                build = program(op("bad", "revolve", ["bad-object"], **(params | change)))
+                for consume in (expected_object_bounds, translate_to_rhino_python):
+                    with self.assertRaises(CadTranslationError):
+                        consume(build)
+
     def test_box_keeps_its_bounds_under_a_through_cut(self):
         # P092: a notch or a through-hole strictly inside a box on one
         # axis cannot remove a whole face, so the box's bounds survive.

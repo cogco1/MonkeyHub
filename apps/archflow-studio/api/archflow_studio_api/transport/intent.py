@@ -216,7 +216,7 @@ Outcome = Literal[
     "COMPILED", "NEEDS_CLARIFICATION", "MISSING_EDITABLE_CONTROL", "UNSUPPORTED"
 ]
 ActionKind = Literal[
-    "change_existing_value", "declare_missing_control", "clarify", "unsupported"
+    "change_existing_value", "declare_missing_control", "edit_components", "clarify", "unsupported"
 ]
 
 
@@ -479,7 +479,10 @@ def agent_dto(compilation: Compilation) -> AgentReadingDto:
     return AgentReadingDto(
         provider=compilation.provider,
         model=compilation.model,
-        compiled_utterance=compilation.utterance or "",
+        compiled_utterance=(
+            str(compilation.semantic_edit.get("summary", ""))
+            if compilation.semantic_edit is not None else compilation.utterance or ""
+        ),
         why=compilation.why,
         latency_ms=(
             compilation.latency_ms if receipt is None else receipt.duration_ms

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
-from archflow.capabilities.wall_solver import CONTACT_TOLERANCE_M, _overlaps
+from archflow.capabilities.wall_solver import (
+    CONTACT_TOLERANCE_M, OpeningKind, OpeningRequest, WallElement, WallSolverError, _overlaps, solve_wall,
+)
 
 
 class OverlapTests(unittest.TestCase):
@@ -23,6 +26,37 @@ class OverlapTests(unittest.TestCase):
         b = ((0.5, 0.5, 0.9), (1.5, 1.5, 2.0))
         self.assertTrue(_overlaps(a, b))
         self.assertTrue(_overlaps(a, b, tolerance=0.0))
+
+
+class ArchOpeningTests(unittest.TestCase):
+    def test_semicircular_dimensions_are_explicit_and_checked(self) -> None:
+        opening = OpeningRequest("arch", OpeningKind.DOOR, 3.0, 2.4, 0.0, 2.7,
+                                 "binding-opening", shape="semicircular_arch", spring_height=1.5)
+        for change in ({"spring_height": None}, {"spring_height": -0.1}, {"head": 2.8},
+                       {"shape": "elliptical"}, {"shape": "rectangular"},
+                       {"width": 0.01, "head": 1.505}):
+            with self.subTest(change=change), self.assertRaises(WallSolverError):
+                replace(opening, **change)
+        self.assertEqual(opening.to_dict()["shape"], "semicircular_arch")
+        self.assertEqual(opening.to_dict()["spring_height"], 1.5)
+        rectangle = replace(opening, shape="rectangular", spring_height=None)
+        self.assertNotIn("shape", rectangle.to_dict())
+        self.assertNotIn("spring_height", rectangle.to_dict())
+
+    def test_repeated_arches_keep_their_shape_and_each_datum_binding(self) -> None:
+        wall = WallElement("wall", (0.0, 0.0), (1.0, 0.0), 8.0, 0.3, 4.0,
+                           "level-ground", "world", "binding-wall")
+        opening = OpeningRequest("arch", OpeningKind.DOOR, 2.0, 2.4, 0.0, 2.7,
+                                 "binding-opening", count=2, step=4.0,
+                                 shape="semicircular_arch", spring_height=1.5)
+        result = solve_wall(wall, (opening,))
+        void = result.voids[0]
+        self.assertEqual((void.shape, void.spring_height, void.count), ("semicircular_arch", 1.5, 2))
+        self.assertEqual(len(void.aperture_object_ids), 2)
+        self.assertEqual(void.to_dict()["shape"], "semicircular_arch")
+        primitives = {op.op_id for op in result.operations if not op.input_object_ids}
+        self.assertEqual({binding.op_id for binding in result.datum_bindings}, primitives)
+        self.assertEqual(sum(op.kind.value == "revolve" for op in result.operations), 2)
 
 
 if __name__ == "__main__":

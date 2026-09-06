@@ -21,7 +21,7 @@ mapping at point construction (``cad_point``), so STEP, preview and the
 Rhino ``.3dm`` share one frame and one set of expected bounds.
 
 Capability.  Only the operation kinds the initial consumers actually use are
-realized: ``solid`` (box), ``extrusion``, polyline ``loft`` (capped into a
+realized: ``solid`` (box), ``revolve`` (cylinder or conical frustum), ``extrusion``, polyline ``loft`` (capped into a
 closed solid, or with ``cap_ends`` false the lofted surface itself, open at
 both end sections, for a source that gives a drum or a dome as a surface
 without thickness), the three booleans, and the linear ``array`` the
@@ -70,7 +70,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
-from archflow.adapters.cad_program import _params, _physical_ids, lift_to_base_level
+from archflow.adapters.cad_program import _params, _physical_ids, _revolve_parameters, lift_to_base_level
 from archflow.compilers.geometry import CompiledGeometryProgram
 
 
@@ -105,6 +105,7 @@ class OcctBuildError(OcctBackendError):
 SUPPORTED_OPERATION_KINDS: frozenset[str] = frozenset(
     {
         "solid",
+        "revolve",
         "extrusion",
         "loft",
         "boolean_union",
@@ -123,7 +124,6 @@ _UNSUPPORTED_REASONS: Mapping[str, str] = {
     "curve": "curve objects are not B-rep deliveries; the OCCT executor writes solids and lofted surfaces only",
     "transform": "transform has no exact realization (the Rhino translation only copies it)",
     "radial_array": "radial block instancing is not realized by the OCCT executor yet",
-    "revolve": "revolve is not realized by the OCCT executor yet",
     "sweep": "sweep is not realized by the OCCT executor yet",
     "asset_instance": "asset instances are not realized by the OCCT executor",
 }
@@ -357,6 +357,14 @@ def _build_operation(
         face = _planar_face(occ, profile, op_id)
         vx, vy, vz = cad_point(vector)
         return occ.BRepPrimAPI.BRepPrimAPI_MakePrism(face, occ.gp.gp_Vec(vx, vy, vz)).Shape()
+    if kind == "revolve":
+        a0, a1, r0, r1 = _revolve_parameters(params, op_id)
+        axis = [a1[i] - a0[i] for i in range(3)]
+        length = math.sqrt(sum(value * value for value in axis))
+        placement = occ.gp.gp_Ax2(_gp_point(occ, a0), occ.gp.gp_Dir(*cad_point(axis)))
+        if r0 == r1:
+            return occ.BRepPrimAPI.BRepPrimAPI_MakeCylinder(placement, r0, length).Shape()
+        return occ.BRepPrimAPI.BRepPrimAPI_MakeCone(placement, r0, r1, length).Shape()
     if kind == "loft":
         profiles = lift_to_base_level(params["profiles"], params, op_id)
         size = int(params["profile_size"])

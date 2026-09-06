@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from dataclasses import replace
 
 from archflow.capabilities.opening_solver import (
     DoorType,
@@ -39,6 +40,12 @@ def _params(op) -> dict:
 
 
 class WholeFrameTests(unittest.TestCase):
+    def test_rectangular_types_refuse_an_arched_void(self) -> None:
+        for kind, solve, fill in ((OpeningKind.WINDOW, solve_window, WINDOW), (OpeningKind.DOOR, solve_door, DOOR)):
+            void = replace(_void(kind), shape="semicircular_arch", spring_height=1.8)
+            with self.subTest(kind=kind), self.assertRaisesRegex(OpeningSolverError, "needs a rectangular void"):
+                solve(void, fill, binding_id="binding-opening")
+
     def test_the_frame_is_one_union_of_four_consumed_bars_and_the_pane_stays_separate(self) -> None:
         solution = solve_window(_void(), WINDOW, binding_id="binding-opening")
         by_id = {op.op_id: op for op in solution.operations}

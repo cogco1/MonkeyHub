@@ -62,6 +62,187 @@ class ElementProducerError(ValueError):
     """Typed failure of a reference-reading producer."""
 
 
+def producer_signatures() -> dict[str, dict[str, Any]]:
+    """The semantic authoring contracts the Studio can query and execute.
+
+    The first authoring consumer is a wall with hosted apertures. Other
+    existing producers remain executable; they are not advertised as semantic
+    creation tools until their authored parameter contract is exposed here.
+    Values and placements belong to the project's record, never this table.
+    """
+
+    def obj(properties: dict[str, Any], required: tuple[str, ...] = ()) -> dict[str, Any]:
+        return {"type": "object", "properties": properties,
+                "required": list(required), "additionalProperties": False}
+
+    scalar = {"anyOf": [{"type": "number"}, {"type": "string", "pattern": r"^@[A-Za-z0-9_.:-]+$"}],
+              "description": "A value in metres, or an explicit @parameter binding."}
+    identifier = {"type": "string", "minLength": 1}
+    grid_role = {**identifier, "description": "The existing GridAxis@1 fields.role, not its entity_id."}
+    level_id = {**identifier, "description": "The existing Level@1 entity_id, not its role."}
+    plan = {"anyOf": [
+        obj({"grid": {"anyOf": [grid_role, {"type": "array", "items": grid_role,
+                                                "minItems": 2, "maxItems": 2}]}}, ("grid",)),
+        obj({"axis_point": obj({"axis": grid_role, "along": scalar}, ("axis", "along"))}, ("axis_point",)),
+        obj({"host": obj({"element": identifier, "along": scalar, "across": scalar},
+                         ("element", "along"))}, ("host",)),
+    ]}
+    elevation = {"anyOf": [
+        obj({"level": level_id}, ("level",)),
+        obj({"datum": identifier, "offset": scalar}, ("datum",)),
+        obj({"offset_from": obj({"level": level_id, "offset": scalar}, ("level", "offset"))},
+            ("offset_from",)),
+    ]}
+    # Hosted opening elevations use the level resolver; published datums are
+    # supported by the wall's base/top resolver only.
+    opening_elevation = {"anyOf": [elevation["anyOf"][0], elevation["anyOf"][2]]}
+    opening = obj({
+        "opening_id": identifier,
+        "component_id": identifier,
+        "kind": {"type": "string", "enum": ["door", "window"]},
+        "shape": {"type": "string", "enum": ["rectangular", "semicircular_arch"],
+                  "description": "The aperture profile. An unfilled doorway has no door leaf."},
+        "along": scalar,
+        "at": plan,
+        "width": scalar,
+        "sill": {"anyOf": [scalar, opening_elevation]},
+        "head": {"anyOf": [scalar, opening_elevation]},
+        "spring_height": {**scalar, "description":
+            "For semicircular_arch only: springing above the wall base; head - spring_height = width / 2."},
+        "count": {"anyOf": [{"type": "integer", "minimum": 1},
+                              {"type": "string", "pattern": r"^@[A-Za-z0-9_.:-]+$"}]},
+        "step": scalar,
+        "type_id": {**identifier, "description": "Only an existing compatible rectangular window or door type; omit for an empty passage."},
+        "interface_ref": identifier,
+    }, ("opening_id", "kind", "width", "sill", "head"))
+    return {"wall": {
+        "producer": "wall",
+        "label": "墙体与宿主开口",
+        "description": (
+            "A straight wall placed on existing grids or host references. Its hosted opening may be "
+            "rectangular or semicircular. No opening type means an empty passage, with no frame or leaf. "
+            "Types supply reusable defaults; instance params and references override named defaults. "
+            "References and dimensions must come from the project or an explicit design proposal. "
+            "A supporting wall ends at the supported slab's underside, not its walking surface."
+        ),
+        "parameters": obj({
+            "height": {**scalar, "description": "Wall height; optional when references.top determines it."},
+            "thickness": {**scalar, "description": "Positive wall thickness towards the line's inward normal."},
+            "openings": {"type": "array", "items": opening},
+        }),
+        "references": obj({
+            "base": {"anyOf": [obj({"level": level_id}, ("level",)), obj({"datum": identifier}, ("datum",))]},
+            "top": elevation,
+            "support": {**identifier, "description": "Existing support reference; bearing is declared by a named support relationship."},
+            "line": obj({"from": plan, "to": plan,
+                         "face": {"type": "string", "description": "The existing wall face label, when the record names one."},
+                         "inward": {"type": "array", "items": {"type": "number"},
+                                    "minItems": 2, "maxItems": 2}}, ("from", "to")),
+        }),
+        "requiredParameters": ["thickness"],
+        "requiredReferences": ["base", "line"],
+        "constraints": [
+            "Provide either height or references.top; if both are stated they must agree.",
+            "Each aperture needs along or at, and remains inside its wall's length and height.",
+            "A semicircular aperture requires spring_height >= sill and head - spring_height = width / 2.",
+            "Use @parameter bindings for dimensions that subsequent changes must share.",
+            "Use existing relation kinds for support, host, adjacency or clearance; proximity does not prove support.",
+        ],
+    }}
+
+
+def _check_signature_value(value: Any, schema: Mapping[str, Any], field_name: str) -> None:
+    """Check the small JSON-schema vocabulary returned by this owner's signatures."""
+
+    if "anyOf" in schema:
+        for option in schema["anyOf"]:
+            try:
+                _check_signature_value(value, option, field_name)
+                return
+            except ElementProducerError:
+                pass
+        raise ElementProducerError(f"{field_name}: value does not match the producer signature")
+    kind = schema.get("type")
+    valid_type = {
+        "object": isinstance(value, Mapping),
+        "array": isinstance(value, (list, tuple)),
+        "number": isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value),
+        "integer": isinstance(value, int) and not isinstance(value, bool),
+        "string": isinstance(value, str),
+    }.get(kind, False)
+    if not valid_type:
+        raise ElementProducerError(f"{field_name}: expected {kind}")
+    if "enum" in schema and value not in schema["enum"]:
+        raise ElementProducerError(f"{field_name}: unsupported value {value!r}")
+    if kind == "object":
+        properties = schema.get("properties", {})
+        missing = set(schema.get("required", ())) - value.keys()
+        unknown = value.keys() - properties.keys() if schema.get("additionalProperties") is False else set()
+        if missing or unknown:
+            raise ElementProducerError(f"{field_name}: missing {sorted(missing)}, unknown {sorted(unknown)}")
+        for key, item in value.items():
+            if key in properties:
+                _check_signature_value(item, properties[key], f"{field_name}.{key}")
+    elif kind == "array":
+        if len(value) < schema.get("minItems", 0) or len(value) > schema.get("maxItems", len(value)):
+            raise ElementProducerError(f"{field_name}: incorrect number of items")
+        for index, item in enumerate(value):
+            _check_signature_value(item, schema["items"], f"{field_name}[{index}]")
+    elif kind == "string":
+        if len(value) < schema.get("minLength", 0):
+            raise ElementProducerError(f"{field_name}: an empty name is not allowed")
+        if "pattern" in schema:
+            import re
+            if re.fullmatch(schema["pattern"], value) is None:
+                raise ElementProducerError(f"{field_name}: invalid parameter binding")
+    elif "minimum" in schema and value < schema["minimum"]:
+        raise ElementProducerError(f"{field_name}: value is below {schema['minimum']}")
+
+
+def validate_element_contract(record, element_ids: tuple[str, ...]) -> None:
+    """Check a semantic edit against the advertised producer and its real solver.
+
+    This creates domain operations in memory only. Geometry, dimensions,
+    reference resolution and opening rules are checked by their existing
+    owners; no second solver or persistence path is introduced.
+    """
+
+    ids = set(element_ids)
+    if not ids:
+        return
+    rows = element_rows_of(record)
+    by_id = {row.element_id: row for row in rows}
+    unknown = sorted(ids - by_id.keys())
+    if unknown:
+        raise ElementProducerError(f"semantic edit names unknown elements: {unknown}")
+    signatures = producer_signatures()
+    for entity_id in ids:
+        row = by_id[entity_id]
+        signature = signatures.get(row.producer)
+        if signature is None:
+            raise ElementProducerError(f"{entity_id}: semantic authoring is not available for {row.producer!r}")
+        for key in signature["requiredParameters"]:
+            if key not in row.params:
+                raise ElementProducerError(f"{entity_id}: the wall needs {key} from its type or instance")
+        for key in signature["requiredReferences"]:
+            if key not in row.references:
+                raise ElementProducerError(f"{entity_id}: the wall needs a {key} reference")
+        # Existing rectangular fill types and exclusion policy retain their
+        # solver's contract; semantic creation does not invent either one.
+        _check_signature_value({k: v for k, v in row.params.items() if k not in {"types", "respect_exclusions"}},
+                               signature["parameters"], f"{entity_id}.params")
+        _check_signature_value(row.references, signature["references"], f"{entity_id}.references")
+    from archflow.state.state_record import project_grids_of, project_levels_of
+
+    context = ProductionContext(
+        references=ReferenceContext(grids=project_grids_of(record), levels=project_levels_of(record)),
+        published={},
+    )
+    # Existing rows establish host lines and top datums for the edited rows.
+    # This is the same dependency order the runner uses, with no CAD execution.
+    produce_rows(rows, context)
+
+
 def _finite(value: object, field: str) -> float:
     """The owned finite-number rule, typed for this module's callers."""
 
@@ -233,21 +414,24 @@ def _base(row: ElementRow, context: ProductionContext) -> tuple[str, float]:
 
 def _height(row: ElementRow, context: ProductionContext, base_datum: str) -> float:
     params = row.params
-    if "height" in params:
-        return _positive(params["height"], f"{row.element_id} height")
+    declared = _positive(params["height"], f"{row.element_id} height") if "height" in params else None
     top = row.references.get("top")
     if top is None:
-        raise ElementProducerError(f"{row.element_id}: height or top reference required")
+        if declared is None:
+            raise ElementProducerError(f"{row.element_id}: height or top reference required")
+        return declared
     if isinstance(top, Mapping) and "datum" in top:
         top_id = str(top["datum"])
+        offset = _finite(top.get("offset", 0.0), f"{row.element_id} top offset")
     else:
         top_id, offset = resolve_elevation(parse_reference(top), context.references)
-        if offset:
-            raise ElementProducerError(f"{row.element_id}: a top reference cannot carry an offset")
-    height = round(context.datum_value(top_id) - context.datum_value(base_datum), 9)
+    _, base_offset = _base(row, context)
+    height = round(context.datum_value(top_id) + offset - context.datum_value(base_datum) - base_offset, 9)
     if height <= 0.0:
         raise ElementProducerError(f"{row.element_id}: top {top_id!r} is not above base {base_datum!r}")
-    return height
+    if declared is not None and not math.isclose(declared, height, rel_tol=0.0, abs_tol=0.001):
+        raise ElementProducerError(f"{row.element_id}: height {declared} conflicts with the top reference height {height}")
+    return declared if declared is not None else height
 
 
 def _engagement(row: ElementRow, label: str) -> float:
@@ -413,7 +597,10 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
         head = o["head"] if not isinstance(o["head"], Mapping) else _rel(o["head"], base_datum, context)
         openings.append(OpeningRequest(o["opening_id"], OpeningKind(o["kind"]), round(_finite(along, f"{o['opening_id']} along"), 9), _finite(o["width"], f"{o['opening_id']} width"),
                                        round(_finite(sill, f"{o['opening_id']} sill"), 9), round(_finite(head, f"{o['opening_id']} head"), 9), f"binding-{o.get('component_id', row.component_id)}",
-                                       int(o.get("count", 1)), _finite(o.get("step", 0.0), f"{o['opening_id']} step")))
+                                        int(o.get("count", 1)), _finite(o.get("step", 0.0), f"{o['opening_id']} step"),
+                                        shape=str(o.get("shape", "rectangular")),
+                                        spring_height=(None if o.get("spring_height") is None else
+                                                       round(_finite(o["spring_height"], f"{o['opening_id']} spring_height"), 9))))
     exclusions = context.exclusions if p.get("respect_exclusions", True) else ()
     solution = solve_wall(wall, tuple(openings), exclusions=exclusions, base_elevation=context.datum_value(base_datum) if exclusions else None)
     ops, bindings, assemblies = list(solution.operations), list(solution.datum_bindings), []

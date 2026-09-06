@@ -99,7 +99,7 @@ def execute_candidate(
         expected_state_digest=proposal.base_state_digest,
         source_run_id=proposal.source_run_id,
     )
-    operator = StateRecordOperator(
+    operator = proposal.state_record_operator or StateRecordOperator(
         kind=StateRecordEditKind.SET_SCALAR,
         base_record_digest=proposal.record_digest,
         base_state_digest=base_record.state_digest,

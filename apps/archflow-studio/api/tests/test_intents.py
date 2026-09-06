@@ -10,6 +10,7 @@ proved is the contract around the agent, not the agent.
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import shutil
 import tempfile
 import unittest
@@ -24,6 +25,7 @@ from archflow_studio_api.application.intent_agent import (
     Selection,
     _parse_answer,
     record_sheet,
+    response_schema,
 )
 from archflow_studio_api.application.projection import project_state
 from archflow_studio_api.application.binding import bound_project
@@ -38,6 +40,45 @@ from .support import (
     runner_state_digest,
     write_codex_shim,
 )
+
+
+def semantic_wall_edit() -> dict:
+    """A small domain edit with shared dimensions and a real arch opening."""
+
+    return {
+        "summary": "Add a supporting wall with an open arched passage, keeping the existing base and level.",
+        "entities": [{
+            "entity_id": "passage-wall", "schema": "Element@1", "parent_id": "portico",
+            "basis_refs": ["studio:intent"],
+            "fields": {
+                "component_id": "portico", "producer": "wall",
+                "references": {
+                    "base": {"level": "level-ground"},
+                    "line": {
+                        "from": {"axis_point": {"axis": "front", "along": 0}},
+                        "to": {"axis_point": {"axis": "front", "along": 4}},
+                        "inward": [1, 0],
+                    },
+                },
+                "params": {
+                    "thickness": "@passage_thickness", "height": 3,
+                    "openings": [{
+                        "opening_id": "passage-arch", "kind": "door", "shape": "semicircular_arch",
+                        "along": 2, "width": "@passage_width", "sill": 0,
+                        "head": "@passage_head", "spring_height": 1.5,
+                    }],
+                },
+            },
+        }],
+        "parameters": [
+            {"key": "passage_thickness", "value": 0.3, "unit": "m", "epistemic_status": "declared", "source_ref": "studio:intent"},
+            {"key": "passage_width", "value": 2, "unit": "m", "epistemic_status": "declared", "source_ref": "studio:intent"},
+            {"key": "passage_head", "value": 2.5, "unit": "m", "expr": "1.5 + passage_width / 2", "inputs": ["passage_width"], "source_ref": "studio:intent"},
+        ],
+        "relations": [], "removeEntityIds": [], "removeParameterKeys": [], "removeRelationIds": [],
+        "protected": ["entity:level-ground", "entity:portico-base"],
+        "kept": ["The existing base geometry and ground level remain unchanged."],
+    }
 
 
 def scripted(**fields: object):
@@ -116,6 +157,19 @@ class DeterministicPassThroughTests(IntentTestCase):
 
 
 class ScriptedAgentTests(IntentTestCase):
+    def test_an_unfamiliar_natural_name_can_be_resolved_by_one_agent_call(self) -> None:
+        compiler = scripted(
+            utterance="increase height by 10 %", component_id="portico", element_id="portico-base",
+            why="The arrival plinth is the portico base; a little = +10 %.",
+        )
+        self.app.state.intent_compiler = compiler
+        status, payload = self.ask("Make the arrival plinth a little taller.", targetComponentId=None)
+        self.assertEqual(status, 201, payload)
+        self.assertEqual(payload["proposal"]["target"]["elementId"], "portico-base")
+        self.assertEqual(payload["proposal"]["change"]["old"], 0.6)
+        self.assertAlmostEqual(payload["proposal"]["change"]["new"], 0.66)
+        self.assertEqual(len(compiler.calls), 1)
+
     def test_the_agents_compiled_sentence_becomes_the_records_proposal(self) -> None:
         compiler = scripted(
             utterance="increase height by 10 %",
@@ -219,12 +273,126 @@ class RecordSheetTests(IntentTestCase):
         self.assertEqual(list(sheet["honesty"]), list(projection.honesty))
 
 
+class SemanticIntentTests(IntentTestCase):
+    def test_missing_members_reach_the_agent_without_a_scalar_target(self) -> None:
+        from archflow.state.state_record import StateRecordEditKind, apply_state_record_operator
+
+        compiler = scripted(semantic_edit=semantic_wall_edit(), component_id="portico")
+        self.app.state.intent_compiler = compiler
+        before = self.repository.read_head()
+        status, body = self.ask("平台下面缺了一条通道和支承，帮我补齐，现有宽度高度都保持不变。", elementId="portico-base")
+        self.assertEqual(status, 201, body)
+        self.assertEqual(len(compiler.calls), 1)
+        proposal = body["proposal"]
+        self.assertEqual(proposal["change"]["kind"], "edit_components")
+        self.assertNotIn("old", proposal["change"])
+        self.assertIsNone(proposal["target"]["key"])
+        self.assertIsNone(proposal["decisionOperator"])
+        self.assertEqual(body["agent"]["compiledUtterance"], proposal["change"]["summary"])
+        self.assertEqual(body["pendingIntent"]["candidates"], [])
+        stored = self.app.state.proposals.get(proposal["proposalId"])
+        self.assertEqual(stored.state_record_operator.kind, StateRecordEditKind.EDIT_COMPONENTS)
+        base = compiler.calls[0]["projection"].record
+        successor = apply_state_record_operator(base, stored.state_record_operator)
+        self.assertEqual(successor.entity("portico-base"), base.entity("portico-base"))
+        self.assertEqual(successor.entity("passage-wall").fields["producer"], "wall")
+        self.assertIn("entity:passage-wall", successor.closure(("parameter:passage_width",)))
+        self.assertEqual(self.repository.read_head(), before)
+
+    def test_a_scalar_is_not_an_answer_to_missing_members(self) -> None:
+        self.app.state.intent_compiler = scripted(utterance="set height to 22", component_id="portico", element_id="portico-base")
+        status, body = self.ask("补齐平台下面缺少的侧向通道，平台高度保持不变。", elementId="portico-base")
+        self.assertEqual(status, 422, body)
+        self.assertEqual(body["code"], "UNSUPPORTED_REQUEST")
+        self.assertEqual(body["pendingIntent"]["candidates"], [])
+
+    def test_a_design_question_has_no_unrelated_numeric_choices(self) -> None:
+        self.app.state.intent_compiler = scripted(status="question", question="Should the passage lead to the hall or the garden?", why="The destination changes the route.")
+        status, body = self.ask("Add a passage beneath the landing.", elementId="portico-base")
+        self.assertEqual(status, 422, body)
+        self.assertEqual(body["question"], "Should the passage lead to the hall or the garden?")
+        self.assertEqual(body["pendingIntent"]["candidates"], [])
+
+    def test_a_missing_agent_never_offers_a_numeric_replacement(self) -> None:
+        status, body = self.ask("补齐缺少的通道和支承，楼梯宽度保持不变。", elementId="portico-base")
+        self.assertEqual(status, 422, body)
+        self.assertEqual(body["code"], "UNSUPPORTED_REQUEST")
+        self.assertEqual(body["pendingIntent"]["candidates"], [])
+
+    def test_undeclared_references_and_producers_are_refused_before_a_proposal_exists(self) -> None:
+        for mutate in (
+            lambda edit: edit["entities"][0]["fields"]["references"].update(base={"level": "unknown-level"}),
+            lambda edit: edit["entities"][0]["fields"]["references"]["line"]["from"]["axis_point"].update(axis="axis-a"),
+            lambda edit: edit["entities"][0]["fields"].update(producer="loft"),
+            lambda edit: edit["entities"][0].update(schema="GeometryProgram@1"),
+        ):
+            edit = semantic_wall_edit()
+            mutate(edit)
+            self.app.state.intent_compiler = scripted(semantic_edit=edit)
+            status, body = self.ask("Add a passage wall.")
+            self.assertEqual(status, 422, body)
+            self.assertEqual(body["code"], "SEMANTIC_EDIT_INVALID")
+        self.assertEqual(self.app.state.proposals.for_state(self.state_digest), ())
+
+    def test_semantic_edits_bind_the_requested_exact_base_before_the_agent(self) -> None:
+        compiler = scripted(semantic_edit=semantic_wall_edit())
+        self.app.state.intent_compiler = compiler
+        status, body = self.ask("Add the passage wall.", stateDigest="0" * 64)
+        self.assertEqual(status, 409, body)
+        self.assertEqual(compiler.calls, [])
+
+    def test_semantic_diff_is_readable_and_retained_in_an_episode(self) -> None:
+        self.app.state.intent_compiler = scripted(semantic_edit=semantic_wall_edit())
+        status, body = self.ask("Add a wall with an arched passage.")
+        self.assertEqual(status, 201, body)
+        proposal = body["proposal"]
+        reread = self.client.get(f"/api/proposals/{proposal['proposalId']}")
+        self.assertEqual(reread.json(), proposal)
+        decided = self.client.post(f"/api/proposals/{proposal['proposalId']}/decision", json={"decision": "rejected", "reason": "Move the passage first."})
+        self.assertEqual(decided.status_code, 201, decided.text)
+        change = decided.json()["proposals"][0]["change"]
+        self.assertEqual(change["kind"], "edit_components")
+        self.assertEqual(change["edits"]["entities"][0]["entity_id"], "passage-wall")
+        self.assertNotIn("old", change)
+
+    def test_the_model_schema_uses_the_producer_signature(self) -> None:
+        from archflow.capabilities.element_producers import producer_signatures
+
+        schema = response_schema(strict=False)
+        edits = schema["properties"]["semanticEdit"]["anyOf"][1]
+        element = edits["properties"]["entities"]["items"]["anyOf"][0]
+        wall = element["properties"]["fields"]["anyOf"][0]
+        self.assertEqual(wall["properties"]["params"], producer_signatures()["wall"]["parameters"])
+        self.assertFalse(wall["additionalProperties"])
+        projection = project_state(bound_project(self.app.state))
+        sheet = record_sheet(projection, Selection("portico", "portico-base"))
+        self.assertEqual(sheet["producerSignatures"], producer_signatures())
+        self.assertIn("relationships", sheet)
+        self.assertIn("frame", sheet)
+        self.assertIn("types", sheet)
+        self.assertNotIn("profile", next(row for row in sheet["elements"] if row["elementId"] == "portico-base")["params"])
+
+
 class AnswerParsingTests(unittest.TestCase):
     def test_a_fenced_json_answer_is_read(self) -> None:
         raw = '```json\n{"status":"compiled","targetComponentId":"portico","elementId":"portico-base","utterance":"set height to 0.8","why":"","question":null}\n```'
         compilation = _parse_answer(raw, provider=CODEX, model=None, latency_ms=1, prompt_sha="00" * 32)
         self.assertEqual(compilation.utterance, "set height to 0.8")
         self.assertEqual(compilation.element_id, "portico-base")
+
+    def test_optional_nulls_from_strict_semantic_output_mean_absent_domain_fields(self) -> None:
+        edit = semantic_wall_edit()
+        fields = edit["entities"][0]["fields"]
+        fields["type_ref"] = None
+        fields["params"]["openings"][0].update(at=None, count=None, step=None)
+        raw = json.dumps({
+            "status": "compiled", "targetComponentId": "portico", "elementId": None,
+            "utterance": None, "semanticEdit": edit, "why": "The named wall and opening meet the request.", "question": None,
+        })
+        compilation = _parse_answer(raw, provider=CODEX, model=None, latency_ms=1, prompt_sha="00" * 32)
+        parsed = compilation.semantic_edit["entities"][0]["fields"]
+        self.assertNotIn("type_ref", parsed)
+        self.assertNotIn("at", parsed["params"]["openings"][0])
 
     def test_not_json_is_the_agents_failure(self) -> None:
         with self.assertRaises(StudioError) as caught:

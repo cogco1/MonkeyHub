@@ -425,7 +425,7 @@ def _elements(
     bindings = {
         entity.entity_id: {
             path[len("params."):]: key
-            for path, key in parameter_bindings_of(entity)
+            for path, key in parameter_bindings_of(entity, record)
             if path.startswith("params.") and "[" not in path[len("params."):] and "." not in path[len("params."):]
         }
         for entity in entities

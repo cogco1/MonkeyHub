@@ -21,6 +21,8 @@ from archflow.capabilities.element_producers import (
     element_rows_of,
     produce_rows,
     production_order,
+    producer_signatures,
+    validate_element_contract,
 )
 from archflow.capabilities.geometry_proposal import GeometryProposalStatus
 from archflow.capabilities.reference_resolver import ReferenceContext
@@ -169,6 +171,58 @@ def _wall_row(element_id: str, axis_from: str, axis_to: str, opening_id: str = "
                        "sill": 0.9, "head": 2.4, "type_id": "window-type-1"}]},
         BASIS,
     )
+
+
+class SemanticWallContractTests(unittest.TestCase):
+    def test_a_wall_ends_at_the_referenced_slab_underside(self) -> None:
+        original = _wall_row("support-wall", "1", "2")
+        row = replace(original, references={**original.references, "base": {"level": "level-ground"},
+                                           "top": {"offset_from": {"level": PN, "offset": -0.24}}},
+                      params={"thickness": 0.3})
+        produced, _ = _produce((row,))
+        body = next(op for op in produced[0].operations if op.op_id == row.element_id)
+        self.assertAlmostEqual(_op_params(body)["vector"][1], 3.33)
+        with self.assertRaisesRegex(ElementProducerError, "conflicts with the top reference"):
+            _produce((replace(row, params={"thickness": 0.3, "height": 3.57}),))
+
+    def test_a_type_height_cannot_override_an_instances_top_reference(self) -> None:
+        record = authored_record()
+        wall = next(e for e in record.entities if e.entity_id == "wall-south")
+        family = replace(wall, entity_id="wall-family", schema="Type@1", parent_id=None,
+                         fields={"producer": "wall", "params": {"height": 2.97}})
+        fields = dict(wall.fields)
+        fields["type_ref"] = family.entity_id
+        fields["params"] = {k: v for k, v in fields["params"].items() if k != "height"}
+        fields["references"] = {**fields["references"], "top": {"offset_from": {"level": PN, "offset": -0.24}}}
+        candidate = replace(record, entities=tuple(replace(e, fields=fields) if e.entity_id == wall.entity_id else e
+                                                   for e in record.entities) + (family,))
+        with self.assertRaisesRegex(ElementProducerError, "conflicts with the top reference"):
+            validate_element_contract(candidate, (wall.entity_id,))
+
+    def test_the_advertised_arch_is_the_wall_solvers_actual_cut(self) -> None:
+        record = authored_record()
+        wall = next(e for e in record.entities if e.entity_id == "wall-south")
+        opening = {"opening_id": "passage", "kind": "door", "shape": "semicircular_arch", "along": 3.0,
+                   "width": 1.2, "sill": 0.0, "spring_height": 1.2, "head": 1.8}
+        fields = {**wall.fields, "params": {**wall.fields["params"], "openings": [opening]}}
+        candidate = replace(record, entities=tuple(replace(e, fields=fields) if e.entity_id == wall.entity_id else e
+                                                   for e in record.entities))
+        validate_element_contract(candidate, (wall.entity_id,))
+        self.assertIn("semicircular_arch", producer_signatures()["wall"]["parameters"]["properties"]["openings"]["items"]["properties"]["shape"]["enum"])
+        broken = {**fields, "params": {**fields["params"], "openings": [{**opening, "spring_height": 1.0}]}}
+        with self.assertRaises(ElementProducerError):
+            validate_element_contract(replace(candidate, entities=tuple(replace(e, fields=broken) if e.entity_id == wall.entity_id else e
+                                                                         for e in candidate.entities)), (wall.entity_id,))
+
+    def test_unadvertised_nested_fields_are_refused_before_production(self) -> None:
+        record = authored_record()
+        wall = next(e for e in record.entities if e.entity_id == "wall-south")
+        opening = {**wall.fields["params"]["openings"][0], "radius_override": 8.0}
+        fields = {**wall.fields, "params": {**wall.fields["params"], "openings": [opening]}}
+        candidate = replace(record, entities=tuple(replace(e, fields=fields) if e.entity_id == wall.entity_id else e
+                                                   for e in record.entities))
+        with self.assertRaisesRegex(ElementProducerError, "radius_override"):
+            validate_element_contract(candidate, (wall.entity_id,))
 
 
 class OpeningIdScopeTests(unittest.TestCase):

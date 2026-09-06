@@ -1,27 +1,15 @@
-"""The intent compiler: an architect's sentence becomes a sentence in the
-grammar, and nothing else is allowed to reach the record.
+"""Compile an architect's request against one projected design state.
 
-An agent — a local ``codex`` process, or the Anthropic Messages API — is shown
-one thing: a *record sheet*, the components, elements, numeric fields,
-parameters and honesty lines the projection already answers with, plus the
-four forms of the grammar. It answers with one JSON object: a compiled
-sentence against one selection, or a question. It never sees the file system,
-never runs anything, and never produces a coordinate, a digest or an operator.
-What it produced is then handed to the deterministic seam exactly as a typed
-sentence would be, so the proposal that comes back is the record's, typed by
-the same grammar, refusable by the same questions.
+The record sheet exposes components, parameters, types, readings, references,
+relationships and producer signatures. A provider returns either one scalar
+grammar sentence, a semantic edit of named design data, or a question. The
+application types that answer against the existing state and geometry owners;
+the provider never supplies a geometry program or project writer.
 
-Everything the agent said is kept and shown as the agent's — its ``why``, the
-sentence it compiled, which provider and model answered, and how long it took
-— so a reader can tell the agent's reading from the record's answer.
-
-A call to a model is a call across a boundary, and the Studio signs it with the
-same receipt the rest of the system does: ``ModelInvocationRequest`` and
-``ModelInvocationReceipt`` from ``archflow.ports.model``, in the new
-``ModelPhase.INTENT_COMPILATION`` phase. The receipt names the provider, the
-model, the provider's own version and fingerprint, the bytes in and out, and
-whether the call succeeded, timed out, exited non-zero or answered something
-unreadable. The deterministic compiler calls no model and mints no receipt.
+The answer retains the provider's explanation, model and timing. External
+model calls use ModelInvocationRequest and ModelInvocationReceipt at the
+INTENT_COMPILATION boundary. The deterministic scalar compiler calls no model
+and produces no invocation receipt.
 """
 
 from __future__ import annotations
@@ -95,22 +83,151 @@ VERSION_PROBE_TIMEOUT_S = 30.0
 RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["status", "targetComponentId", "elementId", "utterance", "why", "question"],
+    "required": ["status", "targetComponentId", "elementId", "utterance", "semanticEdit", "why", "question"],
     "properties": {
         "status": {"type": "string", "enum": ["compiled", "question"]},
         "targetComponentId": {"type": ["string", "null"]},
         "elementId": {"type": ["string", "null"]},
         "utterance": {"type": ["string", "null"]},
+        "semanticEdit": {"type": "null"},
         "why": {"type": "string"},
         "question": {"type": ["string", "null"]},
     },
 }
 
-SYSTEM_PROMPT = """You compile an architect's request into ArchFlow's intent grammar.
 
-You are given a RECORD SHEET: the components, elements, numeric fields, parameters and honesty lines a design record declares. You may only name components, elements and fields that appear on the sheet, spelled exactly as they appear. You never invent a field, a component, or a coordinate.
+def response_schema(*, strict: bool = True) -> dict[str, Any]:
+    """The provider's closed design-input schema, from the producer owner."""
 
-The grammar has four forms (each is a whole sentence):
+    from archflow.capabilities.element_producers import producer_signatures
+    from archflow.relations.contracts import ArchitecturalRelationKind
+
+    text = {"type": "string"}
+    nullable_text = {"type": ["string", "null"]}
+    strings = {"type": "array", "items": text}
+
+    def object_of(properties, required=None):
+        return {
+            "type": "object", "additionalProperties": False, "properties": properties,
+            "required": list(properties) if required is None else required,
+        }
+
+    element_fields = []
+    type_fields = []
+    for producer, signature in producer_signatures().items():
+        element_fields.append(object_of({
+            "component_id": text,
+            "producer": {"type": "string", "enum": [producer]},
+            "type_ref": nullable_text,
+            "references": signature["references"],
+            "params": signature["parameters"],
+            "name": nullable_text,
+            "label": nullable_text,
+            "note": nullable_text,
+        }, ["component_id", "producer", "references", "params"]))
+        type_fields.append(object_of({
+            "producer": {"type": "string", "enum": [producer]},
+            "references": signature["references"], "params": signature["parameters"],
+            "name": nullable_text, "label": nullable_text, "note": nullable_text,
+        }, ["producer", "references", "params"]))
+    entity_variants = [object_of({
+        "entity_id": text, "schema": {"type": "string", "enum": ["Element@1"]},
+        "parent_id": nullable_text, "basis_refs": strings,
+        "fields": {"anyOf": element_fields},
+    })]
+    entity_variants.append(object_of({
+        "entity_id": text, "schema": {"type": "string", "enum": ["Component@1"]},
+        "parent_id": nullable_text, "basis_refs": strings,
+        "fields": object_of({"semantic_kind": text, "intent": text, "source_refs": strings}),
+    }))
+    entity_variants.append(object_of({
+        "entity_id": text, "schema": {"type": "string", "enum": ["Type@1"]},
+        "parent_id": nullable_text, "basis_refs": strings,
+        "fields": {"anyOf": type_fields},
+    }))
+    parameter = object_of({
+        "key": text, "value": {"type": "number"}, "unit": text,
+        "expr": nullable_text, "inputs": strings,
+        "epistemic_status": {"type": "string", "enum": ["declared", "derived", "hypothesis"]},
+        "source_ref": nullable_text,
+    })
+    relation = object_of({
+        "relation_id": text,
+        "kind": {"type": "string", "enum": [kind.value for kind in ArchitecturalRelationKind]},
+        "subject": text, "object": text, "datum_role": nullable_text,
+        "propagation": {"type": "string", "enum": ["unchanged", "revalidate", "invalidate"]},
+        "validator": {"anyOf": [{"type": "null"}, object_of({
+            "check_kind": {"type": "string", "enum": ["support_contact", "aperture_exists"]},
+            "tolerance": {"type": "number"},
+        }), object_of({
+            "check_kind": {"type": "string", "enum": ["clearance_interval"]},
+            "interval_m": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+        })]},
+        "parameters": object_of({
+            "engagement_depth": {"type": "number"}, "rise": {"type": "number"},
+        }, []),
+        "epistemic_status": {"type": "string", "enum": ["declared", "derived", "hypothesis"]},
+        "basis_refs": strings,
+    })
+    edit = object_of({
+        "summary": text,
+        "entities": {"type": "array", "items": {"anyOf": entity_variants}},
+        "parameters": {"type": "array", "items": parameter},
+        "relations": {"type": "array", "items": relation},
+        "removeEntityIds": strings, "removeParameterKeys": strings, "removeRelationIds": strings,
+        "protected": strings, "kept": strings,
+    })
+    schema = {
+        **RESPONSE_SCHEMA,
+        "properties": {**RESPONSE_SCHEMA["properties"], "semanticEdit": {"anyOf": [{"type": "null"}, edit]}},
+    }
+    return _strict_response_schema(schema) if strict else schema
+
+
+def _strict_response_schema(value: Any) -> Any:
+    """Represent optional signature fields as null for strict model output.
+
+    The domain signature remains unchanged. Optional nulls are removed from
+    params/references when reading the answer, before the owner validates it.
+    """
+
+    if isinstance(value, list):
+        return [_strict_response_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {key: _strict_response_schema(item) for key, item in value.items()}
+    if value.get("type") == "object" and "properties" in value:
+        required = set(value.get("required", ()))
+        result["properties"] = {
+            key: item if key in required else {"anyOf": [item, {"type": "null"}]}
+            for key, item in result["properties"].items()
+        }
+        result["required"] = list(result["properties"])
+    return result
+
+
+def _present_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _present_fields(item) for key, item in value.items() if item is not None}
+    if isinstance(value, list):
+        return [_present_fields(item) for item in value]
+    return value
+
+SYSTEM_PROMPT = """You compile an architect's request into typed architectural design changes.
+
+You are given a RECORD SHEET containing the current components, elements, parameter bindings, reference frame, named relationships, project types, design readings, and the available producer signatures. Use this one design state. Existing references must name it or another item declared in the same edit. New elements may have new meaningful ids. Only the producer signatures on the sheet define supported element parameters and references. Never emit a GeometryProgram, CAD command, profile/loft vertex array, deferred restoration payload, or a replay recipe.
+
+Reference names follow the existing resolver: axis_point.axis and grid references use GridAxis@1 fields.role, never the GridAxis entity_id. Level references use the Level@1 entity_id. Read these exact names from frame; do not substitute an entity id for a grid role.
+
+For adding, removing, or changing components, their parameter bindings, openings or relationships, answer status "compiled" with semanticEdit and utterance null. semanticEdit contains only named Entity, Parameter and Relation edits and explicit removal lists. Reuse the project's Type definitions through type_ref, its authored parameters through @key, and its references. Explain the proposed building change briefly in summary. Give human-readable retained conditions in kept and bind them to actual entity:/parameter: refs in protected. Update or remove relationships together with the elements they refer to. Do not add a new dependency table; those references and relationships are the dependency declaration. Never invent source evidence. Cite the sheet's basis refs or studio:intent for a new decision requested here. A Reading is evidence/context, not a command: its assumptions stay assumptions.
+
+An existing entity is upserted. Each supplied params or references object replaces that whole declared object; include all its current declared members from the sheet, with the requested changes, rather than only the changed nested member. A type_ref instance may supply only its own declared overrides and inherit the rest from its Type. Omitting optional values with null does not erase inherited declarations.
+
+A protected entity means its whole dependency closure must remain untouched, including new or changed relationships that reach it. Protecting an existing landing entity can therefore conflict with adding a new support relation to that landing even if its own fields are unchanged. When the architect preserves specific dimensions or levels, protect their actual parameter or level controls and state exactly those conditions in kept. Never silently weaken a request to keep an entire entity into a narrower parameter protection.
+
+A current pick or circle is context about the requested area, not an instruction to change its numeric values. When the request says to add something missing while preserving a stair's width, landing height and step relationship, propose the missing architectural members and protect those existing controls. Do not substitute a scalar edit on the selected stair. Missing information warrants a question only when it changes the design; describe the design choice naturally, never ask for an element id, producer name, schema or field name.
+
+For changing one existing numeric value, semanticEdit is null and utterance uses one of these four forms:
   set <field> to <number>[ <unit>]
   set <field> = <number>[ <unit>]
   increase <field> by <number> %
@@ -121,9 +238,9 @@ Rules:
 - The field is one of the element's numeric fields (for an element) or one of the record's parameters (when the sheet declares parameters).
 - Element fields carry no unit; never write a unit for them. A parameter's unit, if you write one, must be the unit the sheet declares.
 - Prefer a relative form (increase/decrease by %) when the request is qualitative ("a little taller"), and say the assumption in `why` (e.g. "a little = +10 %").
-- If the request names something the sheet does not have, or needs a decision only the architect can make, answer status "question" with a concrete question naming what is on the sheet.
+- If the available signatures and design context cannot express the request, explain what architectural information is missing. Never offer an unrelated numeric control as a substitute.
 - If a selection is given, stay on it unless the request clearly names another element on the sheet.
-- The sheet's "gestures" are what the architect drew on the model, already resolved to the record's names by the server: "arrow on <element> · world direction +Z (up)" means the architect pointed that element upward (Z is up), "circle covering <component> (...)" names the area they meant, "keep mark on ..." names what must not change (the server adds those keep refs itself; you need not repeat them). Read a gesture as part of the request: an arrow up on an element with a height field and the words "a little" is "increase height by 10 %" on that element. A remove mark has no form in the grammar: answer with a question.
+- The sheet's "gestures" are what the architect drew on the model, already resolved to the record's names by the server: "arrow on <element> · world direction +Z (up)" means the architect pointed that element upward (Z is up), "circle covering <component> (...)" names the area they meant, "keep mark on ..." names what must not change (the server adds those keep refs itself; you need not repeat them). Read a gesture as part of the request: an arrow up on an element with a height field and the words "a little" is "increase height by 10 %" on that element. A remove mark with an unambiguous bound target can populate semanticEdit.removeEntityIds; update its affected references and relationships together. Ask only when the target or resulting design is ambiguous.
 - Answer with the JSON object only. No prose outside it."""
 
 
@@ -193,6 +310,7 @@ class Compilation:
     # ``ModelInvocationReceipt@2`` contract. ``None`` when no model was
     # called, which is the deterministic compiler's whole case.
     receipt: ModelInvocationReceipt | None = None
+    semantic_edit: Mapping[str, Any] | None = None
 
 
 class IntentCompiler(Protocol):
@@ -206,6 +324,12 @@ class IntentCompiler(Protocol):
 
 def record_sheet(projection: StateProjection, selection: Selection) -> dict[str, Any]:
     """What the agent is allowed to know: the projection, as facts, nothing else."""
+
+    from archflow.capabilities.element_producers import producer_signatures
+    from archflow.semantics.registry import registered_ids
+
+    signatures = producer_signatures()
+    authored = {entity.entity_id: entity for entity in projection.record.entities}
 
     # The kernel's tree when it built; the record's own component entities
     # when it did not — the same ids either way, and never a name from anywhere
@@ -234,6 +358,16 @@ def record_sheet(projection: StateProjection, selection: Selection) -> dict[str,
             "componentId": element.component_id,
             "producer": element.producer,
             "numericFields": dict(element.numeric_fields),
+            "parameterBindings": dict(element.bindings),
+            "references": dict(authored[element.element_id].fields.get("references", {})),
+            "params": {
+                key: value
+                for key, value in authored[element.element_id].fields.get("params", {}).items()
+                if key in signatures.get(element.producer, {}).get("parameters", {}).get("properties", {})
+                or isinstance(value, (str, int, float, bool))
+            },
+            "typeRef": authored[element.element_id].fields.get("type_ref"),
+            "basisRefs": list(authored[element.element_id].basis_refs),
         }
         for element in projection.elements
     ]
@@ -243,6 +377,9 @@ def record_sheet(projection: StateProjection, selection: Selection) -> dict[str,
             "value": parameter.value,
             "unit": parameter.unit,
             "lockAuthority": parameter.lock_authority,
+            "expr": parameter.expr,
+            "inputs": list(parameter.reads()),
+            "sourceRef": parameter.source_ref,
         }
         for parameter in projection.parameters
     ]
@@ -256,6 +393,19 @@ def record_sheet(projection: StateProjection, selection: Selection) -> dict[str,
         "components": components,
         "elements": elements,
         "parameters": parameters,
+        "producerSignatures": signatures,
+        "semanticIds": list(registered_ids()),
+        "frame": [
+            entity.to_dict() for entity in projection.record.entities
+            if entity.schema in {"Level@1", "GridAxis@1"}
+        ],
+        "types": [entity.to_dict() for entity in projection.record.entities_of("Type@1")],
+        "readings": [entity.to_dict() for entity in projection.record.entities_of("Reading@1")],
+        "relationships": [relation.to_dict() for relation in projection.record.relations],
+        "basisRefs": sorted({
+            "studio:intent", *projection.record.basis_refs, *projection.record.evidence_refs,
+            *(ref for entity in projection.record.entities for ref in entity.basis_refs),
+        }),
         "honesty": list(projection.honesty),
         "grammar": {"forms": list(ACCEPTED_FORMS), "keep": KEEP_SENTENCE},
     }
@@ -316,6 +466,7 @@ def _answer_object(compilation: Compilation) -> dict[str, Any]:
         "targetComponentId": compilation.component_id,
         "elementId": compilation.element_id,
         "utterance": compilation.utterance,
+        "semanticEdit": None if compilation.semantic_edit is None else dict(compilation.semantic_edit),
         "why": compilation.why,
         "question": compilation.question,
     }
@@ -444,6 +595,18 @@ def _parse_answer(
         return value.strip() or None
 
     why = payload.get("why")
+    semantic_edit = payload.get("semanticEdit")
+    if semantic_edit is not None and not isinstance(semantic_edit, dict):
+        raise StudioError(502, AGENT_FAILED, f"the {provider} agent's semanticEdit is not an object")
+    if semantic_edit is not None:
+        # Strict provider schemas spell absent optional signature keys as
+        # null. Their domain spelling is absence, so type defaults still work.
+        for entity in semantic_edit.get("entities", ()):
+            if isinstance(entity, dict) and isinstance(entity.get("fields"), dict):
+                entity["fields"] = _present_fields(entity["fields"])
+        for relation in semantic_edit.get("relations", ()):
+            if isinstance(relation, dict) and isinstance(relation.get("parameters"), dict):
+                relation["parameters"] = _present_fields(relation["parameters"])
     compilation = Compilation(
         status=status,
         provider=provider,
@@ -457,9 +620,12 @@ def _parse_answer(
         prompt_sha256=prompt_sha,
         raw=raw,
         receipt=receipt,
+        semantic_edit=semantic_edit,
     )
-    if compilation.status == "compiled" and compilation.utterance is None:
-        raise StudioError(502, AGENT_FAILED, f"the {provider} agent said compiled but produced no sentence")
+    if compilation.status == "compiled" and (compilation.utterance is None) == (semantic_edit is None):
+        raise StudioError(502, AGENT_FAILED, f"the {provider} agent must compile exactly one scalar sentence or semantic edit")
+    if compilation.status == "question" and semantic_edit is not None:
+        raise StudioError(502, AGENT_FAILED, f"the {provider} agent asked a question and also supplied an edit")
     if compilation.status == "question" and compilation.question is None:
         raise StudioError(502, AGENT_FAILED, f"the {provider} agent said question but asked none")
     return compilation
@@ -597,7 +763,7 @@ class CodexCompiler:
         with tempfile.TemporaryDirectory(prefix="archflow-intent-") as tmp:
             workdir = Path(tmp)
             schema_path = workdir / "schema.json"
-            schema_path.write_text(json.dumps(RESPONSE_SCHEMA), encoding="utf-8")
+            schema_path.write_text(json.dumps(response_schema()), encoding="utf-8")
             answer_path = workdir / "answer.json"
             command = [self.executable, *CODEX_FIXED_ARGUMENTS]
             command += [
@@ -883,8 +1049,8 @@ class AnthropicCompiler:
             client = self._sdk.Anthropic(timeout=self.timeout_s)
             response = client.messages.create(
                 model=self.model,
-                max_tokens=800,
-                system=SYSTEM_PROMPT + "\n\nJSON schema of the only acceptable answer:\n" + json.dumps(RESPONSE_SCHEMA),
+                max_tokens=5000,
+                system=SYSTEM_PROMPT + "\n\nJSON schema of the only acceptable answer:\n" + json.dumps(response_schema()),
                 messages=[{"role": "user", "content": user}],
             )
         except Exception as exc:  # the SDK's own errors, stated not swallowed

@@ -79,11 +79,13 @@ OUTCOMES: tuple[str, ...] = (
 # value change and never enters the scalar grammar.
 CHANGE_EXISTING_VALUE = "change_existing_value"
 DECLARE_MISSING_CONTROL = "declare_missing_control"
+EDIT_COMPONENTS = "edit_components"
 CLARIFY = "clarify"
 UNSUPPORTED_ACTION = "unsupported"
 ACTION_KINDS: tuple[str, ...] = (
     CHANGE_EXISTING_VALUE,
     DECLARE_MISSING_CONTROL,
+    EDIT_COMPONENTS,
     CLARIFY,
     UNSUPPORTED_ACTION,
 )
@@ -390,6 +392,56 @@ def declares_a_control(text: str) -> bool:
     return _DECLARE_ZH.search(lowered) is not None or _DECLARE_EN.search(lowered) is not None
 
 
+def component_edit_requested(text: str) -> bool:
+    """An existence change must not become a nearby scalar edit.
+
+    This identifies the action only. All members, values and relationships
+    still come from the agent and are checked against the design contracts.
+    """
+
+    if declares_a_control(text):
+        return False
+    return bool(re.search(
+        r"\b(add|create|build|remove|delete|restore|rebuild|reconstruct)\b|"
+        r"补齐|补上|补建|补一|新建|新增|加一个|加一条|建一个|删除|移除|拆除|恢复|缺了|缺少|没了",
+        text, re.IGNORECASE,
+    ))
+
+
+def semantic_resolution(
+    projection: StateProjection,
+    *,
+    utterance: str,
+    selection: Selection,
+    pending: PendingIntent | None = None,
+    question: str | None = None,
+    detail: str = "",
+    unsupported: bool = False,
+) -> Resolution:
+    """A semantic exchange without manufacturing a numeric candidate."""
+
+    value = _pending(
+        state_digest=projection.state_digest,
+        original_utterance=pending.original_utterance if pending is not None else utterance,
+        action_kind=EDIT_COMPONENTS,
+        target_component_id=selection.component_id,
+        element_id=selection.element_id,
+        semantic_property=None,
+        known={} if pending is None else pending.known_slots,
+        missing=(SLOT_TARGET,) if question else (),
+        candidates=(),
+        rejected=() if pending is None else pending.rejected_candidates,
+        reason_code=REQUEST_NOT_EXPRESSIBLE if unsupported else AGENT_ASKED if question else COMPILED_CLEANLY,
+        terminal=unsupported or question is None,
+        previous=pending,
+    )
+    answer = Resolution(
+        outcome=UNSUPPORTED if unsupported else NEEDS_CLARIFICATION if question else COMPILED,
+        pending=value, selection=selection, question=question, detail=detail,
+    )
+    return _advance_or(pending, answer) if question else answer
+
+
 # ---- the pending intent -----------------------------------------------------
 
 
@@ -650,7 +702,7 @@ def _option(element: ProjectedElement, semantic_property: str | None) -> Candida
     key = (
         semantic_property
         if semantic_property in element.numeric_fields
-        else next(iter(sorted(element.numeric_fields)), None)
+        else next(iter(sorted(element.numeric_fields)), None) if semantic_property is None else None
     )
     value = element.numeric_fields.get(key) if key is not None else None
     orientation = compass_in(element.element_id)

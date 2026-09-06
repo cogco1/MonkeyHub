@@ -350,6 +350,8 @@ class StateRecord:
                 if item not in set(keys):
                     raise StateRecordError(f"parameter {p.key}: unknown input {item!r}")
         for e in self.entities:
+            if e.schema == "Element@1" and "type_ref" in e.fields:
+                _element_fields(self, e)
             for path, name in parameter_bindings_of(e):
                 if name not in set(keys):
                     raise StateRecordError(f"entity {e.entity_id}: {path} binds @{name}, which names no parameter (parameters: {', '.join(sorted(keys)) or 'none'})")
@@ -556,6 +558,8 @@ def _entity_references(fields: Mapping[str, Any]) -> tuple[tuple[str, str, str],
     for key in ("base_level", "top_level", "sill_level", "host", "type_ref"):
         target = fields.get(key)
         if isinstance(target, str):
+            if key == "type_ref":
+                target = target.removeprefix("entity:")
             out.append((key, "entity", target))
 
     def walk(key: str, value: object) -> None:
@@ -681,20 +685,47 @@ def _binding_paths(value: object, path: str) -> list[tuple[str, str]]:
     return []
 
 
-def parameter_bindings_of(entity: Entity) -> tuple[tuple[str, str], ...]:
-    """Every explicit ``"@key"`` binding on an ``Element@1``'s ``params`` / ``references``, as (field path, parameter key).
+def _element_fields(record: StateRecord, entity: Entity) -> dict[str, Any]:
+    """The element's declared fields with its type defaults, before parameter evaluation."""
+
+    fields = dict(entity.fields)
+    if "type_ref" not in fields:
+        return fields
+    type_ref = fields["type_ref"]
+    if not isinstance(type_ref, str) or not type_ref:
+        raise StateRecordError(f"element {entity.entity_id}: type_ref must name a Type@1")
+    type_id = type_ref.removeprefix("entity:")
+    declared_type = next((item for item in record.entities if item.entity_id == type_id), None)
+    if declared_type is None or declared_type.schema != "Type@1":
+        raise StateRecordError(f"element {entity.entity_id}: type_ref names no Type@1 {type_ref!r}")
+    if not isinstance(declared_type.fields.get("producer"), str) or declared_type.fields["producer"] != fields["producer"]:
+        raise StateRecordError(f"element {entity.entity_id}: producer must match type {type_id}")
+    for name in ("params", "references"):
+        defaults, overrides = declared_type.fields.get(name, {}), fields.get(name, {})
+        if not isinstance(defaults, Mapping) or not isinstance(overrides, Mapping):
+            raise StateRecordError(f"element {entity.entity_id}: type and element {name} must be mappings")
+        if name in declared_type.fields or name in fields:
+            fields[name] = {**defaults, **overrides}
+    fields["type_ref"] = type_id
+    return fields
+
+
+def parameter_bindings_of(entity: Entity, record: StateRecord | None = None) -> tuple[tuple[str, str], ...]:
+    """Explicit ``"@key"`` bindings on Element@1/Type@1 params and references, as (field path, parameter key).
 
     A binding is the only way a row reads a parameter. A numeric literal in a
     row is a literal: nothing here guesses that a ``height`` of 2.97 "means"
     the parameter that happens to evaluate to 2.97, and no retained row is
-    rebound. Other schemas carry no bindings.
+    rebound. Supplying the record includes an element's inherited type bindings;
+    other schemas carry no bindings.
     """
 
-    if entity.schema != "Element@1":
+    if entity.schema not in {"Element@1", "Type@1"}:
         return ()
+    fields = _element_fields(record, entity) if record is not None and entity.schema == "Element@1" else entity.fields
     out: list[tuple[str, str]] = []
     for field_name in ("params", "references"):
-        out.extend(_binding_paths(entity.fields.get(field_name, {}), field_name))
+        out.extend(_binding_paths(fields.get(field_name, {}), field_name))
     return tuple(out)
 
 
@@ -765,7 +796,9 @@ def stale_parameters(record: StateRecord, evaluated: EvaluatedDerivations | None
 def resolve_element_bindings(record: StateRecord) -> dict[str, dict[str, Any]]:
     """Every ``Element@1``'s fields with its explicit ``@key`` bindings replaced by the evaluated parameter value, by entity id.
 
-    This is the producers' input projection of the record's parameters.
+    Type defaults and instance overrides are shallow-merged per params/references
+    dictionary; lists such as openings are replaced whole. This is the producers'
+    and Studio's one input projection of the record's parameters.
     Bindings only: a literal stays exactly what the row said, and a record
     with no binding is returned as authored without evaluating anything.
     Where a binding exists, the bound parameter and every parameter its
@@ -775,9 +808,10 @@ def resolve_element_bindings(record: StateRecord) -> dict[str, dict[str, Any]]:
     """
 
     elements = record.entities_of("Element@1")
-    bindings = {e.entity_id: parameter_bindings_of(e) for e in elements}
+    fields_by_id = {e.entity_id: _element_fields(record, e) for e in elements}
+    bindings = {e.entity_id: parameter_bindings_of(replace(e, fields=fields_by_id[e.entity_id])) for e in elements}
     if not any(bindings.values()):
-        return {e.entity_id: dict(e.fields) for e in elements}
+        return fields_by_id
     evaluated = evaluate_parameters(record)
     stale = set(stale_parameters(record, evaluated))
     by_key = {p.key: p for p in record.parameters}
@@ -800,7 +834,7 @@ def resolve_element_bindings(record: StateRecord) -> dict[str, dict[str, Any]]:
                                    "apply the change through its inputs (which recomputes it) or correct the declaration")
     out: dict[str, dict[str, Any]] = {}
     for e in elements:
-        fields = dict(e.fields)
+        fields = fields_by_id[e.entity_id]
         if bindings[e.entity_id]:
             for field_name in ("params", "references"):
                 if field_name in fields:
@@ -852,12 +886,13 @@ class SchematicPack:
 
 
 class StateRecordEditKind(StrEnum):
-    """The four StateRecord edits that have production consumers today."""
+    """The StateRecord edits that have production consumers today."""
 
     SET_SCALAR = "set_scalar"
     REPLACE_MASSING = "replace_massing"
     APPLY_PROGRAM = "apply_program"
     REINDEX = "reindex"
+    EDIT_COMPONENTS = "edit_components"
 
 
 @dataclass(frozen=True, slots=True)
@@ -866,7 +901,7 @@ class StateRecordOperator:
 
     This is deliberately not a general patch language.  Its closed kinds are
     exactly the edits currently compiled by the Studio scalar and massing
-    paths, the program sheet, and element re-indexing.
+    paths, semantic component editing, the program sheet, and element re-indexing.
     """
 
     kind: StateRecordEditKind
@@ -880,6 +915,10 @@ class StateRecordOperator:
     entities: tuple[Entity, ...] = ()
     relations: tuple[Relation, ...] = ()
     basis_refs: tuple[str, ...] = ()
+    parameters: tuple[Parameter, ...] = ()
+    remove_entity_ids: tuple[str, ...] = ()
+    remove_parameter_keys: tuple[str, ...] = ()
+    remove_relation_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, StateRecordEditKind):
@@ -906,11 +945,17 @@ class StateRecordOperator:
             raise TypeError("operator entities must be Entity items")
         if not isinstance(self.relations, tuple) or any(not isinstance(item, Relation) for item in self.relations):
             raise TypeError("operator relations must be Relation items")
+        if not isinstance(self.parameters, tuple) or any(not isinstance(item, Parameter) for item in self.parameters):
+            raise TypeError("operator parameters must be Parameter items")
         _refs(self.basis_refs, "operator basis_refs")
+        for name in ("remove_entity_ids", "remove_parameter_keys", "remove_relation_ids"):
+            _refs(getattr(self, name), f"operator {name}")
+            for identifier in getattr(self, name):
+                require_identifier(identifier, name)
 
         scalar = self.kind is StateRecordEditKind.SET_SCALAR
         massing = self.kind is StateRecordEditKind.REPLACE_MASSING
-        graph = self.kind in (StateRecordEditKind.APPLY_PROGRAM, StateRecordEditKind.REINDEX)
+        graph = self.kind in (StateRecordEditKind.APPLY_PROGRAM, StateRecordEditKind.REINDEX, StateRecordEditKind.EDIT_COMPONENTS)
         if scalar:
             if (
                 not isinstance(self.target_ref, str)
@@ -929,6 +974,38 @@ class StateRecordOperator:
             raise StateRecordError(f"{self.kind.value} cannot carry entity or relation edits")
         if self.kind is not StateRecordEditKind.REINDEX and self.basis_refs:
             raise StateRecordError("only reindex can add record basis refs")
+        component_edits = self.parameters or self.remove_entity_ids or self.remove_parameter_keys or self.remove_relation_ids
+        if self.kind is not StateRecordEditKind.EDIT_COMPONENTS and component_edits:
+            raise StateRecordError("only edit_components can edit parameters or remove graph items")
+        if self.kind is StateRecordEditKind.EDIT_COMPONENTS and not (self.entities or self.relations or component_edits):
+            raise StateRecordError("edit_components needs at least one edit")
+
+
+def compile_component_edit(
+    record: StateRecord,
+    *,
+    entities: tuple[Entity, ...] = (),
+    parameters: tuple[Parameter, ...] = (),
+    relations: tuple[Relation, ...] = (),
+    remove_entity_ids: tuple[str, ...] = (),
+    remove_parameter_keys: tuple[str, ...] = (),
+    remove_relation_ids: tuple[str, ...] = (),
+    protected: tuple[str, ...] = (),
+) -> StateRecordOperator:
+    """Compile named semantic edits against this record's exact content and binding."""
+
+    return StateRecordOperator(
+        kind=StateRecordEditKind.EDIT_COMPONENTS,
+        base_record_digest=record.digest,
+        base_state_digest=record.state_digest,
+        entities=entities,
+        parameters=parameters,
+        relations=relations,
+        remove_entity_ids=tuple(sorted(remove_entity_ids)),
+        remove_parameter_keys=tuple(sorted(remove_parameter_keys)),
+        remove_relation_ids=tuple(sorted(remove_relation_ids)),
+        protected=tuple(sorted(protected)),
+    )
 
 
 _MASSING_SCHEMAS = frozenset(
@@ -942,7 +1019,7 @@ def apply_state_record_operator(
     """Apply the one canonical StateRecord operator, or refuse it typed.
 
     Exact-base, protected closure and parameter locks are checked here for all
-    four edit kinds.  Domain modules only compile an operator; none of them
+    edit kinds.  Domain modules only compile an operator; none of them
     constructs a successor record.
     """
 
@@ -969,9 +1046,11 @@ def apply_state_record_operator(
         successor = _apply_reindex_operator(
             record, operator.entities, operator.relations, operator.basis_refs
         )
+    elif operator.kind is StateRecordEditKind.EDIT_COMPONENTS:
+        successor = _apply_component_operator(record, operator)
 
     changed = _changed_refs(record, successor)
-    closure = set(record.closure(changed)) if changed else set()
+    closure = (set(record.closure(changed)) | set(successor.closure(changed))) if changed else set()
     conflicts = tuple(sorted(closure & set(operator.protected)))
     if conflicts:
         raise StateRecordError(
@@ -1053,7 +1132,7 @@ def _apply_scalar_operator(
     entity = record.entity(entity_id)
     if entity.schema != "Element@1":
         raise StateRecordError("set_scalar entity target must be an Element@1")
-    params = entity.fields.get("params")
+    params = _element_fields(record, entity).get("params")
     if not isinstance(params, Mapping) or key not in params:
         raise StateRecordError(
             f"element {entity_id}: params has no field {key!r}"
@@ -1069,7 +1148,7 @@ def _apply_scalar_operator(
         )
     replacement = replace(
         entity,
-        fields={**entity.fields, "params": {**params, key: value}},
+        fields={**entity.fields, "params": {**entity.fields.get("params", {}), key: value}},
     )
     return replace(
         record,
@@ -1232,6 +1311,77 @@ def _apply_reindex_operator(
         basis_refs=tuple(sorted(set((*record.basis_refs, *basis_refs)))),
         predecessor_ref=f"record:{record.digest}",
     )
+
+
+def _apply_component_operator(record: StateRecord, operator: StateRecordOperator) -> StateRecord:
+    """Apply one atomic semantic graph edit; refuse dangling survivors."""
+
+    allowed_schemas = {"Component@1", "Element@1", "Type@1", "Reading@1"}
+    existing_entities = {entity.entity_id: entity for entity in record.entities}
+    for entity in operator.entities:
+        if entity.schema not in allowed_schemas:
+            raise StateRecordError(f"edit_components cannot edit entity schema {entity.schema}")
+        previous = existing_entities.get(entity.entity_id)
+        if previous is not None and previous.schema != entity.schema:
+            raise StateRecordError(f"edit_components cannot change schema of entity {entity.entity_id}")
+    for entity_id in operator.remove_entity_ids:
+        previous = existing_entities.get(entity_id)
+        if previous is not None and previous.schema not in allowed_schemas:
+            raise StateRecordError(f"edit_components cannot remove entity schema {previous.schema}")
+
+    # Validate all requested removals and replacements before constructing the
+    # final record, so a related parameter and element can be edited together.
+    replacements: dict[str, dict[str, Any]] = {}
+    for name, items, edits, removals, identity in (
+        ("entities", record.entities, operator.entities, operator.remove_entity_ids, "entity_id"),
+        ("parameters", record.parameters, operator.parameters, operator.remove_parameter_keys, "key"),
+        ("relations", record.relations, operator.relations, operator.remove_relation_ids, "relation_id"),
+    ):
+        known = {getattr(item, identity) for item in items}
+        edited_ids = [getattr(item, identity) for item in edits]
+        if len(set(edited_ids)) != len(edited_ids):
+            raise StateRecordError(f"edit_components {name} ids must be unique")
+        unknown = set(removals) - known
+        if unknown:
+            raise StateRecordError(f"edit_components removes unknown {name}: " + ", ".join(sorted(unknown)))
+        overlap = set(edited_ids) & set(removals)
+        if overlap:
+            raise StateRecordError(f"edit_components both edits and removes {name}: " + ", ".join(sorted(overlap)))
+        replacements[name] = {getattr(item, identity): item for item in edits}
+
+    removed_entities = set(operator.remove_entity_ids)
+    removed_relations = set(operator.remove_relation_ids) | {
+        relation.relation_id for relation in record.relations
+        if relation.subject in removed_entities or relation.object in removed_entities
+    }
+    # A replacement can deliberately reattach an existing relation to surviving
+    # endpoints; only the old incident relation is implicitly removed.
+    removed_relations -= set(replacements["relations"])
+    final: dict[str, tuple[Any, ...]] = {}
+    for name, items, removals, identity in (
+        ("entities", record.entities, removed_entities, "entity_id"),
+        ("parameters", record.parameters, set(operator.remove_parameter_keys), "key"),
+        ("relations", record.relations, removed_relations, "relation_id"),
+    ):
+        edits = replacements[name]
+        known = {getattr(item, identity) for item in items}
+        final[name] = tuple(
+            edits.get(getattr(item, identity), item) for item in items
+            if getattr(item, identity) not in removals
+        ) + tuple(item for identifier, item in edits.items() if identifier not in known)
+
+    successor = replace(record, **final)
+    # Component membership and expression inputs must also remain resolvable;
+    # they cannot be silently detached when another item is removed.
+    surviving_entities = {entity.entity_id: entity for entity in successor.entities}
+    for entity in successor.entities:
+        component_id = entity.fields.get("component_id")
+        if component_id is not None:
+            component = surviving_entities.get(component_id)
+            if component is None or component.schema != "Component@1":
+                raise StateRecordError(f"entity {entity.entity_id}: component_id names no Component@1 {component_id!r}")
+    evaluate_parameters(successor)
+    return successor
 
 
 def _upsert_graph(

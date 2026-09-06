@@ -147,7 +147,7 @@ class RejectionIsAJudgement(EpisodeTestCase):
         # What the option would have touched travels with the decision: the
         # proposal it came from is lost on restart, the closure is not.
         self.assertIn("entity:portico-base", decided["closure"])
-        self.assertEqual(decided["change"], {"key": "height", "old": 0.6, "new": 0.9})
+        self.assertEqual(decided["change"], {"kind": "set_scalar", "key": "height", "old": 0.6, "new": 0.9})
         # No run exists yet, and the episode says exactly that rather than
         # implying the project can account for it.
         self.assertIsNone(episode["producedRun"])

@@ -160,6 +160,76 @@ class CandidateRunTests(CandidateTestCase):
         self.assertRegex(accepted["candidateId"], IDENTIFIER)
         self.finished(accepted["jobId"])
 
+    def test_a_semantic_proposal_runs_and_remains_parametrically_editable(self) -> None:
+        from .test_intents import scripted, semantic_wall_edit
+
+        edit = semantic_wall_edit()
+        wall = edit["entities"][0]
+        type_fields = {key: value for key, value in wall["fields"].items() if key != "component_id"}
+        edit["entities"].insert(0, {
+            "entity_id": "passage-wall-type", "schema": "Type@1",
+            "fields": type_fields, "basis_refs": ["studio:intent"],
+        })
+        wall["fields"] = {"component_id": "portico", "producer": "wall", "type_ref": "passage-wall-type", "params": {}, "references": {}}
+        self.app.state.intent_compiler = scripted(semantic_edit=edit, component_id="portico")
+        before_head = self.repository.read_head()
+        before_input = self.repository.layout.resolve_relative(RUNNER_RECORD_PATH).read_bytes()
+        response = self.client.post("/api/intents", json={
+            "stateDigest": self.state_digest, "sourceRunId": REFERENCE_RUN_ID,
+            "targetComponentId": "portico", "elementId": "portico-base",
+            "utterance": "Add a supporting wall with an arched passage, keeping the base unchanged.",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        proposal = response.json()["proposal"]
+        self.assertEqual(proposal["sourceRunId"], REFERENCE_RUN_ID)
+        accepted = self.start(proposal["proposalId"])
+        job = self.finished(accepted["jobId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        restored = _run_state_record(self.repository, accepted["candidateId"])
+        wall = next(entity for entity in restored["entities"] if entity["entity_id"] == "passage-wall")
+        self.assertEqual(wall["fields"]["producer"], "wall")
+        self.assertEqual(wall["fields"]["type_ref"], "passage-wall-type")
+        wall_type = next(entity for entity in restored["entities"] if entity["entity_id"] == "passage-wall-type")
+        self.assertEqual(wall_type["fields"]["params"]["openings"][0]["width"], "@passage_width")
+        state = self.client.get("/api/state", params={"run": accepted["candidateId"]}).json()
+        edit = semantic_wall_edit()
+        edit.update(
+            summary="Narrow the same arched passage to 1.8 metres.", entities=[],
+            parameters=[{"key": "passage_width", "value": 1.8, "unit": "m"}],
+        )
+        self.app.state.intent_compiler = scripted(semantic_edit=edit, component_id="portico")
+        response = self.client.post("/api/intents", json={
+            "stateDigest": state["stateDigest"], "sourceRunId": accepted["candidateId"],
+            "targetComponentId": "portico", "elementId": "passage-wall",
+            "utterance": "Make the same arch passage narrower, to 1.8 metres, keeping its semicircular relationship.",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        following = self.start(response.json()["proposal"]["proposalId"])
+        self.assertEqual(self.finished(following["jobId"])["status"], "succeeded")
+        successor = _run_state_record(self.repository, following["candidateId"])
+        parameters = {item["key"]: item["value"] for item in successor["parameters"]}
+        self.assertEqual(parameters["passage_width"], 1.8)
+        self.assertEqual(parameters["passage_head"], 2.4)
+        original_parameters = {item["key"]: item["value"] for item in restored["parameters"]}
+        self.assertEqual(original_parameters["passage_width"], 2)
+        self.assertEqual(self.repository.read_head(), before_head)
+        self.assertEqual(self.repository.layout.resolve_relative(RUNNER_RECORD_PATH).read_bytes(), before_input)
+        # Editing only the type must validate its instantiated opening before
+        # another proposal or candidate can be offered.
+        state = self.client.get("/api/state", params={"run": following["candidateId"]}).json()
+        edit.update(entities=[{
+            "entity_id": "passage-wall-type", "schema": "Type@1",
+            "fields": {"params": {**type_fields["params"], "height": 1}},
+        }], parameters=[])
+        self.app.state.intent_compiler = scripted(semantic_edit=edit, component_id="portico")
+        refused = self.client.post("/api/intents", json={
+            "stateDigest": state["stateDigest"], "sourceRunId": following["candidateId"],
+            "targetComponentId": "portico", "elementId": "passage-wall",
+            "utterance": "Lower this wall type to one metre while keeping the same opening.",
+        })
+        self.assertEqual(refused.status_code, 422, refused.text)
+        self.assertEqual(refused.json()["code"], "SEMANTIC_EDIT_INVALID")
+
     def test_two_candidates_of_one_proposal_never_share_a_run(self) -> None:
         """Started in the same second, they are still two different runs."""
 

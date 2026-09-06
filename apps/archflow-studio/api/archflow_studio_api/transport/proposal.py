@@ -94,13 +94,15 @@ class ProposalTargetDto(BaseModel):
     ref: str = Field(
         description="the kernel's prefixed ref: entity:<id> or parameter:<key>",
     )
-    key: str
+    key: str | None
 
 
 class ProposalChangeDto(BaseModel):
     """The number as the record has it, and the number proposed for it."""
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    kind: Literal["set_scalar"] = "set_scalar"
 
     # Authored quantities keep the type they were written with: a value
     # authored as 3 must not come back as 3.0.
@@ -110,6 +112,38 @@ class ProposalChangeDto(BaseModel):
         description="the unit the record declares; element params are "
         "unit-less numbers and answer null",
     )
+
+
+class ComponentChangeDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    action: Literal["add", "update", "remove"]
+    entity_id: str = Field(alias="entityId")
+    label: str
+    description: str
+
+
+class ComponentEditsDto(BaseModel):
+    """The typed design edits shown only in the proposal's details."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    entities: list[dict[str, Any]]
+    parameters: list[dict[str, Any]]
+    relations: list[dict[str, Any]]
+    remove_entity_ids: list[str] = Field(alias="removeEntityIds")
+    remove_parameter_keys: list[str] = Field(alias="removeParameterKeys")
+    remove_relation_ids: list[str] = Field(alias="removeRelationIds")
+
+
+class ComponentEditChangeDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    kind: Literal["edit_components"] = "edit_components"
+    summary: str
+    changes: list[ComponentChangeDto]
+    kept: list[str]
+    edits: ComponentEditsDto
 
 
 class ProposalScopeDto(BaseModel):
@@ -152,9 +186,9 @@ class ProposalDto(BaseModel):
         "the project's default state projection",
     )
     target: ProposalTargetDto
-    change: ProposalChangeDto
+    change: ProposalChangeDto | ComponentEditChangeDto = Field(discriminator="kind")
     protected: list[str]
-    decision_operator: dict[str, Any] = Field(
+    decision_operator: dict[str, Any] | None = Field(
         alias="decisionOperator",
         description="the kernel's DecisionOperator@2 payload, opaque here",
     )
@@ -195,11 +229,13 @@ def to_dto(proposal: Proposal, *, scope: ProposalScopeDto | None = None) -> Prop
             ref=proposal.target_ref,
             key=proposal.key,
         ),
-        change=ProposalChangeDto(
-            old=proposal.old, new=proposal.new, unit=proposal.unit
+        change=(
+            ComponentEditChangeDto(**proposal.semantic_edit)
+            if proposal.semantic_edit is not None
+            else ProposalChangeDto(old=proposal.old, new=proposal.new, unit=proposal.unit)
         ),
         protected=list(proposal.protected),
-        decision_operator=proposal.operator.to_dict(),
+        decision_operator=None if proposal.operator is None else proposal.operator.to_dict(),
         impact=impact_dto(proposal.impact),
         utterance=proposal.utterance,
         persistence=PERSISTENCE,
@@ -259,6 +295,8 @@ class EpisodeChangeDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
+    kind: Literal["set_scalar"] = "set_scalar"
+
     key: str
     old: int | float
     new: int | float
@@ -271,7 +309,7 @@ class EpisodeProposalDto(BaseModel):
 
     proposal_id: str = Field(alias="proposalId")
     target: str
-    change: EpisodeChangeDto
+    change: EpisodeChangeDto | ComponentEditChangeDto = Field(discriminator="kind")
     closure: list[str] = Field(
         description="every ref this option would invalidate, as the "
         "proposal's own closure had it",
@@ -328,8 +366,10 @@ def episode_proposal_dto(item: EpisodeProposal) -> EpisodeProposalDto:
     return EpisodeProposalDto(
         proposal_id=item.proposal_id,
         target=item.target,
-        change=EpisodeChangeDto(
-            key=item.change.key, old=item.change.old, new=item.change.new
+        change=(
+            ComponentEditChangeDto(**item.change.semantic_edit)
+            if item.change.semantic_edit is not None
+            else EpisodeChangeDto(key=item.change.key, old=item.change.old, new=item.change.new)
         ),
         closure=list(item.closure),
         # The application's three decisions are the DTO's three literals; a

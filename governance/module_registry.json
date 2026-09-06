@@ -19,13 +19,18 @@
       "implementations": [
         {
           "backend": "occt",
-          "entry_points": ["archflow.adapters.cad_execution.execute_occt_export"],
+          "entry_points": [
+            "archflow.adapters.cad_execution.execute_occt_export"
+          ],
           "implementation_file": "archflow/adapters/occt_backend.py",
           "output": "OcctExecutionReceipt@1: exact STEP B-rep and optional mesh .3dm preview from the same model; unsupported operations fail explicitly"
         },
         {
           "backend": "rhino",
-          "entry_points": ["archflow.adapters.cad_execution.prepare_rhino_three_dm_export", "archflow.adapters.cad_execution.execute_rhino_three_dm_export"],
+          "entry_points": [
+            "archflow.adapters.cad_execution.prepare_rhino_three_dm_export",
+            "archflow.adapters.cad_execution.execute_rhino_three_dm_export"
+          ],
           "implementation_file": "archflow/adapters/cad_execution.py",
           "output": "RhinoCadExecutionReceipt@4: explicit Rhino compatibility export with host supervision and saved .3dm readback"
         }
@@ -44,7 +49,7 @@
         "supervising the blocking worker, collecting its output, and independently cleaning the Rhino host it started",
         "readback verification: the saved file's physical objects, semantics, bounds, counts, layer colours and document user text against the denominator",
         "the execution receipt and its status",
-        "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, capped or uncapped polyline loft, boolean and linear array operations; exact STEP write/readback and tessellated .3dm preview from one model",
+        "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated .3dm preview from one model",
         "native preview material assignment and readback for existing FRAME and GLAZING assembly roles, including actual glass transparency",
         "CadProgramBinding (the retained RhinoCadProgramBinding alias), OcctCadExportIdentity, OcctExecutionReceipt and explicit CadCapabilityError for unsupported operations"
       ],
@@ -116,7 +121,8 @@
         "discovery is read-only: it never launches or attaches to Rhino",
         "OCCT execution never starts Rhino and never silently falls back; unsupported operations are named before file writes",
         "STEP carries exact B-rep geometry; mesh .3dm is explicitly a tessellated preview, with the same program/object semantics and one x-y-up-z-plan to Z-up coordinate conversion",
-        "OCCT saved geometry is re-read with a fresh STEP reader and checked for named shapes, semantic layers and predicted bounds; solids retain closure and count checks, explicitly uncapped lofts retain open boundaries and report no volume; this is not a separate geometry instrument or a structural bearing proof"
+        "OCCT saved geometry is re-read with a fresh STEP reader and checked for named shapes, semantic layers and predicted bounds; solids retain closure and count checks, explicitly uncapped lofts retain open boundaries and report no volume; this is not a separate geometry instrument or a structural bearing proof",
+        "revolve realizes the existing axis and end-radius contract as an exact OCCT cylinder or conical frustum; its datum placement and radius rule are shared with the existing translator and bounds predictor"
       ],
       "status": "canonical",
       "tests": [
@@ -477,7 +483,9 @@
         "typed declination: a component owned, looked at, and left without geometry for a stated reason",
         "the building-local frame id and the +Y extrusion convention every producer emits",
         "a straight stair flight as one closed stepped solid, a sloped-top wedge (wedge) and a hollow revolved shell (shell), each publishing <id>-top and seated by a support relation like prism",
-        "declaring on the operation, as statements and never as parameters, the row facts the produced solid cannot show (a wedge's low/high/axis/sense, a shell's thickness/kind), already formatted as the text the export will carry; wedge_sense is the world-anchored rise direction +x|-x|+z|-z, derived from the row's declared from->to line and slope_across, never measured back off the geometry"
+        "declaring on the operation, as statements and never as parameters, the row facts the produced solid cannot show (a wedge's low/high/axis/sense, a shell's thickness/kind), already formatted as the text the export will carry; wedge_sense is the world-anchored rise direction +x|-x|+z|-z, derived from the row's declared from->to line and slope_across, never measured back off the geometry",
+        "the queryable semantic authoring signature of the wall producer and its rectangular or semicircular hosted apertures; project values remain in StateRecord",
+        "in-memory checking of a semantic element edit by the advertised signature and the existing producers before a candidate is queued"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -507,7 +515,9 @@
         "ElementRow",
         "ProductionContext",
         "element_rows_of",
-        "produce_rows"
+        "produce_rows",
+        "producer_signatures",
+        "validate_element_contract"
       ],
       "depends_on": [
         "archflow.capabilities.opening_solver",
@@ -537,7 +547,8 @@
         "a row fact the export needs but the geometry does not is a statement, never a parameter: the function contract for the operation's kind still sees exactly the parameters it names",
         "a stair's explicit top must match base plus offset plus count times rise within 0.001 m; the closed profile has that physical top by construction, and a conflict fails without adjusting inputs",
         "the stair emits one whole solid and retains its declared endpoint, width and top datum; positive thin-tread thickness is refused rather than reinterpreted as a whole-flight slab",
-        "a direct loft row preserves its explicit cap_ends boolean, defaulting to true, without changing closure of other producers; declared profile_basis is passed through and unsupported open section profiles are refused"
+        "a direct loft row preserves its explicit cap_ends boolean, defaulting to true, without changing closure of other producers; declared profile_basis is passed through and unsupported open section profiles are refused",
+        "an unfilled semicircular wall opening passes its explicit shape and spring height to wall_solver and creates no frame or leaf"
       ],
       "status": "canonical",
       "tests": [
@@ -712,7 +723,8 @@
         "a type carries proportions only - no position, no level, no absolute size",
         "every member is placed relative to the void the wall granted",
         "a void whose opening id has no type fails OpeningSolverError rather than being left empty",
-        "member operation ids are scoped by the hosting wall: an opening id is unique inside its wall, not inside the building, and a wall id already prefixing the opening id is not doubled"
+        "member operation ids are scoped by the hosting wall: an opening id is unique inside its wall, not inside the building, and a wall id already prefixing the opening id is not doubled",
+        "rectangular window and door types cannot silently fill a non-rectangular hosted aperture"
       ],
       "status": "canonical",
       "tests": [
@@ -872,7 +884,8 @@
         "OpeningRequest: where an opening sits along the wall, its width, sill, head and repeat count/step",
         "enumerating the wall solid, one tool per opening and the single boolean difference that cuts them",
         "granting each opening a HostedVoid - its aperture in wall coordinates plus the object ids it may use",
-        "rejecting overlapping openings, openings past the wall ends, and openings that hit a declared exclusion"
+        "rejecting overlapping openings, openings past the wall ends, and openings that hit a declared exclusion",
+        "semicircular hosted apertures with explicit spring height, cut from the wall by the existing revolve, extrusion and boolean operations"
       ],
       "does_not_own": [
         "what fills a void - capabilities.opening_solver decides frames, panes and leaves",
@@ -919,7 +932,8 @@
       "invariants": [
         "the wall is one solid; every opening is a void request the wall hosts, never a separate subtraction chain",
         "an opening's position is expressed in wall coordinates (along, across), never in project coordinates",
-        "a contract violation - non-positive size, an opening outside the wall, overlapping voids - fails WallSolverError"
+        "a contract violation - non-positive size, an opening outside the wall, overlapping voids - fails WallSolverError",
+        "a semicircular aperture has head minus spring height equal to half its width, with its spring at or above its sill; rectangular opening serialization is unchanged"
       ],
       "status": "canonical",
       "tests": [
@@ -2031,8 +2045,8 @@
         "StageExecutionGuard",
         "ProjectRunnerError",
         "RecordedProposalProvider",
-      "RECORDED_PROPOSAL_IDENTITY",
-      "SeatResult",
+        "RECORDED_PROPOSAL_IDENTITY",
+        "SeatResult",
         "RELATION_CHECK_BASIS",
         "CAD_BACKEND_OCCT",
         "CAD_BACKEND_RHINO",
@@ -2866,8 +2880,10 @@
         "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)",
         "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1",
         "the one reading of a Volume@1 box in the kernel's voxel lattice - x and z plan, y up, inclusive cells (volume_boxes_of); the schematic pack read out of the record (schematic_pack_of), which developed_design_view and the massing metrics both use",
-        "the closed StateRecord edit vocabulary and its one successor function: set_scalar, replace_massing, apply_program and reindex (StateRecordEditKind, StateRecordOperator, apply_state_record_operator)",
-        "adapting declared parameter expressions and explicit @parameter bindings to the existing state.derivation evaluator, locating stale/conflicting input declarations and recomputing declared downstream values through the existing successor operator"
+        "the closed StateRecord edit vocabulary and its one successor function: set_scalar, replace_massing, apply_program, reindex and edit_components (StateRecordEditKind, StateRecordOperator, apply_state_record_operator)",
+        "adapting declared parameter expressions and explicit @parameter bindings to the existing state.derivation evaluator, locating stale/conflicting input declarations and recomputing declared downstream values through the existing successor operator",
+        "atomic semantic component edits: entity, parameter and relationship upserts or explicit removals, with incident relationships removed when their entity is removed",
+        "Type@1 producer defaults combined with Element@1 instance overrides before resolving explicit parameter bindings; the same values and dependencies reach projection and production"
       ],
       "does_not_own": [
         "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
@@ -2921,7 +2937,8 @@
         "derivation_table_of",
         "evaluate_parameters",
         "stale_parameters",
-        "resolve_element_bindings"
+        "resolve_element_bindings",
+        "compile_component_edit"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -2963,7 +2980,9 @@
         "developed_design_view is an adapter, not a second source of truth; design_components_of is the single component-tree builder",
         "every successor edit binds both complete content identity (record.digest) and run/base binding identity (state_digest), checks protected dependency closure and parameter locks in one function, and recomputes only declared downstream parameter expressions",
         "explicit @parameter bindings use evaluated values; ordinary numeric literals never acquire an inferred dependency; conflicting direct edits to derived or bound scalar targets are refused",
-        "the caller supplies a run's developed-view phase; the historical default and retained serialized values remain compatible without rewriting old records"
+        "the caller supplies a run's developed-view phase; the historical default and retained serialized values remain compatible without rewriting old records",
+        "semantic edits check protected closure before and after the edit; a deleted entity releases its incident relationships, while remaining dangling references are refused",
+        "a wall type supplies producer parameters and references, not a second instance store; changing a type or a bound parameter propagates to its instances"
       ],
       "status": "canonical",
       "tests": [
@@ -3366,7 +3385,8 @@
         "the worker pool and queue: closure-based conflicts, the exclusive Rhino export lane, and per-job lifecycle state",
         "the bounded in-process event log, its replay and its live subscribers",
         "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines",
-        "one arrangement for every kind of candidate: compile or receive a StateRecordOperator, replay it against the worker's exact base, then run the successor (run_operator over _run_successor); a proposal's optional source_run_id follows its explicitly selected retained record through queue and worker, while None preserves the default reference policy"
+        "one arrangement for every kind of candidate: compile or receive a StateRecordOperator, replay it against the worker's exact base, then run the successor (run_operator over _run_successor); a proposal's optional source_run_id follows its explicitly selected retained record through queue and worker, while None preserves the default reference policy",
+        "executing a semantic component proposal through the same run_operator path as scalar and massing proposals"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -3492,7 +3512,9 @@
         "the DeliberationEpisode value: one judgement of the studio - the intent, the options on the table, the decision on each with its reason, and the run it produced",
         "the in-process episode store, and the flush that writes judgements made before a run into the next run made against the same state; a judgement is retained only into a run that happened, an episode that met no run says so and is lost on restart; the payload states facts only (ADR-004)",
         "the scope step: which elements a change is agreed to reach - the element, the stack that seats on it (support relations and base references, intersected with the record's closure), or everything on its datum; asked (SCOPE_UNRESOLVED) only when a stack exists and the request did not say, never for an explicitly picked element",
-        "the derived-control answer: a capability a reference pins is named with its source (CONTROL_IS_DERIVED) and never compiled - the source's own editable controls when it is an element, the terminal authored-control answer when it is a level"
+        "the derived-control answer: a capability a reference pins is named with its source (CONTROL_IS_DERIVED) and never compiled - the source's own editable controls when it is an element, the terminal authored-control answer when it is a level",
+        "compiling an Agent semantic component edit from the queried producer signatures and the current record into the existing typed StateRecordOperator; a proposal carries a concise change summary and explicit kept conditions",
+        "showing the Agent project types, source readings, parameter bindings and named relationships as context; no geometry program or deferred replay payload is accepted as semantic authoring"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -3579,7 +3601,10 @@
         "studio.binding",
         "project.record_kinds",
         "project.ports",
-        "project.refs"
+        "project.refs",
+        "capabilities.element_producers",
+        "relations.contracts",
+        "semantics.registry"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -3593,7 +3618,7 @@
         "apps/archflow-studio/api/tests/test_proposals.py"
       ],
       "invariants": [
-        "an utterance is parsed, never interpreted; anything outside the four forms becomes a question with the accepted forms attached",
+        "an utterance is parsed, never interpreted; scalar edits use the four forms; component edits use the typed Entity, Parameter and Relation payload",
         "an agent's answer must itself parse as the grammar - a compiler that claims success ungrammatically is a failure",
         "a clarification chain advances or terminates: a round that leaves the target, the missing slots and the candidates where they were is answered UNSUPPORTED, never asked again",
         "a pending intent is bound to a stateDigest; one opened against a state the project has left is void and answers STALE_CLARIFICATION",
@@ -3607,8 +3632,10 @@
         "an AuthoredControlDraft is a value: it is returned, never retained, and it invents no number",
         "identity comes from the export's archflow:* strings, not from an object's name alone",
         "the proposal store and the pending-intent store are one process's dictionaries: not version history, lost on restart",
-        "a scope is a coverage, not a mutation: whatever scope is settled, the proposal moves one scalar on one element",
-        "a derived capability is shown with its source and never compiled; the agent is not asked about one"
+        "a scalar proposal moves one scalar; a semantic component proposal enumerates its entity, parameter and relationship changes through the same candidate chain",
+        "a derived capability is shown with its source and never compiled; the agent is not asked about one",
+        "an add/remove component request cannot be replaced with an unrelated numeric-field question; protected height or width statements are not change targets",
+        "semantic proposals carry real edits and before/after summaries, never synthetic numeric old/new values"
       ],
       "status": "canonical",
       "tests": [
@@ -3683,14 +3710,14 @@
         "GET /api/protocol",
         "create_app",
         "main",
-      "StudioSettings",
-      "SettingsError",
+        "StudioSettings",
+        "SettingsError",
         "cad_export_from_env",
         "CAD_EXPORT_OCCT",
         "CAD_EXPORT_RHINO",
         "CAD_EXPORT_OFF",
         "CAD_EXPORTS",
-      "StudioError",
+        "StudioError",
         "ClarificationRefused",
         "BlockedNeedsHuman",
         "MissingEditableControl",
@@ -3736,7 +3763,8 @@
         "apps/archflow-studio/api/tests/test_settings.py",
         "apps/archflow-studio/api/tests/test_errors.py",
         "apps/archflow-studio/api/tests/test_protocol.py",
-        "apps/archflow-studio/web/test/connection.test.ts"
+        "apps/archflow-studio/web/test/connection.test.ts",
+        "apps/archflow-studio/web/test/proposalCard.test.ts"
       ],
       "notes": "transport/* carries the wire shapes for all six concerns, so a DTO change is a shell change, not an application one. docs/PROTOCOL.md is the written form of what protocol.py names; the client half of the seam is apps/archflow-studio/web/src/api/connection.ts, which this registry does not list because it lists Python modules only. Browser-only language, theme, font-scale and event-visibility preferences stay in web localStorage; the typed client message catalogs and settings panel may display server facts but never create a second server-configuration or project-persistence authority.",
       "files": [

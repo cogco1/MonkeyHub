@@ -396,6 +396,84 @@ class StairLoftExecutionTests(unittest.TestCase):
 class WallOpeningBooleanTests(unittest.TestCase):
     """The authored record's wall with its window void: a real Boolean cut, saved and verified."""
 
+    def test_repeated_half_round_openings_need_no_straight_jamb_segment(self) -> None:
+        payload = json.loads(json.dumps(RECORD_PAYLOAD))
+        wall = next(row for row in payload["entities"] if row["entity_id"] == "wall-south")
+        wall["fields"]["params"]["openings"] = [{
+            "opening_id": "arch", "kind": "window", "along": 1.7, "width": 2.4,
+            "sill": 1.1, "head": 2.3, "shape": "semicircular_arch", "spring_height": 1.1,
+            "count": 2, "step": 2.6,
+        }]
+        program = _compile(StateRecord.from_dict(payload))
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _persisted_binding(program, "stage-occt-half-round"), workspace, "half-round@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+            cut = entries["obj-wall-south-cut"].shape
+            self.assertAlmostEqual(occt_backend.measure_shape(cut).volume,
+                                   6.0 * 0.3 * 2.97 - math.pi * 1.2 ** 2 * 0.3, places=6)
+            for index, centre in enumerate((1.7, 4.3)):
+                aperture = occt_backend.measure_shape(entries[f"obj-wall-south-aperture-arch-{index}"].shape)
+                self.assertAlmostEqual(aperture.volume, math.pi * 1.2 ** 2 * 0.3 / 2, places=6)
+                _assert_bbox(self, aperture, (centre - 1.2, -0.3, 1.7), (centre + 1.2, 0.0, 2.9))
+                self.assertEqual(occt_backend.classify_program_point(cut, (centre, 2.0, -0.15)), "outside")
+                self.assertEqual(occt_backend.classify_program_point(cut, (centre, 1.6, -0.15)), "inside")
+            self.assertEqual(occt_backend.classify_program_point(cut, (3.0, 2.0, -0.15)), "inside")
+
+    def test_semicircular_arch_is_an_exact_through_opening_with_solid_shoulders(self) -> None:
+        payload = json.loads(json.dumps(RECORD_PAYLOAD))
+        wall = next(row for row in payload["entities"] if row["entity_id"] == "wall-south")
+        wall["fields"]["params"]["openings"] = [{
+            "opening_id": "arch", "kind": "door", "along": 3.0, "width": 2.4,
+            "sill": 0.0, "head": 2.7, "shape": "semicircular_arch", "spring_height": 1.5,
+        }]
+        program = _compile(StateRecord.from_dict(payload))
+        binding = _persisted_binding(program, "stage-occt-arch")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, binding, workspace, "arch@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            self.assertEqual(receipt.physical_object_ids,
+                             ("obj-plinth", "obj-wall-south-aperture-arch", "obj-wall-south-cut"))
+            entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+            shape = entries["obj-wall-south-cut"].shape
+            aperture_shape = entries["obj-wall-south-aperture-arch"].shape
+            cut = occt_backend.measure_shape(shape)
+            aperture = occt_backend.measure_shape(aperture_shape)
+            area = 2.4 * 1.5 + math.pi * 1.2 ** 2 / 2.0
+            self.assertEqual((cut.valid, cut.closed, cut.solid_count), (True, True, 1))
+            self.assertEqual((aperture.valid, aperture.closed, aperture.solid_count), (True, True, 1))
+            self.assertAlmostEqual(aperture.volume, area * 0.3, places=6)
+            self.assertAlmostEqual(cut.volume, 6.0 * 2.97 * 0.3 - area * 0.3, places=6)
+            _assert_bbox(self, aperture, (1.8, -0.3, 0.6), (4.2, 0.0, 3.3))
+            # Cold-read points in program coordinates: the same opening on three depth slices.
+            for depth in (-0.02, -0.15, -0.28):
+                for x, y, result in ((3.0, 1.0, "outside"), (3.0, 3.29, "outside"),
+                                     (3.0, 3.31, "inside"), (4.0, 2.9, "inside"),
+                                     (4.0, 2.6, "outside"), (1.79, 1.5, "inside"),
+                                     (1.81, 1.5, "outside"), (4.19, 1.5, "outside"),
+                                     (4.21, 1.5, "inside")):
+                    point = (x, y, depth)
+                    self.assertEqual(occt_backend.classify_program_point(shape, point), result, point)
+                    self.assertEqual(occt_backend.classify_program_point(aperture_shape, point),
+                                     "inside" if result == "outside" else "outside", point)
+            # The reveal survives STEP as a cylinder, without faceted loft approximation.
+            from OCP.BRepAdaptor import BRepAdaptor_Surface
+            from OCP.GeomAbs import GeomAbs_Cylinder
+            from OCP.TopAbs import TopAbs_FACE
+            from OCP.TopExp import TopExp_Explorer
+            from OCP.TopoDS import TopoDS
+            faces = TopExp_Explorer(shape, TopAbs_FACE)
+            radii = []
+            while faces.More():
+                surface = BRepAdaptor_Surface(TopoDS.Face_s(faces.Current()))
+                if surface.GetType() == GeomAbs_Cylinder:
+                    radii.append(surface.Cylinder().Radius())
+                faces.Next()
+            self.assertEqual(len(radii), 1)
+            self.assertAlmostEqual(radii[0], 1.2, places=8)
+
     def test_the_cut_wall_is_the_saved_solid_with_its_opening(self) -> None:
         program = _compile(authored_record())
         binding = _persisted_binding(program, "stage-occt-wall")
@@ -919,6 +997,37 @@ def _program_of(*operations: GeometryOperation) -> CompiledGeometryProgram:
 
 
 @NEEDS_OCCT
+class RevolveExecutionTests(unittest.TestCase):
+    def test_cylinder_and_oblique_frustum_keep_the_declared_axis_radii_and_base_datum(self) -> None:
+        for endpoint, radii in (([0.0, 0.0, -0.4], (0.005, 0.005)), ([2.0, 3.0, 4.0], (0.8, 0.4))):
+            with self.subTest(endpoint=endpoint, radii=radii), tempfile.TemporaryDirectory() as tmp:
+                params = {"axis_start": [0.0, 0.0, 0.0], "axis_end": endpoint,
+                          "start_radius": radii[0], "end_radius": radii[1],
+                          "base_level": 0.6, "base_offset": 1.5}
+                operation = GeometryOperation(
+                    op_id="revolve", kind=GeometryOperationKind.REVOLVE,
+                    output_object_ids=("revolve-object",), input_object_ids=(), frame_id="world",
+                    semantic_binding_ids=("body-binding",),
+                    parameters=tuple(GeometryParameter.create(
+                        name=name, kind=GeometryParameterKind.VECTOR3 if name.startswith("axis_") else GeometryParameterKind.NUMBER,
+                        value=value, unit=LengthUnit.METER,
+                    ) for name, value in sorted(params.items())),
+                )
+                program = _program_of(operation)
+                workspace = Path(tmp).resolve()
+                receipt, _ = _execute(program, _synthetic_binding(program), workspace, "revolve@occt")
+                self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+                shape = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])["revolve-object"].shape
+                measure = occt_backend.measure_shape(shape)
+                self.assertEqual((measure.valid, measure.closed, measure.solid_count), (True, True, 1))
+                r0, r1 = (max(radius, 0.01) for radius in radii)
+                length = math.sqrt(sum(value * value for value in endpoint))
+                self.assertAlmostEqual(measure.volume, math.pi * length * (r0 * r0 + r0 * r1 + r1 * r1) / 3.0, places=7)
+                midpoint = (endpoint[0] / 2, 2.1 + endpoint[1] / 2, endpoint[2] / 2)
+                self.assertEqual(occt_backend.classify_program_point(shape, midpoint), "inside")
+
+
+@NEEDS_OCCT
 class JointIntersectionTests(unittest.TestCase):
     """``boolean_intersection`` with n inputs is the volume common to all of them, as the IR's bounds contract states.
 
@@ -1272,9 +1381,9 @@ class ImportBoundaryTests(unittest.TestCase):
     def test_the_backend_names_what_it_does_not_realize(self) -> None:
         self.assertEqual(
             occt_backend.SUPPORTED_OPERATION_KINDS,
-            {"solid", "extrusion", "loft", "boolean_union", "boolean_difference", "boolean_intersection", "array"},
+            {"solid", "revolve", "extrusion", "loft", "boolean_union", "boolean_difference", "boolean_intersection", "array"},
         )
-        for unsupported in ("radial_array", "transform", "revolve", "sweep", "curve", "asset_instance"):
+        for unsupported in ("radial_array", "transform", "sweep", "curve", "asset_instance"):
             self.assertNotIn(unsupported, occt_backend.SUPPORTED_OPERATION_KINDS)
 
 

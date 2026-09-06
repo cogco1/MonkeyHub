@@ -182,6 +182,8 @@ class OpeningRequest:
     binding_id: str
     count: int = 1
     step: float = 0.0
+    shape: str = "rectangular"
+    spring_height: float | None = None
 
     SCHEMA = "OpeningRequest@1"
 
@@ -198,6 +200,19 @@ class OpeningRequest:
             raise WallSolverError(f"opening {self.opening_id} sill below the wall base")
         if self.head <= self.sill:
             raise WallSolverError(f"opening {self.opening_id} head must be above its sill")
+        if self.shape not in ("rectangular", "semicircular_arch"):
+            raise WallSolverError(f"opening {self.opening_id} has unsupported shape {self.shape!r}")
+        if self.shape == "semicircular_arch":
+            if self.width < 0.02:
+                raise WallSolverError(f"opening {self.opening_id} arch width is below the revolve minimum diameter 0.02")
+            spring = _finite(self.spring_height, f"opening {self.opening_id} spring_height")
+            object.__setattr__(self, "spring_height", spring)
+            if spring < self.sill:
+                raise WallSolverError(f"opening {self.opening_id} spring_height must be at or above its sill")
+            if not math.isclose(self.head - spring, self.width / 2.0, rel_tol=1e-9, abs_tol=1e-9):
+                raise WallSolverError(f"opening {self.opening_id} semicircular arch needs head - spring_height = width / 2")
+        elif self.spring_height is not None:
+            raise WallSolverError(f"opening {self.opening_id} rectangular shape has no spring_height")
         if isinstance(self.count, bool) or not isinstance(self.count, int) or self.count < 1:
             raise WallSolverError(f"opening {self.opening_id} count must be a positive integer")
         object.__setattr__(self, "step", _finite(self.step, f"opening {self.opening_id} step"))
@@ -236,6 +251,7 @@ class OpeningRequest:
             "binding_id": self.binding_id,
             "count": self.count,
             "step": self.step,
+            **({"shape": self.shape, "spring_height": self.spring_height} if self.shape != "rectangular" else {}),
         }
 
 
@@ -261,6 +277,8 @@ class HostedVoid:
     count: int = 1
     step: float = 0.0
     aperture_object_ids: tuple[str, ...] = ()
+    shape: str = "rectangular"
+    spring_height: float | None = None
 
     def __post_init__(self) -> None:
         if not self.aperture_object_ids:
@@ -297,6 +315,7 @@ class HostedVoid:
             "head": self.head,
             "count": self.count,
             "step": self.step,
+            **({"shape": self.shape, "spring_height": self.spring_height} if self.shape != "rectangular" else {}),
         }
 
 
@@ -336,6 +355,52 @@ CONTACT_TOLERANCE_M = 0.025
 
 def _overlaps(a: Bounds, b: Bounds, tolerance: float = CONTACT_TOLERANCE_M) -> bool:
     return all(a[0][i] + tolerance < b[1][i] and b[0][i] + tolerance < a[1][i] for i in range(3))
+
+
+def _arch_tool(wall: WallElement, opening: OpeningRequest, op_id: str,
+               along0: float, along1: float, margin: float) -> tuple[GeometryOperation, ...]:
+    """An exact half cylinder over straight jambs, crossing both wall faces."""
+
+    spring = float(opening.spring_height)
+    radius = opening.width / 2.0
+    centre = (along0 + along1) / 2.0
+    start = wall.plan_point(centre, -margin)
+    end = wall.plan_point(centre, wall.thickness + margin)
+
+    def operation(name, kind, parameters=(), inputs=()):
+        return GeometryOperation(
+            op_id=name, kind=kind, output_object_ids=(f"obj-{name}",),
+            input_object_ids=tuple(sorted(inputs)), frame_id=wall.frame_id,
+            parameters=tuple(sorted(parameters, key=lambda parameter: parameter.name)),
+            semantic_binding_ids=(opening.binding_id,),
+        )
+
+    def box(name, bottom, top):
+        return operation(name, GeometryOperationKind.EXTRUSION, (
+            _number("base_offset", bottom),
+            _points("profile", wall.plan_rectangle(along0, along1, -margin, wall.thickness + margin)),
+            _vector((0.0, top - bottom, 0.0)),
+        ))
+
+    cylinder = operation(f"{op_id}-cylinder", GeometryOperationKind.REVOLVE, (
+        _number("base_offset", spring),
+        GeometryParameter.create(name="axis_start", kind=GeometryParameterKind.VECTOR3,
+                                 value=[round(start[0], 9), 0.0, round(start[1], 9)], unit=_M),
+        GeometryParameter.create(name="axis_end", kind=GeometryParameterKind.VECTOR3,
+                                 value=[round(end[0], 9), 0.0, round(end[1], 9)], unit=_M),
+        _number("start_radius", radius), _number("end_radius", radius),
+    ))
+    upper = box(f"{op_id}-upper", spring, opening.head + margin)
+    bottom = opening.sill if opening.sill > 0.0 else -margin
+    dome_id = f"{op_id}-arch" if bottom < spring else op_id
+    dome = operation(dome_id, GeometryOperationKind.BOOLEAN_INTERSECTION,
+                     inputs=(cylinder.output_object_ids[0], upper.output_object_ids[0]))
+    if bottom >= spring:
+        return cylinder, upper, dome
+    legs = box(f"{op_id}-legs", bottom, spring)
+    tool = operation(op_id, GeometryOperationKind.BOOLEAN_UNION,
+                     inputs=(dome.output_object_ids[0], legs.output_object_ids[0]))
+    return cylinder, upper, dome, legs, tool
 
 
 def solve_wall(
@@ -432,8 +497,12 @@ def solve_wall(
             tool = f"obj-{op_id}"
             first_tool = first_tool or tool
             tool_objects.append(tool)
-            operations.append(
-                GeometryOperation(
+            if opening.shape == "semicircular_arch":
+                arch_ops = _arch_tool(wall, opening, op_id, a0, a1, margin)
+                operations.extend(arch_ops)
+                bound_ids = tuple(op.op_id for op in arch_ops if not op.input_object_ids)
+            else:
+                operations.append(GeometryOperation(
                     op_id=op_id,
                     kind=GeometryOperationKind.EXTRUSION,
                     output_object_ids=(tool,),
@@ -447,15 +516,16 @@ def solve_wall(
                         _vector((0.0, (opening.head - opening.sill) + (margin if opening.sill <= 0.0 else 0.0) + (margin if opening.head >= wall.height else 0.0), 0.0)),
                     ),
                     semantic_binding_ids=(opening.binding_id,),
-                )
-            )
-            bindings.append(
+                ))
+                bound_ids = (op_id,)
+            bindings.extend(
                 DatumBinding(
-                    binding_id=f"bind-{op_id}",
+                    binding_id=f"bind-{bound_id}",
                     datum_id=wall.base_level_datum_id,
-                    op_id=op_id,
+                    op_id=bound_id,
                     parameter_name="base_level",
                 )
+                for bound_id in bound_ids
             )
             aperture_id = f"{wall.wall_id}-aperture-{opening.opening_id}{suffix}"
             aperture = f"obj-{aperture_id}"
@@ -482,6 +552,7 @@ def solve_wall(
                 aperture_object_id=apertures[0], aperture_object_ids=tuple(apertures),
                 along0=opening.along0, along1=opening.along1, sill=opening.sill, head=opening.head,
                 count=opening.count, step=opening.step,
+                shape=opening.shape, spring_height=opening.spring_height,
             )
         )
     if cut_id:

@@ -19,6 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+from archflow.state.state_record import StateRecord
+
 from .projection import StateProjection
 
 NO_EDGES = "0 dependency edges: impact closure is direct-only"
@@ -55,8 +57,10 @@ class Impact:
 
 def impact(
     projection: StateProjection,
-    target_ref: str,
+    target_ref: str | Sequence[str],
     protected: Sequence[str],
+    *,
+    successor: StateRecord | None = None,
 ) -> Impact:
     """The closure of one prefixed ref, with the protections it runs into.
 
@@ -66,9 +70,11 @@ def impact(
     here to make it match.
     """
 
-    direct = (target_ref,)
-    closure = projection.record.closure(direct)
-    propagated = tuple(ref for ref in closure if ref != target_ref)
+    direct = (target_ref,) if isinstance(target_ref, str) else tuple(sorted(set(target_ref)))
+    closure = set(projection.record.closure(direct))
+    if successor is not None:
+        closure.update(successor.closure(direct))
+    propagated = tuple(sorted(closure - set(direct)))
     protected_refs = tuple(sorted(set(protected)))
     unknown = _unknown_coverage(projection)
     return Impact(

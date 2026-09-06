@@ -114,7 +114,7 @@ class ElementFieldProposalTests(ProposalTestCase):
         )
         # The old value is the record's, not the client's.
         self.assertEqual(
-            payload["change"], {"old": 0.6, "new": 2.2, "unit": None}
+            payload["change"], {"kind": "set_scalar", "old": 0.6, "new": 2.2, "unit": None}
         )
         self.assertEqual(payload["utterance"], "set height to 2.2")
         self.assertEqual(payload["persistence"], PERSISTENCE)
@@ -228,7 +228,7 @@ class ParameterProposalTests(ProposalTestCase):
         self.assertEqual(payload["target"]["elementId"], None)
         self.assertEqual(payload["target"]["key"], "module")
         self.assertEqual(
-            payload["change"], {"old": 1.2, "new": 1.5, "unit": "m"}
+            payload["change"], {"kind": "set_scalar", "old": 1.2, "new": 1.5, "unit": "m"}
         )
         # the whole declared chain: bay = 2 * module, span = 2 * bay
         self.assertEqual(
@@ -576,7 +576,7 @@ class ZeroValueTests(ProposalTestCase):
             "set height to 2.2", elementId="portico-base"
         )
 
-        self.assertEqual(payload["change"], {"old": 0, "new": 2.2, "unit": None})
+        self.assertEqual(payload["change"], {"kind": "set_scalar", "old": 0, "new": 2.2, "unit": None})
 
 
 class ProposalStoreTests(ProposalTestCase):

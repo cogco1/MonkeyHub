@@ -20,6 +20,7 @@ two unrelated proposals.
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 
 from fastapi import APIRouter
 from starlette.datastructures import State
@@ -27,14 +28,15 @@ from starlette.requests import Request
 
 from ..application import episodes
 from ..application.binding import ProjectBinding, bound_project
-from ..application.intent import DeterministicIntentProvider
+from ..application.intent import DeterministicIntentProvider, component_edit_proposal
+from ..application.intent_agent import DeterministicCompiler, Selection
 from ..application.projection import (
     StateProjection,
     project_state,
     require_actionable,
 )
 from ..application.proposals import Proposal, proposal_from
-from ..transport.errors import StudioError
+from ..transport.errors import BlockedNeedsHuman, StudioError
 from ..transport.proposal import (
     EpisodeDto,
     ProposalDecisionRequestDto,
@@ -166,6 +168,36 @@ def _reproposed(
     offered against a state the project has left is ``STALE_BASE``, exactly as
     a first proposal would be.
     """
+
+    if proposal.semantic_edit is not None:
+        if (
+            projection.record_digest != proposal.record_digest
+            or projection.state_digest != proposal.base_state_digest
+        ):
+            raise StudioError(409, "STALE_BASE", "the proposal's design base has changed; read the selected run again")
+        if isinstance(state.intent_compiler, DeterministicCompiler):
+            raise StudioError(422, "SEMANTIC_EDIT_UNAVAILABLE", "this process has no design agent for component changes")
+        compilation = state.intent_compiler.compile(
+            message=(
+                "Revise this unexecuted proposal against the supplied record. Return the complete revised edit.\n"
+                + json.dumps(proposal.semantic_edit, ensure_ascii=False)
+                + "\nArchitect's change: " + utterance
+            ),
+            selection=Selection(proposal.component_id, proposal.element_id),
+            projection=projection,
+        )
+        if compilation.semantic_edit is None:
+            if compilation.question:
+                raise BlockedNeedsHuman(compilation.why, question=compilation.question)
+            raise StudioError(422, "SEMANTIC_EDIT_INVALID", "the agent did not return the revised component edit")
+        replacement = proposal_from(component_edit_proposal(
+            projection, compilation.semantic_edit, utterance=utterance,
+            component_id=compilation.component_id, keep_refs=proposal.protected,
+        ))
+        return state.proposals.put(replace(
+            replacement, source_run_id=proposal.source_run_id,
+            compilation_receipt=None if compilation.receipt is None else compilation.receipt.to_dict(),
+        ))
 
     context_refs = [
         f"state:{projection.state_digest}",

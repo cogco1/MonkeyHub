@@ -19,6 +19,7 @@ from dataclasses import MISSING, dataclass, fields
 from typing import TYPE_CHECKING, Any, Mapping
 
 from archflow.state.decision_operator import DecisionOperator
+from archflow.state.state_record import StateRecordOperator
 
 from ..transport.errors import StudioError
 from .impact import Impact
@@ -47,12 +48,12 @@ class Proposal:
     component_id: str
     element_id: str | None
     target_ref: str
-    key: str
-    old: int | float
-    new: int | float
+    key: str | None
+    old: int | float | None
+    new: int | float | None
     unit: str | None
     protected: tuple[str, ...]
-    operator: DecisionOperator
+    operator: DecisionOperator | None
     impact: Impact
     utterance: str
     created_at: str
@@ -73,6 +74,10 @@ class Proposal:
     pending: "PendingIntent | None" = None
     # An explicit editing base; None keeps the project's default projection.
     source_run_id: str | None = None
+    # Structured component edits carry the same kernel operator the worker
+    # replays. The review is domain data, never a CAD program or a second run.
+    state_record_operator: StateRecordOperator | None = None
+    semantic_edit: Mapping[str, Any] | None = None
 
 
 

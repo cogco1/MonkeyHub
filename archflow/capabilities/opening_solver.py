@@ -263,6 +263,8 @@ def solve_window(void: HostedVoid, window: WindowType, *, binding_id: str, inter
         raise OpeningSolverError("solve_window needs a HostedVoid and a WindowType")
     if void.kind is not OpeningKind.WINDOW:
         raise OpeningSolverError(f"void {void.opening_id} was requested as a {void.kind.value}, not a window")
+    if void.shape != "rectangular":
+        raise OpeningSolverError(f"window type {window.type_id} needs a rectangular void; {void.opening_id} is {void.shape}")
     require_identifier(binding_id, "binding_id")
     fw = window.frame_width
     if 2.0 * fw >= void.width or 2.0 * fw >= void.height:
@@ -304,6 +306,8 @@ def solve_door(void: HostedVoid, door: DoorType, *, binding_id: str, interface_r
         raise OpeningSolverError("solve_door needs a HostedVoid and a DoorType")
     if void.kind is not OpeningKind.DOOR:
         raise OpeningSolverError(f"void {void.opening_id} was requested as a {void.kind.value}, not a door")
+    if void.shape != "rectangular":
+        raise OpeningSolverError(f"door type {door.type_id} needs a rectangular void; {void.opening_id} is {void.shape}")
     require_identifier(binding_id, "binding_id")
     fw = door.frame_width
     clear = fw + door.clearance_bottom + door.clearance_top

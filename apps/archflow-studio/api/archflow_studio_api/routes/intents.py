@@ -1,20 +1,10 @@
-"""``/api/intents``: the architect's sentence, resolved against the record,
-compiled by an agent, typed by the grammar.
+"""Compile a request into a scalar or semantic proposal against its exact base.
 
-The route does four things in order and nothing else. It resumes the pending
-intent the request's ``continuationToken`` names, if there is one — that token
-is the *whole* of the continuity, and no chat transcript is sent or read. It
-asks the resolver what the request is about, which settles the target from the
-component tree and an explicit choice rather than from the nearest similar
-string. It hands the *resolved* target to the process's intent compiler and
-insists the answer is a sentence in the grammar. And it hands that sentence to
-the deterministic seam exactly as ``POST /api/proposals`` would.
-
-Four answers and no fifth. ``COMPILED`` is the 201 below; the other three are
-refusals carrying the pending intent they belong to, so the next request
-continues the same exchange instead of starting a new one that has forgotten
-everything. The rule that ends the loop lives in the resolver: a round that
-narrows nothing terminates rather than asking again.
+Pending intents retain clarification context. Scalar requests first resolve
+known controls and scope; an agent may interpret an unfamiliar target against
+the record sheet before the same checks run again. Component edits go to the
+design compiler and are typed against StateRecord and producer contracts.
+Both return a stored, reviewable proposal for the existing candidate path.
 """
 
 from __future__ import annotations
@@ -31,19 +21,21 @@ from ..application.binding import bound_project
 from ..application.catalog import catalog_of
 from ..application.conventions import project_conventions
 from ..application.clarification import PendingIntentStore, Resolution
-from ..application.gestures import read_gestures
+from ..application.gestures import GestureReading, read_gestures
 from ..application.intent import (
     DeterministicIntentProvider,
+    component_edit_proposal,
     merge_keep,
     parse_utterance,
 )
 from ..application.intent_agent import (
     DeterministicCompiler,
+    Compilation,
     IntentCompiler,
     Selection,
     context_refs,
 )
-from ..application.projection import project_state, require_actionable
+from ..application.projection import StateProjection, project_state, require_actionable
 from ..application.proposals import proposal_from
 from ..transport.errors import (
     BlockedNeedsHuman,
@@ -100,6 +92,43 @@ def _refused(
     )
 
 
+def _semantic_answer(
+    request: Request,
+    body: IntentRequestDto,
+    projection: StateProjection,
+    reading: GestureReading,
+    pending,
+    compilation: Compilation,
+    compile_ms: int,
+) -> IntentDto:
+    if compilation.status != "compiled" or compilation.utterance is not None or compilation.semantic_edit is None:
+        raise StudioError(502, "INTENT_AGENT_FAILED", "the agent must compile one design edit or ask a question")
+    typed_at = time.perf_counter()
+    utterance = body.utterance if pending is None else (
+        f"Original request: {pending.original_utterance}\nArchitect's clarification: {body.utterance}"
+    )
+    parts = component_edit_proposal(
+        projection, compilation.semantic_edit, utterance=utterance,
+        component_id=compilation.component_id, keep_refs=reading.keep_refs,
+    )
+    proposal = proposal_from(parts)
+    resolution = clarification.semantic_resolution(
+        projection, utterance=body.utterance,
+        selection=Selection(proposal.component_id, proposal.element_id, reading.facts), pending=pending,
+    )
+    proposal = replace(
+        proposal, pending=resolution.pending, source_run_id=body.source_run_id,
+        compilation_receipt=None if compilation.receipt is None else compilation.receipt.to_dict(),
+    )
+    request.app.state.proposals.put(proposal)
+    request.app.state.pending_intents.close(body.continuation_token)
+    return IntentDto(
+        outcome=clarification.COMPILED, agent=agent_dto(compilation), proposal=to_dto(proposal),
+        timings=IntentTimingsDto(compile_ms=compile_ms, type_ms=int((time.perf_counter() - typed_at) * 1000)),
+        gestures=list(reading.facts), pending_intent=pending_dto(resolution.pending),
+    )
+
+
 @router.post(
     "/intents",
     response_model=IntentDto,
@@ -143,11 +172,40 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         element_id=body.element_id,
         gestures=reading.facts,
     )
-    # Three of the four outcomes are reached here, without a model: an action
-    # no grammar expresses, a target the record cannot resolve, and a component
-    # that has no editable control. The last of those is why the agent is not
-    # asked at all in that case — an agent shown the whole record sheet would
-    # offer the nearest element whose field happens to share a name.
+    compilation = None
+    compile_ms = 0
+    edit_request = clarification.component_edit_requested(body.utterance) or (
+        pending is not None and pending.action_kind == clarification.EDIT_COMPONENTS
+    )
+    configured_compiler = request.app.state.intent_compiler
+    if edit_request:
+        agent_selection = replace(reading.target, gestures=reading.facts) if reading.target else selection
+        if isinstance(configured_compiler, DeterministicCompiler):
+            raise _refused(store, token=body.continuation_token, resolution=clarification.semantic_resolution(
+                projection, utterance=body.utterance, selection=agent_selection, pending=pending,
+                unsupported=True,
+                detail="Component changes need the configured design agent. This process currently accepts numeric edits only.",
+            ))
+        message = body.utterance
+        if pending is not None:
+            message = f"Original request: {pending.original_utterance}\nArchitect's clarification: {message}"
+        started = time.perf_counter()
+        compilation = configured_compiler.compile(
+            message=message, selection=agent_selection, projection=projection,
+        )
+        compile_ms = int((time.perf_counter() - started) * 1000)
+        if compilation.semantic_edit is not None:
+            return _semantic_answer(request, body, projection, reading, pending, compilation, compile_ms)
+        if edit_request:
+            question = compilation.question if compilation.status == "question" else None
+            raise _refused(store, token=body.continuation_token, resolution=clarification.semantic_resolution(
+                projection, utterance=body.utterance, selection=agent_selection, pending=pending,
+                question=question, unsupported=question is None,
+                detail=compilation.why or "The request changes building components; the agent did not supply a supported component edit.",
+            ))
+    # Known missing controls, derived values and unresolved scope are settled
+    # before a model call. An unfamiliar natural-language name may still be
+    # read by the agent against the sheet, then checked by this same resolver.
     # The project's conventions (PROJECT.md: names for people, the compass) and
     # the request's camera let a viewer word become a side; the catalog is the
     # one directory of editable elements and of what the model shows without a row.
@@ -161,19 +219,41 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         else None
     )
     catalog = catalog_of(binding, projection) if getattr(projection, "state", None) is not None else None
-    resolution = clarification.resolve(
-        projection,
-        utterance=body.utterance,
-        selection=selection,
-        picked=reading.target,
-        has_camera=bool(body.gestures) or camera is not None,
-        pending=pending,
-        camera=camera,
-        compass=conventions.compass if conventions_are_current else None,
-        aliases=conventions.aliases if conventions_are_current else {},
-        catalog=catalog,
-        scope=body.scope,
+    resolution_context = dict(
+        has_camera=bool(body.gestures) or camera is not None, pending=pending,
+        camera=camera, compass=conventions.compass if conventions_are_current else None,
+        aliases=conventions.aliases if conventions_are_current else {}, catalog=catalog, scope=body.scope,
     )
+    resolution = clarification.resolve(
+        projection, utterance=body.utterance, selection=selection,
+        picked=reading.target, **resolution_context,
+    )
+    if (
+        resolution.pending.reason_code == clarification.TARGET_UNRESOLVED
+        and parse_utterance(body.utterance) is None
+        and not isinstance(configured_compiler, DeterministicCompiler)
+        and not clarification.declares_a_control(body.utterance)
+    ):
+        message = body.utterance if pending is None else (
+            f"Original request: {pending.original_utterance}\nArchitect's clarification: {body.utterance}"
+        )
+        started = time.perf_counter()
+        compilation = configured_compiler.compile(message=message, selection=selection, projection=projection)
+        compile_ms = int((time.perf_counter() - started) * 1000)
+        if compilation.semantic_edit is not None:
+            return _semantic_answer(request, body, projection, reading, pending, compilation, compile_ms)
+        checked = clarification.read_compilation(
+            projection, compilation=compilation, resolution=resolution, pending=pending,
+        )
+        if checked.outcome != clarification.COMPILED:
+            raise _refused(store, token=body.continuation_token, resolution=checked)
+        original_utterance = resolution.pending.original_utterance
+        resolution = clarification.resolve(
+            projection, utterance=compilation.utterance,
+            selection=Selection(compilation.component_id, compilation.element_id, reading.facts),
+            **resolution_context,
+        )
+        resolution = replace(resolution, pending=replace(resolution.pending, original_utterance=original_utterance))
     if resolution.outcome != clarification.COMPILED:
         raise _refused(store, token=body.continuation_token, resolution=resolution)
     assert resolution.selection is not None
@@ -202,13 +282,16 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         if parse_utterance(message) is not None
         else request.app.state.intent_compiler
     )
-    compiled_at = time.perf_counter()
-    compilation = compiler.compile(
-        message=message,
-        selection=resolution.selection,
-        projection=projection,
-    )
-    compile_ms = int((time.perf_counter() - compiled_at) * 1000)
+    if compilation is None:
+        compiled_at = time.perf_counter()
+        compilation = compiler.compile(
+            message=message,
+            selection=resolution.selection,
+            projection=projection,
+        )
+        compile_ms = int((time.perf_counter() - compiled_at) * 1000)
+    if compilation.semantic_edit is not None:
+        return _semantic_answer(request, body, projection, reading, pending, compilation, compile_ms)
     # What the compiler answered, in the same four outcomes. An agent that asks
     # still names a target, and that target is kept: losing it is what made the
     # next round start from nothing.

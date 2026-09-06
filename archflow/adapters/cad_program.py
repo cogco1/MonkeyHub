@@ -145,6 +145,21 @@ def lift_to_base_level(points, params: Mapping[str, object], op_id: str):
     shift = float(raw) + float(offset) - min(p[1] for p in lifted)
     return [(p[0], p[1] + shift, p[2]) for p in lifted]
 
+def _revolve_parameters(params: Mapping[str, object], op_id: str):
+    """The declared circular end sections, placed on their optional storey datum."""
+
+    a0, a1 = lift_to_base_level((params["axis_start"], params["axis_end"]), params, op_id)
+    length = math.dist(a0, a1)
+    if not math.isfinite(length) or length <= 0.0:
+        raise CadTranslationError(f"revolve {op_id} requires a finite non-zero axis")
+    # Retained circular-section realization has a 0.01 minimum end radius.
+    # All executors and the predictor use it identically.
+    radii = tuple(max(float(params[name]), 0.01) for name in ("start_radius", "end_radius"))
+    if any(not math.isfinite(radius) for radius in radii):
+        raise CadTranslationError(f"revolve {op_id} requires finite radii")
+    return a0, a1, *radii
+
+
 def _is_axis_aligned_box(profile, vector) -> bool:
     """True for a rectangular, axis-aligned, level profile extruded along Y."""
 
@@ -498,9 +513,7 @@ def translate_to_rhino_python(
             )
             lines.append(f"_register({out!r}, rs.AddBox({corners}))")
         elif kind == "revolve":
-            a0, a1 = params["axis_start"], params["axis_end"]
-            r0 = max(float(params["start_radius"]), 0.01)
-            r1 = max(float(params["end_radius"]), 0.01)
+            a0, a1, r0, r1 = _revolve_parameters(params, op_id)
             lines.extend(
                 [
                     f"_c0 = rs.AddCircle(rs.PlaneFromNormal(({a0[0]},{a0[2]},{a0[1]}), "
@@ -790,7 +803,7 @@ def expected_object_bounds(program) -> dict[str, dict]:
             if _is_axis_aligned_box(profile, vector):
                 boxes.add(out)
         elif kind == "revolve":
-            a0, a1 = params["axis_start"], params["axis_end"]
+            a0, a1, r0, r1 = _revolve_parameters(params, op_id)
             axis = [float(a1[i]) - float(a0[i]) for i in range(3)]
             axis_length = math.sqrt(sum(value * value for value in axis))
             if not math.isfinite(axis_length) or axis_length <= 0.0:
@@ -800,8 +813,8 @@ def expected_object_bounds(program) -> dict[str, dict]:
             unit_axis = [value / axis_length for value in axis]
             pts = []
             for level, radius in (
-                (a0, max(float(params["start_radius"]), 0.01)),
-                (a1, max(float(params["end_radius"]), 0.01)),
+                (a0, r0),
+                (a1, r1),
             ):
                 projected_radii = [
                     radius * math.sqrt(max(0.0, 1.0 - component * component))

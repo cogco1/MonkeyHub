@@ -132,11 +132,14 @@ def intent_of(proposal: Proposal) -> EpisodeIntent:
 class EpisodeChange:
     """The number as the record had it, and the number the option proposed."""
 
-    key: str
-    old: int | float
-    new: int | float
+    key: str | None
+    old: int | float | None
+    new: int | float | None
+    semantic_edit: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        if self.semantic_edit is not None:
+            return {"kind": "edit_components", **self.semantic_edit}
         return {"key": self.key, "old": self.old, "new": self.new}
 
 
@@ -196,7 +199,8 @@ def decided(
         proposal_id=proposal.proposal_id,
         target=proposal.target_ref,
         change=EpisodeChange(
-            key=proposal.key, old=proposal.old, new=proposal.new
+            key=proposal.key, old=proposal.old, new=proposal.new,
+            semantic_edit=proposal.semantic_edit,
         ),
         closure=tuple(sorted(closure_of(proposal))),
         decision=decision,

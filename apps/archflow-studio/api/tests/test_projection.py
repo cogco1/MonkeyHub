@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
 from pathlib import Path
@@ -54,6 +55,24 @@ class StateProjectionTests(unittest.TestCase):
         self.client = TestClient(create_app(self.settings))
         self.addCleanup(self.client.close)
         self.payload = self.client.get("/api/state").json()
+
+    def test_type_inherited_parameter_bindings_keep_their_source_in_the_projection(self) -> None:
+        from archflow_studio_api.application.projection import _elements
+
+        payload = deepcopy(RECORD_PAYLOAD)
+        payload["entities"].append({
+            "entity_id": "wall-type", "schema": "Type@1",
+            "fields": {"producer": "wall", "params": {"thickness": "@module", "height": 3}},
+        })
+        payload["entities"].append({
+            "entity_id": "typed-wall", "schema": "Element@1", "parent_id": "portico",
+            "fields": {"component_id": "portico", "producer": "wall", "type_ref": "wall-type", "params": {}},
+        })
+        elements, error = _elements(StateRecord.from_dict(payload))
+        self.assertIsNone(error)
+        wall = next(element for element in elements if element.element_id == "typed-wall")
+        self.assertEqual(wall.numeric_fields["thickness"], 1.2)
+        self.assertEqual(wall.bindings["thickness"], "module")
 
     def test_the_projection_reproduces_the_runners_state_digest(self) -> None:
         # The number the runner's receipt carries, recomputed here from the

@@ -1,26 +1,16 @@
-"""The IntentProvider seam, and the only grammar it speaks.
+"""Type scalar sentences and semantic design edits into reviewable proposals.
 
-A round-1 utterance is not interpreted. It is parsed, against four exact forms
-and one optional ``keep`` clause, and anything outside them becomes a question
-for a human rather than a guess about a building. That is the whole point of
-this module: an LLM here would be free to invent a coordinate, and the boundary
-the plan draws is that nothing may reach a proposal that the record did not
-already contain.
-
-Two things follow from that and are worth saying out loud. The *field* is never
-read out of prose — it is resolved against the selection the request carried
-(``targetComponentId`` and an optional ``elementId``), and only against a scalar
-number the record actually declares: a polyline vertex, a datum offset, or any
-field outside ``params`` is not a target, because moving a coordinate by
-sentence is exactly the silently invented number this seam exists to refuse. And
-the *proposal* is never applied: it carries a real ``DecisionOperator`` with no
-write authority, which Task 7 may run as a candidate and nothing here may
-commit.
+Existing numeric controls use four exact grammar forms and an optional keep
+clause. Component edits use the agent's named Entity, Parameter and Relation
+data, checked by the StateRecord operator and advertised producer contracts.
+Both paths calculate impact against the selected state and retain protection
+conflicts for review. Neither writes project state: candidate execution uses
+the existing runner, and formal commit remains a separate decision.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import re
 from typing import Any, Mapping, Sequence
@@ -34,7 +24,14 @@ from archflow.state.decision_operator import (
     StateCondition,
 )
 from archflow.state.operational_state import ParameterBinding, StateLock
-from archflow.state.state_record import Parameter
+from archflow.state.state_record import (
+    Entity,
+    Parameter,
+    Relation,
+    StateRecordError,
+    apply_state_record_operator,
+    compile_component_edit,
+)
 
 from ..transport.errors import BlockedNeedsHuman, StudioError
 from .impact import impact
@@ -214,6 +211,209 @@ def _selection(context_refs: Sequence[str], prefix: str) -> str | None:
         if ref.startswith(prefix):
             return ref[len(prefix) :] or None
     return None
+
+
+def component_edit_proposal(
+    projection: StateProjection,
+    edit: Mapping[str, Any],
+    *,
+    utterance: str,
+    component_id: str | None = None,
+    keep_refs: Sequence[str] = (),
+) -> Mapping[str, Any]:
+    """Type the agent's design data and describe the exact successor it proposes.
+
+    The agent supplies named entities, parameters and relations. The kernel
+    derives the successor, including reference integrity and dependencies;
+    neither the transport nor the model supplies a geometry program.
+    """
+
+    from archflow.capabilities.element_producers import producer_signatures, validate_element_contract
+
+    allowed = {
+        "summary", "entities", "parameters", "relations", "removeEntityIds",
+        "removeParameterKeys", "removeRelationIds", "protected", "kept",
+    }
+    try:
+        if not isinstance(edit, Mapping) or set(edit) != allowed:
+            raise ValueError("semantic edit must contain the declared design fields")
+        summary = edit["summary"]
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError("semantic edit must describe its proposed change")
+        for key in allowed - {"summary"}:
+            if not isinstance(edit[key], (list, tuple)):
+                raise ValueError(f"semantic edit {key} must be a list")
+        for key in ("protected", "kept"):
+            if any(not isinstance(item, str) or not item.strip() for item in edit[key]):
+                raise ValueError(f"semantic edit {key} must contain nonempty strings")
+        record = projection.record
+        existing = {entity.entity_id: entity for entity in record.entities}
+        entities = []
+        for payload in edit["entities"]:
+            if not isinstance(payload, Mapping) or set(payload) - {
+                "entity_id", "schema", "parent_id", "fields", "basis_refs"
+            }:
+                raise ValueError("an entity edit contains undeclared fields")
+            previous = existing.get(payload.get("entity_id"))
+            value = dict(payload)
+            if previous is not None:
+                value = {
+                    **previous.to_dict(), **value,
+                    "fields": {**previous.fields, **value.get("fields", {})},
+                }
+            entity = Entity.from_dict(value)
+            entities.append(entity)
+        parameters = []
+        current_parameters = {parameter.key: parameter for parameter in record.parameters}
+        for payload in edit["parameters"]:
+            if not isinstance(payload, Mapping) or set(payload) - {
+                "key", "value", "unit", "expr", "inputs", "epistemic_status", "source_ref"
+            }:
+                raise ValueError("a parameter edit contains undeclared fields")
+            previous = current_parameters.get(payload.get("key"))
+            parameters.append(Parameter.from_dict({
+                **({} if previous is None else previous.to_dict()), **payload,
+            }))
+        relations = []
+        current_relations = {relation.relation_id: relation for relation in record.relations}
+        for payload in edit["relations"]:
+            if not isinstance(payload, Mapping) or set(payload) - {
+                "relation_id", "kind", "subject", "object", "datum_role", "propagation",
+                "validator", "parameters", "epistemic_status", "basis_refs",
+            }:
+                raise ValueError("a relation edit contains undeclared fields")
+            previous = current_relations.get(payload.get("relation_id"))
+            relations.append(Relation.from_dict({
+                **({} if previous is None else previous.to_dict()), **payload,
+            }))
+        removed = {}
+        for wire, internal in (
+            ("removeEntityIds", "remove_entity_ids"),
+            ("removeParameterKeys", "remove_parameter_keys"),
+            ("removeRelationIds", "remove_relation_ids"),
+        ):
+            if any(not isinstance(item, str) or not item for item in edit[wire]):
+                raise ValueError(f"{wire} must name existing design items")
+            removed[internal] = tuple(edit[wire])
+        provider = DeterministicIntentProvider(projection)
+        protected = provider._protected(tuple(edit["protected"]) + tuple(keep_refs))
+        operator = compile_component_edit(
+            record, entities=tuple(entities), parameters=tuple(parameters),
+            relations=tuple(relations), **removed,
+        )
+        # Conflicting protections remain reviewable, just as scalar proposals
+        # do. The worker applies the final protected operator and refuses them.
+        successor = apply_state_record_operator(record, operator)
+        changed_inputs = tuple(
+            [entity.ref for entity in entities]
+            + [parameter.ref for parameter in parameters]
+        )
+        affected = set(successor.closure(changed_inputs))
+        # A newly supplied element cannot bypass the advertised authoring
+        # vocabulary merely by naming another executable legacy producer.
+        authored_ids = {entity.entity_id for entity in entities if entity.schema == "Element@1"}
+        advertised = producer_signatures()
+        validate_element_contract(successor, tuple(sorted(authored_ids | {
+            entity.entity_id for entity in successor.entities_of("Element@1")
+            if entity.ref in affected and entity.fields.get("producer") in advertised
+        })))
+        operator = replace(operator, protected=protected)
+    except (KeyError, TypeError, ValueError, StateRecordError) as exc:
+        raise StudioError(422, "SEMANTIC_EDIT_INVALID", str(exc)) from exc
+
+    before_entities = {entity.entity_id: entity for entity in record.entities}
+    after_entities = {entity.entity_id: entity for entity in successor.entities}
+    direct: set[str] = set()
+    changes: list[dict[str, str]] = []
+    for entity_id in sorted(before_entities.keys() | after_entities.keys()):
+        before, after = before_entities.get(entity_id), after_entities.get(entity_id)
+        if before == after:
+            continue
+        direct.add(f"entity:{entity_id}")
+        entity = after or before
+        assert entity is not None
+        action = "add" if before is None else "remove" if after is None else "update"
+        producer = str(entity.fields.get("producer") or entity.schema.removesuffix("@1"))
+        changed_fields = sorted(
+            key for key in set(before.fields if before else ()) | set(after.fields if after else ())
+            if (before.fields.get(key) if before else None) != (after.fields.get(key) if after else None)
+        )
+        label = str(entity.fields.get("label") or entity.fields.get("name") or entity_id)
+        changes.append({
+            "action": action, "entityId": entity_id, "label": label,
+            "description": producer + (": " + ", ".join(changed_fields) if changed_fields else ""),
+        })
+    before_parameters = {parameter.key: parameter for parameter in record.parameters}
+    after_parameters = {parameter.key: parameter for parameter in successor.parameters}
+    for key in sorted(before_parameters.keys() | after_parameters.keys()):
+        before, after = before_parameters.get(key), after_parameters.get(key)
+        if before == after:
+            continue
+        direct.add(f"parameter:{key}")
+        changes.append({
+            "action": "add" if before is None else "remove" if after is None else "update",
+            "entityId": f"parameter:{key}", "label": key,
+            "description": f"{None if before is None else before.value} → {None if after is None else after.value}",
+        })
+    before_relations = {relation.relation_id: relation for relation in record.relations}
+    after_relations = {relation.relation_id: relation for relation in successor.relations}
+    for key in sorted(before_relations.keys() | after_relations.keys()):
+        before, after = before_relations.get(key), after_relations.get(key)
+        if before == after:
+            continue
+        for relation in (before, after):
+            if relation is not None:
+                direct.update((f"entity:{relation.subject}", f"entity:{relation.object}"))
+        relation = after or before
+        assert relation is not None
+        changes.append({
+            "action": "add" if before is None else "remove" if after is None else "update",
+            "entityId": f"relation:{key}", "label": key,
+            "description": f"{relation.subject} · {relation.kind} · {relation.object}",
+        })
+    answer = impact(projection, tuple(sorted(direct)), protected, successor=successor)
+    components = {entity.entity_id for entity in successor.entities_of("Component@1")}
+    changed_elements = [entity for entity in entities if entity.schema == "Element@1"]
+    changed_components = {
+        entity.fields.get("component_id") or entity.parent_id for entity in changed_elements
+    }
+    if component_id not in components or (changed_components and component_id not in changed_components):
+        component_id = next((
+            str(entity.fields.get("component_id") or entity.parent_id)
+            for entity in changed_elements
+            if (entity.fields.get("component_id") or entity.parent_id) in components
+        ), next(iter(sorted(components)), None))
+    if component_id is None:
+        raise StudioError(422, "SEMANTIC_EDIT_INVALID", "the edit has no declared building component")
+    kept = edit["kept"]
+    if any(not isinstance(item, str) for item in kept):
+        raise StudioError(422, "SEMANTIC_EDIT_INVALID", "kept conditions must be text")
+    return {
+        "proposal_id": f"studio-{uuid4().hex[:12]}",
+        "status": CONFLICT if answer.conflicts else PROPOSED,
+        "base_state_digest": projection.state_digest, "record_digest": projection.record_digest,
+        "component_id": component_id,
+        "element_id": changed_elements[0].entity_id if len(changed_elements) == 1 else None,
+        "target_ref": next(iter(sorted(direct)), f"entity:{component_id}"),
+        "key": None, "old": None, "new": None, "unit": None,
+        "protected": protected, "operator": None, "state_record_operator": operator,
+        "impact": answer, "utterance": utterance,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "semantic_edit": {
+            "summary": summary.strip(), "changes": changes, "kept": list(kept),
+            "edits": {
+                "entities": [
+                    {**entity.to_dict(), "fields": dict(payload["fields"])}
+                    for entity, payload in zip(entities, edit["entities"])
+                ],
+                "parameters": [parameter.to_dict() for parameter in parameters],
+                "relations": [relation.to_dict() for relation in relations],
+                "removeEntityIds": list(removed["remove_entity_ids"]),
+                "removeParameterKeys": list(removed["remove_parameter_keys"]),
+                "removeRelationIds": list(removed["remove_relation_ids"]),
+            },
+        },
+    }
 
 
 @dataclass(frozen=True, slots=True)

@@ -27,7 +27,10 @@ from archflow.state.state_record import (
     StateRecordOperator,
     ValidatorBinding,
     apply_state_record_operator,
+    compile_component_edit,
     developed_design_view,
+    parameter_bindings_of,
+    resolve_element_bindings,
 )
 
 
@@ -56,6 +59,191 @@ def _record() -> StateRecord:
 
 
 class StateRecordTests(unittest.TestCase):
+    def _wall_edit(self, record: StateRecord, **extra) -> StateRecordOperator:
+        return compile_component_edit(
+            record,
+            entities=(
+                Entity("opening-source", "Reading@1", {"note": "declared arch profile"}, basis_refs=("reading:plan",)),
+                Entity("arch-type", "Type@1", {"producer": "opening", "params": {
+                    "profile": "semicircular", "width": "@opening_width", "rise": 0.6,
+                }}, basis_refs=("reading:plan",)),
+                Entity("wall-new", "Element@1", {
+                    "component_id": "building", "producer": "wall", "references": {},
+                    "params": {"height": "@wall_height", "thickness": 0.3},
+                }, parent_id="building", basis_refs=("reading:plan",)),
+                Entity("arch-new", "Element@1", {
+                    "component_id": "building", "producer": "opening", "type_ref": "arch-type",
+                    "references": {"host": {"host": {"element": "wall-new"}}},
+                    "params": {"width": "@opening_width", "height": "@opening_height"},
+                }, parent_id="building", basis_refs=("reading:plan",)),
+            ),
+            parameters=(
+                Parameter("wall_height", 3, "m", epistemic_status="declared"),
+                Parameter("opening_width", 1.2, "m", epistemic_status="declared"),
+                Parameter("opening_height", 0, "m", expr="opening_width * 2"),
+            ),
+            relations=(Relation("wall-hosts-arch", "hosts_void", "wall-new", "arch-new"),),
+            **extra,
+        )
+
+    def test_component_edit_adds_named_elements_bindings_and_relations_atomically(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        operator = self._wall_edit(record)
+        successor = apply_state_record_operator(record, operator)
+
+        self.assertEqual(successor.entities[:len(record.entities)], record.entities)
+        self.assertEqual(successor.parameter("opening_height").value, 2.4)
+        self.assertEqual(resolve_element_bindings(successor)["arch-new"]["params"]["height"], 2.4)
+        self.assertEqual(successor.entity("arch-new").fields["type_ref"], "arch-type")
+        self.assertIn("entity:arch-new", successor.closure(("entity:arch-type",)))
+        self.assertIn("entity:arch-new", successor.closure(("entity:wall-new",)))
+        self.assertEqual(successor.digest, apply_state_record_operator(record, operator).digest)
+
+        reloaded = StateRecord.from_dict(successor.to_dict())
+        continued = apply_state_record_operator(reloaded, compile_component_edit(
+            reloaded, parameters=(replace(reloaded.parameter("opening_width"), value=1.5),),
+        ))
+        self.assertEqual(continued.parameter("opening_height").value, 3)
+        self.assertEqual(continued.entity("arch-new"), reloaded.entity("arch-new"))
+        scalar = StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR, base_record_digest=continued.digest, base_state_digest=continued.state_digest,
+            target_ref="parameter:opening_width", key="opening_width", value=2,
+        )
+        self.assertEqual(apply_state_record_operator(continued, scalar).parameter("opening_height").value, 4)
+
+    def test_component_delete_removes_relations_and_can_remove_related_parameters_together(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        record = apply_state_record_operator(record, self._wall_edit(record))
+        successor = apply_state_record_operator(record, compile_component_edit(
+            record, remove_entity_ids=("arch-new",), remove_parameter_keys=("opening_height",),
+        ))
+
+        self.assertNotIn("wall-hosts-arch", {relation.relation_id for relation in successor.relations})
+        self.assertNotIn("entity:arch-new", successor.closure(("entity:wall-new",)))
+        self.assertEqual(successor.entity("wall-new"), record.entity("wall-new"))
+        self.assertNotIn("opening_height", {parameter.key for parameter in successor.parameters})
+        self.assertEqual(len(successor.entities), len(record.entities) - 1)
+
+    def test_type_defaults_share_one_parameter_projection_and_instance_overrides(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        record = apply_state_record_operator(record, self._wall_edit(record))
+        declared_type = replace(record.entity("arch-type"), fields={
+            **record.entity("arch-type").fields,
+            "params": {**record.entity("arch-type").fields["params"], "openings": [{"width": 1}]},
+            "references": {"base": {"level": "level-piano-nobile"}},
+        })
+        instance = replace(record.entity("arch-new"), fields={
+            **record.entity("arch-new").fields, "type_ref": "entity:arch-type",
+            "params": {"height": "@opening_height", "openings": [{"width": 2}]},
+        })
+        record = apply_state_record_operator(record, compile_component_edit(record, entities=(declared_type, instance)))
+        resolved = resolve_element_bindings(record)["arch-new"]
+        self.assertEqual(resolved["type_ref"], "arch-type")
+        self.assertEqual(resolved["params"], {"profile": "semicircular", "width": 1.2, "rise": 0.6, "height": 2.4, "openings": [{"width": 2}]})
+        self.assertEqual(resolved["references"]["base"], {"level": "level-piano-nobile"})
+        self.assertEqual(resolved["references"]["host"], instance.fields["references"]["host"])
+        self.assertIn(("params.width", "opening_width"), parameter_bindings_of(instance, record))
+        self.assertEqual(record.entity("arch-new"), instance)
+        self.assertIn("entity:arch-type", record.closure(("parameter:opening_width",)))
+        self.assertIn("entity:arch-new", record.closure(("parameter:opening_width",)))
+
+        scalar = StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+            target_ref="entity:arch-new", key="rise", value=0.8,
+        )
+        successor = apply_state_record_operator(record, scalar)
+        self.assertEqual(successor.entity("arch-new").fields["params"], {**instance.fields["params"], "rise": 0.8})
+        self.assertEqual(successor.entity("arch-type"), declared_type)
+        with self.assertRaisesRegex(StateRecordError, "bound to parameter opening_width"):
+            apply_state_record_operator(record, replace(scalar, key="width", value=2))
+        with self.assertRaisesRegex(StateRecordError, "reaches protected refs: entity:arch-new"):
+            apply_state_record_operator(record, compile_component_edit(record,
+                parameters=(replace(record.parameter("opening_width"), value=2),), protected=("entity:arch-new",),
+            ))
+
+    def test_type_instance_requires_matching_producer_and_known_type_and_parameters(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        record = apply_state_record_operator(record, self._wall_edit(record))
+        instance = record.entity("arch-new")
+        for fields, error in (
+            ({"type_ref": "wall-new"}, "names no Type"),
+            ({"type_ref": "missing"}, "names no Type"),
+            ({"producer": "beam"}, "producer must match type"),
+        ):
+            with self.subTest(fields=fields), self.assertRaisesRegex(StateRecordError, error):
+                apply_state_record_operator(record, compile_component_edit(record, entities=(replace(instance, fields={**instance.fields, **fields}),)))
+        with self.assertRaisesRegex(StateRecordError, "binds @missing"):
+            apply_state_record_operator(record, compile_component_edit(record, entities=(replace(record.entity("arch-type"), fields={
+                "producer": "opening", "params": {"width": "@missing"},
+            }),)))
+
+    def test_component_delete_refuses_dangling_host_type_parent_member_and_parameter(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        record = apply_state_record_operator(record, self._wall_edit(record))
+        cases = (
+            ({"remove_entity_ids": ("wall-new",)}, "reference host names no entity"),
+            ({"remove_entity_ids": ("arch-type",)}, "type_ref names no Type"),
+            ({"remove_entity_ids": ("building",)}, "unknown parent"),
+            ({"remove_entity_ids": ("portico-columns",)}, "component_id names no Component"),
+            ({"remove_parameter_keys": ("wall_height",)}, "names no parameter"),
+            ({"remove_parameter_keys": ("opening_width",), "entities": (replace(record.entity("arch-new"), fields={
+                **record.entity("arch-new").fields, "params": {"height": "@opening_height"},
+            }),)}, "opening_width"),
+        )
+        for edit, error in cases:
+            with self.subTest(edit=edit), self.assertRaisesRegex(StateRecordError, error):
+                apply_state_record_operator(record, compile_component_edit(record, **edit))
+
+    def test_component_relation_replacement_and_removal_update_dependencies(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        record = apply_state_record_operator(record, self._wall_edit(record))
+        old_relation = record.relations[-1]
+        replacement = replace(old_relation, object="entablature-west")
+        successor = apply_state_record_operator(record, compile_component_edit(record, relations=(replacement,)))
+        self.assertEqual(successor.relations[-1], replacement)
+        self.assertIn("entity:entablature-west", successor.closure(("entity:wall-new",)))
+        deleted = apply_state_record_operator(successor, compile_component_edit(successor, remove_relation_ids=(replacement.relation_id,)))
+        self.assertNotIn("entity:entablature-west", deleted.closure(("entity:wall-new",)))
+
+    def test_component_edit_checks_new_and_previous_protected_dependencies_and_locks(self) -> None:
+        record = self._bound_record()
+        new_relation = Relation("columns-reach-building", "adjacent", "columns-west", "building")
+        operator = compile_component_edit(record, relations=(new_relation,), protected=("entity:building",))
+        with self.assertRaisesRegex(StateRecordError, "reaches protected refs: entity:building"):
+            apply_state_record_operator(record, operator)
+        with self.assertRaisesRegex(StateRecordError, "reaches protected refs: entity:entablature-west"):
+            apply_state_record_operator(record, compile_component_edit(record, remove_relation_ids=(record.relations[0].relation_id,), protected=("entity:entablature-west",)))
+
+        locked = replace(record, parameters=(replace(record.parameters[0], lock_authority="architect"), record.parameters[1]))
+        for edited in (replace(locked.parameter("source"), value=5), replace(locked.parameter("source"), lock_authority=None)):
+            with self.subTest(edited=edited), self.assertRaisesRegex(StateRecordError, "locked parameters"):
+                apply_state_record_operator(locked, compile_component_edit(locked, parameters=(edited,)))
+
+    def test_component_edit_refuses_both_stale_identities(self) -> None:
+        record = self._bound_record()
+        operator = compile_component_edit(record, parameters=(replace(record.parameter("source"), value=4),))
+        for field_name in ("base_record_digest", "base_state_digest"):
+            with self.subTest(field=field_name), self.assertRaisesRegex(StateRecordError, "exact base is stale"):
+                apply_state_record_operator(record, replace(operator, **{field_name: "f" * 64}))
+
+    def test_component_edit_refuses_empty_unknown_ambiguous_and_wrong_schema_edits(self) -> None:
+        record = self._bound_record()
+        with self.assertRaisesRegex(StateRecordError, "at least one edit"):
+            compile_component_edit(record)
+        for remove_field in ("remove_entity_ids", "remove_parameter_keys", "remove_relation_ids"):
+            with self.subTest(remove=remove_field), self.assertRaisesRegex(StateRecordError, "removes unknown"):
+                apply_state_record_operator(record, compile_component_edit(record, **{remove_field: ("missing",)}))
+        with self.assertRaisesRegex(StateRecordError, "both edits and removes"):
+            apply_state_record_operator(record, compile_component_edit(record, entities=(record.entity("columns-west"),), remove_entity_ids=("columns-west",)))
+        with self.assertRaisesRegex(StateRecordError, "ids must be unique"):
+            apply_state_record_operator(record, compile_component_edit(record, parameters=(record.parameter("source"), record.parameter("source"))))
+        with self.assertRaisesRegex(StateRecordError, "cannot change schema"):
+            apply_state_record_operator(record, compile_component_edit(record, entities=(Entity("columns-west", "Type@1", {}),)))
+        with self.assertRaisesRegex(StateRecordError, "cannot edit entity schema"):
+            apply_state_record_operator(record, compile_component_edit(record, entities=(record.entity("level-piano-nobile"),)))
+        with self.assertRaisesRegex(StateRecordError, "only edit_components"):
+            replace(compile_component_edit(record, remove_entity_ids=("columns-west",)), kind=StateRecordEditKind.REINDEX)
+
     def test_typed_operator_changes_one_value_deterministically(self) -> None:
         record = replace(
             _record(), base=ProjectVersionRef("demo", 0, "0" * 64)
