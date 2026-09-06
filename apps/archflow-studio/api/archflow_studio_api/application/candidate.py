@@ -46,7 +46,7 @@ from archflow.state.state_record import (
     developed_design_view,
 )
 
-from ..adapters.harness import STAGE_ID, harness_guard
+from ..adapters.harness import HARNESS_PHASE, STAGE_ID, harness_guard
 from ..adapters.seats import load_seat_pack, seats_of
 from ..settings import StudioSettings
 from ..transport.errors import StudioError
@@ -233,12 +233,17 @@ def _run_successor(
         )
     # The one sanctioned binding: the record attaches itself to this run.
     bound = successor.bound_to(run)
+    # The phase is this run's, and this run's stage is the candidate harness:
+    # ``harness_guard`` writes ``HARNESS_PHASE`` into the envelope it retains
+    # and the runner refuses a state projected in any other, so the phase is
+    # read from the stage rather than restated here (ADR-007 rule 1).
     state = developed_design_view(
         bound,
         run=run,
         portfolio_id=PORTFOLIO_ID,
         branch_id=BRANCH_ID,
         selection_decision_ref=SELECTION_DECISION_REF,
+        phase=HARNESS_PHASE,
     )
     guard = harness_guard(repository, run, state)
     # What a live provider would have to present. The runner records its own

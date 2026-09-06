@@ -1,7 +1,7 @@
 """One authored State Record and the run the spine binds it to.
 
 The spine's design state is a ``StateRecord@1`` and its constructor is
-``developed_design_view(record, run=...)`` (docs/CANONICAL_SPINE.md, the
+``developed_design_view(record, run=..., phase=...)`` (docs/CANONICAL_SPINE.md, the
 "Design state" row). ``initialize_developed_design`` — the portfolio
 ceremony that used to build the fixture state for these tests — left with
 that lane, so the fixture is authored here as a record and projected the
@@ -11,7 +11,8 @@ three constants.
 Nothing here is a mock: ``bound_state`` initializes a real P036 project,
 creates a run, binds the record to it and returns the projection, so a
 test that compiles against this state is compiling against what
-production would hand the compiler.
+production would hand the compiler. It takes the run's phase, as the
+projection does in production, and every caller states one.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ from archflow.state.developed_design import (
     DevelopmentObligationPriority,
     DevelopmentObligationStatus,
 )
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.geometry_program import (
     AffineTransform,
     AssemblyKind,
@@ -319,8 +321,17 @@ def authored_record() -> StateRecord:
     return StateRecord.from_dict(RECORD_PAYLOAD)
 
 
+# The phase the shared fixture run is in. A run states its phase in its stage
+# envelope; this fixture creates a run without opening a stage, so the phase it
+# would have executed in is named here once and passed explicitly. A test about
+# phases builds its own ``bound_state`` with the phase it is about.
+FIXTURE_PHASE = DesignPhase.DESIGN_DEVELOPMENT
+
+
 def bound_state(
     tmp_path: Path | str,
+    *,
+    phase: DesignPhase,
 ) -> tuple[FilesystemProjectRepository, RunRef, StateRecord, DevelopedDesignState]:
     """One P036 project, one run, the record bound to it, and its projection.
 
@@ -328,6 +339,11 @@ def bound_state(
     tuple, named: the repository the run lives in, the run itself, the
     record bound to that run's base, and the developed-design state the
     spine's constructor yields from it.
+
+    ``phase`` is the phase the run executes in and every caller states it:
+    it enters the state digest exactly as a stage envelope's phase does in
+    production, so a fixture that did not name it would be projecting a run
+    nobody described.
     """
 
     project_dir = Path(tmp_path) / PROJECT_ID
@@ -338,7 +354,7 @@ def bound_state(
     )
     run = repository.create_run(RUN_ID)
     record = authored_record().bound_to(run)
-    state = developed_design_view(record, run=run, **VIEW_KWARGS)
+    state = developed_design_view(record, run=run, phase=phase, **VIEW_KWARGS)
     return repository, run, record, state
 
 
@@ -360,7 +376,7 @@ def shared_bound_state() -> tuple[
     if _SHARED is None:
         root = Path(tempfile.mkdtemp(prefix="archflow-spine-fixture-"))
         atexit.register(shutil.rmtree, root, True)
-        _SHARED = bound_state(root)
+        _SHARED = bound_state(root, phase=FIXTURE_PHASE)
     return _SHARED
 
 
@@ -668,7 +684,7 @@ class ProducerFixture(unittest.IsolatedAsyncioTestCase):
             self.run,
             self.record,
             self.design_state,
-        ) = bound_state(Path(self.temporary.name))
+        ) = bound_state(Path(self.temporary.name), phase=FIXTURE_PHASE)
         self.destination = PersistenceDestination(
             PersistenceArea.RUN_RECORD,
             run_id=self.run.run_id,

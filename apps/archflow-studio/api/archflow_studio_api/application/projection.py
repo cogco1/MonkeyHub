@@ -10,6 +10,14 @@ receipt name the same number or the difference is stated out loud.
 
 Two identities travel, not three: ``record.digest`` is the record's content and
 ``state.state_digest`` is that content bound to a run. Neither is computed here.
+
+The phase that view is taken in is the run's, never this module's: it is read
+from the reference run's receipt, then from the stage envelope that run
+retained, then - for a projection of authored WIP in a project that holds no
+run - from stage zero of the project's frozen ``project-stage-workflow``.
+``UNSTATED_PHASE`` is the last step and applies only when the project states
+no phase anywhere; ``_projected_phase`` is the whole rule and says why each
+step exists.
 """
 
 from __future__ import annotations
@@ -24,7 +32,11 @@ from archflow.project.inputs import (
 )
 from archflow.project.layout import AUTHORED_RECORD_PATH
 from archflow.project.refs import ProjectVersionRef, RunRef
-from archflow.state.developed_design import DevelopedDesignError, DevelopedDesignState
+from archflow.state.developed_design import (
+    DEVELOPED_PHASES,
+    DevelopedDesignError,
+    DevelopedDesignState,
+)
 from archflow.state.operational_state import DependencyEdge
 from archflow.state.spatial import DesignComponent
 from archflow.state.stage_workflow import DesignPhase
@@ -47,11 +59,14 @@ PORTFOLIO_ID = "declared-schematic"
 BRANCH_ID = "runner-v1"
 SELECTION_DECISION_REF = "decision:declared-schematic-selection"
 
-# The phase a record is projected in when nothing states one: a project with
-# no run, a WIP fallback, or a receipt older than ``stage.phase``. It is the
-# phase every such projection always had (P112), not a second authority over
-# the phase a run's envelope states.
-DEFAULT_PHASE = DesignPhase.DESIGN_DEVELOPMENT
+# The last step of ``_projected_phase`` and the only place this module names
+# a phase: a project that holds no run and has frozen no stage ladder states
+# none anywhere. It is the phase every such projection has had (P112), and
+# the phase in which a receipt older than ``stage.phase`` computed its own
+# digest, so a comparison against one still compares like with like. It is
+# not a default for a run: a run states its phase in the envelope it
+# retained, and steps 1-3 of the rule read it there.
+UNSTATED_PHASE = DesignPhase.DESIGN_DEVELOPMENT
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,9 +100,10 @@ class StateProjection:
     record_source: str
     reference_state_exact: bool
     reference_state_error: str | None
-    # The phase the record was projected in: the reference run's own stage
-    # phase when its receipt states one and the record is that run's exact
-    # retained record; ``DEFAULT_PHASE`` otherwise. It enters ``state_digest``.
+    # The phase the record was projected in, by ``_projected_phase``: the
+    # reference run's own stage phase when its receipt or retained envelope
+    # states one, else the project's frozen stage ladder, else
+    # ``UNSTATED_PHASE``. It enters ``state_digest``.
     phase: DesignPhase
     # ``None`` when the kernel refused to build the bound view. Only
     # ``GET /api/state`` is served such a projection; see ``project_state``.
@@ -179,11 +195,15 @@ def project_state(
             except (StateRecordError, KeyError, TypeError, ValueError) as exc:
                 raise _record_invalid(exc) from exc
             reference_state_error = exc.detail
-    # The phase is the run's, stated by its retained receipt (ADR-007, P112).
-    # It is read only for the exact retained record of that run: a WIP
-    # fallback is a current projection under the studio run id and is never
-    # rebound to the phase of a historical run it did not come from.
-    phase, phase_error = _reference_phase(reference, exact=reference_state_exact)
+    # The phase is the run's, stated by the envelope it retained and copied
+    # on to its receipt (ADR-007 rule 1); ``_projected_phase`` carries the
+    # whole rule, including what a project with no run at all is read in.
+    # The receipt's own phase is read only for the exact retained record of
+    # that run: a WIP fallback is a current projection under the studio run
+    # id and is never rebound to the phase of a run it did not come from.
+    phase, phase_error = _projected_phase(
+        binding, reference, exact=reference_state_exact
+    )
     try:
         state, components, component_tree_error = _bound_view(
             record,
@@ -250,41 +270,74 @@ def project_state(
     )
 
 
-def _reference_phase(
-    reference: ReferenceRun, *, exact: bool
-) -> tuple[DesignPhase, str | None]:
-    """The phase the reference run's stage ran in, or the default with the reason it was not used.
+def _carryable(value: object) -> DesignPhase | None:
+    """One written phase, if it is a design phase the developed view can carry."""
 
-    ``RunnerRunReceipt@3`` carries the envelope's phase under ``stage.phase``.
-    A receipt older than that key states none and is read in the phase every
-    projection had then, which is what its digest was computed in. A phase the
-    developed-design projection cannot carry is not mapped to one it can: the
-    default is used and the sentence says so, so the digest comparison stays
-    unmade rather than reporting a mismatch about a number nobody computed.
-    """
-
-    if not exact or reference.receipt is None:
-        return DEFAULT_PHASE, None
-    stage = reference.receipt.get("stage")
-    value = stage.get("phase") if isinstance(stage, Mapping) else None
     if not isinstance(value, str):
-        return DEFAULT_PHASE, None
+        return None
     try:
         phase = DesignPhase(value)
     except ValueError:
-        return DEFAULT_PHASE, (
+        return None
+    return phase if phase in DEVELOPED_PHASES else None
+
+
+def _projected_phase(
+    binding: ProjectBinding, reference: ReferenceRun, *, exact: bool
+) -> tuple[DesignPhase, str | None]:
+    """The phase this projection reads the record in, and why the run's own was not used.
+
+    A stage belongs to the run (ADR-007 rule 1), so the rule asks runs first
+    and names a phase itself only when the project states none anywhere:
+
+    1. the reference run's receipt, when the record on screen is that run's
+       exact retained record and ``RunnerRunReceipt@3`` states ``stage.phase``;
+    2. the stage envelope that run retained - the record the receipt copied its
+       phase from - for a receipt written before that key existed, or for a WIP
+       fallback bound to a run that still states its own stage;
+    3. stage zero of the project's own frozen ``project-stage-workflow``, for a
+       projection of authored WIP in a project with no run to answer for it;
+    4. ``UNSTATED_PHASE``, when the project holds neither a run that states a
+       phase nor a frozen ladder.
+
+    A phase the developed-design projection cannot carry is never mapped to one
+    it can: the rule continues past it and the returned sentence says so, so the
+    digest comparison stays unmade rather than reporting a mismatch about a
+    number nobody computed.
+    """
+
+    named: str | None = None
+    if exact and reference.receipt is not None:
+        stage = reference.receipt.get("stage")
+        value = stage.get("phase") if isinstance(stage, Mapping) else None
+        phase = _carryable(value)
+        if phase is not None:
+            return phase, None
+        if isinstance(value, str):
+            named = value
+    resolved: DesignPhase | None = None
+    if reference.source != "none":
+        resolved = _carryable(binding.retained_stage_phase(reference.run.run_id))
+    if resolved is None:
+        resolved = _carryable(binding.frozen_workflow_first_phase())
+    if resolved is None:
+        resolved = UNSTATED_PHASE
+    if named is None:
+        return resolved, None
+    try:
+        DesignPhase(named)
+    except ValueError:
+        return resolved, (
             f"reference run {reference.run.run_id} names stage phase "
-            f"{value!r}, which is not a design phase; projected in "
-            f"{DEFAULT_PHASE.value}, so its digest is not compared to the receipt"
+            f"{named!r}, which is not a design phase; projected in "
+            f"{resolved.value}, so its digest is not compared to the receipt"
         )
-    if phase not in (DesignPhase.SCHEMATIC_DESIGN, DesignPhase.DESIGN_DEVELOPMENT):
-        return DEFAULT_PHASE, (
-            f"reference run {reference.run.run_id} ran its stage in phase "
-            f"{phase.value}, which the developed-design projection cannot "
-            f"carry; projected in {DEFAULT_PHASE.value}, so its digest is not "
-            "compared to the receipt"
-        )
-    return phase, None
+    return resolved, (
+        f"reference run {reference.run.run_id} ran its stage in phase "
+        f"{named}, which the developed-design projection cannot "
+        f"carry; projected in {resolved.value}, so its digest is not "
+        "compared to the receipt"
+    )
 
 
 def require_actionable(projection: StateProjection) -> None:
@@ -380,7 +433,7 @@ def _bound_view(
     the component tree itself, so a record the kernel will not view is one
     whose tree this projection has no business arranging on its own.
 
-    ``phase`` is the run's (``_reference_phase``): the same view kwargs the
+    ``phase`` is the run's (``_projected_phase``): the same view kwargs the
     runner uses, in the same phase its envelope stated, or the digest is a
     number no receipt carries.
 

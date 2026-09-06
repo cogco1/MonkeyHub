@@ -18,7 +18,14 @@ from starlette.datastructures import State
 
 from archflow.project.location import open_located_project
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, STATE_RECORD
+from archflow.project.record_kinds import (
+    EQUIVALENCE_HARNESS_ENVELOPE,
+    PROJECT_STAGE_WORKFLOW,
+    RUNNER_RUN_RECEIPT,
+    STAGE_RUN_ENVELOPE,
+    STATE_RECORD,
+    STUDIO_CANDIDATE_ENVELOPE,
+)
 from archflow.project.refs import (
     ProjectRecordRef,
     ProjectVersionRef,
@@ -36,7 +43,17 @@ from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
 from ..transport.errors import StudioError, error_sentence
 
 STAGE_WORKFLOW_SCHEMA = "ProjectStageWorkflow@1"
+STAGE_ENVELOPE_SCHEMA = "StageRunEnvelope@1"
 RUNNER_RECEIPT_V3 = "RunnerRunReceipt@3"
+
+# The three record kinds a ``StageRunEnvelope@1`` is retained under: the
+# project's own stage runs and the two harnesses of ADR-007 rule 4. A run
+# states its stage - and so its phase - in exactly one of these.
+STAGE_ENVELOPE_KINDS = (
+    STAGE_RUN_ENVELOPE,
+    STUDIO_CANDIDATE_ENVELOPE,
+    EQUIVALENCE_HARNESS_ENVELOPE,
+)
 
 # ``HARNESS_WORKFLOW_IDS`` (imported above) names the runs whose workflow says
 # they exist to compare or to answer the Studio, not to carry the design
@@ -443,6 +460,70 @@ class ProjectBinding:
             receipt.get("workflow_ref") is not None
             and self._load_workflow(receipt) is None
         )
+
+    def retained_stage_phase(self, run_id: str) -> str | None:
+        """The phase the stage envelope retained in one run states, verbatim.
+
+        ADR-007 rule 1: a stage is a property of the run, stated by the
+        envelope retained in it. A run receipt's ``stage.phase`` is a copy of
+        this value; this is the record that made it. ``None`` when the run
+        retains no envelope, retains more than one (two stages on disk is not
+        a question this reader answers), or when the envelope states no phase.
+        """
+
+        found: list[str] = []
+        try:
+            refs = self.record_refs(run_id)
+        except (StudioError, ProjectRepositoryError, ValueError, OSError):
+            return None
+        for ref in refs:
+            if record_kind(ref) not in STAGE_ENVELOPE_KINDS:
+                continue
+            try:
+                payload = self.repository.load_json(ref)
+            except Exception:
+                continue
+            if payload.get("schema") != STAGE_ENVELOPE_SCHEMA:
+                continue
+            stage = payload.get("stage")
+            phase = stage.get("phase") if isinstance(stage, Mapping) else None
+            if isinstance(phase, str):
+                found.append(phase)
+        return found[0] if len(found) == 1 else None
+
+    def frozen_workflow_first_phase(self) -> str | None:
+        """The phase of stage zero of the project's own frozen workflow, verbatim.
+
+        A ``project-stage-workflow`` retained anywhere in the project is the
+        ladder the project froze (ADR-007 rule 2); the harness workflows are
+        not one and are skipped. ``None`` when no such workflow is retained,
+        or when the project froze more than one distinct ladder - which is a
+        question for whoever froze them, not something to pick between here.
+        """
+
+        phases: set[str] = set()
+        for run_id in self.run_ids():
+            try:
+                refs = self.record_refs(run_id)
+            except (StudioError, ProjectRepositoryError, ValueError, OSError):
+                continue
+            for ref in refs:
+                if record_kind(ref) != PROJECT_STAGE_WORKFLOW:
+                    continue
+                try:
+                    payload = self.repository.load_json(ref)
+                except Exception:
+                    continue
+                if payload.get("schema") != STAGE_WORKFLOW_SCHEMA:
+                    continue
+                if payload.get("workflow_id") in HARNESS_WORKFLOW_IDS:
+                    continue
+                stages = payload.get("stages")
+                first = stages[0] if isinstance(stages, list) and stages else None
+                phase = first.get("phase") if isinstance(first, Mapping) else None
+                if isinstance(phase, str):
+                    phases.add(phase)
+        return next(iter(phases)) if len(phases) == 1 else None
 
     def _load_uri(self, uri: object) -> Mapping[str, Any] | None:
         """Load a ``project://`` record reference, or None if it does not resolve."""

@@ -55,6 +55,17 @@ from archflow.state.spatial import (
 )
 from archflow.state.stage_workflow import DesignPhase
 
+# The one phase this module names, and the only thing it is for:
+# ``StateRecord.state_digest``. A record states no stage (ADR-007 rule 1),
+# so the record's own binding identity - the staleness token an exact-base
+# operator cites, and the only value ever compared against it - cannot come
+# from an envelope. It is read in one stated phase, named here so that no
+# call site quietly supplies one. It is not a default for anybody else: a
+# run's state digest comes from ``developed_design_view`` with the phase that
+# run's envelope states, which the caller passes and this module never fills
+# in.
+RECORD_BINDING_PHASE: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT
+
 _RELATION_KINDS = frozenset(kind.value for kind in ArchitecturalRelationKind)   # one vocabulary: the kernel's
 # What each schema's readers take off ``fields`` by key; a record that lacks them is refused
 # here instead of failing as a KeyError inside a producer or a projection.
@@ -505,11 +516,17 @@ class StateRecord:
         The compiler binds a program to a state by this digest. The
         projection is a pure function of the record, so citing it cites the
         record; the value is computed once and kept.
+
+        The phase is ``RECORD_BINDING_PHASE`` and is stated there: this
+        property has no run envelope to read one from, and the only values
+        ever compared with it - an operator's exact base, a program sheet's
+        declared state - are this same property. A run's own digest is the
+        projection under that run's envelope phase, and is not taken here.
         """
 
         cached = getattr(self, "_state_digest_cache", None)
         if cached is None:
-            cached = developed_design_view(self, run=self.run_ref).state_digest
+            cached = developed_design_view(self, run=self.run_ref, phase=RECORD_BINDING_PHASE).state_digest
             object.__setattr__(self, "_state_digest_cache", cached)
         return cached
 
@@ -1505,22 +1522,22 @@ def schematic_pack_of(record: StateRecord, *, option_id: str | None = None, evid
 
 
 def bootstrap_developed_state(pack: SchematicPack, *, run: RunRef, portfolio_id: str, branch_id: str, selection_decision_ref: str,
-                              phase: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT) -> DevelopedDesignState:
+                              phase: DesignPhase) -> DevelopedDesignState:
     """A developed-design state whose selected schematic is the pack.
 
     The portfolio ceremony (branches, votes, handoff) is replaced by one
     declared selection: the pack *is* the selected option, and the record
     that carries it says so. Everything downstream is the real state.
 
-    ``phase`` is the run's, not the record's (ADR-007, P112): the runner
-    passes its envelope's phase, a harness its own stage's. It enters the
-    state digest, so the same record executed in a schematic stage and in a
-    development stage yields two binding identities - that is what a stage
-    envelope binds. The default keeps every reader that projects a record
-    without an envelope (``StateRecord.state_digest``, the Studio's
-    read-only projection, retained older runs) on the phase they always had;
-    it is not a second authority over the phase, which the envelope states.
-    ``DevelopedDesignState`` admits schematic_design and design_development.
+    ``phase`` is the run's, not the record's (ADR-007 rule 1), and it is
+    required: the runner passes its envelope's phase, a harness its own
+    stage's, a tool the stage it is opening. It enters the state digest, so
+    the same record executed in a schematic stage and in a development stage
+    yields two binding identities - that is what a stage envelope binds.
+    There is no default; a reader that has no run must say which phase it
+    reads in and why (``StateRecord.state_digest`` does, and so does the
+    Studio's read-only projection). ``DevelopedDesignState`` admits
+    schematic_design and design_development.
     """
 
     if run.project_id != pack.project_id:
@@ -1545,7 +1562,7 @@ def bootstrap_developed_state(pack: SchematicPack, *, run: RunRef, portfolio_id:
 
 def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | None = None, evidence_ref: str | None = None, portfolio_id: str = "declared-state-record",
                           branch_id: str = "state-record", selection_decision_ref: str = "decision:state-record-declared",
-                          phase: DesignPhase = DesignPhase.DESIGN_DEVELOPMENT):
+                          phase: DesignPhase):
     """Forward a State Record to the legacy ``DevelopedDesignState`` the compiler still takes.
 
     With massing entities (MassingLevel@1, Volume@1, Space@1 zones,
@@ -1555,8 +1572,10 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
     compiler, the seats and the handovers read the record directly; each
     call is a lineage event, not a second source of truth.
 
-    ``phase`` is the executing run's (its stage envelope's); see
-    ``bootstrap_developed_state``. The record itself states no phase.
+    ``phase`` is the executing run's (its stage envelope's) and is required;
+    see ``bootstrap_developed_state``. The record itself states no phase, so
+    there is nothing here for a default to fall back on: a caller that omits
+    it is a caller that has not said which run it is projecting.
     """
 
     from dataclasses import replace as _replace

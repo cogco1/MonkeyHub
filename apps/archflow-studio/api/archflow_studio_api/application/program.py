@@ -187,7 +187,8 @@ def operator_for(
     record the kernel will not view is a refusal the architect can be given now
     instead of a failed job in a minute. Nothing is written by the check: the
     view is a pure function, and the run it binds to is the one the projection
-    already answered for.
+    already answered for - and so is the phase it is viewed in, which is why
+    ``projection.phase`` is passed rather than any value chosen here.
     """
 
     try:
@@ -212,6 +213,7 @@ def operator_for(
             portfolio_id=PORTFOLIO_ID,
             branch_id=BRANCH_ID,
             selection_decision_ref=SELECTION_DECISION_REF,
+            phase=projection.phase,
         )
     except (StateRecordError, KeyError, TypeError, ValueError) as exc:
         raise StudioError(
