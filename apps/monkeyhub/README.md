@@ -28,6 +28,8 @@ run.py adds the source and API import paths explicitly, including for embedded P
 
 An API-only development run may omit --hub-web-dir. To connect a separate local web development server, pass --web-origin http://127.0.0.1:5175 (substitute its actual port). The packaged web and API use one origin. Studio startup requires its built index.html; supplying no Studio build does not prevent Monitor from running.
 
+Run `npm --prefix apps/monkeyhub/web run dev` for the web development server on 127.0.0.1:5175; its `/api` proxy targets `MONKEYHUB_API_URL`, defaulting to `http://127.0.0.1:8790`.
+
 For a headless test, add --managed-stdin --managed-instance-id followed by a fresh UUID and keep the process's stdin pipe. Writing stop followed by a newline, or closing that owned pipe, requests shutdown. --no-browser suppresses automatic browser opening. Normal standalone CLI use remains available.
 
 ## Configuration and data
