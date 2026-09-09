@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from archflow_studio_api.application.jobs import (
     EXCLUSIVE,
@@ -71,6 +72,104 @@ class QueueTestCase(unittest.TestCase):
             work=gate,
             closure=closure,
             exclusive=exclusive,
+        )
+
+
+class ConcurrentSubmissionTests(QueueTestCase):
+    def test_another_submit_can_admit_a_job_before_its_submitter_returns(self) -> None:
+        a, b = Gate(), Gate()
+        paused, resume = threading.Event(), threading.Event()
+        original_admit = self.registry._admit
+        errors = []
+
+        def pause_first_admission(*args, **kwargs):
+            if threading.current_thread().name == "submit-a":
+                paused.set()
+                if not resume.wait(5):
+                    raise TimeoutError("the first submitter was never resumed")
+            return original_admit(*args, **kwargs)
+
+        def submit_a():
+            try:
+                self.submit("a", a, closure={"entity:a"})
+            except Exception as exc:
+                errors.append(exc)
+
+        with patch.object(self.registry, "_admit", side_effect=pause_first_admission):
+            thread = threading.Thread(target=submit_a, name="submit-a")
+            thread.start()
+            try:
+                self.assertTrue(paused.wait(2))
+                self.submit("b", b, closure={"entity:b"})
+                self.assertTrue(a.started.wait(2))
+                self.assertTrue(b.started.wait(2))
+            finally:
+                resume.set()
+                a.release.set()
+                b.release.set()
+                thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertTrue(wait_until(lambda: len(self.events.of("candidate.succeeded")) == 2))
+        for candidate in ("a", "b"):
+            self.assertEqual(self.registry.for_candidate(candidate).status, SUCCEEDED)
+            self.assertEqual(
+                [event["type"] for event in self.events.events
+                 if event["candidate_id"] == candidate],
+                ["candidate.queued", "candidate.running", "candidate.succeeded"],
+            )
+
+    def test_queued_publication_preserves_order_before_a_competing_submit(self) -> None:
+        a, b = Gate(), Gate()
+        publishing, resume = threading.Event(), threading.Event()
+        second_submitting = threading.Event()
+        original_publish = self.events.publish
+        errors = []
+
+        def pause_first_publication(*, event):
+            if event["candidate_id"] == "a" and event["type"] == "candidate.queued":
+                publishing.set()
+                if not resume.wait(5):
+                    raise TimeoutError("the queued event was never published")
+            original_publish(event=event)
+
+        def submit(candidate, gate):
+            try:
+                if candidate == "b":
+                    second_submitting.set()
+                self.submit(candidate, gate, closure={"entity:shared"})
+            except Exception as exc:
+                errors.append(exc)
+
+        with patch.object(self.events, "publish", side_effect=pause_first_publication):
+            threads = [
+                threading.Thread(target=submit, args=(candidate, gate))
+                for candidate, gate in (("a", a), ("b", b))
+            ]
+            threads[0].start()
+            try:
+                self.assertTrue(publishing.wait(2))
+                threads[1].start()
+                self.assertTrue(second_submitting.wait(2))
+                self.assertFalse(b.started.wait(0.2))
+                resume.set()
+                self.assertTrue(a.started.wait(2))
+                self.assertFalse(b.started.is_set())
+                a.release.set()
+                self.assertTrue(b.started.wait(2))
+            finally:
+                resume.set()
+                a.release.set()
+                b.release.set()
+                for thread in threads:
+                    if thread.ident is not None:
+                        thread.join(2)
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertTrue(wait_until(lambda: len(self.events.of("candidate.succeeded")) == 2))
+        self.assertEqual(
+            [event["candidate_id"] for event in self.events.of("candidate.running")],
+            ["a", "b"],
         )
 
 

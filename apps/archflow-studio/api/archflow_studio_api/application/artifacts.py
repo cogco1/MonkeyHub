@@ -274,7 +274,15 @@ def list_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument
             model_source=ModelSource.from_dict(payload["modelSource"]) if payload.get("modelSource") else None,
             model_source_binding_ref=ref.uri if payload.get("modelSource") else None,
         )
-        documents.setdefault(document.asset_sha256, document)
+        previous = documents.get(document.asset_sha256)
+        if previous is None:
+            documents[document.asset_sha256] = document
+        elif document.model_source is not None:
+            if previous.model_source is not None and previous.model_source != document.model_source:
+                raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "This document has competing model associations; its pages remain retained.")
+            if previous.model_source is None:
+                documents[document.asset_sha256] = replace(previous, model_source=document.model_source,
+                                                           model_source_binding_ref=document.model_source_binding_ref)
     for ref in binding.record_refs(run_id):
         if record_kind(ref) != STUDIO_DOCUMENT_MODEL_SOURCE:
             continue
@@ -332,28 +340,29 @@ def save_document(
         raise StudioError(413, "DOCUMENT_TOO_LARGE", "Source documents may contain at most 32 MiB.")
     pages = _document_pages(data, mime_type)
     digest = hashlib.sha256(data).hexdigest()
-    existing = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == digest), None)
-    if existing is not None:
-        if existing.model_source != model_source:
-            raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's model source is already retained. Its saved pages cannot be rebound to another model.")
-        document_bytes(binding, run_id, digest)
-        return existing
-    document = SourceDocument(binding.project_id, run_id, digest, file_name, mime_type, len(data), pages, model_source)
-    try:
-        binding.repository.ingest(
-            run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
-            artifact_id=f"source-document-{digest}", media_type=mime_type, source=BytesIO(data),
-        )
-        binding.repository.put_json(
-            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
-            record_kind=STUDIO_SOURCE_DOCUMENT,
-            payload={"schema": "StudioSourceDocument@1", **{
-                key: value for key, value in asdict(document).items() if key not in ("model_source", "model_source_binding_ref")
-            }, **({"modelSource": model_source.to_dict()} if model_source else {})},
-        )
-    except (ProjectRepositoryError, OSError) as exc:
-        raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document could not be retained in its project.") from exc
-    return next(row for row in list_documents(binding, run_id) if row.asset_sha256 == digest)
+    with _document_source_lock:
+        existing = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == digest), None)
+        if existing is not None:
+            if existing.model_source != model_source:
+                raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's model source is already retained. Its saved pages cannot be rebound to another model.")
+            document_bytes(binding, run_id, digest)
+            return existing
+        document = SourceDocument(binding.project_id, run_id, digest, file_name, mime_type, len(data), pages, model_source)
+        try:
+            binding.repository.ingest(
+                run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
+                artifact_id=f"source-document-{digest}", media_type=mime_type, source=BytesIO(data),
+            )
+            binding.repository.put_json(
+                run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+                record_kind=STUDIO_SOURCE_DOCUMENT,
+                payload={"schema": "StudioSourceDocument@1", **{
+                    key: value for key, value in asdict(document).items() if key not in ("model_source", "model_source_binding_ref")
+                }, **({"modelSource": model_source.to_dict()} if model_source else {})},
+            )
+        except (ProjectRepositoryError, OSError) as exc:
+            raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document could not be retained in its project.") from exc
+        return next(row for row in list_documents(binding, run_id) if row.asset_sha256 == digest)
 
 
 _document_source_lock = threading.RLock()

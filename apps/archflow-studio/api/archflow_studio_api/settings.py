@@ -8,6 +8,7 @@ write to, a project nobody chose.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from ipaddress import ip_address
 import os
 from pathlib import Path
 import tempfile
@@ -113,7 +114,7 @@ class StudioSettings:
     origins: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        """A remote process without a token is not a configuration that exists.
+        """Local listeners stay on loopback; remote listeners need credentials.
 
         The rule lives here rather than in ``create_app`` so that no path can
         build one: the environment, ``--project-dir``, and a test constructing
@@ -131,6 +132,15 @@ class StudioSettings:
                 f"{self.mode!r}."
             )
         if self.mode != REMOTE_MODE:
+            try:
+                loopback = ip_address(self.bind_host).is_loopback
+            except ValueError:
+                loopback = self.bind_host.lower() == "localhost"
+            if not loopback:
+                raise SettingsError(
+                    f"{MODE_ENV}={LOCAL_MODE} requires a loopback {BIND_ENV}. "
+                    "Use remote mode with a token and allowed origins for a network listener."
+                )
             return
         if not self.api_token:
             raise SettingsError(

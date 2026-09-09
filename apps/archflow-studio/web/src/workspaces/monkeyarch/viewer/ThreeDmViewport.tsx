@@ -661,6 +661,7 @@ export const ThreeDmViewport = forwardRef<
   const hostRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<ViewportRuntime | null>(null);
   const loadGenerationRef = useRef(0);
+  const secondaryLoadRequest = useRef(0);
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
   const callbacksRef = useRef({ onInspection, onStatus, onSource, onPick });
   const [dragActive, setDragActive] = useState(false);
@@ -779,6 +780,7 @@ export const ThreeDmViewport = forwardRef<
   );
 
   const clearSecondary = useCallback(() => {
+    secondaryLoadRequest.current += 1;
     const runtime = runtimeRef.current;
     if (!runtime) return;
     // The loaded model gets its materials back exactly as they were - a pane
@@ -860,16 +862,27 @@ export const ThreeDmViewport = forwardRef<
     async (file: File): Promise<number> => {
       const runtime = runtimeRef.current;
       if (!runtime?.model) throw new Error("Load a model first; the second one is compared against it.");
+      const generation = loadGenerationRef.current;
+      const request = ++secondaryLoadRequest.current;
+      const primary = runtime.model;
+      const isCurrent = () => request === secondaryLoadRequest.current && generation === loadGenerationRef.current &&
+        runtimeRef.current === runtime && runtime.model === primary;
       const buffer = await file.arrayBuffer();
+      if (!isCurrent()) return 0;
       const fallbackBuffer = buffer.slice(0);
       const loader = new Rhino3dmLoader();
       loader.setLibraryPath("/rhino3dm/");
       loader.setWorkerLimit(Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2)));
-      const generation = loadGenerationRef.current;
       return new Promise<number>((resolve, reject) => {
         loader.parse(
           buffer,
           (model) => {
+            if (!isCurrent()) {
+              loader.dispose();
+              disposeScene(model);
+              resolve(0);
+              return;
+            }
             let display = model;
             void (async () => {
               try {
@@ -884,7 +897,7 @@ export const ThreeDmViewport = forwardRef<
                 // valid (if empty) comparison rather than a failed file load.
               }
               loader.dispose();
-              if (generation !== loadGenerationRef.current || !runtimeRef.current?.model) {
+              if (!isCurrent()) {
                 // The loaded model changed while this parsed: nothing to compare against any more.
                 disposeScene(display);
                 resolve(0);

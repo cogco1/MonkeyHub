@@ -294,6 +294,12 @@ export default function App({ server }: { server: ServerIdentity }) {
     t: number;
     meshes: number;
   } | null>(null);
+  const comparisonRequest = useRef(0);
+  const clearComparison = useCallback(() => {
+    comparisonRequest.current += 1;
+    viewportRef.current?.clearSecondary();
+    setBlendState(null);
+  }, []);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [capturePath, setCapturePath] = useState<string | null>(null);
   const refineInFlight = useRef<string | null>(null);
@@ -511,11 +517,11 @@ export default function App({ server }: { server: ServerIdentity }) {
       setDisplayMode(next);
       if (next === "model") {
         setGhostProposalId(null);
-        setBlendState(null);
+        clearComparison();
         viewportRef.current?.showOriginal();
       }
     },
-    [displayMode],
+    [clearComparison, displayMode],
   );
 
   /** A semantic target lights only the exact object names in this run's catalog. */
@@ -596,7 +602,7 @@ export default function App({ server }: { server: ServerIdentity }) {
     }
   }, []);
 
-  useEffect(() => () => { artifactsReadRef.current += 1; }, []);
+  useEffect(() => () => { artifactsReadRef.current += 1; comparisonRequest.current += 1; }, []);
 
   useEffect(() => {
     if (session.status === "ready") void loadArtifacts();
@@ -1051,8 +1057,8 @@ export default function App({ server }: { server: ServerIdentity }) {
     setGhostProposalId(null);
     modelAnnotationsController.resetUnbound(documentEditingRef.current.projectId ?? "");
     setTool(null);
-    setBlendState(null);
-  }, []);
+    clearComparison();
+  }, [clearComparison]);
 
   const resolvePick = useCallback(
     async (pick: ViewportPick) => {
@@ -1468,8 +1474,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       setProgramOpen(false);
       setDisplayMode("model");
       viewportRef.current?.showOriginal();
-      viewportRef.current?.clearSecondary();
-      setBlendState(null);
+      clearComparison();
       if (selectedSource && artifacts.status === "ready" &&
           (loadedArtifact?.runId !== selectedSource.runId || loadedArtifact.sha256 !== selectedSource.assetSha256)) {
         const artifact = artifacts.value.artifacts.find((row) => row.runId === selectedSource.runId && row.sha256 === selectedSource.assetSha256);
@@ -1495,7 +1500,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       }
     }
     return next;
-  }, [applyingProgram, artifacts, candidateBusy, changingBase, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, optionsBusy, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, workingCopies]);
+  }, [applyingProgram, artifacts, candidateBusy, changingBase, clearComparison, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, optionsBusy, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, workingCopies]);
 
   /**
    * The hand moves a proposal's number. The sentence is the grammar's own —
@@ -1608,6 +1613,7 @@ export default function App({ server }: { server: ServerIdentity }) {
    */
   const compareInModel = useCallback(
     async (comparison: CompareDto) => {
+      if (modelLoading) return;
       const shown = loadedArtifact;
       if (shown === null || shown.runId !== comparison.against) {
         append({
@@ -1641,9 +1647,17 @@ export default function App({ server }: { server: ServerIdentity }) {
         });
         return;
       }
+      clearComparison();
+      const request = comparisonRequest.current;
+      const requestedModel = modelLoadRequest.current;
+      const shownArtifacts = loadedArtifactsRef.current;
+      const isCurrent = () => request === comparisonRequest.current && requestedModel === modelLoadRequest.current &&
+        shownArtifacts === loadedArtifactsRef.current;
       try {
         const file = await studio.artifactFile(twin.sha256, twin.fileName);
+        if (!isCurrent()) return;
         const meshes = (await viewportRef.current?.loadSecondary(file)) ?? 0;
+        if (!isCurrent()) return;
         setBlendState({
           candidateId: comparison.candidateId,
           against: comparison.against,
@@ -1651,6 +1665,7 @@ export default function App({ server }: { server: ServerIdentity }) {
           meshes,
         });
       } catch (cause) {
+        if (!isCurrent()) return;
         append({
           kind: "refusal",
           error: asStudioApiError(cause),
@@ -1658,7 +1673,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         });
       }
     },
-    [append, artifacts, loadedArtifact],
+    [append, artifacts, clearComparison, loadedArtifact, modelLoading],
   );
 
   const runCandidate = useCallback(
@@ -2542,10 +2557,7 @@ export default function App({ server }: { server: ServerIdentity }) {
               viewportRef.current?.blend(t);
               setBlendState((current) => (current ? { ...current, t } : current));
             }}
-            onEndBlend={() => {
-              viewportRef.current?.clearSecondary();
-              setBlendState(null);
-            }}
+            onEndBlend={clearComparison}
             captureState={captureState}
             capturePath={capturePath}
             onCapture={captureViewport}

@@ -4009,7 +4009,7 @@
         "create_app touches no filesystem and binds no project - a wrong project root is discovered by the request that needs it",
         "the project root is never defaulted in code",
         "GET /api/protocol opens no project, so a client can tell a foreign server from an unbound one; removing or renaming a stable wire field changes the protocol major, and mismatched clients refuse at handshake",
-        "a remote-mode StudioSettings without a token and without origins cannot be constructed, so no path can start one",
+        "local-mode StudioSettings accepts only loopback listeners; remote mode requires a token and allowed origins; CLI host overrides pass through the same constructor before serving",
         "in remote mode every /api route but health and protocol answers 401 UNAUTHENTICATED without a matching bearer token, unknown paths included",
         "every failure answers in the same body shape, and an unexpected error says nothing about itself",
         "a refusal that ends a clarification carries a null continuationToken, so a client can tell 'answer this' from 'this is what the system lacks' without reading the sentence",

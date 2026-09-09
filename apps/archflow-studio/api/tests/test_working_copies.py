@@ -16,6 +16,9 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from archflow.adapters.three_dm_inspector import ThreeDmInspectionError, ThreeDmInspectionErrorCode
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT
+from archflow_studio_api.application.binding import record_kind
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
@@ -290,6 +293,62 @@ class WorkingCopyTests(unittest.TestCase):
         with TestClient(create_app(self.settings)) as reopened:
             self.assertEqual(reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"], [associated.json()])
             self.assertEqual(reopened.get("/api/document-annotations", params=query).json(), page)
+
+    def test_concurrent_document_uploads_cannot_install_competing_sources(self) -> None:
+        before = self.repository.read_head()
+        body = {"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "parallel.png",
+                "mimeType": "image/png", "contentBase64": base64.b64encode(image_bytes()).decode()}
+        start = threading.Barrier(2)
+
+        def upload(source):
+            start.wait(timeout=10)
+            return self.client.post("/api/documents", json={**body, "modelSource": source})
+
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            futures = [workers.submit(upload, source) for source in (self.a, self.b)]
+            responses = [future.result(timeout=30) for future in futures]
+        self.assertEqual(sorted(response.status_code for response in responses), [201, 409])
+        saved = next(response.json() for response in responses if response.status_code == 201)
+        refused = next(response.json() for response in responses if response.status_code == 409)
+        self.assertEqual(refused["code"], "DOCUMENT_SOURCE_IMMUTABLE")
+        binding = bound_project(self.app.state)
+        self.assertEqual(len([ref for ref in binding.record_refs(REFERENCE_RUN_ID)
+                              if record_kind(ref) == STUDIO_SOURCE_DOCUMENT]), 1)
+        repeated = self.client.post("/api/documents", json={**body, "modelSource": saved["modelSource"]})
+        self.assertEqual(repeated.status_code, 201, repeated.text)
+        self.assertEqual(repeated.json(), saved)
+        with TestClient(create_app(self.settings)) as reopened:
+            self.assertEqual(reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"], [saved])
+        self.assertEqual(self.repository.read_head(), before)
+
+    def test_retained_duplicate_documents_only_refuse_conflicting_model_sources(self) -> None:
+        data = image_bytes()
+        response = self.client.post("/api/documents", json={"projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID,
+                                   "fileName": "original.png", "mimeType": "image/png",
+                                   "contentBase64": base64.b64encode(data).decode(), "modelSource": self.a})
+        self.assertEqual(response.status_code, 201, response.text)
+        binding = bound_project(self.app.state)
+        ref = next(ref for ref in binding.record_refs(REFERENCE_RUN_ID) if record_kind(ref) == STUDIO_SOURCE_DOCUMENT)
+        original = self.repository.load_json(ref)
+        run = self.repository.load_run(REFERENCE_RUN_ID)
+        destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=REFERENCE_RUN_ID)
+        same_source = {**original, "file_name": "same-source.png"}
+        unbound = {key: value for key, value in original.items() if key != "modelSource"}
+        for payload in (same_source, {**unbound, "file_name": "unbound.png"}):
+            self.repository.put_json(run=run, destination=destination, record_kind=STUDIO_SOURCE_DOCUMENT, payload=payload)
+        with TestClient(create_app(self.settings)) as reopened:
+            listed = reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID})
+            self.assertEqual(listed.status_code, 200, listed.text)
+            self.assertEqual(len(listed.json()["documents"]), 1)
+            self.assertEqual(listed.json()["documents"][0]["modelSource"], self.a)
+            self.assertEqual(reopened.get(f"/api/documents/{response.json()['assetSha256']}/bytes",
+                                         params={"runId": REFERENCE_RUN_ID}).content, data)
+        self.repository.put_json(run=run, destination=destination, record_kind=STUDIO_SOURCE_DOCUMENT,
+                                 payload={**original, "modelSource": self.b})
+        with TestClient(create_app(self.settings)) as reopened:
+            conflicting = reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID})
+            self.assertEqual(conflicting.status_code, 409, conflicting.text)
+            self.assertEqual(conflicting.json()["code"], "DOCUMENT_SOURCE_CONFLICT")
 
     def test_3d_ink_is_bound_to_exact_model_and_cas_preserves_old_revisions(self) -> None:
         mark = {"id": "first", **gesture("circle", hit("portico-base"))}

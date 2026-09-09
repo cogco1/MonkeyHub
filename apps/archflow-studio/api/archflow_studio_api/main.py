@@ -32,7 +32,7 @@ from .application.options import OptionStore
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
 from .protocol import SERVER_VERSION
-from .settings import PROJECT_DIR_ENV, REMOTE_MODE, StudioSettings
+from .settings import BIND_ENV, PROJECT_DIR_ENV, REMOTE_MODE, StudioSettings
 from .transport.errors import StudioError
 
 DEFAULT_PORT = 8000
@@ -222,7 +222,7 @@ def create_app(settings: StudioSettings) -> FastAPI:
             CORSMiddleware,
             allow_origins=list(settings.origins),
             allow_credentials=False,
-            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_methods=["GET", "POST", "PUT", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type", "Last-Event-ID"],
             # The two headers the artifact-bytes route answers with that a
             # browser cannot read unless they are named here.
@@ -251,10 +251,12 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.project_dir is not None:
         os.environ[PROJECT_DIR_ENV] = str(args.project_dir)
+    if args.host is not None:
+        os.environ[BIND_ENV] = args.host
     settings = StudioSettings.from_env()
     uvicorn.run(
         create_app(settings),
-        host=args.host if args.host is not None else settings.bind_host,
+        host=settings.bind_host,
         port=args.port,
     )
 

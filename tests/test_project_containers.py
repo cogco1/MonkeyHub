@@ -277,6 +277,56 @@ class ProjectContainersTests(unittest.TestCase):
         with self.assertRaises(ContainerError):
             archived(self.repository)
 
+    def test_unissued_snapshots_never_become_published_or_archived(self) -> None:
+        initial = published(self.repository).ref
+
+        def prepare(run_id: str):
+            run = self.make_run(run_id)
+            decision = self.repository.put_json(
+                run=run,
+                destination=PersistenceDestination(
+                    PersistenceArea.RUN_REVIEW, run_id=run.run_id
+                ),
+                record_kind=PROMOTION_DECISION,
+                payload={
+                    "schema": "PromotionDecision@1",
+                    "status": "accepted",
+                    "project_id": run.project_id,
+                    "run_id": run.run_id,
+                    "checked_state": run.base.to_dict(),
+                    "candidate_ref": f"project://{PROJECT_ID}/runs/{run.run_id}",
+                },
+            )
+            return self.repository.prepare_transition(
+                run=run,
+                expected=run.base,
+                replacement_state={"schema": "TestState@1", "choice": run_id},
+                decision_receipt=decision,
+            )
+
+        alternatives = (prepare("choice-a"), prepare("choice-b"))
+        selected = max(alternatives, key=lambda item: item.replacement.uri)
+        self.repository.compare_and_swap(
+            expected=selected.expected,
+            event=selected.event,
+            replacement=selected.replacement,
+        )
+        self.assertEqual(published(self.repository).ref, selected.replacement.uri)
+        self.assertEqual(tuple(item.ref for item in archived(self.repository)), (initial,))
+
+        next_issue = prepare("next-issue")
+        self.repository.compare_and_swap(
+            expected=next_issue.expected,
+            event=next_issue.event,
+            replacement=next_issue.replacement,
+        )
+        reopened = FilesystemProjectRepository.open(self.root)
+        self.assertEqual(published(reopened).ref, next_issue.replacement.uri)
+        self.assertEqual(
+            tuple(item.ref for item in archived(reopened)),
+            (initial, selected.replacement.uri),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -78,8 +78,8 @@ class JobRegistry:
     """The worker threads candidates run on, the queue in front of them, and
     what became of each job.
 
-    Every state change publishes an event before the lock is released, so the
-    order events are numbered in is the order the jobs actually changed.
+    A queued job is registered with its work and announced before another
+    submitter or a finishing worker can admit it.
     """
 
     def __init__(self, events: StudioEventSink, *, max_workers: int = 2) -> None:
@@ -140,6 +140,11 @@ class JobRegistry:
             if claimed is None:
                 self._jobs[job.job_id] = job
                 self._by_candidate[candidate_id] = job.job_id
+                self._work[job.job_id] = work
+                self._pending.append(job.job_id)
+                # Admission can happen on any submitting or finishing thread.
+                # Publish queued before releasing this complete job to them.
+                self._publish(job, "candidate.queued")
         if claimed is not None:
             raise StudioError(
                 409,
@@ -148,10 +153,7 @@ class JobRegistry:
                 f"{claimed}. One candidate id names one run; it is never "
                 "rebound to a second job.",
             )
-        self._publish(job, "candidate.queued")
-        with self._lock:
-            self._pending.append(job.job_id)
-        self._admit(work_for={job.job_id: work})
+        self._admit()
         return job
 
     def get(self, job_id: str) -> Job:
@@ -221,7 +223,7 @@ class JobRegistry:
                 return other.candidate_id, "shares " + ", ".join(shared)
         return None
 
-    def _admit(self, *, work_for: Mapping[str, Callable[[], Any]] | None = None) -> None:
+    def _admit(self) -> None:
         """Start every pending job that nothing ahead of it blocks.
 
         Called on submit and whenever a job finishes. Pending jobs are
@@ -234,8 +236,6 @@ class JobRegistry:
         started: list[tuple[Job, Callable[[], Any]]] = []
         waiting: list[tuple[Job, str]] = []
         with self._lock:
-            if work_for:
-                self._work.update(work_for)
             running = [self._jobs[job_id] for job_id in self._running]
             earlier: list[Job] = []
             still_pending: list[str] = []

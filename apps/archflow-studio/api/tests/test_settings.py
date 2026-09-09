@@ -15,7 +15,7 @@ import venv
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.main import create_app
+from archflow_studio_api.main import create_app, main
 from archflow_studio_api.settings import (
     CAD_EXPORT_ENV,
     CAD_EXPORT_OCCT,
@@ -45,6 +45,36 @@ ENV_BLOCK_END = "$env:PYTHONUNBUFFERED"
 
 
 class SettingsTests(unittest.TestCase):
+    def test_local_mode_accepts_only_loopback_listeners(self) -> None:
+        for host in ("127.0.0.1", "127.0.0.2", "::1", "localhost"):
+            with self.subTest(host=host):
+                self.assertEqual(
+                    StudioSettings(project_dir=Path("p"), bind_host=host).bind_host,
+                    host,
+                )
+        for host in ("0.0.0.0", "::", "192.168.1.2", "studio.example"):
+            with self.subTest(host=host), self.assertRaisesRegex(SettingsError, "loopback"):
+                StudioSettings(project_dir=Path("p"), bind_host=host)
+
+    def test_cli_validates_the_effective_listener_before_starting(self) -> None:
+        with patch.dict(os.environ, {
+            "ARCHFLOW_STUDIO_PROJECT_DIR": "unused-project",
+            "ARCHFLOW_STUDIO_BIND": "127.0.0.1",
+        }, clear=True), patch("archflow_studio_api.main.uvicorn.run") as serve:
+            with self.assertRaisesRegex(SettingsError, "loopback"):
+                main(["--host", "0.0.0.0"])
+            serve.assert_not_called()
+
+        with patch.dict(os.environ, {
+            "ARCHFLOW_STUDIO_PROJECT_DIR": "unused-project",
+            "ARCHFLOW_STUDIO_BIND": "0.0.0.0",
+        }, clear=True), patch("archflow_studio_api.main.create_app") as create, patch(
+            "archflow_studio_api.main.uvicorn.run"
+        ) as serve:
+            main(["--host", "127.0.0.1"])
+            self.assertEqual(create.call_args.args[0].bind_host, "127.0.0.1")
+            self.assertEqual(serve.call_args.kwargs["host"], "127.0.0.1")
+
     def test_missing_project_dir_refuses_and_names_the_variable(self) -> None:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ARCHFLOW_STUDIO_PROJECT_DIR", None)

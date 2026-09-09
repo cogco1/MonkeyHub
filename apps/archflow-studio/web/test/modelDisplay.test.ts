@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
 
-import { BoxGeometry, Group, Mesh, MeshBasicMaterial } from "three";
+import { BoxGeometry, Color, Group, Mesh, MeshBasicMaterial } from "three";
 
 import {
   captureModelAppearance,
@@ -269,4 +271,129 @@ test("only an object on screen through every ancestor is displayed", () => {
   mesh.visible = true;
   model.visible = false;
   assert.equal(isDisplayed(mesh), false, "the hidden root hides everything");
+});
+
+// Execute the production callbacks with deferred I/O; no browser, project,
+// renderer or replacement implementation of their async transitions is needed.
+function productionCallback(file: string, name: string, scope: Record<string, unknown>) {
+  const source = readFileSync(new URL(file, import.meta.url), "utf8");
+  const declaration = `const ${name} = useCallback(`;
+  const declarationAt = source.indexOf(declaration);
+  assert.ok(declarationAt >= 0, `Missing production callback ${name}`);
+  const start = declarationAt + declaration.length;
+  const end = /\r?\n {2,4}},\s*\[/.exec(source.slice(start));
+  assert.ok(end, `Missing callback dependency list for ${name}`);
+  const callback = source.slice(start, start + end.index + end[0].indexOf("}") + 1);
+  return new Function(...Object.keys(scope), `return ${stripTypeScriptTypes(`(${callback})`)}`)(...Object.values(scope));
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+test("comparison downloads cannot outlive a model switch, a clear or a newer comparison", async () => {
+  for (const action of ["switch", "clear", "newer"] as const) {
+    const first = deferred<string>(), second = deferred<string>();
+    const displayed: string[] = [];
+    const before = { runId: "before", stageId: "seat", sha256: "before-sha" };
+    let blend: { candidateId: string } | null = null;
+    const scope = {
+      modelLoading: false, loadedArtifact: before, loadedArtifactsRef: { current: [before] },
+      comparisonRequest: { current: 0 }, modelLoadRequest: { current: 0 },
+      artifacts: { status: "ready", value: { artifacts: ["first", "second"].map((id) =>
+        ({ runId: id, stageId: "seat", sha256: id, fileName: `${id}.3dm` })) } },
+      viewableArtifacts: (rows: unknown) => rows,
+      studio: { artifactFile: (sha: string) => sha === "first" ? first.promise : second.promise },
+      viewportRef: { current: { clearSecondary() {}, loadSecondary: async (file: string) => { displayed.push(file); return 1; } } },
+      setBlendState: (value: typeof blend) => { blend = value; },
+      append: (entry: unknown) => assert.fail(JSON.stringify(entry)), asStudioApiError: (value: unknown) => value,
+    };
+    const clear = productionCallback("../src/app/App.tsx", "clearComparison", scope);
+    const compare = productionCallback("../src/app/App.tsx", "compareInModel", { ...scope, clearComparison: clear });
+    const old = compare({ candidateId: "first", against: "before" });
+    if (action === "switch") {
+      scope.modelLoadRequest.current += 1;
+      scope.loadedArtifactsRef.current = [{ ...before, runId: "another-model" }];
+    } else if (action === "clear") clear();
+    else {
+      const latest = compare({ candidateId: "second", against: "before" });
+      second.resolve("second.3dm");
+      await latest;
+    }
+    first.resolve("first.3dm");
+    await old;
+    assert.deepEqual(displayed, action === "newer" ? ["second.3dm"] : [], action);
+    assert.equal(blend?.candidateId ?? null, action === "newer" ? "second" : null, action);
+  }
+});
+
+function secondaryViewport() {
+  const parsed = new Map<number, (model: Group) => void>();
+  const disposed: string[] = [];
+  const runtime = { model: new Group(), secondary: null as Group | null,
+    scene: new Group(), restore: new Map(), blendT: null as number | null, render() {} };
+  const scope = {
+    runtimeRef: { current: runtime }, loadGenerationRef: { current: 0 }, secondaryLoadRequest: { current: 0 },
+    Rhino3dmLoader: class {
+      setLibraryPath() {} setWorkerLimit() {} dispose() {}
+      parse(bytes: ArrayBuffer, complete: (model: Group) => void) { parsed.set(new Uint8Array(bytes)[0], complete); }
+    },
+    navigator: { hardwareConcurrency: 1 }, Color, accentColour: () => "#2277dd",
+    meshCount: () => 1, prepareLoadedModel, tintSecondary() {}, reportStatus() {},
+    nurbsFallbackWarning: () => null, restoreOpacity,
+    disposeScene: (model: Group) => disposed.push(model.name),
+    disposeSecondary: (model: Group) => disposed.push(model.name),
+    blend: (value: number) => { runtime.blendT = value; },
+  };
+  const clear = productionCallback("../src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx", "clearSecondary", scope);
+  const load = productionCallback("../src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx", "loadSecondary", { ...scope, clearSecondary: clear });
+  const file = (id: number) => ({ arrayBuffer: async () => Uint8Array.of(id).buffer });
+  const complete = (id: number) => {
+    const model = new Group(); model.name = `comparison-${id}`;
+    assert.ok(parsed.has(id)); parsed.get(id)!(model);
+  };
+  return { ...scope, runtime, parsed, disposed, load, clear, file, complete };
+}
+
+test("secondary file reading stays bound to the primary model present before the await", async () => {
+  const h = secondaryViewport();
+  const bytes = deferred<ArrayBuffer>();
+  const loading = h.load({ arrayBuffer: () => bytes.promise });
+  h.loadGenerationRef.current += 1;
+  h.runtime.model = new Group();
+  bytes.resolve(Uint8Array.of(1).buffer);
+  assert.equal(await loading, 0);
+  assert.equal(h.parsed.size, 0, "an obsolete file is not handed to the parser");
+  assert.equal(h.runtime.secondary, null);
+});
+
+test("clearing a comparison prevents a late parse from restoring it", async () => {
+  const h = secondaryViewport();
+  const loading = h.load(h.file(1));
+  await flush();
+  h.clear();
+  h.complete(1);
+  assert.equal(await loading, 0);
+  assert.equal(h.runtime.secondary, null);
+  assert.equal(h.runtime.blendT, null);
+  assert.deepEqual(h.disposed, ["comparison-1"]);
+});
+
+test("the last secondary request wins when its parse finishes before the earlier request", async () => {
+  const h = secondaryViewport();
+  const first = h.load(h.file(1));
+  await flush();
+  const second = h.load(h.file(2));
+  await flush();
+  h.complete(2);
+  assert.equal(await second, 1);
+  h.complete(1);
+  assert.equal(await first, 0);
+  assert.equal(h.runtime.secondary?.name, "comparison-2");
+  assert.equal(h.runtime.blendT, 0.5);
+  assert.deepEqual(h.disposed, ["comparison-1"]);
 });
