@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MonkeyMonitor · 用量与成本</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#overview">跳到用量概览</a>
+  <div class="shell">
+    <header class="masthead">
+      <a class="brand" href="#overview" aria-label="MonkeyMonitor 用量概览">
+        <span><strong>MonkeyMonitor</strong><small>用量与费用</small></span>
+      </a>
+      <div class="sync-controls">
+        <span id="health" class="health">正在连接</span>
+        <button id="refresh" class="button secondary" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.5 6.5A7 7 0 1 0 17 12M16.5 2.5v4.5H12"/></svg><span>刷新</span></button>
+      </div>
+    </header>
+    <nav class="section-nav" aria-label="页面导航">
+      <a href="#overview">用量概览</a><a href="#calculator">Token 计算器</a><a href="#algorithms">算法接口</a>
+      <span id="sync-time" role="status">等待首次读取</span>
+    </nav>
+    <main>
+      <div class="page-heading"><div><p class="eyebrow">MONKEYMONITOR</p><h1>用量与费用</h1></div><p class="heading-note">汇总已记录用量<br>保留缺失信息，按需估算费用</p></div>
+      <div id="load-notice" class="notice" role="status" hidden></div>
+      <div class="dashboard-grid">
+        <section id="overview" class="overview" aria-labelledby="overview-title">
+          <div class="section-heading"><h2 id="overview-title">用量概览</h2><div class="source-filter" role="group" aria-label="用量来源"><button type="button" data-source="all" aria-pressed="true">全部</button><button type="button" data-source="studio" aria-pressed="false">Studio</button><button type="button" data-source="codex" aria-pressed="false">Codex</button></div></div>
+          <div class="stat-grid" aria-live="polite">
+            <article class="stat"><p>调用记录</p><strong id="stat-events">—</strong><small id="stat-events-note">正在读取</small></article>
+            <article class="stat"><p>已知输入 Token</p><strong id="stat-input">—</strong><small id="stat-input-note">总输入含缓存</small></article>
+            <article class="stat"><p>已知输出 Token</p><strong id="stat-output">—</strong><small id="stat-output-note">总输出含推理</small></article>
+            <article class="stat"><p>耗时中位数</p><strong id="stat-duration">—</strong><small id="stat-duration-note">只统计已记录耗时</small></article>
+          </div>
+          <p id="cache-summary" class="cache-summary">缓存读取 — · 输入占比 — · 尚无记录</p>
+          <div id="data-notice" class="notice compact" hidden></div>
+          <section class="panel breakdown-panel" aria-labelledby="breakdown-title">
+            <div class="panel-heading"><div><p class="eyebrow">MODEL / PHASE</p><h3 id="breakdown-title">模型与阶段</h3></div><span id="group-count" class="quiet"></span></div>
+            <div id="breakdown-empty" class="empty-state small"><span class="empty-glyph" aria-hidden="true">∅</span><p>暂无用量记录</p><small>接入的真实调用会在这里按模型和阶段汇总。</small></div>
+            <div id="breakdown-wrap" class="table-wrap" tabindex="0" role="region" aria-label="模型与阶段汇总，可横向滚动" hidden><table class="breakdown-table"><thead><tr><th scope="col">模型 / 阶段</th><th scope="col" class="number">次数</th><th scope="col" class="number">已知输入</th><th scope="col" class="number">已知输出</th></tr></thead><tbody id="breakdown-body"></tbody></table></div>
+          </section>
+          <section class="panel events-panel" aria-labelledby="events-title">
+            <div class="panel-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h3 id="events-title">调用明细</h3></div><div class="event-controls"><span id="event-count" class="quiet">尚无记录</span><label class="sort-label" for="event-sort">降序排列<select id="event-sort"><option value="time">时间</option><option value="input_tokens">输入 Token</option><option value="output_tokens">输出 Token</option><option value="duration_ms">耗时</option></select></label></div></div>
+            <div id="events-empty" class="empty-state"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 36h32M12 30V18m12 12V10m12 20v-8"/></svg><p>等待第一条调用记录</p><small>Studio 与 Codex 的真实用量会显示在这里。<br>没有记录的 Token 与耗时显示为「—」。</small></div>
+            <div id="events-wrap" class="table-wrap" tabindex="0" role="region" aria-label="调用明细，可横向滚动" hidden><table class="events-table"><thead><tr><th scope="col">时间 / 来源</th><th scope="col">模型 / 阶段</th><th scope="col">状态</th><th scope="col" class="number">耗时</th><th scope="col" class="number">输入 / 输出</th><th scope="col">计价</th></tr></thead><tbody id="events-body"></tbody></table></div>
+            <div class="table-footer"><p>订阅用量仅供观察；按单价换算的等值费用不代表实际扣费。</p><button id="more-events" class="text-button" type="button" hidden>显示更多</button></div>
+          </section>
+        </section>
+        <aside id="calculator" class="panel calculator" aria-labelledby="calculator-title">
+          <div class="panel-heading"><div><p class="eyebrow">TOKEN CALCULATOR</p><h2 id="calculator-title">费用计算器</h2></div><span class="tag">USD</span></div>
+          <p class="intro">输入用量与单价，计算 API 费用或订阅用量的费用等值。</p>
+          <p id="quote-context" class="selection-note" role="status" hidden></p>
+          <form id="quote-form" novalidate>
+            <fieldset><legend>01 <span>Token 用量</span></legend><p class="field-help" id="usage-help">空白表示未知；确认没有发生的项目请填 0。</p><div class="field-grid">
+              <label>总输入<input name="input_tokens" inputmode="numeric" autocomplete="off" placeholder="未记录" aria-describedby="usage-help"></label>
+              <label>总输出<input name="output_tokens" inputmode="numeric" autocomplete="off" placeholder="未记录" aria-describedby="usage-help"></label>
+              <label>缓存读取<input name="cached_input_tokens" inputmode="numeric" autocomplete="off" placeholder="未记录" aria-describedby="usage-help"></label>
+              <label>缓存写入总量<input name="cache_write_input_tokens" inputmode="numeric" autocomplete="off" placeholder="未记录" aria-describedby="usage-help"></label>
+              <label>其中：1 小时写入<input name="cache_write_1h_input_tokens" inputmode="numeric" autocomplete="off" placeholder="未记录" aria-describedby="usage-help"></label>
+              <label>其中：推理输出<input name="reasoning_output_tokens" inputmode="numeric" autocomplete="off" placeholder="未记录" aria-describedby="usage-help"></label>
+            </div><p class="inclusion-note">总输入已包含缓存读取和写入；1 小时写入属于写入总量；推理输出已包含在总输出中。</p></fieldset>
+            <fieldset><legend>02 <span>每百万 Token 单价</span></legend>
+              <label class="preset-label" for="rate-preset">参考费率<span>选择后填入，可继续修改</span></label><select id="rate-preset" name="rate_preset"><option value="">自定义 · 单价留空</option></select><p id="rate-source" class="field-help">请自行选择与模型、上下文长度及服务档位匹配的费率。</p>
+              <p class="field-help">普通缓存写入可填提供方的对应单价；Anthropic 可填写 5 分钟档位。</p><div class="field-grid rate-grid">
+                <label>普通输入<span class="input-unit"><input name="rate_input" inputmode="decimal" autocomplete="off" placeholder="未提供"><span>$</span></span></label>
+                <label>缓存读取<span class="input-unit"><input name="rate_cached_input" inputmode="decimal" autocomplete="off" placeholder="未提供"><span>$</span></span></label>
+                <label>普通缓存写入<span class="input-unit"><input name="rate_cache_write_input" inputmode="decimal" autocomplete="off" placeholder="未提供"><span>$</span></span></label>
+                <label>缓存写入 · 1 小时<span class="input-unit"><input name="rate_cache_write_1h_input" inputmode="decimal" autocomplete="off" placeholder="未提供"><span>$</span></span></label>
+                <label class="wide">输出（包含推理）<span class="input-unit"><input name="rate_output" inputmode="decimal" autocomplete="off" placeholder="未提供"><span>$</span></span></label>
+              </div>
+            </fieldset>
+            <p id="form-error" class="form-error" role="alert" hidden></p><button id="calculate" class="button primary" type="submit">计算费用 <span aria-hidden="true">↗</span></button>
+          </form>
+          <div id="quote-result" class="quote-result" aria-live="polite"><span id="quote-label">费用估算</span><strong id="quote-amount">—</strong><p id="quote-detail">填写用量与单价后计算。未知项目不会自动计为 0。</p></div>
+        </aside>
+      </div>
+      <section id="algorithms" class="panel algorithms" aria-labelledby="algorithms-title">
+        <div class="panel-heading"><div><p class="eyebrow">DECISION INTERFACE</p><h2 id="algorithms-title">通用算法接口</h2></div><span class="tag">1 个策略已实现</span></div>
+        <div class="algorithm-layout"><div><p class="intro">策略接收上下文，从允许的动作中返回一个选择。</p><div class="algorithm-flow"><code>context</code><span aria-hidden="true">→</span><code>choose(context)</code><span aria-hidden="true">→</span><code>allowed action</code></div></div><div class="policy-card"><div><strong>FirstAvailablePolicy</strong><span class="tag active">已实现</span></div><p>按原顺序选择第一个估算在已声明预算内的动作；无可行选项时停止。</p></div></div>
+        <div class="future-policies"><span>待实现策略</span><span>OCBA</span><span>MCTS</span><span>Pareto</span><span>AHP</span></div>
+      </section>
+    </main>
+    <footer class="page-footer"><span>MonkeyMonitor</span><p>页面可见时每 30 秒刷新 · 仅显示用量与运行信息</p></footer>
+  </div>
+</body>
+</html>

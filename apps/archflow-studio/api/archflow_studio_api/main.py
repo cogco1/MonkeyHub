@@ -205,6 +205,13 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # code path. A provider that cannot name its own version refuses here,
     # before a request arrives, rather than at the first sentence.
     app.state.intent_compiler = compiler_from_settings(settings)
+    if settings.monitor_dir is not None:
+        from monkeymonitor.store import UsageLog
+        from .application.monitoring import MonitoredCompiler
+
+        app.state.intent_compiler = MonitoredCompiler(
+            app.state.intent_compiler, UsageLog(settings.monitor_dir)
+        )
     app.add_exception_handler(StudioError, _handle_studio_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)

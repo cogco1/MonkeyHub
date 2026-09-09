@@ -38,7 +38,9 @@ its currently implemented limits are described in `docs/ARCHITECTURE.md`.
 ## Framework versus project data
 
 - `archflow/` contains shared project, fact and technical contracts. `monkeyarch/`
-  owns 3D modeling algorithms; `monkeydiagram/` owns drawing algorithms. The Studio
+  owns 3D modeling algorithms; `monkeydiagram/` owns drawing algorithms.
+  `monkeymonitor/` owns independent engineering usage, pricing and budget advice;
+  its explicitly configured diagnostic logs are not project state. The Studio
   host composes peer workspaces. Core code imports neither workflow, and the
   workflows do not import one another; see `docs/REPO_LAYOUT.md`.
 - `probes/<project_id>/` contains explicitly promoted, committed building

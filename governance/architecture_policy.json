@@ -5,6 +5,7 @@
     "archflow",
     "monkeyarch",
     "monkeydiagram",
+    "monkeymonitor",
     "tools",
     "apps/archflow-studio/api",
     "tests",
@@ -160,13 +161,25 @@
       "kind": "wip_input",
       "owner": "project.inputs",
       "reason": "writes only input/runner/seats.json when the caller explicitly saves the authored seat pack; retaining replaced bytes belongs to the caller through project.repository"
+    },
+    {
+      "path": "monkeymonitor/store.py",
+      "function": "append",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "diagnostics",
+      "owner": "monkeymonitor",
+      "reason": "Metadata-only usage.jsonl is appended under an explicitly supplied noncanonical diagnostics directory; it does not write any project document."
     }
   ],
   "forbidden_layer_imports": [
     {
       "source": "archflow",
       "targets": [
-        "labs"
+        "labs",
+        "monkeymonitor"
       ],
       "reason": "labs/ is interest-driven exploration: a lab may import the spine, the spine may never import a lab. A lab graduates by becoming a card with an owner in the module registry, and the lab copy is retired in the same change (labs/README.md)."
     },
@@ -197,7 +210,8 @@
         "docs",
         "tests",
         "tools",
-        "archive"
+        "archive",
+        "monkeymonitor"
       ],
       "reason": "Reusable framework code cannot import repository tooling, tests, or documentation modules. Probe imports are rejected by the dedicated probe reverse-import rule."
     },
@@ -337,7 +351,8 @@
       "source": "archflow",
       "targets": [
         "monkeyarch",
-        "monkeydiagram"
+        "monkeydiagram",
+        "monkeymonitor"
       ],
       "reason": "The shared ArchFlow core provides facts, persistence and CAD contracts; it cannot depend on either workflow."
     },
@@ -350,7 +365,8 @@
         "tests",
         "tools",
         "probes",
-        "archive"
+        "archive",
+        "monkeymonitor"
       ],
       "reason": "The 3D workflow uses ArchFlow contracts and ports; the host coordinates drawing handoffs. Project-specific data and tooling are not runtime dependencies."
     },
@@ -363,7 +379,8 @@
         "tests",
         "tools",
         "probes",
-        "archive"
+        "archive",
+        "monkeymonitor"
       ],
       "reason": "The drawing workflow consumes retained source contracts through ArchFlow; it cannot import 3D workflow internals or project-specific code."
     },
@@ -381,6 +398,18 @@
         "archflow.project.repository"
       ],
       "reason": "Geometry compilation returns a domain value and has no project writer."
+    },
+    {
+      "source": "monkeymonitor",
+      "targets": [
+        "archflow",
+        "monkeyarch",
+        "monkeydiagram",
+        "archflow_studio_api",
+        "probes",
+        "archive"
+      ],
+      "reason": "The independent usage and pricing tool receives plain values; project and workflow execution remain with their owners."
     }
   ],
   "authority_symbol_patterns": [
