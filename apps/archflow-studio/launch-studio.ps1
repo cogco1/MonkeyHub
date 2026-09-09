@@ -1,7 +1,13 @@
 ﻿param(
     [string]$RuntimeConfig = (Join-Path $PSScriptRoot 'runtime.json'),
     [switch]$NoBrowser,
-    [switch]$HideConsole
+    [switch]$HideConsole,
+    [switch]$Hub,
+    [string]$Python,
+    [string]$RuntimeRoot,
+    [string]$HubWebDir,
+    [string]$StudioWebDir,
+    [ValidateRange(1, 65535)][int]$Port = 8790
 )
 
 # One-click start for MonkeyArch: the ArchFlow Studio API (FastAPI) and the web client
@@ -53,6 +59,11 @@ $repoRoot = (Resolve-Path (Join-Path $studioRoot '..\..')).Path
 $apiRoot = Join-Path $studioRoot 'api'
 $webRoot = Join-Path $studioRoot 'web'
 $logRoot = Join-Path $studioRoot '.runtime'
+if ($Hub) {
+    if (-not $RuntimeRoot) { $RuntimeRoot = Join-Path $env:LOCALAPPDATA 'MonkeyHub' }
+    $RuntimeRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RuntimeRoot)
+    $logRoot = Join-Path $RuntimeRoot 'logs'
+}
 $assetRoot = Join-Path $studioRoot 'assets'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -63,10 +74,15 @@ $script:Children = @()
 $script:Splash = $null
 $script:FaultOpen = $false
 $script:Quitting = $false
+$script:LaunchLocks = @()
 
 # --- the application name and the same semantic palette the web shell uses
 $BrandName = 'MonkeyArch'
 $BrandLineOne = 'ArchFlow modeling workspace'
+if ($Hub) {
+    $BrandName = 'MonkeyHub'
+    $BrandLineOne = 'Monkey applications on this computer'
+}
 $StepCount = 8
 
 $Ink = [System.Drawing.Color]::FromArgb(25, 27, 25)
@@ -296,15 +312,15 @@ function Show-Fault([string]$Message) {
     # The same window, turned red. Every `throw` sentence in this script is written to be read
     # here, so nothing is reworded on the way: the message is the message.
     Write-Host ''
-    Write-Host "$BrandName did not start." -ForegroundColor Red
+    Write-Host "$BrandName needs attention." -ForegroundColor Red
     Write-Host $Message -ForegroundColor Red
     if (-not $script:Splash -or $script:Splash.Form.IsDisposed) { New-Splash | Out-Null }
     $splash = $script:Splash
     $splash.Form.BackColor = $FaultInk
     $splash.Title.Font = New-Object System.Drawing.Font('Segoe UI', 17, [System.Drawing.FontStyle]::Bold)
-    $splash.Title.Text = "$BrandName did not start"
+    $splash.Title.Text = "$BrandName needs attention"
     $splash.Title.Top = 30
-    $splash.Tagline.Text = 'The launcher refused. Nothing was left running.'
+    $splash.Tagline.Text = 'See the details and logs below.'
     $splash.Tagline.ForeColor = $FaultRed
     $splash.Tagline.Top = 70
     $splash.Progress.Visible = $false
@@ -374,15 +390,179 @@ function Wait-Http([string]$url, [int]$seconds, [System.Diagnostics.Process]$Pro
     return $false
 }
 
-function Stop-Children {
-    foreach ($child in $script:Children) {
-        $process = $child.Process
-        if ($process -and -not $process.HasExited) {
-            # /T because the web child is cmd.exe with node under it: killing cmd alone
-            # would leave a Vite server holding the port.
-            try { & taskkill /PID $process.Id /T /F 2>&1 | Out-Null } catch { }
+function Lock-LaunchPorts([int[]]$Ports) {
+    foreach ($number in ($Ports | Sort-Object -Unique)) {
+        if ($number -lt 1 -or $number -gt 65535) { throw "Invalid port: $number" }
+        $mutex = New-Object System.Threading.Mutex($false, "Local\MonkeyApps-Port-$number")
+        $acquired = $false
+        try { $acquired = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $acquired = $true }
+        if (-not $acquired) {
+            $mutex.Dispose()
+            throw "Another Monkey launcher is already opening or using port $number. Use its existing window or tray icon."
+        }
+        $script:LaunchLocks += $mutex
+        if (-not (Test-PortFree $number)) {
+            throw "Port $number is already in use. Choose another port or close that application yourself; this launcher has not taken ownership of it."
         }
     }
+}
+
+function Get-SourceRevision([string]$Root) {
+    $versionFile = Join-Path $Root 'source-version.txt'
+    if (Test-Path -LiteralPath $versionFile -PathType Leaf) {
+        $revision = (Get-Content -LiteralPath $versionFile -Raw -Encoding utf8).Trim()
+    } else {
+        $result = Invoke-Quiet 'git' @('-C', $Root, 'rev-parse', 'HEAD')
+        if ($result.ExitCode -ne 0) { throw 'Cannot identify this source version. The packaged source-version.txt is missing and Git could not read HEAD.' }
+        $revision = $result.Output.Trim()
+    }
+    if ($revision -notmatch '^[0-9a-fA-F]{40}$') { throw 'The source version must be a complete 40-character Git commit id.' }
+    return $revision.ToLowerInvariant()
+}
+
+function ConvertTo-ProcessArgument([string]$Value) {
+    # Windows command-line quoting, including quotes and trailing backslashes in paths.
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') { return $Value }
+    $escaped = [regex]::Replace($Value, '(\\*)"', '$1$1\"')
+    return '"' + [regex]::Replace($escaped, '(\\+)$', '$1$1') + '"'
+}
+
+function Start-OwnedProcess {
+    param([string]$Name, [string]$Exe, [string[]]$Arguments, [string]$Directory,
+          [string]$OutputLog, [string]$ErrorLog)
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $Exe
+    $info.Arguments = (($Arguments | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
+    $info.WorkingDirectory = $Directory
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardInput = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $info
+    # Copy bytes asynchronously without PowerShell callbacks on background .NET threads.
+    $outStream = New-Object System.IO.FileStream($OutputLog, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite, 1)
+    $errStream = New-Object System.IO.FileStream($ErrorLog, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite, 1)
+    try { [void]$process.Start() } catch { $outStream.Dispose(); $errStream.Dispose(); $process.Dispose(); throw }
+    $child = [pscustomobject]@{
+        Name = $Name; Process = $process; ErrorLog = $ErrorLog; OutputLog = $OutputLog
+        OutputStream = $outStream; ErrorStream = $errStream
+        OutputCopy = $process.StandardOutput.BaseStream.CopyToAsync($outStream)
+        ErrorCopy = $process.StandardError.BaseStream.CopyToAsync($errStream)
+        StopRequested = $false; LogsClosed = $false
+    }
+    $script:Children += $child
+    return $child
+}
+
+function Wait-ManagedHealth {
+    param([string]$Url, [int]$Seconds, [System.Diagnostics.Process]$Process,
+          [string]$InstanceId, [string]$Service, [string]$SourceRevision)
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $deadline) {
+        if ($Process.HasExited) { return $false }
+        $health = $null
+        try { $health = Invoke-RestMethod -Uri $Url -TimeoutSec 2 } catch { }
+        if ($health) {
+            if ($health.status -ne 'ok' -or $health.service -cne $Service -or
+                $health.managedInstanceId -cne $InstanceId -or
+                ($health.processId -ne $Process.Id -and $health.parentProcessId -ne $Process.Id) -or
+                $health.sourceRevision -cne $SourceRevision -or -not $health.serverVersion) {
+                throw "Service identity mismatch at $Url. Expected $Service, instance $InstanceId, PID $($Process.Id), source $SourceRevision; received $($health.service), instance $($health.managedInstanceId), PID $($health.processId), source $($health.sourceRevision), version $($health.serverVersion)."
+            }
+            Write-Host "  service : $($health.service) $($health.serverVersion), source $($health.sourceRevision), PID $($health.processId)"
+            return $true
+        }
+        Invoke-Pump 200
+    }
+    return $false
+}
+
+function Get-ManagedViteScript {
+    # Keep the existing dev sync and Vite configuration, but own Node directly and close Vite.
+    return @'
+let stopping = false;
+let finish;
+const stopped = new Promise(resolve => { finish = resolve; });
+const stop = () => { stopping = true; finish(); };
+let pending = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', data => {
+  pending += data;
+  const lines = pending.split(/\r?\n/);
+  pending = lines.pop();
+  if (lines.some(line => line.trim() === 'stop')) stop();
+});
+process.stdin.on('end', stop);
+process.on('SIGINT', stop);
+process.on('SIGTERM', stop);
+let server;
+try {
+  await import('./scripts/sync-rhino3dm.mjs');
+  const { createServer } = await import('vite');
+  server = await createServer({ server: { port: Number(process.argv[1]), strictPort: true } });
+  if (!stopping) await server.listen();
+  if (!stopping) console.log('MONKEY_WEB_READY', process.argv[2], process.pid);
+  await stopped;
+} catch (error) {
+  console.error(error);
+  process.exitCode = 1;
+} finally {
+  if (server) await server.close();
+  process.stdin.destroy();
+}
+'@
+}
+
+function Wait-OwnedWeb([object]$Child, [string]$InstanceId, [int]$WebPort) {
+    $deadline = (Get-Date).AddSeconds(90)
+    $marker = "MONKEY_WEB_READY $InstanceId $($Child.Process.Id)"
+    while ((Get-Date) -lt $deadline) {
+        if ($Child.Process.HasExited) { return $false }
+        if ((Get-LogTail $Child.OutputLog 20).Contains($marker)) {
+            return (Wait-Http "http://127.0.0.1:$WebPort/" 5 $Child.Process)
+        }
+        Invoke-Pump 200
+    }
+    return $false
+}
+
+function Stop-Children {
+    $script:Quitting = $true
+    if ($script:Watchdog) { $script:Watchdog.Stop() }
+    $active = @($script:Children | Where-Object { -not $_.Process.HasExited })
+    if ($active.Count) {
+        if (-not $script:Splash -or $script:Splash.Form.IsDisposed) { New-Splash | Out-Null }
+        Set-SplashStep 8 'Finishing running work and closing services...'
+    }
+    foreach ($child in $script:Children) {
+        if (-not $child.Process.HasExited -and -not $child.StopRequested) {
+            $child.StopRequested = $true
+            try {
+                $child.Process.StandardInput.WriteLine('stop')
+                $child.Process.StandardInput.Flush()
+            } catch { } finally {
+                # EOF is also a normal stop request, including when the launcher exits.
+                try { $child.Process.StandardInput.Close() } catch { }
+            }
+        }
+    }
+    foreach ($child in $script:Children) {
+        while (-not $child.Process.HasExited) { Invoke-Pump 50 }
+        if (-not $child.LogsClosed) {
+            $child.Process.WaitForExit()
+            try {
+                $child.OutputCopy.GetAwaiter().GetResult()
+                $child.ErrorCopy.GetAwaiter().GetResult()
+            } finally {
+                $child.OutputStream.Dispose()
+                $child.ErrorStream.Dispose()
+                $child.LogsClosed = $true
+            }
+        }
+    }
+    Close-Splash
 }
 
 function Start-Tray([string]$url) {
@@ -416,10 +596,77 @@ function Start-Tray([string]$url) {
 }
 
 function Invoke-Quit {
+    if ($script:Quitting) { return }
     $script:Quitting = $true
-    if ($script:Tray) { $script:Tray.Visible = $false }
     Stop-Children
+    if ($script:Tray) { $script:Tray.Visible = $false }
     [System.Windows.Forms.Application]::ExitThread()
+}
+
+function Invoke-AppLoop {
+    Set-SplashStep 8 'opening the application'
+    if ($script:OpenBrowser -and -not $NoBrowser) { Start-Process $script:WebUrl }
+    Close-Splash
+    $tray = Start-Tray $script:WebUrl
+    Write-Host "$BrandName is running. Quit it from the tray icon." -ForegroundColor Green
+    Write-Host "  logs: $logRoot"
+    $watchdog = New-Object System.Windows.Forms.Timer
+    $watchdog.Interval = 2000
+    $watchdog.Add_Tick({
+        if ($script:Quitting) { return }
+        foreach ($child in $script:Children) {
+            if ($child.Process.HasExited) {
+                $script:Watchdog.Stop()
+                $message = "$($child.Name) exited with code $($child.Process.ExitCode). Its log said:$([Environment]::NewLine)$(Get-LogTail $child.ErrorLog 25)$([Environment]::NewLine)(logs: $script:LogRoot)"
+                Stop-Children
+                if ($script:Tray) { $script:Tray.Visible = $false }
+                Show-Fault $message
+                [System.Windows.Forms.Application]::ExitThread()
+                return
+            }
+        }
+    })
+    $script:Watchdog = $watchdog
+    $watchdog.Start()
+    try { [System.Windows.Forms.Application]::Run() } finally {
+        $watchdog.Stop()
+        $watchdog.Dispose()
+        $tray.Visible = $false
+        $tray.Dispose()
+        $script:Watchdog = $null
+        $script:Tray = $null
+    }
+}
+
+function Invoke-HubLaunch {
+    Set-SplashStep 1 'checking the Hub package'
+    if (-not $Python -or -not (Test-Path -LiteralPath $Python -PathType Leaf)) { throw 'Hub -Python must name the installed Python executable.' }
+    foreach ($directory in @($HubWebDir, $StudioWebDir)) {
+        if (-not $directory -or -not (Test-Path -LiteralPath (Join-Path $directory 'index.html') -PathType Leaf)) {
+            throw "The built web directory is missing its index.html: $directory"
+        }
+    }
+    $Python = (Resolve-Path -LiteralPath $Python).ProviderPath
+    $HubWebDir = (Resolve-Path -LiteralPath $HubWebDir).ProviderPath
+    $StudioWebDir = (Resolve-Path -LiteralPath $StudioWebDir).ProviderPath
+    $entry = Join-Path $repoRoot 'apps\monkeyhub\run.py'
+    if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) { throw "The Hub entry is missing: $entry" }
+    Lock-LaunchPorts @($Port)
+    $revision = Get-SourceRevision $repoRoot
+    $instanceId = [Guid]::NewGuid().ToString()
+    $hubOut = Join-Path $logRoot "hub-$stamp.out.log"
+    $hubErr = Join-Path $logRoot "hub-$stamp.err.log"
+    $hubArgs = @('-u', $entry, '--runtime-root', $RuntimeRoot, '--hub-web-dir', $HubWebDir,
+        '--studio-web-dir', $StudioWebDir, '--port', "$Port", '--no-browser',
+        '--managed-stdin', '--managed-instance-id', $instanceId)
+    Set-SplashStep 4 'starting MonkeyHub'
+    $child = Start-OwnedProcess 'MonkeyHub' $Python $hubArgs $repoRoot $hubOut $hubErr
+    Set-SplashStep 5 "waiting for MonkeyHub on :$Port"
+    if (-not (Wait-ManagedHealth "http://127.0.0.1:$Port/api/health" 60 $child.Process $instanceId 'monkeyhub-api' $revision)) {
+        throw "MonkeyHub did not answer with its service identity. Its log said:$([Environment]::NewLine)$(Get-LogTail $hubErr 25)$([Environment]::NewLine)(full log: $hubErr)"
+    }
+    $script:WebUrl = "http://127.0.0.1:$Port"
+    $script:OpenBrowser = $true
 }
 
 # Everything below runs inside one try: a refusal reaches the reader as the sentence that
@@ -428,6 +675,12 @@ function Invoke-Quit {
 try {
 
 New-Splash | Out-Null
+
+if ($Hub) {
+    Invoke-HubLaunch
+    Invoke-AppLoop
+    return
+}
 
 # --- runtime.json selects the project and is validated before anything is started
 Set-SplashStep 1 'validating runtime.json'
@@ -470,11 +723,18 @@ Write-Host "  api     : http://127.0.0.1:$apiPort   web: http://127.0.0.1:$webPo
 
 # --- preflight: python + fastapi, node_modules, free ports
 Set-SplashStep 2 'checking python and fastapi'
-$check = Invoke-Quiet $pythonExe ($pythonArgs + @('-c', 'import fastapi, uvicorn'))
+$check = Invoke-Quiet $pythonExe ($pythonArgs + @('-c', 'import fastapi, uvicorn, json, sys; print(json.dumps(dict(executable=sys.executable, arguments=sys.orig_argv[1:-2])))'))
 if ($check.ExitCode -ne 0) {
     $requirements = Join-Path $repoRoot 'apps\archflow-studio\api\requirements.txt'
     throw "'$($runtime.python)' cannot import fastapi/uvicorn. Install them with:$([Environment]::NewLine)  $($runtime.python) -m pip install -r $requirements$([Environment]::NewLine)$($check.Output)"
 }
+# Resolve py -3.12 to its interpreter; keep actual Python flags without owning a launcher shim.
+$pythonProbe = ($check.Output.Trim() -split '[\r\n]+')[-1] | ConvertFrom-Json
+$pythonExe = [string]$pythonProbe.executable
+$pythonArgs = @($pythonProbe.arguments)
+if ($apiPort -eq $webPort) { throw 'The API and web client need different ports.' }
+Lock-LaunchPorts @($apiPort, $webPort)
+$sourceRevision = Get-SourceRevision $repoRoot
 Set-SplashStep 3 'checking web dependencies'
 if (-not (Test-Path -LiteralPath (Join-Path $webRoot 'node_modules\.bin\vite.cmd'))) {
     Set-SplashStep 3 'installing web dependencies · this takes a few minutes'
@@ -482,15 +742,13 @@ if (-not (Test-Path -LiteralPath (Join-Path $webRoot 'node_modules\.bin\vite.cmd
     $installLog = Join-Path $logRoot "npm-install-$stamp.log"
     $installErr = Join-Path $logRoot "npm-install-$stamp.err.log"
     # Started rather than called, so the launch surface stays responsive through a long install.
-    $install = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', 'npm.cmd install') -WorkingDirectory $webRoot -PassThru -NoNewWindow -RedirectStandardOutput $installLog -RedirectStandardError $installErr
+    $install = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', 'npm.cmd install') -WorkingDirectory $webRoot -PassThru -WindowStyle Hidden -RedirectStandardOutput $installLog -RedirectStandardError $installErr
     while (-not $install.HasExited) { Invoke-Pump 100 }
     $install.WaitForExit()
     if ($install.ExitCode -ne 0) {
         throw "npm install failed in $webRoot$([Environment]::NewLine)$(Get-LogTail $installErr 25)$([Environment]::NewLine)(full logs: $installLog, $installErr)"
     }
 }
-if (-not (Test-PortFree $apiPort)) { throw "port $apiPort is already in use (a $BrandName API is running, or another program holds it)." }
-if (-not (Test-PortFree $webPort)) { throw "port $webPort is already in use (a Vite dev server is running, or another program holds it)." }
 if ([string]$runtime.codex -and -not (Test-Path -LiteralPath ([string]$runtime.codex) -PathType Leaf)) {
     Write-Host "  warning : codex not found at $($runtime.codex); the API refuses to start with intent_provider codex until it is (it needs codex --version to sign its receipts)." -ForegroundColor Yellow
 }
@@ -556,78 +814,36 @@ $apiOut = Join-Path $logRoot "api-$stamp.out.log"
 $apiErr = Join-Path $logRoot "api-$stamp.err.log"
 $webOut = Join-Path $logRoot "web-$stamp.out.log"
 $webErr = Join-Path $logRoot "web-$stamp.err.log"
-try {
-    Set-SplashStep 4 'starting the API'
-    $apiArgs = $pythonArgs + @('-m', 'archflow_studio_api.main', '--host', '127.0.0.1', '--port', "$apiPort")
-    $api = Start-Process -FilePath $pythonExe -ArgumentList $apiArgs -WorkingDirectory $apiRoot -PassThru -NoNewWindow -RedirectStandardOutput $apiOut -RedirectStandardError $apiErr
-    $script:Children += [pscustomobject]@{ Name = 'the API'; Process = $api; ErrorLog = $apiErr }
-    Set-SplashStep 5 'waiting for the API to answer /api/health'
-    if (-not (Wait-Http "http://127.0.0.1:$apiPort/api/health" 60 $api)) {
-        throw "the API did not answer /api/health. Its log said:$([Environment]::NewLine)$(Get-LogTail $apiErr 25)$([Environment]::NewLine)(full log: $apiErr)"
-    }
-    $health = (Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$apiPort/api/health").Content
-    Set-SplashStep 5 'the API answered /api/health'
-    Write-Host "  api up  : $health"
-
-    Set-SplashStep 6 'starting the web client'
-    $web = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', "npm.cmd run dev -- --port $webPort --strictPort") -WorkingDirectory $webRoot -PassThru -NoNewWindow -RedirectStandardOutput $webOut -RedirectStandardError $webErr
-    $script:Children += [pscustomobject]@{ Name = 'the web client'; Process = $web; ErrorLog = $webErr }
-    Set-SplashStep 7 "waiting for the web client on :$webPort"
-    if (-not (Wait-Http "http://127.0.0.1:$webPort/" 90 $web)) {
-        throw "the web client did not answer on :$webPort. Its log said:$([Environment]::NewLine)$(Get-LogTail $webErr 25)$([Environment]::NewLine)$(Get-LogTail $webOut 10)$([Environment]::NewLine)(full logs: $webErr, $webOut)"
-    }
-    Set-SplashStep 7 'the web client answered'
-    Write-Host "  web up  : http://127.0.0.1:$webPort"
-
-    $script:WebUrl = "http://127.0.0.1:$webPort"
-    Set-SplashStep 8 'opening the browser'
-    if ($runtime.open_browser -and -not $NoBrowser) { Start-Process $script:WebUrl }
-    # A beat with the last step on screen: the browser takes a moment to paint, and a surface
-    # that vanished before it did would look like the launch had failed.
-    Invoke-Pump 1400
-    Close-Splash
-
-    $tray = Start-Tray $script:WebUrl
-    Write-Host ""
-    Write-Host "$BrandName is running. Quit it from the tray icon." -ForegroundColor Green
-    Write-Host "  logs: $logRoot"
-
-    # The watchdog: the same check the console loop used to make, answering into a balloon
-    # tip and a red window instead of into a console nobody is looking at.
-    $watchdog = New-Object System.Windows.Forms.Timer
-    $watchdog.Interval = 2000
-    $watchdog.Add_Tick({
-        if ($script:Quitting) { return }
-        foreach ($child in $script:Children) {
-            if ($child.Process.HasExited) {
-                $script:Watchdog.Stop()
-                $script:Quitting = $true
-                $message = "$($child.Name) exited with code $($child.Process.ExitCode). Its log said:$([Environment]::NewLine)$(Get-LogTail $child.ErrorLog 25)$([Environment]::NewLine)(logs: $script:LogRoot)"
-                if ($script:Tray) {
-                    $script:Tray.ShowBalloonTip(8000, "$BrandName stopped", "$($child.Name) exited. The window behind this says why.", [System.Windows.Forms.ToolTipIcon]::Error)
-                }
-                Stop-Children
-                if ($script:Tray) { $script:Tray.Visible = $false }
-                Show-Fault $message
-                [System.Windows.Forms.Application]::ExitThread()
-                return
-            }
-        }
-    })
-    $script:Watchdog = $watchdog
-    $watchdog.Start()
-    [System.Windows.Forms.Application]::Run()
-    $watchdog.Stop()
-    $tray.Visible = $false
-    $tray.Dispose()
-} finally {
-    Stop-Children
-    Write-Host "$BrandName stopped."
+Set-SplashStep 4 'starting the API'
+$instanceId = [Guid]::NewGuid().ToString()
+$apiArgs = $pythonArgs + @('-m', 'archflow_studio_api.main', '--host', '127.0.0.1', '--port', "$apiPort",
+    '--managed-stdin', '--managed-instance-id', $instanceId)
+$api = Start-OwnedProcess 'the Studio API' $pythonExe $apiArgs $apiRoot $apiOut $apiErr
+Set-SplashStep 5 'waiting for the API identity'
+if (-not (Wait-ManagedHealth "http://127.0.0.1:$apiPort/api/health" 60 $api.Process $instanceId 'archflow-studio-api' $sourceRevision)) {
+    throw "The API did not answer with its service identity. Its log said:$([Environment]::NewLine)$(Get-LogTail $apiErr 25)$([Environment]::NewLine)(full log: $apiErr)"
 }
 
+Set-SplashStep 6 'starting the web client'
+$env:ARCHFLOW_STUDIO_API_URL = "http://127.0.0.1:$apiPort"
+$node = (Get-Command 'node.exe' -ErrorAction Stop).Source
+$webArgs = @('--input-type=module', '-e', (Get-ManagedViteScript), '--', "$webPort", $instanceId)
+$web = Start-OwnedProcess 'the Studio web client' $node $webArgs $webRoot $webOut $webErr
+Set-SplashStep 7 "waiting for the web client on :$webPort"
+if (-not (Wait-OwnedWeb $web $instanceId $webPort)) {
+    throw "The web client did not start on :$webPort. Its log said:$([Environment]::NewLine)$(Get-LogTail $webErr 25)$([Environment]::NewLine)$(Get-LogTail $webOut 10)$([Environment]::NewLine)(full logs: $webErr, $webOut)"
+}
+$script:WebUrl = "http://127.0.0.1:$webPort"
+$script:OpenBrowser = [bool]$runtime.open_browser
+Invoke-AppLoop
+
 } catch {
-    # The inner finally above has already stopped whatever had started.
+    $failure = $_.Exception.Message
+    Stop-Children
     if ($script:Tray) { try { $script:Tray.Visible = $false } catch { } }
-    Show-Fault $_.Exception.Message
+    Show-Fault $failure
     exit 1
+} finally {
+    Stop-Children
+    foreach ($mutex in $script:LaunchLocks) { $mutex.ReleaseMutex(); $mutex.Dispose() }
 }

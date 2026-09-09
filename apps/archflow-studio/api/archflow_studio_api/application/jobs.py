@@ -85,6 +85,8 @@ class JobRegistry:
             raise ValueError("max_workers must be at least 1")
         self._events = events
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        self._accepting = True
         self._jobs: dict[str, Job] = {}
         self._by_candidate: dict[str, str] = {}
         # Admission order preserves the exclusive resource lane's order.
@@ -99,6 +101,17 @@ class JobRegistry:
     @property
     def max_workers(self) -> int:
         return self._max_workers
+
+    @property
+    def accepting(self) -> bool:
+        with self._lock:
+            return self._accepting
+
+    def stop_accepting(self) -> None:
+        """Close admission while already accepted work keeps its place."""
+
+        with self._lock:
+            self._accepting = False
 
     def submit(
         self,
@@ -134,6 +147,12 @@ class JobRegistry:
             write_refs=frozenset(write_refs),
         )
         with self._lock:
+            if not self._accepting:
+                raise StudioError(
+                    503,
+                    "STUDIO_STOPPING",
+                    "Studio is shutting down and no longer accepts candidate jobs.",
+                )
             claimed = self._by_candidate.get(candidate_id)
             if claimed is None:
                 self._jobs[job.job_id] = job
@@ -200,8 +219,11 @@ class JobRegistry:
             )
 
     def shutdown(self) -> None:
-        """Stop accepting work and let the running candidates finish."""
+        """Finish every accepted job before closing the worker pool."""
 
+        with self._idle:
+            self._accepting = False
+            self._idle.wait_for(lambda: not self._pending and not self._running)
         self._workers.shutdown(wait=True)
 
     # ---- admission
@@ -291,6 +313,9 @@ class JobRegistry:
             )
             self._release(job_id)
             return
+        except BaseException:
+            self._release(job_id)
+            raise
         self._publish(
             self._transition(
                 job_id,
@@ -306,6 +331,7 @@ class JobRegistry:
         with self._lock:
             if job_id in self._running:
                 self._running.remove(job_id)
+            self._idle.notify_all()
         self._admit()
 
     def _transition(self, job_id: str, **changes: Any) -> Job:

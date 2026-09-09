@@ -3667,7 +3667,9 @@
         "read_candidate_delta",
         "replay_candidate",
         "prepare_combined_candidate",
-        "POST /api/candidates/combine"
+        "POST /api/candidates/combine",
+        "JobRegistry.stop_accepting",
+        "JobRegistry.accepting"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -3708,7 +3710,8 @@
         "the existing event stream also carries model_asset.registered and working_copy.option_added with runId; clients reread retained lists, and events never substitute for project records",
         "separate candidate workspaces may compute shared read or write scopes concurrently; worker capacity and the single Rhino export resource remain queue limits",
         "retained candidates descend through exact parent runner/record references from their declared Stage; replays never rewrite an operator base digest",
-        "independent same-Stage component changes form a new candidate; overlapping writes or declared dependency effects refuse combination before creating a run"
+        "independent same-Stage component changes form a new candidate; overlapping writes or declared dependency effects refuse combination before creating a run",
+        "Shutdown closes admission before draining all accepted queued and running jobs, and only then closes the executor"
       ],
       "status": "canonical",
       "tests": [
@@ -3997,7 +4000,9 @@
         "every wire DTO and its camelCase aliases, and the router mounting order",
         "GET /api/health and GET /api/protocol",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement; launcher reads saved intent defaults for the next launch",
-        "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of each intent outcome without changing its result or retrying a call"
+        "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of each intent outcome without changing its result or retrying a call",
+        "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity; optional prebuilt Studio web hosting",
+        "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -4056,7 +4061,10 @@
         "save_user_settings",
         "GET /api/settings/user",
         "PUT /api/settings/user",
-        "MonitoredCompiler"
+        "MonitoredCompiler",
+        "ApplicationSettingsDto",
+        "read_application_settings",
+        "save_application_settings"
       ],
       "depends_on": [
         "monkeymonitor"
@@ -4065,7 +4073,10 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/*.py",
         "apps/archflow-studio/api/tests/test_health.py",
         "apps/archflow-studio/api/tests/test_settings.py",
-        "apps/archflow-studio/api/tests/test_errors.py"
+        "apps/archflow-studio/api/tests/test_errors.py",
+        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/applications.py",
+        "apps/monkeyhub/launch-hub.ps1"
       ],
       "invariants": [
         "create_app touches no filesystem and binds no project - a wrong project root is discovered by the request that needs it",
@@ -4077,7 +4088,9 @@
         "a refusal that ends a clarification carries a null continuationToken, so a client can tell 'answer this' from 'this is what the system lacks' without reading the sentence",
         "ports.py holds Protocols only: there are deliberately no implementations here",
         "projectBound in health is whether the binding opens, not a claim about what it contains",
-        "remote servers do not advertise user-settings and answer authenticated settings routes with 404; saving preferences never changes the running compiler or project, and null clears a saved override"
+        "remote servers do not advertise user-settings and answer authenticated settings routes with 404; saving preferences never changes the running compiler or project, and null clears a saved override",
+        "Managed stop refuses new jobs, ends SSE and drains accepted work before normal process exit; standalone startup remains supported",
+        "Hub application launch choices do not replace user appearance or provider preferences, and never write project state"
       ],
       "status": "canonical",
       "tests": [
@@ -4103,7 +4116,8 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/protocol.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/settings.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/settings.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py"
+        "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
+        "apps/archflow-studio/launch-studio.ps1"
       ]
     },
     {
@@ -5127,7 +5141,8 @@
         "Explicit-source Codex token event normalization and duplicate/counter-discontinuity handling",
         "Caller-selected per-million-token RateCard and disjoint-bucket USD estimates",
         "Pure Algorithm selection interface and FirstAvailablePolicy baseline over caller-owned actions and budgets",
-        "Loopback MonkeyMonitor UI and CLI, and optional usage.jsonl diagnostic append/read under a caller-supplied noncanonical data directory"
+        "Loopback MonkeyMonitor UI and CLI, and optional usage.jsonl diagnostic append/read under a caller-supplied noncanonical data directory",
+        "Optional managed stdin lifecycle and additive health identity for a Hub-owned CLI process; stop/EOF stops listening and waits for active request threads"
       ],
       "does_not_own": [
         "Architectural evaluation, geometry, candidate execution or formal design acceptance",
@@ -5166,14 +5181,16 @@
       "depends_on": [],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
-        "monkeymonitor/__main__.py"
+        "monkeymonitor/__main__.py",
+        "apps/monkeyhub/api/monkeyhub_api/applications.py"
       ],
       "invariants": [
         "No prompts, responses, tool contents or credentials are exported in usage events",
         "Missing counters never become zero and cache/reasoning subsets are never charged twice",
         "Core and workflow packages do not import Monitor; the host composes it",
         "Only the explicitly supplied diagnostics directory is writable; project state is untouched",
-        "The algorithm chooses only a caller-provided action within stated estimates or stops"
+        "The algorithm chooses only a caller-provided action within stated estimates or stops",
+        "Standalone serve/report remain available; managed identity reads the actual source-version.txt or checkout HEAD and never trusts a parent-supplied revision"
       ],
       "status": "canonical",
       "tests": [
@@ -5191,6 +5208,70 @@
         "monkeymonitor/store.py",
         "monkeymonitor/server.py",
         "monkeymonitor/__main__.py"
+      ]
+    },
+    {
+      "module_id": "hub.shell",
+      "owner_path": "apps/monkeyhub/api/monkeyhub_api/main.py",
+      "status": "canonical",
+      "purpose": "Host the fixed local application lifecycle without a building project; existing Studio settings and child service APIs retain their ownership.",
+      "owns": [
+        "Project-free Hub FastAPI and the finite MonkeyArch, MonkeyDiagram and MonkeyMonitor start/status/stop interface; MonkeyBoard is explicitly unavailable",
+        "One owned Studio process shared by MonkeyArch and MonkeyDiagram, and one independent Monitor process",
+        "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
+        "Hub CLI and thin Windows entry point, with shared Studio launcher tray, logs and child monitoring"
+      ],
+      "does_not_own": [
+        "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
+        "Alternative preference persistence; user and application configuration are read and saved through studio.shell",
+        "Plugin discovery, installation, auto-updates or attaching to and stopping foreign processes"
+      ],
+      "inputs": [
+        "Explicit nonproject runtime root",
+        "Optional existing project path and retained run",
+        "Packaged or checkout source revision and built web directories",
+        "Fixed application id and start/stop request"
+      ],
+      "outputs": [
+        "Hub FastAPI and OpenAPI",
+        "Application status and URL",
+        "Owned process lifecycle and local diagnostic logs"
+      ],
+      "public_api": [
+        "create_app",
+        "HubSettings",
+        "main",
+        "Applications",
+        "GET /api/health",
+        "GET /api/apps",
+        "POST /api/apps/{app_id}/start",
+        "POST /api/apps/{app_id}/stop",
+        "GET /api/settings/apps",
+        "PUT /api/settings/apps",
+        "GET /api/settings/user",
+        "PUT /api/settings/user"
+      ],
+      "invariants": [
+        "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
+        "Arch and Diagram share one service; Diagram opens its documents view",
+        "Only this Hub's stdin pipes can stop its children; a occupied port or mismatched service is never adopted",
+        "Accepted work is allowed to finish; no taskkill or forced process termination is a normal exit path",
+        "Settings and logs have explicit nonproject locations; retained building writes use the existing project interfaces"
+      ],
+      "used_by": [
+        "apps/monkeyhub/run.py",
+        "apps/monkeyhub/launch-hub.ps1"
+      ],
+      "files": [
+        "apps/monkeyhub/api/monkeyhub_api/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/monkeyhub_api/applications.py",
+        "apps/monkeyhub/run.py",
+        "apps/monkeyhub/launch-hub.ps1"
+      ],
+      "tests": [
+        "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py"
       ]
     }
   ]
