@@ -42,6 +42,12 @@
 .monkeyboard-alert :is(button,a) { flex-shrink: 0; }
 .monkeyboard-initializing { position: absolute; inset: 0; display: grid; place-items: center; background: var(--panel); z-index: 10; font-size: 13px; color: var(--muted); }
 .monkeyboard-busy { position: absolute; right: 16px; bottom: 56px; background: var(--panel); color: var(--ink); padding: 9px 14px; border: 1px solid var(--line); border-radius: 7px; box-shadow: var(--shadow); font-size: 12px; pointer-events: none; }
+.monkeyboard-crit-actions { position: absolute; z-index: 20; left: 50%; bottom: 18px; display: flex; gap: 8px; transform: translateX(-50%); padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); }
+.monkeyboard-crit-actions button { min-height: 40px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); cursor: pointer; }
+.monkeyboard-crit-actions button:disabled { opacity: .5; cursor: default; }
+.monkeyboard--crit .monkeyboard-topbar, .monkeyboard--crit .monkeyboard-alert, .monkeyboard--crit .monkeyboard-sources, .monkeyboard--crit .monkeyboard-footer, .monkeyboard--crit .monkeyboard-busy { display: none; }
+.monkeyboard--crit .monkeyboard-canvas { position: fixed; inset: 0; z-index: 30; }
+.monkeyboard--crit .excalidraw .layer-ui__wrapper, .monkeyboard--crit .excalidraw .App-bottom-bar, .monkeyboard--crit .excalidraw .FixedSideContainer { display: none !important; }
 .monkeyboard-footer { flex: 0 0 auto; display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 7px 16px; border-top: 1px solid var(--line); font-size: 10px; color: var(--muted); background: var(--panel); min-height: 29px; }
 .monkeyboard-footer > * { min-width: 0; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
 .monkeyboard-loading { align-items: center; justify-content: center; padding: 36px; text-align: center; gap: 10px; }
