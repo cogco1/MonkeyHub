@@ -1,0 +1,192 @@
+/* ---------------------------------------------------------------------------
+   Tokens. Workshop graphite is the content surface; drafting blue marks
+   interaction, never "AI" as a separate visual world. Stable panels use a
+   matte material and transient controls use a denser version of that same
+   surface. The bare :root is dark; the light set answers an explicit light
+   choice or a light OS.
+   ------------------------------------------------------------------------ */
+
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+  --font-ui: "Segoe UI Variable Text", Inter, -apple-system, BlinkMacSystemFont,
+    "SF Pro Text", "Segoe UI", sans-serif;
+  --font-display: "Segoe UI Variable Display", Inter, -apple-system,
+    BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  --font-mono: "Cascadia Mono", "SFMono-Regular", "Roboto Mono", Consolas,
+    ui-monospace, monospace;
+  --ground: #191b19;
+  --panel: #1f221f;
+  --panel-2: #272b27;
+  --surface-2: var(--panel-2);
+  --ink: #f0f1ec;
+  --ink-2: #d3d6d0;
+  --muted: #b3b8b1;
+  --faint: #8d938c;
+  --line: rgba(240, 241, 236, 0.11);
+  --line-2: rgba(240, 241, 236, 0.06);
+  --accent: #7fa6d2;
+  --accent-ink: #0e1b28;
+  --accent-soft: rgba(127, 166, 210, 0.15);
+  --held: #75a986;
+  --violated: #d27b72;
+  --unchecked: #c49a5a;
+  --processing: #a2adb3;
+  --viewport: #141614;
+  --grid-major: #343934;
+  --grid-minor: #252925;
+  --overlay: rgba(31, 34, 31, 0.96);
+  --surface-hover: #303530;
+  --shadow: 0 10px 26px rgba(0, 0, 0, 0.28),
+    0 1px 3px rgba(0, 0, 0, 0.22);
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.18);
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-lg: 8px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --ground: #ecede8;
+    --panel: #f4f5f0;
+    --panel-2: #fbfcf8;
+    --surface-2: var(--panel-2);
+    --ink: #20231f;
+    --ink-2: #3d443e;
+    --muted: #59615a;
+    --faint: #687069;
+    --line: rgba(32, 35, 31, 0.13);
+    --line-2: rgba(32, 35, 31, 0.07);
+    --accent: #356b9e;
+    --accent-ink: #ffffff;
+    --accent-soft: rgba(53, 107, 158, 0.13);
+    --held: #3d7754;
+    --violated: #a64e47;
+    --unchecked: #8a6123;
+    --processing: #56656e;
+    --viewport: #e3e5e0;
+    --grid-major: #bfc4bd;
+    --grid-minor: #d5d8d2;
+    --overlay: rgba(244, 245, 240, 0.97);
+    --surface-hover: #ffffff;
+    --shadow: 0 10px 26px rgba(41, 46, 41, 0.13),
+      0 1px 3px rgba(41, 46, 41, 0.08);
+    --shadow-soft: 0 4px 12px rgba(41, 46, 41, 0.09);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ground: #ecede8;
+  --panel: #f4f5f0;
+  --panel-2: #fbfcf8;
+  --surface-2: var(--panel-2);
+  --ink: #20231f;
+  --ink-2: #3d443e;
+  --muted: #59615a;
+  --faint: #687069;
+  --line: rgba(32, 35, 31, 0.13);
+  --line-2: rgba(32, 35, 31, 0.07);
+  --accent: #356b9e;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(53, 107, 158, 0.13);
+  --held: #3d7754;
+  --violated: #a64e47;
+  --unchecked: #8a6123;
+  --processing: #56656e;
+  --viewport: #e3e5e0;
+  --grid-major: #bfc4bd;
+  --grid-minor: #d5d8d2;
+  --overlay: rgba(244, 245, 240, 0.97);
+  --surface-hover: #ffffff;
+  --shadow: 0 10px 26px rgba(41, 46, 41, 0.13),
+    0 1px 3px rgba(41, 46, 41, 0.08);
+  --shadow-soft: 0 4px 12px rgba(41, 46, 41, 0.09);
+}
+
+
+/* Shared controls; each application keeps its own layout. */
+/* Buttons ---------------------------------------------------------------- */
+
+.btn {
+  min-height: 32px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: calc(12.5px * var(--font-scale, 1));
+  font-weight: 500;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+  background: var(--surface-hover);
+}
+
+.btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn--primary:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+.btn--primary:active:not(:disabled),
+.button--primary:active:not(:disabled) {
+  filter: brightness(0.96);
+}
+
+.btn--link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.btn--link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.btn--small {
+  min-height: 28px;
+  padding: 3px 8px;
+  font-size: calc(11.5px * var(--font-scale, 1));
+}
+
+/* The viewer's own controls (rendered inside ThreeDmViewport). */
+
+.button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-size: calc(12.5px * var(--font-scale, 1));
+  font-weight: 500;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.button--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Pills: the one chip vocabulary. held / violated / unchecked never share a
+   colour; accent marks the selection; plain marks a fact with no state. */
+
+
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
