@@ -60,7 +60,7 @@ class Proposal:
     utterance: str
     created_at: str
     # The receipt of the model call that compiled the words, when a model was
-    # called at all: ``ModelInvocationReceipt@2`` as a mapping, exactly as the
+    # called at all: ``ModelInvocationReceipt`` as a mapping, exactly as the
     # shared contract serialises it. ``None`` for a sentence already in the
     # grammar, which no model read. It travels with the proposal so that a run
     # made from it can retain what answered; nothing here reads it.

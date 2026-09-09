@@ -69,7 +69,7 @@ export type AgentReadingDto = {
     /**
      * Receiptid
      *
-     * the ModelInvocationReceipt@2 that signs the call to the model; null for the deterministic provider, which calls none
+     * the ModelInvocationReceipt that signs the call to the model; null for the deterministic provider, which calls none
      */
     receiptId?: string | null;
     /**

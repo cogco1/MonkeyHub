@@ -34,6 +34,7 @@ MODE_ENV = "ARCHFLOW_STUDIO_MODE"
 BIND_ENV = "ARCHFLOW_STUDIO_BIND"
 TOKEN_ENV = "ARCHFLOW_STUDIO_TOKEN"
 ORIGINS_ENV = "ARCHFLOW_STUDIO_ORIGINS"
+MONITOR_DIR_ENV = "MONKEYMONITOR_DATA_DIR"
 
 # The two modes of the protocol boundary. ``local`` is the pair the launcher
 # starts on this machine: one loopback listener, one user, no token. ``remote``
@@ -112,6 +113,8 @@ class StudioSettings:
     # mode only. Local mode adds no CORS at all: the dev proxy makes the two
     # halves one origin, so there is nothing to allow.
     origins: tuple[str, ...] = ()
+    # Optional engineering telemetry, outside the P036 project document.
+    monitor_dir: Path | None = None
 
     def __post_init__(self) -> None:
         """Local listeners stay on loopback; remote listeners need credentials.
@@ -224,6 +227,7 @@ class StudioSettings:
                 os.environ.get(BIND_ENV, "").strip() or DEFAULT_BIND_HOST
             ),
             api_token=os.environ.get(TOKEN_ENV, "").strip() or None,
+            monitor_dir=Path(os.environ[MONITOR_DIR_ENV]) if os.environ.get(MONITOR_DIR_ENV, "").strip() else None,
             origins=tuple(
                 origin
                 for origin in (
