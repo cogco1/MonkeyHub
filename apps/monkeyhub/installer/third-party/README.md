@@ -1,9 +1,15 @@
 # 随包第三方许可补充
 
 这些原文补充 MonkeyHub Windows x64 候选包所用的 `cadquery-ocp==7.9.3.1.1`
-和 `vtk==9.6.2` wheel。文件以下载到的原始字节保存；下表逐份保留来源。
+和 `vtk==9.6.2` wheel，以及前端分发依赖的原文缺漏；下表逐份保留来源。
 安装包仍须原样保留 Python 的 `LICENSE.txt`、所有 wheel 的 `.dist-info`、包内
 LICENSE/NOTICE 及附带 DLL。本目录不替代那些文件。
+
+前端补充原文：[fflate 0.8.2](web-supplement/fflate-0.8.2-LICENSE.txt)、
+[rhino3dm 8.32.2](web-supplement/rhino3dm-8.32.2-LICENSE.txt)、
+[TinyEXR/OpenEXR 通知](web-supplement/three-0.185.1-EXRLoader-NOTICES.txt)。
+精确来源及对应关系见[说明](web-supplement/README.md)。构建时另从各前端锁定安装中
+保留 React、ReactDOM、scheduler、three 和 PDF.js 的原始 LICENSE，并在包内列明版本。
 
 ## 库与对应源码
 
