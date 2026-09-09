@@ -7,10 +7,10 @@
  * stage decides nothing.
  */
 
-import { useEffect, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 
 import type { StudioApiError } from "../../api/client";
-import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
+import type { DocumentAnnotationRefDto, DocumentVisualInputDto, ElevationRequestDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { designObjectLabel } from "../../app/format";
@@ -28,8 +28,8 @@ import {
 } from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { SourceChip, type ViewState } from "./SourceChip";
-import { VersionsStrip, type VersionGroup } from "./VersionsStrip";
-import { DocumentCanvas } from "../../workspaces/monkeydiagram/DocumentCanvas";
+import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
+import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
 import { createDocumentAnnotationsController } from "../../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useModelAnnotations";
 
@@ -82,6 +82,12 @@ export function Stage({
   onVersionsOpen,
   workingCopies,
   onOpenWorkingOption,
+  designHistory,
+  documentView,
+  onDocumentView,
+  documentAnnotationsController,
+  onDocumentBeforeLeave,
+  drawing,
   loadingSha,
   loadedShas,
   evidenceCounts,
@@ -153,6 +159,12 @@ export function Stage({
   onVersionsOpen?(): void;
   workingCopies: readonly WorkingCopyDto[];
   onOpenWorkingOption(option: WorkingCopyOptionDto): void;
+  designHistory?: DesignHistoryControls;
+  documentView: DocumentViewContext;
+  onDocumentView(next: DocumentViewContext): void;
+  documentAnnotationsController: ReturnType<typeof createDocumentAnnotationsController>;
+  onDocumentBeforeLeave(save: (() => Promise<void>) | null): void;
+  drawing?: { busy: boolean; available: boolean; error: string | null; generate(view: ElevationRequestDto["view"]): void };
   loadingSha: string | null;
   /** The digests on screen: one seat's, or every seat of a run. */
   loadedShas: readonly string[];
@@ -230,26 +242,11 @@ export function Stage({
   const t = useT();
   const { developerMode } = usePreferences();
   const [annotationStyle, setAnnotationStyle] = useState<AnnotationStyle>({ color: "#e5534b", lineWidth: 2 });
+  const [elevationView, setElevationView] = useState<NonNullable<ElevationRequestDto["view"]>>("front");
   const [annotationCancel, setAnnotationCancel] = useState(0);
-  const [documentLink] = useState(() => {
-    const query = new URLSearchParams(window.location.search);
-    if (query.get("view") !== "documents") return null;
-    const page = Number(query.get("documentPage") ?? 0);
-    return { runId: query.get("documentRun"), source: query.get("documentSource"),
-      page: Number.isSafeInteger(page) && page >= 0 ? page : -1 };
-  });
-  const [documentOpen, setDocumentOpen] = useState(documentLink !== null);
-  const [documentMounted, setDocumentMounted] = useState(documentLink !== null);
-  // A document's storage run remains fixed when its associated model becomes
-  // the editing base. Continuing from B must keep the drawing already open.
-  const [openedDocumentRunId, setOpenedDocumentRunId] = useState<string | null>(documentLink?.runId ?? null);
-  const documentRunId = openedDocumentRunId ?? editingBaseRunId;
-  useEffect(() => {
-    if (documentMounted && openedDocumentRunId === null && editingBaseRunId !== null) {
-      setOpenedDocumentRunId(editingBaseRunId);
-    }
-  }, [documentMounted, editingBaseRunId, openedDocumentRunId]);
-  const [documentAnnotationsController] = useState(createDocumentAnnotationsController);
+  const documentOpen = documentView.open;
+  const documentMounted = documentView.mounted;
+  const documentRunId = documentView.runId ?? editingBaseRunId;
   const [eraser, setEraser] = useState(false);
   const [annotationToolsOpen, setAnnotationToolsOpen] = useState(false);
   const [viewToolsOpen, setViewToolsOpen] = useState(false);
@@ -268,13 +265,16 @@ export function Stage({
     editingModelSource.stateDigest === viewedModelSource.stateDigest &&
     editingModelSource.assetSha256 === viewedModelSource.assetSha256;
   const editingLabel = editingBaseLabel ?? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName ?? editingBaseRunId;
-  const versionCount = new Set([
+  const versionCount = designHistory ? designHistory.history?.stages.length ?? 0 : new Set([
     ...versions.flatMap((group) => group.exports.filter(({ artifact }) => artifact.format === "3dm" && artifact.sha256 !== null)
       .map(({ artifact }) => `${group.runId}:${artifact.sha256}`)),
     ...workingCopies.flatMap((copy) => copy.options.map((option) => `${option.modelSource.runId}:${option.modelSource.assetSha256}`)),
   ]).size;
   const loadedOptionLabel = workingCopies.flatMap((copy) => copy.options)
     .find((option) => option.modelSource.runId === loadedRunId && loadedShas.includes(option.modelSource.assetSha256))?.label;
+  const acceptedStage = designHistory?.history?.stages.find((stage) => stage.modelSource.runId === loadedRunId && loadedShas.includes(stage.modelSource.assetSha256));
+  const contextLabel = designHistory ? acceptedStage?.label ?? (designHistory.candidates.some((candidate) => candidate.modelSource.runId === loadedRunId)
+    ? `${designHistory.history?.stages.find((stage) => stage.stageRef === designHistory.currentStageRef)?.label ?? "历史 Stage"} · 候选未提交` : "尚未确认 Stage") : loadedOptionLabel;
   const sessionStatus = <>
     {editingBaseRunId !== null && (
       <div className="editing-base" data-source-match={sameSource ? "same" : "different"}>
@@ -317,9 +317,15 @@ export function Stage({
   return (
     <section className="stage" aria-label={t("stage.ariaLabel")}>
       <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
-        <button type="button" aria-pressed={!documentOpen} onClick={() => setDocumentOpen(false)}>{t("workspace.monkeyarch")}</button>
-        <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); setDocumentMounted(true); setDocumentOpen(true); }}>{t("workspace.monkeydiagram")}</button>
+        <button type="button" aria-pressed={!documentOpen} onClick={() => onDocumentView({ ...documentView, open: false })}>{t("workspace.monkeyarch")}</button>
+        <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); onDocumentView({ ...documentView, mounted: true, open: true }); }}>{t("workspace.monkeydiagram")}</button>
+        {designHistory && <span className="stage-current-context">{designHistory.history?.branchId ?? "main"} · {contextLabel}</span>}
+        {drawing && <><select aria-label="立面方向" value={elevationView} disabled={drawing.busy}
+          onChange={(event) => setElevationView(event.target.value as NonNullable<ElevationRequestDto["view"]>)}>
+          <option value="front">正立面</option><option value="back">背立面</option><option value="left">左立面</option><option value="right">右立面</option>
+        </select><button disabled={!drawing.available || drawing.busy} onClick={() => drawing.generate(elevationView)}>{drawing.busy ? "正在出图…" : "生成立面"}</button></>}
       </div>
+      {drawing?.error && <p className="stage-drawing-error" role="alert">{drawing.error}</p>}
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
         onKeyDown={(event) => {
           if (!(event.ctrlKey || event.metaKey) || (event.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
@@ -555,12 +561,18 @@ export function Stage({
         </div>
       </div>
 
+
+      {framePanel}
+      {optionsPanel}
+      {programPanel}
+      {drawer}
+      </div>
       <div className="stage__foot">
         <div className="stage__versions">
           <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
             onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); }}>
             {t("stage.versions.open")} <span className="quiet">{versionCount}</span>
-            {loadedOptionLabel && <span className="stage__versions-current">{loadedOptionLabel}</span>}
+            {contextLabel && <span className="stage__versions-current">{contextLabel}</span>}
             {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
           </button>
           {versionsOpen && <div id="stage-versions-panel" className="stage__versions-panel" role="region" aria-label={t("stage.versions.ariaLabel")}>
@@ -568,6 +580,7 @@ export function Stage({
               <button type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
             </div>
             <VersionsStrip
+              design={designHistory}
               workingCopies={workingCopies} onOpenWorkingOption={onOpenWorkingOption}
               groups={versions} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
               onOpen={onOpenVersion} onOpenRun={onOpenRun} onCompare={onCompareVersion}
@@ -606,17 +619,15 @@ export function Stage({
         </button></>}
       </div>
 
-      {framePanel}
-      {optionsPanel}
-      {programPanel}
-      {drawer}
-      </div>
       {documentMounted && <div style={{ visibility: documentOpen ? "visible" : "hidden" }} inert={!documentOpen} aria-hidden={!documentOpen}>
-        {documentProjectId && documentRunId ? <DocumentCanvas key={`${documentProjectId}:${documentRunId}`}
+        {documentProjectId && documentRunId ? <DocumentCanvas key={`${documentProjectId}:${documentRunId}:${documentView.sourceSha}:${documentView.revisionRef}`}
           projectId={documentProjectId} runId={documentRunId} controller={documentAnnotationsController}
           modelSources={documentModelSources} editingModelSource={editingModelSource}
           onContinueModelSource={onContinueModelSource}
-          initialSourceSha={documentLink?.source ?? null} initialPageIndex={documentLink?.page ?? 0}
+          initialSourceSha={documentView.sourceSha} initialPageIndex={documentView.pageIndex}
+          initialRevisionRef={documentView.revisionRef}
+          sourceStageRef={designHistory?.currentStageRef}
+          onBeforeLeave={onDocumentBeforeLeave}
           busy={baseActionBusy || changingBase} onSubmit={onDocumentSubmit} documentVisualInputAvailable={documentVisualInputAvailable} />
           : <div className="document-workspace document-empty">{t("document.noRun")}</div>}
       </div>}

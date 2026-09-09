@@ -96,7 +96,7 @@ def apply_program(
     state = request.app.state
     settings: StudioSettings = state.settings
     binding = bound_project(state)
-    projection = project_state(binding, run_id=body.source_run_id)
+    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
     require_actionable(projection)
     if (
         body.state_digest != projection.state_digest
@@ -127,6 +127,7 @@ def apply_program(
         return run_operator(
             binding, settings, operator, run_id, source_run_id=body.source_run_id,
             model_source=model_source,
+            source_stage_ref=projection.source_stage_ref,
         )
 
     job = registry.submit(
@@ -135,7 +136,7 @@ def apply_program(
         # borrowing a proposal id that would resolve to nothing.
         proposal_id=f"program-sheet:{projection.record_digest}",
         work=work,
-        closure=closure_of_sheet(sheet),
+        write_refs=closure_of_sheet(sheet),
         exclusive=settings.rhino_lane,
     )
     saved = False

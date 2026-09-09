@@ -66,6 +66,8 @@ class MassingOptionRequestDto(BaseModel):
     one it needs and does not get is a 422 that says which.
     """
 
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     source_run_id: str | None = Field(

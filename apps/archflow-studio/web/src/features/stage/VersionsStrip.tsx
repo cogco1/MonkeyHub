@@ -4,7 +4,8 @@
  * view, compare and download still use the existing artifact callbacks.
  */
 
-import type { ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
+import { useState } from "react";
+import type { DesignHistoryDto, DesignStageDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
 import { sha8 } from "../../app/format";
 import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
@@ -27,6 +28,23 @@ export interface VersionGroup {
   readonly exports: readonly VersionExport[];
 }
 
+export interface DesignHistoryControls {
+  history: DesignHistoryDto | null;
+  acceptedModelSources: readonly ModelSourceDto[];
+  currentStageRef: string | null;
+  currentModelSource: ModelSourceDto | null;
+  candidates: readonly { label: string; modelSource: ModelSourceDto; sourceStageRef: string }[];
+  busy: boolean;
+  error: string | null;
+  onInitialize(): void;
+  onStage(stage: DesignStageDto): void;
+  onBranch(branchId: string): void;
+  onCandidate(source: ModelSourceDto): void;
+  onAccept(candidateId: string): void;
+  onFork(stage: DesignStageDto, name: string): void;
+  onCombine(candidateIds: string[]): void;
+}
+
 export function VersionsStrip({
   groups,
   loadingSha,
@@ -37,6 +55,7 @@ export function VersionsStrip({
   onCompare,
   workingCopies = [],
   onOpenWorkingOption,
+  design,
 }: {
   groups: readonly VersionGroup[];
   loadingSha: string | null;
@@ -51,9 +70,70 @@ export function VersionsStrip({
   onCompare(artifact: ProjectArtifactDto): void;
   workingCopies?: readonly WorkingCopyDto[];
   onOpenWorkingOption?(option: WorkingCopyOptionDto): void;
+  design?: DesignHistoryControls;
 }) {
   const t = useT();
   const { developerMode } = usePreferences();
+  const [forkStage, setForkStage] = useState<DesignStageDto | null>(null);
+  const [branchName, setBranchName] = useState("");
+  const [combineIds, setCombineIds] = useState<string[]>([]);
+  if (design) {
+    const history = design.history;
+    const branch = history?.branches.find((item) => item.branchId === history.branchId);
+    const selectedCandidates = design.candidates.filter((candidate) => combineIds.includes(candidate.modelSource.runId));
+    const commonSource = selectedCandidates[0]?.sourceStageRef;
+    const knownModels = new Set([...design.acceptedModelSources, ...design.candidates.map((candidate) => candidate.modelSource),
+      ...workingCopies.flatMap((copy) => copy.options.map((option) => option.modelSource))].map((source) => `${source.runId}:${source.assetSha256}`));
+    const legacy = groups.map((group) => ({ ...group, exports: group.exports.filter(({ artifact }) =>
+      !knownModels.has(`${artifact.runId}:${artifact.sha256}`)) })).filter((group) => group.exports.length > 0);
+    return <div className="versions" role="list" aria-label="Stage 历史">
+      <div className="vcard"><div className="vcard__head"><strong>设计历史</strong>
+        {history && history.branches.length > 0 && <select aria-label="Branch" value={history.branchId} disabled={design.busy}
+          onChange={(event) => design.onBranch(event.target.value)}>{history.branches.map((item) =>
+            <option key={item.branchId} value={item.branchId}>{item.branchId}</option>)}</select>}
+        {history?.branches.length === 0 && <button className="btn btn--small" disabled={design.busy || !design.currentModelSource}
+          onClick={design.onInitialize}>确认当前模型为 S0</button>}
+      </div>{design.error && <p role="alert">{design.error}</p>}</div>
+      {history?.stages.map((stage) => <div key={stage.stageRef} className="vcard" role="listitem" data-design-stage={stage.label}>
+        <div className="vcard__head"><button className="btn btn--small" disabled={design.busy} onClick={() => design.onStage(stage)}
+          aria-pressed={stage.stageRef === design.currentStageRef && stage.modelSource.runId === design.currentModelSource?.runId &&
+            stage.modelSource.stateDigest === design.currentModelSource.stateDigest && stage.modelSource.assetSha256 === design.currentModelSource.assetSha256}>
+          {stage.label}{stage.stageRef === branch?.headStageRef ? " · 当前提交" : ""}</button>
+          <button className="btn btn--small" disabled={design.busy} onClick={() => { setForkStage(stage); setBranchName(""); }}>从这里新建分支</button>
+        </div>
+      </div>)}
+      {forkStage && <form className="vcard" onSubmit={(event) => { event.preventDefault(); if (branchName.trim()) design.onFork(forkStage, branchName.trim()); }}>
+        <label>{forkStage.label} 的新分支名称 <input value={branchName} onChange={(event) => setBranchName(event.target.value)}
+          pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,99}" required placeholder="alternate-layout" /></label>
+        <button className="btn btn--small" disabled={design.busy || !branchName.trim()}>创建分支</button>
+        <button type="button" className="btn btn--small" onClick={() => setForkStage(null)}>取消</button>
+      </form>}
+      {workingCopies.map((copy) => <div key={copy.groupId} className="vcard" data-working-copy={copy.groupId}><strong>探索 · {copy.label}</strong>
+        <div className="vcard__exports">{copy.options.map((option) => <button key={option.id} className="btn btn--small" disabled={design.busy}
+          onClick={() => design.onCandidate(option.modelSource)}>{option.label}{copy.selectedOptionId === option.id ? " · ✓" : ""}</button>)}</div></div>)}
+      {design.candidates.length > 1 && <div className="vcard"><button className="btn btn--small"
+        disabled={design.busy || selectedCandidates.length < 2 || selectedCandidates.some((candidate) => candidate.sourceStageRef !== commonSource)}
+        onClick={() => design.onCombine(selectedCandidates.map((candidate) => candidate.modelSource.runId))}>合并选中候选并预览</button>
+        <span className="quiet">选择同一 Stage 下的候选，合并后仍需接受。</span></div>}
+      {design.candidates.map(({ label, modelSource, sourceStageRef }) => {
+        const selected = modelSource.runId === design.currentModelSource?.runId && modelSource.assetSha256 === design.currentModelSource.assetSha256;
+        return <div className="vcard" role="listitem" key={`${modelSource.runId}:${modelSource.assetSha256}`} data-preview-candidate={modelSource.runId}>
+          <div className="vcard__head"><label><input type="checkbox" aria-label={`合并 ${label}`} checked={combineIds.includes(modelSource.runId)}
+            disabled={design.busy || (commonSource !== undefined && sourceStageRef !== commonSource && !combineIds.includes(modelSource.runId))}
+            onChange={(event) => setCombineIds((current) => event.target.checked ? [...current, modelSource.runId] : current.filter((id) => id !== modelSource.runId))} />候选 · 未提交</label><strong>{label}</strong></div>
+          <div className="vcard__exports"><button className="btn btn--small" aria-pressed={selected} disabled={design.busy}
+            onClick={() => design.onCandidate(modelSource)}>预览并继续修改</button>
+            {selected && branch && <button className="btn btn--small" disabled={design.busy || design.currentStageRef !== branch.headStageRef}
+              onClick={() => design.onAccept(modelSource.runId)}>接受为下一 Stage</button>}
+            {selected && branch && design.currentStageRef !== branch.headStageRef && <span className="quiet">此候选来自历史阶段，请先从该阶段新建分支。</span>}
+          </div></div>;
+      })}
+      {legacy.length > 0 && <details className="vcard"><summary>已有模型与历史运行 · 尚未归入 Stage</summary>
+        <VersionsStrip groups={legacy} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
+          onOpen={onOpen} onOpenRun={onOpenRun} onCompare={onCompare} />
+      </details>}
+    </div>;
+  }
   if (groups.length === 0 && workingCopies.length === 0) return null;
   // A grouped option represents one exact asset, not every export in its run.
   // Keep other composed models and native exports from that run discoverable.

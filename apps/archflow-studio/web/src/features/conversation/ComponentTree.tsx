@@ -16,7 +16,7 @@
  * components are listed flat, as before.
  */
 
-import { useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import type { CatalogComponentDto, StateProjectionDto } from "../../api/generated";
 import { BilingualText } from "../../i18n/BilingualText";
@@ -171,7 +171,7 @@ export function ComponentTree({
 }) {
   const t = useT();
   const [query, setQuery] = useState("");
-  const [folded, setFolded] = useState<Set<string>>(() => new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const roots = useMemo(() => catalogNodes(projection) ?? flatNodes(projection, t), [projection, t]);
   const producerOf = useMemo(() => {
     const map = new Map<string, string>();
@@ -179,6 +179,19 @@ export function ComponentTree({
     return map;
   }, [projection]);
   const needle = query.trim().toLowerCase();
+  const selectedPath = useMemo(() => {
+    const path = new Set<string>();
+    const visit = (nodes: Node[]): boolean => nodes.reduce((found, node) => {
+      const below = visit(node.children);
+      const selected = node.id === selectedComponentId || node.elementIds.includes(selectedElementId ?? "");
+      if (below || selected) path.add(node.id);
+      return found || below || selected;
+    }, false);
+    visit(roots); return path;
+  }, [roots, selectedComponentId, selectedElementId]);
+  useEffect(() => {
+    setExpanded((current) => new Set([...current, ...selectedPath]));
+  }, [selectedPath]);
   const kept = useMemo(() => {
     const keep = new Set<string>();
     if (needle) matching(roots, needle, keep);
@@ -195,7 +208,7 @@ export function ComponentTree({
   );
 
   const toggle = (id: string) => {
-    setFolded((current) => {
+    setExpanded((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -205,7 +218,7 @@ export function ComponentTree({
 
   const renderNode = (node: Node, depth: number): ReactElement | null => {
     if (needle && !kept.has(node.id)) return null;
-    const isFolded = folded.has(node.id) && !needle;
+    const isFolded = !expanded.has(node.id) && !needle;
     const missing = catalogMissing(node);
     const selected = selectedComponentId === node.id && selectedElementId === null;
     const hasBelow = node.children.length > 0 || node.elementIds.length > 0;

@@ -139,11 +139,13 @@ class DocumentAnnotationRef:
     asset_sha256: str
     page_index: int
     revision_sha256: str
+    drawing_revision_ref: str | None = None
 
     def to_dict(self) -> dict:
         return {
             "runId": self.run_id, "assetSha256": self.asset_sha256,
             "pageIndex": self.page_index, "revisionSha256": self.revision_sha256,
+            **({"drawingRevisionRef": self.drawing_revision_ref} if self.drawing_revision_ref is not None else {}),
         }
 
 
@@ -156,6 +158,7 @@ class DocumentAnnotationPage:
     revision_sha256: str | None
     annotations: tuple[DocumentGesture, ...] = ()
     comment: str = ""
+    drawing_revision_ref: str | None = None
 
 
 # HTTP saves in this process must check and write a page revision together.
@@ -220,20 +223,22 @@ def save_model_annotations(
     return ModelAnnotationSnapshot(binding.project_id, source, ref.sha256, tuple(annotations), comment)
 
 
-def _document_page_source(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int) -> SourceDocument:
-    document, _ = document_bytes(binding, run_id, asset_sha256)
+def _document_page_source(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int,
+                          drawing_revision_ref: str | None = None, *, binding_ref: str | None = None) -> SourceDocument:
+    document, _ = document_bytes(binding, run_id, asset_sha256, drawing_revision_ref, binding_ref=binding_ref)
     if not 0 <= page_index < len(document.pages):
         raise StudioError(422, "DOCUMENT_PAGE_NOT_FOUND", "The page does not exist in this source document version.")
     return document
 
 
-def _document_page_revisions(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int) -> dict[str, Mapping]:
+def _document_page_revisions(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int,
+                             drawing_revision_ref: str | None = None) -> dict[str, Mapping]:
     revisions = {}
     for ref in binding.record_refs(run_id):
         if record_kind(ref) != STUDIO_DOCUMENT_ANNOTATIONS:
             continue
         payload = binding.repository.load_json(ref)
-        if (payload.get("assetSha256"), payload.get("pageIndex")) != (asset_sha256, page_index):
+        if (payload.get("assetSha256"), payload.get("pageIndex"), payload.get("drawingRevisionRef")) != (asset_sha256, page_index, drawing_revision_ref):
             continue
         if payload.get("schema") != "StudioDocumentAnnotations@1" or (
             payload.get("projectId"), payload.get("runId")
@@ -251,7 +256,8 @@ def _latest_document_revision(revisions: Mapping[str, Mapping]) -> str | None:
     return next(iter(tips), None)
 
 
-def _document_page_from(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int, revision: str | None, payload: Mapping | None) -> DocumentAnnotationPage:
+def _document_page_from(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int, revision: str | None,
+                        payload: Mapping | None, drawing_revision_ref: str | None = None) -> DocumentAnnotationPage:
     return DocumentAnnotationPage(
         binding.project_id, run_id, asset_sha256, page_index, revision,
         annotations=tuple(DocumentGesture(
@@ -260,37 +266,42 @@ def _document_page_from(binding: ProjectBinding, run_id: str, asset_sha256: str,
             font_size=row.get("fontSize"),
         ) for row in payload["annotations"]) if payload is not None else (),
         comment=payload.get("comment", "") if payload is not None else "",
+        drawing_revision_ref=drawing_revision_ref,
     )
 
 
 def read_document_annotations(
     binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int,
     revision_sha256: str | None = None,
+    drawing_revision_ref: str | None = None,
+    *, binding_ref: str | None = None,
 ) -> DocumentAnnotationPage:
-    _document_page_source(binding, run_id, asset_sha256, page_index)
-    revisions = _document_page_revisions(binding, run_id, asset_sha256, page_index)
+    _document_page_source(binding, run_id, asset_sha256, page_index, drawing_revision_ref, binding_ref=binding_ref)
+    revisions = _document_page_revisions(binding, run_id, asset_sha256, page_index, drawing_revision_ref)
     revision = revision_sha256 or _latest_document_revision(revisions)
     if revision is not None and revision not in revisions:
         raise StudioError(404, "ANNOTATION_REVISION_NOT_FOUND", "This page has no saved annotation revision with that identity.")
-    return _document_page_from(binding, run_id, asset_sha256, page_index, revision, revisions.get(revision))
+    return _document_page_from(binding, run_id, asset_sha256, page_index, revision, revisions.get(revision), drawing_revision_ref)
 
 
 def save_document_annotations(
     binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int,
     base_revision_sha256: str | None, annotations: Sequence[DocumentGesture], comment: str,
+    drawing_revision_ref: str | None = None,
 ) -> DocumentAnnotationPage:
-    _document_page_source(binding, run_id, asset_sha256, page_index)
+    _document_page_source(binding, run_id, asset_sha256, page_index, drawing_revision_ref)
     if len({annotation.id for annotation in annotations}) != len(annotations):
         raise StudioError(422, "ANNOTATION_INVALID", "Annotation ids must be distinct within a page.")
     run = binding.load_run(run_id)
     with _document_annotation_lock:
-        revisions = _document_page_revisions(binding, run_id, asset_sha256, page_index)
+        revisions = _document_page_revisions(binding, run_id, asset_sha256, page_index, drawing_revision_ref)
         latest = _latest_document_revision(revisions)
         if base_revision_sha256 != latest:
             raise StudioError(409, "ANNOTATION_STALE", "This page was saved from another revision. Read its saved annotations before retrying.")
         payload = {
             "schema": "StudioDocumentAnnotations@1", "projectId": binding.project_id,
             "runId": run_id, "assetSha256": asset_sha256, "pageIndex": page_index,
+            **({"drawingRevisionRef": drawing_revision_ref} if drawing_revision_ref is not None else {}),
             "previousRevisionSha256": latest,
             "annotations": [annotation.to_dict() for annotation in annotations], "comment": comment,
         }
@@ -298,7 +309,7 @@ def save_document_annotations(
             run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
             record_kind=STUDIO_DOCUMENT_ANNOTATIONS, payload=payload,
         )
-    return _document_page_from(binding, run_id, asset_sha256, page_index, ref.sha256, payload)
+    return _document_page_from(binding, run_id, asset_sha256, page_index, ref.sha256, payload, drawing_revision_ref)
 
 
 def _document_facts(document: SourceDocument, page: DocumentAnnotationPage) -> tuple[str, ...]:
@@ -354,16 +365,18 @@ def prepare_document_visuals(
         return ()
     edits = [row for row in inputs if row["role"] == "edit"]
     if len(inputs) > 4 or len(references) != 1 or len(edits) != 1 or any(
-        edits[0][key] != value for key, value in references[0].to_dict().items()
+        edits[0].get(key) != value for key, value in {
+            **references[0].to_dict(), "drawingRevisionRef": references[0].drawing_revision_ref,
+        }.items()
     ):
         raise StudioError(422, "DOCUMENT_VISUAL_MISMATCH", "One edit visual must match the exact submitted document page revision.")
     visuals = []
     total_bytes = 0
     for row in inputs:
-        document = _document_page_source(binding, row["runId"], row["assetSha256"], row["pageIndex"])
+        document = _document_page_source(binding, row["runId"], row["assetSha256"], row["pageIndex"], row.get("drawingRevisionRef"))
         page = None
         if row.get("revisionSha256") is not None:
-            page = read_document_annotations(binding, row["runId"], row["assetSha256"], row["pageIndex"], row["revisionSha256"])
+            page = read_document_annotations(binding, row["runId"], row["assetSha256"], row["pageIndex"], row["revisionSha256"], row.get("drawingRevisionRef"))
         has_ink = page is not None and bool(page.annotations)
         if has_ink != (row.get("annotatedPngBase64") is not None):
             raise StudioError(422, "DOCUMENT_VISUAL_MISMATCH", "The selected saved revision needs its complete annotation overlay; pages without selected ink must omit it.")
@@ -388,6 +401,7 @@ def prepare_document_visuals(
         visuals.append(DocumentVisual(context={
             "role": row["role"], "runId": row["runId"], "assetSha256": row["assetSha256"],
             "pageIndex": row["pageIndex"], "revisionSha256": row.get("revisionSha256"),
+            **({"drawingRevisionRef": row["drawingRevisionRef"]} if row.get("drawingRevisionRef") is not None else {}),
             "fileName": document.file_name, "referenceNote": row.get("referenceNote"),
             "annotationSummary": summary,
         }, page_png=png, annotated_png=overlay))
@@ -406,9 +420,9 @@ def retain_document_comment(
         return (), None
     facts = []
     for reference in references:
-        document = _document_page_source(binding, reference.run_id, reference.asset_sha256, reference.page_index)
+        document = _document_page_source(binding, reference.run_id, reference.asset_sha256, reference.page_index, reference.drawing_revision_ref)
         page = read_document_annotations(
-            binding, reference.run_id, reference.asset_sha256, reference.page_index, reference.revision_sha256,
+            binding, reference.run_id, reference.asset_sha256, reference.page_index, reference.revision_sha256, reference.drawing_revision_ref,
         )
         facts.extend(_document_facts(document, page))
     run = binding.load_run(source_run_id or references[0].run_id)
@@ -433,13 +447,21 @@ def retain_document_comment(
 def require_document_model_sources(
     binding: ProjectBinding, references: Sequence[DocumentAnnotationRef], projection: StateProjection,
     model_source: ModelSource | None = None,
+    *, pinned_sources: Sequence[Mapping] | None = None,
 ) -> tuple[Mapping, ...]:
     """Check declared correspondence before any model call; never infer it from storage."""
 
+    if pinned_sources is not None and len(pinned_sources) != len(references):
+        raise StudioError(409, "DOCUMENT_MODEL_SOURCE_MISMATCH", "The submitted request has incomplete source bindings.")
     sources = []
-    for reference in references:
-        document = _document_page_source(binding, reference.run_id, reference.asset_sha256, reference.page_index)
-        read_document_annotations(binding, reference.run_id, reference.asset_sha256, reference.page_index, reference.revision_sha256)
+    for index, reference in enumerate(references):
+        binding_ref = None if pinned_sources is None else pinned_sources[index].get("bindingRef")
+        if pinned_sources is not None and not binding_ref:
+            raise StudioError(409, "DOCUMENT_MODEL_SOURCE_UNKNOWN", "The submitted request has no exact model association.")
+        document = _document_page_source(binding, reference.run_id, reference.asset_sha256, reference.page_index,
+                                         reference.drawing_revision_ref, binding_ref=binding_ref)
+        read_document_annotations(binding, reference.run_id, reference.asset_sha256, reference.page_index,
+                                   reference.revision_sha256, reference.drawing_revision_ref, binding_ref=binding_ref)
         source = document.model_source
         if source is None:
             raise StudioError(409, "DOCUMENT_MODEL_SOURCE_UNKNOWN", "This drawing has no declared model source. Its annotations are saved; associate it with the model it describes before requesting a change.")
@@ -449,6 +471,7 @@ def require_document_model_sources(
         if model_source is None:
             model_source = source
         sources.append({"runId": reference.run_id, "assetSha256": reference.asset_sha256,
+                        **({"drawingRevisionRef": reference.drawing_revision_ref} if reference.drawing_revision_ref is not None else {}),
                         "modelSource": source.to_dict(), "bindingRef": document.model_source_binding_ref})
     return tuple(sources)
 
@@ -461,8 +484,9 @@ def require_document_comment_source(binding: ProjectBinding, comment: Mapping, p
         raise StudioError(409, "DOCUMENT_MODEL_SOURCE_UNKNOWN", "This earlier request did not retain a model association. Submit a new request using the drawing's declared source.")
     if (comment.get("sourceRunId"), comment.get("stateDigest")) != (projection.run.run_id, projection.state_digest):
         raise StudioError(409, "DOCUMENT_MODEL_SOURCE_MISMATCH", "The submitted drawing request belongs to another editing base.")
-    references = tuple(DocumentAnnotationRef(row["runId"], row["assetSha256"], row["pageIndex"], row["revisionSha256"]) for row in comment["documentAnnotations"])
-    current = require_document_model_sources(binding, references, projection)
+    references = tuple(DocumentAnnotationRef(row["runId"], row["assetSha256"], row["pageIndex"], row["revisionSha256"],
+                                             row.get("drawingRevisionRef")) for row in comment["documentAnnotations"])
+    current = require_document_model_sources(binding, references, projection, pinned_sources=pinned)
     if list(current) != pinned:
         raise StudioError(409, "DOCUMENT_MODEL_SOURCE_MISMATCH", "The submitted request does not retain the drawing's exact declared model association.")
 

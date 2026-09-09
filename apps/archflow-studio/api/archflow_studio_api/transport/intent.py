@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from ..application.clarification import (
     AuthoredControlDraft,
@@ -177,6 +177,16 @@ class DocumentAnnotationRefDto(BaseModel):
     asset_sha256: str = Field(alias="assetSha256", pattern=STATE_DIGEST_PATTERN)
     page_index: int = Field(alias="pageIndex", ge=0)
     revision_sha256: str = Field(alias="revisionSha256", pattern=STATE_DIGEST_PATTERN)
+    drawing_revision_ref: str | None = Field(alias="drawingRevisionRef", default=None,
+        description="The exact generated drawing receipt URI; omitted for legacy source documents.")
+
+    @model_serializer(mode="wrap")
+    def serialize_ref(self, handler):
+        value = handler(self)
+        if self.drawing_revision_ref is None:
+            value.pop("drawingRevisionRef", None)
+            value.pop("drawing_revision_ref", None)
+        return value
 
 
 class DocumentAnnotationsRequestDto(BaseModel):
@@ -186,6 +196,7 @@ class DocumentAnnotationsRequestDto(BaseModel):
     run_id: str = Field(alias="runId", min_length=1)
     asset_sha256: str = Field(alias="assetSha256", pattern=STATE_DIGEST_PATTERN)
     page_index: int = Field(alias="pageIndex", ge=0)
+    drawing_revision_ref: str | None = Field(alias="drawingRevisionRef", default=None)
     base_revision_sha256: str | None = Field(
         alias="baseRevisionSha256", pattern=STATE_DIGEST_PATTERN,
         description="The last revision read for this file/page; null only for an unsaved page. A stale revision is refused with 409.",
@@ -204,6 +215,7 @@ class DocumentAnnotationsDto(BaseModel):
     revision_sha256: str | None = Field(alias="revisionSha256")
     annotations: list[DocumentGestureDto]
     comment: str
+    drawing_revision_ref: str | None = Field(alias="drawingRevisionRef", default=None)
 
 
 class DocumentVisualInputDto(BaseModel):
@@ -216,6 +228,7 @@ class DocumentVisualInputDto(BaseModel):
     asset_sha256: str = Field(alias="assetSha256", pattern=STATE_DIGEST_PATTERN)
     page_index: int = Field(alias="pageIndex", ge=0)
     revision_sha256: str | None = Field(alias="revisionSha256", default=None, pattern=STATE_DIGEST_PATTERN)
+    drawing_revision_ref: str | None = Field(alias="drawingRevisionRef", default=None)
     page_png_base64: str = Field(alias="pagePngBase64", max_length=5592408,
         description="Pure base64 PNG, at most 4 MiB decoded and 2048 px on its longer side; same visible-page aspect ratio as the registered PDF/image.")
     annotated_png_base64: str | None = Field(alias="annotatedPngBase64", default=None, max_length=5592408,
@@ -244,7 +257,7 @@ def document_gesture_from(dto: DocumentGestureDto) -> DocumentGesture:
 
 
 def document_annotation_ref_from(dto: DocumentAnnotationRefDto) -> DocumentAnnotationRef:
-    return DocumentAnnotationRef(dto.run_id, dto.asset_sha256, dto.page_index, dto.revision_sha256)
+    return DocumentAnnotationRef(dto.run_id, dto.asset_sha256, dto.page_index, dto.revision_sha256, dto.drawing_revision_ref)
 
 
 def document_annotations_dto(page: DocumentAnnotationPage) -> DocumentAnnotationsDto:
@@ -252,12 +265,14 @@ def document_annotations_dto(page: DocumentAnnotationPage) -> DocumentAnnotation
         project_id=page.project_id, run_id=page.run_id, asset_sha256=page.asset_sha256,
         page_index=page.page_index, revision_sha256=page.revision_sha256,
         annotations=[DocumentGestureDto(**annotation.to_dict()) for annotation in page.annotations],
-        comment=page.comment,
+        comment=page.comment, drawing_revision_ref=page.drawing_revision_ref,
     )
 
 
 class IntentRequestDto(BaseModel):
     """One request in the architect's words, against the current selection."""
+
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)

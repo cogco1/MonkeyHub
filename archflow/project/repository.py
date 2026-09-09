@@ -24,7 +24,7 @@ from archflow.project.digests import project_state_sha256
 from archflow.project.layout import ProjectLayout
 from archflow.project.manifest import ProjectManifest, ProjectManifestError
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import require_registered
+from archflow.project.record_kinds import DESIGN_STAGE, require_registered
 from archflow.project.refs import (
     ProjectArtifactRef,
     ProjectRecordRef,
@@ -50,6 +50,10 @@ class ProjectIntegrityError(ProjectRepositoryError):
 
 class StaleProjectHead(ProjectRepositoryError):
     pass
+
+
+class StaleDesignBranch(ProjectRepositoryError):
+    """The design branch advanced since this change was prepared."""
 
 
 class PromotionAuthorityError(ProjectRepositoryError):
@@ -377,13 +381,14 @@ def _record_from_dict(
 
 
 class FilesystemProjectRepository:
-    """Content-addressed records plus one atomic canonical ``HEAD``."""
+    """Content-addressed records, issued HEAD and atomic design positions."""
 
     def __init__(self, layout: ProjectLayout, manifest: ProjectManifest) -> None:
         self.layout = layout
         self._manifest = manifest
         self._lock = _project_lock(layout.root)
         self._head_lock = _HeadFileLock(layout.root / "HEAD.lock")
+        self._design_lock = _HeadFileLock(layout.design_branches.with_suffix(".lock"))
 
     @classmethod
     def initialize(
@@ -516,6 +521,31 @@ class FilesystemProjectRepository:
     def load_current_state(self) -> dict[str, Any]:
         _, snapshot_ref, _ = self._read_head_document()
         snapshot = self.load_json(snapshot_ref)
+        state = snapshot.get("state")
+        if not isinstance(state, dict):
+            raise ProjectIntegrityError("canonical snapshot state is not an object")
+        return state
+
+    def load_version_state(self, version: ProjectVersionRef) -> dict[str, Any]:
+        """Read an exact published ancestor, following retained event references."""
+        self._require_project_version(version, durable=True)
+        current, snapshot_ref, event_ref = self._read_head_document()
+        while current != version:
+            if current.version <= version.version:
+                raise ProjectIntegrityError("requested version is not in published history")
+            event = self.load_json(event_ref)
+            parent = _version_from_dict(event.get("from"), field="event from")
+            snapshot_ref = (
+                _record_from_dict(event.get("from_snapshot"), project_id=self._manifest.project_id,
+                                  field="event from_snapshot")
+                if self._manifest.format_version == CURRENT_FORMAT_VERSION
+                else self._canonical_ref_for_version(parent)
+            )
+            event_ref = _record_from_dict(event.get("previous_event"), project_id=self._manifest.project_id,
+                                          field="previous_event")
+            self._verify_snapshot(snapshot_ref, parent)
+            current = parent
+        snapshot = self._verify_snapshot(snapshot_ref, version)
         state = snapshot.get("state")
         if not isinstance(state, dict):
             raise ProjectIntegrityError("canonical snapshot state is not an object")
@@ -783,6 +813,73 @@ class FilesystemProjectRepository:
         if _sha256(data) != ref.sha256:
             raise ProjectIntegrityError(f"record digest mismatch: {ref.relative_path}")
         return _read_json(path)
+
+    def _require_design_stage(self, ref: ProjectRecordRef) -> dict[str, Any]:
+        self._require_record(ref)
+        parts = PurePosixPath(ref.relative_path).parts
+        if len(parts) != 4 or parts[0] != "runs" or parts[2] != "reviews" or ref.record_kind != DESIGN_STAGE:
+            raise ProjectIntegrityError("design branch must reference a retained design stage review")
+        self.load_run(parts[1])
+        return self.load_json(ref)
+
+    def _design_branch_payload(self, branch_id: str, value: object) -> dict[str, Any]:
+        require_identifier(branch_id, "branch_id")
+        if not isinstance(value, Mapping) or set(value) != {"branch_id", "parent_branch", "fork_stage", "head_stage"}:
+            raise ProjectIntegrityError("design branch reference schema drifted")
+        if value["branch_id"] != branch_id:
+            raise ProjectIntegrityError("design branch id disagrees with its key")
+        parent = value["parent_branch"]
+        if parent is not None:
+            require_identifier(parent, "parent_branch")
+            if parent == branch_id:
+                raise ProjectIntegrityError("design branch cannot fork from itself")
+        result: dict[str, Any] = {"branch_id": branch_id, "parent_branch": parent}
+        for field in ("fork_stage", "head_stage"):
+            ref = ProjectRecordRef.from_dict(value[field], field)
+            self._require_design_stage(ref)
+            result[field] = ref.to_dict()
+        return result
+
+    def read_design_branches(self) -> dict[str, dict[str, Any]]:
+        """Read verified design references, including projects predating them."""
+        if not self.layout.design_branches.exists():
+            return {}
+        payload = _read_shared_json(self.layout.design_branches)
+        if set(payload) != {"schema", "project_id", "branches"} or payload["schema"] != "DesignBranches@1" or payload["project_id"] != self._manifest.project_id:
+            raise ProjectIntegrityError("design branches belong to another project or schema")
+        if not isinstance(payload["branches"], Mapping):
+            raise ProjectIntegrityError("design branches must be a mapping")
+        return {branch_id: self._design_branch_payload(branch_id, value) for branch_id, value in payload["branches"].items()}
+
+    def compare_and_swap_design_branch(
+        self,
+        *,
+        branch_id: str,
+        expected_head: ProjectRecordRef | None,
+        branch: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Publish a retained design position without moving canonical HEAD.
+
+        The application owns acceptance and lineage rules. The repository
+        verifies durable references and serializes creation or head movement.
+        """
+        replacement = self._design_branch_payload(branch_id, branch)
+        if expected_head is not None:
+            self._require_design_stage(expected_head)
+        with self._lock, self._design_lock:
+            branches = self.read_design_branches()
+            previous = branches.get(branch_id)
+            actual = None if previous is None else ProjectRecordRef.from_dict(previous["head_stage"])
+            if actual != expected_head:
+                raise StaleDesignBranch(f"design branch {branch_id!r} changed; reload its current stage")
+            if previous is not None and any(previous[key] != replacement[key] for key in ("parent_branch", "fork_stage")):
+                raise ProjectIntegrityError("an existing design branch's fork identity is immutable")
+            branches[branch_id] = replacement
+            _replace_atomic(self.layout.design_branches, _json_bytes({
+                "schema": "DesignBranches@1", "project_id": self._manifest.project_id,
+                "branches": branches,
+            }))
+        return replacement
 
     def list_json(
         self,
@@ -1150,6 +1247,21 @@ class FilesystemProjectRepository:
             expected_snapshot = parent_snapshot
             current_event = previous_ref
 
+        design_branches = self.read_design_branches()
+        if design_branches:
+            reachable.add(self.layout.design_branches.relative_to(self.layout.root).as_posix())
+        for branch in design_branches.values():
+            for field in ("fork_stage", "head_stage"):
+                stage_ref: ProjectRecordRef | None = ProjectRecordRef.from_dict(branch[field])
+                seen: set[str] = set()
+                while stage_ref is not None:
+                    if stage_ref.relative_path in seen:
+                        raise ProjectIntegrityError("design history contains a cycle")
+                    seen.add(stage_ref.relative_path)
+                    stage = self._require_design_stage(stage_ref)
+                    reachable.add(stage_ref.relative_path)
+                    parent = stage.get("parent_stage")
+                    stage_ref = None if parent is None else ProjectRecordRef.from_dict(parent, "parent_stage")
         retained = {
             path.relative_to(self.layout.root).as_posix()
             for base in (self.layout.events, self.layout.canonical)
@@ -1157,6 +1269,11 @@ class FilesystemProjectRepository:
             for path in base.rglob("*.json")
             if path.is_file()
         }
+        retained.update(
+            path.relative_to(self.layout.root).as_posix()
+            for path in self.layout.runs.glob(f"*/reviews/{DESIGN_STAGE}-*.json")
+            if path.is_file()
+        )
         return RecoveryReport(
             head=head,
             reachable_paths=tuple(sorted(reachable)),

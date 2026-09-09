@@ -82,7 +82,8 @@ export type Entry =
       id: string;
       candidateId: string;
       jobId: string;
-      proposalId: string;
+      /** Program candidates have no proposal in the intent store. */
+      proposalId: string | null;
       /** The server's own word for the job: queued, running, succeeded, failed. */
       status: string;
     }

@@ -56,7 +56,7 @@ existing owners; they are not new packages, four toolbar panels or mandatory sta
 | Read: sources and brief | Turn relevant material into project facts, requirements and attributable evidence. | ProgramSheet and Reading provide structured inputs; automatic brief/document extraction is not yet a complete service. |
 | Make: design and modeling | Generate or revise massing, components and their relationships, returning an editable candidate. | Massing options, component edits, type/reference resolution and CAD production exist; a general brief-to-design generator does not. |
 | Check: analysis and verification | Measure a selected design and return results, findings and assumptions. | Massing/envelope metrics, realized-relation checks and CAD readback exist; environmental simulation remains a separate capability to add. |
-| Present: views and drawings | Derive inspectable or deliverable representations from a selected model. | Model export/download and viewport captures exist; plans, sections, elevations, detailed drawing sets and architectural rendering are not established production services. |
+| Present: views and drawings | Derive inspectable or deliverable representations from a selected model. | Model exports, viewport captures and exact-STEP model-axis elevations exist. Studio elevations require a complete matching STEP; plans, sections, detailed drawing sets and architectural rendering remain separate work. |
 
 The agent and workbench combine these areas according to the request. An early-design
 workflow may read a brief, make a massing and check sunlight; one contributor may develop
@@ -98,8 +98,16 @@ stage workflow                    archflow/state/stage_workflow.py + StageExecut
 P036 repository                   archflow/project/repository.py — content-addressed records; one published design
   │ issue                          archflow/project/issue.py — compare-and-swap from a satisfied closure (ADR-007)
   ▼
-the published design              the one issue a project stands at; `HEAD` is the file's name and nothing else uses the word
+the published design              the one issue a project stands at; canonical `HEAD` is its file
 ```
+
+The design history uses `state.design_portfolio` and the same P036 repository:
+an accepted `DesignStage@1` pins one complete materialized model and StateRecord;
+`design/branches.json` holds each sustained history line's fork and head refs.
+Generate and preview leave candidates; explicit acceptance advances the design
+branch by exact Stage compare-and-swap. Formal issue alone advances canonical
+`HEAD`. [The Stage plan](STAGE_BRANCH_CANDIDATE_PLAN.md) records this convergence
+and its remaining product validation.
 
 Entry points: `tools/run_project.py` (a run of one project), `tools/verify_state_record.py`
 (replay equivalence), `tools/freeze_project_stage_workflow.py`, `tools/issue_project.py`, and the Studio

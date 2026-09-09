@@ -119,6 +119,11 @@ class ProjectLayout:
     def exports(self) -> Path:
         return self.root / "exports"
 
+    @property
+    def design_branches(self) -> Path:
+        """Working design history positions; independent of issued HEAD."""
+        return self.root / "design" / "branches.json"
+
     def run(self, run_id: str) -> RunLayout:
         require_identifier(run_id, "run_id")
         return RunLayout(self.runs / run_id)

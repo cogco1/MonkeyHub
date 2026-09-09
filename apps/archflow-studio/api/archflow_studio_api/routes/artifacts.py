@@ -76,8 +76,9 @@ def read_documents(request: Request, run_id: str = Query(alias="runId", min_leng
 
 
 @router.get("/documents/{asset_sha256}/bytes", response_class=Response)
-def read_document_bytes(request: Request, asset_sha256: str, run_id: str = Query(alias="runId", min_length=1)) -> Response:
-    document, data = document_bytes(bound_project(request.app.state), run_id, asset_sha256)
+def read_document_bytes(request: Request, asset_sha256: str, run_id: str = Query(alias="runId", min_length=1),
+                        revision_ref: str | None = Query(default=None, alias="revisionRef")) -> Response:
+    document, data = document_bytes(bound_project(request.app.state), run_id, asset_sha256, revision_ref)
     return Response(
         content=data, media_type=document.mime_type,
         headers={

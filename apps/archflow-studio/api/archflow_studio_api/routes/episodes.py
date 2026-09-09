@@ -19,11 +19,20 @@ from starlette.requests import Request
 
 from ..transport.proposal import EpisodeDto, episode_dto
 from ..application.binding import bound_project
+from ..application.design_history import (
+    accept_design_candidate, fork_design_branch, initialize_design_stage,
+    read_design_history, stage_ref_from,
+)
 from ..application.episodes import (
     add_working_copy_option, create_working_copy, list_working_copies,
     read_working_copy, select_working_copy_option,
 )
 from ..transport.artifacts import model_source_from
+from ..transport.design_history import (
+    AcceptDesignCandidateRequestDto, DesignBranchDto, DesignHistoryDto, DesignStageDto,
+    ForkDesignBranchRequestDto, InitializeDesignStageRequestDto,
+    branch_dto, history_dto, stage_dto,
+)
 from ..transport.proposal import (
     WorkingCopyCreateRequestDto, WorkingCopyDto, WorkingCopyListDto,
     WorkingCopySelectionRequestDto, WorkingCopyOptionRequestDto,
@@ -32,6 +41,36 @@ from ..transport.proposal import (
 from .proposals import _require_bound_project
 
 router = APIRouter(tags=["episodes"])
+
+
+@router.get("/design-history", response_model=DesignHistoryDto, response_model_by_alias=True)
+def read_committed_design_history(request: Request, branch_id: str = Query(default="main", alias="branchId")) -> DesignHistoryDto:
+    return history_dto(read_design_history(bound_project(request.app.state), branch_id))
+
+
+@router.post("/design-stages/initialize", response_model=DesignStageDto, response_model_by_alias=True, status_code=201)
+def initialize_committed_design(request: Request, payload: InitializeDesignStageRequestDto) -> DesignStageDto:
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, payload.project_id)
+    return stage_dto(initialize_design_stage(binding, model_source=model_source_from(payload.model_source),
+                                            branch_id=payload.branch_id, label=payload.label))
+
+
+@router.post("/candidates/{candidate_id}/accept", response_model=DesignStageDto, response_model_by_alias=True)
+def accept_committed_design(request: Request, candidate_id: str, payload: AcceptDesignCandidateRequestDto) -> DesignStageDto:
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, payload.project_id)
+    return stage_dto(accept_design_candidate(binding, candidate_id=candidate_id, branch_id=payload.branch_id,
+                                            expected_head=stage_ref_from(binding, payload.expected_head_stage_ref),
+                                            events=request.app.state.events, label=payload.label))
+
+
+@router.post("/design-branches", response_model=DesignBranchDto, response_model_by_alias=True, status_code=201)
+def fork_committed_design(request: Request, payload: ForkDesignBranchRequestDto) -> DesignBranchDto:
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, payload.project_id)
+    return branch_dto(fork_design_branch(binding, branch_id=payload.branch_id, parent_branch=payload.parent_branch,
+                                         stage_ref=stage_ref_from(binding, payload.stage_ref)))
 
 
 @router.get("/working-copies", response_model=WorkingCopyListDto, response_model_by_alias=True)

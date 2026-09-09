@@ -1691,6 +1691,191 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
         self.assertEqual(closure["findings"], [])
 
 
+@NEEDS_OCCT
+class IncrementalSourceRunTests(unittest.TestCase):
+    def setUp(self) -> None:
+        for patcher in _no_rhino():
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_shared_missing_intermediate_does_not_rebuild_an_unchanged_final_object(self) -> None:
+        from unittest.mock import patch
+        from archflow.adapters import occt_backend
+        from archflow.adapters.cad_execution import execute_occt_export
+        from tests.test_cad_execution import _binding
+        from tests.test_occt_execution import _array, _box, _program_of
+
+        seed = _box("seed", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        fixed = _array("fixed", seed, count=2, step=[0.0, 3.0, 0.0])
+        before = _program_of(seed, _array("edited", seed, count=2, step=[3.0, 0.0, 0.0]), fixed)
+        after = _program_of(seed, _array("edited", seed, count=3, step=[3.0, 0.0, 0.0]), fixed)
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary).resolve()
+            first = execute_occt_export(before, binding=_binding(before), speculative_workspace=workspace,
+                                        artifact_stem="base", preview=False)
+            self.assertTrue(first.readback_verified, first.failures)
+            with patch.object(occt_backend, "_build_operation", wraps=occt_backend._build_operation) as build:
+                second = execute_occt_export(after, binding=_binding(after), speculative_workspace=workspace,
+                    artifact_stem="candidate", preview=False, prior_program=before,
+                    prior_step=workspace / first.exact_artifact["relative_path"],
+                    prior_step_sha256=first.exact_artifact["sha256"])
+            self.assertTrue(second.readback_verified, second.failures)
+            self.assertEqual(second.reused_object_ids, ("fixed-object",))
+            self.assertEqual([call.args[2].op_id for call in build.call_args_list], ["seed", "edited"])
+            self.assertEqual(second.physical_object_ids, ("edited-object", "fixed-object"))
+
+    def run_source(self, project, record, run_id, source=None, *, one_seat=True, required_checks=None):
+        run = project.run if run_id == project.run.run_id else project.repository.create_run(run_id)
+        options = replace(project.options, workspace_root=project.repository.layout.run(run_id).workspaces,
+                          source_run_receipt_ref=None if source is None else record_ref_from_uri(source["receipt_ref"], "demo"))
+        seats = _seats(DesignPhase.DESIGN_DEVELOPMENT)
+        if one_seat:
+            seats = (replace(seats[0], owned_component_ids=("building",)), seats[-1])
+        for seat in seats:
+            if not seat.reviewer:
+                (options.workspace_root / f"cad-stage-0-test-production-{seat.seat_id}").mkdir(parents=True, exist_ok=True)
+        return run_project(project.repository, run=run, record=record, seats=seats, options=options,
+                           stage_guard=_stage_guard(project.repository, run, record, options,
+                                                    **({"required_checks": required_checks} if required_checks is not None else {})))
+
+    @staticmethod
+    def taller(record, element_id="columns-plinth"):
+        return replace(record, entities=tuple(
+            replace(entity, fields={**entity.fields, "params": {**entity.fields["params"], "height": 0.8}})
+            if entity.entity_id == element_id else entity for entity in record.entities))
+
+    @staticmethod
+    def checks(repository, receipt):
+        return {check["relation_id"]: check for seat in receipt["seat_results"] if seat.get("relation_check_ref")
+                for check in repository.load_json(record_ref_from_uri(seat["relation_check_ref"], "demo"))["checks"]}
+
+    def test_same_seat_change_reuses_the_frozen_building_before_production_and_cad(self) -> None:
+        from unittest.mock import patch
+        from monkeyarch.runtime import project_runner
+
+        record = _record(elements=("wall-south",), extra_entities=(_prism_row(),))
+        project = _ExportProject(self, record)
+        first = self.run_source(project, record, "run-1")
+        before = first["seat_results"][0]
+        source_path = Path(before["cad"]["model"])
+        source_sha = _sha256_of(source_path)
+        with patch.object(project_runner, "produce_rows", wraps=project_runner.produce_rows) as produce, patch.object(
+            _occt_backend, "_build_operation", wraps=_occt_backend._build_operation
+        ) as build:
+            second = self.run_source(project, self.taller(record), "run-2", first)
+        self.assertTrue(second["seat_execution_complete"], second["seat_results"])
+        self.assertEqual(second["closure_status"], "SATISFIED")
+        self.assertEqual([row.element_id for call in produce.call_args_list for row in call.args[0]], ["columns-plinth"])
+        self.assertEqual([call.args[2].op_id for call in build.call_args_list], ["columns-plinth"])
+        seat = second["seat_results"][0]
+        round_receipt = project.repository.load_json(record_ref_from_uri(seat["receipt_ref"], "demo"))
+        self.assertEqual(round_receipt["reused_element_ids"], ["wall-south"])
+        self.assertEqual(seat["cad"]["path"], "incremental")
+        execution = project.repository.load_json(record_ref_from_uri(seat["cad"]["execution_ref"], "demo"))
+        self.assertEqual(execution["identity"]["binding"]["run_id"], "run-2")
+        self.assertTrue(execution["readback_verified"])
+        self.assertIn("obj-wall-south-cut", execution["reused_object_ids"])
+        self.assertEqual(_sha256_of(source_path), source_sha)
+        self.assertEqual(second["source_run_receipt_ref"], first["receipt_ref"])
+        self.assertEqual(self.checks(project.repository, second)["columns-plinth-stands-on"]["status"], "held")
+
+    def test_unchanged_seat_is_reused_across_a_new_run_binding(self) -> None:
+        from unittest.mock import patch
+        from monkeyarch.runtime import project_runner
+
+        record = _record(elements=("wall-south",), extra_entities=(_prism_row(),))
+        project = _ExportProject(self, record)
+        first = self.run_source(project, record, "run-1", one_seat=False)
+        changed = _record(opening_along=5.0, elements=("wall-south",), extra_entities=(_prism_row(),))
+        with patch.object(project_runner, "produce_rows", wraps=project_runner.produce_rows) as produce:
+            second = self.run_source(project, changed, "run-2", first, one_seat=False)
+        self.assertTrue(second["seat_execution_complete"], second["seat_results"])
+        self.assertEqual([row.element_id for call in produce.call_args_list for row in call.args[0]], ["wall-south"])
+        seat = next(row for row in second["seat_results"] if row["seat_id"] == "seat-structure")
+        self.assertEqual(seat["cad"]["reused_object_ids"], ["obj-columns-plinth"])
+        self.assertNotEqual(seat["cad"]["execution_ref"], first["seat_results"][0]["cad"]["execution_ref"])
+        self.assertEqual(second["closure_status"], "SATISFIED")
+
+    def test_changed_support_datum_rebuilds_its_consumer_and_rechecks_the_boundary(self) -> None:
+        from unittest.mock import patch
+        from monkeyarch.runtime import project_runner
+
+        cabinet = _prism_row(element_id="cabinet")
+        cabinet = replace(cabinet, fields={**cabinet.fields, "references": {"base": {"datum": "columns-plinth-top"}}})
+        record = _record(elements=("wall-south",), extra_entities=(_prism_row(), cabinet), relations=(
+            Relation("cabinet-on-plinth", "support", "columns-plinth", "cabinet", datum_role="columns-plinth-top",
+                     propagation="revalidate", validator=ValidatorBinding("support_contact", tolerance=0.001)),))
+        project = _ExportProject(self, record)
+        first = self.run_source(project, record, "run-1")
+        with patch.object(project_runner, "produce_rows", wraps=project_runner.produce_rows) as produce:
+            second = self.run_source(project, self.taller(record), "run-2", first)
+        self.assertEqual([row.element_id for call in produce.call_args_list for row in call.args[0]], ["columns-plinth", "cabinet"])
+        self.assertEqual(second["closure_status"], "SATISFIED")
+        checks = self.checks(project.repository, second)
+        self.assertEqual(checks["cabinet-on-plinth"]["status"], "held")
+        path = Path(second["seat_results"][0]["cad"]["model"])
+        cabinet_shape = next(entry.shape for entry in _occt_backend.read_step(path, length_unit="meter") if entry.name == "obj-cabinet")
+        self.assertAlmostEqual(_occt_backend.measure_shape(cabinet_shape).bbox_min[2], 4.3, places=6)
+
+    def test_legacy_source_without_element_results_runs_producers_without_claiming_they_were_reused(self) -> None:
+        from unittest.mock import patch
+        from monkeyarch.runtime import project_runner
+
+        record = _record(elements=("wall-south",), extra_entities=(_prism_row(),))
+        project = _ExportProject(self, record)
+        first = self.run_source(project, record, "run-1")
+        payload = project.repository.load_json(record_ref_from_uri(first["receipt_ref"], "demo"))
+        for seat in payload["seat_results"]:
+            round_payload = project.repository.load_json(record_ref_from_uri(seat["receipt_ref"], "demo"))
+            for key in ("element_results", "producer_code", "reused_element_ids"):
+                round_payload.pop(key, None)
+            seat["receipt_ref"] = project.repository.put_json(
+                run=project.run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=project.run.run_id),
+                record_kind="seat-round-receipt", payload=round_payload).uri
+        source_ref = project.repository.put_json(
+            run=project.run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=project.run.run_id),
+            record_kind="runner-run-receipt", payload=payload)
+        with patch.object(project_runner, "produce_rows", wraps=project_runner.produce_rows) as produce:
+            second = self.run_source(project, self.taller(record), "run-2", {"receipt_ref": source_ref.uri})
+        self.assertCountEqual([row.element_id for call in produce.call_args_list for row in call.args[0]], ["wall-south", "columns-plinth"])
+        round_receipt = project.repository.load_json(record_ref_from_uri(second["seat_results"][0]["receipt_ref"], "demo"))
+        self.assertEqual(round_receipt["reused_element_ids"], [])
+        self.assertTrue(second["seat_execution_complete"])
+
+    def test_changed_source_step_is_never_reused_under_its_old_receipt(self) -> None:
+        record = _record(elements=("wall-south",), extra_entities=(_prism_row(),))
+        project = _ExportProject(self, record)
+        first = self.run_source(project, record, "run-1")
+        source_path = Path(first["seat_results"][0]["cad"]["model"])
+        source_path.write_bytes(b"the source STEP was replaced")
+        second = self.run_source(project, self.taller(record), "run-2", first)
+        self.assertTrue(second["seat_execution_complete"])
+        self.assertEqual(second["seat_results"][0]["cad"]["path"], "occt")
+        self.assertNotIn("reused_object_ids", second["seat_results"][0]["cad"])
+        self.assertEqual(source_path.read_bytes(), b"the source STEP was replaced")
+
+    def test_reused_geometry_still_takes_part_in_the_new_run_solid_check(self) -> None:
+        fixed = _prism_row("exterior-walls", "fixed-building")
+        cabinet = _prism_row(element_id="cabinet")
+        cabinet = replace(cabinet, fields={**cabinet.fields, "params": {
+            **cabinet.fields["params"], "profile": [[x + 12.0, z] for x, z in cabinet.fields["params"]["profile"]]}})
+        record = _record(elements=(), extra_entities=(fixed, cabinet), relations=(
+            Relation("cabinet-clear-of-building", "clearance", "fixed-building", "cabinet",
+                     validator=ValidatorBinding("solid_nonpenetration", tolerance=0.0),
+                     parameters={"object_pairs": [["obj-fixed-building", "obj-cabinet"]]}),))
+        project = _ExportProject(self, record)
+        first = self.run_source(project, record, "run-1", required_checks=("solid_nonpenetration",))
+        moved = replace(record, entities=tuple(replace(entity, fields={**entity.fields, "params": {
+            **entity.fields["params"], "profile": [[x - 0.5, z] for x, z in entity.fields["params"]["profile"]]}})
+            if entity.entity_id == "cabinet" else entity for entity in record.entities))
+        second = self.run_source(project, moved, "run-2", first, required_checks=("solid_nonpenetration",))
+        self.assertTrue(second["seat_execution_complete"])
+        self.assertIn("obj-fixed-building", second["seat_results"][0]["cad"]["reused_object_ids"])
+        report = project.repository.load_json(record_ref_from_uri(second["relation_checks"]["solid_check_ref"], "demo"))
+        self.assertEqual(report["checks"][0]["status"], "violated")
+        self.assertNotEqual(second["closure_status"], "SATISFIED")
+
+
 class CadBackendSelectionTests(unittest.TestCase):
     def test_run_options_refuse_a_backend_nobody_implements(self) -> None:
         with self.assertRaisesRegex(ProjectRunnerError, "cad_backend"):

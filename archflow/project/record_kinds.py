@@ -105,6 +105,8 @@ STUDIO_MODEL_ASSET = "studio-model-asset"
 STUDIO_DOCUMENT_MODEL_SOURCE = "studio-document-model-source"
 STUDIO_WORKING_COPY = "studio-working-copy"
 STUDIO_MODEL_ANNOTATIONS = "studio-model-annotations"
+DESIGN_STAGE = "design-stage"
+STUDIO_CANDIDATE_DELTA = "studio-candidate-delta"
 
 # ---- read by the spine, written by nobody on it
 
@@ -132,6 +134,18 @@ _RUN_BRANCH = PersistenceArea.RUN_BRANCH.value
 
 
 _TABLE: tuple[RecordKind, ...] = (
+    RecordKind(
+        DESIGN_STAGE,
+        "DesignStage@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "an explicitly accepted immutable design state and its parent, retained in the actual model run; not formal issue",
+    ),
+    RecordKind(
+        STUDIO_CANDIDATE_DELTA,
+        "StudioCandidateDelta@1",
+        _RUN_RECORD,
+        "the exact source and typed operator executed by a candidate; generation does not accept the result",
+    ),
     RecordKind(
         STUDIO_WORKING_COPY,
         "StudioWorkingCopy@1",

@@ -32,7 +32,7 @@ from fastapi import APIRouter, Query
 from starlette.requests import Request
 
 from ..application.binding import ProjectBinding, bound_project
-from ..application.candidate import describe, execute_candidate
+from ..application.candidate import describe, execute_candidate, prepare_combined_candidate, run_operator
 from ..application.compare import compare_runs
 from ..application.jobs import FAILED, QUEUED, RUNNING, SUCCEEDED, Job, JobRegistry
 from ..application.projection import (
@@ -40,10 +40,11 @@ from ..application.projection import (
     project_state,
     require_actionable,
 )
-from ..application.proposals import closure_of, Proposal
+from ..application.proposals import read_refs_of, write_refs_of, Proposal
 from ..settings import StudioSettings
 from ..transport.candidate import (
     CandidateAcceptedDto,
+    CombineCandidatesRequestDto,
     CandidateDto,
     JobDto,
     accepted_dto,
@@ -83,7 +84,7 @@ def start_candidate(
             "a protection the user named.",
         )
     binding = bound_project(state)
-    projection = project_state(binding, run_id=proposal.source_run_id)
+    projection = project_state(binding, run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref)
     require_actionable(projection)
     _require_current_base(binding, projection, proposal)
     registry: JobRegistry = state.jobs
@@ -116,10 +117,29 @@ def start_candidate(
             # The queue's two facts about this run: what it touches, and
             # whether it needs the one Rhino this machine can export with. An
             # OCCT export is ordinary worker work and takes no lane of its own.
-            closure=closure_of(proposal),
+            read_refs=read_refs_of(proposal),
+            write_refs=write_refs_of(proposal),
             exclusive=settings.rhino_lane,
         )
     )
+
+
+@router.post("/candidates/combine", response_model=CandidateAcceptedDto, response_model_by_alias=True, status_code=202)
+def combine_candidates(request: Request, body: CombineCandidatesRequestDto) -> CandidateAcceptedDto:
+    state = request.app.state
+    binding = bound_project(state)
+    if body.project_id != binding.project_id:
+        raise StudioError(409, "PROJECT_MISMATCH", "This request names another project.")
+    candidate_ids = tuple(body.candidate_ids)
+    projection, operator = prepare_combined_candidate(binding, candidate_ids)
+    run_id = _run_id("combined")
+    return accepted_dto(state.jobs.submit(
+        candidate_id=run_id, proposal_id="combined:" + "+".join(candidate_ids),
+        work=lambda: run_operator(binding, state.settings, operator, run_id,
+                                  source_run_id=projection.run.run_id, source_stage_ref=projection.source_stage_ref,
+                                  combined_candidate_ids=candidate_ids),
+        read_refs=frozenset(operator.protected), exclusive=state.settings.rhino_lane,
+    ))
 
 
 @router.get(

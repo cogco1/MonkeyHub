@@ -271,9 +271,11 @@ try {
       } else if (url.pathname === "/api/options") {
         assert.ok(optionsByRun.has(runId), "Options GET must request the explicit editing run");
         await route.fulfill({ json: optionsByRun.get(runId) });
-      } else if (url.pathname === "/api/jobs/fixture-option-job") {
-        await route.fulfill({ json: { jobId: "fixture-option-job", candidateId: "fixture-option-candidate",
-          proposalId: rightAssetOption.optionId, status: "failed", createdAt: "2026-09-08T00:00:00Z",
+      } else if (["/api/jobs/fixture-option-job", "/api/jobs/fixture-program-job"].includes(url.pathname)) {
+        const isProgram = url.pathname.endsWith("fixture-program-job");
+        await route.fulfill({ json: { jobId: isProgram ? "fixture-program-job" : "fixture-option-job",
+          candidateId: isProgram ? "fixture-program-B" : "fixture-option-candidate",
+          proposalId: isProgram ? "fixture-program" : rightAssetOption.optionId, status: "failed", createdAt: "2026-09-08T00:00:00Z",
           startedAt: null, finishedAt: "2026-09-08T00:00:00Z", error: "Execution is intercepted by this browser test.",
           wallTimeS: 0, lane: "parallel", waitingFor: null, waitingReason: null, persistence: "browser fixture only" } });
       } else {

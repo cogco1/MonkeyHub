@@ -4,8 +4,12 @@ import hashlib
 import unittest
 from dataclasses import replace
 
-from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
-from archflow.state.design_portfolio import AdviceDisposition, BranchLifecycle, DesignOptionPortfolio, DesignPortfolioError, ExpertAdviceResolution, ParetoBranchObservation, SelectionPolicy, attach_pareto_observation, combine_branches, compile_selected_branch_handoff, fork_branch, initialize_design_portfolio, park_branch, reject_branch, revise_branch, select_branch
+from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
+from archflow.state.design_portfolio import (
+    BranchRevisionRef, DesignBranch, DesignOptionPortfolio, DesignPortfolioError,
+    DesignStage, SelectedBranchHandoff, SelectionPolicy, advance_branch,
+    fork_branch, initialize_branch,
+)
 from archflow.state.spatial import ComponentMaturity, ConstraintResponseStatus, DesignComponent, MassingVolume, SchematicOption, SchematicOptionSet, SpatialConstraintResponse, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialZone
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.spatial import SiteBounds
@@ -209,338 +213,147 @@ def _policy(
     )
 
 
-def _portfolio(run: RunRef | None = None) -> DesignOptionPortfolio:
-    option_set = _option_set(run)
-    return initialize_design_portfolio(
-        option_set,
-        portfolio_id="schematic-portfolio",
-        selection_policy=_policy(option_set.project_id),
-        architect_id="architect-lead",
-    )
-
-
-def _transition_kwargs(
-    portfolio: DesignOptionPortfolio,
-    *,
-    transition_id: str,
-    authority_id: str = "architect-lead",
-) -> dict[str, object]:
+def _retained_portfolio_payload() -> dict[str, object]:
+    """The old stored shape, built without the retired lifecycle writers."""
+    options = _option_set()
     return {
-        "expected_portfolio_digest": portfolio.portfolio_digest,
-        "authority_id": authority_id,
-        "decision_ref": DECISION,
-        "rationale": f"Explicit rationale for {transition_id}.",
-        "evidence_refs": (EVIDENCE,),
-        "transition_id": transition_id,
+        "schema": "DesignOptionPortfolio@1", "portfolio_id": "schematic-portfolio",
+        "project_id": options.project_id, "run_id": options.run_id,
+        "base": options.base.to_dict(), "source_option_set_digest": options.option_set_digest,
+        "operational_state_digest": options.operational_state_digest,
+        "selection_policy": _policy().to_dict(),
+        "branches": [
+            {"schema": "DesignBranch@1", "branch_id": option.option_id,
+             "lifecycle": "active", "lifecycle_evidence_refs": [], "revisions": [
+                 {"schema": "DesignBranchRevision@1", "revision_id": f"origin-{option.option_id}",
+                  "branch_id": option.option_id, "index": 0, "kind": "origin",
+                  "option": option.to_dict(), "parent_revisions": [],
+                  "requirement_refs": list(option.proposal.responds_to_refs),
+                  "derivation_refs": [options.ref, option.proposal.ref],
+                  "evidence_refs": list(option.proposal.evidence_refs), "expert_resolutions": [],
+                  "tradeoff_rationale": option.proposal.rationale, "author_id": "architect-lead"}
+             ]}
+            for option in options.options
+        ],
+        "observations": [], "transitions": [], "ranked": False, "automatic_winner": False,
+        "hard_usability_verdict": None, "canonical_write_authority": False,
+        "candidate_assembly_authority": False,
     }
 
 
-class DesignPortfolioTests(unittest.TestCase):
-    def test_three_branch_lineage_round_trips_without_ranking(self) -> None:
-        portfolio = _portfolio()
+def _ref(name: str, *, project_id: str = PROJECT_ID) -> ProjectRecordRef:
+    digest = hashlib.sha256(name.encode()).hexdigest()
+    return ProjectRecordRef(project_id, f"runs/{RUN_ID}/records/{name}-{digest}.json", digest)
 
-        reloaded = DesignOptionPortfolio.from_dict(portfolio.to_dict())
 
-        self.assertEqual(reloaded, portfolio)
-        self.assertEqual(
-            tuple(item.branch_id for item in portfolio.branches),
-            ("branch-a", "branch-b", "branch-c"),
-        )
-        self.assertIsNone(portfolio.selected_branch)
-        self.assertFalse(portfolio.to_dict()["ranked"])
-        self.assertFalse(portfolio.to_dict()["automatic_winner"])
+def _stage(parent: ProjectRecordRef | None, *, branch_id: str = "main", candidate_id: str = "cabinet-a") -> DesignStage:
+    return DesignStage(
+        parent_stage=parent, record_ref=_ref(f"state-{candidate_id}"),
+        model_ref=_ref(f"model-{candidate_id}"), model_sha256="b" * 64,
+        runner_ref=_ref(f"runner-{candidate_id}"), candidate_id=candidate_id,
+        branch_id=branch_id, label="Stage 1", accepted_by="Architect",
+    )
 
-    def test_fork_revise_combine_and_lifecycle_preserve_lineage(self) -> None:
-        portfolio = _portfolio()
-        advice = (
-            ExpertAdviceResolution(
-                advice_ref="expert-advice:structure:001",
-                expert_id="structure-expert",
-                disposition=AdviceDisposition.ADOPTED,
-                rationale="Adopted the shorter span recommendation.",
-                evidence_refs=(EVIDENCE,),
-            ),
-            ExpertAdviceResolution(
-                advice_ref="expert-advice:circulation:001",
-                expert_id="circulation-expert",
-                disposition=AdviceDisposition.REJECTED,
-                rationale=(
-                    "Rejected the route because it conflicts with the "
-                    "retained public-access commitment."
-                ),
-                evidence_refs=(EVIDENCE,),
-            ),
-        )
-        portfolio = fork_branch(
-            portfolio,
-            parent_branch_id="branch-a",
-            new_branch_id="branch-d",
-            revision_id="branch-d-origin",
-            option=_option("branch-d", shape=12),
-            expert_resolutions=advice,
-            **_transition_kwargs(portfolio, transition_id="fork-d"),
-        )
-        fork_head = portfolio.branch("branch-d").head
-        self.assertEqual(
-            fork_head.parent_revisions,
-            (portfolio.branch("branch-a").head.ref,),
-        )
-        self.assertEqual(fork_head.expert_resolutions, advice)
 
-        portfolio = revise_branch(
-            portfolio,
-            branch_id="branch-d",
-            revision_id="branch-d-r1",
-            option=_option("branch-d-r1", shape=13),
-            expert_resolutions=advice,
-            **_transition_kwargs(portfolio, transition_id="revise-d"),
-        )
-        self.assertEqual(len(portfolio.branch("branch-d").revisions), 2)
+class DesignHistoryTests(unittest.TestCase):
+    def test_accepting_candidates_continues_one_branch_and_preserves_base(self) -> None:
+        s0, s1, s2 = _ref("s0"), _ref("s1"), _ref("s2")
+        main = initialize_branch("main", s0)
+        cabinet = _stage(s0)
+        next_main = advance_branch(main, expected_head=s0, candidate_base=s0, stage_ref=s1, stage=cabinet)
+        hood = _stage(s1, candidate_id="hood-b")
+        final_main = advance_branch(next_main, expected_head=s1, candidate_base=s1, stage_ref=s2, stage=hood)
+        self.assertEqual((main.head_stage, next_main.head_stage, final_main.head_stage), (s0, s1, s2))
+        self.assertEqual(final_main.branch_id, "main")
+        self.assertEqual(final_main.fork_stage, s0)
+        self.assertIsNone(final_main.parent_branch)
 
-        portfolio = combine_branches(
-            portfolio,
-            parent_branch_ids=("branch-b", "branch-d"),
-            new_branch_id="branch-e",
-            revision_id="branch-e-origin",
-            option=_option("branch-e", shape=16),
-            expert_resolutions=advice,
-            **_transition_kwargs(portfolio, transition_id="combine-e"),
-        )
-        combined = portfolio.branch("branch-e").head
-        self.assertEqual(
-            {item.branch_id for item in combined.parent_revisions},
-            {"branch-b", "branch-d"},
-        )
-        self.assertEqual(
-            set(combined.requirement_refs),
-            {REQUIREMENT_A, REQUIREMENT_B},
-        )
-        self.assertIn(
-            portfolio.branch("branch-b").head.option.ref,
-            combined.derivation_refs,
-        )
-        self.assertIn(
-            portfolio.branch("branch-d").head.option.ref,
-            combined.derivation_refs,
-        )
+    def test_sibling_candidate_cannot_advance_a_changed_head(self) -> None:
+        s0, s1 = _ref("s0"), _ref("s1")
+        main = advance_branch(initialize_branch("main", s0), expected_head=s0,
+                              candidate_base=s0, stage_ref=s1, stage=_stage(s0))
+        with self.assertRaisesRegex(DesignPortfolioError, "head changed"):
+            advance_branch(main, expected_head=s0, candidate_base=s0,
+                           stage_ref=_ref("sibling"), stage=_stage(s0, candidate_id="cabinet-b"))
+        with self.assertRaisesRegex(DesignPortfolioError, "candidate base"):
+            advance_branch(main, expected_head=s1, candidate_base=s0,
+                           stage_ref=_ref("sibling"), stage=_stage(s1, candidate_id="cabinet-b"))
 
-        portfolio = park_branch(
-            portfolio,
-            branch_id="branch-b",
-            **_transition_kwargs(portfolio, transition_id="park-b"),
-        )
-        portfolio = reject_branch(
-            portfolio,
-            branch_id="branch-c",
-            **_transition_kwargs(portfolio, transition_id="reject-c"),
-        )
-        with self.assertRaisesRegex(
-            DesignPortfolioError,
-            "not allowed to select",
-        ):
-            select_branch(
-                portfolio,
-                branch_id="branch-e",
-                **_transition_kwargs(
-                    portfolio,
-                    transition_id="bad-select",
-                    authority_id="untrusted-agent",
-                ),
-            )
-        portfolio = select_branch(
-            portfolio,
-            branch_id="branch-e",
-            **_transition_kwargs(
-                portfolio,
-                transition_id="select-e",
-                authority_id="user-owner",
-            ),
-        )
+    def test_fork_from_old_stage_preserves_main_and_can_continue(self) -> None:
+        s0, s1 = _ref("s0"), _ref("s1")
+        main = advance_branch(initialize_branch("main", s0), expected_head=s0,
+                              candidate_base=s0, stage_ref=s1, stage=_stage(s0))
+        other = fork_branch(main, new_branch_id="alternative", stage_ref=s0)
+        continued = advance_branch(other, expected_head=s0, candidate_base=s0, stage_ref=_ref("other-s1"),
+                                   stage=_stage(s0, branch_id="alternative", candidate_id="cabinet-b"))
+        self.assertEqual(main.head_stage, s1)
+        self.assertEqual(other.head_stage, s0)
+        self.assertEqual(continued.parent_branch, "main")
+        self.assertEqual(continued.fork_stage, s0)
+        self.assertNotEqual(continued.head_stage, main.head_stage)
 
-        handoff = compile_selected_branch_handoff(
-            portfolio,
-            expected_portfolio_digest=portfolio.portfolio_digest,
-            expected_revision_digest=(
-                portfolio.branch("branch-e").head.revision_digest
-            ),
-        )
-        self.assertEqual(handoff.branch_id, "branch-e")
-        self.assertFalse(handoff.to_dict()["candidate_created"])
-        self.assertIsNone(
-            handoff.to_dict()["hard_usability_verdict"]
-        )
-        self.assertFalse(
-            handoff.to_dict()["canonical_write_authority"]
-        )
-        self.assertEqual(
-            DesignOptionPortfolio.from_dict(portfolio.to_dict()),
-            portfolio,
-        )
+    def test_stage_keeps_exact_model_and_runner_sources_on_round_trip(self) -> None:
+        stage = _stage(_ref("s0"))
+        self.assertEqual(DesignStage.from_dict(stage.to_dict()), stage)
+        branch = initialize_branch("main", _ref("s0"))
+        self.assertEqual(DesignBranch.from_dict(branch.to_dict()), branch)
+        other_runner = replace(stage, runner_ref=_ref("runner-other"))
+        self.assertNotEqual(other_runner.runner_ref, stage.runner_ref)
 
-    def test_pareto_observation_cannot_choose_or_delete_branch(self) -> None:
-        portfolio = _portfolio()
-        statuses = tuple(
-            (item.branch_id, item.lifecycle) for item in portfolio.branches
-        )
-        observation = ParetoBranchObservation(
-            observation_ref="critic-observation:pareto:001",
-            branch_revisions=tuple(
-                item.head.ref for item in portfolio.branches[:2]
-            ),
-            objective_names=("coherence", "material-economy"),
-            evidence_refs=(EVIDENCE,),
-            summary="The two branches expose a non-dominating trade-off.",
-        )
-        portfolio = attach_pareto_observation(
-            portfolio,
-            observation=observation,
-            **_transition_kwargs(
-                portfolio,
-                transition_id="observe-pareto",
-            ),
-        )
+    def test_stage_cannot_mix_projects_or_lose_its_model_identity(self) -> None:
+        stage = _stage(_ref("s0"))
+        for field in ("parent_stage", "record_ref", "model_ref", "runner_ref"):
+            with self.subTest(field=field), self.assertRaisesRegex(DesignPortfolioError, "another project"):
+                replace(stage, **{field: _ref(field, project_id="other-project")})
+        with self.assertRaises(ValueError):
+            replace(stage, model_sha256="not-a-digest")
+        with self.assertRaises(ValueError):
+            replace(stage, accepted_by="")
 
-        self.assertIsNone(portfolio.selected_branch)
-        self.assertEqual(
-            tuple(
-                (item.branch_id, item.lifecycle)
-                for item in portfolio.branches
-            ),
-            statuses,
+    def test_advance_refuses_changed_parent_branch_or_project(self) -> None:
+        s0, s1 = _ref("s0"), _ref("s1")
+        main = initialize_branch("main", s0)
+        wrong_stages = (
+            replace(_stage(s0), parent_stage=_ref("other-parent")),
+            replace(_stage(s0), branch_id="other-branch"),
         )
-        serialized = portfolio.observations[0].to_dict()
-        self.assertTrue(serialized["read_only"])
-        self.assertFalse(serialized["selection_authority"])
-        self.assertFalse(serialized["deletion_authority"])
+        for stage in wrong_stages:
+            with self.subTest(stage=stage), self.assertRaises(DesignPortfolioError):
+                advance_branch(main, expected_head=s0, candidate_base=s0, stage_ref=s1, stage=stage)
+        with self.assertRaisesRegex(DesignPortfolioError, "another project"):
+            advance_branch(main, expected_head=s0, candidate_base=s0,
+                           stage_ref=_ref("s1", project_id="other-project"), stage=_stage(s0))
+        with self.assertRaisesRegex(DesignPortfolioError, "new Stage"):
+            advance_branch(main, expected_head=s0, candidate_base=s0, stage_ref=s0, stage=_stage(s0))
 
-        observed_revision = observation.branch_revisions[0]
-        portfolio = revise_branch(
-            portfolio,
-            branch_id="branch-a",
-            revision_id="branch-a-after-observation",
-            option=_option("branch-a-after-observation", shape=2),
-            **_transition_kwargs(
-                portfolio,
-                transition_id="revise-after-observation",
-            ),
-        )
-        self.assertEqual(
-            portfolio.observations[0].branch_revisions[0],
-            observed_revision,
-        )
-        self.assertNotEqual(
-            portfolio.branch("branch-a").head.ref,
-            observed_revision,
-        )
-        self.assertIsNone(portfolio.selected_branch)
+    def test_fork_refuses_self_and_other_project(self) -> None:
+        main = initialize_branch("main", _ref("s0"))
+        with self.assertRaisesRegex(DesignPortfolioError, "itself"):
+            fork_branch(main, new_branch_id="main", stage_ref=main.head_stage)
+        with self.assertRaisesRegex(DesignPortfolioError, "another project"):
+            fork_branch(main, new_branch_id="alternative", stage_ref=_ref("s0", project_id="other-project"))
 
-    def test_stale_transition_and_lost_parent_requirement_fail_closed(
-        self,
-    ) -> None:
-        portfolio = _portfolio()
-        stale_digest = portfolio.portfolio_digest
-        portfolio = park_branch(
-            portfolio,
-            branch_id="branch-a",
-            **_transition_kwargs(portfolio, transition_id="park-a"),
-        )
-        with self.assertRaisesRegex(DesignPortfolioError, "stale base"):
-            reject_branch(
-                portfolio,
-                expected_portfolio_digest=stale_digest,
-                branch_id="branch-b",
-                authority_id="architect-lead",
-                decision_ref=DECISION,
-                rationale="Stale decision.",
-                evidence_refs=(EVIDENCE,),
-                transition_id="stale-reject",
-            )
 
-        incomplete = _option(
-            "branch-incomplete",
-            requirement_refs=(REQUIREMENT_A,),
-            shape=20,
-        )
-        with self.assertRaisesRegex(
-            DesignPortfolioError,
-            "lost parent requirement",
-        ):
-            fork_branch(
-                portfolio,
-                parent_branch_id="branch-b",
-                new_branch_id="branch-incomplete",
-                revision_id="branch-incomplete-origin",
-                option=incomplete,
-                **_transition_kwargs(
-                    portfolio,
-                    transition_id="invalid-fork",
-                ),
-            )
+class RetainedPortfolioCompatibilityTests(unittest.TestCase):
+    def test_saved_portfolio_preserves_its_record_and_digest(self) -> None:
+        payload = _retained_portfolio_payload()
+        retained = DesignOptionPortfolio.from_dict(payload)
+        self.assertEqual(retained.to_dict(), payload)
+        self.assertEqual(retained.portfolio_digest, "c7036e26bd5b99eb6e372fc10d002303f658f8606e14c532d72f621ac72903fc")
 
-    def test_selected_branch_must_be_released_before_revision(self) -> None:
-        portfolio = _portfolio()
-        portfolio = select_branch(
-            portfolio,
-            branch_id="branch-a",
-            **_transition_kwargs(
-                portfolio,
-                transition_id="select-a",
-                authority_id="user-owner",
-            ),
+    def test_compiler_selection_handoff_keeps_its_retained_identity(self) -> None:
+        from archflow.state.developed_design import SelectedSchematicInput
+        handoff = SelectedBranchHandoff(
+            portfolio_id="legacy", portfolio_digest="c" * 64,
+            project_id=PROJECT_ID, run_id=RUN_ID, base=_run().base,
+            branch_id="legacy-branch", revision=BranchRevisionRef("legacy-branch", "r0", "d" * 64),
+            option=_option("legacy"), selection_transition_id="declared",
+            selection_decision_ref="decision:declared",
         )
-        with self.assertRaisesRegex(
-            DesignPortfolioError,
-            "selected branch",
-        ):
-            revise_branch(
-                portfolio,
-                branch_id="branch-a",
-                revision_id="branch-a-r1",
-                option=_option("branch-a-r1", shape=2),
-                **_transition_kwargs(
-                    portfolio,
-                    transition_id="revise-selected",
-                ),
-            )
-        portfolio = park_branch(
-            portfolio,
-            branch_id="branch-a",
-            **_transition_kwargs(
-                portfolio,
-                transition_id="release-a",
-                authority_id="user-owner",
-            ),
-        )
-        self.assertEqual(
-            portfolio.branch("branch-a").lifecycle,
-            BranchLifecycle.PARKED,
-        )
-
-    def test_cross_project_answers_remain_instance_scoped(self) -> None:
-        first = _portfolio()
-        other_run = _run("other-project", digest_char="9")
-        second = _portfolio(other_run)
-
-        self.assertNotEqual(
-            first.source_option_set_digest,
-            second.source_option_set_digest,
-        )
-        self.assertTrue(
-            all(
-                branch.head.option.proposal.evidence_refs[0].startswith(
-                    "project://other-project/"
-                )
-                for branch in second.branches
-            )
-        )
-        with self.assertRaisesRegex(
-            DesignPortfolioError,
-            "different projects",
-        ):
-            replace(
-                second,
-                base=first.base,
-            )
+        selected = SelectedSchematicInput.from_handoff(handoff)
+        self.assertEqual(SelectedSchematicInput.from_dict(selected.to_dict()), selected)
+        self.assertEqual(selected.revision, handoff.revision)
+        self.assertEqual(handoff.to_dict()["schema"], "SelectedSchematicBranch@1")
 
 
 if __name__ == "__main__":

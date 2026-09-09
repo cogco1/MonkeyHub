@@ -33,6 +33,8 @@ anybody else can read.
 
 from __future__ import annotations
 
+from archflow.project.refs import ProjectRecordRef
+
 from dataclasses import dataclass, replace
 import threading
 from typing import Any, Mapping, Sequence
@@ -108,6 +110,7 @@ class MassingOption:
     record_ref: str
     honesty: tuple[str, ...]
     source_run_id: str | None = None
+    source_stage_ref: ProjectRecordRef | None = None
     model_source: ModelSource | None = None
 
 
@@ -252,11 +255,12 @@ def make_option(
     program_targets: Mapping[str, float] | None = None,
     source_run_id: str | None = None,
     model_source: ModelSource | None = None,
+    source_stage_ref: ProjectRecordRef | None = None,
 ) -> MassingOption:
     """Apply one transform, measure the result, retain it, and put it on the table."""
 
     if model_source is not None:
-        require_model_source(binding, model_source, project_state(binding, source_run_id))
+        require_model_source(binding, model_source, project_state(binding, source_run_id, source_stage_ref=source_stage_ref))
     if transform not in TRANSFORMS:
         raise StudioError(
             422,
@@ -291,6 +295,7 @@ def make_option(
             record_ref=record_ref,
             honesty=tuple(honesty) + tuple(more),
             source_run_id=source_run_id,
+            source_stage_ref=source_stage_ref,
             model_source=model_source,
         )
     )

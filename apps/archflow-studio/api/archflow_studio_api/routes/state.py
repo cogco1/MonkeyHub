@@ -40,6 +40,7 @@ router = APIRouter(tags=["state"])
 )
 def read_state(
     request: Request,
+    source_stage_ref: str | None = Query(default=None, alias="sourceStageRef"),
     run: str | None = Query(
         default=None,
         description=(
@@ -58,7 +59,7 @@ def read_state(
     """
 
     binding = bound_project(request.app.state)
-    projection = project_state(binding, run, require_view=False)
+    projection = project_state(binding, run, require_view=False, source_stage_ref=source_stage_ref)
     # The catalog stands on the bound view; a record the kernel refused to
     # view has no tree to catalogue, and the honesty line already says so.
     catalog = None if projection.state is None else catalog_of(binding, projection)

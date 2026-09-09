@@ -817,6 +817,9 @@ class CandidateContinuationTests(CandidateTestCase):
             self.assertEqual(response.json()["code"], "REFERENCE_BASE_STALE")
 
     def test_queued_continuation_rechecks_the_selected_record(self) -> None:
+        from archflow_studio_api.application.jobs import JobRegistry
+        self.app.state.jobs.shutdown()
+        self.app.state.jobs = JobRegistry(self.app.state.events, max_workers=1)
         proposal = self.propose(**self.source_body)
         release = threading.Event()
         self.addCleanup(release.set)
@@ -824,7 +827,7 @@ class CandidateContinuationTests(CandidateTestCase):
             candidate_id="studio-cand-hold-continuation",
             proposal_id=proposal["proposalId"],
             work=release.wait,
-            closure=("entity:portico-cornice",),
+            write_refs=("entity:portico-cornice",),
         )
         accepted = self.start(proposal["proposalId"])
         self.assertEqual(

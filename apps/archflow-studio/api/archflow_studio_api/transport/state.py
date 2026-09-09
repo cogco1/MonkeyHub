@@ -195,6 +195,7 @@ class StateProjectionDto(BaseModel):
     """The wire form of ``GET /api/state``."""
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
 
     project_id: str = Field(alias="projectId")
     published: ProjectVersionDto = Field(
@@ -321,6 +322,7 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
         record_source=projection.record_source,
         record_digest=projection.record_digest,
         state_digest=projection.state_digest,
+        source_stage_ref=None if projection.source_stage_ref is None else projection.source_stage_ref.uri,
         active_phase=(
             None
             if projection.state is None

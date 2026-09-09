@@ -135,6 +135,8 @@ export interface CameraState {
 export interface ViewportLoadOptions {
   /** Keep the current view when replacing a model; the first load still fits. */
   readonly preserveCamera?: boolean;
+  /** The caller may leave this project or editing context while parsing is in flight. */
+  readonly isCurrent?: () => boolean;
 }
 
 export interface ViewportController {
@@ -933,6 +935,7 @@ export const ThreeDmViewport = forwardRef<
 
   const openFiles = useCallback(
     async (files: readonly File[], sourceLabel: string = LOCAL_SOURCE_LABEL, options?: ViewportLoadOptions) => {
+      if (options?.isCurrent?.() === false) return;
       const runtime = runtimeRef.current;
       if (!runtime) {
         throw new Error(
@@ -969,6 +972,11 @@ export const ThreeDmViewport = forwardRef<
       const totalSize = files.reduce((sum, file) => sum + file.size, 0);
       const generation = loadGenerationRef.current + 1;
       loadGenerationRef.current = generation;
+      const isCurrent = () => generation === loadGenerationRef.current && (options?.isCurrent?.() ?? true);
+      const cancelled = () => {
+        if (generation === loadGenerationRef.current) reportStatus(runtime.model ? "ready" : "idle",
+          runtime.model ? "Kept the current model on screen" : "No model on screen");
+      };
       reportStatus(
         "loading",
         files.length === 1
@@ -982,9 +990,10 @@ export const ThreeDmViewport = forwardRef<
       } catch (error) {
         // Bytes that could not be read are a file that never arrived, and the
         // fact line still names the one before it. Same reason as a refusal.
-        decline(errorMessage(error));
+        if (isCurrent()) decline(errorMessage(error)); else cancelled();
         return;
       }
+      if (!isCurrent()) { cancelled(); return; }
       // Rhino3dmLoader transfers each buffer to its own worker. Preserve a
       // separate local copy only for the rare valid-but-meshless fallback.
       const fallbackBuffers = buffers.map((buffer) => buffer.slice(0));
@@ -1017,9 +1026,10 @@ export const ThreeDmViewport = forwardRef<
         (result): result is PromiseRejectedResult =>
           result.status === "rejected",
       );
-      if (generation !== loadGenerationRef.current) {
+      if (!isCurrent()) {
         // Something else was asked for while these parsed; they are nobody's.
         for (const model of models) disposeScene(model);
+        cancelled();
         return;
       }
       if (failure !== undefined) {
@@ -1048,8 +1058,9 @@ export const ThreeDmViewport = forwardRef<
       }));
       // A fallback can take longer than the loader's own parse. It remains
       // part of this request only while this generation still owns the stage.
-      if (generation !== loadGenerationRef.current || !runtimeRef.current) {
+      if (!isCurrent() || !runtimeRef.current) {
         for (const model of models) disposeScene(model);
+        cancelled();
         return;
       }
 
