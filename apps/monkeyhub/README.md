@@ -1,6 +1,6 @@
 # MonkeyHub local services
 
-MonkeyHub opens without a building project. It starts MonkeyMonitor independently and shares one Studio service between MonkeyArch and MonkeyDiagram. MonkeyDiagram opens that service at /?view=documents. MonkeyBoard is listed as unavailable.
+MonkeyHub opens without a building project. It starts MonkeyMonitor independently and shares one Studio service between MonkeyArch, MonkeyDiagram and MonkeyBoard. MonkeyDiagram opens that service at /?view=documents; MonkeyBoard opens at /?view=board for single-operator drawing layout and meeting presentation.
 
 The Hub runs the existing services and owns only the child processes it starts. It does not initialize projects or provide a plugin or general model gateway.
 
@@ -46,7 +46,7 @@ The default runtime root is LOCALAPPDATA/MonkeyHub; --runtime-root selects anoth
 
 User preferences and application launch configuration have separate purposes and cannot overwrite one another. No credentials are stored in application configuration. Hub reads the existing saved model defaults when it starts Studio; changing a saved default does not replace an already running compiler.
 
-No StudioSettings object is created for the Hub. Choose an existing complete project before starting MonkeyArch or MonkeyDiagram; the Studio health check must confirm that binding. Clearing the Hub's selected path does not delete a project. Stop the applications before changing their project or ports.
+No StudioSettings object is created for the Hub. Choose an existing complete project before starting MonkeyArch, MonkeyDiagram or MonkeyBoard; the Studio health check must confirm that binding. Clearing the Hub's selected path does not delete a project. Stop the applications before changing their project or ports.
 
 ## HTTP contract
 
@@ -57,7 +57,7 @@ The actual schema is available at GET /openapi.json. Generate a client from this
 | GET /api/health | Hub service/version, actual process and parent process IDs, managed instance ID, source revision |
 | GET /api/apps | AppStatus[] for the four fixed application cards |
 | POST /api/apps/{app_id}/start | 202 with starting or current status; repeat requests reuse the owned process |
-| POST /api/apps/{app_id}/stop | 202 with stopping or current status; stopping either Studio card stops their shared service |
+| POST /api/apps/{app_id}/stop | 202 with stopping or current status; stopping any Studio card stops their shared service |
 | GET/PUT /api/settings/user | Existing UserSettingsDto and existing local preference routes |
 | GET/PUT /api/settings/apps | projectDir, referenceRun, cadExport, studioPort, monitorPort |
 

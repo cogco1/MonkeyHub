@@ -11,7 +11,7 @@
 2. 双击 `INSTALL_MONKEYHUB.cmd`。默认复制到 `%LOCALAPPDATA%\MonkeyHub\versions\<源码版本>`，不需要管理员权限。
 3. 安装完成后，选择是否创建桌面快捷方式、是否立即打开 MonkeyHub。按 Enter 接受显示的选项，输入 `n` 跳过。
 4. 之后双击桌面的 `MonkeyHub` 即可；也可运行安装目录中的 `OPEN_MONKEYHUB.cmd`。
-   Hub 可在没有项目时打开；MonkeyArch 和 MonkeyDiagram 通过已选真实项目共用 Studio 服务，MonkeyMonitor 可独立启动。
+   Hub 可在没有项目时打开；MonkeyArch、MonkeyDiagram 和 MonkeyBoard 通过已选真实项目共用 Studio 服务，MonkeyMonitor 可独立启动。
 
 安装目录也可在 PowerShell 中明确指定，例如：
 
@@ -29,6 +29,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\apps\monkeyhub\instal
 许可目录的 README 保留原始路径说明、来源链接及对应文本链接。
 
 ## 使用与退出
+
+选择项目后，启动并打开 MonkeyBoard。一人编辑画布、在会议中共享这个窗口即可：
+PDF／PNG／JPG 可上传、拖放或粘贴，PDF 可选页；新出的 MonkeyDiagram 图纸每约 5 秒自动接收。
+图框、文字与箭头自动保存；图纸卡片可打开原始页面及其精确出图版本。
+字体随包提供，白板不需要连接外部字体服务。Zoom／腾讯会议的实时语音接入尚未配置。
 
 Hub 的启动和退出统一由包内 `apps/monkeyhub/launch-hub.ps1` 与 `run.py` 负责。
 重复打开和应用按钮沿同一服务管理入口执行。正常退出时，在系统托盘图标中选择 `Quit MonkeyHub`；

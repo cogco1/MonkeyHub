@@ -143,10 +143,11 @@ class HubApiLifecycleTests(LocalHubCase):
             self.assertEqual(client.get("/api/health").json()["service"], "monkeyhub-api")
             rows = {row["appId"]: row for row in client.get("/api/apps").json()}
             self.assertEqual(set(rows), {"monkeyarch", "monkeydiagram", "monkeymonitor", "monkeyboard"})
-            self.assertEqual(rows["monkeyboard"]["state"], "unavailable")
+            self.assertEqual(rows["monkeyboard"]["state"], "stopped")
+            self.assertEqual(rows["monkeyboard"]["serviceId"], "studio")
             self.assertIsNone(client.get("/api/settings/apps").json()["projectDir"])
             self.configure(client)
-            for app_id in ("monkeyarch", "monkeydiagram"):
+            for app_id in ("monkeyarch", "monkeydiagram", "monkeyboard"):
                 response = client.post(f"/api/apps/{app_id}/start")
                 self.assertEqual(response.status_code, 409, response.text)
                 self.assertEqual(response.json()["code"], "PROJECT_REQUIRED")
@@ -244,7 +245,7 @@ class HubApiLifecycleTests(LocalHubCase):
             wait_for(exited, "The rejected owned child did not exit")
             self.assertFalse(port_open(self.monitor_port))
 
-    def test_arch_and_diagram_share_one_studio_and_either_card_stops_it(self):
+    def test_arch_diagram_and_board_share_one_studio_and_any_card_stops_it(self):
         fixture = project_fixture()
         fixture.make_project(self.root / "projects")
         web = self.root / "minimal Studio web"
@@ -258,7 +259,11 @@ class HubApiLifecycleTests(LocalHubCase):
             )
             self.assertEqual(client.post("/api/apps/monkeymonitor/start").status_code, 202)
             monitor = self.wait_state(client, "monkeymonitor", "running")
-            for first_card, other_card in (("monkeyarch", "monkeydiagram"), ("monkeydiagram", "monkeyarch")):
+            for first_card, other_card, stop_card in (
+                ("monkeyboard", "monkeyarch", "monkeydiagram"),
+                ("monkeyarch", "monkeydiagram", "monkeyboard"),
+                ("monkeydiagram", "monkeyboard", "monkeyarch"),
+            ):
                 with self.subTest(first_card=first_card):
                     first = client.post(f"/api/apps/{first_card}/start")
                     second = client.post(f"/api/apps/{other_card}/start")
@@ -267,15 +272,20 @@ class HubApiLifecycleTests(LocalHubCase):
                     self.assertEqual(first.json()["processId"], second.json()["processId"])
                     arch = self.wait_state(client, "monkeyarch", "running")
                     diagram = self.wait_state(client, "monkeydiagram", "running")
+                    board = self.wait_state(client, "monkeyboard", "running")
                     self.assertEqual(arch["processId"], diagram["processId"])
+                    self.assertEqual(arch["processId"], board["processId"])
+                    self.assertEqual(board["serviceId"], "studio")
                     self.assertEqual(diagram["url"], arch["url"] + "?view=documents")
+                    self.assertEqual(board["url"], arch["url"] + "?view=board")
                     self.assertTrue(http_json(arch["url"] + "api/health")["projectBound"])
-                    for url in (arch["url"], diagram["url"]):
+                    for url in (arch["url"], diagram["url"], board["url"]):
                         with build_opener(ProxyHandler({})).open(url, timeout=2) as response:
                             self.assertEqual(response.read(), page)
-                    self.assertEqual(client.post(f"/api/apps/{other_card}/stop").status_code, 202)
+                    self.assertEqual(client.post(f"/api/apps/{stop_card}/stop").status_code, 202)
                     self.wait_state(client, "monkeyarch", "stopped")
                     self.wait_state(client, "monkeydiagram", "stopped")
+                    self.wait_state(client, "monkeyboard", "stopped")
                     self.assertEqual(self.wait_state(client, "monkeymonitor", "running")["processId"], monitor["processId"])
 
 

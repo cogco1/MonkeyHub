@@ -107,6 +107,7 @@ STUDIO_WORKING_COPY = "studio-working-copy"
 STUDIO_MODEL_ANNOTATIONS = "studio-model-annotations"
 DESIGN_STAGE = "design-stage"
 STUDIO_CANDIDATE_DELTA = "studio-candidate-delta"
+STUDIO_BOARD_SCENE = "studio-board-scene"
 
 # ---- read by the spine, written by nobody on it
 
@@ -134,6 +135,12 @@ _RUN_BRANCH = PersistenceArea.RUN_BRANCH.value
 
 
 _TABLE: tuple[RecordKind, ...] = (
+    RecordKind(
+        STUDIO_BOARD_SCENE,
+        "StudioBoardScene@1",
+        _RUN_RECORD,
+        "Single-operator whiteboard scene with exact registered document-page sources; retained in its studio-board run, separate from design Stages.",
+    ),
     RecordKind(
         DESIGN_STAGE,
         "DesignStage@1",

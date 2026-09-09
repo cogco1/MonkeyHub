@@ -31,6 +31,8 @@ import {
   type FieldsResult,
 } from "./error";
 import {
+  readBoardApiBoardGet,
+  updateBoardApiBoardPut,
   readCommittedDesignHistoryApiDesignHistoryGet,
   createElevationApiDrawingsElevationsPost,
   combineCandidatesApiCandidatesCombinePost,
@@ -76,6 +78,7 @@ import {
   writeSavedModelAnnotationsApiModelAnnotationsPut,
 } from "./generated";
 import type {
+  BoardDto, BoardRequestDto,
   DesignHistoryDto, DesignStageDto, DesignBranchDto,
   ElevationRequestDto, CombineCandidatesRequestDto,
   InitializeDesignStageRequestDto, AcceptDesignCandidateRequestDto, ForkDesignBranchRequestDto,
@@ -159,6 +162,12 @@ function base64Of(buffer: ArrayBuffer): string {
 // stronger and is the one it asks: `GET /api/project` and `GET /api/state`
 // either return the binding or fail with a code the top bar renders.
 export const studio = {
+  board(): Promise<BoardDto> {
+    return call("GET /api/board", readBoardApiBoardGet());
+  },
+  saveBoard(body: BoardRequestDto): Promise<BoardDto> {
+    return call("PUT /api/board", updateBoardApiBoardPut({ body }));
+  },
   elevation(body: ElevationRequestDto): Promise<SourceDocumentDto> {
     return call("POST /api/drawings/elevations", createElevationApiDrawingsElevationsPost({ body }));
   },
@@ -336,12 +345,12 @@ export const studio = {
     return new File([blob], fileName, { type: "application/octet-stream" });
   },
 
-  documents(runId: string): Promise<SourceDocumentListDto> {
+  documents(runId?: string | null): Promise<SourceDocumentListDto> {
     return call("GET /api/documents", readDocumentsApiDocumentsGet({ query: { runId } }));
   },
 
   /** Upload the original bytes; the server validates the MIME type and size. */
-  async uploadDocument(projectId: string, runId: string, file: File): Promise<SourceDocumentDto> {
+  async uploadDocument(projectId: string, runId: string | null, file: File): Promise<SourceDocumentDto> {
     const contentBase64 = base64Of(await file.arrayBuffer());
     return call(
       "POST /api/documents",

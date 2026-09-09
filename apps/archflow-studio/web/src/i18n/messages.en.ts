@@ -2,6 +2,7 @@ export const messagesEn = {
   "workspace.switcher": "Workspaces",
   "workspace.monkeyarch": "MonkeyArch · 3D",
   "workspace.monkeydiagram": "MonkeyDiagram · Drawings",
+  "workspace.monkeyboard": "MonkeyBoard · Board",
   "document.workspace": "Drawings & images",
   "document.model": "3D model",
   "document.open": "Open PDF / image",

@@ -43,7 +43,7 @@ import os
 from pathlib import Path
 import re
 import threading
-from typing import Any, Mapping, NamedTuple
+from typing import Any, Iterable, Mapping, NamedTuple
 
 from PIL import Image, ImageOps
 from pypdf import PdfReader
@@ -77,6 +77,7 @@ FILE_UNREADABLE = "file unreadable"
 DIGEST_MISMATCH = "digest mismatch"
 PNG_MEDIA_TYPE = "image/png"
 PNG_END = b"\x00\x00\x00\x00IEND\xaeB\x60\x82"
+DOCUMENT_UPLOAD_RUN_ID = "studio-documents"
 
 # The receipts that certify an exported file, and the schema that tells the
 # two apart. Both are read; nothing is ever regenerated or run by reading them.
@@ -259,8 +260,13 @@ def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
         raise StudioError(422, "DOCUMENT_INVALID", "The source is not a complete, readable PDF, PNG or JPEG.") from exc
 
 
-def list_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument, ...]:
-    """Only registered source files in this run, separately from model exports."""
+def list_documents(binding: ProjectBinding, run_id: str | None = None) -> tuple[SourceDocument, ...]:
+    """Registered documents in one run, or across the bound project."""
+
+    if run_id is None:
+        return _ordered_documents(
+            document for source_run in binding.run_ids() for document in list_documents(binding, source_run)
+        )
 
     documents: dict[str, SourceDocument] = {}
     for ref in binding.record_refs(run_id):
@@ -303,10 +309,15 @@ def list_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument
         if document is None or (document.model_source is not None and document.model_source != source):
             raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "This document has competing model associations; its pages remain retained.")
         documents[document.asset_sha256] = replace(document, model_source=source, model_source_binding_ref=ref.uri)
-    generated = sorted((doc for doc in documents.values() if doc.generated_at is not None),
+    return _ordered_documents(documents.values())
+
+
+def _ordered_documents(documents: Iterable[SourceDocument]) -> tuple[SourceDocument, ...]:
+    documents = tuple(documents)
+    generated = sorted((doc for doc in documents if doc.generated_at is not None),
                        key=lambda doc: (doc.generated_at, doc.revision_ref or doc.asset_sha256), reverse=True)
-    undated = sorted((doc for doc in documents.values() if doc.generated_at is None),
-                     key=lambda doc: (doc.file_name, doc.asset_sha256))
+    undated = sorted((doc for doc in documents if doc.generated_at is None),
+                     key=lambda doc: (doc.file_name, doc.run_id, doc.asset_sha256))
     return tuple(generated + undated)
 
 
@@ -345,12 +356,12 @@ def document_bytes(
 
 
 def save_document(
-    binding: ProjectBinding, run_id: str, file_name: str, mime_type: str, content_base64: str,
+    binding: ProjectBinding, run_id: str | None, file_name: str, mime_type: str, content_base64: str,
     model_source: ModelSource | None = None,
 ) -> SourceDocument:
-    """Retain original bytes via the object port and register them in the named run."""
+    """Retain original bytes in a named run or the project's source-document run."""
 
-    run = binding.load_run(run_id)
+    run = binding.load_run(run_id) if run_id is not None else None
     if model_source is not None:
         require_model_source(binding, model_source)
     if not file_name.strip() or len(file_name) > 240 or any(char in file_name for char in "/\\\r\n\x00"):
@@ -368,6 +379,15 @@ def save_document(
     pages = _document_pages(data, mime_type)
     digest = hashlib.sha256(data).hexdigest()
     with _document_source_lock:
+        if run is None:
+            # A general P036 run stores references without inventing a model
+            # or a design Stage. Invalid uploads never create this envelope.
+            try:
+                run = (binding.load_run(DOCUMENT_UPLOAD_RUN_ID) if DOCUMENT_UPLOAD_RUN_ID in binding.run_ids()
+                       else binding.repository.create_run(DOCUMENT_UPLOAD_RUN_ID))
+            except (ProjectRepositoryError, OSError) as exc:
+                raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document run could not be retained in its project.") from exc
+            run_id = run.run_id
         existing = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == digest), None)
         if existing is not None:
             if existing.model_source != model_source:

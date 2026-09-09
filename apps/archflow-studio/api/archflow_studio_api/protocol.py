@@ -42,6 +42,7 @@ SERVER_VERSION = "0.1.0"
 # reads would look like a server that had changed.
 BASE_CAPABILITIES: tuple[str, ...] = (
     "artifacts",
+    "board-scenes",
     "candidates",
     "captures",
     "compare",

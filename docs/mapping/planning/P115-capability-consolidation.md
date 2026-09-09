@@ -22,8 +22,8 @@ Monkey 家族的用量、计价与预算接口归独立 [MonkeyMonitor](../../..
 **请求已授权实施，尚未交付。** 用户要求总结现有基础设施，分给不同会话执行。功能基线是
 `5813fb4`；各实现会话从本次交接提交建立独立工作区，保留 `D:/ARCHFLOW_V4` 的未提交内容。
 第一版闭环：下载固定版本包 → 首次准备 → 打开 Hub → 打开应用 → 正常退出 → 再次打开。
-现有 MonkeyArch、MonkeyDiagram 共用 Studio；MonkeyMonitor 独立启动。MonkeyBoard 是图版应用的
-建议名称，尚无实现，本轮只保留不可启动的说明，不把其开发混入启动器任务。
+MonkeyArch、MonkeyDiagram 共用 Studio；MonkeyMonitor 独立启动。Hub 最初交接时 MonkeyBoard
+尚未实现；其后单独授权的白板实施与 Studio 共用入口，见下节。
 
 | 执行会话 | 交付与文件边界 | 完成条件 |
 | --- | --- | --- |
@@ -54,6 +54,34 @@ localStorage 不共享。用户默认值已有 `%APPDATA%/MonkeyArch/settings.js
 同时交安装会话做集成。集成会话在自身工作区处理合并，公共契约冲突由原 owner 修复，不改受保护主线。
 检查采用现有相关行为测试、受影响 Web 类型/构建/OpenAPI 检查和 `tools/archcheck.py`；纯包装验收
 以真实可启动成品为准。最终状态区分本地实现、候选包与第二台机器已验证。
+
+### MonkeyBoard：公司内部单人投屏白板（2026-09-09）
+
+**本地实现与真实浏览器验收已完成。** 首版由一人编辑并在会议中投屏，操作沿用
+Miro 的无限画布习惯，从已发布候选源码 `4d2c7c2` 单独实施。PDF／PNG／JPG 已接上传、
+拖放和粘贴；PDF 可按页加入画布。MonkeyDiagram 的新资料自动追加为独立图框，保留
+已有图纸的位置与讨论；主动移除的图纸不会在下一次自动收取时重新出现。
+图框、文字、箭头和手绘标记可在画布排列，布局经串行保存后可重开恢复。
+每张图均可按原文档的 run、确切 drawing revision 和页码返回 MonkeyDiagram。
+原始文件仍由 `studio.artifacts` 保存在项目原有 P036 对象和记录中。
+
+**实现归属。** EXTEND `studio.artifacts` 的跨 run 文档发现和无模型上传；新增
+`studio.board` 仅承担当前真实消费者需要的持久画布场景，使用 `studio-board` run
+内的 `studio-board-scene` 记录。已有文件 owner 不负责画布排布，页批注 owner 不负责
+多图位置，因此此场景拥有单独 owner；不另建项目存储或 Design Stage。Hub 的 Board
+入口与 Arch／Diagram 共用 Studio 进程。画布采用 MIT 的 Excalidraw 0.18.1，保留本地
+字体与许可，使用现有显示偏好和生成客户端。
+
+**验收状态。** 相关 API 和前端保存／来源身份测试已通过。主代理继续在真实浏览器中
+核对自动收图、上传与 PDF 分页、拖动与标记、撤销、保存重开，以及确切原图页返回。
+多人实时协作不在本次明确使用方式内。
+
+**会议接入。** 官方已提供 Zoom RTMS 和腾讯会议 `meeting.asr-push` 实时转写路径。
+目标是会议原句／发言时间对应当时白板上的图纸与区域，再形成该来源 Stage 的意见。
+当前账户权限、会议接入与真实转写尚未配置；普通白板保存不宣称完成了会议自动传输。
+腾讯会议 OAuth 接入限相应授权创建的会议，Zoom 公司内部与对外分发的审批条件不同。
+[Zoom RTMS](https://developers.zoom.us/docs/rtms/meetings/add-features/) ·
+[腾讯会议转写推送](https://cloud.tencent.com/document/product/1095/107522)。
 
 | 工作领域 | 回答什么问题 | 输入 → 输出 | 不负责 |
 | --- | --- | --- | --- |
@@ -272,7 +300,7 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 | 资料与任务（3） | `state.program`、`state.program_sheet`、`studio.program` |
 | 方案与建模（10） | `capabilities.element_producers`、`capabilities.geometry_proposal`、`capabilities.opening_solver`、`capabilities.reference_resolver`、`capabilities.wall_solver`、`capabilities.element_reindex`、`state.spatial`、`state.developed_design`、`state.decision_operator`、`studio.options` |
 | 分析与校核（7） | `capabilities.declaration`、`capabilities.relation_checks`、`state.massing_metrics`、`validation.engine`、`validation.model`、`studio.validation`、`adapters.three_dm_inspector` |
-| 表达与出图（3） | `studio.artifacts`、`adapters.drawing_svg`、`runtime.drawing_elevation` |
+| 表达与出图（4） | `studio.artifacts`、`studio.board`、`adapters.drawing_svg`、`runtime.drawing_elevation` |
 | Agent 与工作台（6） | `ports.model`、`capabilities.discipline_seats`、`studio.binding`、`studio.candidate`、`studio.intent`、`studio.shell` |
 | 共享：状态与语义（12） | `state.commitments`、`state.derivation`、`state.design_portfolio`、`state.model`、`state.operational_state`、`state.record`、`state.stage_workflow`、`relations.contracts`、`semantics.conditions`、`semantics.registry`、`semantics.roles`、`submission.model` |
 | 建模编译与共用 CAD 执行（6） | `state.geometry_program`、`compilers.geometry`、`runtime.project_runner`、`adapters.cad_execution`、`adapters.cad_patch`、`adapters.cad_program` |

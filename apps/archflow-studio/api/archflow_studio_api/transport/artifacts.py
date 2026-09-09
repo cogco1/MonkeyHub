@@ -164,7 +164,8 @@ class SourceDocumentRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
     project_id: str = Field(alias="projectId", min_length=1)
-    run_id: str = Field(alias="runId", min_length=1)
+    run_id: str | None = Field(alias="runId", default=None, min_length=1,
+                              description="Existing storage run, or omit to use the project's source-document run without a model or Stage association.")
     file_name: str = Field(alias="fileName", min_length=1, max_length=240)
     mime_type: Literal["application/pdf", "image/png", "image/jpeg"] = Field(alias="mimeType")
     content_base64: str = Field(alias="contentBase64", min_length=1, description="Original file bytes; maximum decoded size 32 MiB. No server path is accepted.")
@@ -197,7 +198,7 @@ class SourceDocumentListDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     project_id: str = Field(alias="projectId")
-    run_id: str = Field(alias="runId")
+    run_id: str | None = Field(alias="runId", description="Requested storage run; null when listing every registered project document.")
     documents: list[SourceDocumentDto]
 
 

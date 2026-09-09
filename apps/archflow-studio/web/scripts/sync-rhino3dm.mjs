@@ -1,4 +1,4 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { copyFile, cp, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,8 +8,8 @@ const source = join(
   "node_modules",
   "rhino3dm",
 );
-// Rhino is the web client's only generated public asset. Clear the public root so a
-// checkout that once generated the retired raster loading reel cannot keep shipping it.
+// Rebuild only this application's generated public assets, including the local
+// whiteboard fonts. Neither runtime needs a CDN in the packaged application.
 const publicRoot = join(appRoot, ".generated", "public");
 const destination = join(publicRoot, "rhino3dm");
 
@@ -25,6 +25,17 @@ await Promise.all(
 await copyFile(
   join(appRoot, "src", "workspaces", "monkeyarch", "viewer", "nurbsFallback.worker.js"),
   join(publicRoot, "nurbsFallback.worker.js"),
+);
+
+await cp(
+  join(appRoot, "node_modules", "@excalidraw", "excalidraw", "dist", "prod", "fonts"),
+  join(publicRoot, "excalidraw", "fonts"),
+  { recursive: true },
+);
+// Replace the bundled legacy Liberation font with the verified OFL 2.1.5 asset.
+await copyFile(
+  join(appRoot, "assets", "board-fonts", "LiberationSans-Regular.woff2"),
+  join(publicRoot, "excalidraw", "fonts", "Liberation", "LiberationSans-Regular.woff2"),
 );
 
 console.log(`Synced Rhino3dm runtime to ${destination}`);

@@ -3341,7 +3341,7 @@
     {
       "module_id": "studio.artifacts",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-      "purpose": "List and serve receipt-certified model exports, retain viewport captures, and import and serve PDF/image source documents separately from exports in an explicitly named existing run.",
+      "purpose": "List and serve receipt-certified model exports, retain viewport captures, and import and serve PDF/image source documents in their exact project runs, including project-wide discovery for MonkeyBoard.",
       "owns": [
         "reading retained seat-rhino-execution and seat-occt-execution receipts into ArtifactRecord rows across a project's runs; exact STEP and mesh .3dm preview carry their format and representation and share their producing receipt",
         "locating the certified file in the run's workspaces by name and re-verifying its sha256 as it is read",
@@ -3353,7 +3353,8 @@
         "retaining an explicitly supplied composed 3dm in P036 objects and a registration in its exact retained run state; listing composed alongside native exports with registered status and no native readback claim",
         "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments",
         "registering model-axis elevation revisions from a complete exact STEP in the existing document list, with fixed model/Stage source, logical drawing id, view recipe and immutable drawing receipt",
-        "requiring a native Stage model to cover every producing seat execution, or an explicitly registered complete composed model"
+        "requiring a native Stage model to cover every producing seat execution, or an explicitly registered complete composed model",
+        "project-wide source document discovery without coalescing distinct run or drawing revision identities; uploads without a run use the existing P036 studio-documents source-material run after content validation"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3368,7 +3369,8 @@
         "sha256 hex",
         "run id and base64 PNG bytes",
         "named run, source file name, MIME type and base64 original bytes",
-        "optional StudioEventSink for successful API registration or option additions"
+        "optional StudioEventSink for successful API registration or option additions",
+        "optional source run for project-wide discovery or project source-material upload"
       ],
       "outputs": [
         "ArtifactListing",
@@ -3438,7 +3440,8 @@
         "an unknown document may receive one explicit model association; a known association cannot be overwritten and old submitted comments keep the exact association they originally used",
         "only a completed new model registration emits model_asset.registered; exact-source retries, including concurrent requests in one process, and failed registration emit no new-model event",
         "drawing requests refuse a partial native STEP for a complete composed model; document bytes resolve the requested drawing revision and verify its retained source and artifact hashes",
-        "new generated drawing registrations retain their original UTC generatedAt through cold reads and idempotent reuse; legacy and uploaded documents carry no inferred generation time"
+        "new generated drawing registrations retain their original UTC generatedAt through cold reads and idempotent reuse; legacy and uploaded documents carry no inferred generation time",
+        "GET documents without runId returns all registered project documents with each original run/revision; an omitted upload run uses studio-documents and creates no model, design Stage or canonical transition"
       ],
       "status": "canonical",
       "tests": [
@@ -3458,6 +3461,60 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py"
       ]
+    },
+    {
+      "module_id": "studio.board",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
+      "purpose": "Retain and reopen one single-operator project whiteboard scene for drawing layout, notes and meeting presentation, with exact registered document-page sources.",
+      "owns": [
+        "the main MonkeyBoard canvas scene and its immutable revision chain in the P036 studio-board run",
+        "optimistic scene replacement against the exact last saved revision; a stale tab cannot overwrite another save",
+        "verifying image source references against the registered document page and drawing revision; originals remain with studio.artifacts"
+      ],
+      "does_not_own": [
+        "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
+        "page-specific design comments or model interpretation (studio.intent)",
+        "accepting Design Stages, advancing canonical HEAD, live meeting transcription or multiplayer synchronization"
+      ],
+      "inputs": [
+        "ProjectBinding",
+        "project id, title, Excalidraw scene elements, seen-document identities and expected scene revision"
+      ],
+      "outputs": [
+        "BoardDto",
+        "retained single-operator board scene revision"
+      ],
+      "public_api": [
+        "GET /api/board",
+        "PUT /api/board",
+        "read_board",
+        "save_board"
+      ],
+      "depends_on": [
+        "studio.artifacts",
+        "studio.binding",
+        "contracts.canonical",
+        "project.ports",
+        "project.repository",
+        "project.record_kinds"
+      ],
+      "used_by": [
+        "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx"
+      ],
+      "invariants": [
+        "reading an empty board creates no run; a valid first save uses runs/studio-board/records through P036",
+        "scene revisions retain element positions, text and exact source-document page references, never embedded image bytes or a second project store",
+        "image references do not infer a model or Stage; accepted design state and project HEAD remain unchanged",
+        "seen-document identities keep an intentionally removed drawing from being imported again during automatic discovery"
+      ],
+      "status": "canonical",
+      "tests": [
+        "apps/archflow-studio/api/tests/test_boards.py",
+        "apps/archflow-studio/web/test/boardScene.test.ts",
+        "apps/archflow-studio/web/test/boardSaveQueue.test.ts"
+      ],
+      "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
     {
       "module_id": "studio.binding",
@@ -5245,8 +5302,8 @@
       "status": "canonical",
       "purpose": "Host the fixed local application lifecycle without a building project; existing Studio settings and child service APIs retain their ownership.",
       "owns": [
-        "Project-free Hub FastAPI and the finite MonkeyArch, MonkeyDiagram and MonkeyMonitor start/status/stop interface; MonkeyBoard is explicitly unavailable",
-        "One owned Studio process shared by MonkeyArch and MonkeyDiagram, and one independent Monitor process",
+        "Project-free Hub FastAPI and the finite MonkeyArch, MonkeyDiagram, MonkeyBoard and MonkeyMonitor start/status/stop interface",
+        "One owned Studio process shared by MonkeyArch, MonkeyDiagram and MonkeyBoard, and one independent Monitor process",
         "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
         "Hub CLI and thin Windows entry point, with shared Studio launcher tray, logs and child monitoring"
       ],
@@ -5282,7 +5339,7 @@
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
-        "Arch and Diagram share one service; Diagram opens its documents view",
+        "Arch, Diagram and Board share one service; Diagram opens its documents view and Board opens its board view",
         "Only this Hub's stdin pipes can stop its children; a occupied port or mismatched service is never adopted",
         "Accepted work is allowed to finish; no taskkill or forced process termination is a normal exit path",
         "Settings and logs have explicit nonproject locations; retained building writes use the existing project interfaces"

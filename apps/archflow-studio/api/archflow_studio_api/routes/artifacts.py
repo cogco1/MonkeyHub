@@ -67,7 +67,7 @@ def create_document(request: Request, payload: SourceDocumentRequestDto) -> Sour
 
 
 @router.get("/documents", response_model=SourceDocumentListDto, response_model_by_alias=True)
-def read_documents(request: Request, run_id: str = Query(alias="runId", min_length=1)) -> SourceDocumentListDto:
+def read_documents(request: Request, run_id: str | None = Query(default=None, alias="runId", min_length=1)) -> SourceDocumentListDto:
     binding = bound_project(request.app.state)
     return SourceDocumentListDto(
         project_id=binding.project_id, run_id=run_id,

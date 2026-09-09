@@ -23,7 +23,7 @@ APPS = {
     "monkeyarch": ("MonkeyArch", "studio"),
     "monkeydiagram": ("MonkeyDiagram", "studio"),
     "monkeymonitor": ("MonkeyMonitor", "monitor"),
-    "monkeyboard": ("MonkeyBoard", "board"),
+    "monkeyboard": ("MonkeyBoard", "studio"),
 }
 
 
@@ -78,8 +78,6 @@ class Applications:
 
     def status(self, app_id: AppId) -> AppStatus:
         title, service = APPS[app_id]
-        if service == "board":
-            return AppStatus(appId=app_id, title=title, serviceId=service, available=False, state="unavailable")
         with self._lock:
             child = self._children.get(service)
             if child is None:
@@ -90,6 +88,8 @@ class Applications:
                 url = f"http://127.0.0.1:{child.port}/"
                 if app_id == "monkeydiagram":
                     url += "?view=documents"
+                elif app_id == "monkeyboard":
+                    url += "?view=board"
             return AppStatus(
                 appId=app_id, title=title, serviceId=service, state=state,
                 url=url, processId=child.process.pid if child.process.poll() is None else None,
@@ -98,8 +98,6 @@ class Applications:
 
     def start(self, app_id: AppId) -> AppStatus:
         _, service = APPS[app_id]
-        if service == "board":
-            raise HubFailure(409, "APP_UNAVAILABLE", "MonkeyBoard does not have a runnable application yet.")
         with self._lock:
             if self._closing:
                 raise HubFailure(409, "HUB_STOPPING", "The Hub is waiting for its applications to finish.")

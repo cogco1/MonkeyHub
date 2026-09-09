@@ -72,6 +72,7 @@ class ProtocolRouteTests(unittest.TestCase):
             "candidates",
             "captures",
             "artifacts",
+            "board-scenes",
             "events",
             "validation",
         ):

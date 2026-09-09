@@ -4,6 +4,7 @@ export const messagesZhCN = {
   "workspace.switcher": "工作区",
   "workspace.monkeyarch": "MonkeyArch · 3D",
   "workspace.monkeydiagram": "MonkeyDiagram · 图纸",
+  "workspace.monkeyboard": "MonkeyBoard · 白板",
   "document.workspace": "图纸与图片",
   "document.model": "三维模型",
   "document.open": "打开 PDF／图片",

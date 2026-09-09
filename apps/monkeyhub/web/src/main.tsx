@@ -15,11 +15,11 @@ const copy = {
   "zh-CN": {
     apps: "应用", settings: "设置", refresh: "刷新", connected: "Hub 已连接", connecting: "正在连接", disconnected: "无法读取应用状态",
     closeNote: "关闭此网页不会停止应用。请使用应用的停止按钮，或从托盘退出 Hub。",
-    arch: "三维建模与空间修改", diagram: "图纸、图片与批注", monitor: "调用用量与费用估算", board: "图版排版，尚未实现",
-    shared: "MonkeyArch 与 MonkeyDiagram 共用一组服务，停止任一项会同时停止两者。",
+    arch: "三维建模与空间修改", diagram: "图纸、图片与批注", monitor: "调用用量与费用估算", board: "白板排图、圈注与会议投屏",
+    shared: "MonkeyArch、MonkeyDiagram 与 MonkeyBoard 共用一组服务，停止任一项会同时停止这三个应用。",
     stopped: "未启动", starting: "正在启动", running: "运行中", stopping: "正在停止", error: "启动失败", unavailable: "尚未实现",
     open: "打开应用", start: "启动", stop: "停止", stopShared: "停止共享服务", details: "详细信息", noProject: "尚未选择项目",
-    project: "项目目录", projectHelp: "仅 MonkeyArch / MonkeyDiagram 需要已有项目。MonkeyMonitor 可直接启动。", projectPlaceholder: "已有项目的完整路径，可留空",
+    project: "项目目录", projectHelp: "MonkeyArch / MonkeyDiagram / MonkeyBoard 需要已有项目。MonkeyMonitor 可直接启动。", projectPlaceholder: "已有项目的完整路径，可留空",
     reference: "参考运行（可选）", launch: "启动设置", advanced: "更多启动选项", cad: "模型导出", occt: "OCCT", rhino: "Rhino（兼容）", off: "关闭导出",
     studioPort: "Studio 端口", monitorPort: "Monitor 端口", saveLaunch: "保存启动设置", saved: "已保存", unsaved: "有未保存修改", saving: "正在保存…",
     launchHelp: "项目与端口修改在下次启动时生效；运行中的应用需要先停止。", appearance: "显示设置", language: "语言", theme: "主题",
@@ -29,11 +29,11 @@ const copy = {
   en: {
     apps: "Applications", settings: "Settings", refresh: "Refresh", connected: "Hub connected", connecting: "Connecting", disconnected: "Cannot read application status",
     closeNote: "Closing this page does not stop applications. Use their Stop buttons, or quit Hub from the system tray.",
-    arch: "3D modelling and spatial changes", diagram: "Drawings, images and annotations", monitor: "Call usage and cost estimates", board: "Board layout, not implemented",
-    shared: "MonkeyArch and MonkeyDiagram share one service. Stopping either stops both.",
+    arch: "3D modelling and spatial changes", diagram: "Drawings, images and annotations", monitor: "Call usage and cost estimates", board: "Drawing board, markup and meeting presentation",
+    shared: "MonkeyArch, MonkeyDiagram and MonkeyBoard share one service. Stopping any one stops all three.",
     stopped: "Stopped", starting: "Starting", running: "Running", stopping: "Stopping", error: "Failed", unavailable: "Not implemented",
     open: "Open application", start: "Start", stop: "Stop", stopShared: "Stop shared service", details: "Details", noProject: "No project selected",
-    project: "Project directory", projectHelp: "Only MonkeyArch / MonkeyDiagram need an existing project. MonkeyMonitor can start without one.", projectPlaceholder: "Full path to an existing project, optional",
+    project: "Project directory", projectHelp: "MonkeyArch / MonkeyDiagram / MonkeyBoard need an existing project. MonkeyMonitor can start without one.", projectPlaceholder: "Full path to an existing project, optional",
     reference: "Reference run (optional)", launch: "Launch settings", advanced: "More launch options", cad: "Model export", occt: "OCCT", rhino: "Rhino (compatibility)", off: "Export off",
     studioPort: "Studio port", monitorPort: "Monitor port", saveLaunch: "Save launch settings", saved: "Saved", unsaved: "Unsaved changes", saving: "Saving…",
     launchHelp: "Project and port changes apply on the next start. Stop running applications before saving them.", appearance: "Display settings", language: "Language", theme: "Theme",
@@ -178,13 +178,13 @@ function App() {
     finally { actionLocks.current.delete(app.serviceId); setBusyServices(new Set(actionLocks.current)); }
   };
   const descriptions: Record<AppId, CopyKey> = { monkeyarch: "arch", monkeydiagram: "diagram", monkeymonitor: "monitor", monkeyboard: "board" };
-  const fallback: AppStatus[] = (["monkeyarch", "monkeydiagram", "monkeymonitor", "monkeyboard"] as const).map((appId) => ({ appId, title: { monkeyarch: "MonkeyArch", monkeydiagram: "MonkeyDiagram", monkeymonitor: "MonkeyMonitor", monkeyboard: "MonkeyBoard" }[appId], serviceId: appId === "monkeymonitor" ? "monitor" : appId === "monkeyboard" ? "board" : "studio", available: false, state: appId === "monkeyboard" ? "unavailable" : "stopped" }));
+  const fallback: AppStatus[] = (["monkeyarch", "monkeydiagram", "monkeymonitor", "monkeyboard"] as const).map((appId) => ({ appId, title: { monkeyarch: "MonkeyArch", monkeydiagram: "MonkeyDiagram", monkeymonitor: "MonkeyMonitor", monkeyboard: "MonkeyBoard" }[appId], serviceId: appId === "monkeymonitor" ? "monitor" : "studio", available: false, state: "stopped" }));
   return <><header className="toolbar"><strong className="wordmark">MonkeyHub</strong><span className={`connection ${connected ? "online" : ""}`} role="status">{connected ? t("connected") : statusIssue ? t("disconnected") : t("connecting")}</span><button className="btn" type="button" onClick={() => { void refreshApps(); if (savedLaunch === null || savedAppearance === null) void readSettings(); }}>{t("refresh")}</button><a className="btn" href="#settings">{t("settings")}</a></header>
     <main className="hub"><div className="section-heading"><h1>{t("apps")}</h1><span>{savedLaunch?.projectDir ?? t("noProject")}</span></div>
       <ErrorMessage issue={statusIssue} language={preferences.language} />
       <div className="apps">{(apps ?? fallback).map((app) => {
         const pending = busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping";
-        const unavailable = app.appId === "monkeyboard" || app.state === "unavailable";
+        const unavailable = app.state === "unavailable";
         return <article className="app-card" key={app.appId} data-app={app.appId}><div className="app-heading"><h2>{app.title}</h2><span className={`app-state state-${app.state}`}>{t(app.state)}</span></div><p>{t(descriptions[app.appId])}</p><div className="actions">{app.state === "running" && app.url ? <><a className="btn btn--primary" href={applicationUrl(app.url, preferences)} target="_blank" rel="noopener noreferrer">{t("open")}</a><button className="btn" type="button" disabled={!connected || pending} onClick={() => void act(app)}>{pending ? t("working") : t(app.serviceId === "studio" ? "stopShared" : "stop")}</button></> : <button className="btn" type="button" disabled={!connected || unavailable || !app.available || pending} onClick={() => void act(app)}>{unavailable ? t("unavailable") : pending ? t(app.state === "stopping" ? "stopping" : "starting") : t("start")}</button>}</div><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></article>;
       })}</div><p className="shared-service-note">{t("shared")}</p>
       <section id="settings" className="settings"><div className="settings-section"><h2>{t("launch")}</h2><p className="help">{t("projectHelp")}</p><label htmlFor="project-dir">{t("project")}<input id="project-dir" value={launchDraft.projectDir ?? ""} placeholder={t("projectPlaceholder")} onChange={(event) => changeLaunch({ projectDir: event.target.value || null })} /></label><details className="advanced"><summary>{t("advanced")}</summary><div className="form-grid"><label>{t("reference")}<input id="reference-run" value={launchDraft.referenceRun ?? ""} onChange={(event) => changeLaunch({ referenceRun: event.target.value || null })} /></label><label>{t("cad")}<select id="cad-export" value={launchDraft.cadExport} onChange={(event) => changeLaunch({ cadExport: event.target.value as ApplicationSettingsDto["cadExport"] })}><option value="occt">{t("occt")}</option><option value="rhino">{t("rhino")}</option><option value="off">{t("off")}</option></select></label><label>{t("studioPort")}<input id="studio-port" type="number" min="1024" max="65535" value={launchDraft.studioPort} onChange={(event) => changeLaunch({ studioPort: Number(event.target.value) })} /></label><label>{t("monitorPort")}<input id="monitor-port" type="number" min="1024" max="65535" value={launchDraft.monitorPort} onChange={(event) => changeLaunch({ monitorPort: Number(event.target.value) })} /></label></div><p className="help">{t("launchHelp")}</p></details><ErrorMessage issue={launchIssue} language={preferences.language} /><div className="save-row"><button id="save-launch" className="btn" type="button" disabled={savingLaunch || !launchDirty} onClick={() => void saveLaunch()}>{savingLaunch ? t("saving") : t("saveLaunch")}</button><span role="status">{savedLaunch !== null ? launchDirty ? t("unsaved") : t("saved") : ""}</span></div></div>

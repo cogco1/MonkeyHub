@@ -117,6 +117,45 @@ def build_web(source: Path, node: Path, npm_cli: Path, environment: dict[str, st
             raise ValueError(f"The production frontend was not built: {web}")
 
 
+def collect_web_notices(source: Path, target: Path, supplemental_links: dict[str, str]) -> str:
+    """Copy the installed production dependency notices named by both lockfiles."""
+    rows = []
+    copied: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for application in ("archflow-studio", "monkeyhub"):
+        web = source / "apps" / application / "web"
+        locked = json.loads((web / "package-lock.json").read_text(encoding="utf-8"))
+        for relative, metadata in sorted(locked["packages"].items()):
+            if not relative or metadata.get("dev"):
+                continue
+            dependency = web / relative
+            if not (dependency / "package.json").is_file():
+                if metadata.get("optional"):
+                    continue  # Optional native packages for another platform.
+                raise ValueError(f"Production web dependency is not installed: {application}/{relative}")
+            package = json.loads((dependency / "package.json").read_text(encoding="utf-8"))
+            name, version = package["name"], package["version"]
+            identity = (name, version)
+            if identity not in copied:
+                stem = re.sub(r"[^A-Za-z0-9._-]+", "-", f"{name}-{version}").lstrip("-")
+                texts = sorted(path for path in dependency.iterdir() if path.is_file()
+                               and re.match(r"^(licen[cs]e|copying|notice)([._-].*)?$", path.name, re.I))
+                copied[identity] = []
+                for index, text in enumerate(texts, 1):
+                    filename = f"web-{stem}-{index}-{text.name}.txt"
+                    shutil.copy2(text, target / filename)
+                    copied[identity].append((text.name, filename))
+                if not texts:
+                    supplement = f"web-supplement/{stem}-LICENSE.txt"
+                    if supplement not in supplemental_links:
+                        raise ValueError(f"No upstream license text for {name} {version}; add its exact-version web supplement")
+                    copied[identity].append(("LICENSE (upstream supplement)", supplemental_links[supplement]))
+            row = f"- {application}: {name} {version} — " + ", ".join(
+                f"[{label}]({filename})" for label, filename in copied[identity])
+            if row not in rows:
+                rows.append(row)
+    return "\n".join(rows) + "\n"
+
+
 def collect_application(source: Path, bundle: Path, commit: str) -> None:
     bundle.mkdir()
     # These trees only contain the committed snapshot, before runtime writes.
@@ -137,21 +176,20 @@ def collect_application(source: Path, bundle: Path, commit: str) -> None:
         filename = f"{index:03d}-{notice.name}"
         links[notice.relative_to(notices).as_posix()] = filename
         shutil.copy2(notice, notice_target / filename)
+    # Supplemental/font READMEs keep working after their source directories
+    # have been flattened; the license texts themselves stay byte-identical.
+    for relative, filename in links.items():
+        if Path(relative).name.lower() == "readme.md":
+            content = (notices / relative).read_text(encoding="utf-8")
+            content = re.sub(r"\]\(([^)]+)\)", lambda match: "](" + links.get(
+                (Path(relative).parent / match[1]).as_posix(), match[1]) + ")", content)
+            (notice_target / filename).write_text(content, encoding="utf-8")
     notice_readme = (notices / "README.md").read_text(encoding="utf-8")
     notice_readme = re.sub(r"\]\(([^)]+)\)",
                           lambda match: "](" + links[match[1]] + ")" if match[1] in links else match[0],
                           notice_readme)
     notice_readme += "\n## 前端随包许可\n\n原文来自各前端按 package-lock.json 安装的生产依赖。\n\n"
-    for application, packages in (
-        ("archflow-studio", ("react", "react-dom", "scheduler", "three", "pdfjs-dist")),
-        ("monkeyhub", ("react", "react-dom", "scheduler")),
-    ):
-        for name in packages:
-            dependency = source / "apps" / application / "web/node_modules" / name
-            version = json.loads((dependency / "package.json").read_text(encoding="utf-8"))["version"]
-            filename = f"web-{application}-{name}-LICENSE.txt"
-            shutil.copy2(dependency / "LICENSE", notice_target / filename)
-            notice_readme += f"- {application}: {name} {version} — [LICENSE]({filename})\n"
+    notice_readme += collect_web_notices(source, notice_target, links)
     (notice_target / "README.md").write_text(notice_readme, encoding="utf-8")
     for relative in ("apps/archflow-studio/web/dist", "apps/monkeyhub/web/dist"):
         shutil.copytree(source / relative, bundle / relative)

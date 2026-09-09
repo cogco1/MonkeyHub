@@ -319,6 +319,11 @@ export function Stage({
       <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
         <button type="button" aria-pressed={!documentOpen} onClick={() => onDocumentView({ ...documentView, open: false })}>{t("workspace.monkeyarch")}</button>
         <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); onDocumentView({ ...documentView, mounted: true, open: true }); }}>{t("workspace.monkeydiagram")}</button>
+        <button type="button" onClick={() => {
+          const target = new URL(window.location.href);
+          target.searchParams.set("view", "board");
+          window.open(target.href, "_blank", "noopener");
+        }}>{t("workspace.monkeyboard")}</button>
         {designHistory && <span className="stage-current-context">{designHistory.history?.branchId ?? "main"} · {contextLabel}</span>}
         {drawing && <><select aria-label="立面方向" value={elevationView} disabled={drawing.busy}
           onChange={(event) => setElevationView(event.target.value as NonNullable<ElevationRequestDto["view"]>)}>

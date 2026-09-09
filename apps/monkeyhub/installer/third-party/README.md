@@ -8,8 +8,13 @@ LICENSE/NOTICE 及附带 DLL。本目录不替代那些文件。
 前端补充原文：[fflate 0.8.2](web-supplement/fflate-0.8.2-LICENSE.txt)、
 [rhino3dm 8.32.2](web-supplement/rhino3dm-8.32.2-LICENSE.txt)、
 [TinyEXR/OpenEXR 通知](web-supplement/three-0.185.1-EXRLoader-NOTICES.txt)。
-精确来源及对应关系见[说明](web-supplement/README.md)。构建时另从各前端锁定安装中
-保留 React、ReactDOM、scheduler、three 和 PDF.js 的原始 LICENSE，并在包内列明版本。
+精确来源及对应关系见[说明](web-supplement/README.md)，其中包括 MonkeyBoard 使用的
+Excalidraw、Radix 等 npm 发布包缺漏的许可原文。构建时按两个前端的 package-lock.json
+枚举实际安装的生产依赖，跳过开发依赖及未安装的平台可选包，保留顶层 LICENSE、LICENCE、
+COPYING、NOTICE 文本；同一包名与版本只复制一份，并在包内列明应用与版本。
+
+Excalidraw 0.18.1 自带字体独立遵循各自的许可，具体原文及来源见
+[字体许可说明](excalidraw-fonts/README.md)。Excalidraw 代码的 MIT 许可不替代字体许可。
 
 ## 库与对应源码
 

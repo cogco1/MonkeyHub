@@ -177,6 +177,62 @@ export type AuthoredControlDraftDto = {
 };
 
 /**
+ * BoardDto
+ */
+export type BoardDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Elements
+     */
+    elements: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Seendocuments
+     */
+    seenDocuments: Array<string>;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+};
+
+/**
+ * BoardRequestDto
+ */
+export type BoardRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string | null;
+    /**
+     * Title
+     */
+    title?: string;
+    /**
+     * Elements
+     */
+    elements: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Seendocuments
+     */
+    seenDocuments: Array<string>;
+};
+
+/**
  * BoxDto
  */
 export type BoxDto = {
@@ -3909,8 +3965,10 @@ export type SourceDocumentListDto = {
     projectId: string;
     /**
      * Runid
+     *
+     * Requested storage run; null when listing every registered project document.
      */
-    runId: string;
+    runId: string | null;
     /**
      * Documents
      */
@@ -3927,8 +3985,10 @@ export type SourceDocumentRequestDto = {
     projectId: string;
     /**
      * Runid
+     *
+     * Existing storage run, or omit to use the project's source-document run without a model or Stage association.
      */
-    runId: string;
+    runId?: string | null;
     /**
      * Filename
      */
@@ -4977,11 +5037,11 @@ export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostRe
 export type ReadDocumentsApiDocumentsGetData = {
     body?: never;
     path?: never;
-    query: {
+    query?: {
         /**
          * Runid
          */
-        runId: string;
+        runId?: string | null;
     };
     url: '/api/documents';
 };
@@ -5134,6 +5194,47 @@ export type ReadArtifactBytesApiArtifactsSha256BytesGetResponses = {
      */
     200: unknown;
 };
+
+export type ReadBoardApiBoardGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/board';
+};
+
+export type ReadBoardApiBoardGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: BoardDto;
+};
+
+export type ReadBoardApiBoardGetResponse = ReadBoardApiBoardGetResponses[keyof ReadBoardApiBoardGetResponses];
+
+export type UpdateBoardApiBoardPutData = {
+    body: BoardRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/board';
+};
+
+export type UpdateBoardApiBoardPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateBoardApiBoardPutError = UpdateBoardApiBoardPutErrors[keyof UpdateBoardApiBoardPutErrors];
+
+export type UpdateBoardApiBoardPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: BoardDto;
+};
+
+export type UpdateBoardApiBoardPutResponse = UpdateBoardApiBoardPutResponses[keyof UpdateBoardApiBoardPutResponses];
 
 export type CreateElevationApiDrawingsElevationsPostData = {
     body: ElevationRequestDto;

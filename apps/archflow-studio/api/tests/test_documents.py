@@ -14,6 +14,8 @@ from PIL import Image
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, NameObject, RectangleObject
 
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
@@ -108,6 +110,56 @@ class SourceDocumentTests(unittest.TestCase):
         self.assertEqual(first, repeated)
         self.assertNotEqual(first["assetSha256"], changed["assetSha256"])
         self.assertEqual(len(self.client.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"]), 2)
+
+    def test_project_listing_keeps_same_content_in_each_storage_run_after_reopen(self) -> None:
+        before = self.repository.read_head()
+        first = self.upload(image_bytes(), "same.png", "image/png").json()
+        self.repository.create_run("other-run")
+        second = self.upload(image_bytes(), "same.png", "image/png", "other-run").json()
+        self.assertEqual(first["assetSha256"], second["assetSha256"])
+        reopened = self.new_client()
+        response = reopened.get("/api/documents")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIsNone(response.json()["runId"])
+        self.assertCountEqual(response.json()["documents"], [first, second])
+        self.assertEqual(reopened.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"], [first])
+        self.assertEqual(reopened.get("/api/documents", params={"runId": "missing-run"}).status_code, 404)
+        self.assertEqual(self.repository.read_head(), before)
+
+    def test_upload_without_run_works_before_any_model_or_stage_and_reopens(self) -> None:
+        empty_dir = self.root / "empty" / PROJECT_ID
+        repository = FilesystemProjectRepository.initialize(
+            empty_dir, project_id=PROJECT_ID, initial_state={"project_id": PROJECT_ID, "version": 0},
+        )
+        before = repository.read_head()
+        client = TestClient(create_app(StudioSettings(project_dir=empty_dir, cad_export="off")))
+        self.addCleanup(client.close)
+        body = {"projectId": PROJECT_ID, "fileName": "参考图纸.pdf", "mimeType": "application/pdf", "contentBase64": "YnJva2Vu"}
+        self.assertEqual(client.get("/api/documents").json()["documents"], [])
+        self.assertEqual(client.post("/api/documents", json=body).status_code, 422)
+        self.assertEqual(list(repository.layout.runs.iterdir()), [])
+        data = two_page_pdf()
+        body["contentBase64"] = base64.b64encode(data).decode("ascii")
+        self.assertEqual(client.post("/api/documents", json={**body, "runId": "missing-run"}).status_code, 404)
+        self.assertEqual(list(repository.layout.runs.iterdir()), [])
+        uploaded = client.post("/api/documents", json=body)
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+        document = uploaded.json()
+        self.assertEqual(document["runId"], "studio-documents")
+        self.assertEqual(document["pageCount"], 2)
+        self.assertIsNone(document["modelSource"])
+        self.assertIsNone(document["sourceStageRef"])
+        reopened = TestClient(create_app(StudioSettings(project_dir=empty_dir, cad_export="off")))
+        self.addCleanup(reopened.close)
+        self.assertEqual(reopened.get("/api/documents").json()["documents"], [document])
+        self.assertEqual(reopened.post("/api/documents", json=body).json(), document)
+        self.assertEqual(reopened.get(f"/api/documents/{document['assetSha256']}/bytes", params={"runId": document["runId"]}).content, data)
+        run = repository.load_run(document["runId"])
+        self.assertEqual(run.base, before)
+        refs = repository.list_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id))
+        self.assertEqual([ref.record_kind for ref in refs], ["studio-source-document"])
+        self.assertEqual(repository.read_design_branches(), {})
+        self.assertEqual(repository.read_head(), before)
 
     def test_wrong_project_missing_run_paths_and_invalid_bytes_are_refused(self) -> None:
         for data, name, mime in ((b"%PDF-not-complete", "broken.pdf", "application/pdf"), (image_bytes()[:-8], "broken.png", "image/png"), (image_bytes(), "fake.pdf", "application/pdf"), (b"junk", "broken.jpg", "image/jpeg"), (image_bytes(), "../private.png", "image/png"), (image_bytes(), "C:\\private.png", "image/png")):

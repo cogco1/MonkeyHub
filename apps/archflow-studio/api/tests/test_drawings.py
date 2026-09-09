@@ -88,6 +88,10 @@ class DrawingTests(CandidateTestCase):
         first, second = self.generate(drawingId="elevation-a").json(), self.generate(drawingId="elevation-b").json()
         self.assertEqual(first["assetSha256"], second["assetSha256"])
         self.assertNotEqual(first["revisionRef"], second["revisionRef"])
+        listing = self.client.get("/api/documents")
+        self.assertEqual(listing.status_code, 200, listing.text)
+        self.assertIsNone(listing.json()["runId"])
+        self.assertCountEqual(listing.json()["documents"], [first, second])
         a = self.save_drawing_page(first, "the first drawing")
         b = self.save_drawing_page(second, "the second drawing")
         for drawing, saved in ((first, a), (second, b)):
