@@ -9,6 +9,12 @@
       "goal": "Continue the remaining P115 capability consolidation from the completed namespace and Stage/Branch/Candidate baseline. The card retains unfinished method/tool/check work and real project acceptance; delivered preview, history, drawing-source and incremental execution paths are not reopened.",
       "depends_on": [],
       "write_scope": [
+        "OPEN_MONKEYHUB.cmd",
+        "apps/monkeyhub/",
+        "apps/shared-web/",
+        "apps/archflow-studio/OPEN_MONKEYARCH.bat",
+        "apps/archflow-studio/make-desktop-shortcut.ps1",
+        "tools/package_monkeyapps.py",
         ".claude/launch.json",
         ".github/workflows/verify.yml",
         ".gitignore",
@@ -274,6 +280,7 @@
         "Generated candidates appear without opening chat or waiting for validation; explicit acceptance advances one design branch atomically and survives restart without CAD rerun; historical model and drawing sources stay exact, and issue retains its separate canonical-base checks."
       ],
       "notes": [
+        "2026-09-09: MonkeyHub implementation authorized and split across existing UI, team-environment and repository-maintenance conversations. P115 records shared UI reuse, local service lifecycle and Windows candidate packaging scopes; architecture owners remain unchanged until their actual public contracts are extended. Delivery and clean-machine acceptance remain pending.",
         "2026-09-08: align the existing rule sources and contributor instructions; reuse the verified historical-commit scope checker from the source release. Module ownership, current work, runtime authority and installable versions remain distinct. No new registry or plugin loader.",
         "2026-09-08 product boundary: MonkeyArch is the 3D modeling/spatial-revision workflow; MonkeyDiagram is the peer drawing/diagram workflow covering the existing drawing work, markup, graphic composition, layout and exports. Reuse existing owners and ArchFlow project infrastructure; the names do not create new packages or persistence authority.",
         "2026-09-08 long-term separation: REPO_LAYOUT defines distinct archflow shared-core, monkeyarch modeling and monkeydiagram drawing namespaces plus peer Web workspaces. Current code paths are not yet migrated. Move one real consumer chain at a time, updating existing owner paths/imports/package checks rather than adding duplicate owners or a new project store. The frozen v0.1.0 candidate remains unchanged.",
