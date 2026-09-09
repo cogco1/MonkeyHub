@@ -40,3 +40,17 @@ Declared component material colours now become native materials in both CAD
 export paths. MonkeyArch also restores saved display colours for older files
 whose loader supplies only its default white material; existing native materials
 and glass transparency retain their original appearance.
+
+The ordinary prism producer also accepts `rectangular_cutouts` for material panels.
+Each item names `cutout_id`, `span0`, `span1`, `bottom` and `top` in metres: X is the
+span, bottom/top are relative to the prism base, and the cut crosses its Z thickness.
+The profile must be an ordered axis-aligned rectangle. A cut may cross a panel edge
+or consume it; unchanged pieces retain their identity and empty pieces retire through
+the existing incremental runner. This does not relax the wall solver's hosted-opening
+boundary rules. A trimmed panel publishes no complete-prism top datum.
+
+Composed candidates inherit a missing donor material from the same source object,
+or an unambiguous source component. Explicit donor materials remain authoritative.
+This preserves PBR colours, transparency and textures during continuation. The OCCT
+preview still supplies meshes for changed objects; retained Breps stay Breps, while
+those changed objects continue to be editable through their StateRecord parameters.

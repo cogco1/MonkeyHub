@@ -295,7 +295,8 @@
         "archflow/adapters/cad_program.py",
         "tests/test_lintel_bearing.py",
         "tests/test_window_relational_update.py",
-        "archflow/adapters/cad_patch.py"
+        "archflow/adapters/cad_patch.py",
+        "tests/test_prism_cutouts.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -319,7 +320,8 @@
         "2026-09-09: MonkeyHub service implementation extends Studio settings/launcher and both service lifecycle boundaries. hub.shell is required because Studio requires a building project; Hub must start and manage Monitor without one. UI and distribution integrate separately; no package or second-machine completion is claimed.",
         "2026-09-09: Shared browser appearance, interpolation, translation and base controls extend studio.shell; Monitor serves only the four exact shared JS/CSS URLs. UI owns the shared files and consumer changes; distribution preserves them in the package. Real browser integration and packaged acceptance remain separate from the HTTP route checks.",
         "2026-09-09 MonkeyBoard local implementation: single-operator whiteboard for meeting screen sharing, original PDF/image uploads, automatic receipt of new MonkeyDiagram documents, movable drawing frames and notes, immutable layout saves and reopening, and exact run/revision/page return links. Focused API and frontend save/source tests passed; real-browser acceptance is in progress with the main integration task. No multiplayer is requested; meeting plugins, account access and live transcription are not connected.",
-        "2026-09-09: user authorized the bounded window-width relation slice and editable 3dm materials. Extend existing parameter/closure/operator, window producers, relation checks and CAD reuse. Add only the declared lintel envelope bearing check; repair native material export and legacy layer-colour display. The explicitly named external Ightham analytical input consumes these relations through its existing case script and retains candidates through P036; active services and formal issue are separate."
+        "2026-09-09: user authorized the bounded window-width relation slice and editable 3dm materials. Extend existing parameter/closure/operator, window producers, relation checks and CAD reuse. Add only the declared lintel envelope bearing check; repair native material export and legacy layer-colour display. The explicitly named external Ightham analytical input consumes these relations through its existing case script and retains candidates through P036; active services and formal issue are separate.",
+        "2026-09-09: user authorized the ordinary UI window continuation and local runtime integration. Extend prism with panel cutouts and preserve exact source materials through composed candidates. The external Ightham input is authored into a normal single-seat runner state; verify 1400 to 1600 mm, save/reopen, then 1500 mm. The existing OCCT composed display changes remain meshes; parameter continuation and native Brep editing are distinct."
       ]
     },
     {
