@@ -5273,6 +5273,52 @@
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py"
       ]
+    },
+    {
+      "module_id": "tools.package_monkeyapps",
+      "owner_path": "tools/package_monkeyapps.py",
+      "status": "canonical",
+      "purpose": "Build a Windows application distribution from one exact Git commit in caller-selected external directories. This CLI owns packaging; project and app lifecycle owners retain their existing authority.",
+      "owns": [
+        "Exact-commit source collection, frontend build and embedded Python dependency preparation in external staging/cache",
+        "Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery",
+        "Fresh-version Windows installation and the thin root Hub entry; actual application lifecycle stays with hub.shell"
+      ],
+      "does_not_own": [
+        "Project data, project initialization, candidate execution or formal project issue",
+        "Application lifecycle, model/provider credentials, automatic updates or publishing to a remote service",
+        "The shared application preference authority"
+      ],
+      "inputs": [
+        "Exact source Git commit or ref",
+        "Explicit external staging, cache and output directories",
+        "Builder Node/npm and Windows Python runtime inputs"
+      ],
+      "outputs": [
+        "Windows candidate application directory with embedded Python and built web assets",
+        "ZIP, checksum and source/build metadata"
+      ],
+      "public_api": [
+        "main",
+        "package"
+      ],
+      "invariants": [
+        "Only the selected committed source is collected; local WIP and project/runtime folders are not selected inputs",
+        "package validates staging/output/cache against the selected source checkout before passing paths to its write helpers",
+        "The registered writer functions derive distribution outputs from those validated roots; this registration adds no project writer and is not a filesystem sandbox.",
+        "Installation targets a fresh version directory and leaves unknown existing data intact"
+      ],
+      "used_by": [
+        "apps/monkeyhub/installer/README.md"
+      ],
+      "files": [
+        "tools/package_monkeyapps.py",
+        "OPEN_MONKEYHUB.cmd",
+        "apps/monkeyhub/installer/INSTALL_MONKEYHUB.cmd",
+        "apps/monkeyhub/installer/install.ps1"
+      ],
+      "tests": [],
+      "untested_reason": "No committed unit test exists for this Windows packaging CLI. Acceptance is an explicit candidate build plus isolated installer and installed-application smoke checks; kernel test membership does not certify distribution."
     }
   ]
 }
