@@ -14,6 +14,10 @@
 .monkeyboard-save-state { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .monkeyboard-save-state.is-error { color: var(--violated); }
 .monkeyboard button.monkeyboard-primary { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.monkeyboard-export { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; color: var(--muted); }
+.monkeyboard-export > span { max-width: 156px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.monkeyboard-export label { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.monkeyboard-export input { margin: 0; }
 .monkeyboard-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .monkeyboard-sources { display: flex; flex-direction: column; flex: 0 0 248px; min-width: 0; border-right: 1px solid var(--line); background: var(--panel); padding: 18px 12px 12px; }
 .monkeyboard-source-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
@@ -65,5 +69,5 @@
 .monkeyboard-feedback-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 .monkeyboard-feedback button { min-height: 44px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); cursor: pointer; }
 .monkeyboard-feedback button:disabled { opacity: .5; cursor: default; }
-@media (max-width: 1000px) { .monkeyboard-sources { flex-basis: 215px; padding: 14px 8px; } .monkeyboard-topbar { padding: 8px 10px; gap: 7px; } .monkeyboard-heading { gap: 8px; } .monkeyboard-heading input { width: 150px; } .monkeyboard-footer { padding-inline: 10px; } }
+@media (max-width: 1000px) { .monkeyboard-sources { flex-basis: 215px; padding: 14px 8px; } .monkeyboard-topbar { padding: 8px 10px; gap: 7px; flex-wrap: wrap; } .monkeyboard-heading { gap: 8px; } .monkeyboard-heading input { width: 150px; } .monkeyboard-footer { padding-inline: 10px; } .monkeyboard-export { order: 2; flex-basis: 100%; } }
 @media (max-width: 700px) { .monkeyboard-sources { flex-basis: 175px; } .monkeyboard-topbar { flex-wrap: wrap; } .monkeyboard-heading { flex-basis: 70%; } .monkeyboard-topbar button { font-size: 11px; } .monkeyboard-source { padding: 9px; } .monkeyboard-page-row { flex-direction: column; } .monkeyboard-footer > span:first-child { display: none; } .monkeyboard-canvas .excalidraw .welcome-screen-center__heading { font-size: 20px; } }

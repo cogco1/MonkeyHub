@@ -15,8 +15,8 @@ import { documentKey, documentMime, documentUrl, findSource, imageSource, nextDo
 import "./board.css";
 
 const copy = {
-  en: { loading: "Opening board…", loadFailed: "The board could not be opened.", retry: "Retry", sources: "Project documents", upload: "Upload PDF / image", title: "Board title", saved: "Saved", saving: "Saving…", dirty: "Unsaved changes", saveError: "Changes have not been saved.", conflict: "Another saved version exists. Your current canvas is preserved; open the saved board separately to compare.", compare: "Open saved board", save: "Save now", add: "Add page", open: "Open in MonkeyDiagram", fit: "Fit board", busy: "Receiving document…", crit: "Crit mode", critSubmit: "Submit", critExit: "Exit", welcome: "Bring the project together", welcomeBody: "Arrange drawings, connect ideas and mark up the discussion. New MonkeyDiagram documents arrive here automatically.", empty: "Upload a PDF, PNG or JPEG to begin. New project drawings will appear here.", hint: "Wheel to zoom · Space or middle mouse to pan · Shift to select several", auto: "New documents arrive automatically", previewError: "Some page previews could not be loaded. The saved layout is retained.", unsupported: "Use PDF, PNG or JPEG files.", unbound: "This image has no registered project source. Upload its original file first.", page: "Page", pages: "pages", received: "Received", pending: "Pending", dismiss: "Dismiss", sourceError: "Project documents could not be refreshed.", select: "Select a drawing to open its original.", refresh: "Retry previews / receive", unknown: "Unknown error" },
-  "zh-CN": { loading: "正在打开画布…", loadFailed: "画布暂时无法打开。", retry: "重试", sources: "项目资料", upload: "上传 PDF / 图片", title: "画布标题", saved: "已保存", saving: "正在保存…", dirty: "有未保存的修改", saveError: "修改尚未保存。", conflict: "已有另一份保存版本。当前画布已保留，请另开已保存画布进行比较。", compare: "另开已保存画布", save: "立即保存", add: "添加此页", open: "在 MonkeyDiagram 中打开", fit: "查看全部", busy: "正在接收资料…", crit: "Crit 模式", critSubmit: "提交", critExit: "退出", welcome: "把项目放在一起讨论", welcomeBody: "摆放图纸、连接想法、标记讨论。MonkeyDiagram 的新资料会自动来到这里。", empty: "上传 PDF、PNG 或 JPEG 开始。项目的新图纸也会自动出现在这里。", hint: "滚轮缩放 · 空格或鼠标中键平移 · Shift 多选", auto: "自动接收新资料", previewError: "部分页面预览未能载入，已保留原有布局。", unsupported: "请使用 PDF、PNG 或 JPEG 文件。", unbound: "这张图片没有项目来源，请先上传原始文件。", page: "第", pages: "页", received: "已接收", pending: "待接收", dismiss: "关闭提示", sourceError: "项目资料暂时无法刷新。", select: "选中图纸可打开原始页面。", refresh: "重试预览 / 接收", unknown: "未知错误" },
+  en: { loading: "Opening board…", loadFailed: "The board could not be opened.", retry: "Retry", sources: "Project documents", upload: "Upload PDF / image", title: "Board title", saved: "Saved", saving: "Saving…", dirty: "Unsaved changes", saveError: "Changes have not been saved.", conflict: "Another saved version exists. Your current canvas is preserved; open the saved board separately to compare.", compare: "Open saved board", save: "Save now", add: "Add page", open: "Open in MonkeyDiagram", fit: "Fit board", busy: "Receiving document…", crit: "Crit mode", critSubmit: "Submit", critExit: "Exit", export: "Export board pages", exportClean: "Clean originals · marks excluded", exportMerged: "Merged PDF", exportPages: "One PDF per page", exportPng: "PNG", exportJpeg: "JPEG", exportZip: "ZIP for transfer", exporting: "Preparing export…", exportDone: "Export ready.", exportEmpty: "Place at least one registered drawing page on the board before exporting.", welcome: "Bring the project together", welcomeBody: "Arrange drawings, connect ideas and mark up the discussion. New MonkeyDiagram documents arrive here automatically.", empty: "Upload a PDF, PNG or JPEG to begin. New project drawings will appear here.", hint: "Wheel to zoom · Space or middle mouse to pan · Shift to select several", auto: "New documents arrive automatically", previewError: "Some page previews could not be loaded. The saved layout is retained.", unsupported: "Use PDF, PNG or JPEG files.", unbound: "This image has no registered project source. Upload its original file first.", page: "Page", pages: "pages", received: "Received", pending: "Pending", dismiss: "Dismiss", sourceError: "Project documents could not be refreshed.", select: "Select a drawing to open its original.", refresh: "Retry previews / receive", unknown: "Unknown error" },
+  "zh-CN": { loading: "正在打开画布…", loadFailed: "画布暂时无法打开。", retry: "重试", sources: "项目资料", upload: "上传 PDF / 图片", title: "画布标题", saved: "已保存", saving: "正在保存…", dirty: "有未保存的修改", saveError: "修改尚未保存。", conflict: "已有另一份保存版本。当前画布已保留，请另开已保存画布进行比较。", compare: "另开已保存画布", save: "立即保存", add: "添加此页", open: "在 MonkeyDiagram 中打开", fit: "查看全部", busy: "正在接收资料…", crit: "Crit 模式", critSubmit: "提交", critExit: "退出", export: "整理导出图墙图纸", exportClean: "清洁原图 · 不含批注", exportMerged: "合并 PDF", exportPages: "单页 PDF", exportPng: "PNG", exportJpeg: "JPEG", exportZip: "传输 ZIP", exporting: "正在整理导出…", exportDone: "导出已就绪。", exportEmpty: "请先在图墙中摆放至少一页已登记图纸。", welcome: "把项目放在一起讨论", welcomeBody: "摆放图纸、连接想法、标记讨论。MonkeyDiagram 的新资料会自动来到这里。", empty: "上传 PDF、PNG 或 JPEG 开始。项目的新图纸也会自动出现在这里。", hint: "滚轮缩放 · 空格或鼠标中键平移 · Shift 多选", auto: "自动接收新资料", previewError: "部分页面预览未能载入，已保留原有布局。", unsupported: "请使用 PDF、PNG 或 JPEG 文件。", unbound: "这张图片没有项目来源，请先上传原始文件。", page: "第", pages: "页", received: "已接收", pending: "待接收", dismiss: "关闭提示", sourceError: "项目资料暂时无法刷新。", select: "选中图纸可打开原始页面。", refresh: "重试预览 / 接收", unknown: "未知错误" },
 };
 type Copy = typeof copy.en;
 
@@ -177,6 +177,9 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const feedbackQueued = useRef(false);
   const [feedbackWaiting, setFeedbackWaiting] = useState(false);
   const [pages, setPages] = useState<Record<string, number>>({});
+  const [exportFormat, setExportFormat] = useState<"merged-pdf" | "page-pdfs" | "png" | "jpeg">("merged-pdf");
+  const [exportZip, setExportZip] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -341,6 +344,31 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     canvas.current?.addFiles(Object.values(restored.files)); setPreviewFailed(restored.failures.length > 0);
     await receive(list.documents);
   }); };
+  const exportBoard = async () => {
+    const placed = canvas.current?.getSceneElements().filter((element) => element.type === "image") ?? [];
+    const ordered = [...placed].sort((left, right) => left.y - right.y || left.x - right.x);
+    const seenPages = new Set<string>();
+    const sources = ordered.flatMap((element) => {
+      const source = imageSource(element as unknown as Record<string, unknown>);
+      if (!source) return [];
+      const key = `${source.runId}:${source.assetSha256}:${source.revisionRef ?? ""}:${source.pageIndex}`;
+      if (seenPages.has(key)) return [];
+      seenPages.add(key);
+      return [source];
+    });
+    if (sources.length === 0) { setNotice(text.exportEmpty); return; }
+    setExporting(true); setNotice("");
+    try {
+      await queue.flush();
+      const blob = await studio.exportBoard({ projectId: board.projectId, pages: sources, format: exportFormat, zip: exportZip });
+      const suffix = exportZip || (exportFormat !== "merged-pdf" && sources.length > 1) ? "zip" : exportFormat === "merged-pdf" || exportFormat === "page-pdfs" ? "pdf" : exportFormat;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a"); link.href = url; link.download = `monkeyboard-export.${suffix}`; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setNotice(text.exportDone);
+    } catch (cause) { setNotice(errorText(cause)); }
+    finally { if (alive.current) setExporting(false); }
+  };
   const source = selected && findSource(documents, selected);
   const openFeedbackNow = () => {
     const api = canvas.current;
@@ -402,6 +430,14 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       <button disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>
       <button disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>
       <button disabled={!ready} onClick={enterCrit}>{text.crit}</button>
+      <div className="monkeyboard-export" aria-label={text.export}>
+        <span>{text.exportClean}</span>
+        <select aria-label={text.export} value={exportFormat} disabled={!ready || exporting} onChange={(event) => setExportFormat(event.target.value as typeof exportFormat)}>
+          <option value="merged-pdf">{text.exportMerged}</option><option value="page-pdfs">{text.exportPages}</option><option value="png">{text.exportPng}</option><option value="jpeg">{text.exportJpeg}</option>
+        </select>
+        <label><input type="checkbox" checked={exportZip} disabled={!ready || exporting} onChange={(event) => setExportZip(event.target.checked)} /> {text.exportZip}</label>
+        <button disabled={!ready || exporting} onClick={() => { void exportBoard(); }}>{exporting ? text.exporting : text.export}</button>
+      </div>
       <input ref={input} type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" multiple hidden onChange={(event) => { void upload([...event.target.files ?? []]); event.target.value = ""; }} />
     </header>
     {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{saveState.conflict ? <a href={window.location.href} target="_blank" rel="noopener noreferrer">{text.compare}</a> : <button onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}

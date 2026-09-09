@@ -8,8 +8,15 @@ Saving a board creates neither a design Stage nor a canonical transition.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from io import BytesIO
+from pathlib import PurePath
+from typing import Any, Literal, Mapping, Sequence
 import threading
+from zipfile import ZIP_DEFLATED, ZipFile
+
+import fitz
+from PIL import Image, ImageOps
+from pypdf import PdfReader, PdfWriter
 
 from archflow.contracts.canonical import CanonicalValueError, canonical_json_bytes
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -37,6 +44,21 @@ class BoardScene:
     elements: tuple[Mapping[str, Any], ...] = ()
     seen_documents: tuple[str, ...] = ()
     revision_sha256: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BoardExportPage:
+    run_id: str
+    asset_sha256: str
+    revision_ref: str | None
+    page_index: int
+
+
+@dataclass(frozen=True, slots=True)
+class BoardExport:
+    file_name: str
+    media_type: str
+    content: bytes
 
 
 def _revisions(binding: ProjectBinding) -> dict[str, Mapping]:
@@ -72,6 +94,98 @@ def read_board(binding: ProjectBinding) -> BoardScene:
     revisions = _revisions(binding)
     latest = _latest(revisions)
     return _scene(binding, latest, revisions.get(latest))
+
+
+def _export_name(index: int, file_name: str, suffix: str) -> str:
+    stem = PurePath(file_name).stem.strip() or "drawing"
+    clean = "".join(char if char.isalnum() or char in "-_" else "-" for char in stem).strip("-") or "drawing"
+    return f"{index:03d}-{clean}.{suffix}"
+
+
+def _page_pdf(data: bytes, mime_type: str, page_index: int) -> bytes:
+    writer = PdfWriter()
+    if mime_type == "application/pdf":
+        reader = PdfReader(BytesIO(data))
+        writer.add_page(reader.pages[page_index])
+    else:
+        with Image.open(BytesIO(data)) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+            dpi = image.info.get("dpi", (72, 72))
+            output = BytesIO()
+            image.save(output, format="PDF", resolution=float(dpi[0]))
+        reader = PdfReader(BytesIO(output.getvalue()))
+        writer.add_page(reader.pages[0])
+    output = BytesIO(); writer.write(output)
+    return output.getvalue()
+
+
+def _page_raster(data: bytes, mime_type: str, page_index: int, format: Literal["png", "jpeg"]) -> bytes:
+    if mime_type == "application/pdf":
+        document = fitz.open(stream=data, filetype="pdf")
+        try:
+            # 144 dpi is explicit print-ready raster output, never the browser viewport.
+            pixmap = document.load_page(page_index).get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+        finally:
+            document.close()
+    else:
+        with Image.open(BytesIO(data)) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+    output = BytesIO()
+    if format == "png":
+        image.save(output, format="PNG", optimize=True)
+    else:
+        image.save(output, format="JPEG", quality=95, subsampling=0, optimize=True)
+    return output.getvalue()
+
+
+def export_board_pages(
+    binding: ProjectBinding,
+    pages: Sequence[BoardExportPage],
+    format: Literal["merged-pdf", "page-pdfs", "png", "jpeg"],
+    zip_output: bool,
+) -> BoardExport:
+    """Build transient clean-source output in caller order without retaining a new project artifact."""
+
+    if not pages:
+        raise _invalid("Choose at least one drawing page to export.")
+    if len(pages) > 100:
+        raise _invalid("An export can contain at most 100 drawing pages.")
+    entries: list[tuple[str, bytes]] = []
+    exported: set[tuple[str, str, str | None, int]] = set()
+    for reference in pages:
+        identity = (reference.run_id, reference.asset_sha256, reference.revision_ref, reference.page_index)
+        if identity in exported:
+            continue
+        exported.add(identity)
+        index = len(entries) + 1
+        document, data = document_bytes(binding, reference.run_id, reference.asset_sha256, reference.revision_ref)
+        if reference.page_index >= len(document.pages):
+            raise StudioError(422, "DOCUMENT_PAGE_NOT_FOUND", "The requested board page no longer exists in its registered source.")
+        if format in {"merged-pdf", "page-pdfs"}:
+            entries.append((_export_name(index, document.file_name, "pdf"), _page_pdf(data, document.mime_type, reference.page_index)))
+        else:
+            entries.append((_export_name(index, document.file_name, format), _page_raster(data, document.mime_type, reference.page_index, format)))
+
+    if format == "merged-pdf":
+        writer = PdfWriter()
+        for _, data in entries:
+            writer.append(PdfReader(BytesIO(data)))
+        output = BytesIO(); writer.write(output)
+        merged = output.getvalue()
+        if not zip_output:
+            return BoardExport("monkeyboard-print.pdf", "application/pdf", merged)
+        entries = [("monkeyboard-print.pdf", merged), *entries]
+
+    if not zip_output and len(entries) == 1:
+        name, data = entries[0]
+        return BoardExport(name, "application/pdf" if format in {"merged-pdf", "page-pdfs"} else f"image/{format}", data)
+
+    output = BytesIO()
+    with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
+        for name, data in entries:
+            archive.writestr(name, data)
+    return BoardExport("monkeyboard-export.zip", "application/zip", output.getvalue())
 
 
 def _invalid(message: str) -> StudioError:
