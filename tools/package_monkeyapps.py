@@ -178,7 +178,7 @@ def smoke_runtime(bundle: Path) -> None:
         "assert sys.version_info[:3]==(3,13,15); "
         "assert not BRepPrimAPI_MakeBox(1,2,3).Shape().IsNull(); "
         "assert Image.new('RGB',(2,2)).size==(2,2); "
-        "assert rhino3dm.File3dm.fromByteArray(rhino3dm.File3dm().toByteArray()) is not None; "
+        "assert rhino3dm.File3dm.Decode(rhino3dm.File3dm().Encode()) is not None; "
         "print('Bundled Python, API, image/PDF and OCCT/3DM imports: PASS')"
     )], cwd=bundle)
     run([str(python), "-B", str(bundle / "apps/monkeyhub/run.py"), "--help"], cwd=bundle)
