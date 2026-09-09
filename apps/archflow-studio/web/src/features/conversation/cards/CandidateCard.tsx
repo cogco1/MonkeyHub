@@ -106,7 +106,7 @@ export function CandidateCard({
           <p className="quiet">
             {job.value.lane === "exclusive"
               ? t("candidate.running.exportLane")
-              : t("candidate.running.kernelOnly")}
+              : t("candidate.running.generating")}
           </p>
         </div>
       )}

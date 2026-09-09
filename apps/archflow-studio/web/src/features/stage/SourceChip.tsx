@@ -6,7 +6,6 @@
 
 import type { SceneInspection } from "../../workspaces/monkeyarch/viewer/sceneInspection";
 import { useT } from "../../i18n/useT";
-import { usePreferences } from "../settings/preferences";
 import {
   LOCAL_SOURCE_LABEL,
   type ViewportStatus,
@@ -45,7 +44,6 @@ export function SourceChip({
   view: ViewState | null;
 }) {
   const t = useT();
-  const { developerMode } = usePreferences();
   const { tag, rest } = tagOf(sourceLabel);
   const displayedTag =
     tag === "NO MODEL"
@@ -54,7 +52,7 @@ export function SourceChip({
         ? t("stage.source.local")
         : tag === "RUN"
           ? t("stage.source.run")
-          : tag;
+          : tag === "CANDIDATE" ? t("stage.source.candidate") : tag;
   const displayedRest = tag === "LOCAL" && rest === "unbound"
     ? t("stage.source.unbound")
     : rest;
@@ -70,7 +68,7 @@ export function SourceChip({
   const viewDetail = (() => {
     if (!view?.detail) return null;
     if (view.detail === "approximate") return t("stage.view.approximate");
-    if (view.detail === "ready for review") return t("stage.view.reviewReady");
+    if (view.detail === "ready for review") return view.label === "Review-ready" ? null : t("stage.view.reviewReady");
     if (view.detail === "verdict not read yet") return t("stage.view.verdictUnread");
     if (view.detail.startsWith("blocked: ")) {
       return (
@@ -79,9 +77,7 @@ export function SourceChip({
         </>
       );
     }
-    return developerMode
-      ? <span lang="en" translate="no">{view.detail}</span>
-      : t("stage.view.needsAttention");
+    return <span lang="en" translate="no">{view.detail}</span>;
   })();
   return (
     <div className="source" data-tag={tag} data-state={view?.state ?? "none"}>
@@ -93,8 +89,8 @@ export function SourceChip({
       )}
       <span className="source__tag">{displayedTag}</span>
       {inspection && <span className="source__name" title={inspection.fileName}>{inspection.fileName}</span>}
-      {developerMode && displayedRest && <span className="mono">{displayedRest}</span>}
-      {developerMode && inspection && (
+      {displayedRest && <span className="mono">{displayedRest}</span>}
+      {inspection && (
         <span className="mono source__facts">
           {t("stage.source.meshes", {
             count: inspection.meshCount.toLocaleString(),

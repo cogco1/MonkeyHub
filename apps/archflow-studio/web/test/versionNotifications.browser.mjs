@@ -109,7 +109,7 @@ async function painted() {
 }
 async function assertAnnotationNotePlacement() {
   const placement = await page.locator(".annotate__note").evaluateAll((notes) => {
-    const controls = [...document.querySelectorAll(".stage-mode-switch, .stage-model .source, .stage-model .editing-base, .stage-source-line__save, .stage-model .viewtools, .stage__versions-toggle")];
+    const controls = [...document.querySelectorAll(".stage-mode-switch, #stage-versions-panel .stage__versions-session, .stage-model .viewtools, .stage__versions-toggle")];
     const visible = notes.filter((note) => {
       const style = getComputedStyle(note);
       const rect = note.getBoundingClientRect();
@@ -131,11 +131,31 @@ async function assertAnnotationNotePlacement() {
     `The retained-mark view-change note must stay visible without overlapping model controls: ${JSON.stringify(placement)}`);
 }
 const versionsToggle = () => page.locator(".stage__versions-toggle");
+const versionSession = () => page.locator("#stage-versions-panel .stage__versions-session");
 const newVersionBadge = () => page.locator(".stage__versions-new");
 const conversationToggle = () => page.locator("button[aria-controls='conversation-panel']");
 const toolsToggle = () => page.locator("button[aria-controls='annotation-tools']");
 const viewToolsToggle = () => page.locator("button[aria-controls='view-tools']");
 const composerInput = () => page.locator(".composer__box input, .composer__box textarea");
+async function withModelDetails(read) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const panel = page.locator(".settings-panel[role='dialog']");
+  try {
+    await panel.getByRole("tab", { name: "Model", exact: true }).click();
+    await panel.locator(".source").waitFor({ state: "visible" });
+    return await read(panel);
+  } finally {
+    await panel.getByRole("button", { name: "Close", exact: true }).click();
+    await panel.waitFor({ state: "hidden" });
+  }
+}
+async function sessionState() {
+  assert.equal(await versionsToggle().getAttribute("aria-expanded"), "true");
+  return {
+    sourceMatch: await versionSession().locator(".editing-base[data-source-match]").getAttribute("data-source-match"),
+    modelAnnotations: await versionSession().locator("[data-model-annotations-status]").getAttribute("data-model-annotations-status"),
+  };
+}
 async function setConversationOpen(open) {
   if ((await conversationToggle().getAttribute("aria-expanded") === "true") !== open) await conversationToggle().click();
   await until(() => conversationToggle().getAttribute("aria-expanded"), (value) => value === String(open), "The conversation panel did not toggle");
@@ -155,22 +175,38 @@ function versionButton(option) {
     .getByRole("button", { name: new RegExp(`^View ${label}`) });
 }
 async function readyA() {
-  await until(async () => ({
-    selected: await versionButton(optionA).getAttribute("aria-pressed"),
-    annotations: await page.locator("[data-model-annotations-status]").getAttribute("data-model-annotations-status"),
-    loading: await page.locator(".stage-model .source__status").count(),
-  }), (value) => value.selected === "true" && value.annotations === "saved" && value.loading === 0,
-  "The real A model and annotations must be ready", 60_000);
+  await withModelDetails(async (panel) => {
+    await until(async () => ({
+      selected: await versionButton(optionA).getAttribute("aria-pressed"),
+      annotations: await versionSession().locator("[data-model-annotations-status]").getAttribute("data-model-annotations-status"),
+      loading: await panel.locator(".source__status").count(),
+    }), (value) => value.selected === "true" && value.annotations === "saved" && value.loading === 0,
+    "The real A model and annotations must be ready", 60_000);
+  });
+  return sessionState();
 }
 async function preservedState() {
+  // Opening versions acknowledges notifications, so inspect the source only
+  // through Settings while its session details remain unmounted.
+  assert.equal(await versionsToggle().getAttribute("aria-expanded"), "false");
+  assert.equal(await versionSession().count(), 0);
+  const unread = await newVersionBadge().count();
+  const source = await withModelDetails(async (panel) => ({
+    source: await panel.locator(".source").textContent(),
+    state: await panel.locator(".source").getAttribute("data-state"),
+  }));
+  assert.equal(await versionsToggle().getAttribute("aria-expanded"), "false");
+  assert.equal(await versionSession().count(), 0);
+  assert.equal(await newVersionBadge().count(), unread, "Reading model details must not acknowledge a version notice");
+  const annotationRequest = requests.findLast((request) => request.path === "/api/model-annotations" && request.completed);
+  assert.ok(annotationRequest, "The viewed model must have loaded its exact annotation scope");
+  const query = new URLSearchParams(annotationRequest.query);
   return {
-    source: await page.locator(".stage-model .source").textContent(),
-    state: await page.locator(".stage-model .source").getAttribute("data-state"),
-    sourceMatch: await page.locator(".stage-model .editing-base[data-source-match]").getAttribute("data-source-match"),
+    ...source,
+    modelSource: Object.fromEntries(["runId", "stateDigest", "assetSha256"].map((key) => [key, query.get(key)])),
     context: await page.locator(".composer > .context").textContent(),
     draft: await composerInput().inputValue(),
     preferences: await page.evaluate((key) => localStorage.getItem(key), preferenceKey),
-    modelAnnotations: await page.locator("[data-model-annotations-status]").getAttribute("data-model-annotations-status"),
     modelCanvasCount: await page.locator(".stage-model canvas").count(),
     url: page.url(),
   };
@@ -304,12 +340,13 @@ try {
 
   await page.goto(`${uiOrigin}/?lang=en`, { waitUntil: "domcontentloaded" });
   let baseline;
+  let baselineSession;
   let connectionCount;
   let refreshStart;
   await step("normal mode keeps one SSE connection with the developer drawer and event stream hidden", async () => {
     await versionsToggle().waitFor();
     await setVersionsOpen(true);
-    await readyA();
+    baselineSession = await readyA();
     assert.equal(await page.locator(".drawer").count(), 0);
     assert.equal(await page.locator(".events").count(), 0);
     assert.equal(await newVersionBadge().count(), 0, "Initial retained lists are not new versions");
@@ -323,6 +360,7 @@ try {
     await composerInput().fill(draft);
     await painted();
     baseline = await preservedState();
+    assert.deepEqual(baseline.modelSource, sourceA);
     const preferences = JSON.parse(baseline.preferences);
     assert.equal(preferences.developerMode, false);
     assert.equal(preferences.eventStreamVisible, false);
@@ -351,7 +389,7 @@ try {
     assert.deepEqual(await preservedState(), baseline);
     await setVersionsOpen(true);
     await versionButton(optionB).waitFor();
-    await readyA();
+    assert.deepEqual(await readyA(), baselineSession);
     assert.equal(await versionButton(optionB).getAttribute("aria-pressed"), "false");
     assert.equal(await newVersionBadge().count(), 0, "Opening versions acknowledges the notice without selecting B");
     await setVersionsOpen(false);
@@ -379,13 +417,13 @@ try {
       assert.equal(await newVersionBadge().count(), 0);
       assert.deepEqual(await preservedState(), baseline);
       await setVersionsOpen(true);
-      await readyA();
+      assert.deepEqual(await readyA(), baselineSession);
       assert.equal(await versionButton(optionB).count(), 1, "A failed refresh retains the existing B choice");
       await setVersionsOpen(false);
     }
     assert.deepEqual(failedRefreshes, [...listPaths]);
     await setVersionsOpen(true);
-    await readyA();
+    assert.deepEqual(await readyA(), baselineSession);
     await setVersionsOpen(false);
     assert.equal(await newVersionBadge().count(), 0);
     assert.deepEqual(await preservedState(), baseline);
@@ -437,21 +475,20 @@ try {
     const mountStart = requests.length;
     await page.reload({ waitUntil: "domcontentloaded" });
     await versionsToggle().waitFor();
-    await until(async () => ({
-      annotations: await page.locator("[data-model-annotations-status]").getAttribute("data-model-annotations-status"),
-      loading: await page.locator(".stage-model .source__status").count(),
-      sourceMatch: await page.locator(".stage-model .editing-base[data-source-match]").getAttribute("data-source-match"),
-      originalBytes: requests.slice(mountStart).some((request) => request.path === `/api/artifacts/${nativeA.sha256}/bytes`),
-      originalAnnotations: requests.slice(mountStart).some((request) => request.path === "/api/model-annotations" &&
-        Object.entries(nativeA.modelSource).every(([key, value]) => new URLSearchParams(request.query).get(key) === value)),
-    }), (value) => value.annotations === "saved" && value.loading === 0 && value.sourceMatch === "same" &&
-      value.originalBytes && value.originalAnnotations,
-    "A's original export must be both the viewed and editing source, with its own saved annotation scope", 60_000);
+    await withModelDetails(async (panel) => {
+      await until(async () => ({
+        loading: await panel.locator(".source__status").count(),
+        originalBytes: requests.slice(mountStart).some((request) => request.path === `/api/artifacts/${nativeA.sha256}/bytes`),
+        originalAnnotations: requests.slice(mountStart).some((request) => request.path === "/api/model-annotations" && request.completed &&
+          Object.entries(nativeA.modelSource).every(([key, value]) => new URLSearchParams(request.query).get(key) === value)),
+      }), (value) => value.loading === 0 && value.originalBytes && value.originalAnnotations,
+      "A's original export must load its real model bytes and exact annotation scope", 60_000);
+    });
     assert.equal(await newVersionBadge().count(), 0);
     await setConversationOpen(true);
     await composerInput().fill(`${draft} Preserve the original export.`);
     const originalState = await preservedState();
-    assert.equal(originalState.sourceMatch, "same");
+    assert.deepEqual(originalState.modelSource, nativeA.modelSource);
     assert.equal(JSON.parse(originalState.preferences).editingBases[editingKey], sourceA.runId);
     const originalConnections = await assertOneStream();
     const start = requests.length;
@@ -461,6 +498,8 @@ try {
     assert.deepEqual(await preservedState(), originalState);
     assert.equal(await assertOneStream(), originalConnections);
     await setVersionsOpen(true);
+    await until(sessionState, (value) => value.modelAnnotations === "saved" && value.sourceMatch === "same",
+      "A's original export must remain both the viewed and editing source, with its own saved annotation scope");
     assert.equal(await newVersionBadge().count(), 0);
     await setVersionsOpen(false);
     assert.deepEqual(await preservedState(), originalState);

@@ -165,12 +165,46 @@ const undo = () => page.locator(".stage-model .viewtools").getByRole("button", {
 async function editingBases() {
   return page.evaluate((key) => JSON.parse(localStorage.getItem(key)).editingBases, preferenceStorageKey);
 }
+async function openVersions() {
+  const button = page.locator(".stage__versions-toggle");
+  if (await button.getAttribute("aria-expanded") !== "true") await button.click();
+}
+async function withModelDetails(read) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await settings.getByRole("tab", { name: "Model", exact: true }).click();
+  const source = settings.locator(".source");
+  await source.waitFor({ state: "visible" });
+  try { return await read(source); }
+  finally {
+    await settings.getByRole("button", { name: "Close", exact: true }).click();
+    await settings.waitFor({ state: "detached" });
+  }
+}
+const editingBase = () => page.locator("#stage-versions-panel .stage__versions-session .editing-base");
+const annotationStatus = () => page.locator("#stage-versions-panel [data-model-annotations-status]");
 async function editingRun() {
-  return page.locator(".stage-model .hud__left > .editing-base").first().locator("span[title]").getAttribute("title");
+  await openVersions();
+  if (await editingBase().getAttribute("data-source-match") === "same") {
+    for (const option of group.options) {
+      if (await versionButton(option).getAttribute("aria-pressed") === "true") return option.modelSource.runId;
+    }
+    // The original ungrouped model remains identified by its Reference card.
+    return page.locator("#stage-versions-panel .vcard[title]").filter({
+      has: page.locator(".vcard__head > .label").filter({ hasText: /^Reference$/ }),
+    }).getAttribute("title");
+  }
+  const label = (await editingBase().locator(".editing-base__name").textContent()).trim();
+  const option = group.options.find((row) => label === `${group.label} · ${row.label}`);
+  if (option) return option.modelSource.runId;
+  const runs = [...new Set(artifacts.artifacts.filter((row) => row.fileName === label).map((row) => row.runId))];
+  assert.equal(runs.length, 1, `The editing notice must identify one retained model: ${label}`);
+  return runs[0];
 }
 async function ready(option) {
+  await openVersions();
   await until(async () => ({ pressed: await versionButton(option).getAttribute("aria-pressed"),
-    status: await page.locator("[data-model-annotations-status]").getAttribute("data-model-annotations-status") }),
+    status: await annotationStatus().getAttribute("data-model-annotations-status") }),
   (value) => value.pressed === "true" && value.status === "saved", `Exact ${option.label} model and its annotations did not become ready`, 60_000);
   await page.locator(".stage-model .viewtools").getByTitle("Draw a straight annotation line", { exact: true }).waitFor();
 }
@@ -200,6 +234,7 @@ async function inkImage() {
   return inkCanvas().evaluate((canvas) => canvas.toDataURL());
 }
 async function openOption(option) {
+  await openVersions();
   const start = requests.length;
   await versionButton(option).click();
   await ready(option);
@@ -333,8 +368,10 @@ try {
       "Saving an unchanged L6 page must retain its existing revision");
     assert.equal(requests.filter((request) => !["GET", "HEAD", "OPTIONS"].includes(request.method)).length, 0);
     await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyArch · 3D", exact: true }).click();
-    await page.locator(".stage-model .source__facts").waitFor({ timeout: 60_000 });
-    await until(() => page.locator(".stage-model .source__status").count(), (count) => count === 0, "The old model must finish loading before viewing B");
+    await withModelDetails(async (source) => {
+      await source.locator(".source__facts").waitFor({ timeout: 60_000 });
+      await until(() => source.locator(".source__status").count(), (count) => count === 0, "The old model must finish loading before viewing B");
+    });
   });
   await step("view B fetches only B's exact model without selecting it or changing the existing editing choice", async () => {
     await openOption(optionB);
@@ -383,7 +420,8 @@ try {
   await step("only explicit Continue selects B and persists the editing choice", async () => {
     assert.equal(selectionWrites.length, 0);
     allowedMutation = { kind: "selection" };
-    await page.locator(".stage-model .hud__left > .editing-base").first()
+    await openVersions();
+    await editingBase()
       .getByRole("button", { name: "Continue from this version", exact: true }).click();
     await until(() => selectionWrites.length, (count) => count === 1, "Continue must write exactly one working-copy selection");
     await until(editingRun, (runId) => runId === sourceB.runId, "The editing base must become B");

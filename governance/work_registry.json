@@ -296,7 +296,11 @@
         "tests/test_lintel_bearing.py",
         "tests/test_window_relational_update.py",
         "archflow/adapters/cad_patch.py",
-        "tests/test_prism_cutouts.py"
+        "tests/test_prism_cutouts.py",
+        "apps/archflow-studio/web/src/features/settings/SettingsPanel.css",
+        "apps/archflow-studio/web/src/features/settings/SettingsPanel.tsx",
+        "apps/archflow-studio/web/test/settingsPanel.browser.mjs",
+        "apps/archflow-studio/web/test/versionNotifications.browser.mjs"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [

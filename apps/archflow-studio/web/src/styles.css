@@ -727,11 +727,19 @@ button.chip:hover {
 
 .stage {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: var(--viewport);
   isolation: isolate;
+}
+
+.stage-workspace {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 .stage .viewport-host {
@@ -836,29 +844,17 @@ button.chip:hover {
   display: grid;
   gap: 6px;
   max-width: 100%;
-  /* Source information and tools each have a row: neither can squeeze the
-     other into a tall column when the conversation or evidence panel is open. */
   min-width: 0;
 }
 
-.stage-source-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  min-width: 0;
-  width: fit-content;
-  max-width: 100%;
-  padding: 5px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--overlay);
-  font-size: calc(12px * var(--font-scale, 1));
+.stage__versions-session {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0;
 }
 
-.stage-source-line[data-source-match="different"] .editing-base {
+.editing-base[data-source-match="different"] {
   color: var(--unchecked);
-  border-left-color: var(--unchecked);
 }
 
 .source {
@@ -880,17 +876,15 @@ button.chip:hover {
   white-space: nowrap;
 }
 
-.stage-source-line__save {
+.stage-annotations-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
   color: var(--muted);
 }
 
-.stage-source-line__save[data-model-annotations-status="error"] {
+.stage-annotations-status[data-model-annotations-status="error"] {
   color: var(--violated);
 }
 
@@ -937,9 +931,7 @@ button.chip:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding-left: 10px;
   max-width: 100%;
-  border-left: 1px solid var(--line);
   font-size: calc(12px * var(--font-scale, 1));
   overflow-wrap: anywhere;
 }

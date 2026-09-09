@@ -1,8 +1,7 @@
 /**
  * The model, and the few facts that sit over it.
  *
- * The viewport is the moved viewer, untouched. Around it: the source chip
- * (which file, whose label), the camera tools, the last resolved pick, the
+ * The viewport is the moved viewer, untouched. Around it: the camera tools, the last resolved pick, the
  * versions strip and the evidence tab. Everything here was handed in; the
  * stage decides nothing.
  */
@@ -27,7 +26,6 @@ import {
   type ViewportStatus,
 } from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
-import { SourceChip, type ViewState } from "./SourceChip";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
 import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
 import { createDocumentAnnotationsController } from "../../workspaces/monkeydiagram/useDocumentAnnotations";
@@ -70,12 +68,9 @@ export type CaptureState = "idle" | "busy" | "success" | "error";
 
 export function Stage({
   viewportRef,
-  sourceLabel,
   message,
   status,
-  inspection,
   artifactError,
-  view,
   picked,
   versions,
   hasNewVersions = false,
@@ -146,13 +141,9 @@ export function Stage({
   onEvidence,
 }: {
   viewportRef: RefObject<ViewportController | null>;
-  sourceLabel: string | null;
   message: string;
   status: ViewportStatus;
-  inspection: SceneInspection | null;
   artifactError: StudioApiError | null;
-  /** CURRENT / GHOST PREVIEW / VALIDATED, with the server's word as detail. */
-  view: ViewState | null;
   picked: PickedFacts | null;
   versions: readonly VersionGroup[];
   hasNewVersions?: boolean;
@@ -164,7 +155,7 @@ export function Stage({
   onDocumentView(next: DocumentViewContext): void;
   documentAnnotationsController: ReturnType<typeof createDocumentAnnotationsController>;
   onDocumentBeforeLeave(save: (() => Promise<void>) | null): void;
-  drawing?: { busy: boolean; available: boolean; error: string | null; generate(view: ElevationRequestDto["view"]): void };
+  drawing?: { busy: boolean; available: boolean; error: StudioApiError | null; dismissError(): void; generate(view: ElevationRequestDto["view"]): void };
   loadingSha: string | null;
   /** The digests on screen: one seat's, or every seat of a run. */
   loadedShas: readonly string[];
@@ -301,7 +292,7 @@ export function Stage({
         {baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
       </div>
     )}
-    {modelAnnotations && <div className="stage-source-line__save" data-model-annotations-status={modelAnnotations.error ? "error" :
+    {modelAnnotations && <div className="stage-annotations-status" data-model-annotations-status={modelAnnotations.error ? "error" :
       !modelAnnotations.ready ? "loading" : modelAnnotations.saving || modelAnnotations.dirty ? "saving" : "saved"}>
       {!modelAnnotations.error && <span role="status">{t(!modelAnnotations.ready ? "stage.annotations.loading" :
         modelAnnotations.saving || modelAnnotations.dirty ? "stage.annotations.saving" : "stage.annotations.saved")}</span>}
@@ -324,13 +315,22 @@ export function Stage({
           target.searchParams.set("view", "board");
           window.open(target.href, "_blank", "noopener");
         }}>{t("workspace.monkeyboard")}</button>
-        {designHistory && <span className="stage-current-context">{designHistory.history?.branchId ?? "main"} · {contextLabel}</span>}
-        {drawing && <><select aria-label="立面方向" value={elevationView} disabled={drawing.busy}
-          onChange={(event) => setElevationView(event.target.value as NonNullable<ElevationRequestDto["view"]>)}>
-          <option value="front">正立面</option><option value="back">背立面</option><option value="left">左立面</option><option value="right">右立面</option>
-        </select><button disabled={!drawing.available || drawing.busy} onClick={() => drawing.generate(elevationView)}>{drawing.busy ? "正在出图…" : "生成立面"}</button></>}
+        {drawing && <><select aria-label={t("stage.drawing.direction")} value={elevationView} disabled={drawing.busy}
+          onChange={(event) => { setElevationView(event.target.value as NonNullable<ElevationRequestDto["view"]>); drawing.dismissError(); }}>
+          <option value="front">{t("stage.drawing.front")}</option><option value="back">{t("stage.drawing.back")}</option><option value="left">{t("stage.drawing.left")}</option><option value="right">{t("stage.drawing.right")}</option>
+        </select><button disabled={!drawing.available || drawing.busy} onClick={() => drawing.generate(elevationView)}>{t(drawing.busy ? "stage.drawing.busy" : "stage.drawing.generate")}</button></>}
       </div>
-      {drawing?.error && <p className="stage-drawing-error" role="alert">{drawing.error}</p>}
+      {drawing?.error && <div className="stage-drawing-error">
+        <div>
+          <p role="alert">{t(drawing.error.code === "DRAWING_COMPLETE_SOURCE_UNAVAILABLE" ? "stage.drawing.completeSourceUnavailable"
+            : drawing.error.code === "DRAWING_SOURCE_MISMATCH" ? "stage.drawing.sourceMismatch" : "stage.drawing.failed")}</p>
+          <details key={`${drawing.error.code}:${drawing.error.detail}`}><summary>{t("stage.drawing.details")}</summary>
+            <p className="mono" lang="en" translate="no">{drawing.error.code}: {drawing.error.detail}</p>
+          </details>
+        </div>
+        <button type="button" className="btn btn--small" onClick={drawing.dismissError} aria-label={t("stage.drawing.dismiss")}>{t("common.close")}</button>
+      </div>}
+      <div className="stage-workspace">
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
         onKeyDown={(event) => {
           if (!(event.ctrlKey || event.metaKey) || (event.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
@@ -367,16 +367,6 @@ export function Stage({
 
       <div className="hud">
         <div className="hud__left">
-          <div className="stage-source-line" data-source-match={sameSource ? "same" : "different"}>
-          <SourceChip
-            sourceLabel={sourceLabel}
-            inspection={inspection}
-            status={status}
-            message={message}
-            view={view}
-          />
-          {sessionStatus}
-          </div>
           {blend && (
             <div className="blend" aria-label={t("stage.blend.ariaLabel")}>
               <span className="label">{t("stage.blend.before")}</span>
@@ -584,6 +574,7 @@ export function Stage({
             <div className="stage__versions-head"><strong>{t("stage.versions.ariaLabel")}</strong>
               <button type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
             </div>
+            <div className="stage__versions-session">{sessionStatus}</div>
             <VersionsStrip
               design={designHistory}
               workingCopies={workingCopies} onOpenWorkingOption={onOpenWorkingOption}
@@ -636,6 +627,7 @@ export function Stage({
           busy={baseActionBusy || changingBase} onSubmit={onDocumentSubmit} documentVisualInputAvailable={documentVisualInputAvailable} />
           : <div className="document-workspace document-empty">{t("document.noRun")}</div>}
       </div>}
+      </div>
     </section>
   );
 }

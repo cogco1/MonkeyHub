@@ -161,6 +161,26 @@
   background: var(--panel-2);
 }
 
+.settings-model-info {
+  gap: 12px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+
+.settings-model-info .source__name {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.settings-model-publication {
+  display: grid;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
 .settings-row {
   display: grid;
   grid-template-columns: minmax(150px, 0.8fr) minmax(190px, 1.2fr) auto;
