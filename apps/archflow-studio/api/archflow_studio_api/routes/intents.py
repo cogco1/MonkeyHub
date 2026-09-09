@@ -217,7 +217,7 @@ def _semantic_answer(
     response_model=IntentDto,
     response_model_by_alias=True,
     status_code=201,
-    responses={422: {"model": IntentBlockedDto}},
+    responses={422: {"model": IntentBlockedDto, "description": "Unprocessable Entity"}},
 )
 def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     """Compile one request against the resolved target, then propose it."""
