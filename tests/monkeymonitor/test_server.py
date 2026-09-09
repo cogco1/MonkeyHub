@@ -94,6 +94,36 @@ class MonitorServerTests(unittest.TestCase):
         self.assertEqual(self.request("/api/sources/codex", {"paths": []}, method="PUT"), {"paths": []})
         self.assertEqual(self.request("/api/events")["events"], [])
 
+    def test_conflicting_session_copies_leave_independent_healthy_usage_visible(self):
+        def token(timestamp, count):
+            usage = {"input_tokens": count, "output_tokens": 1}
+            return {"type": "event_msg", "timestamp": timestamp, "payload": {
+                "type": "token_count", "info": {"total_token_usage": usage, "last_token_usage": usage},
+            }}
+
+        private = "private-conflicting-session"
+        metadata = {"type": "session_meta", "payload": {"id": private}}
+        first = token("2026-09-09T12:00:00Z", 11)
+        second = token("2026-09-09T12:00:01Z", 22)
+        sources = (
+            [metadata, first, second], [metadata, second, first],
+            [{"type": "session_meta", "payload": {"id": "healthy"}}, token("2026-09-09T12:00:02Z", 7)],
+        )
+        paths = []
+        for index, rows in enumerate(sources):
+            path = Path(self.temp.name) / f"source-{index}.jsonl"
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            paths.append(str(path))
+        self.request("/api/sources/codex", {"paths": paths}, method="PUT")
+        result = self.request("/api/events")
+        self.assertEqual(len(result["events"]), 1)
+        self.assertEqual(result["events"][0]["session_id"], "healthy")
+        self.assertEqual(result["events"][0]["tokens"]["input_tokens"], 7)
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertIn("顺序冲突", result["warnings"][0])
+        self.assertNotIn(private, json.dumps(result))
+        self.assertNotIn(self.temp.name, json.dumps(result))
+
     def test_codex_source_validation_is_atomic_and_local_only(self):
         source = Path(self.temp.name) / "selected.jsonl"
         source.write_text("", encoding="utf-8")
