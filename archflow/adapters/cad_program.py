@@ -415,9 +415,9 @@ def translate_to_rhino_python(
     emitted, in program order, and only their physical outputs are named
     and measured; the rest of the document is the patch base's business.
 
-    With a material assignment, component layers take the material's
-    display color and objects carry ``archflow:material`` user text —
-    the assignment travels with the geometry, auditable in the file.
+    With a material assignment, component layers take the material's display
+    color and objects carry both a native rendering material and the matching
+    ``archflow:material`` user text.
     """
 
     proposal = program.proposal
@@ -441,6 +441,7 @@ def translate_to_rhino_python(
     lines: list[str] = [
         "import json",
         "import math",
+        "import Rhino",
         "import rhinoscriptsyntax as rs",
         "objects = {}",
         "counts = {}",
@@ -458,6 +459,40 @@ def translate_to_rhino_python(
     )
     for layer_path, color in layer_colors:
         lines.append(f"rs.AddLayer({layer_path!r}, {color!r})")
+    native_colors = {}
+    layer_color_map = dict(layer_colors)
+    for object_id in _physical_ids(program.proposal):
+        row = semantics["objects"][object_id]
+        material = row["user_text"].get("archflow:material")
+        if material:
+            native_colors.setdefault(material, _rgb(
+                (material_colors or {}).get(material, layer_color_map[row["layer"]]),
+                f"material color for {material}",
+            ))
+    lines.extend([
+        f"_material_colors = {native_colors!r}",
+        "_native_materials = dict(globals().get('_patch_native_materials', {}))",
+        "def _assign_native_material(_g, _meta):",
+        "    _material_name = _meta.get('user_text', {}).get('archflow:material')",
+        "    if not _material_name: return",
+        "    _material_index = _native_materials.get(_material_name)",
+        "    if _material_index is None:",
+        "        rs.ObjectMaterialIndex(_g, -1)",
+        "        _material_index = rs.AddMaterialToObject(_g)",
+        "        if _material_index is None or _material_index < 0: raise Exception('material failed: ' + _material_name)",
+        "        rs.MaterialName(_material_index, _material_name)",
+        "        _native_materials[_material_name] = _material_index",
+        "    else:",
+        "        rs.ObjectMaterialIndex(_g, _material_index)",
+        "    rs.MaterialColor(_material_index, _material_colors[_material_name])",
+        "    _material = Rhino.RhinoDoc.ActiveDoc.Materials[_material_index]",
+        "    if _material.IsPhysicallyBased:",
+        "        _rgb = _material_colors[_material_name]",
+        "        _alpha = _material.PhysicallyBased.BaseColor.A",
+        "        _material.PhysicallyBased.BaseColor = Rhino.Display.Color4f(_rgb[0] / 255.0, _rgb[1] / 255.0, _rgb[2] / 255.0, _alpha)",
+        "        _material.CommitChanges()",
+        "    rs.ObjectMaterialSource(_g, 1)",
+    ])
     for key, value in sorted((provenance or {}).items()):
         lines.append(
             f"rs.SetDocumentUserText({f'archflow:{key}'!r}, {value!r})"
@@ -691,6 +726,8 @@ def translate_to_rhino_python(
             "_semantic_table = json.loads("
             + repr(json.dumps(semantics["objects"], sort_keys=True))
             + ")",
+            "for _kept_name, _kept_guids in globals().get('_patch_kept_objects', {}).items():",
+            "    for _kept_guid in _kept_guids: _assign_native_material(_kept_guid, _semantic_table[_kept_name])",
             "_semantics = {}",
             "measures = {}",
             "for _oid in _physical:",
@@ -701,6 +738,7 @@ def translate_to_rhino_python(
             "        continue",
             "    _meta = _semantic_table.get(_oid, {})",
             "    for _g in _guids:",
+            "        _assign_native_material(_g, _meta)",
             "        rs.ObjectName(_g, _oid)",
             "        if _meta.get('layer'): rs.ObjectLayer(_g, _meta['layer'])",
             "        for _k in sorted(_meta.get('user_text', {})):",

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
 
-import { BoxGeometry, Color, Group, Mesh, MeshBasicMaterial } from "three";
+import { BoxGeometry, Color, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Texture } from "three";
 
 import {
   captureModelAppearance,
@@ -59,6 +59,41 @@ test("returning to model restores every original visibility, layer and material"
   assert.equal(mesh.visible, true);
   assert.equal(mesh.material, original);
   assert.equal(model.userData.layers[0].visible, true);
+});
+
+test("unassigned loader meshes use saved display colors without changing native materials or shared defaults", () => {
+  const model = new Group();
+  model.userData.layers = [{ color: { r: 12, g: 34, b: 56 } }];
+  const defaultMaterial = new MeshStandardMaterial({ name: "__DEFAULT", transparent: true, opacity: 0.4, depthWrite: false });
+  const add = (attributes: object, material = defaultMaterial) => {
+    const mesh = new Mesh(new BoxGeometry(1, 1, 1), material);
+    mesh.userData.attributes = attributes;
+    model.add(mesh);
+    return mesh;
+  };
+  const layer = add({ layerIndex: 0, colorSource: { name: "ObjectColorSource_ColorFromLayer" } });
+  const object = add({ layerIndex: 0, colorSource: { name: "ObjectColorSource_ColorFromObject" }, objectColor: { r: 180, g: 90, b: 30 } });
+  const resolved = add({ drawColor: { r: 0, g: 0, b: 0 }, objectColor: { r: 255, g: 255, b: 255 } });
+  const invalid = add({ drawColor: { r: 400, g: 20, b: 30 } });
+  const nativeMaterial = defaultMaterial.clone();
+  nativeMaterial.userData.id = "native-material-id";
+  const native = add({ drawColor: { r: 180, g: 90, b: 30 } }, nativeMaterial);
+  const texturedMaterial = defaultMaterial.clone();
+  texturedMaterial.map = new Texture();
+  const textured = add({ drawColor: { r: 180, g: 90, b: 30 } }, texturedMaterial);
+  prepareLoadedModel(model);
+  assert.equal(layer.material.color.getHex(), 0x0c2238);
+  assert.equal(object.material.color.getHex(), 0xb45a1e);
+  assert.equal(resolved.material.color.getHex(), 0x000000);
+  assert.notEqual(layer.material, object.material);
+  assert.equal(defaultMaterial.color.getHex(), 0xffffff);
+  assert.deepEqual([layer.material.transparent, layer.material.opacity, layer.material.depthWrite], [true, 0.4, false]);
+  assert.equal(invalid.material, defaultMaterial);
+  assert.equal(native.material, nativeMaterial);
+  assert.equal(textured.material, texturedMaterial);
+  const prepared = layer.material;
+  prepareLoadedModel(model);
+  assert.equal(layer.material, prepared);
 });
 
 test("semantic highlight matches only complete catalog object names", () => {

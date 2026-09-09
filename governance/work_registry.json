@@ -267,7 +267,11 @@
         "tools/open_stage_run.py",
         "tools/reindex_project.py",
         "tools/run_project.py",
-        "tools/verify_state_record.py"
+        "tools/verify_state_record.py",
+        "archflow/adapters/cad_program.py",
+        "tests/test_lintel_bearing.py",
+        "tests/test_window_relational_update.py",
+        "archflow/adapters/cad_patch.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -287,7 +291,8 @@
         "2026-09-08 migration execution: user authorized the remaining evening for physical migration. Work occurs in an isolated source worktree captured from current D:/ARCHFLOW_V4; the frozen v0.1.0 candidate stays unchanged. P115 coordinates the Python, Web and integration lanes; feature follow-ups wait for the migrated baseline.",
         "2026-09-08 completed migration: 12 modeling modules and 2 drawing modules moved to their workflow packages; 16 Web files moved into peer workspaces. Four compiled values remain with the shared geometry contract. Existing project data formats and HTTP API are unchanged. Validation: modeling 396, drawings 16, metrics 20, architecture tests 30; API 620 passed/4 environment skips with 209 subtests; Web 72 passed/2 fixture skips, 2 isolated browser consumers, build, generated API and installed-wheel imports passed. Remaining broader consolidation items are not declared delivered.",
         "2026-09-09: user accepted STAGE_BRANCH_CANDIDATE_PLAN and authorized implementation with adjustments. Normal A/B is one Exploration on the current Branch; generation must display before acceptance. Work is active in the current source checkout; no real project migration or active application restart is included.",
-        "2026-09-09 implementation and review fixes complete: persistent Stage/Branch CAS and cold candidate replay; candidate previews; exact-source elevation revisions; within-seat producer/CAD reuse; isolated queue scopes and independent candidate combination. Stage views pin the exact model and source runner across later canonical/run records. Drawing annotations and submitted requests retain their exact revision even when later drawings share PNG bytes. API/OCCT regressions, 41 isolated browser scenarios, affected Web unit tests, build, generated client and archcheck passed. Real project migration, active-service restart and remote push are outside this completed local change; architectural task acceptance and other P115 items remain open."
+        "2026-09-09 implementation and review fixes complete: persistent Stage/Branch CAS and cold candidate replay; candidate previews; exact-source elevation revisions; within-seat producer/CAD reuse; isolated queue scopes and independent candidate combination. Stage views pin the exact model and source runner across later canonical/run records. Drawing annotations and submitted requests retain their exact revision even when later drawings share PNG bytes. API/OCCT regressions, 41 isolated browser scenarios, affected Web unit tests, build, generated client and archcheck passed. Real project migration, active-service restart and remote push are outside this completed local change; architectural task acceptance and other P115 items remain open.",
+        "2026-09-09: user authorized the bounded window-width relation slice and editable 3dm materials. Extend existing parameter/closure/operator, window producers, relation checks and CAD reuse. Add only the declared lintel envelope bearing check; repair native material export and legacy layer-colour display. The explicitly named external Ightham analytical input consumes these relations through its existing case script and retains candidates through P036; active services and formal issue are separate."
       ]
     },
     {

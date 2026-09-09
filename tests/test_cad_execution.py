@@ -19,6 +19,7 @@ from archflow.adapters.cad_execution import (
     build_rhino_com_powershell_command,
     build_rhino_com_powershell_source,
     execute_rhino_three_dm_export,
+    execute_occt_export,
     prepare_rhino_three_dm_export,
     verify_rhino_export_readback,
 )
@@ -450,6 +451,31 @@ def _verified_readback(plan, inspection):
         cleanup_witness_sha256="b" * 64,
         cleanup_status="confirmed",
     )
+
+
+class DeclaredPreviewMaterialTest(unittest.TestCase):
+    def test_declared_material_reaches_a_saved_object_without_an_assembly_role(self):
+        try:
+            import rhino3dm
+            import OCP
+        except ImportError:
+            self.skipTest("OCCT preview dependencies are not installed")
+        program = _program()
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            receipt = execute_occt_export(
+                program, binding=_binding(program), speculative_workspace=workspace,
+                artifact_stem="declared-material",
+                material_by_component={"body-component": "stucco"},
+                material_colors={"stucco": (210, 205, 190)},
+            )
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            model = rhino3dm.File3dm.Read(str(workspace / receipt.preview_artifact["relative_path"]))
+            obj = next(obj for obj in model.Objects if obj.Attributes.Name == "body-object")
+            self.assertEqual(obj.Attributes.MaterialSource, rhino3dm.ObjectMaterialSource.MaterialFromObject)
+            material = model.Materials[obj.Attributes.MaterialIndex]
+            self.assertEqual((material.Name, material.DiffuseColor, material.Transparency), ("stucco", (210, 205, 190, 255), 0.0))
+            self.assertEqual(obj.Attributes.GetUserString("archflow:material"), "stucco")
 
 
 class RhinoCadExportTest(unittest.TestCase):

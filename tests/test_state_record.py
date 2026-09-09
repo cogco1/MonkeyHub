@@ -571,7 +571,7 @@ class StateRecordTests(unittest.TestCase):
             StateRecord("demo", "run-1", record.entities, relations=(Relation("r", "support", "columns-west", "nowhere"),))
 
     def test_a_validator_names_a_check_the_spine_can_measure(self) -> None:
-        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "solid_nonpenetration", "support_contact"])
+        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "lintel_minimum_bearing", "solid_nonpenetration", "support_contact"])
         for kind in ("alignment", "meets", "engagement_interval", "separation_interval", "magic"):
             with self.assertRaises(StateRecordError) as raised:                       # a kind nothing measures is refused here, not reported unchecked forever
                 ValidatorBinding(kind)

@@ -195,7 +195,8 @@ def select_patch_operations(program, prior_program) -> PatchSelection:
 def build_patch_prelude(selection: PatchSelection, *, prior_model_path: Path, semantics: Mapping[str, Mapping[str, Any]]) -> str:
     """Rhino-side prelude: carry the prior document's kept objects into a fresh one.
 
-    Layers are recreated by full path, then every instance definition the
+    Referenced materials are copied with their textures and remapped; layers
+    are recreated by full path, then every instance definition the
     prior file holds is rebuilt from its own member geometry so that block
     families (P099 typed instances) survive the carry. Kept objects are
     re-added by geometry and duplicated attributes, instance references
@@ -229,6 +230,20 @@ def build_patch_prelude(selection: PatchSelection, *, prior_model_path: Path, se
             f"_patch_semantics = json.loads({semantics_literal})",
             f"_patch_expected_names = set(json.loads({expected_names_literal}))",
             f"_patch_witness_prefix = {_WITNESS_PREFIX!r}",
+            "_patch_material_indices = {_layer.RenderMaterialIndex for _layer in _patch_base.Layers if _layer.RenderMaterialIndex >= 0}",
+            "for _item in _patch_base.Objects:",
+            "    if (_item.Attributes.Name or '').startswith(_patch_witness_prefix) or _item.Attributes.Name in _patch_delete: continue",
+            "    if _item.Attributes.MaterialIndex >= 0: _patch_material_indices.add(_item.Attributes.MaterialIndex)",
+            "_patch_materials, _patch_native_materials = {}, {}",
+            "for _base_index in sorted(_patch_material_indices):",
+            "    _material = _patch_base.Materials.FindIndex(_base_index)",
+            "    if _material is None: raise Exception('patch base material missing: ' + str(_base_index))",
+            "    _new_index = Rhino.RhinoDoc.ActiveDoc.Materials.Add(_material)",
+            "    if _new_index < 0: raise Exception('patch base material could not be copied: ' + str(_base_index))",
+            "    _patch_materials[_base_index] = _new_index",
+            "    if _material.Name: _patch_native_materials[_material.Name] = _new_index",
+            "    _logical_material = _material.GetUserString('archflow:material_id') or _material.GetUserString('archflow:material')",
+            "    if _logical_material: _patch_native_materials[_logical_material] = _new_index",
             "_patch_base_layers = {_layer.Index: _layer for _layer in _patch_base.Layers}",
             "_patch_base_by_id = {str(_layer.Id): _layer for _layer in _patch_base.Layers}",
             "def _patch_full_path(_layer):",
@@ -246,6 +261,10 @@ def build_patch_prelude(selection: PatchSelection, *, prior_model_path: Path, se
             "    _doc_index = Rhino.RhinoDoc.ActiveDoc.Layers.FindByFullPath(_full, -1)",
             "    if _doc_index < 0: raise Exception('patch base layer could not be recreated: ' + _full)",
             "    _patch_layers[_base_index] = _doc_index",
+            "    if _base_layer.RenderMaterialIndex >= 0:",
+            "        _doc_layer = Rhino.RhinoDoc.ActiveDoc.Layers[_doc_index]",
+            "        _doc_layer.RenderMaterialIndex = _patch_materials[_base_layer.RenderMaterialIndex]",
+            "        _doc_layer.CommitChanges()",
             # ---- instance definitions: rebuilt from their own members, so block families survive the carry
             "_patch_base_objects = {str(_item.Attributes.ObjectId): _item for _item in _patch_base.Objects}",
             "_patch_definition_index = {}",
@@ -259,6 +278,7 @@ def build_patch_prelude(selection: PatchSelection, *, prior_model_path: Path, se
             "        _patch_definition_members.add(_member_id)",
             "        _member_attribute = _member.Attributes.Duplicate()",
             "        _member_attribute.LayerIndex = _patch_layers[_member.Attributes.LayerIndex]",
+            "        _member_attribute.MaterialIndex = _patch_materials.get(_member.Attributes.MaterialIndex, -1)",
             "        _member_geometry.append(_member.Geometry)",
             "        _member_attributes.append(_member_attribute)",
             "    if not _member_geometry: raise Exception('instance definition has no members: ' + _definition.Name)",
@@ -267,12 +287,14 @@ def build_patch_prelude(selection: PatchSelection, *, prior_model_path: Path, se
             "    _patch_definition_index[str(_definition.Id)] = _new_index",
             # ---- kept objects, instance references against their rebuilt definition
             "_patch_carried = {}",
+            "_patch_kept_objects = {}",
             "for _base_object in _patch_base.Objects:",
             "    _base_name = _base_object.Attributes.Name or ''",
             "    if _base_name.startswith(_patch_witness_prefix) or _base_name in _patch_delete: continue",
             "    if str(_base_object.Attributes.ObjectId) in _patch_definition_members: continue",
             "    _base_attributes = _base_object.Attributes.Duplicate()",
             "    _base_attributes.LayerIndex = _patch_layers[_base_object.Attributes.LayerIndex]",
+            "    _base_attributes.MaterialIndex = _patch_materials.get(_base_object.Attributes.MaterialIndex, -1)",
             "    _base_geometry = _base_object.Geometry",
             "    if isinstance(_base_geometry, Rhino.Geometry.InstanceReferenceGeometry):",
             "        _definition_key = str(_base_geometry.ParentIdefId)",
@@ -291,6 +313,7 @@ def build_patch_prelude(selection: PatchSelection, *, prior_model_path: Path, se
             "    if _kept_meta.get('visible') is False: rs.HideObject(_kept_guid)",
             "    else: rs.ShowObject(_kept_guid)",
             "    _patch_carried[_base_name] = _patch_carried.get(_base_name, 0) + 1",
+            "    _patch_kept_objects.setdefault(_base_name, []).append(_kept_guid)",
             "if set(_patch_carried) != _patch_expected_names:",
             "    raise Exception('patch base carried the wrong object names: missing %s, extra %s' % (sorted(_patch_expected_names - set(_patch_carried)), sorted(set(_patch_carried) - _patch_expected_names)))",
         )
