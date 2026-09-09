@@ -17,6 +17,13 @@ from .store import UsageLog
 from .usage import TokenUsage
 
 WEB = Path(__file__).parent / "web"
+SHARED_WEB = Path(__file__).resolve().parents[1] / "apps/shared-web/src"
+SHARED_ASSETS = {
+    "/shared/appearance.js": ("appearance.js", "text/javascript"),
+    "/shared/i18n.js": ("i18n.js", "text/javascript"),
+    "/shared/browserTranslator.js": ("browserTranslator.js", "text/javascript"),
+    "/shared/base.css": ("base.css", "text/css"),
+}
 SERVER_VERSION = "0.1.0"
 
 
@@ -105,6 +112,14 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self._send(self.data.snapshot())
         elif path == "/api/rates":
             self._send(json.loads((Path(__file__).parent / "rates.json").read_text(encoding="utf-8")))
+        elif path in SHARED_ASSETS:
+            filename, mime = SHARED_ASSETS[path]
+            try:
+                body = (SHARED_WEB / filename).read_bytes()
+            except FileNotFoundError:
+                self._send({"error": "Not found"}, 404)
+            else:
+                self._send(body, content_type=mime + "; charset=utf-8")
         elif path in {"/", "/index.html", "/style.css", "/app.js"}:
             filename = "index.html" if path == "/" else path[1:]
             mime = {".html": "text/html", ".css": "text/css", ".js": "text/javascript"}

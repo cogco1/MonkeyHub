@@ -3988,7 +3988,7 @@
     {
       "module_id": "studio.shell",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/main.py",
-      "purpose": "Assemble the FastAPI application: settings in, routes mounted under /api, one error body out, the named protocol boundary the API serves, and the reserved application ports.",
+      "purpose": "Assemble the Studio FastAPI boundary and share its browser appearance, translation and base controls with the Hub and Monitor consumers.",
       "owns": [
         "create_app and the uvicorn entry point, and the lifespan that lets a running candidate finish",
         "StudioSettings and every environment variable the process reads (project dir, cad_export occt/rhino/off with legacy rhino_export read-in, workers, powershell, reference run, mode, bind host, token, origins)",
@@ -4002,7 +4002,8 @@
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement; launcher reads saved intent defaults for the next launch",
         "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of each intent outcome without changing its result or retrying a call",
         "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity; optional prebuilt Studio web hosting",
-        "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences"
+        "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
+        "Shared browser display validation and application, launch-URL display choices, message interpolation, browser English-to-Chinese translation and base style/control tokens in apps/shared-web"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -4064,7 +4065,11 @@
         "MonitoredCompiler",
         "ApplicationSettingsDto",
         "read_application_settings",
-        "save_application_settings"
+        "save_application_settings",
+        "apps/shared-web/src/appearance.js: DEFAULT_APPEARANCE, isLanguage, isTheme, isFontScale, resolveAppearance, appearanceFromSearch, applyAppearance and applicationUrl",
+        "apps/shared-web/src/i18n.js: translateMessage",
+        "apps/shared-web/src/browserTranslator.js: prepareEnglishToChinese, translateEnglishToChinese and subscribeToEnglishToChineseReadiness",
+        "apps/shared-web/src/base.css: appearance tokens and base controls"
       ],
       "depends_on": [
         "monkeymonitor"
@@ -4076,7 +4081,10 @@
         "apps/archflow-studio/api/tests/test_errors.py",
         "apps/monkeyhub/api/monkeyhub_api/main.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
-        "apps/monkeyhub/launch-hub.ps1"
+        "apps/monkeyhub/launch-hub.ps1",
+        "apps/monkeyhub/web/src/main.tsx",
+        "monkeymonitor/web/app.js",
+        "monkeymonitor/web/style.css"
       ],
       "invariants": [
         "create_app touches no filesystem and binds no project - a wrong project root is discovered by the request that needs it",
@@ -4090,7 +4098,9 @@
         "projectBound in health is whether the binding opens, not a claim about what it contains",
         "remote servers do not advertise user-settings and answer authenticated settings routes with 404; saving preferences never changes the running compiler or project, and null clears a saved override",
         "Managed stop refuses new jobs, ends SSE and drains accepted work before normal process exit; standalone startup remains supported",
-        "Hub application launch choices do not replace user appearance or provider preferences, and never write project state"
+        "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
+        "Shared browser modules import no React or backend runtime and do not persist preferences; each host retains its existing settings boundary, and explicit launch-URL appearance does not imply shared localStorage across ports",
+        "Browser translation preserves technical tokens and retains source text when unavailable or unsuccessful; applications keep their own message catalogs and layouts"
       ],
       "status": "canonical",
       "tests": [
@@ -4100,9 +4110,10 @@
         "apps/archflow-studio/api/tests/test_protocol.py",
         "apps/archflow-studio/web/test/connection.test.ts",
         "apps/archflow-studio/web/test/proposalCard.test.ts",
-        "apps/archflow-studio/api/tests/test_monitoring.py"
+        "apps/archflow-studio/api/tests/test_monitoring.py",
+        "apps/archflow-studio/web/test/settingsPanel.browser.mjs"
       ],
-      "notes": "transport/* carries the wire shapes for all six concerns, so a DTO change is a shell change, not an application one. docs/PROTOCOL.md is the written form of what protocol.py names; the client half of the seam is apps/archflow-studio/web/src/api/connection.ts, which this registry does not list because it lists Python modules only. Browser-only language, theme, font-scale and event-visibility preferences stay in web localStorage; the typed client message catalogs and settings panel may display server facts but never create a second server-configuration or project-persistence authority.",
+      "notes": "transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/archflow-studio/web/src/api/connection.ts is the client boundary. EXTEND: Studio already owns the user settings boundary and its browser preferences, interpolation, translation and styles. apps/shared-web extracts only these facilities for the real Hub and Monitor consumers, without a second preference writer. Shared JavaScript exports are listed with their source paths; the registry's symbol checker inspects Python only.",
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/main.py",
         "apps/archflow-studio/api/archflow_studio_api/settings.py",
@@ -4117,7 +4128,18 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/settings.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/settings.py",
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
-        "apps/archflow-studio/launch-studio.ps1"
+        "apps/archflow-studio/launch-studio.ps1",
+        "apps/archflow-studio/web/src/features/settings/preferences.tsx",
+        "apps/archflow-studio/web/src/i18n/useT.ts",
+        "apps/archflow-studio/web/src/i18n/browserTranslator.ts",
+        "apps/archflow-studio/web/src/styles.css",
+        "apps/shared-web/src/appearance.js",
+        "apps/shared-web/src/appearance.d.ts",
+        "apps/shared-web/src/i18n.js",
+        "apps/shared-web/src/i18n.d.ts",
+        "apps/shared-web/src/browserTranslator.js",
+        "apps/shared-web/src/browserTranslator.d.ts",
+        "apps/shared-web/src/base.css"
       ]
     },
     {
@@ -5142,13 +5164,15 @@
         "Caller-selected per-million-token RateCard and disjoint-bucket USD estimates",
         "Pure Algorithm selection interface and FirstAvailablePolicy baseline over caller-owned actions and budgets",
         "Loopback MonkeyMonitor UI and CLI, and optional usage.jsonl diagnostic append/read under a caller-supplied noncanonical data directory",
-        "Optional managed stdin lifecycle and additive health identity for a Hub-owned CLI process; stop/EOF stops listening and waits for active request threads"
+        "Optional managed stdin lifecycle and additive health identity for a Hub-owned CLI process; stop/EOF stops listening and waits for active request threads",
+        "Read-only HTTP delivery of the four shared appearance, translation and base-style assets through the existing loopback boundary"
       ],
       "does_not_own": [
         "Architectural evaluation, geometry, candidate execution or formal design acceptance",
         "P036 project storage, canonical HEAD or project artifact identities",
         "Subscription billing, account quota, actual concurrent budget reservation or hard token enforcement",
-        "OCBA, MCTS, Pareto or AHP implementations; the callable seam is reserved for them"
+        "OCBA, MCTS, Pareto or AHP implementations; the callable seam is reserved for them",
+        "Shared browser appearance, translation and base-style implementation - studio.shell; Monitor serves and consumes those files"
       ],
       "inputs": [
         "Provider-reported numeric usage metadata",
@@ -5176,7 +5200,11 @@
         "UsageLog",
         "MonitorData",
         "make_server",
-        "main"
+        "main",
+        "GET /shared/appearance.js",
+        "GET /shared/i18n.js",
+        "GET /shared/browserTranslator.js",
+        "GET /shared/base.css"
       ],
       "depends_on": [],
       "used_by": [
@@ -5190,7 +5218,8 @@
         "Core and workflow packages do not import Monitor; the host composes it",
         "Only the explicitly supplied diagnostics directory is writable; project state is untouched",
         "The algorithm chooses only a caller-provided action within stated estimates or stops",
-        "Standalone serve/report remain available; managed identity reads the actual source-version.txt or checkout HEAD and never trusts a parent-supplied revision"
+        "Standalone serve/report remain available; managed identity reads the actual source-version.txt or checkout HEAD and never trusts a parent-supplied revision",
+        "Shared asset URLs are an exact allowlist with JavaScript or CSS content types; other paths never expose a source directory"
       ],
       "status": "canonical",
       "tests": [
