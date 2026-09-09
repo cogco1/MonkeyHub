@@ -8,9 +8,8 @@ import {
   type ReactNode,
 } from "react";
 
-export type Language = "en" | "zh-CN";
-export type ThemePreference = "dark" | "light" | "system";
-export type FontScale = 0.9 | 1 | 1.1;
+import { applyAppearance, appearanceFromSearch, isLanguage, isTheme, isFontScale, type Language, type ThemePreference, type FontScale } from "../../../../../shared-web/src/appearance.js";
+export type { Language, ThemePreference, FontScale } from "../../../../../shared-web/src/appearance.js";
 
 export interface UserPreferences {
   readonly language: Language;
@@ -42,18 +41,6 @@ type StoredPreferences = UserPreferences & {
 const UserPreferencesContext = createContext<UserPreferencesContextValue | null>(
   null,
 );
-
-function isLanguage(value: unknown): value is Language {
-  return value === "en" || value === "zh-CN";
-}
-
-function isTheme(value: unknown): value is ThemePreference {
-  return value === "dark" || value === "light" || value === "system";
-}
-
-function isFontScale(value: unknown): value is FontScale {
-  return value === 0.9 || value === 1 || value === 1.1;
-}
 
 function readStoredPreferences(requireReadable = false): StoredPreferences | null {
   if (typeof window === "undefined") return null;
@@ -117,10 +104,11 @@ function languageFromNavigator(): Language | null {
 function initialPreferences(): UserPreferences {
   const stored = readStoredPreferences();
   return {
-    language:
-      languageFromQuery() ?? stored?.language ?? languageFromNavigator() ?? "en",
-    theme: stored?.theme ?? "system",
-    fontScale: stored?.fontScale ?? 1,
+    ...appearanceFromSearch(typeof window === "undefined" ? "" : window.location.search, {
+      language: languageFromQuery() ?? stored?.language ?? languageFromNavigator() ?? "en",
+      theme: stored?.theme ?? "system",
+      fontScale: stored?.fontScale ?? 1,
+    }),
     eventStreamVisible: stored?.eventStreamVisible ?? true,
     developerMode: stored?.developerMode ?? false,
   };
@@ -180,12 +168,7 @@ export function UserPreferencesProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState<UserPreferences>(initialPreferences);
 
   useEffect(() => {
-    if (typeof document !== "undefined") {
-      const root = document.documentElement;
-      root.lang = preferences.language;
-      root.dataset.theme = preferences.theme;
-      root.style.setProperty("--font-scale", String(preferences.fontScale));
-    }
+    applyAppearance(preferences);
     persistPreferences(preferences);
   }, [preferences]);
 

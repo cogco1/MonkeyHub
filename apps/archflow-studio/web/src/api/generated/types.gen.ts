@@ -4105,6 +4105,26 @@ export type StudioHealth = {
      * Projectbound
      */
     projectBound: boolean;
+    /**
+     * Serverversion
+     */
+    serverVersion?: string | null;
+    /**
+     * Managedinstanceid
+     */
+    managedInstanceId?: string | null;
+    /**
+     * Processid
+     */
+    processId?: number | null;
+    /**
+     * Parentprocessid
+     */
+    parentProcessId?: number | null;
+    /**
+     * Sourcerevision
+     */
+    sourceRevision?: string | null;
 };
 
 /**
