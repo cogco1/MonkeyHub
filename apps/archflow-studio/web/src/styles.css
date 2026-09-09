@@ -1003,7 +1003,7 @@ button.chip:hover {
 }
 
 .viewtools button {
-  min-height: 36px;
+  min-height: 34px;
   padding: 5px 10px;
   border: 0;
   border-left: 1px solid var(--line-2);
