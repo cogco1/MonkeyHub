@@ -36,15 +36,26 @@ Git 源码仓 / worktree
   <temp_root>/                              可删除临时数据
 ```
 
-**已验证：** 活跃项目与 `probes/` 使用同一种项目目录格式；它们只因是否被明确提升进
-Git 而不同，不得为外部项目再建第二个数据库或写入器。通用说明见
-[`archflow/project/README.md`](../archflow/project/README.md)，外部根的配置形状见
-Studio 启动器读取的 [`apps/archflow-studio/runtime.json`](../apps/archflow-studio/runtime.json)
-只配置该应用的 `project_dir` 等设置，不统一配置 workspace/cache/temp；该文件目前仍跟踪本机绝对路径，
-新人使用第 8 节的显式环境变量，不照抄这份配置。
+活跃项目与 `probes/` 使用同一种 P036 项目格式；它们只因是否被明确提升进 Git 而不同，
+不得为外部项目再建第二个数据库或写入器。通用说明见
+[`archflow/project/README.md`](../archflow/project/README.md)。Studio 的共享配置模板是
+[`runtime.example.json`](../apps/archflow-studio/runtime.example.json)；填写后的配置保存在外部 Runtime，
+或保存为已被 Git 忽略的 `apps/archflow-studio/runtime.json`。它选择单个 `project_dir`，
+不统一管理 workspace/cache/temp；这些根仍由调用方显式指定，没有另一份全局 workspace manifest。
 
 缓存和临时根不是项目记录。能被删除而不改变设计含义的内容才可以进入那里；证据、模型、
 验收回执和恢复所需数据不能借 `temp` 绕过项目存储。
+
+项目目录名与 `project.json` 的 `project_id` 一致。首次建立使用
+[`tools/create_project.py`](../tools/create_project.py)，不手工拼装 `HEAD` 或运行记录。
+当前创建命令写入项目标识、版本 0 的 `HEAD`、初始化事件与快照，以及
+`input/runner/state-record.json`；指定分工输入时再写入 `input/runner/seats.json`。
+它同时准备 `objects/sha256/`、`runs/`、`exports/` 等区域，但不会生成 run 或模型。
+各项产物沿 P036 的目录规则保存，子区域随相应操作出现；历史项目是否可用以仓库读取结果为准，
+不以所有空目录是否齐全判断。
+
+原始 Rhino 文件可以留在设计师原有的工作目录。需要随项目重开、审阅或共享的模型副本、
+导出文件和记录，通过既有 P036 入口保留到绑定项目；外部原文件路径不代替项目内的工件引用。
 
 长期源码按 **ArchFlow 公共底座、MonkeyArch 建模业务、MonkeyDiagram 图纸业务** 分清目录与依赖。
 当前代码所在位置与目标归属的具体映射只维护在 [REPO_LAYOUT.md](REPO_LAYOUT.md)；
@@ -384,18 +395,25 @@ npm run api:check
 ```powershell
 $SourceRoot = 'D:\code\ARCHFLOW_V4'
 $RuntimeRoot = 'D:\ArchFlowRuntime\first-trial'
-git clone https://github.com/cogco1/ARCHFLOW_V4.git $SourceRoot
+git clone --branch main https://github.com/cogco1/ARCHFLOW_V4.git $SourceRoot
 Set-Location $SourceRoot
-git fetch origin refs/pull/3/head
-git switch --detach 217204171f1ac69088fb54977acc124dc1284c2e
 git rev-parse HEAD
 git status --short
 ```
 
 共享工具箱同样独立 clone 到另一个源码目录，再按它的 README 安装；不嵌入 ArchFlow，也不共用 Python venv。
 
-上述命令用于自己的首次 clone，取 [PR #3](https://github.com/cogco1/ARCHFLOW_V4/pull/3) 的本轮候选 `2172041`。
-2026-09-08 核对时默认远端 `main` 仍为 `7b3d09f`，直接 clone 后停在 main 不会得到该候选；后续开发从约定基线开短分支。历史核验与本轮候选状态见 8.8。
+上述命令取得远端当前 `main`。如果维护者明确提供了其他分支、tag 或提交，使用那份已发布的源码：
+
+```powershell
+$SourceRef = '<维护者提供的源码 ref>'
+git fetch origin $SourceRef
+git switch --detach FETCH_HEAD
+git rev-parse HEAD
+```
+
+确认取得的提交包含本节所用的创建命令和配置模板，再进行安装。后续开发从约定基线开短分支；
+8.8 记录旧版交付事实，不作为默认安装版本。
 
 需要已安装 Git、Python 3.12 和 Node.js 24；9 月 5 日首次隔离核验版本为 Python 3.12.10 / Node.js 24.14.0。
 Vite 声明的 Node 下限为 `^20.19.0 || >=22.12.0`，这里选 Node 24 同时覆盖直接运行 TypeScript 的 Web 测试。
@@ -419,46 +437,69 @@ python -c "import sys; print(sys.executable)"
 两份 npm lockfile 已固定 Web 和 OpenAPI 生成器依赖；Python API 目前使用版本范围，尚无完整锁文件。
 `api:dump` 使用 PATH 中的 `python`，因此生成 SDK 和 API 检查共用这个 venv。
 
-### 8.3 创建可共享的合成试用项目
+### 8.3 创建外部项目
 
-仓库当前没有随 clone 分发的正式模型项目。复用
-[`make_empty_project`](../apps/archflow-studio/api/tests/support.py) 创建小型项目测试夹具：
-它通过既有项目存储接口写入设计输入和执行分工，不伪造历史执行记录。
-这是开发试用数据；不代表真实设计成果，也不生成 3DM。
+仓库不随 clone 分发正式模型项目。使用生产命令
+[`tools/create_project.py`](../tools/create_project.py) 创建自己的 P036 项目；该命令不导入测试夹具。
+先选择源码仓外的目标目录，目录名就是项目 ID：
 
 ```powershell
-Set-Location "$SourceRoot\apps\archflow-studio\api"
-$env:ARCHFLOW_ONBOARDING_PROJECTS = "$RuntimeRoot\workspace\projects"
-& $Python -c "import os; from pathlib import Path; from tests.support import make_empty_project; print(make_empty_project(Path(os.environ['ARCHFLOW_ONBOARDING_PROJECTS'])).layout.root)"
+Set-Location $SourceRoot
+$ProjectDir = Join-Path $RuntimeRoot 'workspace\projects\my-project'
 ```
 
-结果是 `$RuntimeRoot\workspace\projects\demo-project`。只初始化一次；再次试用可以继续使用该项目，
-要从头开始则换一个 Runtime 目录。测试夹具只在接入命令和测试中使用，不由生产 API 导入。
+只需建立连接和检查项目状态时，创建空项目：
+
+```powershell
+& $Python tools/create_project.py --project $ProjectDir
+```
+
+命令建立版本 0 和空的 `StateRecord@1`，不创建 run、模型或分工。它可以绑定 Studio 并查看空状态；
+Program 和建模候选需要相应的完整设计输入与执行分工，PDF 保存还需要一个实际存在的 run。
+空视口或连接成功不代表这些功能已经有可运行的输入。
+
+已有自己编写或获准使用的设计输入时，**以这条命令代替上面的空项目创建**，将示例输入路径换成自己的：
+
+```powershell
+& $Python tools/create_project.py --project $ProjectDir `
+    --state-record 'D:\design-inputs\state-record.json' `
+    --seats-file 'D:\design-inputs\seats.json'
+```
+
+`state-record.json` 必须是未绑定历史版本的 `StateRecord@1`：`project_id` 与目录名一致，`base` 为 `null` 或省略；
+分工文件沿用现有 runner seat pack 格式。输入可为 UTF-8 或带 BOM 的 UTF-8，命令通过现有解析器校验后，
+由 P036 写入 `input/runner/`。只提供状态记录也能初始化，但在运行建模候选前仍需完整分工。
+这一步不自动补建筑关系、生成模型或建立历史运行记录。
+
+目标必须不存在或为空目录；已有项目不会被覆盖。以上两种创建方式只选一种，之后继续使用同一项目。
+若要接着既有 run 工作，使用负责人提供的完整 P036 项目副本，不用其已绑定的单份记录重新初始化。
 
 ### 8.4 启动前后端
 
 #### 使用自己的启动配置
 
-首次安装按 8.2 完成。之后可复用现有启动器的 `-RuntimeConfig` 参数：配置保存在自己的 Runtime，
-不修改仓库中带本机路径的 `apps/archflow-studio/runtime.json`。目前没有另一个便携 sample，以下直接使用
-现有配置格式；在已设置 `$SourceRoot`、`$RuntimeRoot`、`$Python` 的 PowerShell 中执行一次：
+首次安装按 8.2 完成，项目按 8.3 创建。将共享模板复制到自己的 Runtime，并填写项目和 Python 路径。
+在已设置 `$SourceRoot`、`$RuntimeRoot`、`$ProjectDir`、`$Python` 的 PowerShell 中执行一次：
 
 ```powershell
 $RuntimeConfig = Join-Path $RuntimeRoot 'config\studio.json'
 if (Test-Path -LiteralPath $RuntimeConfig) { throw '配置已存在，请编辑自己的配置或另选文件名。' }
 New-Item -ItemType Directory -Force -Path (Split-Path $RuntimeConfig) | Out-Null
-@{
-    schema_version = 'archflow-studio-runtime@1'
-    project_dir = "$RuntimeRoot\workspace\projects\demo-project"
-    reference_run = ''
-    python = $Python
-    intent_provider = 'deterministic'
-    rhino_export = $false
-    api_port = 18080
-    web_port = 15174
-    open_browser = $true
-} | ConvertTo-Json | Set-Content -LiteralPath $RuntimeConfig -Encoding UTF8
+Copy-Item -LiteralPath "$SourceRoot\apps\archflow-studio\runtime.example.json" -Destination $RuntimeConfig
+$config = Get-Content -LiteralPath $RuntimeConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+$config.project_dir = $ProjectDir
+$config.python = $Python
+$config.api_port = 18080
+$config.web_port = 15174
+$config | ConvertTo-Json | Set-Content -LiteralPath $RuntimeConfig -Encoding UTF8
 ```
+
+模板默认 `intent_provider = deterministic`、`cad_export = off`。若需要生成几何产物，先安装
+`.[cad-occt]`，再将 `cad_export` 改为 `occt`。也可将填写后的配置保存在
+`apps/archflow-studio/runtime.json`，让默认启动器直接读取；该本机文件已被 Git 忽略。
+已有配置继续保留，不用模板覆盖。外部 `config/studio.json` 与本机 `runtime.json` 使用同一种格式。
+从仍跟踪 `runtime.json` 的旧 clone 升级时，先将本机配置复制到外部 Runtime 的 `config/`，
+再通过 `-RuntimeConfig` 使用它；随后 pull 本次取消跟踪的提交，避免配置随 Git 删除而丢失。
 
 `python` 填虚拟环境中 `python.exe` 的完整路径，路径含空格也可直接写入；若需要附加简单参数，
 写成 `"完整路径\python.exe" -I`。原来的 `py -3.12` 与省略该字段时的默认行为保留，
@@ -492,7 +533,7 @@ Python 子进程启动；保留了 `py -3.12` 的兼容检查。测试没有运�
 
 ```powershell
 Set-Location "$SourceRoot\apps\archflow-studio\api"
-$env:ARCHFLOW_STUDIO_PROJECT_DIR = "$RuntimeRoot\workspace\projects\demo-project"
+$env:ARCHFLOW_STUDIO_PROJECT_DIR = $ProjectDir
 $env:ARCHFLOW_STUDIO_REFERENCE_RUN = ''
 $env:ARCHFLOW_STUDIO_MODE = 'local'
 $env:ARCHFLOW_STUDIO_INTENT_PROVIDER = 'deterministic'
@@ -510,27 +551,40 @@ npm.cmd run dev -- --port 15174
 ```
 
 打开 `http://127.0.0.1:15174`。这组端口与默认的一键启动端口分开；端口被占用时一起改 API 端口和
-代理地址，不停止别人的服务。合成项目没有导出模型，空视口是预期结果；状态与候选链可用。
+代理地址，不停止别人的服务。新建空项目没有导出模型，空视口是预期结果；候选步骤仅适用于已具备设计输入与分工的项目。
 完成后在两个终端分别按 Ctrl+C。
 
 首次路径全部使用进程环境变量。密钥不写源码、runtime.json 或 PR；以后选用模型 provider 时由成员
 按 Studio 指南配置自己的凭据。真实项目必须由其负责人明确提供可共享的项目副本与选定 run，
 不复制维护者的整个 Runtime。运行候选会写入绑定项目的 runs，试用始终绑定自己的副本。
 
-### 8.5 完成一次候选修改
+### 8.5 在有设计输入的项目中完成一次候选修改
 
-终端 C，通过 Web 的代理检查整个 HTTP 通路：
+本节用于已提供完整设计输入和分工、且所选元素支持数值修改的项目。只有空记录时，先完成 8.3 的输入准备。
+终端 C 通过 Web 的代理读取当前状态，查看真实的构件、元素与数值字段：
 
 ```powershell
 $api = 'http://127.0.0.1:15174/api'
 Invoke-RestMethod "$api/health"     # projectBound 应为 true
 Invoke-RestMethod "$api/protocol"   # archflow/2
 $state = Invoke-RestMethod "$api/state"
+$state.elements | Select-Object componentId, elementId, numericFields | Format-List
+```
+
+从返回内容选择实际元素及其已有数值字段，目标值由设计者决定：
+
+```powershell
+$elementId = Read-Host '输入上面列出的 elementId'
+$element = $state.elements | Where-Object elementId -eq $elementId | Select-Object -First 1
+if (-not $element) { throw '当前状态中没有这个元素。' }
+$field = Read-Host '输入该元素 numericFields 中的字段名'
+if ($element.numericFields.PSObject.Properties.Name -notcontains $field) { throw '这个元素没有该数值字段。' }
+$value = Read-Host '输入目标数值，小数点使用 .'
 $body = @{
     stateDigest = $state.stateDigest
-    targetComponentId = 'portico'
-    elementId = 'portico-base'
-    utterance = 'set height to 2.2'
+    targetComponentId = $element.componentId
+    elementId = $element.elementId
+    utterance = "set $field to $value"
 } | ConvertTo-Json
 $proposal = Invoke-RestMethod "$api/proposals" -Method Post -ContentType 'application/json' -Body $body
 $accepted = Invoke-RestMethod "$api/proposals/$($proposal.proposalId)/candidate" -Method Post
@@ -542,17 +596,17 @@ Invoke-RestMethod "$api/jobs/$($accepted.jobId)"
 ```powershell
 Invoke-RestMethod "$api/candidates/$($accepted.candidateId)"
 $result = Invoke-RestMethod "$api/state?run=$($accepted.candidateId)"
-($result.elements | Where-Object elementId -eq 'portico-base').numericFields.height  # 2.2
+($result.elements | Where-Object elementId -eq $element.elementId).numericFields.$field
 ```
 
-这一步调用现有执行器并保留候选记录；关闭导出时 `artifacts` 为空，不宣称 Rhino 执行成功。
+检查返回字段是否等于所填目标值。被锁定或由表达式驱动的字段可能需要修改其上游参数，按 API 的具体返回处理。
+这一步调用现有执行器并保留候选记录；关闭导出时 `artifacts` 为空，不代表生成了模型。
 项目 `HEAD` 保持原值，下一次查看默认状态也不会自动变成刚做的候选。
 
 ### 8.6 GitHub Actions 与本机相关检查
 
 既有 [verify.yml](../.github/workflows/verify.yml) 包含架构、PR 提交范围、内核/API、Web 和 Ubuntu/Windows 首次接入检查。
-本轮候选 `2172041` 在 [PR #3 Checks](https://github.com/cogco1/ARCHFLOW_V4/pull/3/checks) 的四个 CI job 均已通过；
-9 月 5 日“workflow 尚未在远端运行”的记录属于当时状态。后续提交仍以其实际 Checks 为准。
+每次交付查看对应提交或 PR 的实际 Checks；8.8 中的历史检查不代表当前提交已经通过。
 `archcheck` 的当前静态边界检查与 `--changed` 的历史提交范围检查分别执行，不能互相替代。
 
 在另一个终端重新设置 `$SourceRoot`、`$RuntimeRoot`、`$Python` 与 venv PATH，按上述路径运行：
@@ -597,7 +651,7 @@ npm.cmd run build  # 包含 typecheck
 
 首次交接完成的标准是另一位成员确实拿到相同版本、复跑并审查了一次修改；本机自测不能代签。
 
-### 8.8 历史核验与本轮候选
+### 8.8 历史核验记录
 
 以下是 2026-09-05 的历史核验记录：在外部 Runtime 的 `temp/team-onboarding-20260905/` 中，用当时本地 `main`
 （`4a4e196e9a64ac50a4b9f4e23611e1af35888359`）的独立 clone 和新 venv
@@ -615,10 +669,10 @@ Windows 换行的 `api:check` 已通过；接口正文差异仍会报错。`arch
 2026-09-08 的分发候选为 [PR #3](https://github.com/cogco1/ARCHFLOW_V4/pull/3) 的
 `217204171f1ac69088fb54977acc124dc1284c2e`，四个 CI job 已通过，默认远端 main 仍为 `7b3d09f`。
 该候选包含已提交的 Studio 基线和历史 scope 修复，不包含随后开发的文档视觉输入或主检出其他未提交修改。
-成员可按 8.2 取得准确提交；第二位成员的独立复现仍待完成，维护者检查与 CI 不替代成员试用。
+以上是该候选当时的状态，不作为默认安装版本；当时第二位成员的独立复现仍待完成，维护者检查与 CI 不替代成员试用。
 
 首位队友试用前，负责人还需提供：两个 GitHub 仓库的成员访问权限、此次分发版本、首位成员与审查人、
-一个小修改的文件范围。若要看真实建筑，再提供允许共享的项目副本；合成接入不依赖它。
+一个小修改的文件范围。空项目连接检查不依赖建筑模型；试用真实建筑或候选修改时，再提供允许共享的完整输入或项目副本。
 
 ## 9. 与共享工具箱的分工
 

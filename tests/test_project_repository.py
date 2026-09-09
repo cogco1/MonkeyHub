@@ -72,6 +72,21 @@ def _decision(
 
 
 class ProjectRepositoryTests(unittest.TestCase):
+    def test_initial_authored_inputs_refuse_invalid_bytes_and_existing_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new-project"
+            with self.assertRaises(ValueError):
+                FilesystemProjectRepository.initialize(root, project_id="new-project", initial_state={}, authored_record={"bad": object()})
+            self.assertFalse(root.exists())
+            authored = root / "input/runner/state-record.json"
+            authored.parent.mkdir(parents=True)
+            authored.write_bytes(b"existing authored design")
+            with self.assertRaises(ProjectAlreadyExists):
+                FilesystemProjectRepository.initialize(root, project_id="new-project", initial_state={}, authored_record={})
+            self.assertEqual(authored.read_bytes(), b"existing authored design")
+            self.assertFalse((root / "project.json").exists())
+            self.assertFalse((root / "HEAD").exists())
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

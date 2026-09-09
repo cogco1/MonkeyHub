@@ -69,6 +69,22 @@ into run areas of the bound project — which is what running a candidate is.
 
 ## 2. Run it
 
+For a first installation, follow the [onboarding guide](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#82-获取代码并在本机运行)
+to choose a source checkout, create an external Python environment and project,
+and fill the [shared configuration template](runtime.example.json).
+The production command `python tools/create_project.py --project <external-project-dir>`
+runs from the source root in that Python environment. It creates a version-0 P036
+project with an empty authored record, not a model or run. To initialize with your
+own design inputs, add `--state-record <path> --seats-file <path>`; the record's
+project id must match the directory name and its `base` must be null or omitted. Use a complete
+project copy when continuing an existing run.
+
+An empty project supports connection and state inspection. Program and modeling
+candidates need suitable design inputs and execution seats, and PDF persistence
+needs a real run. Opening a local Rhino file does not supply those project records;
+the original file can remain outside the project while managed copies and outputs
+use the existing [P036 storage](../../archflow/project/README.md).
+
 **One click.** The application is called **MonkeyArch**; the methodology and the protocol it
 runs are still ArchFlow. `OPEN_MONKEYARCH.bat` — or the Desktop shortcut
 `make-desktop-shortcut.ps1` writes, `打开 MonkeyArch.lnk` — starts both halves and opens the
@@ -83,18 +99,31 @@ fastapi, web dependencies, starting the API,
 that same window red**, with the launcher's own sentence in it and a Close button; nothing waits
 in a console for a keypress.
 
-Its one input is `runtime.json` beside it, and the line you normally change is the first:
-`project_dir`, the P036 project the API binds. The rest are `reference_run`, `cad_export`
+Its input is a machine-local runtime configuration. Copy `runtime.example.json` to
+`runtime.json` beside the launcher on a fresh installation, or keep the filled copy
+outside the checkout, such as `<RuntimeRoot>/config/studio.json`, and pass
+`-RuntimeConfig <path>`. The adjacent `runtime.json` is Git-ignored; keep an existing
+local configuration instead of overwriting it with the template. A missing file
+produces a setup message naming the template and the fields to fill in.
+Before pulling this change into an older clone that still tracks `runtime.json`,
+copy that local configuration to your external Runtime's `config/` and use
+`-RuntimeConfig`; the incoming Git deletion can remove the formerly tracked file.
+
+Set `project_dir` to the existing P036 project and `python` to its installed Python
+environment's executable. The template leaves the project blank and uses `python`
+from PATH, `intent_provider: deterministic` and `cad_export: off`. The other keys are
+`reference_run`, `cad_export`
 (`occt` | `rhino` | `off`; forwarded as `ARCHFLOW_STUDIO_CAD_EXPORT`, see "Exported
 candidates" below), `powershell`, `intent_provider` and `codex` (the environment variables
-the sections below describe), `python` (the interpreter command, `py -3.12`), `api_port`,
+the sections below describe), `python` (an interpreter command or executable path), `api_port`,
 `web_port` and `open_browser`. A `runtime.json` written before `cad_export` existed may still
 carry `rhino_export: true|false`; the launcher keeps forwarding that boolean as it always did
 (`true` turns export on, `false` keeps it off) until the line is replaced by `cad_export`, and
 a file naming neither leaves the API to its default, which is `occt`. Two optional keys name the agent more exactly: `intent_model` (the model the
 provider runs, forwarded as `ARCHFLOW_STUDIO_INTENT_MODEL`) and `intent_timeout_s` (how long one
-compile may take, default 120, forwarded as `ARCHFLOW_STUDIO_INTENT_TIMEOUT_S`). **The paths in
-it are absolute and machine-specific**; it is not a file to copy between machines unchanged.
+compile may take, default 120, forwarded as `ARCHFLOW_STUDIO_INTENT_TIMEOUT_S`). Fill project
+and interpreter paths for each machine; share the template rather than a local configuration.
+This file binds one application process, not a global workspace manifest.
 The launcher validates all of it before it starts anything, so a `project_dir` with no
 `project.json` in it, a port already held, or a Python that cannot import FastAPI is a refusal
 naming the reason — never a half-started pair.
@@ -139,9 +168,13 @@ No raster loading assets or React animation timer are involved.
 **Install** (from the repo root):
 
 ```powershell
-py -3.12 -m pip install -r apps/archflow-studio/api/requirements.txt
-py -3.12 -m pip install -e ".[cad-occt]"   # the ordinary export: cadquery-ocp and rhino3dm
-py -3.12 -m pip install httpx2        # tests only, for fastapi.testclient
+$RuntimeRoot = 'D:\ArchFlowRuntime\first-trial'
+py -3.12 -m venv "$RuntimeRoot\venv"
+$Python = "$RuntimeRoot\venv\Scripts\python.exe"
+$env:PATH = "$RuntimeRoot\venv\Scripts;" + $env:PATH
+& $Python -m pip install -r apps/archflow-studio/api/requirements.txt
+& $Python -m pip install -e ".[cad-occt]"   # the ordinary export: cadquery-ocp and rhino3dm
+& $Python -m pip install httpx2        # tests only, for fastapi.testclient
 ```
 
 The `cad-occt` extra is what the default candidate export runs on (OCCT in process, no Rhino);
@@ -152,8 +185,8 @@ job's own sentence, and `cad_export: off` runs candidates with no geometry writt
 
 ```powershell
 $env:ARCHFLOW_STUDIO_PROJECT_DIR = "<a P036 project directory>"
-$env:ARCHFLOW_STUDIO_REFERENCE_RUN = "runner-002"   # optional; see below
-py -3.12 -m archflow_studio_api.main                # 127.0.0.1:8000
+$env:ARCHFLOW_STUDIO_REFERENCE_RUN = ""   # set an actual retained run only when needed
+& $Python -m archflow_studio_api.main                # 127.0.0.1:8000
 ```
 
 `main` takes `--host`, `--port` and `--project-dir` (which overrides the env var). There is

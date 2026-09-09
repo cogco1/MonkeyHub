@@ -22,10 +22,58 @@ an assigned `PersistenceDestination`; they never choose a path.
 `location.py` resolves existing projects under roots supplied explicitly by the
 caller. `FilesystemProjectRepository.initialize` creates a project at an explicit
 root. These paths do not change `project.json` identity or `HEAD` authority.
-Section 8 of the [work environment and onboarding guide](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md)
-shows how to create a synthetic external project and bind Studio through
-`ARCHFLOW_STUDIO_PROJECT_DIR`. Active projects live outside the source repository;
-tests bootstrap their own through this repository under `tempfile`.
+Active projects live outside the source repository. Section 8 of the
+[work environment and onboarding guide](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md)
+covers installation, project creation and Studio's explicit project binding.
+Tests bootstrap their own disposable projects through the same repository under `tempfile`.
+
+From the source root, using the installed Python environment, create an external
+project through the production [CLI](../../tools/create_project.py):
+
+```powershell
+python tools/create_project.py --project D:/ArchFlowRuntime/workspace/projects/my-project
+```
+
+The final directory name is the project id. The target must be outside the source
+repository and absent or empty; creation never overwrites an existing project.
+This command creates version 0 and an empty authored `StateRecord@1`, with no run,
+model or seat pack. Studio can connect and inspect that empty state. Program and
+modeling candidates need suitable design inputs and execution seats; saving a PDF
+also needs an existing run.
+
+For a new project with caller-authored inputs, use this invocation **instead of**
+the empty initialization:
+
+```powershell
+python tools/create_project.py --project D:/ArchFlowRuntime/workspace/projects/my-project `
+    --state-record D:/design-inputs/state-record.json `
+    --seats-file D:/design-inputs/seats.json
+```
+
+The state record must name the target project and have `base` null or omitted; the seat
+pack uses the existing runner format. UTF-8 input with or without a BOM is accepted.
+The CLI validates these inputs and passes them to P036's optional `authored_record`
+and `seat_pack` arguments. The repository writes them only during initialization;
+it does not infer missing architectural content or manufacture a completed run.
+To continue an existing retained design, open its complete project copy instead.
+
+The project files have distinct roles:
+
+| File or area | Role at creation |
+| --- | --- |
+| `project.json` | immutable project identity and format version |
+| `HEAD` | version 0's canonical position; unrelated to a Git branch |
+| `canonical/`, `events/` | the initial snapshot and initialization event |
+| `input/runner/state-record.json` | caller-authored input, or the CLI's empty record |
+| `input/runner/seats.json` | execution seats, written only when supplied |
+| `objects/sha256/`, `runs/`, `exports/` | prepared storage areas; initially no run or model |
+
+Other project areas appear as the operations that own them run. Older projects
+need not have every empty directory; repository reopen checks their retained state.
+There is no separate workspace manifest: a suggested layout is
+`<workspace_root>/projects/<project_id>`, and callers supply the roots explicitly.
+Studio's [configuration template](../../apps/archflow-studio/runtime.example.json)
+selects one project; it does not manage the surrounding workspace, cache or temp roots.
 
 Canonical crash order is:
 
@@ -60,3 +108,8 @@ project owner to assign it.
 Cache and temp data do not fit this table because they are not project records.
 They live outside the project root and may be deleted or rebuilt without
 changing canonical project state.
+
+An architect's original Rhino file may stay in its existing working directory.
+Copies, exports and records that must reopen or travel with an ArchFlow project
+are retained through P036 in the assigned project area; an external source path
+does not replace a project artifact reference.

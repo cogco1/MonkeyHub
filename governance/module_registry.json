@@ -1930,7 +1930,8 @@
         "promotion gating on an accepted exact-base PromotionDecision@1 receipt (prepare_transition, PromotionAuthorityError)",
         "run creation and the run record areas (create_run, create_run_batch, load_run)",
         "format-version compatibility between CanonicalSnapshot@1 and CanonicalSnapshot@2",
-        "integrity verification of the snapshot/event chain and orphan reporting (verify, RecoveryReport)"
+        "integrity verification of the snapshot/event chain and orphan reporting (verify, RecoveryReport)",
+        "installing optional caller-authored State Record and seat-pack mappings at the existing input paths during initialize; no run is created and later authored edits remain with their existing owners"
       ],
       "does_not_own": [
         "path naming inside a project (project.layout)",
@@ -1945,7 +1946,8 @@
         "ProjectRecordRef",
         "PersistenceDestination",
         "JSON mapping payload",
-        "binary stream"
+        "binary stream",
+        "optional authored_record and seat_pack mappings on initialize"
       ],
       "outputs": [
         "ProjectRecordRef",
@@ -1984,7 +1986,8 @@
         "tools/verify_state_record.py",
         "tools/freeze_project_stage_workflow.py",
         "tools/issue_project.py",
-        "monkeydiagram/drawing_elevation.py"
+        "monkeydiagram/drawing_elevation.py",
+        "tools/create_project.py"
       ],
       "invariants": [
         "an existing content path is never overwritten; new content is installed or the write fails",
@@ -4996,6 +4999,55 @@
       ],
       "status": "provisional",
       "reason": "The studio's side of design step 2: the panel edits the sheet, applying it is a candidate, saving it is a local-mode write of the architect's own file."
+    },
+    {
+      "module_id": "tools.create_project",
+      "owner_path": "tools/create_project.py",
+      "purpose": "Create one explicitly located external P036 project from empty or supplied authored inputs, before any run.",
+      "owns": [
+        "the create-project command line: external project root and optional authored StateRecord/seat-pack input files",
+        "checking new project identity and rejecting occupied roots, foreign or bound records and malformed seats before initialization"
+      ],
+      "does_not_own": [
+        "project format, filesystem writes or HEAD authority (project.repository)",
+        "StateRecord semantics (state.record) or seat semantics (tools.run_project._seat)",
+        "creating geometry, a run, a stage or a formal issue",
+        "a global workspace registry or runtime installation"
+      ],
+      "inputs": [
+        "CLI arguments",
+        "optional unbound StateRecord@1 JSON",
+        "optional authored runner seat pack"
+      ],
+      "outputs": [
+        "new P036 project with authored inputs",
+        "project path and creation summary",
+        "process exit code"
+      ],
+      "public_api": [
+        "main"
+      ],
+      "depends_on": [
+        "project.repository",
+        "project.refs",
+        "state.record",
+        "tools.run_project"
+      ],
+      "used_by": [
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
+      ],
+      "invariants": [
+        "all project writes go through the existing repository initializer",
+        "the source repository and occupied project directories are not initialization targets",
+        "imported input identity is preserved; a bound record is not silently detached",
+        "empty creation produces no components, seats, model, run or acceptance decision"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_create_project.py",
+        "apps/archflow-studio/api/tests/test_create_project.py"
+      ],
+      "notes": "CREATE only for the requested user-facing initialization command: existing tools operate on retained projects/runs and have no creation entry. Persistence is an EXTEND of project.repository, with no parallel writer."
     }
   ]
 }

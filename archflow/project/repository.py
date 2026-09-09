@@ -392,19 +392,43 @@ class FilesystemProjectRepository:
         *,
         project_id: str,
         initial_state: Mapping[str, Any],
+        authored_record: Mapping[str, Any] | None = None,
+        seat_pack: Mapping[str, Any] | None = None,
     ) -> FilesystemProjectRepository:
+        """Create a project, optionally installing its caller-authored WIP inputs.
+
+        Input meaning belongs to the caller. These files are installed only at
+        creation; they create no run and are not published design content.
+        """
+
         layout = ProjectLayout(Path(root), project_id)
         manifest = ProjectManifest(
             project_id=project_id,
             format_version=CURRENT_FORMAT_VERSION,
+        )
+        state = dict(initial_state)
+        _require_semantic_state_identity(
+            state, project_id=project_id, version=0, field="initial state"
+        )
+        state_sha256 = _semantic_state_sha256(state, field="initial state")
+        authored_files = tuple(
+            (path, _json_bytes(dict(payload)))
+            for path, payload in (
+                (layout.authored_record, authored_record),
+                (layout.seat_pack, seat_pack),
+            )
+            if payload is not None
         )
         # The existence check and the HEAD write must sit inside the same
         # OS-level lock compare_and_swap uses, or a stalled duplicate
         # initialize from another process can reset a promoted HEAD to v0.
         head_lock = _HeadFileLock(layout.root / "HEAD.lock")
         with _project_lock(layout.root), head_lock:
-            if layout.manifest.exists():
+            if layout.manifest.exists() or layout.head.exists():
                 raise ProjectAlreadyExists(f"project already exists: {project_id}")
+            for path, _ in authored_files:
+                if path.exists():
+                    raise ProjectAlreadyExists(f"authored input already exists: {path}")
             layout.root.mkdir(parents=True, exist_ok=True)
             for directory in (
                 layout.inputs,
@@ -417,17 +441,6 @@ class FilesystemProjectRepository:
                 directory.mkdir(parents=True, exist_ok=True)
             _write_immutable(layout.manifest, _json_bytes(manifest.to_dict()))
             repository = cls(layout, manifest)
-            state = dict(initial_state)
-            _require_semantic_state_identity(
-                state,
-                project_id=project_id,
-                version=0,
-                field="initial state",
-            )
-            state_sha256 = _semantic_state_sha256(
-                state,
-                field="initial state",
-            )
             snapshot = repository._put_internal_json(
                 layout.canonical,
                 "state-v000000",
@@ -458,10 +471,8 @@ class FilesystemProjectRepository:
                     "decision_receipt": None,
                 },
             )
-            if layout.head.exists():
-                raise ProjectAlreadyExists(
-                    f"project head already exists: {project_id}"
-                )
+            for path, data in authored_files:
+                _write_immutable(path, data)
             _replace_atomic(
                 layout.head,
                 _json_bytes(repository._head_payload(head_ref, snapshot, event)),
