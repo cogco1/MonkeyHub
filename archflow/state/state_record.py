@@ -72,6 +72,7 @@ CHECK_KINDS: Mapping[str, str] = MappingProxyType({
     "support_contact": "the subject supports the object: contact within tolerance",
     "clearance_interval": "the gap between subject and object lies in interval_m",
     "aperture_exists": "the object opening lies within the subject host's extent and has geometry",
+    "lintel_minimum_bearing": "the declared axis-aligned lintel bounds meet minimum bearing at both opening span ends, align bottom to opening head and overlap transversely",
     "solid_nonpenetration": "explicit final solid pairs have no positive common volume; contact and separation are allowed",
 })
 """The checks the spine can measure: check_kind id -> one line of meaning.
@@ -288,6 +289,25 @@ class Relation:
             require_identifier(self.datum_role, "datum_role")
         _refs(self.basis_refs, f"relation {self.relation_id} basis_refs")
         object.__setattr__(self, "parameters", dict(self.parameters))
+        if self.validator is not None and self.validator.check_kind == "lintel_minimum_bearing":
+            if self.kind != "dependency":
+                raise StateRecordError(f"relation {self.relation_id}: lintel_minimum_bearing requires kind dependency")
+            required = {"opening_object_id", "lintel_object_id", "span_axis", "minimum_bearing_m"}
+            if set(self.parameters) != required:
+                raise StateRecordError(f"relation {self.relation_id}: lintel_minimum_bearing requires exactly {', '.join(sorted(required))}")
+            for name in ("opening_object_id", "lintel_object_id"):
+                require_identifier(self.parameters[name], f"lintel_minimum_bearing {name}")
+            if self.parameters["opening_object_id"] == self.parameters["lintel_object_id"]:
+                raise StateRecordError(f"relation {self.relation_id}: opening and lintel must name distinct objects")
+            if self.parameters["span_axis"] not in ("x", "z"):
+                raise StateRecordError(f"relation {self.relation_id}: lintel_minimum_bearing span_axis must be x or z")
+            bearing = self.parameters["minimum_bearing_m"]
+            try:
+                finite_bearing = isinstance(bearing, (int, float)) and not isinstance(bearing, bool) and math.isfinite(bearing)
+            except OverflowError:
+                finite_bearing = False
+            if not finite_bearing or bearing < 0:
+                raise StateRecordError(f"relation {self.relation_id}: minimum_bearing_m must be a non-negative finite number of metres")
         if self.validator is not None and self.validator.check_kind == "solid_nonpenetration":
             pairs = self.parameters.get("object_pairs")
             if not isinstance(pairs, (list, tuple)) or not pairs:

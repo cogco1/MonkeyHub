@@ -1,4 +1,4 @@
-import { Mesh, type Material, type Object3D } from "three";
+import { Color, Mesh, MeshStandardMaterial, SRGBColorSpace, Texture, type Material, type Object3D } from "three";
 
 export type ModelDisplayMode = "model" | "framework" | "massing";
 
@@ -88,17 +88,50 @@ export function savedObjectVisible(object: Object3D): boolean {
   return attributes?.visible !== false;
 }
 
+function savedDisplayColor(object: Object3D): Color | null {
+  const attributes = object.userData.attributes;
+  if (!attributes) return null;
+  // The loader reads Rhino's resolved draw color, including object/layer source.
+  let rgb = attributes.drawColor;
+  if (rgb === undefined) {
+    if (attributes.colorSource?.name === "ObjectColorSource_ColorFromObject") {
+      rgb = attributes.objectColor;
+    } else if (attributes.colorSource === undefined || attributes.colorSource?.name === "ObjectColorSource_ColorFromLayer") {
+      for (let document: Object3D | null = object; document; document = document.parent) {
+        if (Array.isArray(document.userData.layers)) {
+          rgb = document.userData.layers[attributes.layerIndex]?.color;
+          break;
+        }
+      }
+    }
+  }
+  if (!rgb || ![rgb.r, rgb.g, rgb.b].every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 255)) return null;
+  return new Color().setRGB(rgb.r / 255, rgb.g / 255, rgb.b / 255, SRGBColorSpace);
+}
+
 /**
  * Give a freshly parsed model the display state its file saved: the layer
  * visibility the loader applied, and each object's own saved visibility on
  * top of it. Every loaded model - the reference, a local file, the second
  * side of a comparison - passes through here before its appearance is
  * captured, so a hidden construction object is remembered as hidden and no
- * restoration brings it back.
+ * restoration brings it back. The loader's unassigned white mesh material
+ * uses the file's display color; native materials and textures stay intact.
  */
 export function prepareLoadedModel<T extends Object3D>(root: T): T {
   root.traverse((object) => {
     if (object.visible && !savedObjectVisible(object)) object.visible = false;
+    if (!(object instanceof Mesh)) return;
+    const color = savedDisplayColor(object);
+    if (!color) return;
+    const prepare = (material: Material): Material => {
+      if (!(material instanceof MeshStandardMaterial) || material.name !== "__DEFAULT" || material.userData.id ||
+          material.vertexColors || Object.values(material).some((value) => value instanceof Texture) || material.color.equals(color)) return material;
+      const copy = material.clone();
+      copy.color.copy(color);
+      return copy;
+    };
+    object.material = Array.isArray(object.material) ? object.material.map(prepare) : prepare(object.material);
   });
   return root;
 }

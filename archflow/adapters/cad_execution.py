@@ -2546,16 +2546,22 @@ def _preview_materials(
     layer_colors: Mapping[str, tuple[int, int, int]],
     material_colors: Mapping[str, tuple[int, int, int]] | None,
 ) -> dict[str, PreviewMaterial]:
-    """The native material each delivered assembly member wears, keyed by object id.
+    """The declared native material each delivered object wears, keyed by object id.
 
-    Roles come from ``program.proposal.assemblies`` alone, never from an
-    object's name.  A FRAME member reuses the ``archflow:material`` its
-    semantics already carry (the declared assignment of its component);
-    a GLAZING member takes the glass fallback.
+    Every declared component material is carried into the preview. Roles
+    come from ``program.proposal.assemblies`` alone, never from an object's
+    name: GLAZING keeps its glass fallback and an undeclared FRAME is shaded.
     """
 
     objects = semantics["objects"]
     materials: dict[str, PreviewMaterial] = {}
+    for object_id in physical:
+        row = objects[object_id]
+        declared = row["user_text"].get("archflow:material")
+        if declared:
+            layer_color = layer_colors.get(row["layer"], (0, 0, 0))
+            color = (material_colors or {}).get(declared, layer_color)
+            materials[object_id] = PreviewMaterial(name=declared, diffuse=tuple(int(c) for c in color))
     for assembly in program.proposal.assemblies:
         for object_id in assembly.objects_for(AssemblyRole.GLAZING):
             if object_id in physical:
@@ -2565,13 +2571,8 @@ def _preview_materials(
                 continue
             row = objects[object_id]
             layer_color = layer_colors.get(row["layer"], (0, 0, 0))
-            declared = row["user_text"].get("archflow:material")
-            if declared:
-                color = (material_colors or {}).get(declared, layer_color)
-                materials[object_id] = PreviewMaterial(name=declared, diffuse=tuple(int(c) for c in color))
-            else:
-                shaded = tuple(int(round(channel * _FRAME_FALLBACK_SHADE)) for channel in layer_color)
-                materials[object_id] = PreviewMaterial(name=AssemblyRole.FRAME.value, diffuse=shaded)
+            shaded = tuple(int(round(channel * _FRAME_FALLBACK_SHADE)) for channel in layer_color)
+            materials[object_id] = PreviewMaterial(name=AssemblyRole.FRAME.value, diffuse=shaded)
     return materials
 
 

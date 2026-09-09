@@ -50,7 +50,7 @@
         "readback verification: the saved file's physical objects, semantics, bounds, counts, layer colours and document user text against the denominator",
         "the execution receipt and its status",
         "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated .3dm preview from one model",
-        "native preview material assignment and readback for existing FRAME and GLAZING assembly roles, including actual glass transparency",
+        "native preview material assignment and readback for caller-declared component materials and existing FRAME/GLAZING role fallbacks, including actual glass transparency",
         "CadProgramBinding (the retained RhinoCadProgramBinding alias), OcctCadExportIdentity, OcctExecutionReceipt and explicit CadCapabilityError for unsupported operations",
         "orthographic visible/hidden polylines of named STEP shapes with their source object ids (project_occt_lines): one exact HLRBRep_Algo solve over every selected shape in a caller-stated right/up frame, an exact near/far depth slab, chord-deflection discretization in the STEP read unit",
         "measuring explicitly requested final named solid pairs from OCCT shapes: true distance in metres and common solid volume in cubic metres, preserving separated/contact/penetrating/unchecked and never reconstructing consumed boolean operands",
@@ -156,7 +156,7 @@
         "per-object structural digests of what the CAD script actually emits",
         "the diff into changed / added / retired / kept object ids, with a reason per object",
         "closing the rebuild set over input edges (consumers of a rebuilt object, producers of a rebuilt operation's inputs)",
-        "the Rhino-side prelude that opens the prior model, deletes the retired objects and re-stamps the kept ones",
+        "the Rhino-side prelude that opens the prior model, deletes the retired objects and re-stamps kept objects, copying and remapping their referenced native material tables",
         "refusing a patch that cannot be expressed, so the caller rebuilds instead"
       ],
       "does_not_own": [
@@ -212,7 +212,8 @@
         "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
         "the analytic per-object bounds the realization must reproduce (expected_object_bounds)",
         "applying a datum-bound base_level to profile points (lift_to_base_level)",
-        "the P103 partial emission of an operation subset"
+        "the P103 partial emission of an operation subset",
+        "native Rhino object material assignment from the caller-declared material and colour maps, in addition to layer display colours"
       ],
       "does_not_own": [
         "running the script, saving the file or verifying the readback - adapters.cad_execution",
@@ -893,7 +894,8 @@
         "the aperture measurement: the opening has finite geometry and lies inside its host in plan and vertically within tolerance",
         "solid_nonpenetration: only explicit final object pairs belonging to the declared endpoints' produced objects (either order, both owned by the host for same-host checks); positive common solid volume violates, contact/separation hold, missing/wrong ownership or unavailable measurements are unchecked; bounding boxes never stand in for solid measurements",
         "reporting a relation with no validator, or one whose elements have no realized geometry, as `unchecked` rather than as passing",
-        "the report's three-state counts, held / fully_checked flags and its digest"
+        "the report's three-state counts, held / fully_checked flags and its digest",
+        "lintel_minimum_bearing: declared final opening/lintel object bounds owned by the relation endpoints; minimum coverage at both span ends, bottom-to-head alignment and positive transverse overlap; malformed or unavailable geometry is unchecked"
       ],
       "does_not_own": [
         "which relations reach the check - runtime.project_runner passes the record's own declared relations plus the `support` relations the producers built",
@@ -940,12 +942,15 @@
         "CHECKERS and state.record CHECK_KINDS name the same ids; the module refuses to import otherwise, so a declared check is always measured",
         "`held` alone is not a green light - an unchecked relation does not count against it, so held must be shown with fully_checked",
         "support_contact fails RelationCheckError when its objects have no realized bounds; clearance and aperture report `unchecked` naming the element instead",
-        "the report carries the record digest it was measured against"
+        "the report carries the record digest it was measured against",
+        "lintel bearing measures a declared axis-aligned envelope condition, never member capacity or actual support contact; required stage checks must explicitly name it"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_relation_checks.py",
-        "tests/test_project_runner.py"
+        "tests/test_project_runner.py",
+        "tests/test_lintel_bearing.py",
+        "tests/test_window_relational_update.py"
       ],
       "notes": "One checker per kind the record can declare; adding a kind means adding a checker here and an id to CHECK_KINDS in the same change."
     },
@@ -3052,7 +3057,8 @@
         "atomic semantic component edits: entity, parameter and relationship upserts or explicit removals, with incident relationships removed when their entity is removed",
         "Type@1 producer defaults combined with Element@1 instance overrides before resolving explicit parameter bindings; the same values and dependencies reach projection and production",
         "plain typed operator serialization for exact-source candidate replay",
-        "normalizing independent materialized component edits into one exact-base typed operator; refusing changed objects or dependencies shared by the candidates"
+        "normalizing independent materialized component edits into one exact-base typed operator; refusing changed objects or dependencies shared by the candidates",
+        "lintel_minimum_bearing relation parameters: explicit opening and lintel object ids, x or z span axis, and finite nonnegative minimum_bearing_m"
       ],
       "does_not_own": [
         "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
@@ -3161,7 +3167,9 @@
         "tests/test_state_record.py",
         "tests/test_project_runner.py",
         "apps/archflow-studio/api/tests/test_projection.py",
-        "tests/test_massing_metrics.py"
+        "tests/test_massing_metrics.py",
+        "tests/test_lintel_bearing.py",
+        "tests/test_window_relational_update.py"
       ],
       "notes": "The projection is built here; state no longer imports runtime."
     },

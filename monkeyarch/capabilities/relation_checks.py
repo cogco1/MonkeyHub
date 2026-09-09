@@ -286,6 +286,67 @@ def check_aperture_exists(relation: Relation, *, record: StateRecord, bounds: Ma
                          "; ".join(problems) or f"opening {relation.object} lies within host {relation.subject}")
 
 
+def check_lintel_minimum_bearing(
+    relation: Relation, *, record: StateRecord, bounds: Mapping[str, Bounds],
+    objects_by_element: Mapping[str, Sequence[str]], datum_values: Mapping[str, float],
+) -> RelationCheck:
+    """Measure the declared axis-aligned envelopes, not actual support faces or load capacity.
+
+    The subject owns the named opening object and the object owns the named lintel.
+    These two complete boxes alone supply the measurement; the whole host's extent
+    cannot substitute for an absent opening. Orientation is declared by span_axis,
+    not inferred from an AABB, which carries no source geometry or rotation.
+    """
+
+    tolerance = relation.validator.tolerance if relation.validator and relation.validator.tolerance is not None else _DEFAULT_TOLERANCE
+    boxes: list[Box] = []
+    for name, owner in (("opening_object_id", relation.subject), ("lintel_object_id", relation.object)):
+        object_id = relation.parameters[name]
+        if object_id not in objects_by_element.get(owner, ()):
+            return RelationCheck(relation.relation_id, relation.kind, "lintel_minimum_bearing", "unchecked", tolerance, {},
+                                 f"{name} {object_id} is not owned by {owner}")
+        raw = bounds.get(object_id)
+        try:
+            if (not isinstance(raw, (tuple, list)) or len(raw) != 2
+                    or any(not isinstance(corner, Sequence) or isinstance(corner, (str, bytes)) or len(corner) != 3 for corner in raw)
+                    or any(isinstance(v, bool) or not isinstance(v, (int, float)) for corner in raw for v in corner)):
+                raise ValueError("incomplete bounds")
+            low, high = (tuple(float(v) for v in corner) for corner in raw)
+            if not all(math.isfinite(v) for v in low + high) or any(low[i] >= high[i] for i in range(3)):
+                raise ValueError("non-finite or degenerate bounds")
+        except (TypeError, ValueError, OverflowError):
+            return RelationCheck(relation.relation_id, relation.kind, "lintel_minimum_bearing", "unchecked", tolerance, {},
+                                 f"{name} {object_id} needs complete finite bounds with positive extent on all axes")
+        boxes.append((low, high))
+
+    opening, lintel = boxes
+    span = 0 if relation.parameters["span_axis"] == "x" else 2
+    transverse = 2 if span == 0 else 0
+    minimum = float(relation.parameters["minimum_bearing_m"])
+    measured = {
+        "left_bearing_m": opening[0][span] - lintel[0][span],
+        "right_bearing_m": lintel[1][span] - opening[1][span],
+        "minimum_bearing_m": minimum,
+        "vertical_gap_m": lintel[0][_VERTICAL_AXIS] - opening[1][_VERTICAL_AXIS],
+        "transverse_overlap_m": min(opening[1][transverse], lintel[1][transverse]) - max(opening[0][transverse], lintel[0][transverse]),
+    }
+    if not all(math.isfinite(v) for v in measured.values()):
+        return RelationCheck(relation.relation_id, relation.kind, "lintel_minimum_bearing", "unchecked", tolerance, {},
+                             "opening and lintel bounds exceed finite measurement range")
+    problems = []
+    for side in ("left", "right"):
+        bearing = measured[f"{side}_bearing_m"]
+        if bearing < minimum - tolerance:
+            problems.append(f"{side} bearing {bearing:.4f} m is below minimum {minimum:.4f} m")
+    if abs(measured["vertical_gap_m"]) > tolerance:
+        problems.append(f"lintel bottom differs from opening top by {measured['vertical_gap_m']:.4f} m")
+    if measured["transverse_overlap_m"] <= 0:
+        problems.append("opening and lintel have no positive transverse overlap")
+    scope = "declared axis-aligned envelope coverage only; support faces and structural capacity are not measured"
+    return RelationCheck(relation.relation_id, relation.kind, "lintel_minimum_bearing", "violated" if problems else "held", tolerance,
+                         measured, f"{'; '.join(problems) or 'both span ends meet minimum bearing'}; {scope}")
+
+
 def check_solid_nonpenetration(
     relation: Relation, *, record: StateRecord, bounds: Mapping[str, Bounds],
     objects_by_element: Mapping[str, Sequence[str]], datum_values: Mapping[str, float],
@@ -355,6 +416,7 @@ CHECKERS: Mapping[str, Checker] = MappingProxyType({
     "support_contact": check_support_contact,
     "clearance_interval": check_clearance_interval,
     "aperture_exists": check_aperture_exists,
+    "lintel_minimum_bearing": check_lintel_minimum_bearing,
     "solid_nonpenetration": check_solid_nonpenetration,
 })
 
