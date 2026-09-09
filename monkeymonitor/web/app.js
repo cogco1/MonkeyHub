@@ -185,7 +185,153 @@ const english = {
   "已应用 {count} 个来源": "Applied {count} sources",
   "来源读取失败，可重试。": "Could not read sources. Retry when the service is available.",
   "来源未更改：{error}": "Sources unchanged: {error}",
-  "请求失败": "Request failed"
+  "请求失败": "Request failed",
+  "模型请求耗时中位数": "Median model request duration",
+  "展开一次操作，查看总历时与阶段。父阶段已包含子阶段，嵌套时间不相加；操作间隔单独标注。": "Expand an action to see its elapsed time and stages. Parent intervals include their children, so nested times are not added together. Time between actions is shown separately.",
+  "单次操作": "Single action",
+  "各类耗时概况": "Timing by scope",
+  "交互历时": "Interaction elapsed time",
+  "设计修改": "Design edit",
+  "图纸生成": "Drawing generation",
+  "操作": "Action",
+  "未关联到单次操作": "Not linked to an action",
+  "{actions} 次操作 · {records} 条记录": "{actions} actions · {records} records",
+  "{count} 条阶段记录": "{count} stage records",
+  "总历时 {duration}": "Elapsed time {duration}",
+  "实际等待 {duration}": "Active wait {duration}",
+  "操作间隔 {duration}": "Between actions {duration}",
+  "动作总历时未知；下方仅展示各段实测时间。": "Total action time is unknown. Only recorded stage times are shown below.",
+  "从提交意图到候选可见；总历时包含操作间隔。": "From intent submission to a visible candidate, including time between actions.",
+  "本次未记录图纸生成。": "No drawing generation was recorded for this action.",
+  "关联来源（不计入本次阶段）": "Linked context (outside these stages)",
+  "父阶段未记录": "Parent stage not recorded",
+  "意图处理": "Intent processing",
+  "模型请求往返": "Model request round trip",
+  "意图请求等待": "Intent request wait",
+  "候选请求等待": "Candidate request wait",
+  "图纸请求等待": "Drawing request wait",
+  "候选排队": "Candidate queue",
+  "模型读取与解析": "Model download and parsing",
+  "图纸模型读取": "Drawing model load",
+  "图纸线条计算": "Drawing line computation",
+  "SVG 输出": "SVG output",
+  "PNG 输出": "PNG output",
+  "图纸写入": "Drawing persistence",
+  "图纸登记": "Drawing registration",
+  "纯模型推理耗时未知；此处为请求往返时间。": "Pure model inference time is unknown; this is request round-trip time.",
+  "纯模型推理耗时 {duration}": "Pure model inference time {duration}",
+  "已中止": "Aborted",
+  "实际重算 {count} 个对象": "Recomputed {count} objects",
+  "复用 {count} 个对象": "Reused {count} objects",
+  "已复用": "Reused",
+  "未命中": "Cache miss",
+  "部分复用": "Partial reuse",
+  "未采用复用": "Reuse declined",
+  "不适用缓存": "Cache not applicable",
+  "缓存情况未知": "Cache status unknown",
+  "已知重复执行；是否可避免仍待判断。": "Repeated execution recorded; whether it was avoidable remains undetermined.",
+  "已记录的请求输入相同；是否可避免待定。": "Recorded request inputs match; whether it was avoidable remains undetermined.",
+  "未标记重复执行": "No repeated execution flagged",
+  "重复情况未知": "Repeat status unknown",
+  "重算、复用与来源": "Recomputation, reuse and sources",
+  "执行内容": "Executed work",
+  "实际执行路径": "Actual execution path",
+  "执行范围": "Execution scope",
+  "输入对象": "Input objects",
+  "输出对象": "Emitted objects",
+  "实际重算对象": "Recomputed objects",
+  "实际复用对象": "Reused objects",
+  "实际执行阶段": "Executed stages",
+  "缓存与复用": "Cache and reuse",
+  "缓存状态": "Cache status",
+  "未命中或复用理由": "Cache or reuse reason",
+  "缓存检查": "Cache checks",
+  "重复与复用机会": "Repeated work and reuse opportunities",
+  "重复判断": "Repeat assessment",
+  "判断依据": "Assessment basis",
+  "输入是否相同": "Equivalent input",
+  "复用机会": "Reuse opportunity",
+  "对照记录": "Compared event",
+  "输入身份与对照": "Input identity and comparisons",
+  "输入身份": "Input identity",
+  "对照来源": "Comparison references",
+  "输出来源": "Output references",
+  "操作 ID": "Action ID",
+  "父阶段 ID": "Parent stage ID",
+  "请求方式": "Request kind",
+  "是": "Yes",
+  "否": "No",
+  "无": "None",
+  "相同": "Same",
+  "已变化": "Changed",
+  "缺失": "Missing",
+  "{count} 项": "{count} items",
+  "其余 {count} 项": "{count} more items",
+  "找到完全匹配的已登记图纸": "An exactly matching registered drawing was found",
+  "没有已登记的图纸": "No registered drawing was found",
+  "已登记图纸的输入发生变化": "The registered drawing inputs changed",
+  "缓存图纸文件不可用": "The cached drawing file is unavailable",
+  "源模型不可用": "The source model is unavailable",
+  "沿用已登记图纸": "Retained registered drawing",
+  "完整投影计算": "Full projection",
+  "全局可见性计算": "Global visibility computation",
+  "图纸 ID": "Drawing ID",
+  "来源 Stage": "Source Stage",
+  "模型来源": "Model source",
+  "投影设置": "View settings",
+  "图纸文件": "Drawing bytes",
+  "无效": "Invalid",
+  "Token 汇总仅计模型调用；请求耗时只使用明确记录为 model_call 的时间，不代表纯推理时间。": "Token totals include model calls only. Request durations use only recorded model_call intervals and do not represent pure inference time.",
+  "服务阶段": "Service interval",
+  "执行前排队等待": "Queue wait before execution",
+  "未归类时间 {duration}": "Unattributed time {duration}",
+  "请求与重试": "Request and retry",
+  "请求尝试序号": "Request attempt",
+  "重试原因": "Retry reason",
+  "等待原因": "Wait reason",
+  "HTTP 状态": "HTTP status",
+  "输入字节": "Input bytes",
+  "输出字节": "Output bytes",
+  "机会对照来源": "Opportunity references",
+  "保持一致的输入部分": "Stable input parts",
+  "模型用量（请求时段未记录）": "Model usage (request interval not recorded)",
+  "构件生成": "Element production", "导出缓存检查": "Export cache lookup", "来源导出检查": "Source export lookup",
+  "几何内核初始化": "Geometry kernel initialization", "几何复用检查": "Geometry reuse check", "几何构建": "Geometry build",
+  "STEP 写入": "STEP write", "STEP 读回校验": "STEP readback verification", "曲面网格化": "Tessellation",
+  "预览模型写入": "Preview model write", "预览模型读回校验": "Preview model readback verification",
+  "模型下载": "Model download", "模型解析": "Model parsing", "图纸下载": "Drawing download", "图纸显示": "Drawing display",
+  "Stage 请求等待": "Stage request wait", "API 请求等待": "API request wait",
+  "构件逐项生成": "Produce individual elements", "STEP 读取": "Read STEP", "STEP 校验": "Verify STEP", "预览模型检查": "Inspect preview model", "预览模型校验": "Verify preview model",
+  "复用已保留结果": "Reused a retained result", "首次观察到这些输入": "First observation of these inputs",
+  "缺少可比较的输入记录": "Comparable input records are missing", "再次请求同一资产": "Same asset requested again",
+  "已记录的模型请求输入相同": "Recorded model request inputs match", "已记录的执行输入相同": "Recorded execution inputs match",
+  "资产身份相同": "Asset identity matches", "供应商缓存适用条件仍需确认": "Provider cache eligibility still needs verification",
+  "浏览器缓存是否避免了传输未知": "Whether browser caching avoided transfer is unknown",
+  "仍需核对保留结果与当前执行的绑定": "Retained result binding to this execution still needs verification",
+  "前次失败或取消，未得到可验证复用结果": "The previous attempt failed or was cancelled; no verified reusable result was obtained",
+  "上下文相同；前缀缓存是否适用未知": "Shared context; prefix-cache eligibility is unknown",
+  "等待执行线程接纳": "Waiting for a worker", "独占执行": "Exclusive execution", "并行执行": "Parallel execution",
+  "OCCT 几何执行": "OCCT geometry execution", "OCCT 曲面网格化": "OCCT tessellation", "预览文件写入": "Preview file write",
+  "几何程序": "Geometry program", "构件生产": "Element production", "导出流程": "Export process",
+  "已校验的导出缓存": "Verified export cache", "来源导出缓存": "Source export cache", "已校验的来源形体": "Verified source shapes",
+  "内核初始化": "Kernel initialization", "STEP 写入与文件摘要": "STEP write and file digest",
+  "独立读回与校验": "Independent readback and verification", "累计实际工作时间": "Accumulated active time", "文件写入": "File write",
+  "未选择复用来源": "No reuse source selected", "没有已保留导出": "No retained export", "多个缓存条件未满足": "Multiple cache conditions failed",
+  "找到已校验的匹配导出": "A verified matching export was found", "来源导出缺失": "Source export missing",
+  "来源记录绑定已变化": "Source record binding changed", "来源执行记录未通过校验": "Source execution record is not verified",
+  "来源几何后端已变化": "Source geometry backend changed", "来源记录格式已变化": "Source record format changed",
+  "来源文件已变化": "Source artifact changed", "来源导出已校验": "Source export verified", "来源记录或文件不可读": "Source record or artifact unreadable",
+  "复用来源输入不完整": "Reuse source inputs incomplete", "长度单位已变化": "Length unit changed", "来源是符号链接": "Source is a symbolic link",
+  "来源文件不可读": "Source artifact unreadable", "来源 STEP 读回失败": "Source STEP readback failed", "来源对象身份已变化": "Source object identities changed",
+  "几何内容已变化": "Geometry changed", "对象已增加或移除": "Objects added or removed", "几何内容未变化": "Geometry unchanged",
+  "构件输入未变化": "Element inputs unchanged", "各构件的复用条件不同": "Reuse conditions differ by element",
+  "内核是否复用网格未被观测": "Kernel mesh reuse was not observed",
+  "保留的构件结果缺失": "Retained element result missing", "生产代码已变化": "Producer code changed", "生产代码记录缺失": "Producer code record missing",
+  "引用输入已变化": "Reference inputs changed", "引用输入缺失": "Reference inputs missing", "构件定义已变化": "Element definition changed", "构件定义缺失": "Element definition missing",
+  "依赖输入已变化": "Dependency inputs changed", "依赖输入缺失": "Dependency inputs missing", "文件已变化": "Artifact changed", "文件缺失": "Artifact missing", "文件不可读": "Artifact unreadable",
+  "绑定已变化": "Binding changed", "读回未通过校验": "Readback not verified", "读取失败": "Read failed", "已校验": "Verified", "不可读": "Unreadable",
+  "几何程序摘要": "Geometry program digest", "来源几何程序摘要": "Source program digest", "来源 STEP 摘要": "Source STEP digest", "状态记录摘要": "State record digest",
+  "生产代码": "Producer code", "构件席位": "Element seat", "上下文摘要": "Context digest", "供应商配置身份": "Provider configuration identity", "请求摘要": "Prompt digest", "增量导出": "Incremental export"
 };
 const catalog = locale === "en" ? english : {};
 const t = (key, parameters) => translateMessage(catalog, key, parameters);
@@ -205,15 +351,33 @@ for (const attribute of ["aria-label", "placeholder"]) {
   const form = $("quote-form");
   const usageFields = ["input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens", "cache_write_1h_input_tokens", "reasoning_output_tokens"];
   const rateFields = ["input", "cached_input", "cache_write_input", "cache_write_1h_input", "output"];
-  const state = { events: [], source: "all", project: "", group: "run", visibleGroups: 10, openGroups: new Set(), sourcesLoaded: false, sourceBusy: false, sort: "uncached_input", loaded: false, loading: false, rates: [], ratesLoaded: false, selectedRate: null, quoteEvent: null, warnings: [], excluded: 0, visibleEvents: 10, quoteVersion: 0 };
+  const state = { events: [], source: "all", project: "", group: "operation", visibleGroups: 10, openGroups: new Set(), sourcesLoaded: false, sourceBusy: false, sort: "uncached_input", loaded: false, loading: false, rates: [], ratesLoaded: false, selectedRate: null, quoteEvent: null, warnings: [], excluded: 0, visibleEvents: 10, quoteVersion: 0 };
   const controllers = new Set();
   const integerFormat = new Intl.NumberFormat(locale);
   const timeFormat = new Intl.DateTimeFormat(locale, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+  const actionTimeFormat = new Intl.DateTimeFormat(locale, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   const sourceLabels = { studio: "Studio", codex: "Codex" };
-  const statusLabels = { completed: "已完成", succeeded: "成功", success: "成功", failed: "失败", error: "失败", cancelled: "已取消", running: "进行中", recorded: "已记录", observed: "已观测", compiled: "已编译", question: "待补充", unsupported: "不支持", last_only: "仅末次用量", token_count: "已记录", partial_history: "历史不完整", counter_discontinuity: "计数不连续", counter_reset_unknown: "计数重置未知" };
+  const statusLabels = { completed: "已完成", succeeded: "成功", success: "成功", failed: "失败", error: "失败", cancelled: "已取消", aborted: "已中止", running: "进行中", recorded: "已记录", observed: "已观测", compiled: "已编译", question: "待补充", unsupported: "不支持", last_only: "仅末次用量", token_count: "已记录", partial_history: "历史不完整", counter_discontinuity: "计数不连续", counter_reset_unknown: "计数重置未知" };
   const partialStatuses = new Set(["partial_history", "counter_discontinuity", "counter_reset_unknown", "last_only"]);
-  const scopeLabels = { model_call: "模型调用", service: "服务执行", client_wait: "客户端等待", agent_turn: "代理整轮", unknown: "耗时范围未知" };
-  const phaseLabels = { candidate: "候选生成（含几何导出）", geometry_export: "几何导出", model_load: "模型加载", stage_save: "Stage 保存", intent: "意图理解", agent: "代理调用", agent_turn: "代理整轮" };
+  const scopeLabels = { interaction: "交互历时", model_call: "模型请求往返", service: "服务阶段", client_wait: "客户端等待", agent_turn: "代理整轮", unknown: "耗时范围未知" };
+  const phaseLabels = { design_edit: "设计修改", intent_compile: "意图处理", model_request: "模型请求往返", model_usage: "模型用量（请求时段未记录）", intent_wait: "意图请求等待", candidate_wait: "候选请求等待", candidate_queue: "候选排队", drawing_wait: "图纸请求等待", drawing_generate: "图纸生成", "drawing.load": "图纸模型读取", "drawing.hlr": "图纸线条计算", "drawing.svg": "SVG 输出", "drawing.png": "PNG 输出", "drawing.persist": "图纸写入", "drawing.register": "图纸登记", candidate: "候选生成（含几何导出）", geometry_export: "几何导出", model_load: "模型读取与解析", stage_save: "Stage 保存", intent: "意图理解", agent: "代理调用", agent_turn: "代理整轮" };
+  Object.assign(phaseLabels, { element_production: "构件生成", export_cache_lookup: "导出缓存检查", source_export_lookup: "来源导出检查", occt_initialization: "几何内核初始化", occt_reuse_check: "几何复用检查", geometry_build: "几何构建", step_write: "STEP 写入", step_readback: "STEP 读回校验", tessellation: "曲面网格化", preview_write: "预览模型写入", preview_readback: "预览模型读回校验", model_download: "模型下载", model_parse: "模型解析", document_load: "图纸下载", document_render: "图纸显示", stage_wait: "Stage 请求等待", api_wait: "API 请求等待", produce_rows: "构件逐项生成", build_program_shapes: "几何构建", write_step: "STEP 写入", read_step: "STEP 读取", verify_step: "STEP 校验", tessellate_shape: "曲面网格化", write_preview_three_dm: "预览模型写入", inspect_three_dm: "预览模型检查", verify_preview: "预览模型校验" });
+  const cacheLabels = { hit: "已复用", miss: "未命中", partial: "部分复用", refused: "未采用复用", not_applicable: "不适用缓存", unknown: "缓存情况未知" };
+  const duplicateLabels = { repeated_execution: "已知重复执行；是否可避免仍待判断。", same_input_request: "已记录的请求输入相同；是否可避免待定。", same_asset_request: "再次请求同一资产", reused_result: "复用已保留结果", first_observed_input: "首次观察到这些输入", insufficient_input_identity: "缺少可比较的输入记录", none: "未标记重复执行", unknown: "重复情况未知" };
+  const checkLabels = { same: "相同", changed: "已变化", missing: "缺失", unknown: "未知", verified: "已校验", unreadable: "不可读" };
+  const diagnosticLabels = { exact_registered_drawing: "找到完全匹配的已登记图纸", no_registered_drawing: "没有已登记的图纸", registered_inputs_changed: "已登记图纸的输入发生变化", cached_document_unavailable: "缓存图纸文件不可用", source_unavailable: "源模型不可用", retained_drawing: "沿用已登记图纸", full_projection: "完整投影计算", global_visibility: "全局可见性计算", invalid: "无效" };
+  Object.assign(diagnosticLabels, {
+    same_observed_model_inputs: "已记录的模型请求输入相同", same_observed_execution_inputs: "已记录的执行输入相同", same_asset_identity: "资产身份相同",
+    provider_cache_policy_requires_verification: "供应商缓存适用条件仍需确认", browser_cache_transfer_not_observed: "浏览器缓存是否避免了传输未知",
+    retained_result_binding_requires_verification: "仍需核对保留结果与当前执行的绑定", previous_attempt_has_no_verified_result: "前次失败或取消，未得到可验证复用结果", shared_context_prefix_eligibility_unknown: "上下文相同；前缀缓存是否适用未知",
+    worker_admission: "等待执行线程接纳", exclusive: "独占执行", parallel: "并行执行", occt: "OCCT 几何执行", reused: "复用已保留结果", incremental: "增量导出", occt_tessellation: "OCCT 曲面网格化", file3dm_write: "预览文件写入",
+    program_geometry: "几何程序", producer_elements: "构件生产", cad_export: "导出流程", verified_export_cache: "已校验的导出缓存", source_export_cache: "来源导出缓存", verified_source_shapes: "已校验的来源形体", kernel_initialization: "内核初始化", step_write_and_hash: "STEP 写入与文件摘要", cold_read_and_verification: "独立读回与校验", aggregate_active_time: "累计实际工作时间", file_write: "文件写入",
+    source_not_selected: "未选择复用来源", no_retained_export: "没有已保留导出", multiple_cache_conditions_failed: "多个缓存条件未满足", verified_matching_export: "找到已校验的匹配导出", source_export_missing: "来源导出缺失", source_record_binding_changed: "来源记录绑定已变化", source_receipt_not_verified: "来源执行记录未通过校验", source_backend_changed: "来源几何后端已变化", source_schema_changed: "来源记录格式已变化", source_artifact_changed: "来源文件已变化", verified_source_export: "来源导出已校验", source_receipt_or_artifact_unreadable: "来源记录或文件不可读",
+    source_inputs_incomplete: "复用来源输入不完整", length_unit_changed: "长度单位已变化", source_symlink_refused: "来源是符号链接", source_artifact_unreadable: "来源文件不可读", source_step_readback_failed: "来源 STEP 读回失败", source_object_identity_changed: "来源对象身份已变化", geometry_changed: "几何内容已变化", objects_added_or_retired: "对象已增加或移除", unchanged_geometry: "几何内容未变化", unchanged_inputs: "构件输入未变化", mixed_element_inputs: "各构件的复用条件不同", kernel_mesh_reuse_unobserved: "内核是否复用网格未被观测",
+    retained_result_missing: "保留的构件结果缺失", producer_code_changed: "生产代码已变化", producer_code_missing: "生产代码记录缺失", references_changed: "引用输入已变化", references_missing: "引用输入缺失", element_row_changed: "构件定义已变化", element_row_missing: "构件定义缺失", dependency_inputs_changed: "依赖输入已变化", dependency_inputs_missing: "依赖输入缺失", artifact_changed: "文件已变化", artifact_missing: "文件缺失", artifact_unreadable: "文件不可读", binding_changed: "绑定已变化", readback_not_verified: "读回未通过校验", read_failed: "读取失败"
+  });
+  const identityLabels = { drawing_id: "图纸 ID", source_stage_ref: "来源 Stage", model_source: "模型来源", view_recipe: "投影设置", bytes: "图纸文件" };
+  Object.assign(identityLabels, { program_digest: "几何程序摘要", source_program_digest: "来源几何程序摘要", source_step_sha256: "来源 STEP 摘要", record_digest: "状态记录摘要", producer_code: "生产代码", seat_id: "构件席位", context_digest: "上下文摘要", provider_fingerprint: "供应商配置身份", prompt_sha256: "请求摘要" });
   const billingLabels = { api_estimate: "API 用量", subscription_equivalent: "订阅用量 · 仅等值估算", unknown: "计费方式未记录" };
   const missingLabels = { "tokens.input": "普通输入用量", "tokens.cached_input": "缓存读取用量", "tokens.cache_write_input": "普通缓存写入用量", "tokens.cache_write_1h_input": "1 小时缓存写入用量", "tokens.output": "输出用量", "rate.input": "普通输入单价", "rate.cached_input": "缓存读取单价", "rate.cache_write_input": "普通缓存写入单价", "rate.cache_write_1h_input": "1 小时缓存写入单价", "rate.output": "输出单价", rate_card: "费率" };
 
@@ -224,6 +388,8 @@ for (const attribute of ["aria-label", "placeholder"]) {
   function label(value, fallback = "未记录") { return typeof value === "string" && value.trim() && value !== "unknown" ? value : t(fallback); }
   function duration(value) { if (!known(value)) return "—"; return value < 1000 ? `${integerFormat.format(value)} ms` : `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value / 1000)} s`; }
   function timingScope(event) { return Object.hasOwn(scopeLabels, event.timing_scope) ? event.timing_scope : "unknown"; }
+  function eventDetails(event) { return event.details && typeof event.details === "object" && !Array.isArray(event.details) ? event.details : {}; }
+  function phaseLabel(event) { return t(phaseLabels[event.phase] || (event.phase?.startsWith("geometry_export.") ? "几何导出" : event.phase)); }
   function isModelCall(event) { return event.model_call === true || (event.model_call == null && event.phase !== "agent_turn" && ["intent", "agent"].includes(event.phase)); }
   function modelDuration(event) { return timingScope(event) === "model_call" && isModelCall(event) ? event.duration_ms : null; }
   function median(values) { const sorted = values.filter(known).sort((a, b) => a - b); const middle = Math.floor(sorted.length / 2); return sorted.length ? (sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2)) : null; }
@@ -297,7 +463,7 @@ for (const attribute of ["aria-label", "placeholder"]) {
     const attributionUnknown = state.warnings.some((warning) => warning.includes("继承"));
     text("coverage-title", attributionUnknown ? "来源归属未核实" : incomplete ? "部分记录不完整" : "记录说明");
     const coverage = [
-      "Token 汇总仅计模型调用；模型耗时中位数只使用明确记录为 model_call 的时间。",
+      "Token 汇总仅计模型调用；请求耗时只使用明确记录为 model_call 的时间，不代表纯推理时间。",
       t("未缓存输入：{inputRecorded} 次已记录，{inputMissing} 次未知；输出：{outputRecorded} 次已记录，{outputMissing} 次未知。", { inputRecorded: input.recorded, inputMissing: input.missing, outputRecorded: output.recorded, outputMissing: output.missing }),
       "未缓存输入为总输入减去缓存读取，包含新写入缓存的输入。只在两项均已知时计算；此排序用于比较用量，不代表费用排名。",
       t("缓存比例使用输入和缓存读取同时已知的 {recorded} 次调用，{missing} 次缺失。缓存读取仍可能计费。", { recorded: paired.length, missing: events.length - paired.length }),
@@ -311,7 +477,8 @@ for (const attribute of ["aria-label", "placeholder"]) {
   }
 
   function renderOperations(events) {
-    text("operation-count", `(${integerFormat.format(events.length)})`);
+    const actionCount = new Set(events.filter((event) => event.operation_id).map((event) => JSON.stringify([event.project_id, event.operation_id]))).size;
+    text("operation-count", actionCount ? t("{actions} 次操作 · {records} 条记录", { actions: actionCount, records: events.length }) : `(${integerFormat.format(events.length)})`);
     const scopes = Object.entries(scopeLabels).map(([scope, title]) => {
       const group = events.filter((event) => timingScope(event) === scope);
       if (!group.length) return null;
@@ -332,7 +499,8 @@ for (const attribute of ["aria-label", "placeholder"]) {
     }
     const groups = new Map();
     for (const event of events) {
-      const parts = state.group === "source" ? [event.source, event.source_ref || null]
+      const parts = state.group === "operation" ? [event.project_id || null, event.operation_id || null, event.operation_id ? null : event.run_id || null]
+        : state.group === "source" ? [event.source, event.source_ref || null]
         : state.group === "session" ? [event.source, event.session_id ? family(event.session_id) : null]
         : [event.project_id || null, event.run_id || null];
       const key = JSON.stringify(parts);
@@ -343,15 +511,20 @@ for (const attribute of ["aria-label", "placeholder"]) {
     const fragment = document.createDocumentFragment();
     for (const [key, group] of [...groups].slice(0, state.visibleGroups)) {
       const detail = node("details", "operation-group"); detail.dataset.group = key;
+      const action = state.group === "operation" && group.parts[1] !== null;
+      const root = action ? actionRoot(group.events) : null;
+      if (action) detail.dataset.operationId = group.parts[1];
       const openKey = `${state.group}:${key}`;
       detail.open = state.openGroups.has(openKey);
       detail.addEventListener("toggle", () => { if (!detail.isConnected) return; if (detail.open) state.openGroups.add(openKey); else state.openGroups.delete(openKey); });
-      const title = state.group === "run" ? `${label(group.parts[0], "项目未记录")} · ${label(group.parts[1], "候选轮次未记录")}`
-        : `${sourceLabels[group.parts[0]]} · ${label(group.parts[1], state.group === "session" ? "会话未记录" : "来源未记录")}`;
-      const heading = node("summary"); heading.append(node("strong", "", title), node("span", "secondary-text", t("{count} 条操作", { count: group.events.length })));
+      const title = state.group === "operation" ? actionTitle(group, root)
+        : state.group === "run" ? `${label(group.parts[0], "项目未记录")} · ${label(group.parts[1], "候选轮次未记录")}`
+          : `${sourceLabels[group.parts[0]]} · ${label(group.parts[1], state.group === "session" ? "会话未记录" : "来源未记录")}`;
+      const heading = node("summary"); heading.append(node("strong", "", title), node("span", "secondary-text", action ? t("总历时 {duration}", { duration: known(root?.duration_ms) ? duration(root.duration_ms) : t("未知") }) : t("{count} 条阶段记录", { count: group.events.length })));
       detail.append(heading);
+      if (action) detail.append(actionExplanation(group.events, root));
       const rows = [...group.events]; const linked = new Set();
-      if (state.group === "run") {
+      if (state.group === "run" || state.group === "operation") {
         for (const event of group.events) {
           const related = byId.get(event.related_event_id);
           if (event.phase === "candidate" && related?.phase === "intent" && !rows.some((row) => row.event_id === related.event_id)) { rows.push(related); linked.add(related.event_id); }
@@ -370,7 +543,14 @@ for (const attribute of ["aria-label", "placeholder"]) {
           const sessionHeading = node("h3", "session-heading", session ? `${t(parents.has(session) ? "子会话" : "会话")} · ${session}` : t("会话未记录"));
           detail.append(sessionHeading);
         }
-        for (const event of entries) detail.append(operationRow(event, linked.has(event.event_id)));
+        const own = entries.filter((event) => !linked.has(event.event_id));
+        detail.append(operationTree(own));
+        const context = entries.filter((event) => linked.has(event.event_id));
+        if (context.length) {
+          const related = node("details", "linked-context"); related.append(node("summary", "", t("关联来源（不计入本次阶段）")));
+          for (const event of context) related.append(operationRow(event, true));
+          detail.append(related);
+        }
       }
       fragment.append(detail);
     }
@@ -379,19 +559,84 @@ for (const attribute of ["aria-label", "placeholder"]) {
     $("more-operations").hidden = state.visibleGroups >= groups.size;
   }
 
-  function operationRow(event, linked) {
+  function actionRoot(events) {
+    const edits = events.filter((event) => event.phase === "design_edit" && timingScope(event) === "interaction");
+    if (edits.length) return edits.length === 1 ? edits[0] : null;
+    const drawingWaits = events.filter((event) => event.phase === "drawing_wait" && timingScope(event) === "client_wait");
+    return drawingWaits.length === 1 ? drawingWaits[0] : null;
+  }
+
+  function actionTitle(group, root) {
+    if (group.parts[1] === null) return `${t("未关联到单次操作")} · ${label(group.parts[0], "项目未记录")} · ${label(group.parts[2], "候选轮次未记录")}`;
+    const first = root || group.events.at(-1);
+    const started = new Date(first.started_at);
+    const kind = root?.phase === "design_edit" ? "设计修改" : group.events.some((event) => event.phase === "drawing_generate" || event.phase === "drawing_wait") ? "图纸生成" : "操作";
+    return `${t(kind)} · ${Number.isNaN(started.getTime()) ? t("时间未知") : actionTimeFormat.format(started)} · ${label(group.parts[0], "项目未记录")}`;
+  }
+
+  function actionExplanation(events, root) {
+    const box = node("div", "action-explanation");
+    if (!root || !known(root.duration_ms)) box.append(node("p", "action-total-unknown", t("动作总历时未知；下方仅展示各段实测时间。")));
+    if (root?.phase === "design_edit") {
+      const detail = eventDetails(root);
+      const values = [["实际等待 {duration}", detail.active_wait_ms], ["操作间隔 {duration}", detail.between_actions_ms]];
+      if (Object.hasOwn(detail, "unattributed_ms")) values.push(["未归类时间 {duration}", detail.unattributed_ms]);
+      box.append(node("p", "action-waits", values.map(([key, value]) => t(key, { duration: known(value) ? duration(value) : t("未知") })).join(" · ")));
+      box.append(node("p", "secondary-text", t("从提交意图到候选可见；总历时包含操作间隔。")));
+    }
+    if (!events.some((event) => event.phase === "drawing_generate" || event.phase?.startsWith("drawing."))) box.append(node("p", "drawing-absence secondary-text", t("本次未记录图纸生成。")));
+    return box;
+  }
+
+  function operationTree(events) {
+    const tree = node("div", "operation-tree"); tree.setAttribute("role", "list");
+    const byId = new Map(events.map((event) => [event.event_id, event]));
+    const children = new Map();
+    for (const event of events) {
+      if (!children.has(event.parent_event_id)) children.set(event.parent_event_id, []);
+      children.get(event.parent_event_id).push(event);
+    }
+    const shown = new Set();
+    function append(event, depth) {
+      if (shown.has(event.event_id)) return;
+      shown.add(event.event_id);
+      const row = operationRow(event, false, (children.get(event.event_id)?.length || 0) > 0); row.setAttribute("role", "listitem"); row.dataset.depth = String(depth);
+      row.style.setProperty("--timing-depth", Math.min(depth, 5));
+      if (event.parent_event_id) row.dataset.parentEventId = event.parent_event_id;
+      if (event.parent_event_id && !byId.has(event.parent_event_id)) row.append(node("p", "secondary-text", t("父阶段未记录")));
+      tree.append(row);
+      for (const child of children.get(event.event_id) || []) append(child, depth + 1);
+    }
+    for (const event of events) if (!event.parent_event_id || !byId.has(event.parent_event_id)) append(event, 0);
+    // Retained incomplete records remain visible even if their parent links cycle.
+    for (const event of events) append(event, 0);
+    return tree;
+  }
+
+  function operationRow(event, linked, hasChildren = false) {
     const row = node("article", "operation-row"); row.dataset.eventId = event.event_id;
     const title = node("div", "operation-heading");
-    title.append(node("strong", "", t(phaseLabels[event.phase] || (event.phase?.startsWith("geometry_export.") ? "几何导出" : event.phase))), node("span", ["failed", "error", "cancelled"].includes(event.status) ? "failure-text" : "secondary-text", t(statusLabels[event.status] || event.status)));
+    title.append(node("strong", "", phaseLabel(event)), node("span", ["failed", "error", "cancelled", "aborted"].includes(event.status) ? "failure-text" : "secondary-text", t(statusLabels[event.status] || event.status)));
     row.append(title);
     if (linked) row.append(node("p", "secondary-text", t("关联的意图调用")));
     const callState = event.model_call === false ? "无模型调用" : isModelCall(event) ? "模型调用" : "调用状态未知";
-    const scopeLabel = scopeLabels[timingScope(event)];
-    row.append(node("p", "operation-timing", [t(scopeLabel), duration(event.duration_ms), ...(scopeLabel === callState ? [] : [t(callState)])].join(" · ")));
+    const scope = timingScope(event);
+    const scopeLabel = event.phase === "candidate_queue" ? "执行前排队等待" : scopeLabels[scope];
+    const showCallState = !hasChildren && !["interaction", "client_wait"].includes(scope) && event.phase !== "intent_compile" && !(scope === "model_call" && isModelCall(event));
+    row.append(node("p", "operation-timing", [t(scopeLabel), duration(event.duration_ms), ...(showCallState ? [t(callState)] : [])].join(" · ")));
     if (isModelCall(event)) row.append(node("p", "secondary-text", `${label(event.model, "模型未记录")} · ${t("总输入")} ${known(event.tokens?.input_tokens) ? count(event.tokens.input_tokens) : t("未知")} · ${t("输出")} ${known(event.tokens?.output_tokens) ? count(event.tokens.output_tokens) : t("未知")}`));
-    const detail = node("details", "event-diagnostics"); detail.append(node("summary", "", t("来源与记录详情")));
+    const diagnostics = eventDetails(event);
+    if (event.phase === "model_request") row.append(node("p", "inference-note secondary-text", known(diagnostics.model_inference_ms) ? t("纯模型推理耗时 {duration}", { duration: duration(diagnostics.model_inference_ms) }) : t("纯模型推理耗时未知；此处为请求往返时间。")));
+    const evidence = diagnosticSections(diagnostics);
+    const hints = [];
+    if (Array.isArray(diagnostics.recomputed_object_ids)) hints.push(t("实际重算 {count} 个对象", { count: diagnostics.recomputed_object_ids.length }));
+    if (Array.isArray(diagnostics.reused_object_ids)) hints.push(t("复用 {count} 个对象", { count: diagnostics.reused_object_ids.length }));
+    if (Object.hasOwn(cacheLabels, diagnostics.cache_status)) hints.push(t(cacheLabels[diagnostics.cache_status]));
+    if (Object.hasOwn(duplicateLabels, diagnostics.duplicate_status) && ["repeated_execution", "same_input_request"].includes(diagnostics.duplicate_status)) hints.push(t(duplicateLabels[diagnostics.duplicate_status]));
+    if (hints.length) row.append(node("p", "diagnostic-hint secondary-text", hints.join(" · ")));
+    const detail = node("details", "event-diagnostics"); detail.append(node("summary", "", t(evidence.length ? "重算、复用与来源" : "来源与记录详情")), ...evidence);
     const values = node("dl");
-    const fields = [["开始", event.started_at], ["结束", event.ended_at], ["项目", event.project_id], ["候选轮次", event.run_id], ["精确来源", event.source_ref], ["记录 ID", event.event_id], ["关联记录", event.related_event_id], ["会话", event.session_id], ["父会话", event.parent_session_id], ["轮次", event.turn_id], ["phase", event.phase], ["Token 用量", event.model_call === false ? t("未知") : null]];
+    const fields = [["开始", event.started_at], ["结束", event.ended_at], ["项目", event.project_id], ["候选轮次", event.run_id], ["操作 ID", event.operation_id], ["父阶段 ID", event.parent_event_id], ["精确来源", event.source_ref], ["记录 ID", event.event_id], ["关联记录", event.related_event_id], ["会话", event.session_id], ["父会话", event.parent_session_id], ["轮次", event.turn_id], ["phase", event.phase], ["请求方式", diagnostics.request_kind], ["Token 用量", event.model_call === false ? t("未知") : null]];
     if (isModelCall(event)) {
       for (const [field, name] of [["cached_input_tokens", "缓存读取"], ["cache_write_input_tokens", "缓存写入总量"], ["cache_write_1h_input_tokens", "其中：1 小时写入"], ["reasoning_output_tokens", "其中：推理输出"]]) fields.push([name, known(event.tokens?.[field]) ? count(event.tokens[field]) : t("未知")]);
     }
@@ -400,6 +645,56 @@ for (const attribute of ["aria-label", "placeholder"]) {
       const item = node("div"); item.append(node("dt", "", t(name)), node("dd", "", value == null ? t("未知") : value)); values.append(item);
     }
     detail.append(values); row.append(detail); return row;
+  }
+
+  function diagnosticSections(detail) {
+    const sections = [];
+    const section = (title, fields, folded = false) => {
+      const present = fields.filter(([key]) => Object.hasOwn(detail, key));
+      if (!present.length) return;
+      const box = node(folded ? "details" : "section", "diagnostic-section");
+      box.append(node(folded ? "summary" : "h4", "", t(title)));
+      const values = node("dl");
+      for (const [key, title, labels] of present) {
+        const item = node("div"); item.dataset.detail = key;
+        const value = node("dd"); value.append(diagnosticValue(detail[key], labels));
+        item.append(node("dt", "", t(title)), value); values.append(item);
+      }
+      box.append(values); sections.push(box);
+    };
+    section("执行内容", [["execution_path", "实际执行路径", diagnosticLabels], ["scope", "执行范围", diagnosticLabels], ["input_object_ids", "输入对象"], ["emitted_object_ids", "输出对象"], ["recomputed_object_ids", "实际重算对象"], ["reused_object_ids", "实际复用对象"], ["executed_stages", "实际执行阶段", phaseLabels]]);
+    section("缓存与复用", [["cache_status", "缓存状态", cacheLabels], ["cache_reason", "未命中或复用理由", diagnosticLabels], ["cache_checks", "缓存检查", { ...checkLabels, invalid: "无效" }]]);
+    section("请求与重试", [["retry_attempt", "请求尝试序号"], ["retry_reason", "重试原因", diagnosticLabels], ["wait_reason", "等待原因", diagnosticLabels], ["http_status", "HTTP 状态"], ["input_bytes", "输入字节"], ["output_bytes", "输出字节"]]);
+    section("重复与复用机会", [["duplicate_status", "重复判断", duplicateLabels], ["duplicate_reason", "判断依据", diagnosticLabels], ["input_equivalent", "输入是否相同"], ["reuse_opportunity", "复用机会", diagnosticLabels], ["comparison_event_id", "对照记录"], ["opportunity_refs", "机会对照来源"], ["stable_input_parts", "保持一致的输入部分"]]);
+    section("输入身份与对照", [["input_identity", "输入身份"], ["comparison_refs", "对照来源"], ["output_refs", "输出来源"]], true);
+    return sections;
+  }
+
+  function diagnosticValue(value, labels = {}) {
+    if (value === null || value === undefined) return node("span", "", t("未知"));
+    if (typeof value === "boolean") return node("span", "", t(value ? "是" : "否"));
+    if (typeof value === "string") return node("span", "", Object.hasOwn(labels, value) ? t(labels[value]) : value);
+    if (typeof value === "number") return node("span", "", Number.isFinite(value) ? integerFormat.format(value) : t("未知"));
+    const entries = Array.isArray(value) ? value.map((entry) => [null, entry]) : Object.entries(value);
+    if (!entries.length) return node("span", "", t("无"));
+    const container = node("div", "diagnostic-values");
+    if (Array.isArray(value)) container.append(node("span", "reference-count", t("{count} 项", { count: entries.length })));
+    function listing(items) {
+      const list = node("ul", "reference-list");
+      for (const [key, entry] of items) {
+        const item = node("li");
+        if (key !== null) item.append(node("span", "reference-key", `${t(identityLabels[key] || key)}: `));
+        item.append(diagnosticValue(entry, labels)); list.append(item);
+      }
+      return list;
+    }
+    container.append(listing(entries.slice(0, 6)));
+    if (entries.length > 6) {
+      const more = node("details", "more-references"); more.append(node("summary", "", t("其余 {count} 项", { count: entries.length - 6 })));
+      more.addEventListener("toggle", () => { if (more.open && more.children.length === 1) more.append(listing(entries.slice(6))); });
+      container.append(more);
+    }
+    return container;
   }
 
   async function readSources() {

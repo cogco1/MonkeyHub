@@ -16,7 +16,10 @@ import math
 import os
 import subprocess
 import time
+from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Mapping
@@ -31,6 +34,7 @@ from archflow.adapters.cad_program import (
     translate_to_rhino_python,
 )
 from archflow.adapters.occt_backend import (
+    _observe_operation as _observe_occt_operation,
     CLOSED_SOLID,
     OPEN_SURFACE,
     OcctBackendError,
@@ -2754,6 +2758,30 @@ class OcctExecutionReceipt:
         )
 
 
+@contextmanager
+def _occt_step(observer, phase: str, *, parent_event_id, timings, timing_key: str, details):
+    """Publish the same measured interval retained by the execution receipt."""
+
+    started_at = datetime.now(timezone.utc)
+    started = time.perf_counter()
+    outcome = {"status": "succeeded", "details": details}
+    try:
+        yield outcome
+    except BaseException:
+        outcome["status"] = "failed"
+        raise
+    finally:
+        elapsed = time.perf_counter() - started
+        timings[timing_key] = elapsed
+        if outcome["status"] != "succeeded":
+            for field in ("emitted_object_ids", "output_refs"):
+                if field in details:
+                    details[field] = []
+        _observe_occt_operation(observer, phase=phase, status=outcome["status"],
+            started_at=started_at, ended_at=datetime.now(timezone.utc), duration_ms=round(elapsed * 1000),
+            parent_event_id=parent_event_id, details=deepcopy(details))
+
+
 def execute_occt_export(
     program: CompiledGeometryProgram,
     *,
@@ -2769,6 +2797,8 @@ def execute_occt_export(
     prior_program: CompiledGeometryProgram | None = None,
     prior_step: Path | None = None,
     prior_step_sha256: str | None = None,
+    operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
+    observation_parent_id: str | None = None,
 ) -> OcctExecutionReceipt:
     """Realize the bound program in process, write STEP and a mesh preview, cold-read the STEP.
 
@@ -2820,6 +2850,13 @@ def execute_occt_export(
     binding.bind_program(program)
     unit = program.proposal.length_unit.value
     identity = OcctCadExportIdentity(binding=binding, length_unit=unit)
+    if operation_observer is not None:
+        caller_observer = operation_observer
+
+        def observe_program_operation(event):
+            caller_observer({**event, "source_ref": event.get("source_ref") or binding.program_ref.uri})
+
+        operation_observer = observe_program_operation
     tolerance = _positive_finite(readback_tolerance, "readback_tolerance")
     workspace = _strict_workspace(speculative_workspace)
     stem = _artifact_stem(artifact_stem)
@@ -2879,13 +2916,23 @@ def execute_occt_export(
         )
 
     try:
-        backend = backend_identity()
+        with _occt_step(operation_observer, "occt_initialization", parent_event_id=observation_parent_id,
+                        timings=timings, timing_key="initialization_seconds",
+                        details={"execution_path": "occt", "scope": "kernel_initialization"}):
+            backend = backend_identity()
     except OcctUnavailableError as exc:
         raise CadExecutionError(str(exc)) from exc
     try:
-        reused_shapes = _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256)
-        build = (build_program_shapes(program, reusable_shapes=reused_shapes)
-                 if reused_shapes else build_program_shapes(program))
+        reuse_details = {"input_identity": {"program_digest": program.program_digest,
+                         **({"source_program_digest": prior_program.program_digest} if prior_program is not None else {}),
+                         **({"source_step_sha256": prior_step_sha256} if prior_step_sha256 is not None else {})},
+                         "execution_path": "occt", "scope": "verified_source_shapes"}
+        with _occt_step(operation_observer, "occt_reuse_check", parent_event_id=observation_parent_id,
+                        timings=timings, timing_key="reuse_check_seconds", details=reuse_details):
+            reused_shapes = _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256,
+                                                  diagnostics=reuse_details)
+        build = build_program_shapes(program, **({"reusable_shapes": reused_shapes} if reused_shapes else {}),
+                                     operation_observer=operation_observer, observation_parent_id=observation_parent_id)
     except OcctCapabilityError as exc:
         raise CadCapabilityError(
             f"OCCT executor cannot realize {exc.op_id} ({exc.kind}): {exc.reason}",
@@ -2910,32 +2957,41 @@ def execute_occt_export(
         )
         for object_id in physical
     )
-    phase = time.perf_counter()
     try:
-        write_step(step_path, step_objects, length_unit=unit)
-        exact_artifact = _exact_artifact(step_path, workspace, deliveries)
+        with _occt_step(operation_observer, "step_write", parent_event_id=observation_parent_id,
+                        timings=timings, timing_key="step_write_seconds",
+                        details={"input_identity": {"program_digest": program.program_digest},
+                                 "input_object_ids": list(physical), "emitted_object_ids": list(physical),
+                                 "execution_path": "occt", "scope": "step_write_and_hash",
+                                 "executed_stages": ["write_step"], "output_refs": [step_path.name]}):
+            write_step(step_path, step_objects, length_unit=unit)
+            exact_artifact = _exact_artifact(step_path, workspace, deliveries)
     except (OcctBackendError, OSError) as exc:
         return failure_receipt("cad_execution.step_write_failed", str(exc))
-    timings["step_write_seconds"] = time.perf_counter() - phase
 
-    phase = time.perf_counter()
-    try:
-        entries = read_step(step_path, length_unit=unit)
-    except (OcctBackendError, OSError) as exc:
+    read_error = None
+    with _occt_step(operation_observer, "step_readback", parent_event_id=observation_parent_id,
+                        timings=timings, timing_key="step_read_seconds",
+                        details={"input_identity": {"step_sha256": exact_artifact["sha256"]},
+                                 "input_object_ids": list(physical), "execution_path": "occt",
+                                 "scope": "cold_read_and_verification", "executed_stages": ["read_step", "verify_step"],
+                                 "comparison_refs": [step_path.name]}) as read_span:
+        try:
+            entries = read_step(step_path, length_unit=unit)
+        except (OcctBackendError, OSError) as exc:
+            read_error = exc
+            read_span["status"] = "failed"
+        else:
+            readback, failures = _verify_step_readback(
+                entries, physical=physical, semantics=semantics, expected_bounds=bounds,
+                expected_counts=counts, expected_deliveries=deliveries, layer_colors=layer_colors, tolerance=tolerance,
+            )
+            if failures:
+                read_span["status"] = "failed"
+    if read_error is not None:
         return failure_receipt(
-            "cad_execution.step_readback_failed", str(exc), exact_artifact=exact_artifact
+            "cad_execution.step_readback_failed", str(read_error), exact_artifact=exact_artifact
         )
-    readback, failures = _verify_step_readback(
-        entries,
-        physical=physical,
-        semantics=semantics,
-        expected_bounds=bounds,
-        expected_counts=counts,
-        expected_deliveries=deliveries,
-        layer_colors=layer_colors,
-        tolerance=tolerance,
-    )
-    timings["step_read_seconds"] = time.perf_counter() - phase
 
     preview_artifact = None
     preview_inspection = None
@@ -2969,6 +3025,8 @@ def execute_occt_export(
                 length_unit=unit,
                 linear_deflection=linear_deflection,
                 angular_deflection=_PREVIEW_ANGULAR_DEFLECTION,
+                operation_observer=operation_observer,
+                observation_parent_id=observation_parent_id,
             )
             preview_artifact = _preview_artifact(
                 preview_path, workspace, linear_deflection, mesh_counts, preview_materials
@@ -2977,30 +3035,29 @@ def execute_occt_export(
             failures.append(_failure("cad_execution.preview_write_failed", str(exc)))
         timings["preview_write_seconds"] = time.perf_counter() - phase
         if preview_artifact is not None:
-            phase = time.perf_counter()
-            try:
-                _strict_child(workspace, preview_path, require_exists=True)
-                inspection = inspect_three_dm(preview_path)
-            except (CadExecutionError, ThreeDmInspectionError, OSError) as exc:
-                failures.append(_failure("cad_execution.preview_readback_failed", str(exc)))
-            else:
-                preview_inspection = inspection.to_dict()
-                failures.extend(
-                    _verify_preview_readback(
-                        inspection,
-                        physical=physical,
-                        semantics=semantics,
-                        readback_bounds={
-                            object_id: row["bbox"] for object_id, row in readback.items() if "bbox" in row
-                        },
-                        layer_colors=layer_colors,
-                        expected_document_user_text=document_user_text,
-                        expected_materials=preview_materials,
-                        length_unit=unit,
-                        tolerance=tolerance,
+            with _occt_step(operation_observer, "preview_readback", parent_event_id=observation_parent_id,
+                                timings=timings, timing_key="preview_read_seconds",
+                                details={"input_identity": {"asset_sha256": preview_artifact["sha256"]},
+                                         "input_object_ids": list(physical), "execution_path": "occt",
+                                         "scope": "cold_read_and_verification", "executed_stages": ["inspect_three_dm", "verify_preview"],
+                                         "comparison_refs": [preview_path.name]}) as preview_span:
+                try:
+                    _strict_child(workspace, preview_path, require_exists=True)
+                    inspection = inspect_three_dm(preview_path)
+                except (CadExecutionError, ThreeDmInspectionError, OSError) as exc:
+                    failures.append(_failure("cad_execution.preview_readback_failed", str(exc)))
+                    preview_span["status"] = "failed"
+                else:
+                    preview_inspection = inspection.to_dict()
+                    preview_failures = _verify_preview_readback(
+                        inspection, physical=physical, semantics=semantics,
+                        readback_bounds={object_id: row["bbox"] for object_id, row in readback.items() if "bbox" in row},
+                        layer_colors=layer_colors, expected_document_user_text=document_user_text,
+                        expected_materials=preview_materials, length_unit=unit, tolerance=tolerance,
                     )
-                )
-            timings["preview_read_seconds"] = time.perf_counter() - phase
+                    failures.extend(preview_failures)
+                    if preview_failures:
+                        preview_span["status"] = "failed"
     timings["total_seconds"] = time.perf_counter() - started
     return OcctExecutionReceipt(
         status=CadExecutionStatus.FAILED if failures else CadExecutionStatus.SUCCEEDED,
@@ -3022,24 +3079,33 @@ def execute_occt_export(
     )
 
 
-def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256) -> dict[str, Any]:
+def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256, *, diagnostics=None) -> dict[str, Any]:
     """Load unchanged physical inputs from the exact source the caller chose."""
 
+    details = diagnostics if diagnostics is not None else {}
+    details.update(cache_status="miss", cache_reason="source_not_selected", cache_checks={})
     if prior_program is None and prior_step is None and prior_step_sha256 is None:
         return {}
     if prior_program is None or prior_step is None or prior_step_sha256 is None:
+        details.update(cache_status="refused", cache_reason="source_inputs_incomplete", cache_checks={"source_inputs": "missing"})
         raise CadExecutionError("OCCT reuse requires the prior program, STEP and certified digest")
     if program.proposal.length_unit != prior_program.proposal.length_unit:
+        details.update(cache_reason="length_unit_changed", cache_checks={"length_unit": "changed"})
         return {}
     source = Path(prior_step)
     if source.is_symlink():
+        details.update(cache_status="refused", cache_reason="source_symlink_refused", cache_checks={"artifact": "changed"})
         raise CadExecutionError("OCCT reuse source cannot be a symlink")
+    details.update(cache_status="refused", cache_reason="source_artifact_unreadable")
     with source.open("rb") as stream:
         if hashlib.file_digest(stream, "sha256").hexdigest() != prior_step_sha256:
+            details.update(cache_reason="source_artifact_changed", cache_checks={"artifact": "changed"})
             raise CadExecutionError("OCCT reuse source differs from its certified STEP")
+    details.update(cache_reason="source_step_readback_failed", cache_checks={"artifact": "same"})
     entries = read_step(source, length_unit=program.proposal.length_unit.value)
     by_name = {entry.name: entry.shape for entry in entries}
     if len(by_name) != len(entries) or set(by_name) != set(_physical_ids(prior_program.proposal)):
+        details.update(cache_reason="source_object_identity_changed", cache_checks={"artifact": "same", "object_names": "changed"})
         raise CadExecutionError("OCCT reuse source has missing or ambiguous physical objects")
     from .cad_patch import select_patch_operations
 
@@ -3048,6 +3114,17 @@ def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256)
     # OCCT can keep an unchanged final shape even when a changed sibling needs
     # their missing shared intermediate rebuilt from the program.
     unchanged = (set(by_name) & set(_physical_ids(program.proposal))) - set(selection.changed_object_ids)
+    details.update(
+        cache_status="hit" if unchanged and unchanged == set(_physical_ids(program.proposal)) else "partial" if unchanged else "miss",
+        cache_reason="geometry_changed" if selection.changed_object_ids else "objects_added_or_retired"
+            if selection.added_object_ids or selection.retired_object_ids else "unchanged_geometry",
+        input_equivalent=selection.empty,
+        input_object_ids=sorted(by_name), reused_object_ids=sorted(unchanged),
+        cache_checks={"length_unit": "same", "source_artifact": "same", "source_object_names": "same",
+                      **{f"{name}.{reason}": "changed" for name, reason in selection.reasons.items()},
+                      **{f"{name}.geometry": "same" for name in unchanged}},
+        comparison_refs=[source.name],
+    )
     return {name: by_name[name] for name in unchanged}
 
 

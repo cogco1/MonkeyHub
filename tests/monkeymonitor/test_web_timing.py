@@ -1,5 +1,6 @@
 """Exercise scope separation and explicit source selection through the real UI."""
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -26,16 +27,17 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(process.env.MONITOR_TEST_URL + '/?lang=en');
-  await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(6)');
+  await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(7)');
   assert.equal(await page.locator('#stat-input').getAttribute('title'), '1,475 Token');
   assert.equal(await page.locator('#stat-output').getAttribute('title'), '117 Token');
   assert.equal(await page.locator('#stat-duration').textContent(), '300 ms');
-  assert.equal(await page.locator('#events-body tr').count(), 6);
+  assert.equal(await page.locator('#events-body tr').count(), 7);
   assert.match(await page.locator('#events-body').textContent(), /Partial history/);
   assert.match(await page.locator('#events-body').textContent(), /Failed/);
   assert.equal(await page.locator('#operations').getAttribute('open'), null);
   await page.locator('#operations > summary').click();
-  assert.equal(await page.locator('.scope-stat').count(), 5);
+  assert.equal(await page.locator('.scope-stat').count(), 6);
+  await page.locator('#operation-group').selectOption('run');
   const run = page.locator('.operation-group').filter({ has: page.locator('summary', { hasText: 'project-a · run-a' }) });
   await run.locator(':scope > summary').click();
   const candidate = run.locator('[data-event-id="candidate-a"]');
@@ -77,7 +79,7 @@ try {
   assert.equal(await page.locator('#source-paths').inputValue(), paths.join('\n'));
   await page.locator('#apply-sources').click();
   await page.waitForFunction(() => document.querySelector('#source-status').textContent === 'Applied 2 sources');
-  await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(8)');
+  await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(9)');
   assert.equal(await page.locator('#stat-input').getAttribute('title'), '1,481 Token');
   assert.equal(await page.locator('#coverage-title').textContent(), 'Source attribution unverified');
   assert.equal(await page.locator('#coverage').getAttribute('open'), null);
@@ -97,10 +99,76 @@ try {
   await page.locator('#source-paths').fill('');
   await page.locator('#apply-sources').click();
   await page.waitForFunction(() => document.querySelector('#source-status').textContent === 'Applied 0 sources');
-  await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(6)');
+  await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(7)');
   assert.equal(await page.locator('#coverage-title').textContent(), 'Some records are incomplete');
   assert.equal((await page.locator('#coverage-content').textContent()).includes('未猜测扣除其计数'), false);
   assert.deepEqual((await (await page.request.get(process.env.MONITOR_TEST_URL + '/api/sources/codex')).json()).paths, []);
+
+  await page.locator('#project-filter').selectOption('diagnostic-project');
+  await page.locator('#operation-group').selectOption('operation');
+  assert.equal(await page.locator('#event-count').textContent(), '(1)');
+  const edit = page.locator('[data-operation-id="edit-one"]');
+  await edit.locator(':scope > summary').click();
+  assert.match(await edit.locator(':scope > summary').textContent(), /Elapsed time 18 s/);
+  assert.match(await edit.locator('.action-waits').textContent(), /Active wait 9 s.*Between actions 9 s/);
+  assert.match(await edit.locator('.drawing-absence').textContent(), /No drawing generation was recorded/);
+  assert.equal(await edit.locator('[data-event-id="diag-export"]').getAttribute('data-parent-event-id'), 'diag-candidate');
+  assert.equal(await edit.locator('[data-event-id="diag-build"]').getAttribute('data-depth'), '4');
+  const build = edit.locator('[data-event-id="diag-build"]');
+  assert.equal(await build.locator('strong').textContent(), 'Geometry build');
+  await build.locator(':scope > .event-diagnostics > summary').click();
+  assert.match(await build.locator('[data-detail="recomputed_object_ids"]').textContent(), /window-01/);
+  assert.equal((await build.locator('[data-detail="recomputed_object_ids"]').textContent()).includes('roof-unchanged'), false);
+  assert.match(await build.locator('[data-detail="reused_object_ids"]').textContent(), /roof-unchanged/);
+  assert.match(await build.locator('[data-detail="cache_status"]').textContent(), /Partial reuse/);
+  assert.match(await build.locator('[data-detail="duplicate_reason"]').textContent(), /Recorded execution inputs match/);
+  assert.match(await build.locator('[data-detail="reuse_opportunity"]').textContent(), /previous attempt failed or was cancelled/);
+  assert.match(await build.locator('[data-detail="executed_stages"]').textContent(), /Geometry build/);
+  const reused = page.locator('[data-operation-id="reuse-one"]');
+  await reused.locator(':scope > summary').click();
+  const reusedBuild = reused.locator('[data-event-id="diag-reuse"]');
+  await reusedBuild.locator(':scope > .event-diagnostics > summary').click();
+  assert.match(await reusedBuild.locator('[data-detail="duplicate_status"]').textContent(), /Reused a retained result/);
+  assert.equal((await reusedBuild.textContent()).includes('Repeated execution recorded'), false);
+  await reused.locator(':scope > summary').click();
+  assert.match(await edit.locator('[data-event-id="diag-queue"] .operation-timing').textContent(), /Queue wait before execution/);
+  assert.match(await edit.locator('[data-event-id="diag-request"] .inference-note').textContent(), /Pure model inference time is unknown/);
+  const missingRoot = page.locator('[data-operation-id="missing-root"]');
+  await missingRoot.locator(':scope > summary').click();
+  assert.match(await missingRoot.locator(':scope > summary').textContent(), /Elapsed time Unknown/);
+  assert.equal(await missingRoot.locator('[data-event-id="diag-candidate"]').count(), 0, 'Same run must not merge different actions');
+  assert.equal(await missingRoot.locator('.action-total-unknown').count(), 1);
+  const drawing = page.locator('[data-operation-id="drawing-one"]');
+  await drawing.locator(':scope > summary').click();
+  assert.match(await drawing.locator(':scope > summary').textContent(), /Elapsed time 5 s/);
+  const generated = drawing.locator('[data-event-id="diag-drawing"]');
+  await generated.locator(':scope > .event-diagnostics > summary').click();
+  assert.match(await generated.locator('[data-detail="scope"]').textContent(), /Global visibility computation/);
+  assert.equal(await generated.locator('[data-detail="recomputed_object_ids"]').count(), 0);
+  assert.match(await generated.locator('[data-detail="input_object_ids"]').textContent(), /roof-unchanged/);
+  assert.equal((await generated.locator('[data-detail="emitted_object_ids"]').textContent()).includes('roof-unchanged'), false);
+  assert.match(await generated.locator('[data-detail="cache_reason"]').textContent(), /registered drawing inputs changed/);
+  assert.match(await generated.locator('[data-detail="cache_checks"]').textContent(), /View settings: Changed/);
+  const rawIdentity = generated.locator('.diagnostic-section').filter({ has: page.locator('summary', { hasText: 'Input identity and comparisons' }) });
+  await rawIdentity.locator(':scope > summary').click();
+  assert.match(await rawIdentity.locator('[data-detail="comparison_refs"]').textContent(), /drawing:previous/);
+  assert.equal(await generated.locator('pre').count(), 0);
+  assert.equal(await drawing.locator('.drawing-absence').count(), 0);
+  const hlr = drawing.locator('[data-event-id="diag-hlr"]');
+  await hlr.locator(':scope > .event-diagnostics > summary').click();
+  assert.match(await hlr.locator('[data-detail="scope"]').textContent(), /Global visibility computation/);
+  assert.match(await hlr.locator('[data-detail="input_object_ids"]').textContent(), /roof-unchanged/);
+  assert.equal(await hlr.locator('[data-detail="recomputed_object_ids"]').count(), 0);
+  if (process.env.MONITOR_WEB_QA_DIR) {
+    await edit.screenshot({ path: join(process.env.MONITOR_WEB_QA_DIR, 'monitor-edit-diagnostics.png') });
+    await drawing.screenshot({ path: join(process.env.MONITOR_WEB_QA_DIR, 'monitor-drawing-diagnostics.png') });
+    await page.screenshot({ path: join(process.env.MONITOR_WEB_QA_DIR, 'monitor-operation-diagnostics.png'), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: join(process.env.MONITOR_WEB_QA_DIR, 'monitor-operation-diagnostics-mobile.png'), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 960 });
+  }
+  await page.locator('#project-filter').selectOption('');
 
   await page.locator('#operation-group').selectOption('run');
   const finalRun = page.locator('.operation-group').filter({ has: page.locator('summary', { hasText: 'project-a · run-a' }) });
@@ -111,9 +179,18 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   if (output) await page.screenshot({ path: join(output, 'monitor-timing-mobile.png'), fullPage: true });
   await page.goto(process.env.MONITOR_TEST_URL + '/?lang=zh-CN&theme=dark');
-  await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(6)');
+  await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(7)');
   assert.equal(await page.locator('#stat-duration').textContent(), '300 ms');
-  assert.match(await page.locator('#duration-stat').textContent(), /模型调用耗时中位数/);
+  assert.match(await page.locator('#duration-stat').textContent(), /模型请求耗时中位数/);
+  await page.locator('#project-filter').selectOption('diagnostic-project');
+  await page.locator('#operations > summary').click();
+  const chineseEdit = page.locator('[data-operation-id="edit-one"]');
+  await chineseEdit.locator(':scope > summary').click();
+  const chineseBuild = chineseEdit.locator('[data-event-id="diag-build"]');
+  assert.equal(await chineseBuild.locator('strong').textContent(), '几何构建');
+  await chineseBuild.locator(':scope > .event-diagnostics > summary').click();
+  assert.match(await chineseBuild.locator('[data-detail="reuse_opportunity"]').textContent(), /前次失败或取消，未得到可验证复用结果/);
+  if (output) await chineseEdit.screenshot({ path: join(output, 'monitor-edit-zh-mobile.png') });
   if (output) await page.screenshot({ path: join(output, 'monitor-timing-zh-dark.png'), fullPage: true });
   assert.deepEqual(errors, []);
 } finally { await browser.close(); }
@@ -146,6 +223,35 @@ class MonitorTimingWebTests(unittest.TestCase):
                 replace(base, event_id="agent-turn", source="codex", phase="agent_turn", model_call=None, timing_scope="agent_turn", tokens=TokenUsage(), duration_ms=60000, ended_at="2026-09-09T10:01:00Z", session_id="root-session", turn_id="turn-one", project_id=None, source_ref="codex:root-session"),
                 replace(candidate, event_id="lookalike", source="codex", phase="agent_turn", model_call=None, timing_scope="agent_turn", source_ref="codex:root-session", session_id=None, project_id=None),
             ]
+            origin = datetime(2026, 9, 9, 12, tzinfo=timezone.utc)
+            def diagnostic(event_id, phase, offset, elapsed, parent=None, operation="edit-one", scope="service", **values):
+                start = origin + timedelta(seconds=offset)
+                return replace(candidate, event_id=event_id, phase=phase, project_id="diagnostic-project", run_id="diagnostic-run", operation_id=operation, parent_event_id=parent,
+                    related_event_id=None, source_ref="stage://diagnostic/input", started_at=start.isoformat(), ended_at=(start + timedelta(milliseconds=elapsed)).isoformat(),
+                    duration_ms=elapsed, timing_scope=scope, **values)
+            records.extend([
+                diagnostic("diag-previous-build", "geometry_build", -50, 500, operation="previous-edit", status="failed", details={"input_identity": {"program_digest": "a" * 64}, "executed_stages": ["build_program_shapes"], "cache_status": "miss"}),
+                diagnostic("diag-edit", "design_edit", 0, 18000, scope="interaction", details={"active_wait_ms": 9000, "between_actions_ms": 9000}),
+                diagnostic("diag-intent-wait", "intent_wait", 0, 3000, "diag-edit", scope="client_wait"),
+                diagnostic("diag-intent", "intent_compile", 0, 2900, "diag-intent-wait"),
+                diagnostic("diag-request", "model_request", 0, 300, "diag-intent", scope="model_call", model_call=True, provider="test", model="request-model", details={"request_kind": "codex_cli", "model_inference_ms": None}),
+                diagnostic("diag-candidate-wait", "candidate_wait", 12, 6000, "diag-edit", scope="client_wait"),
+                diagnostic("diag-queue", "candidate_queue", 12, 1000, "diag-candidate-wait"),
+                diagnostic("diag-candidate", "candidate", 13, 4000, "diag-candidate-wait"),
+                diagnostic("diag-export", "geometry_export.occt.incremental", 14, 2500, "diag-candidate"),
+                diagnostic("diag-build", "geometry_build", 14, 1000, "diag-export", details={"input_identity": {"program_digest": "a" * 64}, "scope": "program_geometry", "execution_path": "occt", "executed_stages": ["build_program_shapes"], "cache_status": "partial", "recomputed_object_ids": ["window-01"], "reused_object_ids": ["roof-unchanged"], "emitted_object_ids": ["window-01", "roof-unchanged"]}),
+                diagnostic("diag-load", "model_load", 17, 1000, "diag-candidate-wait", scope="client_wait"),
+                diagnostic("diag-orphan", "candidate", 20, 4000, "absent-root", operation="missing-root"),
+                diagnostic("diag-drawing-wait", "drawing_wait", 30, 5000, operation="drawing-one", scope="client_wait"),
+                diagnostic("diag-drawing", "drawing_generate", 30, 4500, "diag-drawing-wait", operation="drawing-one", details={
+                    "scope": "global_visibility", "execution_path": "full_projection", "cache_status": "miss", "cache_reason": "registered_inputs_changed",
+                    "input_object_ids": ["window-01", "roof-unchanged"], "emitted_object_ids": ["window-01"], "executed_stages": ["drawing.load", "drawing.hlr", "drawing.svg", "drawing.png", "drawing.persist", "drawing.register"],
+                    "cache_checks": {"view_recipe": "changed", "bytes": "same"}, "comparison_refs": ["drawing:previous"], "output_refs": ["drawing:current"],
+                    "input_identity": {"step_sha256": "b" * 64, "backend": "ocp", "backend_version": "diagnostic-version", "view_recipe": {"name": "front", "scale_denominator": 100}},
+                }),
+                diagnostic("diag-hlr", "drawing.hlr", 30, 4000, "diag-drawing", operation="drawing-one", details={"scope": "global_visibility", "input_object_ids": ["window-01", "roof-unchanged"], "emitted_object_ids": ["window-01"]}),
+                diagnostic("diag-reuse", "geometry_build", 40, 5, operation="reuse-one", details={"input_identity": {"program_digest": "a" * 64}, "cache_status": "hit", "executed_stages": [], "recomputed_object_ids": [], "reused_object_ids": ["window-01", "roof-unchanged"], "emitted_object_ids": ["window-01", "roof-unchanged"]}),
+            ])
             for event in records:
                 store.append(event)
             paths = [root / f"source-{index}.jsonl" for index in range(2)]

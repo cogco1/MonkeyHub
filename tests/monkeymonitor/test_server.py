@@ -12,6 +12,7 @@ import sys
 from tempfile import TemporaryDirectory
 from threading import Event, Thread
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
@@ -66,6 +67,59 @@ class MonitorServerTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             self.request("/api/quote", payload)
         self.assertEqual(error.exception.code, 400)
+
+    def test_diagnostics_compare_inputs_without_inventing_avoidable_retries_or_mutable_poll_duplicates(self):
+        store = UsageLog(self.data_dir)
+        base = UsageEvent("model-1", "studio", "anthropic", "model", "model_request", "succeeded",
+            "2026-09-09T00:00:00Z", TokenUsage(100, 2), project_id="example", operation_id="first",
+            timing_scope="model_call", model_call=True,
+            details={"input_identity": {"context_digest": "a" * 64, "prompt_sha256": "b" * 64, "provider_fingerprint": "c" * 64}})
+        rows = [base, replace(base, event_id="model-2", operation_id="second", started_at="2026-09-09T00:01:00Z"),
+            replace(base, event_id="model-changed", started_at="2026-09-09T00:02:00Z",
+                    details={"input_identity": {**base.details["input_identity"], "prompt_sha256": "d" * 64}})]
+        drawing = replace(base, event_id="drawing-1", provider="none", model="none", phase="drawing_generate", tokens=TokenUsage(),
+            model_call=False, timing_scope="service", details={"input_identity": {"step_sha256": "e" * 64, "view_recipe": {"direction": [0, 0, 1]}},
+                "cache_status": "miss", "execution_path": "full_projection"})
+        rows += [drawing, replace(drawing, event_id="drawing-2", started_at="2026-09-09T00:02:00Z"),
+                 replace(drawing, event_id="drawing-cached", started_at="2026-09-09T00:03:00Z",
+                         details={**drawing.details, "cache_status": "hit", "execution_path": "retained_drawing"}),
+                 replace(drawing, event_id="poll-1", phase="api_request", details={"request_kind": "GET /api/jobs/{job_id}"}),
+                 replace(drawing, event_id="poll-2", phase="api_request", details={"request_kind": "GET /api/jobs/{job_id}"})]
+        for row in rows:
+            store.append(row)
+        result = {row["event_id"]: row for row in self.request("/api/events")["events"]}
+        self.assertEqual(result["model-2"]["details"]["duplicate_status"], "same_input_request")
+        self.assertEqual(result["model-2"]["details"]["comparison_event_id"], "model-1")
+        self.assertEqual(result["model-2"]["details"]["reuse_opportunity"], "provider_cache_policy_requires_verification")
+        self.assertEqual(result["model-changed"]["details"]["duplicate_status"], "first_observed_input")
+        self.assertEqual(result["model-changed"]["details"]["stable_input_parts"], ["context_digest", "provider_fingerprint"])
+        self.assertEqual(result["drawing-2"]["details"]["duplicate_status"], "repeated_execution")
+        self.assertEqual(result["drawing-cached"]["details"]["duplicate_status"], "reused_result")
+        self.assertNotIn("duplicate_status", result["poll-2"]["details"])
+        # Snapshot analysis is not a second persisted history or a token change.
+        retained, warnings = store.read()
+        self.assertFalse(warnings)
+        self.assertTrue(all("duplicate_status" not in row.details for row in retained))
+        self.assertEqual(result["model-2"]["tokens"], base.tokens.to_dict())
+
+    def test_failed_retry_and_source_comparison_remain_distinct_from_history_matching(self):
+        store = UsageLog(self.data_dir)
+        first = UsageEvent("attempt-1", "studio", "test", "model", "model_request", "failed",
+            "2026-09-09T00:00:00Z", TokenUsage(), model_call=True,
+            details={"input_identity": {"context_digest": "a" * 64, "prompt_sha256": "b" * 64}})
+        retry = replace(first, event_id="attempt-2", status="succeeded", started_at="2026-09-09T00:01:00Z")
+        producer = replace(first, event_id="production-1", phase="element_production", status="succeeded", model_call=False,
+            details={"input_identity": {"record_digest": "c" * 64}, "input_equivalent": False,
+                     "cache_checks": {"wall.element_row": "changed"}})
+        repeated = replace(producer, event_id="production-2", started_at="2026-09-09T00:02:00Z")
+        for row in (first, retry, producer, repeated):
+            store.append(row)
+        rows = {row["event_id"]: row for row in self.request("/api/events")["events"]}
+        self.assertEqual(rows["attempt-2"]["details"]["duplicate_status"], "same_input_request")
+        self.assertEqual(rows["attempt-2"]["details"]["comparison_event_id"], "attempt-1")
+        self.assertEqual(rows["attempt-2"]["details"]["reuse_opportunity"], "previous_attempt_has_no_verified_result")
+        self.assertFalse(rows["production-2"]["details"]["input_equivalent"])
+        self.assertEqual(rows["production-2"]["details"]["duplicate_status"], "repeated_execution")
 
     def test_multiple_explicit_sessions_without_metadata_do_not_collide(self):
         row = {"type":"event_msg", "timestamp":"2026-09-09T00:00:00Z", "payload":{

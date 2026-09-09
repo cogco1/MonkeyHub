@@ -15,6 +15,10 @@ and produces no invocation receipt.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from contextlib import contextmanager
+from copy import deepcopy
+from datetime import datetime, timezone
+import asyncio
 import base64
 import hashlib
 import json
@@ -24,7 +28,7 @@ import subprocess
 import threading
 import tempfile
 import time
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 import uuid
 
 from archflow.contracts.canonical import canonical_digest, canonical_json
@@ -330,7 +334,8 @@ class Compilation:
 
 class IntentCompiler(Protocol):
     def compile(
-        self, *, message: str, selection: Selection, projection: StateProjection
+        self, *, message: str, selection: Selection, projection: StateProjection,
+        operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> Compilation: ...
 
 
@@ -683,6 +688,38 @@ def _parse_answer(
 # ---- providers -------------------------------------------------------------
 
 
+@contextmanager
+def _model_request_span(observer, *, request, binding, prompt_sha, request_kind):
+    """Observe the provider call boundary without retaining its request or answer."""
+
+    span = {
+        "phase": "model_request", "status": "succeeded",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "details": {
+            "request_kind": request_kind, "model_inference_ms": None,
+            "input_identity": {
+                "context_digest": request.context_digest, "prompt_sha256": prompt_sha,
+                "provider_fingerprint": binding.fingerprint,
+            },
+            "comparison_refs": [request.request_id],
+        },
+    }
+    started = time.perf_counter()
+    try:
+        yield span
+    except BaseException as exc:
+        span["status"] = "cancelled" if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)) else "failed"
+        raise
+    finally:
+        span.update(ended_at=datetime.now(timezone.utc).isoformat(), duration_ms=_elapsed_ms(started))
+        if observer is not None:
+            try:
+                observer(deepcopy(span))
+            except (Exception, asyncio.CancelledError):
+                # A diagnostic callback cannot retry or change a provider call.
+                pass
+
+
 class DeterministicCompiler:
     """No agent: the sentence is taken as already compiled.
 
@@ -695,7 +732,8 @@ class DeterministicCompiler:
     model: str | None = None
 
     def compile(
-        self, *, message: str, selection: Selection, projection: StateProjection
+        self, *, message: str, selection: Selection, projection: StateProjection,
+        operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> Compilation:
         return Compilation(
             status="compiled",
@@ -798,7 +836,8 @@ class CodexCompiler:
         )
 
     def compile(
-        self, *, message: str, selection: Selection, projection: StateProjection
+        self, *, message: str, selection: Selection, projection: StateProjection,
+        operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> Compilation:
         sheet = record_sheet(projection, selection)
         prompt = SYSTEM_PROMPT + "\n\n" + _prompt(message, sheet)
@@ -832,16 +871,19 @@ class CodexCompiler:
                 image_path.write_bytes(png)
                 command += ["--image", str(image_path)]
             command.append("-")  # the prompt arrives on stdin
-            started = time.perf_counter()
             try:
-                completed = _run_bounded(command, prompt, self.timeout_s)
+                with _model_request_span(operation_observer, request=request, binding=self.binding,
+                                         prompt_sha=prompt_sha, request_kind="codex_cli") as request_span:
+                    completed = _run_bounded(command, prompt, self.timeout_s)
+                    if completed.returncode != 0:
+                        request_span["status"] = "failed"
             except FileNotFoundError as exc:
                 raise _failed(
                     self.binding,
                     request,
                     status=ModelInvocationStatus.EXIT_ERROR,
                     prompt=prompt,
-                    duration_ms=_elapsed_ms(started),
+                    duration_ms=request_span["duration_ms"],
                     error_code="model.executable_missing",
                     image_bytes=image_bytes,
                     detail=(
@@ -856,14 +898,14 @@ class CodexCompiler:
                     request,
                     status=ModelInvocationStatus.TIMEOUT,
                     prompt=prompt,
-                    duration_ms=_elapsed_ms(started),
+                    duration_ms=request_span["duration_ms"],
                     error_code="model.timeout",
                     image_bytes=image_bytes,
                     usage=usage,
                     reported_model=reported_model,
                     detail=f"codex did not answer within {self.timeout_s:g} s",
                 ) from exc
-            latency_ms = _elapsed_ms(started)
+            latency_ms = request_span["duration_ms"]
             usage, reported_model = _codex_usage(completed.stdout)
             if completed.returncode != 0:
                 tail = (completed.stderr or completed.stdout or "").strip()[-600:]
@@ -1187,7 +1229,8 @@ class AnthropicCompiler:
         )
 
     def compile(
-        self, *, message: str, selection: Selection, projection: StateProjection
+        self, *, message: str, selection: Selection, projection: StateProjection,
+        operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> Compilation:
         sheet = record_sheet(projection, selection)
         user = _prompt(message, sheet)
@@ -1213,14 +1256,17 @@ class AnthropicCompiler:
             sheet=sheet,
         )
         started = time.perf_counter()
+        request_span = None
         try:
             client = self._sdk.Anthropic(timeout=self.timeout_s)
-            response = client.messages.create(
-                model=self.model,
-                max_tokens=5000,
-                system=system,
-                messages=[{"role": "user", "content": content}],
-            )
+            with _model_request_span(operation_observer, request=request, binding=self.binding,
+                                     prompt_sha=prompt_sha, request_kind="anthropic_api") as request_span:
+                response = client.messages.create(
+                    model=self.model,
+                    max_tokens=5000,
+                    system=system,
+                    messages=[{"role": "user", "content": content}],
+                )
         except Exception as exc:  # the SDK's own errors, stated not swallowed
             timeout_error = getattr(self._sdk, "APITimeoutError", None)
             timed_out = timeout_error is not None and isinstance(exc, timeout_error)
@@ -1233,14 +1279,14 @@ class AnthropicCompiler:
                     else ModelInvocationStatus.EXIT_ERROR
                 ),
                 prompt=prompt,
-                duration_ms=_elapsed_ms(started),
+                duration_ms=request_span["duration_ms"] if request_span is not None else _elapsed_ms(started),
                 error_code="model.timeout" if timed_out else "model.provider_error",
                 image_bytes=image_bytes,
                 usage=_anthropic_usage(getattr(exc, "body", None)),
                 reported_model=_reported_model(getattr(exc, "body", None)),
                 detail=f"the Anthropic API did not answer: {type(exc).__name__}: {exc}",
             ) from exc
-        latency_ms = _elapsed_ms(started)
+        latency_ms = request_span["duration_ms"]
         usage = _anthropic_usage(response)
         reported_model = _reported_model(response)
         raw = "".join(

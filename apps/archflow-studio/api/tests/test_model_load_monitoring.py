@@ -5,14 +5,17 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
 
 from archflow_studio_api.main import create_app
+from archflow_studio_api.application.monitoring import MonitoredCompiler
 from archflow_studio_api.settings import StudioSettings
 from monkeymonitor.store import UsageLog
 
-from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
+from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
+from .test_intents import scripted
 
 
 class ModelLoadMonitoringTests(unittest.TestCase):
@@ -80,3 +83,67 @@ class ModelLoadMonitoringTests(unittest.TestCase):
             self.assertNotIn("operation-timing", client.get("/api/protocol").json()["capabilities"])
             self.assertEqual(client.post("/api/events/model-load", json=self.payload).json(), {"recorded": False})
         self.assertFalse((self.settings.monitor_dir / "usage.jsonl").exists())
+
+    def test_interaction_and_nested_browser_spans_keep_client_duration_and_closed_metadata(self):
+        operation, child = str(uuid4()), str(uuid4())
+        root = dict(self.payload, eventId=operation, operationId=operation, phase="design_edit",
+                    details={"active_wait_ms": 600, "between_actions_ms": 398})
+        running = {**root, "status": "running", "endedAt": None, "durationMs": None}
+        for body in (running, root, dict(root, eventId=child, parentEventId=operation, phase="model_download",
+                                       details={"asset_sha256": "a" * 64, "input_bytes": 1000})):
+            response = self.client.post("/api/events/timing", json=body)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertTrue(response.json()["recorded"])
+        rows, warnings = self.app.state.monitor.store.read()
+        self.assertFalse(warnings)
+        self.assertEqual(len(rows), 2)
+        root_event = next(row for row in rows if row.phase == "design_edit")
+        child_event = next(row for row in rows if row.phase == "model_download")
+        self.assertEqual(root_event.duration_ms, 998)
+        self.assertEqual(root_event.timing_scope, "interaction")
+        self.assertEqual(child_event.operation_id, root_event.event_id)
+        self.assertEqual(child_event.parent_event_id, root_event.event_id)
+        self.assertEqual(child_event.details["input_identity"], {"asset_sha256": "a" * 64})
+        for invalid in (dict(root, details={"prompt": "private"}), dict(root, tokens={"input_tokens": 20}),
+                        dict(root, status="failed", endedAt=None), dict(root, operationId="not-an-id")):
+            self.assertEqual(self.client.post("/api/events/timing", json=invalid).status_code, 422)
+
+    def test_concurrent_request_context_reaches_sync_compiler_without_cross_linking(self):
+        operations = [str(uuid4()), str(uuid4())]
+        digest = runner_state_digest(self.repository, REFERENCE_RUN_ID)
+        self.app.state.intent_compiler = MonitoredCompiler(
+            scripted(utterance="set height to 2.2", component_id="portico", element_id="portico-base"), self.app.state.monitor)
+        def submit(operation):
+            return self.client.post("/api/intents", headers={"X-Monkey-Operation": operation, "X-Monkey-Parent": operation},
+                json={"projectId": PROJECT_ID, "stateDigest": digest, "utterance": "make the portico base taller", "targetComponentId": "portico", "elementId": "portico-base"})
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(submit, operations))
+        for response in responses:
+            self.assertEqual(response.status_code, 201, response.text)
+        rows, warnings = self.app.state.monitor.store.read()
+        self.assertFalse(warnings)
+        self.assertEqual({row.operation_id for row in rows}, {f"studio:client:{value}" for value in operations})
+        for operation in operations:
+            group = [row for row in rows if row.operation_id == f"studio:client:{operation}"]
+            request = next(row for row in group if row.phase == "api_request")
+            compiler = next(row for row in group if row.phase == "intent_compile")
+            self.assertEqual(compiler.parent_event_id, request.event_id)
+            self.assertEqual(request.parent_event_id, f"studio:client:{operation}")
+            self.assertEqual(request.project_id, PROJECT_ID)
+        self.assertEqual(self.app.state.monitor.current(), {})
+        # Unsupported diagnostic headers do not break a valid user action.
+        self.assertEqual(submit("malformed").status_code, 201)
+
+    def test_first_project_action_does_not_need_an_invented_retained_run(self):
+        body = dict(self.payload, phase="design_edit", operationId=str(uuid4()), runId=None, sourceRef=None)
+        response = self.client.post("/api/events/timing", json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["recorded"])
+        rows, warnings = self.app.state.monitor.store.read()
+        self.assertFalse(warnings)
+        self.assertIsNone(rows[0].run_id)
+        self.assertEqual(rows[0].project_id, PROJECT_ID)
+        for changes in ({"runId": "studio-projection"}, {"projectId": "missing-project"},
+                        {"sourceRef": "a" * 64}):
+            answer = self.client.post("/api/events/timing", json={**body, **changes})
+            self.assertIn(answer.status_code, (404, 409), answer.text)

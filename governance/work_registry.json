@@ -6,7 +6,7 @@
       "id": "P115",
       "stream": "planning",
       "status": "active",
-      "goal": "Continue the remaining P115 capability consolidation from the completed namespace and Stage/Branch/Candidate baseline. The card retains unfinished method/tool/check work and real project acceptance; delivered preview, history, drawing-source and incremental execution paths are not reopened. The authorized MonkeyMonitor follow-up measures candidate/export/load/Stage-save intervals and explicitly selected Codex task families through existing owners.",
+      "goal": "Continue the remaining P115 capability consolidation from the completed namespace and Stage/Branch/Candidate baseline. The card retains unfinished method/tool/check work and real project acceptance; delivered preview, history, drawing-source and incremental execution paths are not reopened. The authorized MonkeyMonitor follow-up extends measured candidate/export/load/Stage-save intervals into one visible operation timeline, true provider requests, OCCT/Diagram stages and input/cache comparisons through existing owners.",
       "depends_on": [],
       "write_scope": [
         "OPEN_MONKEYHUB.cmd",
@@ -306,7 +306,8 @@
         "apps/archflow-studio/web/test/versionNotifications.browser.mjs",
         "apps/archflow-studio/api/requirements.txt",
         "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
-        "apps/archflow-studio/web/test/documentLink.browser.mjs"
+        "apps/archflow-studio/web/test/documentLink.browser.mjs",
+        "apps/archflow-studio/web/src/app/clientTiming.ts"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -331,7 +332,8 @@
         "2026-09-09: Shared browser appearance, interpolation, translation and base controls extend studio.shell; Monitor serves only the four exact shared JS/CSS URLs. UI owns the shared files and consumer changes; distribution preserves them in the package. Real browser integration and packaged acceptance remain separate from the HTTP route checks.",
         "2026-09-09 MonkeyBoard local implementation: single-operator whiteboard for meeting screen sharing, original PDF/image uploads, automatic receipt of new MonkeyDiagram documents, movable drawing frames and notes, immutable layout saves and reopening, and exact run/revision/page return links. Focused API and frontend save/source tests passed; real-browser acceptance is in progress with the main integration task. No multiplayer is requested; meeting plugins, account access and live transcription are not connected.",
         "2026-09-09: user authorized the bounded window-width relation slice and editable 3dm materials. Extend existing parameter/closure/operator, window producers, relation checks and CAD reuse. Add only the declared lintel envelope bearing check; repair native material export and legacy layer-colour display. The explicitly named external Ightham analytical input consumes these relations through its existing case script and retains candidates through P036; active services and formal issue are separate.",
-        "2026-09-09: user authorized the ordinary UI window continuation and local runtime integration. Extend prism with panel cutouts and preserve exact source materials through composed candidates. The external Ightham input is authored into a normal single-seat runner state; verify 1400 to 1600 mm, save/reopen, then 1500 mm. The existing OCCT composed display changes remain meshes; parameter continuation and native Brep editing are distinct."
+        "2026-09-09: user authorized the ordinary UI window continuation and local runtime integration. Extend prism with panel cutouts and preserve exact source materials through composed candidates. The external Ightham input is authored into a normal single-seat runner state; verify 1400 to 1600 mm, save/reopen, then 1500 mm. The existing OCCT composed display changes remain meshes; parameter continuation and native Brep editing are distinct.",
+        "2026-09-09: six-question diagnostics completed locally in the isolated source worktree. Existing Monitor values, Studio request/client spans and runtime observers now expose parent-linked intervals, actual execution inputs and cache comparisons. A real 1.2-to-1.8 m window edit verified OCCT preview, object reuse, drawing generation and exact cache hit; its model answer was a controlled local CLI fixture, and the existing unchecked relation correctly refused Stage acceptance. Relevant API/runtime/Monitor checks, 35 browser scenarios, generated client, build and archcheck passed. Frozen packages and running services remain unchanged; other P115 acceptance remains open."
       ]
     },
     {

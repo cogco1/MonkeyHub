@@ -52,10 +52,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
+from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
+from uuid import uuid4
 
 from archflow.adapters.cad_program import expected_object_bounds
 from monkeyarch.capabilities.discipline_seats import (
@@ -420,23 +423,56 @@ def _reload_element(source: _SourceSeat, value: Mapping[str, Any]) -> ProducedEl
     )
 
 
-def _produce_incrementally(rows, context, source, references: str, producer_code: str | None):
+def _produce_incrementally(rows, context, source, references: str, producer_code: str | None,
+                           *, operation_observer=None, input_identity=None, source_ref=None):
     results, retained, reused = [], {}, []
-    for row in rows:
-        inputs = _production_inputs(row, context)
-        previous = source.elements.get(row.element_id) if source is not None else None
-        if (previous is not None and producer_code is not None and producer_code == source.producer_code
-                and references == source.references and row == source.rows.get(row.element_id)
-                and inputs == previous.get("inputs")):
-            element = _reload_element(source, previous)
-            context.published.update({datum.datum_id: datum for datum in element.datums})
-            if element.host_line is not None:
-                context.references.hosts[row.element_id] = element.host_line
-            reused.append(row.element_id)
-        else:
-            element, = produce_rows((row,), context)
-        results.append(element)
-        retained[row.element_id] = _element_result(element, inputs)
+    details = {
+        "scope": "producer_elements", "input_object_ids": [row.element_id for row in rows],
+        "recomputed_object_ids": [], "reused_object_ids": reused, "emitted_object_ids": [],
+        "cache_checks": {}, "cache_status": "unknown", "executed_stages": [],
+        **({"input_identity": input_identity} if input_identity else {}),
+    }
+    reasons = set()
+    with _observe_runner_operation(operation_observer, "element_production", details=details) as span:
+        if source_ref is not None:
+            span["source_ref"] = source_ref
+        for row in rows:
+            inputs = _production_inputs(row, context)
+            previous = source.elements.get(row.element_id) if source is not None else None
+            checks = {
+                "retained_result": "same" if previous is not None else "missing",
+                "producer_code": "missing" if producer_code is None or source is None or source.producer_code is None
+                    else "same" if producer_code == source.producer_code else "changed",
+                "references": "missing" if source is None else "same" if references == source.references else "changed",
+                "element_row": "missing" if source is None or row.element_id not in source.rows
+                    else "same" if row == source.rows[row.element_id] else "changed",
+                "dependency_inputs": "missing" if previous is None or "inputs" not in previous
+                    else "same" if inputs == previous["inputs"] else "changed",
+            }
+            details["cache_checks"].update({f"{row.element_id}.{key}": value for key, value in checks.items()})
+            can_reuse = all(value == "same" for value in checks.values())
+            if can_reuse:
+                element = _reload_element(source, previous)
+                context.published.update({datum.datum_id: datum for datum in element.datums})
+                if element.host_line is not None:
+                    context.references.hosts[row.element_id] = element.host_line
+                reused.append(row.element_id)
+                reasons.add("unchanged_inputs")
+            else:
+                reason = next(key + "_" + value for key, value in checks.items() if value != "same")
+                reasons.add("source_not_selected" if source is None else reason)
+                details.update(cache_status="partial" if reused else "miss",
+                               cache_reason="source_not_selected" if source is None else reason)
+                details["executed_stages"] = ["produce_rows"]
+                element, = produce_rows((row,), context)
+                details["recomputed_object_ids"].append(row.element_id)
+            results.append(element)
+            retained[row.element_id] = _element_result(element, inputs)
+            details["emitted_object_ids"].append(row.element_id)
+        details["cache_status"] = "hit" if reused and len(reused) == len(rows) else "partial" if reused else "miss"
+        details["cache_reason"] = next(iter(reasons)) if len(reasons) == 1 else "mixed_element_inputs"
+        if source is not None and all(value != "missing" for value in details["cache_checks"].values()):
+            details["input_equivalent"] = all(value == "same" for value in details["cache_checks"].values())
     return tuple(results), retained, tuple(reused)
 
 
@@ -624,39 +660,51 @@ def _export_workspace(options: RunOptions, stage_id: str) -> Path:
     return workspace
 
 
+@contextmanager
+def _observe_runner_operation(observer, phase: str, *, parent_event_id=None, details=None):
+    """Report an existing runner step; diagnostics cannot change its outcome."""
+
+    event = {
+        "event_id": f"runner:{uuid4().hex}", "phase": phase, "status": "succeeded",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        **({"parent_event_id": parent_event_id} if parent_event_id is not None else {}),
+        "details": details if details is not None else {},
+    }
+    started = time.perf_counter()
+    try:
+        yield event
+    except BaseException as exc:
+        event["status"] = "cancelled" if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)) else "failed"
+        raise
+    finally:
+        event.update(ended_at=datetime.now(timezone.utc).isoformat(), duration_ms=round((time.perf_counter() - started) * 1000))
+        if observer is not None:
+            try:
+                observer(deepcopy(event))
+            except (Exception, asyncio.CancelledError):
+                pass
+
+
 def _export(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict, *, source: _SourceSeat | None = None,
             operation_observer: Callable[[Mapping[str, Any]], None] | None = None) -> dict:
-    """Export one seat program through the executor the options name; no fallback between the two."""
+    """Export through the selected executor, retaining one parent for its real steps."""
 
-    started_at = datetime.now(timezone.utc).isoformat()
-    started = time.perf_counter()
-    result = None
-    status = "failed"
-    try:
+    details = {"scope": "cad_export", "input_identity": {"program_digest": program.program_digest},
+               "execution_path": "unknown"}
+    with _observe_runner_operation(operation_observer, f"geometry_export.{options.cad_backend}.unknown", details=details) as event:
+        event["source_ref"] = provenance.get("state_record_ref")
         if options.cad_backend == CAD_BACKEND_RHINO:
             result = _export_rhino(repository, run, branch, branch_destination, program, stage_id, options, provenance, source=source)
         else:
-            result = _export_occt(repository, run, branch, branch_destination, program, stage_id, options, provenance, source=source)
-        status = "succeeded" if result.get("status") == "succeeded" else "failed"
+            result = _export_occt(repository, run, branch, branch_destination, program, stage_id, options, provenance, source=source,
+                                  operation_observer=operation_observer, observation_parent_id=event["event_id"])
+        path = result.get("path", "unknown")
+        event.update(phase=f"geometry_export.{options.cad_backend}.{path}",
+                     status="succeeded" if result.get("status") == "succeeded" else "failed")
+        details.update(execution_path=path, output_refs=[result["execution_ref"]] if result.get("execution_ref") else [])
+        if result.get("reused_object_ids"):
+            details["reused_object_ids"] = list(result["reused_object_ids"])
         return result
-    except BaseException as exc:
-        if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
-            status = "cancelled"
-        raise
-    finally:
-        if operation_observer is not None:
-            try:
-                operation_observer({
-                    "phase": "geometry_export", "status": status,
-                    "started_at": started_at, "ended_at": datetime.now(timezone.utc).isoformat(),
-                    "duration_ms": round((time.perf_counter() - started) * 1000),
-                    "backend": options.cad_backend,
-                    "path": "unknown" if result is None else result.get("path", "unknown"),
-                    "source_ref": provenance.get("state_record_ref"),
-                })
-            except Exception:
-                # An optional observer cannot fail or retry a geometry export.
-                pass
 
 
 def _sha256_file(path: Path) -> str:
@@ -664,7 +712,8 @@ def _sha256_file(path: Path) -> str:
         return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
-def _prior_occt_export(repository, run: RunRef, workspace: Path, binding, *, preview: bool) -> tuple[dict, ProjectRecordRef] | None:
+def _prior_occt_export(repository, run: RunRef, workspace: Path, binding, *, preview: bool,
+                       diagnostics: dict | None = None) -> tuple[dict, ProjectRecordRef] | None:
     """A retained succeeded OCCT export of exactly this binding whose files are still the bytes it certified.
 
     Each candidate is read back as the P036 record its file name claims to
@@ -686,35 +735,65 @@ def _prior_occt_export(repository, run: RunRef, workspace: Path, binding, *, pre
     """
 
     expected = binding.to_dict()
+    details = diagnostics if diagnostics is not None else {}
+    details.update(scope="verified_export_cache", cache_status="miss", cache_reason="no_retained_export", cache_checks={})
+    matched_binding = False
+
+    def rejected(reason: str, condition: str = "changed") -> None:
+        if reason == "binding_changed" and matched_binding:
+            return
+        details["cache_checks"][reason] = condition
+        details["cache_reason"] = reason if len(details["cache_checks"]) == 1 else "multiple_cache_conditions_failed"
+
     records_dir = Path(repository.layout.run(run.run_id).records)
     for path in sorted(records_dir.glob(f"{SEAT_OCCT_EXECUTION}-*.json")):
         try:
             ref = record_ref_from_uri(f"project://{run.project_id}/runs/{run.run_id}/records/{path.name}", run.project_id)
             if ref.record_kind != SEAT_OCCT_EXECUTION:
+                rejected("record_kind_changed")
                 continue
             payload = repository.load_json(ref)
         except (ValueError, ProjectIntegrityError):
+            rejected("receipt_integrity_failed")
             continue
         if payload.get("schema") != "OcctExecutionReceipt@1" or payload.get("status") != "succeeded":
+            rejected("receipt_not_succeeded")
             continue
         if payload.get("readback_verified") is not True or payload.get("failures") != []:
+            rejected("readback_not_verified")
             continue
         if (payload.get("identity") or {}).get("binding") != expected:
+            rejected("binding_changed")
             continue
+        if not matched_binding:
+            details["cache_checks"].clear()
+        matched_binding = True
         exact, preview_artifact = payload.get("exact_artifact"), payload.get("preview_artifact")
         if not isinstance(exact, dict) or (preview and not isinstance(preview_artifact, dict)):
+            rejected("required_artifact_missing", "missing")
             continue
         intact = True
         for artifact in (a for a in (exact, preview_artifact) if a is not None):
             file = workspace / str(artifact.get("relative_path") or "")
             try:
-                if not file.is_file() or _sha256_file(file) != artifact.get("sha256"):
+                if not file.is_file():
+                    rejected("artifact_missing", "missing")
+                    intact = False
+                    break
+                if _sha256_file(file) != artifact.get("sha256"):
+                    rejected("artifact_changed")
                     intact = False
                     break
             except OSError:
+                rejected("artifact_unreadable", "unreadable")
                 intact = False
                 break
         if intact:
+            details.update(cache_status="hit", cache_reason="verified_matching_export",
+                           cache_checks={"binding": "same", "artifacts": "same", "readback": "verified"},
+                           input_equivalent=True, comparison_refs=[ref.uri],
+                           reused_object_ids=list(payload.get("physical_object_ids", ())),
+                           executed_stages=[], output_refs=[ref.uri])
             return payload, ref
     return None
 
@@ -725,39 +804,53 @@ def _occt_artifact_summary(artifact: dict | None) -> dict | None:
     return {"relative_path": artifact.get("relative_path"), "sha256": artifact.get("sha256"), "format": artifact.get("format")}
 
 
-def _source_export(repository, source: _SourceSeat | None, kind: str):
+def _source_export(repository, source: _SourceSeat | None, kind: str, *, diagnostics: dict | None = None):
     """A source file is reusable only with its original, intact execution evidence."""
-    if source is None or not source.cad or not source.cad.get("execution_ref") or not source.cad.get("model"):
+    details = diagnostics if diagnostics is not None else {}
+    details.update(scope="source_export_cache", cache_status="miss", cache_reason="source_not_selected", cache_checks={})
+    if source is None:
+        return None
+    if not source.cad or not source.cad.get("execution_ref") or not source.cad.get("model"):
+        details.update(cache_reason="source_export_missing", cache_checks={"source_export": "missing"})
         return None
     try:
         ref = record_ref_from_uri(source.cad["execution_ref"], source.run.project_id)
         if ref.record_kind != kind or not ref.relative_path.startswith(f"runs/{source.run.run_id}/records/"):
+            details.update(cache_status="refused", cache_reason="source_record_binding_changed", cache_checks={"binding": "changed"})
             return None
         payload = repository.load_json(ref)
         identity = payload["identity"]["binding"]
         if (payload.get("status") != "succeeded" or payload.get("readback_verified") is not True or payload.get("failures")
                 or identity.get("project_id") != source.run.project_id or identity.get("run_id") != source.run.run_id
                 or identity.get("base") != source.run.base.to_dict() or identity.get("program_digest") != source.program.program_digest):
+            details.update(cache_status="refused", cache_reason="source_receipt_not_verified", cache_checks={"receipt": "changed"})
             return None
         model = Path(source.cad["model"])
         if kind == SEAT_OCCT_EXECUTION:
             from archflow.adapters.occt_backend import backend_identity
             if payload.get("schema") != "OcctExecutionReceipt@1" or payload.get("backend") != backend_identity():
+                details.update(cache_reason="source_backend_changed", cache_checks={"backend": "changed"})
                 return None
             artifact = payload["exact_artifact"]
             name, digest = artifact["relative_path"], artifact["sha256"]
         else:
             if payload.get("schema") != "RhinoCadExecutionReceipt@4":
+                details.update(cache_reason="source_schema_changed", cache_checks={"schema": "changed"})
                 return None
             name, digest = payload["artifact_relative_path"], payload["inspection"]["file_sha256"]
         if model.name != name or not model.is_file() or model.is_symlink() or _sha256_file(model) != digest:
+            details.update(cache_status="refused", cache_reason="source_artifact_changed", cache_checks={"artifact": "changed"})
             return None
+        details.update(cache_status="hit", cache_reason="verified_source_export", cache_checks={"binding": "same", "artifact": "same"},
+                       comparison_refs=[ref.uri], input_identity={"source_program_digest": source.program.program_digest, "source_step_sha256": digest})
         return payload, model
     except (KeyError, ValueError, TypeError, OSError, ProjectIntegrityError):
+        details.update(cache_status="refused", cache_reason="source_receipt_or_artifact_unreadable", cache_checks={"source_export": "unreadable"})
         return None
 
 
-def _export_occt(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict, *, source: _SourceSeat | None = None) -> dict:
+def _export_occt(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict, *, source: _SourceSeat | None = None,
+                 operation_observer=None, observation_parent_id=None) -> dict:
     """Export one seat program in process: exact STEP plus mesh preview, retained as ``seat-occt-execution``.
 
     The program is retained on the branch first (P036), the binding is made
@@ -780,7 +873,10 @@ def _export_occt(repository, run, branch, branch_destination, program, stage_id:
     program_ref = repository.put_json(run=run, destination=branch_destination, record_kind=stage_geometry_program(stage_id), payload=program.to_dict())
     binding = CadProgramBinding(program_ref=program_ref, branch=branch, stage_id=stage_id, program_digest=program.program_digest,
                                 design_state_digest=program.proposal.design_state_digest, predecessor_program_digest=None)
-    prior = _prior_occt_export(repository, run, workspace, binding, preview=True)
+    cache_details = {"input_identity": {"program_digest": program.program_digest, "backend": CAD_BACKEND_OCCT, "format": "step+preview_3dm"}}
+    with _observe_runner_operation(operation_observer, "export_cache_lookup", parent_event_id=observation_parent_id, details=cache_details) as event:
+        event["source_ref"] = program_ref.uri
+        prior = _prior_occt_export(repository, run, workspace, binding, preview=True, diagnostics=cache_details)
     if prior is not None:
         payload, ref = prior
         out = {"execution_ref": ref.uri, "status": payload["status"], "readback_verified": payload["readback_verified"],
@@ -795,7 +891,10 @@ def _export_occt(repository, run, branch, branch_destination, program, stage_id:
     while (workspace / f"{stem}.step").exists() or (workspace / f"{stem}.preview.3dm").exists():
         attempt += 1
         stem = f"{base_stem}.r{attempt}"
-    source_export = _source_export(repository, source, SEAT_OCCT_EXECUTION)
+    source_details = {}
+    with _observe_runner_operation(operation_observer, "source_export_lookup", parent_event_id=observation_parent_id, details=source_details) as event:
+        event["source_ref"] = program_ref.uri
+        source_export = _source_export(repository, source, SEAT_OCCT_EXECUTION, diagnostics=source_details)
     reuse = {}
     if source_export is not None:
         source_payload, source_model = source_export
@@ -805,7 +904,8 @@ def _export_occt(repository, run, branch, branch_destination, program, stage_id:
     t0 = time.perf_counter()
     try:
         receipt = execute_occt_export(program, binding=binding, speculative_workspace=workspace, artifact_stem=stem, readback_tolerance=0.003,
-                                      provenance={**provenance, "export_path": CAD_BACKEND_OCCT}, preview=True, **reuse)
+                                      provenance={**provenance, "export_path": CAD_BACKEND_OCCT}, preview=True,
+                                      operation_observer=operation_observer, observation_parent_id=observation_parent_id, **reuse)
     except CadCapabilityError as exc:
         return {"execution_ref": None, "status": "unsupported", "readback_verified": False, "path": CAD_BACKEND_OCCT, "backend": CAD_BACKEND_OCCT,
                 "seconds": round(time.perf_counter() - t0, 3),
@@ -1003,7 +1103,11 @@ def run_project(
                 production = ProductionContext(references=ReferenceContext(grids=grids, levels=levels), published={d.datum_id: d for h in handovers for d in h.datums}, exclusions=exclusions)
                 try:
                     elements_produced, element_results, reused_elements = _produce_incrementally(
-                        own, production, sources.get(seat_id), references, producer_code)
+                        own, production, sources.get(seat_id), references, producer_code,
+                        operation_observer=operation_observer,
+                        source_ref=record_ref.uri,
+                        input_identity={"record_digest": record.digest, "producer_code": producer_code, "seat_id": seat_id}
+                            if producer_code is not None else None)
                 except ElementProducerError as exc:
                     raise ProjectRunnerError(str(exc)) from exc
                 produced = _gather(elements_produced)

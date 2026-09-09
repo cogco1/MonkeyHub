@@ -5,6 +5,7 @@ import { asStudioApiError, studio } from "../api/client";
 import type { CandidateDto, JobDto, ValidationDto } from "../api/generated";
 import { IN_FLIGHT } from "./jobs";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
+import { startClientTiming, type ClientTimingSpan } from "./clientTiming";
 
 export interface CandidateReadback {
   readonly job: Loadable<JobDto>;
@@ -24,11 +25,14 @@ interface CandidateWatch {
 export function useCandidateRuns(
   entries: readonly { candidateId: string; jobId: string }[],
   onJobStatus: (candidateId: string, status: string) => void,
+  diagnostics?: { timingFor(candidateId: string): ClientTimingSpan | null; onReadFailure(candidateId: string): void },
 ) {
   const [runs, setRuns] = useState<Readonly<Record<string, CandidateReadback>>>({});
   const watches = useRef(new Map<string, CandidateWatch>());
   const reporter = useRef(onJobStatus);
   reporter.current = onJobStatus;
+  const diagnostic = useRef(diagnostics);
+  diagnostic.current = diagnostics;
 
   useEffect(() => {
     for (const { candidateId, jobId } of entries) {
@@ -53,16 +57,22 @@ export function useCandidateRuns(
         if (stopped || candidateRead || readingCandidate) return;
         readingCandidate = true;
         update({ candidate: loading });
+        const parent = diagnostic.current?.timingFor(candidateId);
+        const timing = parent && !parent.closed ? startClientTiming("api_wait",
+          { ...parent.binding, runId: candidateId }, parent.trace,
+          { request_kind: "candidate_read", retry_attempt: candidateFailures }) : null;
         try {
-          const value = await studio.candidate(candidateId);
+          const value = await studio.candidate(candidateId, timing?.trace);
+          timing?.finish(stopped ? "cancelled" : "succeeded");
           if (stopped) return;
           candidateRead = true;
           update({ candidate: ready(value) });
         } catch (cause) {
+          timing?.finish(stopped ? "cancelled" : "failed");
           update({ candidate: failed(asStudioApiError(cause)) });
           if (!stopped && ++candidateFailures < 3) {
             candidateTimer = window.setTimeout(() => void readCandidate(), 500 * candidateFailures);
-          }
+          } else if (!stopped) diagnostic.current?.onReadFailure(candidateId);
         } finally { readingCandidate = false; }
       };
 
@@ -83,8 +93,13 @@ export function useCandidateRuns(
       const tick = async () => {
         if (stopped || readingJob) return;
         readingJob = true;
+        const parent = diagnostic.current?.timingFor(candidateId);
+        const timing = parent && !parent.closed ? startClientTiming("api_wait",
+          { ...parent.binding, runId: candidateId }, parent.trace,
+          { request_kind: "candidate_poll", retry_attempt: jobFailures }) : null;
         try {
-          const value = await studio.job(jobId);
+          const value = await studio.job(jobId, timing?.trace);
+          timing?.finish(stopped ? "cancelled" : "succeeded");
           if (stopped) return;
           jobFailures = 0;
           update({ job: ready(value) });
@@ -97,10 +112,11 @@ export function useCandidateRuns(
             void readValidation();
           }
         } catch (cause) {
+          timing?.finish(stopped ? "cancelled" : "failed");
           update({ job: failed(asStudioApiError(cause)) });
           if (!stopped && ++jobFailures < 3) {
             jobTimer = window.setTimeout(() => void tick(), 500 * jobFailures);
-          }
+          } else if (!stopped) diagnostic.current?.onReadFailure(candidateId);
         } finally { readingJob = false; }
       };
 

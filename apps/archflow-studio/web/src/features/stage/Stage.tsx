@@ -6,7 +6,7 @@
  * stage decides nothing.
  */
 
-import { useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 
 import type { StudioApiError } from "../../api/client";
 import type { DocumentAnnotationRefDto, DocumentVisualInputDto, ElevationRequestDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
@@ -28,6 +28,7 @@ import {
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
 import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
+import type { ClientTimingSpan } from "../../app/clientTiming";
 import { createDocumentAnnotationsController } from "../../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useModelAnnotations";
 
@@ -79,6 +80,7 @@ export function Stage({
   onOpenWorkingOption,
   designHistory,
   documentView,
+  documentTiming,
   onDocumentView,
   documentAnnotationsController,
   onDocumentBeforeLeave,
@@ -116,6 +118,7 @@ export function Stage({
   onInspection,
   onStatus,
   onRequestFile,
+  onOpenFile,
   onSource,
   onPick,
   onOpenVersion,
@@ -152,6 +155,7 @@ export function Stage({
   onOpenWorkingOption(option: WorkingCopyOptionDto): void;
   designHistory?: DesignHistoryControls;
   documentView: DocumentViewContext;
+  documentTiming?: ClientTimingSpan;
   onDocumentView(next: DocumentViewContext): void;
   documentAnnotationsController: ReturnType<typeof createDocumentAnnotationsController>;
   onDocumentBeforeLeave(save: (() => Promise<void>) | null): void;
@@ -196,6 +200,7 @@ export function Stage({
   onInspection(inspection: SceneInspection | null): void;
   onStatus(status: ViewportStatus, message: string): void;
   onRequestFile(): void;
+  onOpenFile(file: File): void;
   onSource(sourceLabel: string | null): void;
   onPick(pick: ViewportPick): void;
   onOpenVersion(artifact: ProjectArtifactDto, sourceLabel: string): void;
@@ -236,6 +241,7 @@ export function Stage({
   const [elevationView, setElevationView] = useState<NonNullable<ElevationRequestDto["view"]>>("front");
   const [annotationCancel, setAnnotationCancel] = useState(0);
   const documentOpen = documentView.open;
+  useEffect(() => { if (!documentOpen) documentTiming?.finish("cancelled"); }, [documentOpen, documentTiming]);
   const documentMounted = documentView.mounted;
   const documentRunId = documentView.runId ?? editingBaseRunId;
   const [eraser, setEraser] = useState(false);
@@ -360,6 +366,7 @@ export function Stage({
           onInspection={onInspection}
           onStatus={onStatus}
           onRequestFile={onRequestFile}
+          onOpenFile={onOpenFile}
           onSource={onSource}
           onPick={onPick}
         />
@@ -615,6 +622,7 @@ export function Stage({
           onContinueModelSource={onContinueModelSource}
           initialSourceSha={documentView.sourceSha} initialPageIndex={documentView.pageIndex}
           initialRevisionRef={documentView.revisionRef}
+          timing={documentTiming}
           sourceStageRef={designHistory?.currentStageRef}
           onBeforeLeave={onDocumentBeforeLeave}
           busy={baseActionBusy || changingBase} onSubmit={onDocumentSubmit} documentVisualInputAvailable={documentVisualInputAvailable} />

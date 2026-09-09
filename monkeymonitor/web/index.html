@@ -15,14 +15,14 @@
     <div class="page-heading"><h1 data-i18n="调用用量">调用用量</h1><div class="source-filter" role="group" aria-label="用量来源" data-i18n-aria-label="用量来源"><button type="button" data-source="all" aria-pressed="true" data-i18n="全部">全部</button><button type="button" data-source="studio" aria-pressed="false">Studio</button><button type="button" data-source="codex" aria-pressed="false">Codex</button></div></div>
     <p id="load-notice" class="notice" role="status" hidden></p>
     <div class="project-filter"><label for="project-filter" data-i18n="项目">项目</label><select id="project-filter"><option value="" data-i18n="全部项目">全部项目</option></select></div>
-    <div class="stats" aria-live="polite"><div class="stat"><span data-i18n="未缓存输入">未缓存输入</span><strong id="stat-input">—</strong></div><div class="stat"><span data-i18n="输出">输出</span><strong id="stat-output">—</strong></div><div id="duration-stat" class="stat"><span data-i18n="模型调用耗时中位数">模型调用耗时中位数</span><strong id="stat-duration">—</strong></div></div>
+    <div class="stats" aria-live="polite"><div class="stat"><span data-i18n="未缓存输入">未缓存输入</span><strong id="stat-input">—</strong></div><div class="stat"><span data-i18n="输出">输出</span><strong id="stat-output">—</strong></div><div id="duration-stat" class="stat"><span data-i18n="模型请求耗时中位数">模型请求耗时中位数</span><strong id="stat-duration">—</strong></div></div>
     <div class="summary-note"><p id="cache-summary" hidden></p><details id="coverage"><summary id="coverage-title" data-i18n="记录说明">记录说明</summary><div id="coverage-content"></div></details></div>
     <details id="operations" class="operations">
       <summary data-i18n="操作与耗时">操作与耗时 <span id="operation-count"></span></summary>
-      <p class="field-help" data-i18n="各范围分别展示，不相加。候选生成耗时已包含几何导出；人工停留不计为模型调用。">各范围分别展示，不相加。候选生成耗时已包含几何导出；人工停留不计为模型调用。</p>
-      <div id="timing-scopes" class="timing-scopes"></div>
-      <label class="operation-group-label" for="operation-group" data-i18n="分组">分组<select id="operation-group"><option value="run" data-i18n="候选轮次">候选轮次</option><option value="source" data-i18n="精确来源">精确来源</option><option value="session" data-i18n="会话家族">会话家族</option></select></label>
+      <p class="field-help" data-i18n="展开一次操作，查看总历时与阶段。父阶段已包含子阶段，嵌套时间不相加；操作间隔单独标注。">展开一次操作，查看总历时与阶段。父阶段已包含子阶段，嵌套时间不相加；操作间隔单独标注。</p>
+      <label class="operation-group-label" for="operation-group" data-i18n="分组">分组<select id="operation-group"><option value="operation" data-i18n="单次操作">单次操作</option><option value="run" data-i18n="候选轮次">候选轮次</option><option value="source" data-i18n="精确来源">精确来源</option><option value="session" data-i18n="会话家族">会话家族</option></select></label>
       <div id="operation-groups"></div><button id="more-operations" class="text-button" type="button" hidden data-i18n="再显示 10 组">再显示 10 组</button>
+      <details id="timing-summary" class="timing-summary"><summary data-i18n="各类耗时概况">各类耗时概况</summary><div id="timing-scopes" class="timing-scopes"></div></details>
     </details>
     <section class="calls" aria-labelledby="events-title">
       <div class="list-toolbar"><h2 id="events-title" data-i18n="调用列表">调用列表 <span id="event-count"></span></h2><label for="event-sort" data-i18n="排序">排序<select id="event-sort"><option value="uncached_input" data-i18n="未缓存输入">未缓存输入</option><option value="input_tokens" data-i18n="总输入">总输入</option><option value="output_tokens" data-i18n="输出">输出</option><option value="duration_ms" data-i18n="耗时">耗时</option><option value="time" data-i18n="最近">最近</option></select></label></div>

@@ -115,6 +115,7 @@ import { LoadingOverlay } from "./LoadingOverlay";
 import { editingDigestForView, useSession } from "./useSession";
 import { useTranscript, type SystemTextPart } from "./transcript";
 import { useCandidateRuns } from "./useCandidateRuns";
+import { finishEditTiming, startClientTiming, type ClientTimingSpan, type EditTimingTicket } from "./clientTiming";
 
 /** The three refusing outcomes of an intent, and the two that end an exchange. */
 const TERMINAL_OUTCOMES = [MISSING_EDITABLE_CONTROL, UNSUPPORTED_REQUEST];
@@ -289,7 +290,14 @@ export default function App({ server, initialDocumentIntent }: {
   const previewContext = useRef({ key: "", revision: 0 });
   const autoShowRef = useRef<{
     candidateId: string | null; context: number; viewRequest: number; started?: boolean;
+    timing?: EditTimingTicket | null;
   } | null>(null);
+  const monitorDiagnostics = server.capabilities.includes("operation-diagnostics");
+  const activeEditTiming = useRef<EditTimingTicket | null>(null);
+  const proposalTimings = useRef(new Map<string, EditTimingTicket>());
+  const candidateTimings = useRef(new Map<string, EditTimingTicket>());
+  const drawingTiming = useRef<ClientTimingSpan | null>(null);
+  const [drawingDisplayTiming, setDrawingDisplayTiming] = useState<ClientTimingSpan | null>(null);
   const manualLoadRef = useRef(false);
   // The first seat on screen answers for the picture wherever one row is
   // wanted: the run it belongs to, the receipt a pick is resolved against,
@@ -343,7 +351,13 @@ export default function App({ server, initialDocumentIntent }: {
   const candidateEntries = useMemo(() => transcript.entries.filter(
     (entry) => entry.kind === "candidate",
   ), [transcript.entries]);
-  const candidateRuns = useCandidateRuns(candidateEntries, (candidateId, status) => noteJobStatus(candidateId, status));
+  const candidateRuns = useCandidateRuns(candidateEntries, (candidateId, status) => {
+    noteJobStatus(candidateId, status);
+    if (status === "failed" || status === "cancelled") finishEditTiming(candidateTimings.current.get(candidateId), status);
+  }, {
+    timingFor: (id) => candidateTimings.current.get(id)?.candidate ?? null,
+    onReadFailure: (id) => finishEditTiming(candidateTimings.current.get(id), "failed"),
+  });
   const candidates = useMemo(() => Object.fromEntries(Object.entries(candidateRuns.runs).flatMap(([id, run]) =>
     run.candidate.status === "ready" ? [[id, run.candidate.value]] : [])) as Record<string, CandidateDto>, [candidateRuns.runs]);
   const validations = useMemo(() => Object.fromEntries(Object.entries(candidateRuns.runs).flatMap(([id, run]) =>
@@ -410,13 +424,22 @@ export default function App({ server, initialDocumentIntent }: {
   if (previewContext.current.key !== contextKey) {
     previewContext.current = { key: contextKey, revision: previewContext.current.revision + 1 };
   }
-  const beginCandidatePreview = useCallback(() => {
+  const beginCandidatePreview = useCallback((timing?: EditTimingTicket | null) => {
+    finishEditTiming(autoShowRef.current?.timing, "cancelled");
     manualLoadRef.current = false;
     const preview = { candidateId: null as string | null,
-      context: previewContext.current.revision, viewRequest: modelLoadRequest.current };
+      context: previewContext.current.revision, viewRequest: modelLoadRequest.current, timing };
     autoShowRef.current = preview;
     return preview;
   }, []);
+  useEffect(() => {
+    return () => {
+      finishEditTiming(activeEditTiming.current, "cancelled");
+      for (const ticket of proposalTimings.current.values()) finishEditTiming(ticket, "cancelled");
+      for (const ticket of candidateTimings.current.values()) finishEditTiming(ticket, "cancelled");
+      drawingTiming.current?.finish("cancelled");
+    };
+  }, [contextKey]);
   // A new editing base starts a new exchange, without discarding the draft or history.
   useEffect(() => {
     pickRequestRef.current += 1;
@@ -864,6 +887,8 @@ export default function App({ server, initialDocumentIntent }: {
   );
 
   const openLocalFile = useCallback((file: File) => {
+    finishEditTiming(activeEditTiming.current, "cancelled");
+    drawingTiming.current?.finish("cancelled");
     modelLoadRequest.current += 1;
     pendingArtifacts.current = [];
     setArtifactLoadingSha(null);
@@ -892,7 +917,8 @@ export default function App({ server, initialDocumentIntent }: {
    * same route — same digest-addressed bytes, same viewer, different label.
    */
   const loadArtifactIntoViewer = useCallback(
-    async (artifact: ProjectArtifactDto, label: string, preserveCamera = false, stillCurrent?: () => boolean): Promise<boolean> => {
+    async (artifact: ProjectArtifactDto, label: string, preserveCamera = false, stillCurrent?: () => boolean, parentTiming?: ClientTimingSpan): Promise<boolean> => {
+      if (!parentTiming) finishEditTiming(autoShowRef.current?.timing, "cancelled");
       const request = ++modelLoadRequest.current;
       const projectId = artifactProjectRef.current;
       const isCurrent = () => request === modelLoadRequest.current &&
@@ -925,19 +951,30 @@ export default function App({ server, initialDocumentIntent }: {
       }
       setArtifactLoadingSha(artifact.sha256);
       setArtifactLoadPhase("download");
-      const finishTiming = startModelLoadTiming(projectId, artifact.runId, artifact.receiptRef);
+      const timing = monitorDiagnostics && projectId ? startClientTiming("model_load",
+        { projectId, runId: artifact.runId, sourceRef: artifact.receiptRef }, parentTiming?.trace,
+        { asset_sha256: artifact.sha256 }) : null;
+      const download = timing ? startClientTiming("model_download", timing.binding, timing.trace,
+        { asset_sha256: artifact.sha256, request_kind: "artifact_bytes" }) : null;
+      let parse: ClientTimingSpan | null = null;
+      const finishTiming = timing ? (status: "succeeded" | "failed" | "cancelled") => timing.finish(status)
+        : startModelLoadTiming(projectId, artifact.runId, artifact.receiptRef);
       let succeeded = false;
       try {
         const file = await studio.artifactFile(
           artifact.sha256,
           artifact.fileName,
+          download?.trace,
         );
+        download?.finish(isCurrent() ? "succeeded" : "cancelled", { input_bytes: file.size });
         if (!isCurrent()) return false;
         pendingArtifacts.current = [artifact];
         setArtifactLoadPhase("parse");
         const previous = loadedArtifactsRef.current;
         const viewport = viewportRef.current;
         if (!viewport) throw new Error("The 3D viewport is not ready yet; try again in a moment.");
+        parse = timing ? startClientTiming("model_parse", timing.binding, timing.trace,
+          { asset_sha256: artifact.sha256, input_bytes: file.size }) : null;
         await viewport.openFile(file, label, {
           isCurrent,
           preserveCamera: preserveCamera && previous.length > 0 && artifact.lengthUnit !== null &&
@@ -949,7 +986,10 @@ export default function App({ server, initialDocumentIntent }: {
         if (isCurrent()) setArtifactError(asStudioApiError(cause));
         return false;
       } finally {
-        finishTiming(!isCurrent() ? "cancelled" : succeeded ? "succeeded" : "failed");
+        const status = !isCurrent() ? "cancelled" : succeeded ? "succeeded" : "failed";
+        download?.finish(status);
+        parse?.finish(status);
+        finishTiming(status);
         if (request === modelLoadRequest.current) {
           pendingArtifacts.current = [];
           setArtifactLoadingSha(null);
@@ -957,7 +997,7 @@ export default function App({ server, initialDocumentIntent }: {
         }
       }
     },
-    [startModelLoadTiming],
+    [monitorDiagnostics, startModelLoadTiming],
   );
 
   /**
@@ -1362,6 +1402,15 @@ export default function App({ server, initialDocumentIntent }: {
         sameModelSource(currentViewSourceRef.current, requestedView) && sameModelSource(currentViewSourceRef.current, requestModelSource);
       if (proposingRef.current) return;
       proposingRef.current = true;
+      finishEditTiming(activeEditTiming.current, "cancelled");
+      const timing: EditTimingTicket | null = monitorDiagnostics ? {
+        root: startClientTiming("design_edit", { projectId: project.projectId,
+          runId: requestModelSource?.runId ?? sourceRunId ?? (projection?.referenceRunSource === "none" ? null : projection?.referenceRun.runId ?? null),
+          sourceRef: projection?.sourceStageRef }),
+        intentMs: 0, betweenActionsMs: 0,
+      } : null;
+      if (timing) timing.intent = startClientTiming("intent_wait", timing.root.binding, timing.root.trace);
+      activeEditTiming.current = timing;
       // What this request is asked against, and which exchange it belongs to.
       // The token is the whole of the continuity: no transcript is sent, and
       // the pending intent it names carries the original sentence, the target
@@ -1425,7 +1474,13 @@ export default function App({ server, initialDocumentIntent }: {
           gestures: [...sentGestures],
           ...(withDocuments ? { documentAnnotations: [...documentAnnotations], documentVisuals } : {}),
           continuationToken,
-        });
+        }, timing?.intent?.trace);
+        if (timing) {
+          timing.intentMs = timing.intent!.finish("succeeded");
+          timing.intentFinishedAt = performance.now();
+          if (canUpdateView()) proposalTimings.current.set(answer.proposal.proposalId, timing);
+          else finishEditTiming(timing, "cancelled");
+        }
         // COMPILED, the one outcome that is a proposal: the exchange is over
         // and the token that got here is spent.
         if (canContinueIntent()) pendingIntentRef.current = null;
@@ -1480,6 +1535,7 @@ export default function App({ server, initialDocumentIntent }: {
           setTool(null);
         }
       } catch (cause) {
+        finishEditTiming(timing, canContinueIntent() ? "failed" : "cancelled");
         const error = asStudioApiError(cause);
         const updateView = canUpdateView();
         // No proposal came back, so no card claims the ghost that may still
@@ -1542,6 +1598,7 @@ export default function App({ server, initialDocumentIntent }: {
       sourceRunId,
       stateDigest,
       server.capabilities,
+      monitorDiagnostics,
       t,
     ],
   );
@@ -1721,15 +1778,24 @@ export default function App({ server, initialDocumentIntent }: {
     const stage = designHistory?.stages.find((item) => sameModelSource(item.modelSource, loadedModelSource));
     const currentContext = previewContext.current.revision;
     const currentViewRequest = modelLoadRequest.current;
+    drawingTiming.current?.finish("cancelled");
+    const timing = monitorDiagnostics ? startClientTiming("drawing_wait", {
+      projectId: project.projectId, runId: loadedModelSource.runId, sourceRef: stage?.stageRef,
+    }) : null;
+    drawingTiming.current = timing;
     setDrawingBusy(true); setDrawingError(null);
     try {
       await documentSaveRef.current?.();
       const result = await studio.elevation({ projectId: project.projectId, view,
-        ...(stage ? { sourceStageRef: stage.stageRef } : { modelSource: loadedModelSource }) });
-      if (previewContext.current.revision !== currentContext || modelLoadRequest.current !== currentViewRequest) return;
+        ...(stage ? { sourceStageRef: stage.stageRef } : { modelSource: loadedModelSource }) }, timing?.trace);
+      if (previewContext.current.revision !== currentContext || modelLoadRequest.current !== currentViewRequest) {
+        timing?.finish("cancelled"); return;
+      }
+      setDrawingDisplayTiming(timing);
       setDocumentView({ open: true, mounted: true, runId: result.runId, sourceSha: result.assetSha256,
         revisionRef: result.revisionRef ?? null, pageIndex: 0 });
     } catch (cause) {
+      timing?.finish(previewContext.current.revision === currentContext && modelLoadRequest.current === currentViewRequest ? "failed" : "cancelled");
       if (previewContext.current.revision === currentContext && modelLoadRequest.current === currentViewRequest) {
         setDrawingError(asStudioApiError(cause));
       }
@@ -1930,9 +1996,23 @@ export default function App({ server, initialDocumentIntent }: {
       // loaded model until the exact geometry arrives.
       viewportRef.current?.ghost(null);
       setGhostProposalId(null);
-      const preview = beginCandidatePreview();
+      const priorTiming = proposalTimings.current.get(proposalId);
+      proposalTimings.current.delete(proposalId);
+      const timing: EditTimingTicket | null = priorTiming && !priorTiming.root.closed ? priorTiming
+        : monitorDiagnostics && project && projection ? {
+          root: startClientTiming("design_edit", { projectId: project.projectId,
+            runId: sourceRunId ?? (projection.referenceRunSource === "none" ? null : projection.referenceRun.runId), sourceRef: projection.sourceStageRef }),
+          intentMs: 0, betweenActionsMs: 0,
+        } : null;
+      if (timing) {
+        timing.betweenActionsMs = timing.intentFinishedAt === undefined ? 0 : Math.round(performance.now() - timing.intentFinishedAt);
+        timing.candidate = startClientTiming("candidate_wait", timing.root.binding, timing.root.trace);
+        activeEditTiming.current = timing;
+      }
+      const preview = beginCandidatePreview(timing);
       try {
-        const accepted = await studio.startCandidate(proposalId);
+        const accepted = await studio.startCandidate(proposalId, timing?.candidate?.trace);
+        if (timing) candidateTimings.current.set(accepted.candidateId, timing);
         if (autoShowRef.current === preview) preview.candidateId = accepted.candidateId;
         append({
           kind: "candidate",
@@ -1942,6 +2022,7 @@ export default function App({ server, initialDocumentIntent }: {
           status: accepted.status,
         });
       } catch (cause) {
+        finishEditTiming(timing, "failed");
         if (autoShowRef.current === preview) autoShowRef.current = null;
         const error = asStudioApiError(cause);
         recoverFromStaleBase(error);
@@ -1954,7 +2035,7 @@ export default function App({ server, initialDocumentIntent }: {
         setCandidateBusy(false);
       }
     },
-    [append, beginCandidatePreview, recoverFromStaleBase],
+    [append, beginCandidatePreview, monitorDiagnostics, project, projection, recoverFromStaleBase, sourceRunId],
   );
 
   /**
@@ -2110,7 +2191,7 @@ export default function App({ server, initialDocumentIntent }: {
     const candidate = candidates[candidateId];
     if (!candidate) return;
     const rows = viewableArtifacts(candidate.artifacts);
-    if (rows.length === 0) return;
+    if (rows.length === 0) { finishEditTiming(preview.timing, "failed"); return; }
     const twin =
       rows.find((row) => row.representation === "composed" && row.modelSource != null) ??
       rows.find((row) => loadedArtifact !== null && row.stageId === loadedArtifact.stageId) ??
@@ -2118,6 +2199,7 @@ export default function App({ server, initialDocumentIntent }: {
     preview.started = true;
     if (preview.context !== previewContext.current.revision ||
         preview.viewRequest !== modelLoadRequest.current || manualLoadRef.current) {
+      finishEditTiming(preview.timing, "cancelled");
       append({
         kind: "system",
         ...systemText([
@@ -2138,8 +2220,10 @@ export default function App({ server, initialDocumentIntent }: {
       catch (cause) { setArtifactError(asStudioApiError(cause)); return false; }
       if (autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current) return false;
       return loadArtifactIntoViewer(twin, candidateSourceLabel(candidateId), loadedArtifact !== null,
-        () => autoShowRef.current === preview && preview.context === previewContext.current.revision);
+        () => autoShowRef.current === preview && preview.context === previewContext.current.revision, preview.timing?.candidate);
     })().then((shown) => {
+      finishEditTiming(preview.timing, shown ? "succeeded" :
+        autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current ? "cancelled" : "failed");
       if (shown && preview.context === previewContext.current.revision) {
         if (designHistoryEnabled) void reload(twin.runId).then((next) => {
           if (next) setDocumentView((current) => ({ ...current, runId: twin.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
@@ -2619,6 +2703,7 @@ export default function App({ server, initialDocumentIntent }: {
             onEraseGestures={(indices) => editGestures((current) => current.filter((_, index) => !indices.includes(index)))}
             documentProjectId={binding?.projectId ?? null}
             documentView={documentView}
+            documentTiming={drawingDisplayTiming ?? undefined}
             drawing={server.capabilities.includes("drawing-elevations") ? { busy: drawingBusy, error: drawingError, available: loadedModelSource !== null && !modelLoading && !changingBase,
               dismissError: () => setDrawingError(null), generate: (view) => { void generateElevation(view); } } : undefined}
             documentAnnotationsController={documentController}
@@ -2662,9 +2747,17 @@ export default function App({ server, initialDocumentIntent }: {
               onCandidate: (source) => { void changeEditingBase(source.runId, source); },
               onAccept: (candidateId) => {
                 const branch = designHistory?.branches.find((item) => item.branchId === designHistory.branchId);
-                if (project && branch) void updateDesignHistory(() => studio.acceptCandidate(candidateId, {
-                  projectId: project.projectId, branchId: branch.branchId, expectedHeadStageRef: branch.headStageRef,
-                }));
+                if (project && branch) void updateDesignHistory(async () => {
+                  const timing = monitorDiagnostics ? startClientTiming("stage_wait", {
+                    projectId: project.projectId, runId: candidateId, sourceRef: branch.headStageRef,
+                  }) : null;
+                  try {
+                    const stage = await studio.acceptCandidate(candidateId, {
+                      projectId: project.projectId, branchId: branch.branchId, expectedHeadStageRef: branch.headStageRef,
+                    }, timing?.trace);
+                    timing?.finish("succeeded"); return stage;
+                  } catch (cause) { timing?.finish("failed"); throw cause; }
+                });
               },
               onFork: (stage, name) => { void forkDesignBranch(stage, name); },
               onCombine: (ids) => { void combineDesignCandidates(ids); },
@@ -2756,6 +2849,7 @@ export default function App({ server, initialDocumentIntent }: {
               setViewerMessage(message);
             }}
             onRequestFile={() => fileInputRef.current?.click()}
+            onOpenFile={openLocalFile}
             onSource={noteSource}
             onPick={(pick) => void resolvePick(pick)}
             onOpenVersion={(artifact, label) => {

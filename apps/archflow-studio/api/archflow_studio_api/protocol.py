@@ -89,4 +89,5 @@ def server_capabilities(settings: StudioSettings) -> tuple[str, ...]:
         capabilities.append("user-settings")
     if settings.monitor_dir is not None:
         capabilities.append("operation-timing")
+        capabilities.append("operation-diagnostics")
     return tuple(sorted(capabilities))

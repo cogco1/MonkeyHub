@@ -11,6 +11,7 @@ started, and the tests refuse any attempt to.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -1154,6 +1155,168 @@ def _program_of(*operations: GeometryOperation) -> CompiledGeometryProgram:
         )
     )
     return replace(program, proposal=proposal, operation_order=tuple(op.op_id for op in operations), objects=objects)
+
+
+@NEEDS_OCCT
+class OcctOperationObservationTests(unittest.TestCase):
+    def test_build_reports_actual_dependency_work_and_reused_final_shape(self) -> None:
+        seed = _box("seed", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        left = _array("left", seed, count=2, step=[2.0, 0.0, 0.0])
+        right = _array("right", seed, count=2, step=[0.0, 0.0, 2.0])
+        initial_events = []
+        prior = occt_backend.build_program_shapes(_program_of(seed, left, right), operation_observer=initial_events.append)
+        self.assertEqual(initial_events[0]["details"]["cache_status"], "miss")
+        changed_right = _array("right", seed, count=3, step=[0.0, 0.0, 2.0])
+        program = _program_of(seed, left, changed_right)
+        events = []
+        with _no_process(), patch.object(occt_backend, "_build_operation", wraps=occt_backend._build_operation) as executed:
+            build = occt_backend.build_program_shapes(
+                program,
+                reusable_shapes={"left-object": prior.objects["left-object"].shape},
+                operation_observer=events.append,
+                observation_parent_id="export-operation",
+            )
+        self.assertEqual([call.args[2].op_id for call in executed.call_args_list], ["seed", "right"])
+        self.assertEqual(build.executed_operation_ids, ("seed", "right"))
+        self.assertEqual(build.recomputed_object_ids, ("right-object", "seed-object"))
+        self.assertEqual(build.reused_object_ids, ("left-object",))
+        self.assertIs(build.objects["left-object"].shape, prior.objects["left-object"].shape)
+        self.assertAlmostEqual(occt_backend.measure_shape(build.objects["right-object"].shape).volume, 3.0)
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual((event["phase"], event["status"], event["parent_event_id"]),
+                         ("geometry_build", "succeeded", "export-operation"))
+        self.assertEqual(event["details"]["input_identity"], {"program_digest": program.program_digest})
+        self.assertEqual(event["details"]["input_object_ids"], ["left-object", "seed-object"])
+        self.assertEqual(event["details"]["recomputed_object_ids"], ["right-object", "seed-object"])
+        self.assertEqual(event["details"]["reused_object_ids"], ["left-object"])
+        self.assertEqual(event["details"]["emitted_object_ids"], ["left-object", "right-object"])
+        self.assertEqual(event["details"]["executed_stages"], ["build_program_shapes"])
+        self.assertEqual(event["details"]["cache_status"], "partial")
+        self.assertNotIn("input_equivalent", event["details"])
+        self.assertIs(type(event["duration_ms"]), int)
+        self.assertGreaterEqual(event["duration_ms"], 0)
+        events.clear()
+        with patch.object(occt_backend, "_build_operation", side_effect=AssertionError("fully reused shapes must not rebuild")):
+            reused = occt_backend.build_program_shapes(
+                program, reusable_shapes={key: build.objects[key].shape for key in build.physical_object_ids},
+                operation_observer=events.append,
+            )
+        self.assertEqual(reused.executed_operation_ids, ())
+        self.assertEqual(events[0]["details"]["executed_stages"], [])
+        self.assertEqual(events[0]["details"]["reused_object_ids"], ["left-object", "right-object"])
+        self.assertEqual(events[0]["details"]["cache_status"], "hit")
+
+    def test_build_observer_failure_preserves_geometry_and_original_exception(self) -> None:
+        program = _single_operation_program(_box("body", [0.0, 0.0, 0.0], [1.0, 2.0, 3.0]))
+        for observer_failure in (RuntimeError, asyncio.CancelledError):
+            with self.subTest(observer_failure=observer_failure):
+                events = []
+
+                def broken_observer(event):
+                    events.append(event)
+                    raise observer_failure("observer unavailable")
+
+                with _no_process():
+                    build = occt_backend.build_program_shapes(program, operation_observer=broken_observer)
+                self.assertAlmostEqual(occt_backend.measure_shape(build.objects["body-object"].shape).volume, 6.0)
+                for failure in (occt_backend.OcctBuildError("kernel failed"), asyncio.CancelledError("kernel cancelled")):
+                    with patch.object(occt_backend, "_build_operation", side_effect=failure):
+                        with self.assertRaises(type(failure)) as caught:
+                            occt_backend.build_program_shapes(program, operation_observer=broken_observer)
+                    self.assertIs(caught.exception, failure)
+                self.assertEqual([event["status"] for event in events], ["succeeded", "failed", "failed"])
+                for event in events:
+                    self.assertIs(type(event["duration_ms"]), int)
+                self.assertEqual(events[-1]["details"]["emitted_object_ids"], [])
+
+    def _preview_inputs(self):
+        program = _program_of(
+            _box("left", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            _box("right", [2.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+        )
+        build = occt_backend.build_program_shapes(program)
+        objects = tuple(occt_backend.PreviewObject(
+            object_id=name, shape=build.objects[name].shape, layer="body", user_text={},
+        ) for name in build.physical_object_ids)
+        return objects, dict(
+            layer_colors={"body": (100, 100, 100)},
+            document_user_text={"archflow:program_digest": program.program_digest},
+            length_unit="meter", linear_deflection=0.01,
+        )
+
+    def test_preview_observer_separates_active_tessellation_from_file_write(self) -> None:
+        objects, options = self._preview_inputs()
+        events = []
+        with tempfile.TemporaryDirectory() as tmp, _no_process():
+            preview = Path(tmp) / "observed.preview.3dm"
+            with patch.object(occt_backend.time, "perf_counter", side_effect=[100.0, 100.125, 105.0, 105.25, 110.0, 110.5]):
+                counts = occt_backend.write_preview_three_dm(
+                    preview, objects, **options,
+                    operation_observer=events.append, observation_parent_id="export-operation",
+                )
+            inspection = inspect_three_dm(preview)
+            self.assertEqual(inspection.object_count, 2)
+        self.assertEqual(set(counts), {"left-object", "right-object"})
+        self.assertEqual([event["phase"] for event in events], ["tessellation", "preview_write"])
+        self.assertEqual([event["duration_ms"] for event in events], [375, 500])
+        self.assertEqual(events[0]["details"]["scope"], "aggregate_active_time")
+        self.assertEqual(events[0]["details"]["cache_status"], "unknown")
+        self.assertEqual(events[0]["details"]["executed_stages"], ["tessellate_shape"])
+        self.assertEqual(events[1]["details"]["scope"], "file_write")
+        self.assertEqual(events[1]["details"]["executed_stages"], ["write_preview_three_dm"])
+        for event in events:
+            self.assertIs(type(event["duration_ms"]), int)
+            self.assertEqual((event["status"], event["parent_event_id"]), ("succeeded", "export-operation"))
+            self.assertEqual(event["details"]["input_object_ids"], ["left-object", "right-object"])
+            self.assertEqual(event["details"]["emitted_object_ids"], ["left-object", "right-object"])
+
+    def test_preview_observer_failure_preserves_written_file_and_write_refusal(self) -> None:
+        objects, options = self._preview_inputs()
+        for observer_failure in (RuntimeError, asyncio.CancelledError):
+            with self.subTest(observer_failure=observer_failure):
+                events = []
+
+                def broken_observer(event):
+                    events.append(event)
+                    raise observer_failure("observer unavailable")
+
+                with tempfile.TemporaryDirectory() as tmp, _no_process():
+                    preview = Path(tmp) / "observed.preview.3dm"
+                    occt_backend.write_preview_three_dm(preview, objects, **options, operation_observer=broken_observer)
+                    self.assertEqual(inspect_three_dm(preview).object_count, 2)
+                    with self.assertRaisesRegex(occt_backend.OcctBuildError, "preview .3dm write failed"):
+                        occt_backend.write_preview_three_dm(
+                            Path(tmp) / "missing" / "refused.preview.3dm", objects, **options,
+                            operation_observer=broken_observer,
+                        )
+                self.assertEqual([event["status"] for event in events], ["succeeded", "succeeded", "succeeded", "failed"])
+                for event in events:
+                    self.assertIs(type(event["duration_ms"]), int)
+                self.assertEqual(events[-1]["details"]["emitted_object_ids"], [])
+
+    def test_tessellation_failure_preserves_exception_and_reports_only_attempted_work(self) -> None:
+        objects, options = self._preview_inputs()
+        first_mesh = occt_backend.tessellate_shape(objects[0].shape, linear_deflection=0.01)
+        failure = occt_backend.OcctBuildError("tessellation failed")
+        events = []
+
+        def broken_observer(event):
+            events.append(event)
+            raise RuntimeError("observer unavailable")
+
+        with tempfile.TemporaryDirectory() as tmp, _no_process():
+            preview = Path(tmp) / "refused.preview.3dm"
+            with patch.object(occt_backend, "tessellate_shape", side_effect=[first_mesh, failure]):
+                with self.assertRaises(occt_backend.OcctBuildError) as caught:
+                    occt_backend.write_preview_three_dm(preview, objects, **options, operation_observer=broken_observer)
+            self.assertFalse(preview.exists())
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(len(events), 1)
+        self.assertEqual((events[0]["phase"], events[0]["status"]), ("tessellation", "failed"))
+        self.assertIs(type(events[0]["duration_ms"]), int)
+        self.assertEqual(events[0]["details"]["input_object_ids"], ["left-object", "right-object"])
+        self.assertEqual(events[0]["details"]["emitted_object_ids"], ["left-object"])
 
 
 @NEEDS_OCCT

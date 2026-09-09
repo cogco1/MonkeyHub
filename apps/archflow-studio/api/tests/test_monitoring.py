@@ -1,10 +1,11 @@
 import asyncio
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import os
+import time
 import unittest
 from unittest.mock import patch
 
@@ -55,7 +56,14 @@ class MonitoringTests(unittest.TestCase):
                 class Compiler:
                     provider = "anthropic"
                     model = "requested-model"
-                    def compile(self, **kwargs):
+                    def compile(self, *, operation_observer=None, **kwargs):
+                        started = datetime.now(timezone.utc).isoformat()
+                        clock = time.perf_counter()
+                        time.sleep(0.01)
+                        operation_observer(dict(phase="model_request", status="succeeded", started_at=started,
+                            ended_at=datetime.now(timezone.utc).isoformat(), duration_ms=round((time.perf_counter() - clock) * 1000),
+                            details={"model_inference_ms": None}))
+                        time.sleep(0.02)  # Local answer parsing is outside the provider boundary.
                         if status == "failed":
                             error = RuntimeError("private provider text")
                             error.receipt = receipt
@@ -67,10 +75,18 @@ class MonitoringTests(unittest.TestCase):
                 else:
                     self.assertEqual(self.run_call(Compiler(), Path(directory)).status, status)
                 events, warnings = UsageLog(Path(directory)).read()
-                self.assertEqual(len(events), 1)
+                self.assertEqual(len(events), 2)
+                parent = next(event for event in events if event.phase == "intent_compile")
+                events = [event for event in events if event.phase == "model_request"]
+                self.assertEqual(events[0].parent_event_id, parent.event_id)
+                self.assertEqual(events[0].operation_id, parent.operation_id)
+                self.assertGreater(parent.duration_ms, events[0].duration_ms)
+                self.assertFalse(parent.model_call)
+                self.assertTrue(all(count is None for count in parent.tokens.to_dict().values()))
                 self.assertEqual(events[0].model, "actual-model")
                 self.assertEqual(events[0].tokens.input_tokens, 125)
-                self.assertEqual(events[0].status, status)
+                self.assertEqual(events[0].status, "succeeded")
+                self.assertEqual(parent.status, "failed" if status == "failed" else "succeeded")
                 self.assertEqual(events[0].billing_mode, "api_estimate")
                 self.assertEqual(events[0].event_id, "studio:model:model-receipt")
                 self.assertEqual(events[0].timing_scope, "model_call")
@@ -85,7 +101,10 @@ class MonitoringTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             target = Path(directory) / "absent"
             self.run_call(DeterministicCompiler(), target)
-            self.assertFalse(target.exists())
+            events, warnings = UsageLog(target).read()
+            self.assertFalse(warnings)
+            self.assertEqual([event.phase for event in events], ["intent_compile"])
+            self.assertFalse(events[0].model_call)
 
     def test_diagnostic_failure_does_not_repeat_or_fail_compilation(self):
         class BrokenStore:
@@ -139,24 +158,30 @@ class MonitoringTests(unittest.TestCase):
             first, second = Gate(), Gate()
             try:
                 for run_id, gate in (("first", first), ("second", second)):
-                    registry.submit(candidate_id=run_id, proposal_id=f"proposal-{run_id}", work=gate,
-                                    project_id="example", source_ref="retained-input",
-                                    related_event_id="studio:model:model-receipt")
+                    with registry._monitor.scope(operation_id=f"operation:{run_id}", parent_event_id=f"request:{run_id}"):
+                        registry.submit(candidate_id=run_id, proposal_id=f"proposal-{run_id}", work=gate,
+                                        project_id="example", source_ref="retained-input",
+                                        related_event_id="studio:model:model-receipt")
                 self.assertTrue(first.started.wait(2))
                 events, _ = store.read()
-                self.assertEqual([event.run_id for event in events], ["first"])
+                self.assertEqual({event.run_id for event in events}, {"first"})
                 self.assertEqual(registry.for_candidate("second").status, "queued")
                 first.release.set()
                 self.assertTrue(second.started.wait(2))
                 events, _ = store.read()
-                by_run = {event.run_id: event for event in events}
+                by_run = {event.run_id: event for event in events if event.phase == "candidate"}
                 self.assertGreaterEqual(datetime.fromisoformat(by_run["second"].started_at), datetime.fromisoformat(by_run["first"].ended_at))
                 second.release.set()
                 self.assertTrue(wait_until(lambda: registry.for_candidate("second").status == "succeeded"))
                 events, warnings = store.read()
                 self.assertFalse(warnings)
-                self.assertEqual(len(events), 2)
-                for event in events:
+                self.assertEqual(len(events), 4)
+                queues = [event for event in events if event.phase == "candidate_queue"]
+                self.assertEqual(len(queues), 2)
+                self.assertGreaterEqual(queues[1].duration_ms, queues[0].duration_ms)
+                for event in (event for event in events if event.phase == "candidate"):
+                    self.assertEqual(event.operation_id, f"operation:{event.run_id}")
+                    self.assertEqual(event.parent_event_id, f"request:{event.run_id}")
                     self.assertEqual(event.event_id, candidate_event_id("example", event.run_id))
                     self.assertEqual(event.related_event_id, "studio:model:model-receipt")
                     self.assertEqual(event.source_ref, "retained-input")
@@ -180,6 +205,7 @@ class MonitoringTests(unittest.TestCase):
                 self.assertEqual(registry.for_candidate("failed").error, "candidate source was stale")
                 events, warnings = store.read()
                 self.assertFalse(warnings)
+                events = [event for event in events if event.phase == "candidate"]
                 self.assertEqual(len(events), 1)
                 self.assertEqual(events[0].status, "failed")
                 self.assertIsNotNone(events[0].ended_at)
@@ -201,7 +227,7 @@ class MonitoringTests(unittest.TestCase):
                 executor = patch.object(project_runner, "_export_occt",
                                         **({"side_effect": outcome} if isinstance(outcome, BaseException) else {"return_value": outcome}))
                 with executor as export:
-                    arguments = (None, None, None, None, None, "stage", SimpleNamespace(cad_backend="occt"), {"state_record_ref": "retained-state"})
+                    arguments = (None, None, None, None, SimpleNamespace(program_digest="a" * 64), "stage", SimpleNamespace(cad_backend="occt"), {"state_record_ref": "retained-state"})
                     if isinstance(outcome, BaseException):
                         with self.assertRaises(type(outcome)) as caught:
                             project_runner._export(*arguments, operation_observer=broken_observer)

@@ -337,13 +337,12 @@ def _run_successor(
                 ).mkdir(parents=True, exist_ok=True)
     observations = {}
     if monitor is not None and monitor.store is not None:
+        observed = monitor.observer(project_id=binding.project_id, run_id=run_id)
         def observe_export(timing):
-            monitor.record(
-                phase=f"geometry_export.{timing['backend']}.{timing['path']}",
-                status=timing["status"], started_at=timing["started_at"], ended_at=timing["ended_at"],
-                duration_ms=timing["duration_ms"], project_id=binding.project_id, run_id=run_id,
-                source_ref=timing["source_ref"], related_event_id=candidate_event_id(binding.project_id, run_id),
-            )
+            # The runner also exposes nested operations. Backend/path are its
+            # export compatibility fields; the observation already names phase.
+            observed({"related_event_id": candidate_event_id(binding.project_id, run_id),
+                      **{key: value for key, value in timing.items() if key not in {"backend", "path"}}})
         observations["operation_observer"] = observe_export
     return run_project(
         repository,

@@ -710,6 +710,89 @@ export type CatalogElementDto = {
 };
 
 /**
+ * ClientTimingDetailsDto
+ */
+export type ClientTimingDetailsDto = {
+    /**
+     * Active Wait Ms
+     */
+    active_wait_ms?: number | null;
+    /**
+     * Between Actions Ms
+     */
+    between_actions_ms?: number | null;
+    /**
+     * Input Bytes
+     */
+    input_bytes?: number | null;
+    /**
+     * Asset Sha256
+     */
+    asset_sha256?: string | null;
+    /**
+     * Retry Attempt
+     */
+    retry_attempt?: number | null;
+    /**
+     * Request Kind
+     */
+    request_kind?: 'candidate_poll' | 'candidate_read' | 'artifact_bytes' | 'document_bytes' | null;
+};
+
+/**
+ * ClientTimingDto
+ *
+ * Browser intervals for one visible action; no message or document content.
+ */
+export type ClientTimingDto = {
+    /**
+     * Eventid
+     */
+    eventId: string;
+    /**
+     * Operationid
+     */
+    operationId: string;
+    /**
+     * Parenteventid
+     */
+    parentEventId?: string | null;
+    /**
+     * Phase
+     */
+    phase: 'design_edit' | 'intent_wait' | 'candidate_wait' | 'model_load' | 'model_download' | 'model_parse' | 'drawing_wait' | 'document_load' | 'document_render' | 'stage_wait' | 'api_wait';
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId?: string | null;
+    /**
+     * Sourceref
+     */
+    sourceRef?: string | null;
+    /**
+     * Startedat
+     */
+    startedAt: string;
+    /**
+     * Endedat
+     */
+    endedAt?: string | null;
+    /**
+     * Durationms
+     */
+    durationMs?: number | null;
+    /**
+     * Status
+     */
+    status: 'running' | 'succeeded' | 'failed' | 'cancelled';
+    details?: ClientTimingDetailsDto;
+};
+
+/**
  * ClosureDto
  *
  * One closure and the edges that carried it.
@@ -4788,10 +4871,29 @@ export type WorkingCopySelectionRequestDto = {
 
 export type ReadHealthApiHealthGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/health';
 };
+
+export type ReadHealthApiHealthGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadHealthApiHealthGetError = ReadHealthApiHealthGetErrors[keyof ReadHealthApiHealthGetErrors];
 
 export type ReadHealthApiHealthGetResponses = {
     /**
@@ -4804,10 +4906,29 @@ export type ReadHealthApiHealthGetResponse = ReadHealthApiHealthGetResponses[key
 
 export type ReadProtocolApiProtocolGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/protocol';
 };
+
+export type ReadProtocolApiProtocolGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProtocolApiProtocolGetError = ReadProtocolApiProtocolGetErrors[keyof ReadProtocolApiProtocolGetErrors];
 
 export type ReadProtocolApiProtocolGetResponses = {
     /**
@@ -4820,10 +4941,29 @@ export type ReadProtocolApiProtocolGetResponse = ReadProtocolApiProtocolGetRespo
 
 export type GetUserSettingsApiSettingsUserGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/settings/user';
 };
+
+export type GetUserSettingsApiSettingsUserGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetUserSettingsApiSettingsUserGetError = GetUserSettingsApiSettingsUserGetErrors[keyof GetUserSettingsApiSettingsUserGetErrors];
 
 export type GetUserSettingsApiSettingsUserGetResponses = {
     /**
@@ -4836,6 +4976,16 @@ export type GetUserSettingsApiSettingsUserGetResponse = GetUserSettingsApiSettin
 
 export type PutUserSettingsApiSettingsUserPutData = {
     body: UserSettingsDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/settings/user';
@@ -4861,10 +5011,29 @@ export type PutUserSettingsApiSettingsUserPutResponse = PutUserSettingsApiSettin
 
 export type ReadProjectsApiProjectsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/projects';
 };
+
+export type ReadProjectsApiProjectsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectsApiProjectsGetError = ReadProjectsApiProjectsGetErrors[keyof ReadProjectsApiProjectsGetErrors];
 
 export type ReadProjectsApiProjectsGetResponses = {
     /**
@@ -4877,6 +5046,16 @@ export type ReadProjectsApiProjectsGetResponse = ReadProjectsApiProjectsGetRespo
 
 export type ReadProjectByIdApiProjectsProjectIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -4907,10 +5086,29 @@ export type ReadProjectByIdApiProjectsProjectIdGetResponse = ReadProjectByIdApiP
 
 export type ReadProjectApiProjectGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/project';
 };
+
+export type ReadProjectApiProjectGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectApiProjectGetError = ReadProjectApiProjectGetErrors[keyof ReadProjectApiProjectGetErrors];
 
 export type ReadProjectApiProjectGetResponses = {
     /**
@@ -4923,6 +5121,16 @@ export type ReadProjectApiProjectGetResponse = ReadProjectApiProjectGetResponses
 
 export type ReadStateApiStateGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -4959,6 +5167,16 @@ export type ReadStateApiStateGetResponse = ReadStateApiStateGetResponses[keyof R
 
 export type ReadFrameApiStateFrameGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -4989,6 +5207,16 @@ export type ReadFrameApiStateFrameGetResponse = ReadFrameApiStateFrameGetRespons
 
 export type ReadVolumesApiStateVolumesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -5019,6 +5247,16 @@ export type ReadVolumesApiStateVolumesGetResponse = ReadVolumesApiStateVolumesGe
 
 export type ReadClosureApiStateClosurePostData = {
     body: ClosureRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/state/closure';
@@ -5044,6 +5282,16 @@ export type ReadClosureApiStateClosurePostResponse = ReadClosureApiStateClosureP
 
 export type ReadSheetApiProgramGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -5074,6 +5322,16 @@ export type ReadSheetApiProgramGetResponse = ReadSheetApiProgramGetResponses[key
 
 export type ApplyProgramApiProgramPostData = {
     body: ProgramApplyRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/program';
@@ -5099,10 +5357,29 @@ export type ApplyProgramApiProgramPostResponse = ApplyProgramApiProgramPostRespo
 
 export type ReadSemanticsApiSemanticsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/semantics';
 };
+
+export type ReadSemanticsApiSemanticsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSemanticsApiSemanticsGetError = ReadSemanticsApiSemanticsGetErrors[keyof ReadSemanticsApiSemanticsGetErrors];
 
 export type ReadSemanticsApiSemanticsGetResponses = {
     /**
@@ -5115,6 +5392,16 @@ export type ReadSemanticsApiSemanticsGetResponse = ReadSemanticsApiSemanticsGetR
 
 export type CreateModelAssetApiModelAssetsPostData = {
     body: ModelAssetRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/model-assets';
@@ -5140,6 +5427,16 @@ export type CreateModelAssetApiModelAssetsPostResponse = CreateModelAssetApiMode
 
 export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostData = {
     body: DocumentModelSourceRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Asset Sha256
@@ -5170,6 +5467,16 @@ export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostRe
 
 export type ReadDocumentsApiDocumentsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -5200,6 +5507,16 @@ export type ReadDocumentsApiDocumentsGetResponse = ReadDocumentsApiDocumentsGetR
 
 export type CreateDocumentApiDocumentsPostData = {
     body: SourceDocumentRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/documents';
@@ -5225,6 +5542,16 @@ export type CreateDocumentApiDocumentsPostResponse = CreateDocumentApiDocumentsP
 
 export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Asset Sha256
@@ -5262,10 +5589,29 @@ export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetResponses = {
 
 export type ReadArtifactsApiArtifactsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/artifacts';
 };
+
+export type ReadArtifactsApiArtifactsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadArtifactsApiArtifactsGetError = ReadArtifactsApiArtifactsGetErrors[keyof ReadArtifactsApiArtifactsGetErrors];
 
 export type ReadArtifactsApiArtifactsGetResponses = {
     /**
@@ -5278,6 +5624,16 @@ export type ReadArtifactsApiArtifactsGetResponse = ReadArtifactsApiArtifactsGetR
 
 export type CreateViewportCaptureApiCapturesPostData = {
     body: ViewportCaptureRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/captures';
@@ -5303,6 +5659,16 @@ export type CreateViewportCaptureApiCapturesPostResponse = CreateViewportCapture
 
 export type ReadArtifactBytesApiArtifactsSha256BytesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Sha256
@@ -5331,10 +5697,29 @@ export type ReadArtifactBytesApiArtifactsSha256BytesGetResponses = {
 
 export type ReadBoardApiBoardGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/board';
 };
+
+export type ReadBoardApiBoardGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadBoardApiBoardGetError = ReadBoardApiBoardGetErrors[keyof ReadBoardApiBoardGetErrors];
 
 export type ReadBoardApiBoardGetResponses = {
     /**
@@ -5347,6 +5732,16 @@ export type ReadBoardApiBoardGetResponse = ReadBoardApiBoardGetResponses[keyof R
 
 export type UpdateBoardApiBoardPutData = {
     body: BoardRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/board';
@@ -5372,6 +5767,16 @@ export type UpdateBoardApiBoardPutResponse = UpdateBoardApiBoardPutResponses[key
 
 export type ExportBoardApiBoardExportPostData = {
     body: BoardExportRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/board/export';
@@ -5395,6 +5800,16 @@ export type ExportBoardApiBoardExportPostResponses = {
 
 export type CreateElevationApiDrawingsElevationsPostData = {
     body: ElevationRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/drawings/elevations';
@@ -5420,6 +5835,16 @@ export type CreateElevationApiDrawingsElevationsPostResponse = CreateElevationAp
 
 export type ResolveApiPickResolvePostData = {
     body: PickRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/pick/resolve';
@@ -5445,6 +5870,16 @@ export type ResolveApiPickResolvePostResponse = ResolveApiPickResolvePostRespons
 
 export type CreateProposalApiProposalsPostData = {
     body: ProposalRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/proposals';
@@ -5470,6 +5905,16 @@ export type CreateProposalApiProposalsPostResponse = CreateProposalApiProposalsP
 
 export type ReadProposalApiProposalsProposalIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Proposal Id
@@ -5500,6 +5945,16 @@ export type ReadProposalApiProposalsProposalIdGetResponse = ReadProposalApiPropo
 
 export type DecideProposalApiProposalsProposalIdDecisionPostData = {
     body: ProposalDecisionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Proposal Id
@@ -5530,6 +5985,16 @@ export type DecideProposalApiProposalsProposalIdDecisionPostResponse = DecidePro
 
 export type ReadSavedModelAnnotationsApiModelAnnotationsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query: {
         /**
@@ -5572,6 +6037,16 @@ export type ReadSavedModelAnnotationsApiModelAnnotationsGetResponse = ReadSavedM
 
 export type WriteSavedModelAnnotationsApiModelAnnotationsPutData = {
     body: ModelAnnotationsRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/model-annotations';
@@ -5597,6 +6072,16 @@ export type WriteSavedModelAnnotationsApiModelAnnotationsPutResponse = WriteSave
 
 export type ReadDocumentPageAnnotationsApiDocumentAnnotationsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query: {
         /**
@@ -5643,6 +6128,16 @@ export type ReadDocumentPageAnnotationsApiDocumentAnnotationsGetResponse = ReadD
 
 export type WriteDocumentPageAnnotationsApiDocumentAnnotationsPutData = {
     body: DocumentAnnotationsRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/document-annotations';
@@ -5668,6 +6163,16 @@ export type WriteDocumentPageAnnotationsApiDocumentAnnotationsPutResponse = Writ
 
 export type ReadSubmittedDocumentCommentsApiDocumentCommentsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query: {
         /**
@@ -5698,6 +6203,16 @@ export type ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponse = ReadSu
 
 export type CompileIntentApiIntentsPostData = {
     body: IntentRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/intents';
@@ -5723,6 +6238,16 @@ export type CompileIntentApiIntentsPostResponse = CompileIntentApiIntentsPostRes
 
 export type ReadOptionsApiOptionsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -5753,6 +6278,16 @@ export type ReadOptionsApiOptionsGetResponse = ReadOptionsApiOptionsGetResponses
 
 export type MakeMassingOptionApiOptionsPostData = {
     body: MassingOptionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/options';
@@ -5778,6 +6313,16 @@ export type MakeMassingOptionApiOptionsPostResponse = MakeMassingOptionApiOption
 
 export type SelectOptionApiOptionsOptionIdSelectPostData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Option Id
@@ -5808,6 +6353,16 @@ export type SelectOptionApiOptionsOptionIdSelectPostResponse = SelectOptionApiOp
 
 export type StartCandidateApiProposalsProposalIdCandidatePostData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Proposal Id
@@ -5838,6 +6393,16 @@ export type StartCandidateApiProposalsProposalIdCandidatePostResponse = StartCan
 
 export type CombineCandidatesApiCandidatesCombinePostData = {
     body: CombineCandidatesRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/candidates/combine';
@@ -5863,6 +6428,16 @@ export type CombineCandidatesApiCandidatesCombinePostResponse = CombineCandidate
 
 export type ReadJobApiJobsJobIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Job Id
@@ -5893,6 +6468,16 @@ export type ReadJobApiJobsJobIdGetResponse = ReadJobApiJobsJobIdGetResponses[key
 
 export type ReadCandidateApiCandidatesCandidateIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Candidate Id
@@ -5923,6 +6508,16 @@ export type ReadCandidateApiCandidatesCandidateIdGetResponse = ReadCandidateApiC
 
 export type CompareCandidateApiCandidatesCandidateIdCompareGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Candidate Id
@@ -5960,6 +6555,16 @@ export type CompareCandidateApiCandidatesCandidateIdCompareGetResponse = Compare
 
 export type ReadCommittedDesignHistoryApiDesignHistoryGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -5990,6 +6595,16 @@ export type ReadCommittedDesignHistoryApiDesignHistoryGetResponse = ReadCommitte
 
 export type InitializeCommittedDesignApiDesignStagesInitializePostData = {
     body: InitializeDesignStageRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/design-stages/initialize';
@@ -6015,6 +6630,16 @@ export type InitializeCommittedDesignApiDesignStagesInitializePostResponse = Ini
 
 export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostData = {
     body: AcceptDesignCandidateRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Candidate Id
@@ -6045,6 +6670,16 @@ export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponse = Ac
 
 export type ForkCommittedDesignApiDesignBranchesPostData = {
     body: ForkDesignBranchRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/design-branches';
@@ -6070,10 +6705,29 @@ export type ForkCommittedDesignApiDesignBranchesPostResponse = ForkCommittedDesi
 
 export type ReadWorkingCopiesApiWorkingCopiesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/working-copies';
 };
+
+export type ReadWorkingCopiesApiWorkingCopiesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadWorkingCopiesApiWorkingCopiesGetError = ReadWorkingCopiesApiWorkingCopiesGetErrors[keyof ReadWorkingCopiesApiWorkingCopiesGetErrors];
 
 export type ReadWorkingCopiesApiWorkingCopiesGetResponses = {
     /**
@@ -6086,6 +6740,16 @@ export type ReadWorkingCopiesApiWorkingCopiesGetResponse = ReadWorkingCopiesApiW
 
 export type CreateWorkingCopyGroupApiWorkingCopiesPostData = {
     body: WorkingCopyCreateRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/working-copies';
@@ -6111,6 +6775,16 @@ export type CreateWorkingCopyGroupApiWorkingCopiesPostResponse = CreateWorkingCo
 
 export type ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Group Id
@@ -6146,6 +6820,16 @@ export type ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetResponse = ReadWorking
 
 export type ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutData = {
     body: WorkingCopySelectionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Group Id
@@ -6176,6 +6860,16 @@ export type ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutResponse =
 
 export type AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostData = {
     body: WorkingCopyOptionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Group Id
@@ -6206,6 +6900,16 @@ export type AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostResponse = 
 
 export type ListEpisodesApiEpisodesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -6240,6 +6944,16 @@ export type ListEpisodesApiEpisodesGetResponse = ListEpisodesApiEpisodesGetRespo
 
 export type ReadEpisodeApiEpisodesEpisodeIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Episode Id
@@ -6270,6 +6984,16 @@ export type ReadEpisodeApiEpisodesEpisodeIdGetResponse = ReadEpisodeApiEpisodesE
 
 export type ReadValidationApiCandidatesCandidateIdValidationGetData = {
     body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path: {
         /**
          * Candidate Id
@@ -6300,6 +7024,16 @@ export type ReadValidationApiCandidatesCandidateIdValidationGetResponse = ReadVa
 
 export type RecordModelLoadApiEventsModelLoadPostData = {
     body: ModelLoadTimingDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/events/model-load';
@@ -6323,6 +7057,41 @@ export type RecordModelLoadApiEventsModelLoadPostResponses = {
 
 export type RecordModelLoadApiEventsModelLoadPostResponse = RecordModelLoadApiEventsModelLoadPostResponses[keyof RecordModelLoadApiEventsModelLoadPostResponses];
 
+export type RecordClientTimingApiEventsTimingPostData = {
+    body: ClientTimingDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/events/timing';
+};
+
+export type RecordClientTimingApiEventsTimingPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RecordClientTimingApiEventsTimingPostError = RecordClientTimingApiEventsTimingPostErrors[keyof RecordClientTimingApiEventsTimingPostErrors];
+
+export type RecordClientTimingApiEventsTimingPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MonitorWriteDto;
+};
+
+export type RecordClientTimingApiEventsTimingPostResponse = RecordClientTimingApiEventsTimingPostResponses[keyof RecordClientTimingApiEventsTimingPostResponses];
+
 export type StreamEventsApiEventsGetData = {
     body?: never;
     headers?: {
@@ -6330,6 +7099,14 @@ export type StreamEventsApiEventsGetData = {
          * Last-Event-Id
          */
         'Last-Event-ID'?: string | null;
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
     };
     path?: never;
     query?: {

@@ -98,6 +98,20 @@ class UsagePricingTests(unittest.TestCase):
             with self.subTest(counter=name), self.assertRaisesRegex(ValueError, "no provider token"):
                 UsageEvent(**{**base, "tokens": TokenUsage(**{**base["tokens"].to_dict(), name: 0})})
 
+    def test_operation_metadata_roundtrip_and_content_refusal(self):
+        details = {"input_identity": {"program_digest": "a" * 64, "seat_id": "shell"},
+                   "recomputed_object_ids": ["wall-1"], "cache_checks": {"source": "missing"}, "active_wait_ms": 150}
+        event = UsageEvent("op", "studio", "none", "none", "design_edit", "succeeded",
+            "2026-09-09T12:00:00Z", TokenUsage(), model_call=False, timing_scope="interaction",
+            operation_id="op", parent_event_id=None, details=details)
+        details["recomputed_object_ids"].append("later")
+        self.assertEqual(event.details["recomputed_object_ids"], ["wall-1"])
+        self.assertEqual(UsageEvent.from_dict(event.to_dict()), event)
+        for invalid in ({"prompt": "private"}, {"input_identity": {"prompt": "private"}},
+                        {"input_identity": {"program_digest": "private"}}, {"active_wait_ms": -1}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                UsageEvent(**{**event.to_dict(), "tokens": TokenUsage(), "details": invalid})
+
     def test_end_time_must_not_precede_start(self):
         with self.assertRaisesRegex(ValueError, "precedes"):
             UsageEvent("call", "studio", "test", "model", "intent", "completed",

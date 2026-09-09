@@ -1148,10 +1148,11 @@ class _ExportProject:
     def files(self, seat_id: str) -> list[str]:
         return sorted(p.name for p in self.workspace(seat_id).iterdir() if p.is_file())
 
-    def run_once(self, record: StateRecord | None = None) -> dict:
+    def run_once(self, record: StateRecord | None = None, *, operation_observer=None) -> dict:
         record = record if record is not None else self.record
         guard = _stage_guard(self.repository, self.run, record, self.options)
-        return run_project(self.repository, run=self.run, stage_guard=guard, record=record, seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=self.options)
+        return run_project(self.repository, run=self.run, stage_guard=guard, record=record, seats=_seats(DesignPhase.DESIGN_DEVELOPMENT),
+                           options=self.options, operation_observer=operation_observer)
 
     def records(self, prefix: str) -> list[Path]:
         return sorted(self.repository.layout.run("run-1").records.glob(f"{prefix}-*.json"))
@@ -1268,7 +1269,13 @@ class OcctExportTests(unittest.TestCase):
     def test_the_same_program_in_the_same_run_reuses_the_verified_files_and_nothing_else(self) -> None:
         project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
         first = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
-        second = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        spans = []
+        second = {s["seat_id"]: s["cad"] for s in project.run_once(operation_observer=spans.append)["seat_results"]}
+        lookups = [event for event in spans if event["phase"] == "export_cache_lookup"]
+        self.assertEqual(len(lookups), 2)
+        self.assertTrue(all(event["details"]["cache_status"] == "hit" for event in lookups))
+        self.assertTrue(all(event["details"]["input_equivalent"] for event in lookups))
+        self.assertFalse(any(event["phase"] in {"geometry_build", "step_write", "tessellation"} for event in spans))
         for seat_id in first:
             with self.subTest(seat=seat_id):
                 self.assertEqual(second[seat_id]["path"], "reused")
@@ -1281,7 +1288,12 @@ class OcctExportTests(unittest.TestCase):
         # a certified file that no longer hashes to its receipt is not reused: a fresh export under a new stem
         stem = first["seat-structure"]["exact_artifact"]["relative_path"]
         (project.workspace("seat-structure") / stem).write_bytes(b"ISO-10303-21; someone edited this")
-        third = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        spans.clear()
+        third = {s["seat_id"]: s["cad"] for s in project.run_once(operation_observer=spans.append)["seat_results"]}
+        misses = [event for event in spans if event["phase"] == "export_cache_lookup" and event["details"]["cache_status"] == "miss"]
+        self.assertEqual(len(misses), 1)
+        self.assertEqual(misses[0]["details"]["cache_reason"], "artifact_changed")
+        self.assertTrue(any(event["phase"] == "geometry_build" for event in spans))
         self.assertEqual(third["seat-envelope"]["path"], "reused")
         self.assertEqual(third["seat-structure"]["path"], "occt")
         self.assertNotEqual(third["seat-structure"]["execution_ref"], first["seat-structure"]["execution_ref"])
@@ -1299,6 +1311,68 @@ class OcctExportTests(unittest.TestCase):
         self.assertEqual((fourth["seat-structure"]["path"], fourth["seat-envelope"]["path"]), ("occt", "occt"))
         self.assertNotEqual(fourth["seat-structure"]["exact_artifact"]["sha256"], third["seat-structure"]["exact_artifact"]["sha256"])
         self.assertNotEqual(fourth["seat-structure"]["exact_artifact"]["relative_path"], third["seat-structure"]["exact_artifact"]["relative_path"])
+
+    def test_export_observation_keeps_actual_steps_and_one_parent_per_export(self) -> None:
+        from datetime import datetime
+        from monkeymonitor.usage import TokenUsage, UsageEvent
+
+        project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
+        spans = []
+        receipt = project.run_once(operation_observer=spans.append)
+        self.assertTrue(receipt["seat_execution_complete"])
+        self.assertTrue(all(event["source_ref"] == receipt["state_record_ref"]
+                            for event in spans if event["phase"] == "element_production"))
+        parents = {event["event_id"]: event for event in spans if event["phase"].startswith("geometry_export.")}
+        self.assertEqual(len(parents), 2)
+        for parent_id, parent in parents.items():
+            self.assertEqual(parent["source_ref"], receipt["state_record_ref"])
+            execution = project.repository.load_json(record_ref_from_uri(parent["details"]["output_refs"][0], "demo"))
+            program_ref = execution["identity"]["binding"]["program_ref"]
+            self.assertEqual(execution["identity"]["binding"]["program_digest"],
+                             parent["details"]["input_identity"]["program_digest"])
+            steps = [event for event in spans if event.get("parent_event_id") == parent_id]
+            self.assertTrue({"export_cache_lookup", "source_export_lookup", "occt_reuse_check", "geometry_build",
+                             "step_write", "step_readback", "tessellation", "preview_write", "preview_readback"}
+                            .issubset({event["phase"] for event in steps}))
+            for event in steps:
+                self.assertEqual(event["status"], "succeeded")
+                observed_source = record_ref_from_uri(event["source_ref"], "demo")
+                self.assertEqual(observed_source.relative_path, program_ref["relative_path"])
+                self.assertEqual(observed_source.sha256, program_ref["sha256"])
+                project.repository.load_json(observed_source)
+                self.assertIs(type(event["duration_ms"]), int)
+                self.assertGreaterEqual(datetime.fromisoformat(event["started_at"]), datetime.fromisoformat(parent["started_at"]))
+                self.assertLessEqual(datetime.fromisoformat(event["ended_at"]), datetime.fromisoformat(parent["ended_at"]))
+                # The actual observer rows must be accepted by the host's content-free value.
+                UsageEvent(event_id="observed", source="studio", provider="none", model="none",
+                           phase=event["phase"], status=event["status"], started_at=event["started_at"],
+                           ended_at=event["ended_at"], duration_ms=event["duration_ms"], tokens=TokenUsage(),
+                           timing_scope="service", model_call=False, source_ref=event["source_ref"], details=event["details"])
+        self.assertNotIn(str(project.root), json.dumps(spans))
+
+    def test_failed_step_reports_elapsed_without_claiming_delivered_objects(self) -> None:
+        from unittest.mock import patch
+        from archflow.adapters import cad_execution
+        from tests.test_cad_execution import _binding
+        from tests.test_occt_execution import _box, _program_of
+
+        program = _program_of(_box("box", [0, 0, 0], [1, 1, 1]))
+        spans = []
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            cad_execution, "write_step", side_effect=cad_execution.OcctBackendError("write unavailable")
+        ):
+            receipt = cad_execution.execute_occt_export(program, binding=_binding(program),
+                speculative_workspace=Path(temporary).resolve(), artifact_stem="failed", preview=False,
+                operation_observer=spans.append, observation_parent_id="export")
+        self.assertEqual(receipt.status.value, "failed")
+        self.assertTrue(all(event["source_ref"] == receipt.identity.binding.program_ref.uri for event in spans))
+        failed = next(event for event in spans if event["phase"] == "step_write")
+        self.assertEqual(failed["status"], "failed")
+        self.assertGreaterEqual(failed["duration_ms"], 0)
+        self.assertEqual(failed["details"]["emitted_object_ids"], [])
+        self.assertEqual(failed["details"]["output_refs"], [])
+        self.assertIn("step_write_seconds", receipt.timings)
+        self.assertFalse(any(event["phase"] == "step_readback" for event in spans))
 
     def test_a_receipt_edited_under_its_own_file_name_is_not_reused_even_though_its_files_still_hash(self) -> None:
         """A prior receipt is read back only as the P036 record its file name claims to be.
@@ -1724,7 +1798,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
             self.assertEqual([call.args[2].op_id for call in build.call_args_list], ["seed", "edited"])
             self.assertEqual(second.physical_object_ids, ("edited-object", "fixed-object"))
 
-    def run_source(self, project, record, run_id, source=None, *, one_seat=True, required_checks=None):
+    def run_source(self, project, record, run_id, source=None, *, one_seat=True, required_checks=None, operation_observer=None):
         run = project.run if run_id == project.run.run_id else project.repository.create_run(run_id)
         options = replace(project.options, workspace_root=project.repository.layout.run(run_id).workspaces,
                           source_run_receipt_ref=None if source is None else record_ref_from_uri(source["receipt_ref"], "demo"))
@@ -1734,7 +1808,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
         for seat in seats:
             if not seat.reviewer:
                 (options.workspace_root / f"cad-stage-0-test-production-{seat.seat_id}").mkdir(parents=True, exist_ok=True)
-        return run_project(project.repository, run=run, record=record, seats=seats, options=options,
+        return run_project(project.repository, run=run, record=record, seats=seats, options=options, operation_observer=operation_observer,
                            stage_guard=_stage_guard(project.repository, run, record, options,
                                                     **({"required_checks": required_checks} if required_checks is not None else {})))
 
@@ -1750,6 +1824,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
                 for check in repository.load_json(record_ref_from_uri(seat["relation_check_ref"], "demo"))["checks"]}
 
     def test_same_seat_change_reuses_the_frozen_building_before_production_and_cad(self) -> None:
+        from copy import deepcopy
         from unittest.mock import patch
         from monkeyarch.runtime import project_runner
 
@@ -1759,10 +1834,17 @@ class IncrementalSourceRunTests(unittest.TestCase):
         before = first["seat_results"][0]
         source_path = Path(before["cad"]["model"])
         source_sha = _sha256_of(source_path)
+        spans = []
+
+        def broken_observer(event):
+            spans.append(deepcopy(event))
+            event["details"].get("reused_object_ids", []).clear()
+            raise RuntimeError("observer cannot alter producer reuse")
+
         with patch.object(project_runner, "produce_rows", wraps=project_runner.produce_rows) as produce, patch.object(
             _occt_backend, "_build_operation", wraps=_occt_backend._build_operation
         ) as build:
-            second = self.run_source(project, self.taller(record), "run-2", first)
+            second = self.run_source(project, self.taller(record), "run-2", first, operation_observer=broken_observer)
         self.assertTrue(second["seat_execution_complete"], second["seat_results"])
         self.assertEqual(second["closure_status"], "SATISFIED")
         self.assertEqual([row.element_id for call in produce.call_args_list for row in call.args[0]], ["columns-plinth"])
@@ -1778,6 +1860,15 @@ class IncrementalSourceRunTests(unittest.TestCase):
         self.assertEqual(_sha256_of(source_path), source_sha)
         self.assertEqual(second["source_run_receipt_ref"], first["receipt_ref"])
         self.assertEqual(self.checks(project.repository, second)["columns-plinth-stands-on"]["status"], "held")
+        production = next(event["details"] for event in spans if event["phase"] == "element_production")
+        self.assertEqual(production["cache_status"], "partial")
+        self.assertEqual(production["recomputed_object_ids"], ["columns-plinth"])
+        self.assertEqual(production["reused_object_ids"], ["wall-south"])
+        self.assertEqual(production["cache_checks"]["columns-plinth.element_row"], "changed")
+        self.assertEqual(production["cache_checks"]["wall-south.element_row"], "same")
+        build = next(event["details"] for event in spans if event["phase"] == "geometry_build")
+        self.assertEqual(build["recomputed_object_ids"], ["obj-columns-plinth"])
+        self.assertIn("obj-wall-south-cut", build["reused_object_ids"])
 
     def test_unchanged_seat_is_reused_across_a_new_run_binding(self) -> None:
         from unittest.mock import patch
@@ -1787,14 +1878,26 @@ class IncrementalSourceRunTests(unittest.TestCase):
         project = _ExportProject(self, record)
         first = self.run_source(project, record, "run-1", one_seat=False)
         changed = _record(opening_along=5.0, elements=("wall-south",), extra_entities=(_prism_row(),))
+        spans = []
         with patch.object(project_runner, "produce_rows", wraps=project_runner.produce_rows) as produce:
-            second = self.run_source(project, changed, "run-2", first, one_seat=False)
+            second = self.run_source(project, changed, "run-2", first, one_seat=False, operation_observer=spans.append)
         self.assertTrue(second["seat_execution_complete"], second["seat_results"])
         self.assertEqual([row.element_id for call in produce.call_args_list for row in call.args[0]], ["wall-south"])
         seat = next(row for row in second["seat_results"] if row["seat_id"] == "seat-structure")
         self.assertEqual(seat["cad"]["reused_object_ids"], ["obj-columns-plinth"])
         self.assertNotEqual(seat["cad"]["execution_ref"], first["seat_results"][0]["cad"]["execution_ref"])
         self.assertEqual(second["closure_status"], "SATISFIED")
+        unchanged = next(event for event in spans if event["phase"] == "occt_reuse_check" and event["details"].get("input_equivalent"))
+        self.assertEqual(unchanged["details"]["cache_status"], "hit")
+        steps = [event for event in spans if event.get("parent_event_id") == unchanged["parent_event_id"]]
+        build = next(event["details"] for event in steps if event["phase"] == "geometry_build")
+        self.assertEqual(build["recomputed_object_ids"], [])
+        self.assertEqual(build["executed_stages"], [])
+        self.assertEqual(build["cache_status"], "hit")
+        preview = next(event["details"] for event in steps if event["phase"] == "tessellation")
+        self.assertEqual(preview["cache_status"], "unknown")
+        self.assertEqual(preview["cache_reason"], "kernel_mesh_reuse_unobserved")
+        self.assertTrue(any(event["phase"] == "step_write" for event in steps))
 
     def test_changed_support_datum_rebuilds_its_consumer_and_rechecks_the_boundary(self) -> None:
         from unittest.mock import patch

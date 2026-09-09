@@ -71,7 +71,8 @@
         "speculative workspace Path",
         "RhinoPatchBase",
         "provenance",
-        "material and layer maps"
+        "material and layer maps",
+        "Optional operation_observer and parent event id for actual OCCT reuse checks, geometry, STEP, tessellation and preview stages; no diagnostic write or project authority"
       ],
       "outputs": [
         "RhinoCadExportPlan",
@@ -2136,7 +2137,7 @@
         "StateRecord",
         "SeatSpec tuple",
         "RunOptions",
-        "Optional caller-owned operation_observer receives final export status, measured interval, actual backend/path and retained source; it has no project-write authority"
+        "Optional caller-owned operation_observer receives parent-linked production, reuse-check and export intervals, existing input identities, actual backend/path and recomputed/reused object ids; it has no project-write authority"
       ],
       "outputs": [
         "RunnerRunReceipt@3 dict",
@@ -2264,7 +2265,8 @@
         "ElevationSource",
         "ElevationView",
         "drawing run id",
-        "ProjectRecordRef"
+        "ProjectRecordRef",
+        "Optional operation_observer and parent event id for source load, global hidden-line solve, SVG, PNG and persistence intervals"
       ],
       "outputs": [
         "ElevationProjection",
@@ -2303,7 +2305,8 @@
         "the drawing run's base is the source run's base, never the current HEAD; a run with another base is refused",
         "HEAD is read before and after and must be the same; the SVG, PNG and receipt are read back through the repository before the result is reported",
         "the same source and view give the same SVG/PNG bytes and the same receipt; a repeat lands on the same paths",
-        "two identities only: the SVG/PNG content (sha256) and the source binding (run, base, STEP, CAD receipt, object ids, frame); the receipt digests nothing of itself"
+        "two identities only: the SVG/PNG content (sha256) and the source binding (run, base, STEP, CAD receipt, object ids, frame); the receipt digests nothing of itself",
+        "Observations are plain values; callback failure cannot alter or repeat projection or persistence; input and emitted object ids do not claim a changed-object-only visibility solve"
       ],
       "status": "canonical",
       "tests": [
@@ -3392,7 +3395,8 @@
         "named run, source file name, MIME type and base64 original bytes",
         "optional StudioEventSink for successful API registration or option additions",
         "optional source run for project-wide discovery or project source-material upload",
-        "optional exact DocumentPageReplacement values mapping registered old pages to uploaded page indices"
+        "optional exact DocumentPageReplacement values mapping registered old pages to uploaded page indices",
+        "Optional StudioMonitor for generation, exact drawing-cache comparison and registration intervals through the same generate_elevation implementation"
       ],
       "outputs": [
         "ArtifactListing",
@@ -3731,7 +3735,8 @@
         "ProjectBinding",
         "StudioSettings",
         "run id",
-        "optional exact ModelSource on run_operator and execute_option_candidate; the existing harness retains its composed-model registration reference in workflow basis_refs"
+        "optional exact ModelSource on run_operator and execute_option_candidate; the existing harness retains its composed-model registration reference in workflow basis_refs",
+        "Optional client operation correlation captured on candidate admission and content-free client timing events at the existing events route"
       ],
       "outputs": [
         "runner receipt mapping",
@@ -3771,7 +3776,10 @@
         "JobRegistry.accepting",
         "POST /api/events/model-load",
         "ModelLoadTimingDto",
-        "MonitorWriteDto"
+        "MonitorWriteDto",
+        "POST /api/events/timing",
+        "ClientTimingDto",
+        "ClientTimingDetailsDto"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -3892,7 +3900,8 @@
         "StudioSettings",
         "page-normalized DocumentGesture values, including text content, anchor and independent font size, and exact saved DocumentAnnotationRef values",
         "optional StudioEventSink for successful API registration or option additions",
-        "up to four registered document visual contexts with original and optional annotated PNGs, bound to one edit revision and explicit reference purposes"
+        "up to four registered document visual contexts with original and optional annotated PNGs, bound to one edit revision and explicit reference purposes",
+        "Optional compiler operation_observer for the actual provider request boundary, preserving existing receipt counters and content-free input identities"
       ],
       "outputs": [
         "ParsedIntent",
@@ -4207,7 +4216,8 @@
         "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
         "Shared browser modules import no React or backend runtime and do not persist preferences; each host retains its existing settings boundary, and explicit launch-URL appearance does not imply shared localStorage across ports",
         "Browser translation preserves technical tokens and retains source text when unavailable or unsuccessful; applications keep their own message catalogs and layouts",
-        "One optional host UsageLog records compiler, candidate, export, client wait and Stage-save diagnostics; logging never changes or repeats business operations"
+        "One optional host UsageLog records compiler, candidate, export, client wait and Stage-save diagnostics; logging never changes or repeats business operations",
+        "Optional operation-diagnostics records client interaction and wait spans; per-request operation/parent headers cross sync routes and candidate workers without process-global request state; pure model inference time stays unknown"
       ],
       "status": "canonical",
       "tests": [
@@ -5273,7 +5283,8 @@
         "Loopback MonkeyMonitor UI and CLI, and optional usage.jsonl diagnostic append/read under a caller-supplied noncanonical data directory",
         "Optional managed stdin lifecycle and additive health identity for a Hub-owned CLI process; stop/EOF stops listening and waits for active request threads",
         "Read-only HTTP delivery of the four shared appearance, translation and base-style assets through the existing loopback boundary",
-        "Explicitly selected Codex task/child-source families and known turn intervals; distinct model-call, service, client-wait and agent-turn timing views"
+        "Explicitly selected Codex task/child-source families and known turn intervals; distinct model-call, service, client-wait and agent-turn timing views",
+        "Operation/parent-linked timing trees and read-only same-input comparisons within the selected diagnostic rows, with actual execution/cache reasons and conditional reuse opportunities"
       ],
       "does_not_own": [
         "Architectural evaluation, geometry, candidate execution or formal design acceptance",
@@ -5331,7 +5342,8 @@
         "Standalone serve/report remain available; managed identity reads the actual source-version.txt or checkout HEAD and never trusts a parent-supplied revision",
         "Shared asset URLs are an exact allowlist with JavaScript or CSS content types; other paths never expose a source directory",
         "Only explicitly selected Codex paths are read; lineage uses recorded session/parent ids, repeated source snapshots count once and token event gaps never become model duration",
-        "Non-model phases carry unknown token counters; nested geometry duration is not added to the candidate interval and human review time is not service duration"
+        "Non-model phases carry unknown token counters; nested geometry duration is not added to the candidate interval and human review time is not service duration",
+        "Interaction wall time comes only from an explicit client root; active waits and between-action time remain separate and overlapping child durations are never summed into a total; repeated inputs alone do not prove an avoidable retry or eligible provider cache"
       ],
       "status": "canonical",
       "tests": [
