@@ -25,7 +25,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\apps\monkeyhub\instal
 ## 使用与退出
 
 Hub 的启动和退出统一由包内 `apps/monkeyhub/launch-hub.ps1` 与 `run.py` 负责。
-重复打开和应用按钮沿同一服务管理入口执行。正常退出使用 Hub 的退出动作；下次打开同一安装目录即可。
+重复打开和应用按钮沿同一服务管理入口执行。正常退出时，在系统托盘图标中选择 `Quit MonkeyHub`；
+启动器会等待已接收的任务结束并关闭所属服务。关闭浏览器页不会退出服务，下次打开同一安装目录即可。
 已有用户偏好继续由 `%APPDATA%\MonkeyArch\settings.json` 管理，安装器不复制或替换该文件。
 
 模型服务凭据、Codex CLI 和 Rhino 不随本包分发。无需外部模型服务即可打开 Hub、Monitor 及已有设计资料；
