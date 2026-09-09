@@ -828,12 +828,19 @@ button.chip:hover {
 
 .hud {
   position: absolute;
-  inset: 14px 14px auto 14px;
+  inset: 0;
   z-index: 5;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   pointer-events: none;
+}
+
+.hud__left {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
 }
 
 .hud > * {
@@ -945,16 +952,24 @@ button.chip:hover {
 }
 
 .viewtools-wrap {
-  position: relative;
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 6;
   display: grid;
+  justify-items: end;
   gap: 6px;
   min-width: 0;
   width: fit-content;
-  max-width: 100%;
+  max-width: min(560px, calc(100% - 300px));
 }
 
 .viewtools--panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
   width: fit-content;
+  max-width: min(560px, calc(100vw - 28px));
   box-shadow: var(--shadow);
 }
 
@@ -976,7 +991,7 @@ button.chip:hover {
   width: fit-content;
   overflow: visible;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--overlay);
 }
 
@@ -988,7 +1003,7 @@ button.chip:hover {
 }
 
 .viewtools button {
-  min-height: 34px;
+  min-height: 36px;
   padding: 5px 10px;
   border: 0;
   border-left: 1px solid var(--line-2);
@@ -1037,6 +1052,7 @@ button.chip:hover {
   align-items: center;
   gap: 8px;
   min-height: 36px;
+  border-radius: var(--radius-lg);
   max-width: 100%;
   background: var(--overlay);
 }
@@ -1063,10 +1079,18 @@ button.chip:hover {
   width: min(720px, 100%);
   max-height: min(55vh, 480px);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--panel);
   box-shadow: var(--shadow);
   overflow: hidden;
+}
+
+@media (max-width: 800px) {
+  .viewtools-wrap {
+    right: 14px;
+    bottom: 58px;
+    max-width: calc(100% - 28px);
+  }
 }
 
 .stage__versions-head {
