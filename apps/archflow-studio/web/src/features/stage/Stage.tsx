@@ -315,10 +315,23 @@ export function Stage({
           target.searchParams.set("view", "board");
           window.open(target.href, "_blank", "noopener");
         }}>{t("workspace.monkeyboard")}</button>
-        {drawing && <><select aria-label={t("stage.drawing.direction")} value={elevationView} disabled={drawing.busy}
-          onChange={(event) => { setElevationView(event.target.value as NonNullable<ElevationRequestDto["view"]>); drawing.dismissError(); }}>
-          <option value="front">{t("stage.drawing.front")}</option><option value="back">{t("stage.drawing.back")}</option><option value="left">{t("stage.drawing.left")}</option><option value="right">{t("stage.drawing.right")}</option>
-        </select><button disabled={!drawing.available || drawing.busy} onClick={() => drawing.generate(elevationView)}>{t(drawing.busy ? "stage.drawing.busy" : "stage.drawing.generate")}</button></>}
+        {picked && (
+          <div
+            className="picked"
+            title={developerMode ? t("stage.picked.title", {
+              status: picked.status,
+              sourceState: picked.sourceState,
+            }) : designObjectLabel(picked.elementId ?? picked.componentId) ?? undefined}
+          >
+            <span className="label">{t("stage.picked.label")}</span>
+            <span className="picked__name">
+              {developerMode
+                ? picked.elementId ?? picked.componentId ?? t("stage.picked.none")
+                : designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}
+            </span>
+            {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
+          </div>
+        )}
       </div>
       {drawing?.error && <div className="stage-drawing-error">
         <div>
@@ -389,34 +402,6 @@ export function Stage({
               <button type="button" className="btn btn--small" onClick={onEndBlend}>
                 {t("stage.blend.done")}
               </button>
-            </div>
-          )}
-          {picked && (
-            <div
-              className="picked"
-              title={developerMode ? t("stage.picked.title", {
-                status: picked.status,
-                sourceState: picked.sourceState,
-              }) : undefined}
-            >
-              <span className="label">{t("stage.picked.label")}</span>
-              {developerMode && <span className="mono">
-                {picked.elementId ?? picked.componentId ?? t("stage.picked.none")}
-              </span>}
-              {!developerMode && <span>
-                {designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}
-              </span>}
-              {!developerMode && picked.status !== "resolved" && (
-                <span className="picked__meta">{t("stage.picked.unresolved")}</span>
-              )}
-              {developerMode && picked.status !== "resolved" && (
-                <span className="picked__meta">{picked.status}</span>
-              )}
-              {developerMode && picked.fields.map(([key, value]) => (
-                <span key={key} className="mono picked__field">
-                  {key} {value}
-                </span>
-              ))}
             </div>
           )}
           {artifactError && (
@@ -505,6 +490,14 @@ export function Stage({
           >
             {t("program.open")}
           </button>
+          {drawing && <>
+            <span className="viewtools__sep" aria-hidden="true" />
+            <select aria-label={t("stage.drawing.direction")} value={elevationView} disabled={drawing.busy}
+              onChange={(event) => { setElevationView(event.target.value as NonNullable<ElevationRequestDto["view"]>); drawing.dismissError(); }}>
+              <option value="front">{t("stage.drawing.front")}</option><option value="back">{t("stage.drawing.back")}</option><option value="left">{t("stage.drawing.left")}</option><option value="right">{t("stage.drawing.right")}</option>
+            </select>
+            <button disabled={!drawing.available || drawing.busy} onClick={() => drawing.generate(elevationView)}>{t(drawing.busy ? "stage.drawing.busy" : "stage.drawing.generate")}</button>
+          </>}
           <span className="viewtools__sep" aria-hidden="true" />
           {/* One button, home: the reference run's exports when it left
               any, else the export the stage actually opened on — named for

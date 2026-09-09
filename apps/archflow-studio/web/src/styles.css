@@ -996,6 +996,7 @@ button.chip:hover {
 }
 
 .viewtools button,
+.viewtools select,
 .viewtools__sep,
 .viewtools__hint {
   flex: none;
@@ -1017,6 +1018,18 @@ button.chip:hover {
 
 .viewtools button:hover {
   background: var(--surface-hover);
+}
+
+.viewtools select {
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 0;
+  border-left: 1px solid var(--line-2);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: calc(12px * var(--font-scale, 1));
 }
 
 .stage__foot {
