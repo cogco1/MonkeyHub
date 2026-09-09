@@ -35,6 +35,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\apps\monkeyhub\instal
 选择项目后，启动并打开 MonkeyBoard。一人编辑画布、在会议中共享这个窗口即可：
 PDF／PNG／JPG 可上传、拖放或粘贴，PDF 可选页；新出的 MonkeyDiagram 图纸每约 5 秒自动接收。
 图框、文字与箭头自动保存；图纸卡片可打开原始页面及其精确出图版本。
+选中一张图纸或图框及其中的圈线，点击「提交设计意见」，填写修改要求后发送到设计。
+意见会连同原图、圈线和准确模型版本进入 MonkeyArch 的提案、澄清与候选审阅流程；
+原图页已有批注保留。同一白板标记再次发送会更新该标记；上传图纸需先在 MonkeyDiagram 关联模型。
+目前支持圈、矩形、折线、普通箭头和手绘线；文字请填写到意见框，裁剪图及特殊线型需先还原。
 字体随包提供，白板不需要连接外部字体服务。Zoom／腾讯会议的实时语音接入尚未配置。
 
 Hub 的启动和退出统一由包内 `apps/monkeyhub/launch-hub.ps1` 与 `run.py` 负责。

@@ -19,6 +19,8 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { asStudioApiError } from "../api/client";
 import { connection, type ServerIdentity } from "../api/connection";
 import { useT } from "../i18n/useT";
+import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
+import { documentUrl } from "../workspaces/monkeyboard/boardScene";
 import App from "./App";
 import { ErrorPanel } from "./ErrorPanel";
 import { failed, loading, ready, type Loadable } from "./loadable";
@@ -33,14 +35,23 @@ const Board = lazy(async () => {
   const policy = document.createElement("meta");
   policy.httpEquiv = "Content-Security-Policy";
   const apiOrigin = new URL(connection.baseUrl || window.location.origin, window.location.origin).origin;
-  policy.content = `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${apiOrigin}; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'`;
+  // The policy stays active after an in-document handoff. Rhino3dm's existing
+  // loader needs dynamic JS compilation when the Studio viewport mounts.
+  policy.content = `default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${apiOrigin}; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'`;
   document.head.append(policy);
   return import("../workspaces/monkeyboard/Board");
 });
 
 export function Connected() {
   const [server, setServer] = useState<Loadable<ServerIdentity>>(loading);
+  const [documentIntent, setDocumentIntent] = useState<BoardDesignRequest | null>(null);
   const t = useT();
+
+  const submitBoardFeedback = useCallback((request: BoardDesignRequest) => {
+    window.history.replaceState(null, "", documentUrl(window.location.href, request.source));
+    document.title = "MonkeyArch";
+    setDocumentIntent(request);
+  }, []);
 
   const probe = useCallback(() => {
     setServer(loading);
@@ -96,6 +107,6 @@ export function Connected() {
   }
 
   return new URLSearchParams(window.location.search).get("view") === "board"
-    ? <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}><Board /></Suspense>
-    : <App server={server.value} />;
+    ? <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}><Board onSubmit={submitBoardFeedback} /></Suspense>
+    : <App server={server.value} initialDocumentIntent={documentIntent ?? undefined} />;
 }

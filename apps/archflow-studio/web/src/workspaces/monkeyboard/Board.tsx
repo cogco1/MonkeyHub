@@ -9,6 +9,8 @@ import type { BoardDto, SourceDocumentDto } from "../../api/generated";
 import { usePreferences } from "../../features/settings/preferences";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
+import { prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
+import { createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
 import { documentKey, documentMime, documentUrl, findSource, imageSource, nextDocumentPosition, pageKey, pageSource, type BoardDraft, type PageSource } from "./boardScene";
 import "./board.css";
 
@@ -17,6 +19,58 @@ const copy = {
   "zh-CN": { loading: "正在打开画布…", loadFailed: "画布暂时无法打开。", retry: "重试", sources: "项目资料", upload: "上传 PDF / 图片", title: "画布标题", saved: "已保存", saving: "正在保存…", dirty: "有未保存的修改", saveError: "修改尚未保存。", conflict: "已有另一份保存版本。当前画布已保留，请另开已保存画布进行比较。", compare: "另开已保存画布", save: "立即保存", add: "添加此页", open: "在 MonkeyDiagram 中打开", fit: "查看全部", busy: "正在接收资料…", welcome: "把项目放在一起讨论", welcomeBody: "摆放图纸、连接想法、标记讨论。MonkeyDiagram 的新资料会自动来到这里。", empty: "上传 PDF、PNG 或 JPEG 开始。项目的新图纸也会自动出现在这里。", hint: "滚轮缩放 · 空格或鼠标中键平移 · Shift 多选", auto: "自动接收新资料", previewError: "部分页面预览未能载入，已保留原有布局。", unsupported: "请使用 PDF、PNG 或 JPEG 文件。", unbound: "这张图片没有项目来源，请先上传原始文件。", page: "第", pages: "页", received: "已接收", pending: "待接收", dismiss: "关闭提示", sourceError: "项目资料暂时无法刷新。", select: "选中图纸可打开原始页面。", refresh: "重试预览 / 接收", unknown: "未知错误" },
 };
 type Copy = typeof copy.en;
+
+const feedbackCopy = {
+  en: { action: "Send design feedback", title: "Discuss this drawing", hint: "Select one drawing or its frame, together with the marks you want to send.", description: "The selected marks will join this drawing page. Continue the discussion in MonkeyArch to review a proposal or answer a design question.", label: "What would you like to change?", placeholder: "Describe the change and what should stay as it is.", send: "Send to design", sending: "Preparing drawing…", cancel: "Cancel", marks: "selected marks", modelRequired: "Link this drawing to its model in MonkeyDiagram before sending a design change.", sourceChanged: "This drawing's source changed. Close this dialog and select the drawing again.", modelChanged: "The drawing's linked model changed or cannot be opened for editing. Check its source in MonkeyDiagram.", empty: "Write the change you want to discuss.", failed: "The feedback could not be sent." },
+  "zh-CN": { action: "提交设计意见", title: "讨论这张图纸", hint: "选中一张图纸或它的图框，并同时选中要提交的圈线。", description: "选中的圈线会加入对应图页。进入 MonkeyArch 后，可审阅修改提案或回答需要澄清的问题。", label: "希望怎样修改？", placeholder: "说明要调整的内容，以及需要保留的部分。", send: "发送到设计", sending: "正在准备图纸…", cancel: "取消", marks: "条选中标记", modelRequired: "请先在 MonkeyDiagram 中关联这张图纸对应的模型，再提交设计修改。", sourceChanged: "这张图纸的来源已发生变化，请关闭此窗口并重新选择图纸。", modelChanged: "图纸关联的模型已改变或暂时无法继续编辑，请在 MonkeyDiagram 中检查来源。", empty: "请写下希望讨论的修改。", failed: "意见暂时未能发送。" },
+};
+
+function feedbackError(error: unknown, language: "en" | "zh-CN"): string {
+  const text = feedbackCopy[language];
+  const code = error && typeof error === "object" && "code" in error ? error.code : null;
+  if (code === "SOURCE_CHANGED") return text.sourceChanged;
+  if (code === "MODEL_REQUIRED") return text.modelRequired;
+  if (code === "MODEL_CHANGED") return text.modelChanged;
+  if (code === "EMPTY_COMMENT") return text.empty;
+  return errorText(error);
+}
+
+function FeedbackDialog({ selection, language, onCancel, onSubmit }: {
+  selection: BoardFeedbackSelection; language: "en" | "zh-CN";
+  onCancel: () => void; onSubmit: (comment: string) => Promise<void>;
+}) {
+  const dialog = useRef<HTMLDialogElement | null>(null);
+  const [comment, setComment] = useState("");
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const [error, setError] = useState("");
+  const text = feedbackCopy[language];
+  useEffect(() => {
+    const element = dialog.current;
+    element?.showModal();
+    return () => element?.close();
+  }, []);
+  const submit = async () => {
+    if (sendingRef.current || !comment.trim() || !selection.document.modelSource) return;
+    sendingRef.current = true; setSending(true); setError("");
+    try { await onSubmit(comment); }
+    catch (cause) { setError(feedbackError(cause, language)); }
+    finally { sendingRef.current = false; setSending(false); }
+  };
+  return <dialog ref={dialog} className="monkeyboard-feedback" aria-labelledby="monkeyboard-feedback-title" onCancel={(event) => { event.preventDefault(); if (!sendingRef.current) onCancel(); }}>
+    <form onSubmit={(event) => { event.preventDefault(); void submit(); }} aria-busy={sending}>
+      <h2 id="monkeyboard-feedback-title">{text.title}</h2>
+      <p className="monkeyboard-feedback-source">{selection.document.fileName} · {selection.page.pageIndex + 1}/{selection.document.pageCount} · {selection.annotationGroups.length} {text.marks}</p>
+      <p>{text.description}</p>
+      <label htmlFor="monkeyboard-feedback-comment">{text.label}</label>
+      <textarea id="monkeyboard-feedback-comment" value={comment} onChange={(event) => setComment(event.target.value)} placeholder={text.placeholder} autoFocus required rows={4} maxLength={8000} disabled={sending} />
+      {!selection.document.modelSource && <p className="monkeyboard-feedback-error" role="alert">{text.modelRequired}</p>}
+      {error && <p className="monkeyboard-feedback-error" role="alert">{text.failed} {error}</p>}
+      <a href={documentUrl(window.location.href, selection.source)} target="_blank" rel="noopener noreferrer">{copy[language].open} ↗</a>
+      <div className="monkeyboard-feedback-actions"><button type="button" onClick={onCancel} disabled={sending}>{text.cancel}</button><button className="monkeyboard-primary" type="submit" disabled={sending || !comment.trim() || !selection.document.modelSource}>{sending ? text.sending : text.send}</button></div>
+    </form>
+  </dialog>;
+}
 type Preview = { dataURL: DataURL; width: number; height: number };
 
 function errorText(error: unknown): string {
@@ -71,7 +125,7 @@ async function sceneFiles(board: BoardDto, documents: SourceDocumentDto[], previ
   return { files, failures };
 }
 
-export default function MonkeyBoard() {
+export default function MonkeyBoard({ onSubmit }: { onSubmit: (request: BoardDesignRequest) => void }) {
   const { language } = usePreferences();
   const text = copy[language];
   const [attempt, setAttempt] = useState(0);
@@ -88,7 +142,7 @@ export default function MonkeyBoard() {
     }).catch((cause) => { if (alive) setError(cause); });
     return () => { alive = false; };
   }, [attempt]);
-  if (loaded) return <BoardCanvas {...loaded} />;
+  if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} />;
   return <section className="monkeyboard monkeyboard-loading" aria-live="polite">
     <strong>MonkeyBoard</strong>
     <p>{error === null ? text.loading : text.loadFailed}</p>
@@ -96,8 +150,9 @@ export default function MonkeyBoard() {
   </section>;
 }
 
-function BoardCanvas({ board, documents: initialDocuments, files, failures, preview }: {
+function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit }: {
   board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader;
+  onSubmit: (request: BoardDesignRequest) => void;
 }) {
   const { language, theme } = usePreferences();
   const text = copy[language];
@@ -115,6 +170,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const initialized = useRef(false);
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<PageSource | null>(null);
+  const [feedback, setFeedback] = useState<BoardFeedbackSelection | null>(null);
+  const feedbackOpen = useRef(false);
   const [pages, setPages] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -217,7 +274,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     let active = true;
     let refreshing = false;
     const refresh = async () => {
-      if (!active || refreshing || document.hidden) return;
+      if (!active || refreshing || document.hidden || feedbackOpen.current) return;
       refreshing = true;
       try {
         await serial(async () => {
@@ -281,6 +338,25 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     await receive(list.documents);
   }); };
   const source = selected && findSource(documents, selected);
+  const openFeedback = () => {
+    const api = canvas.current;
+    if (!api || !ready || busyRef.current) return;
+    try {
+      const next = createBoardFeedback(api.getSceneElements(), api.getAppState().selectedElementIds, documentsRef.current);
+      feedbackOpen.current = true; setFeedback(next);
+    }
+    catch (cause) { setNotice(`${feedbackCopy[language].hint} ${feedbackError(cause, language)}`); }
+  };
+  const submitFeedback = async (comment: string) => {
+    if (!feedback) return;
+    // Finish any in-flight canvas save before leaving this workspace.
+    busyRef.current = true;
+    try {
+      await queue.flush();
+      const request = await prepareBoardDesignRequest(feedback, board.projectId, comment);
+      if (alive.current) onSubmit(request);
+    } finally { busyRef.current = false; }
+  };
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
   return <section className="monkeyboard" aria-label="MonkeyBoard">
     <header className="monkeyboard-topbar">
@@ -288,6 +364,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       <span className={`monkeyboard-save-state${saveState.error ? " is-error" : ""}`} role="status">{saveState.error ? text.dirty : saveState.saving ? text.saving : saveState.dirty ? text.dirty : text.saved}</span>
       <button className="monkeyboard-primary" disabled={!ready || busy || saveState.conflict} onClick={() => input.current?.click()}>{text.upload}</button>
       <button disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>
+      <button disabled={!ready || busy || saveState.conflict} onClick={openFeedback}>{feedbackCopy[language].action}</button>
       <input ref={input} type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" multiple hidden onChange={(event) => { void upload([...event.target.files ?? []]); event.target.value = ""; }} />
     </header>
     {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{saveState.conflict ? <a href={window.location.href} target="_blank" rel="noopener noreferrer">{text.compare}</a> : <button onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}
@@ -337,5 +414,6 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       </div>
     </div>
     <footer className="monkeyboard-footer"><span>{text.hint}</span>{source && selected ? <a href={documentUrl(window.location.href, selected)} target="_blank" rel="noopener noreferrer">{source.fileName} · {selected.pageIndex + 1}/{source.pageCount} · {text.open} ↗</a> : <span>{text.select}</span>}</footer>
+    {feedback && <FeedbackDialog selection={feedback} language={language} onCancel={() => { feedbackOpen.current = false; setFeedback(null); }} onSubmit={submitFeedback} />}
   </section>;
 }

@@ -60,6 +60,7 @@ import type { GestureTool } from "../workspaces/monkeyarch/Annotate";
 import { createModelAnnotationsController, useModelAnnotations } from "../workspaces/monkeyarch/useModelAnnotations";
 import { createDocumentAnnotationsController } from "../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { DocumentViewContext } from "../workspaces/monkeydiagram/DocumentCanvas";
+import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import {
   canonicalRunSourceLabel,
   canonicalSourceLabel,
@@ -201,7 +202,9 @@ interface HomeArtifacts extends HomeModel {
   readonly referenceRunId: string;
 }
 
-export default function App({ server }: { server: ServerIdentity }) {
+export default function App({ server, initialDocumentIntent }: {
+  server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
+}) {
   const t = useT();
   const { developerMode } = usePreferences();
   const transcript = useTranscript();
@@ -212,7 +215,11 @@ export default function App({ server }: { server: ServerIdentity }) {
     },
     [append],
   );
-  const { session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, recoverFromStaleBase } = useSession(pushNotice, server.capabilities);
+  const { session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
+    initialDocumentIntent ? { runId: initialDocumentIntent.modelSource.runId, sourceStageRef: initialDocumentIntent.sourceStageRef } : undefined);
+  const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
+  const documentIntentStarted = useRef(false);
+  const documentIntentSubmitted = useRef(false);
   const sourceRunId = session.status === "ready" ? session.value.sourceRunId : null;
   const workingCopies = session.status === "ready" ? session.value.workingCopies : [];
   const designHistoryEnabled = server.capabilities.includes("design-history");
@@ -389,7 +396,7 @@ export default function App({ server }: { server: ServerIdentity }) {
     }
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [conversationOpen, setConversationOpen] = useState(false);
+  const [conversationOpen, setConversationOpen] = useState(initialDocumentIntent !== undefined);
 
   useEffect(() => {
     if (conversationOpen) document.querySelector<HTMLInputElement>("#conversation-panel .composer__box input")?.focus();
@@ -1135,12 +1142,13 @@ export default function App({ server }: { server: ServerIdentity }) {
     displayedProjectRef.current = projectId;
   }, [session.status, project?.projectId, missingChosenModel]);
   useEffect(() => {
+    if (documentIntentStatus !== "done") return;
     if (autoLoadedRef.current) return;
     if (homeArtifacts === null) return;
     if (loadedArtifacts.length > 0 || pendingArtifacts.current.length > 0) return;
     autoLoadedRef.current = true;
     showHome(false);
-  }, [homeArtifacts, loadedArtifacts, showHome]);
+  }, [documentIntentStatus, homeArtifacts, loadedArtifacts, showHome]);
 
   /** The viewer says which file it holds; that is when the shell writes it down. */
   const noteSource = useCallback((label: string | null) => {
@@ -1609,6 +1617,50 @@ export default function App({ server }: { server: ServerIdentity }) {
     }
     return next;
   }, [applyingProgram, artifacts, candidateBusy, changingBase, clearComparison, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, optionsBusy, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, workingCopies]);
+
+  useEffect(() => {
+    if (!initialDocumentIntent || documentIntentStarted.current || documentIntentStatus !== "pending" ||
+        session.status !== "ready" || changingBase || artifacts.status !== "ready") return;
+    documentIntentStarted.current = true;
+    setDocumentIntentStatus("switching");
+    void (async () => {
+      if (project?.projectId !== initialDocumentIntent.projectId) {
+        throw new Error("The board request belongs to another project. Its marks are saved; this design instruction has not been submitted.");
+      }
+      const next = await changeEditingBase(initialDocumentIntent.modelSource.runId, initialDocumentIntent.modelSource,
+        initialDocumentIntent.sourceStageRef ?? undefined, undefined, true);
+      if (!next || next.project.projectId !== initialDocumentIntent.projectId ||
+          next.projection.stateDigest !== initialDocumentIntent.modelSource.stateDigest ||
+          next.projection.referenceRun.runId !== initialDocumentIntent.modelSource.runId ||
+          (initialDocumentIntent.sourceStageRef !== null && next.projection.sourceStageRef !== initialDocumentIntent.sourceStageRef)) {
+        throw new Error("The drawing's exact model and Stage could not be restored. Its marks are saved; this design instruction has not been submitted.");
+      }
+      setDocumentIntentStatus("ready");
+    })().catch((cause) => {
+      setDocumentIntentStatus("done");
+      setDraft(initialDocumentIntent.utterance);
+      append({ kind: "refusal", error: asStudioApiError(cause), what: "MonkeyBoard" });
+    });
+  }, [append, artifacts.status, changeEditingBase, changingBase, documentIntentStatus, initialDocumentIntent, project?.projectId, session.status]);
+
+  useEffect(() => {
+    if (!initialDocumentIntent || documentIntentStatus !== "ready" || documentIntentSubmitted.current || changingBase) return;
+    documentIntentSubmitted.current = true;
+    setDocumentIntentStatus("done");
+    if (project?.projectId !== initialDocumentIntent.projectId ||
+        !sameModelSource(editingModelSource, initialDocumentIntent.modelSource) ||
+        projection?.stateDigest !== initialDocumentIntent.modelSource.stateDigest ||
+        (initialDocumentIntent.sourceStageRef !== null && projection?.sourceStageRef !== initialDocumentIntent.sourceStageRef)) {
+      setDraft(initialDocumentIntent.utterance);
+      append({ kind: "refusal", error: asStudioApiError(new Error("The drawing's linked model changed before submission. Its marks are saved; this design instruction has not been submitted.")), what: "MonkeyBoard" });
+      return;
+    }
+    void propose(initialDocumentIntent.utterance, null, initialDocumentIntent.documentAnnotations,
+      initialDocumentIntent.modelSource, initialDocumentIntent.documentVisuals).catch((cause) => {
+      setDraft(initialDocumentIntent.utterance);
+      append({ kind: "refusal", error: asStudioApiError(cause), what: "MonkeyBoard" });
+    });
+  }, [append, changingBase, documentIntentStatus, editingModelSource, initialDocumentIntent, project?.projectId, projection, propose]);
 
   const openDesignStage = async (stage: DesignStageDto, branchId = designHistory?.branchId) => {
     await changeEditingBase(stage.modelSource.runId, stage.modelSource, stage.stageRef, branchId);
@@ -2332,6 +2384,7 @@ export default function App({ server }: { server: ServerIdentity }) {
           <p className="refusal__lead">
             {missingChosenModel ? t("stage.base.modelUnavailable") : t("stage.base.restoreHelp")}
           </p>
+          {initialDocumentIntent && (documentIntentStatus !== "done" || draft === initialDocumentIntent.utterance) && <p>{initialDocumentIntent.utterance}</p>}
           {developerMode && sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
           {error && <ErrorPanel error={error} />}
           <button type="button" className="btn" disabled={changingBase}

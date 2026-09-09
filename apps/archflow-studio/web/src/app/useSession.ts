@@ -179,15 +179,18 @@ export function editingDigestForView(
   return session.value.projection.stateDigest;
 }
 
-export function useSession(notice: (line: string) => void, capabilities: readonly string[] = []): SessionHandle {
+export function useSession(notice: (line: string) => void, capabilities: readonly string[] = [], initialBase?: {
+  runId: string; sourceStageRef: string | null;
+}): SessionHandle {
   const [controller] = useState(() => createSessionController(connection.baseUrl, capabilities));
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { reload } = controller;
   const noticeRef = useRef(notice);
   noticeRef.current = notice;
+  const initialBaseRef = useRef(initialBase);
 
   useEffect(() => {
-    void reload();
+    void reload(initialBaseRef.current?.runId, initialBaseRef.current?.sourceStageRef);
     return () => controller.cancel();
   }, [controller, reload]);
 

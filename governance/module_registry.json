@@ -3469,7 +3469,8 @@
       "owns": [
         "the main MonkeyBoard canvas scene and its immutable revision chain in the P036 studio-board run",
         "optimistic scene replacement against the exact last saved revision; a stale tab cannot overwrite another save",
-        "verifying image source references against the registered document page and drawing revision; originals remain with studio.artifacts"
+        "verifying image source references against the registered document page and drawing revision; originals remain with studio.artifacts",
+        "mapping one explicitly selected drawing and its board marks to page coordinates, then handing its exact saved annotations and user feedback to the existing Studio intent workflow"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -3478,17 +3479,21 @@
       ],
       "inputs": [
         "ProjectBinding",
-        "project id, title, Excalidraw scene elements, seen-document identities and expected scene revision"
+        "project id, title, Excalidraw scene elements, seen-document identities and expected scene revision",
+        "one selected registered drawing or frame, selected board marks and an explicit design comment"
       ],
       "outputs": [
         "BoardDto",
-        "retained single-operator board scene revision"
+        "retained single-operator board scene revision",
+        "page-normalized annotations and a one-time BoardDesignRequest for the existing Studio conversation"
       ],
       "public_api": [
         "GET /api/board",
         "PUT /api/board",
         "read_board",
-        "save_board"
+        "save_board",
+        "web: createBoardFeedback",
+        "web: prepareBoardDesignRequest"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -3496,7 +3501,8 @@
         "contracts.canonical",
         "project.ports",
         "project.repository",
-        "project.record_kinds"
+        "project.record_kinds",
+        "studio.intent"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
@@ -3506,13 +3512,19 @@
         "reading an empty board creates no run; a valid first save uses runs/studio-board/records through P036",
         "scene revisions retain element positions, text and exact source-document page references, never embedded image bytes or a second project store",
         "image references do not infer a model or Stage; accepted design state and project HEAD remain unchanged",
-        "seen-document identities keep an intentionally removed drawing from being imported again during automatic discovery"
+        "seen-document identities keep an intentionally removed drawing from being imported again during automatic discovery",
+        "feedback uses exactly one registered drawing page and its declared model source; board position, rotation and scale never change source identity",
+        "returning board marks merges their own stable groups into the current Diagram page under its existing CAS rule, preserving unrelated ink and unfinished page comment",
+        "feedback reaches the existing intent, clarification and candidate controls once; no board action accepts a Stage or issues a project version"
       ],
       "status": "canonical",
       "tests": [
         "apps/archflow-studio/api/tests/test_boards.py",
         "apps/archflow-studio/web/test/boardScene.test.ts",
-        "apps/archflow-studio/web/test/boardSaveQueue.test.ts"
+        "apps/archflow-studio/web/test/boardSaveQueue.test.ts",
+        "apps/archflow-studio/web/test/boardFeedbackGeometry.test.ts",
+        "apps/archflow-studio/web/test/boardFeedback.test.ts",
+        "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },

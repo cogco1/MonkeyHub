@@ -288,7 +288,10 @@
         "apps/archflow-studio/web/package-lock.json",
         "apps/archflow-studio/web/index.html",
         "apps/archflow-studio/web/vite.config.ts",
-        "apps/archflow-studio/web/src/app/Connected.tsx"
+        "apps/archflow-studio/web/src/app/Connected.tsx",
+        "apps/archflow-studio/web/test/boardFeedbackGeometry.test.ts",
+        "apps/archflow-studio/web/test/boardFeedback.test.ts",
+        "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
