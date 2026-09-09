@@ -540,6 +540,14 @@ class CandidateRunTests(CandidateTestCase):
         # The harness guard's own two records, retained before the run.
         self.assertEqual(kinds.get("studio-candidate-workflow"), 1)
         self.assertEqual(kinds.get("studio-candidate-envelope"), 1)
+        # Running a candidate is a preview, not a judgement: the run retains
+        # no deliberation episode of its own. The only link kept is the job
+        # registry's, proposal -> candidate.
+        self.assertNotIn("deliberation-episode", kinds)
+        self.assertEqual(
+            self.app.state.jobs.candidates_of(job["proposalId"]),
+            (accepted["candidateId"],),
+        )
 
     def test_relation_checks_are_reported_as_three_states(self) -> None:
         accepted, job = self.run_candidate(

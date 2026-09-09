@@ -11,6 +11,16 @@ would otherwise arrive minutes later as a mystery.
 Everything after that is the job's. A run the runner refuses is a failed job
 carrying the runner's own sentence, never an HTTP error: the request to start
 it succeeded, and what failed was the design.
+
+Running a candidate is a preview, not a judgement. It records nothing about
+the proposal beyond the link the job registry already holds (proposal id to
+candidate id) and what the run itself retains; it does not mark the proposal
+accepted, and it does not close the other proposals made against the same
+base. Accepting is the architect's own act: ``POST /api/proposals/{id}/decision``
+with ``accepted`` and this run's ``candidateId`` (``episodes.accept``). The one
+thing the run does for the episode store is give the judgements the architect
+already made against this base — a rejection, a modification — a run to be
+written into, so they stop being process memory.
 """
 
 from __future__ import annotations
@@ -21,7 +31,6 @@ import secrets
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
-from ..application import episodes
 from ..application.binding import ProjectBinding, bound_project
 from ..application.candidate import describe, execute_candidate
 from ..application.compare import compare_runs
@@ -80,34 +89,20 @@ def start_candidate(
     registry: JobRegistry = state.jobs
     settings: StudioSettings = state.settings
     run_id = _run_id(proposal_id)
-    # The judgement is made here, when the architect asks for this proposal and
-    # no other — not when the run finishes. What was on the table is what this
-    # process was holding at that moment, so it is read now; the episode itself
-    # is only written once there is a run to write it into.
-    superseded = episodes.still_open(
-        state.episodes,
-        state.proposals.for_state(proposal.base_state_digest),
-        without=proposal_id,
-    )
-    read = episodes.validation_refs_read(
-        state.jobs, state.validations, (proposal, *superseded)
-    )
-    evidence = tuple(projection.record.evidence_refs)
 
     def work() -> object:
         receipt = execute_candidate(binding, settings, proposal, run_id)
-        # Only a run that happened carries a judgement. A refused value or a
-        # stale base raises above this line, the job reports it, and nothing
-        # claims a decision was retained when no run exists to hold it.
-        episodes.accept(
-            state.episodes,
+        # No judgement is made here: a candidate the architect asked to see is
+        # not a proposal the architect accepted, and the other proposals
+        # against this base stay open. Only the judgements already made
+        # against this base — held in process until now — are flushed into
+        # the run that exists. A refused value or a stale base raises above
+        # this line, the job reports it, and nothing is written into a run
+        # that never happened.
+        state.episodes.flush(
             binding.repository,
             binding.load_run(run_id),
-            project_id=binding.project_id,
-            proposal=proposal,
-            superseded=superseded,
-            evidence_refs=evidence,
-            validation_refs=read,
+            proposal.base_state_digest,
         )
         return receipt
 

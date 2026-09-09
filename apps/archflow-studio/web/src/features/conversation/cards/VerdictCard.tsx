@@ -28,6 +28,7 @@ import {
 } from "../../../app/loadable";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
+import { usePreferences } from "../../settings/preferences";
 import { Verbatim } from "./Verbatim";
 
 const NOT_FINISHED = "CANDIDATE_NOT_FINISHED";
@@ -68,6 +69,7 @@ export function VerdictCard({
   onEvidence(tab: EvidenceTab, candidateId?: string): void;
 }) {
   const t = useT();
+  const { developerMode } = usePreferences();
   const [validation, setValidation] = useState<Loadable<ValidationDto>>(idle);
 
   useEffect(() => {
@@ -143,18 +145,19 @@ export function VerdictCard({
                 ok={ok}
                 clauses={line.clauses}
                 refusing={refusing}
+                developerMode={developerMode}
               >
                 {line.id === "dependencies" && (
-                  <RelationChips checks={value.relationChecks} />
+                  developerMode && <RelationChips checks={value.relationChecks} />
                 )}
                 {line.id === "receipt" && (
                   <span className="quiet">
                     {value.receipt.passed
                       ? t("verdict.passed")
-                      : t("verdict.didNotPass")} · {t("verdict.effective")}: {" "}
+                      : t("verdict.didNotPass")}{developerMode && <> · {t("verdict.effective")}: {" "}
                     {value.effectiveChecks.length === 0
                       ? t("evidence.common.none")
-                      : value.effectiveChecks.join(", ")}
+                      : value.effectiveChecks.join(", ")}</>}
                   </span>
                 )}
               </ReviewLine>
@@ -166,13 +169,13 @@ export function VerdictCard({
               <span className="quiet">{t("verdict.nothingProtected")}</span>
             ) : (
               <>
-                <ul className="reflist">
+                {developerMode && <ul className="reflist">
                   {protectedRefs.map((ref) => (
                     <li key={ref} className="mono" title={ref}>
                       {ref.includes(":") ? ref.slice(ref.indexOf(":") + 1) : ref}
                     </li>
                   ))}
-                </ul>
+                </ul>}
                 <span className="quiet">
                   {t("verdict.protectionExplanation")}
                 </span>
@@ -187,22 +190,22 @@ export function VerdictCard({
               <span className="quiet">{t("verdict.nothingUnresolved")}</span>
             ) : (
               <>
-                {unresolved.length > 0 && (
+                {developerMode && unresolved.length > 0 && (
                   <p className="mono">{unresolved.join(" · ")}</p>
                 )}
                 {value.receipt.findings.length > 0 && (
                   <ul className="findings">
                     {value.receipt.findings.map((finding, index) => (
                       <li key={`${finding.code}:${index}`}>
-                        <span className="mono">{finding.code}</span> ·{" "}
-                        <span className="mono">{finding.severity}</span> · {" "}
+                        {developerMode && <><span className="mono">{finding.code}</span> ·{" "}
+                        <span className="mono">{finding.severity}</span> · {" "}</>}
                         <BilingualText source={finding.message} />
                       </li>
                     ))}
                   </ul>
                 )}
-                <Verbatim lines={value.honesty} />
-                {value.blockedBy.length > 0 && unresolved.length === 0 && (
+                {developerMode && <Verbatim lines={value.honesty} />}
+                {developerMode && value.blockedBy.length > 0 && unresolved.length === 0 && (
                   <p className="quiet">
                     {t("verdict.refused")}: {" "}
                     <span className="mono">{value.blockedBy.join(" · ")}</span>
@@ -213,7 +216,7 @@ export function VerdictCard({
           </dd>
         </dl>
       </div>
-      <div className="card__row actions">
+      {developerMode && <div className="card__row actions">
         <span className="quiet">
           {t("verdict.serverSource")}
         </span>
@@ -224,7 +227,7 @@ export function VerdictCard({
         >
           {t("verdict.readReceipt")}
         </button>
-      </div>
+      </div>}
     </article>
   );
 }
@@ -234,12 +237,14 @@ function ReviewLine({
   ok,
   clauses,
   refusing,
+  developerMode,
   children,
 }: {
   title: string;
   ok: boolean;
   clauses: readonly string[];
   refusing: readonly string[];
+  developerMode: boolean;
   children?: React.ReactNode;
 }) {
   const t = useT();
@@ -255,10 +260,10 @@ function ReviewLine({
         ) : (
           <>
             {t("verdict.refused")}: {" "}
-            <span className="mono">{refusing.join(", ")}</span>
+            {developerMode && <span className="mono">{refusing.join(", ")}</span>}
           </>
         )}
-        <span className="quiet mono review__clauses"> {clauses.join(" · ")}</span>
+        {developerMode && <span className="quiet mono review__clauses"> {clauses.join(" · ")}</span>}
         {children && <div className="review__detail">{children}</div>}
       </dd>
     </>

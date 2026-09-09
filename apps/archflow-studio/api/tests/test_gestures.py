@@ -297,6 +297,48 @@ class RemoveAndUnresolvedTests(GestureTestCase):
         self.assertEqual(payload["gestures"], [])
 
 
+class DrawingAnnotationTests(GestureTestCase):
+    def test_new_drawing_kinds_are_carried_as_annotations_without_changing_selection(self) -> None:
+        status, payload = self.ask(
+            "set height to 0.8",
+            [
+                gesture("freehand", hit("obj-portico-cornice")),
+                gesture("line", hit("obj-portico-base")),
+                gesture("ruler", hit("obj-portico-base"), label="clearance 1200"),
+                gesture("arc", hit("obj-portico-cornice")),
+            ],
+            targetComponentId="portico",
+            elementId="portico-base",
+        )
+        self.assertEqual(status, 201, payload)
+        self.assertEqual(
+            payload["gestures"],
+            [
+                "freehand mark on portico-cornice (portico) · screen (10,10) → (40,40) · recorded view",
+                "line annotation on portico-base (portico) · screen (10,10) → (40,40) · recorded view",
+                "ruler annotation on portico-base (portico) · label: clearance 1200 · screen (10,10) → (40,40) · recorded view",
+                "arc annotation on portico-cornice (portico) · screen (10,10) → (40,40) · recorded view",
+            ],
+        )
+        self.assertEqual(payload["proposal"]["target"]["elementId"], "portico-base")
+
+    def test_same_hit_annotations_keep_their_distinct_screen_shape_and_colour(self) -> None:
+        status, payload = self.ask(
+            "set height to 0.8",
+            [
+                gesture("arc", hit("obj-portico-base"), screen=[[10, 50], [90, 50], [50, 10]], color="#e5534b", lineWidth=2),
+                gesture("arc", hit("obj-portico-base"), screen=[[10, 50], [90, 50], [50, 90]], color="#2f80ed", lineWidth=6),
+            ],
+            targetComponentId="portico",
+            elementId="portico-base",
+        )
+        self.assertEqual(status, 201, payload)
+        self.assertNotEqual(payload["gestures"][0], payload["gestures"][1])
+        self.assertIn("(50,10)", payload["gestures"][0])
+        self.assertIn("color #2f80ed", payload["gestures"][1])
+        self.assertIn("6px", payload["gestures"][1])
+
+
 class MergeKeepTests(unittest.TestCase):
     def test_a_sentence_without_a_clause_gains_one(self) -> None:
         self.assertEqual(

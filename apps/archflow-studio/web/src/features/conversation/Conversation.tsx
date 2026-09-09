@@ -21,6 +21,7 @@ import type {
 import type { EvidenceTab } from "../../app/evidence";
 import type { Entry } from "../../app/transcript";
 import { useT, type TFunction } from "../../i18n/useT";
+import { usePreferences } from "../settings/preferences";
 import { CandidateCard } from "./cards/CandidateCard";
 import { CompareCard } from "./cards/CompareCard";
 import { MissingControlCard } from "./cards/MissingControlCard";
@@ -64,8 +65,6 @@ export function Conversation({
   entries,
   sessionError,
   projection,
-  editingBaseRunId,
-  editingBaseLabel,
   currentStateDigest,
   selection,
   disabledReason,
@@ -86,8 +85,6 @@ export function Conversation({
   entries: readonly Entry[];
   sessionError: StudioApiError | null;
   projection: StateProjectionDto | null;
-  editingBaseRunId: string | null;
-  editingBaseLabel: string | null;
   currentStateDigest: string | null;
   selection: Selection | null;
   disabledReason: string | null;
@@ -110,6 +107,7 @@ export function Conversation({
   callbacks: ConversationCallbacks;
 }) {
   const t = useT();
+  const { developerMode } = usePreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
 
@@ -126,7 +124,7 @@ export function Conversation({
     >
       <header className="chat__head">
         <span className="label">{t("conversation.title")}</span>
-        <span className="chat__head-meta mono">{t("conversation.scope")}</span>
+        {developerMode && <span className="chat__head-meta mono">{t("conversation.scope")}</span>}
       </header>
       <div
         ref={scrollRef}
@@ -154,13 +152,11 @@ export function Conversation({
               callbacks,
               currentStateDigest,
               t,
+              developerMode,
             })}
           </div>
         ))}
       </div>
-      {editingBaseRunId !== null && (
-        <p className="quiet" title={editingBaseRunId}>{t("stage.base.current")} {editingBaseLabel ?? <code>{editingBaseRunId}</code>}</p>
-      )}
       <Composer
         selection={selection}
         projection={projection}
@@ -188,6 +184,7 @@ function renderEntry(
     callbacks,
     currentStateDigest,
     t,
+    developerMode,
   }: {
     runBusy: boolean;
     loadingSha: string | null;
@@ -196,11 +193,12 @@ function renderEntry(
     callbacks: ConversationCallbacks;
     currentStateDigest: string | null;
     t: TFunction;
+    developerMode: boolean;
   },
 ): ReactNode {
   switch (entry.kind) {
     case "system":
-      return <SystemLine text={entry.text} parts={entry.parts} />;
+      return developerMode ? <SystemLine text={entry.text} parts={entry.parts} /> : null;
     case "reading":
       return (
         <ReadingLine

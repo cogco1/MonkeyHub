@@ -1024,28 +1024,57 @@ button.chip:hover {
   min-width: 0;
 }
 
-.source {
-  display: inline-flex;
-  flex-wrap: nowrap;
+.stage-source-line {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 10px;
   min-width: 0;
-  max-width: 100%;
   width: fit-content;
-  min-height: 34px;
-  padding: 6px 10px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
-  scrollbar-width: thin;
+  max-width: 100%;
+  padding: 5px 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--overlay);
   font-size: calc(12px * var(--font-scale, 1));
 }
 
-.source > * {
-  flex: none;
+.stage-source-line[data-source-match="different"] .editing-base {
+  color: var(--unchecked);
+  border-left-color: var(--unchecked);
+}
+
+.source {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 28px;
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
+.source__name {
+  min-width: 0;
+  max-width: min(340px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-source-line__save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.stage-source-line__save[data-model-annotations-status="error"] {
+  color: var(--violated);
 }
 
 .source .mono {
@@ -1090,29 +1119,53 @@ button.chip:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  width: fit-content;
+  gap: 6px;
+  padding-left: 10px;
   max-width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--overlay);
+  border-left: 1px solid var(--line);
   font-size: calc(12px * var(--font-scale, 1));
   overflow-wrap: anywhere;
+}
+
+.editing-base__name {
+  font-weight: 500;
 }
 
 .picked__field {
   color: var(--ink-2);
 }
 
+.viewtools-wrap {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.viewtools--panel {
+  width: fit-content;
+  box-shadow: var(--shadow);
+}
+
+.viewtools__feedback {
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--overlay);
+  font-size: calc(12px * var(--font-scale, 1));
+  overflow-wrap: anywhere;
+}
+
 .viewtools {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   min-width: 0;
   max-width: 100%;
-  width: max-content;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
+  width: fit-content;
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--overlay);
@@ -1163,41 +1216,78 @@ button.chip:hover {
   pointer-events: none;
 }
 
-.versions {
+.stage__versions {
+  position: static;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.stage__versions-toggle {
   display: flex;
-  flex-wrap: nowrap;
-  align-items: stretch;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  max-width: 70%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 2px;
-  scrollbar-width: thin;
-}
-
-.versions__more {
-  flex: none;
-  align-self: center;
-  padding: 7px 11px;
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
+  min-height: 36px;
+  max-width: 100%;
   background: var(--overlay);
-  color: var(--muted);
-  font-size: calc(11px * var(--font-scale, 1));
-  white-space: nowrap;
 }
 
-.versions__more:hover {
-  border-color: var(--accent);
+.stage__versions-current {
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
+.stage__versions-new {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
   color: var(--ink);
+  font-weight: 500;
+}
+
+.stage__versions-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(720px, 100%);
+  max-height: min(55vh, 480px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.stage__versions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: calc(12.5px * var(--font-scale, 1));
+}
+
+.versions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  align-content: start;
+  align-items: start;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .vcard {
   display: grid;
   flex: none;
   gap: 4px;
-  min-width: 150px;
-  max-width: 260px;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--overlay);
@@ -1215,6 +1305,27 @@ button.chip:hover {
   flex-wrap: wrap;
   gap: 4px;
   padding: 0 8px 7px;
+}
+
+.vcard__export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  max-width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+
+.vcard__asset-kind {
+  flex: none;
+  font-weight: 500;
+}
+
+.vcard__filename {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
 }
 
 .vcard__export[aria-pressed="true"] {
@@ -1712,6 +1823,66 @@ button.chip:hover {
   color: var(--ink);
 }
 
+.annotation-style {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 5px;
+  border-left: 1px solid var(--line-2);
+}
+
+.viewtools button.annotation-style__colour,
+.viewtools button.annotation-style__width {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 28px;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+}
+
+.annotation-style__colour::after {
+  width: 13px;
+  height: 13px;
+  border: 1px solid color-mix(in srgb, var(--ink) 45%, transparent);
+  border-radius: 50%;
+  background: var(--annotation-colour);
+  content: "";
+}
+
+.annotation-style__width span {
+  display: block;
+  width: 15px;
+  border-radius: 99px;
+  background: currentColor;
+}
+
+.annotate__label {
+  position: absolute;
+  z-index: 6;
+  top: 76px;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--overlay);
+  color: var(--ink-2);
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
+.annotate__label input {
+  width: 150px;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
 .marks {
   display: flex;
   flex-wrap: wrap;
@@ -1872,8 +2043,9 @@ button.chip:hover {
 
 .annotate__note {
   position: absolute;
-  top: 44px;
-  left: 12px;
+  bottom: 64px;
+  left: 14px;
+  max-width: calc(100% - 28px);
   z-index: 3;
   margin: 0;
   padding: 3px 8px;

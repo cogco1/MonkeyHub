@@ -16,10 +16,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import secrets
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from starlette.requests import Request
 
 from ..application.binding import ProjectBinding, bound_project
+from ..application.artifacts import require_model_source
 from ..application.candidate import execute_option_candidate
 from ..application.jobs import JobRegistry
 from ..application.options import (
@@ -37,6 +38,7 @@ from ..application.projection import (
 from ..settings import StudioSettings
 from ..transport.candidate import CandidateAcceptedDto, accepted_dto
 from ..transport.errors import StudioError
+from ..transport.artifacts import model_source_from
 from ..transport.options import (
     MassingOptionDto,
     MassingOptionRequestDto,
@@ -61,7 +63,7 @@ def make_massing_option(
 
     state = request.app.state
     binding = bound_project(state)
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=body.source_run_id)
     require_actionable(projection)
     _require_current_base(
         binding,
@@ -85,6 +87,8 @@ def make_massing_option(
             label=body.label,
             envelope=envelope,
             program_targets=body.program_targets,
+            source_run_id=body.source_run_id,
+            model_source=model_source_from(body.model_source) if body.model_source is not None else None,
         )
     )
 
@@ -94,7 +98,10 @@ def make_massing_option(
     response_model=OptionsDto,
     response_model_by_alias=True,
 )
-def read_options(request: Request) -> OptionsDto:
+def read_options(
+    request: Request,
+    run: str | None = Query(default=None, min_length=1),
+) -> OptionsDto:
     """The current record's massing as the baseline, and every option beside it.
 
     Options made against an older state stay on the table and keep saying
@@ -105,13 +112,16 @@ def read_options(request: Request) -> OptionsDto:
 
     state = request.app.state
     binding = bound_project(state)
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=run)
+    if run is not None and not projection.reference_state_exact:
+        require_actionable(projection)
     store: OptionStore = state.options
     return options_dto(
         OptionsTable(
             state_digest=projection.state_digest or projection.record_digest,
             baseline=record_massing(projection.record).metrics,
             options=store.all(),
+            source_run_id=run,
         )
     )
 
@@ -133,7 +143,7 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
     state = request.app.state
     option: MassingOption = state.options.get(option_id)
     binding = bound_project(state)
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=option.source_run_id)
     require_actionable(projection)
     _require_current_base(
         binding,
@@ -142,6 +152,8 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
         record_digest=option.base_record_digest,
     )
     registry: JobRegistry = state.jobs
+    if option.model_source is not None:
+        require_model_source(binding, option.model_source, projection)
     settings: StudioSettings = state.settings
     run_id = _run_id(option_id)
     pack = option.pack
@@ -154,6 +166,8 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
             run_id,
             base_record_digest=option.base_record_digest,
             base_state_digest=option.base_state_digest,
+            source_run_id=option.source_run_id,
+            model_source=option.model_source,
         )
 
     return accepted_dto(

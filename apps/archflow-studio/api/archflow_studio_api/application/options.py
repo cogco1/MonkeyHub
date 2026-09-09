@@ -61,6 +61,8 @@ from archflow.state.state_record import (
 
 from ..transport.errors import StudioError
 from .binding import ProjectBinding
+from .artifacts import ModelSource, require_model_source
+from .projection import project_state
 
 # The six moves an option can be made by. Closed: a seventh would be a second
 # way of saying one of these, and ``pack`` is already the one that takes
@@ -105,6 +107,8 @@ class MassingOption:
     # The retained ``selected-spatial-option`` this option's run holds.
     record_ref: str
     honesty: tuple[str, ...]
+    source_run_id: str | None = None
+    model_source: ModelSource | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +118,7 @@ class OptionsTable:
     state_digest: str
     baseline: MassingMetrics
     options: tuple[MassingOption, ...]
+    source_run_id: str | None = None
 
 
 class OptionStore:
@@ -245,9 +250,13 @@ def make_option(
     label: str | None = None,
     envelope: Mapping[str, Any] | None = None,
     program_targets: Mapping[str, float] | None = None,
+    source_run_id: str | None = None,
+    model_source: ModelSource | None = None,
 ) -> MassingOption:
     """Apply one transform, measure the result, retain it, and put it on the table."""
 
+    if model_source is not None:
+        require_model_source(binding, model_source, project_state(binding, source_run_id))
     if transform not in TRANSFORMS:
         raise StudioError(
             422,
@@ -281,6 +290,8 @@ def make_option(
             envelope_findings=findings,
             record_ref=record_ref,
             honesty=tuple(honesty) + tuple(more),
+            source_run_id=source_run_id,
+            model_source=model_source,
         )
     )
 

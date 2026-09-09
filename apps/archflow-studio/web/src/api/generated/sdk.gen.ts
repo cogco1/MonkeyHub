@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ApplyProgramApiProgramPostData, ApplyProgramApiProgramPostErrors, ApplyProgramApiProgramPostResponses, CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, CreateViewportCaptureApiCapturesPostData, CreateViewportCaptureApiCapturesPostErrors, CreateViewportCaptureApiCapturesPostResponses, DecideProposalApiProposalsProposalIdDecisionPostData, DecideProposalApiProposalsProposalIdDecisionPostErrors, DecideProposalApiProposalsProposalIdDecisionPostResponses, DeclareApiControlsPostData, DeclareApiControlsPostErrors, DeclareApiControlsPostResponses, ListEpisodesApiEpisodesGetData, ListEpisodesApiEpisodesGetErrors, ListEpisodesApiEpisodesGetResponses, MakeMassingOptionApiOptionsPostData, MakeMassingOptionApiOptionsPostErrors, MakeMassingOptionApiOptionsPostResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadControlApiControlsControlIdGetData, ReadControlApiControlsControlIdGetErrors, ReadControlApiControlsControlIdGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetData, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetErrors, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadOptionsApiOptionsGetData, ReadOptionsApiOptionsGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadSemanticsApiSemanticsGetData, ReadSemanticsApiSemanticsGetResponses, ReadSheetApiProgramGetData, ReadSheetApiProgramGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadVolumesApiStateVolumesGetData, ReadVolumesApiStateVolumesGetErrors, ReadVolumesApiStateVolumesGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, SelectOptionApiOptionsOptionIdSelectPostData, SelectOptionApiOptionsOptionIdSelectPostErrors, SelectOptionApiOptionsOptionIdSelectPostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses } from './types.gen';
+import type { AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostData, AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostErrors, AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostResponses, ApplyProgramApiProgramPostData, ApplyProgramApiProgramPostErrors, ApplyProgramApiProgramPostResponses, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostData, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostErrors, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutData, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutErrors, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutResponses, CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateDocumentApiDocumentsPostData, CreateDocumentApiDocumentsPostErrors, CreateDocumentApiDocumentsPostResponses, CreateModelAssetApiModelAssetsPostData, CreateModelAssetApiModelAssetsPostErrors, CreateModelAssetApiModelAssetsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, CreateViewportCaptureApiCapturesPostData, CreateViewportCaptureApiCapturesPostErrors, CreateViewportCaptureApiCapturesPostResponses, CreateWorkingCopyGroupApiWorkingCopiesPostData, CreateWorkingCopyGroupApiWorkingCopiesPostErrors, CreateWorkingCopyGroupApiWorkingCopiesPostResponses, DecideProposalApiProposalsProposalIdDecisionPostData, DecideProposalApiProposalsProposalIdDecisionPostErrors, DecideProposalApiProposalsProposalIdDecisionPostResponses, GetUserSettingsApiSettingsUserGetData, GetUserSettingsApiSettingsUserGetResponses, ListEpisodesApiEpisodesGetData, ListEpisodesApiEpisodesGetErrors, ListEpisodesApiEpisodesGetResponses, MakeMassingOptionApiOptionsPostData, MakeMassingOptionApiOptionsPostErrors, MakeMassingOptionApiOptionsPostResponses, PutUserSettingsApiSettingsUserPutData, PutUserSettingsApiSettingsUserPutErrors, PutUserSettingsApiSettingsUserPutResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadDocumentBytesApiDocumentsAssetSha256BytesGetData, ReadDocumentBytesApiDocumentsAssetSha256BytesGetErrors, ReadDocumentBytesApiDocumentsAssetSha256BytesGetResponses, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetData, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetErrors, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetResponses, ReadDocumentsApiDocumentsGetData, ReadDocumentsApiDocumentsGetErrors, ReadDocumentsApiDocumentsGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetData, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetErrors, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadOptionsApiOptionsGetData, ReadOptionsApiOptionsGetErrors, ReadOptionsApiOptionsGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadSavedModelAnnotationsApiModelAnnotationsGetData, ReadSavedModelAnnotationsApiModelAnnotationsGetErrors, ReadSavedModelAnnotationsApiModelAnnotationsGetResponses, ReadSemanticsApiSemanticsGetData, ReadSemanticsApiSemanticsGetResponses, ReadSheetApiProgramGetData, ReadSheetApiProgramGetErrors, ReadSheetApiProgramGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadSubmittedDocumentCommentsApiDocumentCommentsGetData, ReadSubmittedDocumentCommentsApiDocumentCommentsGetErrors, ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadVolumesApiStateVolumesGetData, ReadVolumesApiStateVolumesGetErrors, ReadVolumesApiStateVolumesGetResponses, ReadWorkingCopiesApiWorkingCopiesGetData, ReadWorkingCopiesApiWorkingCopiesGetResponses, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetData, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetErrors, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, SelectOptionApiOptionsOptionIdSelectPostData, SelectOptionApiOptionsOptionIdSelectPostErrors, SelectOptionApiOptionsOptionIdSelectPostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutData, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutErrors, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutResponses, WriteSavedModelAnnotationsApiModelAnnotationsPutData, WriteSavedModelAnnotationsApiModelAnnotationsPutErrors, WriteSavedModelAnnotationsApiModelAnnotationsPutResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -31,6 +31,23 @@ export const readHealthApiHealthGet = <ThrowOnError extends boolean = false>(opt
  * Name the protocol, the server, its version, its mode and what it does.
  */
 export const readProtocolApiProtocolGet = <ThrowOnError extends boolean = false>(options?: Options<ReadProtocolApiProtocolGetData, ThrowOnError>): RequestResult<ReadProtocolApiProtocolGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadProtocolApiProtocolGetResponses, unknown, ThrowOnError>({ url: '/api/protocol', ...options });
+
+/**
+ * Get User Settings
+ */
+export const getUserSettingsApiSettingsUserGet = <ThrowOnError extends boolean = false>(options?: Options<GetUserSettingsApiSettingsUserGetData, ThrowOnError>): RequestResult<GetUserSettingsApiSettingsUserGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetUserSettingsApiSettingsUserGetResponses, unknown, ThrowOnError>({ url: '/api/settings/user', ...options });
+
+/**
+ * Put User Settings
+ */
+export const putUserSettingsApiSettingsUserPut = <ThrowOnError extends boolean = false>(options: Options<PutUserSettingsApiSettingsUserPutData, ThrowOnError>): RequestResult<PutUserSettingsApiSettingsUserPutResponses, PutUserSettingsApiSettingsUserPutErrors, ThrowOnError> => (options.client ?? client).put<PutUserSettingsApiSettingsUserPutResponses, PutUserSettingsApiSettingsUserPutErrors, ThrowOnError>({
+    url: '/api/settings/user',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Read Projects
@@ -121,7 +138,7 @@ export const readClosureApiStateClosurePost = <ThrowOnError extends boolean = fa
  *
  * The project's program sheet: the authored one, or the derived one.
  */
-export const readSheetApiProgramGet = <ThrowOnError extends boolean = false>(options?: Options<ReadSheetApiProgramGetData, ThrowOnError>): RequestResult<ReadSheetApiProgramGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadSheetApiProgramGetResponses, unknown, ThrowOnError>({ url: '/api/program', ...options });
+export const readSheetApiProgramGet = <ThrowOnError extends boolean = false>(options?: Options<ReadSheetApiProgramGetData, ThrowOnError>): RequestResult<ReadSheetApiProgramGetResponses, ReadSheetApiProgramGetErrors, ThrowOnError> => (options?.client ?? client).get<ReadSheetApiProgramGetResponses, ReadSheetApiProgramGetErrors, ThrowOnError>({ url: '/api/program', ...options });
 
 /**
  * Apply Program
@@ -159,6 +176,52 @@ export const applyProgramApiProgramPost = <ThrowOnError extends boolean = false>
  * project root is wrong.
  */
 export const readSemanticsApiSemanticsGet = <ThrowOnError extends boolean = false>(options?: Options<ReadSemanticsApiSemanticsGetData, ThrowOnError>): RequestResult<ReadSemanticsApiSemanticsGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadSemanticsApiSemanticsGetResponses, unknown, ThrowOnError>({ url: '/api/semantics', ...options });
+
+/**
+ * Create Model Asset
+ */
+export const createModelAssetApiModelAssetsPost = <ThrowOnError extends boolean = false>(options: Options<CreateModelAssetApiModelAssetsPostData, ThrowOnError>): RequestResult<CreateModelAssetApiModelAssetsPostResponses, CreateModelAssetApiModelAssetsPostErrors, ThrowOnError> => (options.client ?? client).post<CreateModelAssetApiModelAssetsPostResponses, CreateModelAssetApiModelAssetsPostErrors, ThrowOnError>({
+    url: '/api/model-assets',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Associate Document Model Source
+ */
+export const associateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePost = <ThrowOnError extends boolean = false>(options: Options<AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostData, ThrowOnError>): RequestResult<AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostErrors, ThrowOnError> => (options.client ?? client).post<AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostErrors, ThrowOnError>({
+    url: '/api/documents/{asset_sha256}/model-source',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read Documents
+ */
+export const readDocumentsApiDocumentsGet = <ThrowOnError extends boolean = false>(options: Options<ReadDocumentsApiDocumentsGetData, ThrowOnError>): RequestResult<ReadDocumentsApiDocumentsGetResponses, ReadDocumentsApiDocumentsGetErrors, ThrowOnError> => (options.client ?? client).get<ReadDocumentsApiDocumentsGetResponses, ReadDocumentsApiDocumentsGetErrors, ThrowOnError>({ url: '/api/documents', ...options });
+
+/**
+ * Create Document
+ */
+export const createDocumentApiDocumentsPost = <ThrowOnError extends boolean = false>(options: Options<CreateDocumentApiDocumentsPostData, ThrowOnError>): RequestResult<CreateDocumentApiDocumentsPostResponses, CreateDocumentApiDocumentsPostErrors, ThrowOnError> => (options.client ?? client).post<CreateDocumentApiDocumentsPostResponses, CreateDocumentApiDocumentsPostErrors, ThrowOnError>({
+    url: '/api/documents',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read Document Bytes
+ */
+export const readDocumentBytesApiDocumentsAssetSha256BytesGet = <ThrowOnError extends boolean = false>(options: Options<ReadDocumentBytesApiDocumentsAssetSha256BytesGetData, ThrowOnError>): RequestResult<ReadDocumentBytesApiDocumentsAssetSha256BytesGetResponses, ReadDocumentBytesApiDocumentsAssetSha256BytesGetErrors, ThrowOnError> => (options.client ?? client).get<ReadDocumentBytesApiDocumentsAssetSha256BytesGetResponses, ReadDocumentBytesApiDocumentsAssetSha256BytesGetErrors, ThrowOnError>({ url: '/api/documents/{asset_sha256}/bytes', ...options });
 
 /**
  * Read Artifacts
@@ -229,7 +292,8 @@ export const readProposalApiProposalsProposalIdGet = <ThrowOnError extends boole
 /**
  * Decide Proposal
  *
- * Turn one proposal down, or replace it, and keep the judgement.
+ * Accept one proposal's finished candidate, turn the proposal down, or
+ * replace it — and keep the judgement.
  */
 export const decideProposalApiProposalsProposalIdDecisionPost = <ThrowOnError extends boolean = false>(options: Options<DecideProposalApiProposalsProposalIdDecisionPostData, ThrowOnError>): RequestResult<DecideProposalApiProposalsProposalIdDecisionPostResponses, DecideProposalApiProposalsProposalIdDecisionPostErrors, ThrowOnError> => (options.client ?? client).post<DecideProposalApiProposalsProposalIdDecisionPostResponses, DecideProposalApiProposalsProposalIdDecisionPostErrors, ThrowOnError>({
     url: '/api/proposals/{proposal_id}/decision',
@@ -239,6 +303,45 @@ export const decideProposalApiProposalsProposalIdDecisionPost = <ThrowOnError ex
         ...options.headers
     }
 });
+
+/**
+ * Read Saved Model Annotations
+ */
+export const readSavedModelAnnotationsApiModelAnnotationsGet = <ThrowOnError extends boolean = false>(options: Options<ReadSavedModelAnnotationsApiModelAnnotationsGetData, ThrowOnError>): RequestResult<ReadSavedModelAnnotationsApiModelAnnotationsGetResponses, ReadSavedModelAnnotationsApiModelAnnotationsGetErrors, ThrowOnError> => (options.client ?? client).get<ReadSavedModelAnnotationsApiModelAnnotationsGetResponses, ReadSavedModelAnnotationsApiModelAnnotationsGetErrors, ThrowOnError>({ url: '/api/model-annotations', ...options });
+
+/**
+ * Write Saved Model Annotations
+ */
+export const writeSavedModelAnnotationsApiModelAnnotationsPut = <ThrowOnError extends boolean = false>(options: Options<WriteSavedModelAnnotationsApiModelAnnotationsPutData, ThrowOnError>): RequestResult<WriteSavedModelAnnotationsApiModelAnnotationsPutResponses, WriteSavedModelAnnotationsApiModelAnnotationsPutErrors, ThrowOnError> => (options.client ?? client).put<WriteSavedModelAnnotationsApiModelAnnotationsPutResponses, WriteSavedModelAnnotationsApiModelAnnotationsPutErrors, ThrowOnError>({
+    url: '/api/model-annotations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read Document Page Annotations
+ */
+export const readDocumentPageAnnotationsApiDocumentAnnotationsGet = <ThrowOnError extends boolean = false>(options: Options<ReadDocumentPageAnnotationsApiDocumentAnnotationsGetData, ThrowOnError>): RequestResult<ReadDocumentPageAnnotationsApiDocumentAnnotationsGetResponses, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetErrors, ThrowOnError> => (options.client ?? client).get<ReadDocumentPageAnnotationsApiDocumentAnnotationsGetResponses, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetErrors, ThrowOnError>({ url: '/api/document-annotations', ...options });
+
+/**
+ * Write Document Page Annotations
+ */
+export const writeDocumentPageAnnotationsApiDocumentAnnotationsPut = <ThrowOnError extends boolean = false>(options: Options<WriteDocumentPageAnnotationsApiDocumentAnnotationsPutData, ThrowOnError>): RequestResult<WriteDocumentPageAnnotationsApiDocumentAnnotationsPutResponses, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutErrors, ThrowOnError> => (options.client ?? client).put<WriteDocumentPageAnnotationsApiDocumentAnnotationsPutResponses, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutErrors, ThrowOnError>({
+    url: '/api/document-annotations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read Submitted Document Comments
+ */
+export const readSubmittedDocumentCommentsApiDocumentCommentsGet = <ThrowOnError extends boolean = false>(options: Options<ReadSubmittedDocumentCommentsApiDocumentCommentsGetData, ThrowOnError>): RequestResult<ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses, ReadSubmittedDocumentCommentsApiDocumentCommentsGetErrors, ThrowOnError> => (options.client ?? client).get<ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses, ReadSubmittedDocumentCommentsApiDocumentCommentsGetErrors, ThrowOnError>({ url: '/api/document-comments', ...options });
 
 /**
  * Compile Intent
@@ -255,23 +358,6 @@ export const compileIntentApiIntentsPost = <ThrowOnError extends boolean = false
 });
 
 /**
- * Declare
- */
-export const declareApiControlsPost = <ThrowOnError extends boolean = false>(options: Options<DeclareApiControlsPostData, ThrowOnError>): RequestResult<DeclareApiControlsPostResponses, DeclareApiControlsPostErrors, ThrowOnError> => (options.client ?? client).post<DeclareApiControlsPostResponses, DeclareApiControlsPostErrors, ThrowOnError>({
-    url: '/api/controls',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Read Control
- */
-export const readControlApiControlsControlIdGet = <ThrowOnError extends boolean = false>(options: Options<ReadControlApiControlsControlIdGetData, ThrowOnError>): RequestResult<ReadControlApiControlsControlIdGetResponses, ReadControlApiControlsControlIdGetErrors, ThrowOnError> => (options.client ?? client).get<ReadControlApiControlsControlIdGetResponses, ReadControlApiControlsControlIdGetErrors, ThrowOnError>({ url: '/api/controls/{control_id}', ...options });
-
-/**
  * Read Options
  *
  * The current record's massing as the baseline, and every option beside it.
@@ -281,7 +367,7 @@ export const readControlApiControlsControlIdGet = <ThrowOnError extends boolean 
  * ago is not deleted because the record moved, and ``stateDigest`` per
  * option is how a client greys one out rather than the server hiding it.
  */
-export const readOptionsApiOptionsGet = <ThrowOnError extends boolean = false>(options?: Options<ReadOptionsApiOptionsGetData, ThrowOnError>): RequestResult<ReadOptionsApiOptionsGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadOptionsApiOptionsGetResponses, unknown, ThrowOnError>({ url: '/api/options', ...options });
+export const readOptionsApiOptionsGet = <ThrowOnError extends boolean = false>(options?: Options<ReadOptionsApiOptionsGetData, ThrowOnError>): RequestResult<ReadOptionsApiOptionsGetResponses, ReadOptionsApiOptionsGetErrors, ThrowOnError> => (options?.client ?? client).get<ReadOptionsApiOptionsGetResponses, ReadOptionsApiOptionsGetErrors, ThrowOnError>({ url: '/api/options', ...options });
 
 /**
  * Make Massing Option
@@ -341,6 +427,52 @@ export const readCandidateApiCandidatesCandidateIdGet = <ThrowOnError extends bo
  * is unavailable rather than guessing one.
  */
 export const compareCandidateApiCandidatesCandidateIdCompareGet = <ThrowOnError extends boolean = false>(options: Options<CompareCandidateApiCandidatesCandidateIdCompareGetData, ThrowOnError>): RequestResult<CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, ThrowOnError> => (options.client ?? client).get<CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, ThrowOnError>({ url: '/api/candidates/{candidate_id}/compare', ...options });
+
+/**
+ * Read Working Copies
+ */
+export const readWorkingCopiesApiWorkingCopiesGet = <ThrowOnError extends boolean = false>(options?: Options<ReadWorkingCopiesApiWorkingCopiesGetData, ThrowOnError>): RequestResult<ReadWorkingCopiesApiWorkingCopiesGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadWorkingCopiesApiWorkingCopiesGetResponses, unknown, ThrowOnError>({ url: '/api/working-copies', ...options });
+
+/**
+ * Create Working Copy Group
+ */
+export const createWorkingCopyGroupApiWorkingCopiesPost = <ThrowOnError extends boolean = false>(options: Options<CreateWorkingCopyGroupApiWorkingCopiesPostData, ThrowOnError>): RequestResult<CreateWorkingCopyGroupApiWorkingCopiesPostResponses, CreateWorkingCopyGroupApiWorkingCopiesPostErrors, ThrowOnError> => (options.client ?? client).post<CreateWorkingCopyGroupApiWorkingCopiesPostResponses, CreateWorkingCopyGroupApiWorkingCopiesPostErrors, ThrowOnError>({
+    url: '/api/working-copies',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read Working Copy Group
+ */
+export const readWorkingCopyGroupApiWorkingCopiesGroupIdGet = <ThrowOnError extends boolean = false>(options: Options<ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetData, ThrowOnError>): RequestResult<ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetResponses, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetErrors, ThrowOnError> => (options.client ?? client).get<ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetResponses, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetErrors, ThrowOnError>({ url: '/api/working-copies/{group_id}', ...options });
+
+/**
+ * Choose Working Copy Option
+ */
+export const chooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPut = <ThrowOnError extends boolean = false>(options: Options<ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutData, ThrowOnError>): RequestResult<ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutResponses, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutErrors, ThrowOnError> => (options.client ?? client).put<ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutResponses, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutErrors, ThrowOnError>({
+    url: '/api/working-copies/{group_id}/selection',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Append Working Copy Option
+ */
+export const appendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPost = <ThrowOnError extends boolean = false>(options: Options<AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostData, ThrowOnError>): RequestResult<AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostResponses, AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostErrors, ThrowOnError> => (options.client ?? client).post<AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostResponses, AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostErrors, ThrowOnError>({
+    url: '/api/working-copies/{group_id}/options',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * List Episodes

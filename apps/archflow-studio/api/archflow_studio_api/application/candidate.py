@@ -21,6 +21,7 @@ changed nothing rather than implying it did.
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -28,12 +29,16 @@ from typing import Any, Mapping
 
 from archflow.capabilities.geometry_proposal import (
     GeometryProposalProviderIdentity,
+    load_compiled_geometry_program,
 )
+from archflow.adapters.cad_execution import patch_composed_three_dm
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
     INTENT_COMPILATION,
     RUNNER_RUN_RECEIPT,
     SEAT_RELATION_CHECK,
+    STUDIO_DOCUMENT_COMMENT,
+    STUDIO_MODEL_ASSET,
 )
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef, record_ref_from_uri
 from archflow.runtime.project_runner import CAD_BACKEND_OCCT, RunOptions, run_project
@@ -50,7 +55,10 @@ from ..adapters.harness import STAGE_ID, harness_guard
 from ..adapters.seats import load_seat_pack, seats_of
 from ..settings import StudioSettings
 from ..transport.errors import StudioError
-from .artifacts import ArtifactRecord, _text, _whole, list_artifacts
+from .artifacts import (
+    ArtifactRecord, ModelSource, _text, _whole, artifact_bytes, list_artifacts,
+    register_model_asset, require_model_source,
+)
 from .binding import ProjectBinding, record_kind
 from .jobs import FAILED, QUEUED, RUNNING
 from .projection import (
@@ -127,10 +135,47 @@ def execute_candidate(
                 },
             ),
         )
+    if proposal.document_comment_ref is not None:
+        from .gestures import require_document_comment_source
+
+        comment = binding.repository.load_json(proposal.document_comment_ref)
+        require_document_comment_source(binding, comment, project_state(binding, proposal.source_run_id))
+        retain += ((STUDIO_DOCUMENT_COMMENT, comment),)
     return run_operator(
         binding, settings, operator, run_id,
         source_run_id=proposal.source_run_id, retain=retain,
+        model_source=proposal.model_source,
     )
+
+
+def _retain_composed_candidate(
+    binding: ProjectBinding, source: ArtifactRecord, run_id: str, receipt: Mapping[str, Any],
+) -> None:
+    """Compose the runner's native exports into the exact input model and retain it."""
+
+    prior_receipt = binding.reference_run(source.run_id).receipt
+    before = {row["seat_id"]: row for row in _rows((prior_receipt or {}).get("seat_results"))}
+    after = {row["seat_id"]: row for row in _rows(receipt.get("seat_results"))}
+    if not before or before.keys() != after.keys():
+        raise ValueError("The composed candidate needs the same retained geometry seats as its source model.")
+    _, composed = artifact_bytes(binding, source.sha256)
+    listing = list_artifacts(binding)
+    for seat_id, seat in after.items():
+        prior_ref = before[seat_id].get("program_ref")
+        next_ref = seat.get("program_ref")
+        if not prior_ref or not next_ref:
+            raise ValueError(f"The composed candidate has no retained source or replacement program for seat {seat_id}.")
+        execution_ref = (seat.get("cad") or {}).get("execution_ref")
+        donors = [row for row in listing.artifacts if row.run_id == run_id
+                  and row.receipt_ref == execution_ref and row.format == "3dm"]
+        if len(donors) != 1 or not donors[0].available or not donors[0].sha256:
+            raise ValueError(f"The composed candidate needs an available native 3DM export for seat {seat_id}.")
+        prior_program = load_compiled_geometry_program(binding.repository.load_json(record_ref_from_uri(prior_ref, binding.project_id)))
+        program = load_compiled_geometry_program(binding.repository.load_json(record_ref_from_uri(next_ref, binding.project_id)))
+        _, donor = artifact_bytes(binding, donors[0].sha256)
+        composed = patch_composed_three_dm(composed, prior_program=prior_program, program=program, replacement_3dm=donor)
+    projection = project_state(binding, run_id)
+    register_model_asset(binding, run_id, projection.state_digest, f"{run_id}-composed.3dm", base64.b64encode(composed).decode())
 
 
 def execute_option_candidate(
@@ -141,11 +186,13 @@ def execute_option_candidate(
     *,
     base_record_digest: str,
     base_state_digest: str,
+    source_run_id: str | None = None,
+    model_source: ModelSource | None = None,
 ) -> Mapping[str, Any]:
     """Run one selected massing option as a candidate, by the same arrangement.
 
     The only difference from a proposal's candidate is which successor is run:
-    the authored record with its massing replaced by this option's pack rather
+    the selected source record with its massing replaced by this option's pack rather
     than with one scalar replaced. Everything after that — the base check, the
     run, the harness stage, the seats — is the same code, so an option that
     cannot run fails for the reasons a proposal would.
@@ -160,6 +207,7 @@ def execute_option_candidate(
         binding,
         expected_record_digest=base_record_digest,
         expected_state_digest=base_state_digest,
+        source_run_id=source_run_id,
     )
     operator = StateRecordOperator(
         kind=StateRecordEditKind.REPLACE_MASSING,
@@ -167,7 +215,7 @@ def execute_option_candidate(
         base_state_digest=base_record.state_digest,
         massing_pack=pack,
     )
-    return run_operator(binding, settings, operator, run_id)
+    return run_operator(binding, settings, operator, run_id, source_run_id=source_run_id, model_source=model_source)
 
 
 def _operator_base(
@@ -208,6 +256,7 @@ def _run_successor(
     run_id: str,
     *,
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
+    model_source_ref: str | None = None,
 ) -> Mapping[str, Any]:
     """Create the run, retain what belongs to it, and hand the record to the runner.
 
@@ -240,7 +289,7 @@ def _run_successor(
         branch_id=BRANCH_ID,
         selection_decision_ref=SELECTION_DECISION_REF,
     )
-    guard = harness_guard(repository, run, state)
+    guard = harness_guard(repository, run, state, model_source_ref=model_source_ref)
     # What a live provider would have to present. The runner records its own
     # proposals, so a pack that declares no provider identity still runs.
     declared_provider = seat_pack.get("provider_identity")
@@ -287,14 +336,22 @@ def run_operator(
     *,
     source_run_id: str | None = None,
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
+    model_source: ModelSource | None = None,
 ) -> Mapping[str, Any]:
     """Replay a typed operator against its selected or default exact base and run it."""
 
     seat_pack = load_seat_pack(binding.repository)
     projection = project_state(binding, run_id=source_run_id)
     require_actionable(projection)
+    source_model = require_model_source(binding, model_source, projection) if model_source is not None else None
+    if source_model is not None and source_model.representation != "composed":
+        source_model = None
     successor = apply_state_record_operator(projection.record, operator)
-    return _run_successor(binding, settings, seat_pack, successor, run_id, retain=retain)
+    receipt = _run_successor(binding, settings, seat_pack, successor, run_id, retain=retain,
+                             model_source_ref=source_model.receipt_ref if source_model is not None else None)
+    if source_model is not None:
+        _retain_composed_candidate(binding, source_model, run_id, receipt)
+    return receipt
 
 @dataclass(frozen=True, slots=True)
 class SeatOutcome:
@@ -416,6 +473,15 @@ def describe(
     # One listing answers both questions: which of this run's exports are
     # servable, and which runs could not be read while finding out.
     listing = list_artifacts(binding)
+    workflow_ref = receipt.get("workflow_ref")
+    if workflow_ref:
+        workflow = binding.repository.load_json(record_ref_from_uri(workflow_ref, binding.project_id))
+        composed_source = any(
+            record_kind(record_ref_from_uri(ref, binding.project_id)) == STUDIO_MODEL_ASSET
+            for ref in workflow.get("basis_refs", ()) if ref.startswith("project://")
+        )
+        if composed_source and not any(row.run_id == candidate_id and row.representation == "composed" and row.available for row in listing.artifacts):
+            raise StudioError(404, "CANDIDATE_NOT_FOUND", f"Candidate {candidate_id} has native results but no completed composed model for its retained source.")
     return CandidateRun(
         candidate_id=candidate_id,
         proposal_id=(

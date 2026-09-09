@@ -20,12 +20,14 @@ from typing import TYPE_CHECKING, Any, Mapping
 
 from archflow.state.decision_operator import DecisionOperator
 from archflow.state.state_record import StateRecordOperator
+from archflow.project.refs import ProjectRecordRef
 
 from ..transport.errors import StudioError
 from .impact import Impact
 
 if TYPE_CHECKING:  # the pending intent is a value, not a dependency
     from .clarification import PendingIntent
+    from .artifacts import ModelSource
 
 # What the DTO says about itself, verbatim. A client that shows this has been
 # told the truth about what it is looking at.
@@ -78,6 +80,9 @@ class Proposal:
     # replays. The review is domain data, never a CAD program or a second run.
     state_record_operator: StateRecordOperator | None = None
     semantic_edit: Mapping[str, Any] | None = None
+    # Exact saved source/page ink and submitted words, read again on candidate execution.
+    document_comment_ref: ProjectRecordRef | None = None
+    model_source: "ModelSource | None" = None
 
 
 

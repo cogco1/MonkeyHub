@@ -200,14 +200,14 @@ class ScriptedAgentTests(IntentTestCase):
         self.assertEqual(payload["proposal"]["target"]["elementId"], "portico-cornice")
         self.assertEqual(payload["proposal"]["change"]["old"], 0.3)
 
-    def test_an_agent_naming_an_element_the_record_lacks_is_the_grammars_question(self) -> None:
+    def test_an_agent_naming_an_element_the_record_lacks_is_a_technical_failure(self) -> None:
         self.app.state.intent_compiler = scripted(
             utterance="set height to 0.5", component_id="portico", element_id="portico-attic"
         )
         status, payload = self.ask("raise the attic")
-        self.assertEqual(status, 422, payload)
-        self.assertEqual(payload["code"], "BLOCKED_NEEDS_HUMAN")
-        self.assertIn("portico-attic", payload["question"])
+        self.assertEqual(status, 502, payload)
+        self.assertEqual(payload["code"], AGENT_FAILED)
+        self.assertNotIn("question", payload)
 
     def test_the_agents_question_is_asked_as_the_agents(self) -> None:
         self.app.state.intent_compiler = scripted(
@@ -223,14 +223,16 @@ class ScriptedAgentTests(IntentTestCase):
         self.assertIn("the request names the portico", payload["detail"])
         self.assertNotIn("acceptedForms", payload)
 
-    def test_an_agent_that_claims_to_compile_but_does_not_gets_the_forms(self) -> None:
+    def test_an_agent_that_claims_to_compile_but_does_not_is_a_technical_failure(self) -> None:
         self.app.state.intent_compiler = scripted(
             utterance="lift it a bit", component_id="portico", element_id="portico-base"
         )
         status, payload = self.ask("lift it")
-        self.assertEqual(status, 422, payload)
+        self.assertEqual(status, 502, payload)
+        self.assertEqual(payload["code"], AGENT_FAILED)
         self.assertIn("is not in the grammar", payload["detail"])
-        self.assertEqual(len(payload["acceptedForms"]), 4)
+        self.assertNotIn("question", payload)
+        self.assertNotIn("acceptedForms", payload)
 
     def test_an_agent_that_fails_is_a_502_with_its_own_sentence(self) -> None:
         self.app.state.intent_compiler = Failing()
@@ -256,6 +258,36 @@ class ScriptedAgentTests(IntentTestCase):
         self.assertEqual(status, 409, payload)
         self.assertEqual(payload["code"], "STALE_BASE")
         self.assertEqual(compiler.calls, [])
+
+    def test_an_agent_can_terminally_name_a_missing_tool_capability(self) -> None:
+        self.app.state.intent_compiler = scripted(
+            status="unsupported",
+            why="This compiler cannot create a passage component.",
+        )
+        status, payload = self.ask("make a passage beneath the landing")
+        self.assertEqual(status, 422, payload)
+        self.assertEqual(payload["code"], "UNSUPPORTED_REQUEST")
+        self.assertEqual(
+            payload["detail"], "This compiler cannot create a passage component."
+        )
+        self.assertIsNone(payload["pendingIntent"]["continuationToken"])
+        self.assertNotIn("question", payload)
+
+    def test_unsupported_scalar_reply_preserves_current_action_kind(self) -> None:
+        self.app.state.intent_compiler = scripted(
+            status="unsupported",
+            why="This compiler cannot make that scalar change.",
+        )
+        status, payload = self.ask(
+            "make the portico base taller", elementId="portico-base"
+        )
+        self.assertEqual(status, 422, payload)
+        self.assertEqual(payload["code"], "UNSUPPORTED_REQUEST")
+        self.assertEqual(
+            payload["pendingIntent"]["actionKind"], "clarify"
+        )
+        self.assertIsNone(payload["pendingIntent"]["continuationToken"])
+        self.assertNotIn("question", payload)
 
 
 class RecordSheetTests(IntentTestCase):
@@ -487,6 +519,19 @@ class AnswerParsingTests(unittest.TestCase):
         self.assertEqual(compilation.status, "compiled")
         self.assertEqual(compilation.utterance, "set height to 0.8")
         self.assertEqual(compilation.component_id, "portico")
+
+    def test_unsupported_answer_is_read_without_a_question(self) -> None:
+        compilation = _parse_answer(
+            '{"status":"unsupported","why":"This tool cannot model that component."}',
+            provider=CODEX,
+            model=None,
+            latency_ms=1,
+            prompt_sha="00" * 32,
+        )
+        self.assertEqual(compilation.status, "unsupported")
+        self.assertEqual(compilation.why, "This tool cannot model that component.")
+        self.assertIsNone(compilation.utterance)
+        self.assertIsNone(compilation.question)
 
 
 class ProviderOnTheWireTests(IntentTestCase):

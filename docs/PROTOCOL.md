@@ -1,6 +1,6 @@
 # The open ArchFlow protocol, version 2 (draft)
 
-**Status:** draft, written from the code on 2026-09-04. The one description of the wire is the
+**Status:** draft, written from the code on 2026-09-08. The one description of the wire is the
 FastAPI application (`apps/archflow-studio/api`); this document says what of it a client may
 rely on, and what version 2 has reserved but not yet built.
 
@@ -24,16 +24,18 @@ GET /api/protocol
   "server": "monkeyarch-api",
   "serverVersion": "0.1.0",
   "mode": "local",
-  "capabilities": ["artifacts", "cad-export", "candidates", "captures", "compare", "events", "gestures",
-                   "intents", "pick", "program", "projection", "proposals",
-                   "validation"]
+  "capabilities": ["artifacts", "cad-export", "candidates", "captures", "compare",
+                   "document-model-source", "document-visual-input", "events", "gestures",
+                   "intents", "model-annotations", "model-asset-registration", "pick", "program",
+                   "projection", "proposals", "user-settings", "validation", "working-copies"]
 }
 ```
 
 `protocol` is `archflow/<major>`. `server` and `serverVersion` name the implementation, never the
 protocol. `mode` is `local` or `remote` (§10.1). `capabilities` are the feature names this process
 actually serves now, sorted; `cad-export` appears when geometry export is enabled, and
-`rhino-export` only when the configured export backend is explicitly Rhino.
+`rhino-export` only when the configured export backend is explicitly Rhino. `user-settings`
+appears only in local mode.
 `/api/health`, `/api/protocol` and `/api/projects` are not capabilities — a conforming server
 always has them. The route opens no project, so a client can tell "this is not a server I speak
 to" from "this server cannot find its project": different problems, different people.
@@ -97,9 +99,24 @@ tolerate it.
 | GET | `/api/projects/{projectId}` | that project's binding: `head`, `referenceRun`, `intentProvider` | reads published + shared | stable |
 | GET | `/api/project` | the same, for the default project (§10.2) | reads published + shared | stable |
 | GET | `/api/state?run=` | the projection: component tree, `Element@1` rows and their numeric fields, parameters and their locks, dependency edges, `stateDigest`, `recordDigest`, `honesty[]` | reads work in progress + shared + published | stable |
-| GET | `/api/artifacts` | one row per certified file, with `format`, `representation`, `available` / `unavailableReason`; an OCCT STEP (`step` / `exact`) and mesh preview (`3dm` / `preview`) share one producing `receiptRef` | reads shared | stable |
-| GET | `/api/artifacts/{sha256}/bytes` | the certified bytes, re-hashed before they are served; `ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store` | reads shared | stable |
+| GET | `/api/artifacts` | exported or registered model files, with `format`, `representation`, `available` / `unavailableReason`; an OCCT STEP (`step` / `exact`) and mesh preview (`3dm` / `preview`) share one producing `receiptRef`; a registered model has `representation: "composed"` and `readbackVerified: null` | reads shared | stable |
+| GET | `/api/artifacts/{sha256}/bytes` | the retained bytes, re-hashed before they are served; `ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store` | reads shared | stable |
 | POST | `/api/captures` → 201 | a viewport PNG retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest | **writes shared workspace** | stable |
+| POST | `/api/model-assets` → 201 | register a readable `.3dm` against `projectId`, `runId`, `stateDigest`; body includes `fileName`, `contentBase64`; returns its model artifact | **writes shared** | provisional |
+| POST | `/api/documents` → 201 | retain a PDF, PNG or JPEG source; body includes `projectId`, `runId`, `fileName`, `mimeType`, `contentBase64` and optional `modelSource` | **writes shared** | provisional |
+| GET | `/api/documents?runId=` | source documents retained under the named run, including page geometry and optional `modelSource` | reads shared | provisional |
+| GET | `/api/documents/{assetSha256}/bytes?runId=` | original retained source bytes, with digest `ETag`, inline disposition and `Cache-Control: no-store` | reads shared | provisional |
+| POST | `/api/documents/{assetSha256}/model-source` | bind a source document to `modelSource`; body includes `projectId`, the document's `runId` and `modelSource` | **writes shared** | provisional |
+| GET | `/api/document-annotations` | saved page ink; requires `runId`, `assetSha256`, `pageIndex`; optional `revisionSha256` reads an earlier revision | reads shared | provisional |
+| PUT | `/api/document-annotations` | save complete page ink; body includes `projectId`, `runId`, `assetSha256`, `pageIndex`, nullable `baseRevisionSha256`, `annotations`, `comment`; returns `revisionSha256` | **writes shared** | provisional |
+| GET | `/api/document-comments?runId=` | submitted words and the exact saved page references they accompanied, with `commentRef` | reads shared | provisional |
+| GET | `/api/model-annotations` | saved model ink; requires `runId`, `stateDigest`, `assetSha256`; optional `revisionSha256` reads an earlier revision | reads shared | provisional |
+| PUT | `/api/model-annotations` | save complete model ink; body includes `projectId`, `modelSource`, nullable `baseRevisionSha256`, `annotations`, `comment`; returns `revisionSha256` | **writes shared** | provisional |
+| GET | `/api/working-copies` | retained working-copy groups and their selected options | reads shared | provisional |
+| GET | `/api/working-copies/{groupId}` | one group; optional `revisionSha256` reads an earlier revision | reads shared | provisional |
+| POST | `/api/working-copies` → 201 | create a group from `projectId`, `groupId`, `label`, `stageId`, `commonBase` (`modelSource` shape), `scope`, `options` | **writes shared** | provisional |
+| PUT | `/api/working-copies/{groupId}/selection` | explicitly select an option with `projectId`, `baseRevisionSha256`, `optionId`; returns the revised group | **writes shared** | provisional |
+| POST | `/api/working-copies/{groupId}/options` | append an option with `projectId`, `baseRevisionSha256`, `option`; returns the revised group | **writes shared** | provisional |
 | POST | `/api/pick/resolve` | what the object a user clicked actually is (§6) | reads work in progress + shared | stable |
 | POST | `/api/proposals` → 201 | a typed, exact-base `DecisionOperator` with its closure and impact. Never applied | reads work in progress + shared | stable |
 | GET | `/api/proposals/{proposalId}` | that proposal, as it was returned | server memory | stable |
@@ -108,36 +125,73 @@ tolerate it.
 | GET | `/api/candidates/{candidateId}` | the finished candidate, read back out of the records its run retained | reads shared | stable |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
-| POST | `/api/proposals/{proposalId}/decision` → 201 | the judgement made on one proposal — rejected, or modified into a linked replacement — as a deliberation episode (§5.2) | server memory, **written into shared** by the next candidate run against the same state | provisional |
+| POST | `/api/proposals/{proposalId}/decision` → 201 | an explicit judgement: accepted with its successful `candidateId`, rejected, or modified into a linked replacement (§5.2) | accepted is **written into its named run**; other decisions stay in memory until a candidate run against the same state | provisional |
 | GET | `/api/episodes?stateDigest=` | the judgements this process holds, each saying whether it lives in a run or only in memory (§5.2) | server memory + reads shared | provisional |
 | GET | `/api/episodes/{episodeId}` | one of them | server memory + reads shared | provisional |
 | GET | `/api/candidates/{candidateId}/compare?against=` | before / after / why, from the inspection records both runs retained | reads shared | provisional |
 | GET | `/api/events` | the server-sent event stream (§7) | server memory | provisional |
-| POST | `/api/controls` → 201 | keep a confirmed authored-control draft (the terminal MISSING_EDITABLE_CONTROL answer) as a declared control: component, property, provenance, what the catalog showed | server memory | provisional |
-| GET | `/api/controls/{controlId}` | one declared control | server memory | provisional |
 | GET | `/api/state/frame` | the record's frame: each `Level@1` and `GridAxis@1` with its role, its value, the elements whose own references name it, and the closure of changing it; `honesty[]` | reads work in progress + shared + published | provisional |
 | POST | `/api/state/closure` | what changing `changedRefs` would move, and the propagating edges that carried it. Reads only; the POST carries the list and the `stateDigest` it is asked against | reads work in progress + shared + published | provisional |
 | GET | `/api/state/volumes` | the record's `Volume@1` boxes with their levels and their own plan area, and what the massing as a whole measures (§5.3) | reads work in progress + shared + published | provisional |
 | POST | `/api/options` → 201 | one massing option: a deterministic transform of the record's own pack, measured, with the findings of the envelope the request carried (§5.3) | server memory, pack **written into shared** as its own `option-NNN` run | provisional |
-| GET | `/api/options` | the record's massing as the baseline and every option this process holds beside it, measured the same way | server memory + reads shared | provisional |
+| GET | `/api/options?run=` | the selected record's massing as the baseline and every option this process holds beside it, measured the same way; each option keeps its own source | server memory + reads shared | provisional |
 | POST | `/api/options/{optionId}/select` → 202 | run that option as a candidate, through the same candidate path a proposal takes; answers a job id, never a run | writes a **detached run** | provisional |
 
-| GET | `/api/program` | the program sheet: departments, spaces with target area / count / clear height / function, adjacency requirements, `totals`, `honesty[]`. `source` is `input` (the architect's own `input/runner/program-sheet.json`) or `derived` (what the record's own `Space@1` zones say) | reads work in progress + shared + published | provisional |
+| GET | `/api/program?run=` | the program sheet: departments, spaces with target area / count / clear height / function, adjacency requirements, `totals`, `honesty[]`. `source` is `input` (the architect's own `input/runner/program-sheet.json`) or `derived` (what the record's own `Space@1` zones say); an explicit run reads only that retained record's derivation | reads work in progress + shared + published | provisional |
 | POST | `/api/program` → 202 | apply a sheet to the record **as a candidate**: a job id, the run id it will make, and the server's own `totals`. The authored record is never rewritten. `saveInput: true` also writes the architect's own sheet file — local mode only (§10.1) | **writes shared**; with `saveInput`, **writes work in progress** | provisional |
 | GET | `/api/semantics` | every registered `role.*` and `condition.*` with its meaning and aliases: the vocabulary canonical state may name (ADR-006). Opens no project | none | provisional |
+| GET | `/api/settings/user` | saved local preferences; `{}` when no file exists; local mode only | reads user settings, no project | provisional |
+| PUT | `/api/settings/user` | replace the saved local preferences; omitted/null fields clear their override; local mode only | atomically writes `%APPDATA%/MonkeyArch/settings.json`, no project | provisional |
 
-Thirty-three resources: sixteen stable, seventeen provisional. `/api/intents` is provisional because who
+**Model sources and drawing context.** `modelSource` is `{runId, stateDigest, assetSha256}`;
+registration binds readable model bytes to that exact run state without certifying that all
+uploaded geometry was generated by it. Document and model ink, and working-copy changes, append
+revisions and refuse a stale `baseRevisionSha256`; reading or selecting work never issues or
+moves `HEAD`. A first drawing intent sends one saved `documentAnnotations` reference and one
+matching `documentVisuals` entry with `role: "edit"`, plus at most three `role: "reference"`
+entries. Each visual names `runId`, `assetSha256`, `pageIndex`, nullable `revisionSha256`,
+`pagePngBase64`, optional `annotatedPngBase64` and optional `referenceNote`. An explicitly
+included revision with ink requires a full same-size overlay. Plain-base64 PNGs are limited to 4 MiB each, 2,048 pixels on the long
+side and 16 MiB combined; their aspect ratio must match the registered page. The server checks
+page/revision identity and image shape, not source-pixel provenance. Reference pages and their
+saved comments do not become edit targets or keep conditions; the primary page's bound model
+is the edit source. A clarification retains its state/source and sends `continuationToken`,
+**omitting** `documentAnnotations` and `documentVisuals` to reuse the original references and
+images; explicit empty arrays or changed document context answer `409 DOCUMENT_CONTEXT_MISMATCH`.
+New saved revisions do not replace pending images. Submitted words and references survive
+restart; pending tokens and images do not, so a restart requires a new request.
+
+**Local user settings.** The optional fields are `language` (`en` or `zh-CN`), `theme`
+(`dark`, `light`, `system`), `fontScale` (0.9, 1, 1.1), `intentProvider` (`deterministic`,
+`codex`, `anthropic`), a nonempty `intentModel`, and positive finite `intentTimeoutS`.
+Other fields are refused. Both routes return saved fields only; nulls are omitted. PUT replaces
+the file, so a client preserves any saved fields it is not editing. A malformed file answers
+422 `USER_SETTINGS_INVALID` and can be replaced by an explicit valid PUT. Remote mode omits
+the capability and authenticated requests answer 404; the usual remote token gate still applies.
+The client restores appearance from GET. At the next local launch, saved intent fields override
+the corresponding runtime/environment defaults; clearing them restores the existing runtime
+over environment rule. Saving does not change the current compiler. The launcher ignores an
+unreadable or invalid file with a warning and never changes project, CAD or credential settings.
+
+`/api/intents` is provisional because who
 signs an agent's compilation receipt is still moving; the three deliberation resources because a
-judgement not yet met by a run is still one process's memory; `/api/controls` because a declared
-control has not entered the authored record; `/api/compare` because its `why` comes from one
+judgement not yet met by a run is still one process's memory; `/api/compare` because its `why` comes from one
 process's memory of a proposal; `/api/events` because its event types are not a closed set and
 authenticated streams have no answer yet (§7); `/api/state/frame` and `/api/state/closure` because
 levels and axes are not yet editable — the grammar has no sentence for them — so what an
 architect can do with the frame is still moving; the four massing resources because an
 option's metrics are held in the server's memory — there is no retained record kind whose payload
-is a set of measurements, so only the option's pack survives a restart, in its own run; the three program resources because who owns an
-authored sheet on a shared server has no answer yet, and because a candidate made from a sheet is
-not yet readable through `GET /api/candidates/{id}` (below).
+is a set of measurements, so only the option's pack survives a restart, in its own run; the program resources because who owns an
+authored sheet on a shared server has no answer yet.
+
+**Selected sources for program and massing.** `GET /api/program?run=<runId>` and
+`GET /api/options?run=<runId>` read that run's retained record. Both POST requests accept
+optional `sourceRunId` alongside the selected projection's `stateDigest`. Responses echo
+the source on the program view, options table and individual options. Omitting the source
+preserves the existing default-binding behavior. Selecting an option uses its creation
+source for both preflight and execution, even after the client views another run.
+Missing or inexact explicit runs are errors, not a fallback to authored WIP. These are
+optional API inputs; a client must pass the selected source to use this continuation.
 
 **The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
 the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
@@ -149,9 +203,10 @@ and `clearance`), a `spaceId` that would rewrite an existing entity. It refuses
 build a design view of — a space with no zone becomes a `Space@1` with no volume, and a record that
 already draws massing has no room for a zone that occupies nothing.
 
-A candidate made from a sheet carries no proposal, so `GET /api/candidates/{candidateId}` answers
-`404 PROPOSAL_NOT_FOUND` for one. Follow it with `GET /api/jobs/{jobId}` and read the run's own
-records; the 202's `honesty[]` says so verbatim.
+A candidate made from a sheet carries no text proposal. Follow its execution through
+`GET /api/jobs/{jobId}`; a completed Studio candidate is readable through
+`GET /api/candidates/{candidateId}` from its retained runner records, including after a
+process restart. This does not recover an interrupted in-memory job or a missing proposal.
 
 `saveInput: true` on a remote server answers `409 WIP_WRITE_REMOTE` and **still makes the
 candidate**, naming its run and job in the refusal: running a sheet is a read of the record, and
@@ -178,13 +233,9 @@ One chain, and each arrow is a route.
 
 ### 5.1 The four outcomes of an intent
 
-> **Declared controls are provisional and not retained.** `POST /api/controls` keeps the
-> authored-control draft a MISSING_EDITABLE_CONTROL answer returned, once the architect confirms
-> it, in server memory against the state it was drafted for. A confirmed control has **not**
-> entered the authored record: it is lost on restart, it is not a row, a run or a candidate, and
-> turning it into an `Element@1` row is a later, schema-announced step (the re-index tool drafts
-> rows with provenance for a whole model today).
-
+`MISSING_EDITABLE_CONTROL` may include an `authoredControlDraft` as diagnostic context.
+The declared-control create/read API is retired; the diagnostic draft does not create a control
+or modify the authored record.
 
 An intent is not a free exchange. It ends in one of four named answers, every one of which says
 which it is in an `outcome` field:
@@ -195,6 +246,12 @@ which it is in an `outcome` field:
 | `NEEDS_CLARIFICATION` | `422 BLOCKED_NEEDS_HUMAN` | something only a person can settle, with a concrete `question` and the `acceptedForms` |
 | `MISSING_EDITABLE_CONTROL` | `422 MISSING_EDITABLE_CONTROL` | it is in the model and the record declares no control for it — a missing *system binding*, not a missing answer. Terminal |
 | `UNSUPPORTED` | `422 UNSUPPORTED_REQUEST` | no action can express the request, or the clarification stopped advancing. Terminal |
+
+An agent may explicitly answer `unsupported` with its reason when its available tools cannot
+perform the request; this is not missing information from the architect. Invalid agent scalar
+grammar or an agent-authored field/element/unit that the existing lowering refuses is
+`502 INTENT_AGENT_FAILED`, without a human question or grammar instructions. Direct deterministic
+input keeps its existing clarification behavior. This boundary does not implement agent self-repair.
 
 Each carries a **`pendingIntent`**: `requestId`, `stateDigest`, `originalUtterance`, `actionKind`
 (`change_existing_value` / `declare_missing_control` / `clarify` / `unsupported`),
@@ -267,18 +324,23 @@ Review readiness is memoised per (candidate, published version): reading it twic
 
 ### 5.2 The judgement is retained
 
-Accepting a proposal has always left a run, and turning one down left nothing at all, so the
-option that was considered and not chosen disappeared with the chat — which is why a **deliberation
-episode** is now a record: the intent that was answered, every proposal that was on the table with
-the decision made on it and the architect's own sentence for it, what the request asked to keep,
-the evidence and validation receipts read before deciding, and the run the accepted one produced.
-Running a proposal as a candidate writes that episode into its run as `deliberation-episode`
-(`DeliberationEpisode@1`), closes every other option still open against the same `stateDigest` with
-the reason `superseded by <proposalId>`, and flushes into the same run the rejections and
-modifications this process was holding for that state. A judgement made before any run exists has
-no run to be written into and says so — `producedRun` is `null` and `persistence` reads
-`in-memory (not version history)` until a candidate meets it, after which `persistence` is
-`run:<id>`, exactly as for a proposal.
+Running a candidate makes a reversible result, not a design decision. It does not mark that
+proposal accepted or reject other open proposals. The job registry already links the proposal
+and candidate; the run only flushes earlier explicit judgements against its base.
+
+An architect accepts through `POST /api/proposals/{id}/decision` with
+`{"decision":"accepted","candidateId":"<the chosen candidate>","reason":"<optional reason>"}`.
+The candidate must have succeeded in this process and belong to that proposal. No latest-run
+default is used. `candidateId` is required for acceptance and refused for the other decisions;
+`modifiedTo` is only for modification. Acceptance runs nothing, moves no HEAD and grants no
+formal-issue authority. It retains the existing `DeliberationEpisode@1` in the named candidate run
+and, following the existing explicit-choice semantics, closes other still-open proposals against
+the same base as `superseded by <proposalId>`. Previously retained episodes remain readable.
+
+Rejections and modifications made before a run remain process memory: `producedRun` is `null`
+and `persistence` is `in-memory (not version history)`. When a candidate meets those judgements,
+they are flushed into that run and say `run:<id>`. Restart recovery of active proposal/job state
+is not implied by retained episode or completed-candidate readback.
 
 ### 5.3 Massing options
 
@@ -430,8 +492,11 @@ wherever a server offers it.
 
 `capabilities` is how a client hides what a server cannot do instead of discovering it as a 404.
 A capability name is a feature, not a route: `projection`, `pick`, `gestures`, `intents`,
-`proposals`, `candidates`, `captures`, `compare`, `artifacts`, `program`, `validation`, `events`, and
-`cad-export` when geometry export is enabled, and `rhino-export` when Rhino is explicitly selected.
+`proposals`, `candidates`, `captures`, `compare`, `artifacts`, `program`, `validation`, `events`,
+`document-model-source`, `document-visual-input`, `model-annotations`,
+`model-asset-registration`, `working-copies`, and
+`cad-export` when geometry export is enabled, `rhino-export` when Rhino is explicitly selected,
+and `user-settings` in local mode only.
 OCCT exports an exact STEP and a mesh 3DM preview from the same program. Clients load only the
 3DM in the viewer and offer the STEP as a download; two files sharing a receipt are one export.
 The list is sorted and reflects the running configuration,

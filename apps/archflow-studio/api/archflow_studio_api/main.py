@@ -24,7 +24,6 @@ import uvicorn
 
 from . import routes
 from .application.clarification import PendingIntentStore
-from .application.controls import DeclaredControlStore
 from .application.episodes import EpisodeStore
 from .application.events import StudioEvents
 from .application.intent_agent import compiler_from_settings
@@ -188,7 +187,6 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # the truth about what was asked; this is, and like everything above it,
     # it is one process's memory and is lost on restart.
     app.state.pending_intents = PendingIntentStore()
-    app.state.controls = DeclaredControlStore()
     # The massing options on the table. The option itself — its transform, its
     # metrics, the state it was measured against — is this process's memory
     # like the proposals above it; the pack each one carries is retained in a

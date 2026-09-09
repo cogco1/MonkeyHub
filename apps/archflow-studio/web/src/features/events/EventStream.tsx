@@ -50,12 +50,14 @@ const EVENT_TYPES: readonly string[] = [
   "candidate.succeeded",
   "candidate.failed",
   "validation.computed",
+  "model_asset.registered",
+  "working_copy.option_added",
 ];
 
 /** How many frames the panel keeps. Older ones are dropped, not summarised. */
 const KEEP = 200;
 
-interface StreamLine {
+export interface StreamLine {
   readonly key: string;
   readonly seq: number | null;
   readonly text?: string;
@@ -83,19 +85,13 @@ function summarise(event: StudioEventDto): string {
   return parts.join(" · ");
 }
 
-export function EventStream({
-  notices,
-  onCount,
-}: {
-  notices: readonly string[];
-  /** How many lines the panel holds, for the tab that names it. */
-  onCount?(count: number): void;
-}) {
-  const t = useT();
+export function useStudioEvents(
+  enabled: boolean,
+  onEvent?: (event: StudioEventDto) => void,
+): readonly StreamLine[] {
   const [lines, setLines] = useState<readonly StreamLine[]>([]);
-  useEffect(() => {
-    onCount?.(lines.length);
-  }, [lines.length, onCount]);
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
   const lastSeqRef = useRef<number | null>(null);
   // Every seq shown on the current connection. A reconnect can replay them, and
   // a replayed line must not appear twice. Cleared on every open, and capped at
@@ -113,6 +109,7 @@ export function EventStream({
   const lineIdRef = useRef(0);
 
   useEffect(() => {
+    if (!enabled) return;
     const source = new EventSource(EVENTS_URL);
 
     const push = (line: StreamLine) => {
@@ -180,6 +177,7 @@ export function EventStream({
         text: summarise(event),
         kind: "event",
       });
+      onEventRef.current?.(event);
     };
 
     for (const type of EVENT_TYPES) {
@@ -214,7 +212,19 @@ export function EventStream({
       }
       source.close();
     };
-  }, []);
+  }, [enabled]);
+
+  return lines;
+}
+
+export function EventStream({
+  notices,
+  lines,
+}: {
+  notices: readonly string[];
+  lines: readonly StreamLine[];
+}) {
+  const t = useT();
 
   return (
     <div className="events">

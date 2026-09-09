@@ -15,6 +15,7 @@ import shutil
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -34,6 +35,7 @@ from .support import (
     runner_state_digest,
     write_runner_record,
 )
+from .test_working_copies import register_model
 
 JOB_DEADLINE = 180.0
 TERMINAL = ("succeeded", "failed")
@@ -597,6 +599,163 @@ class SelectionTests(OptionsTestCase):
 
         self.assertEqual(authored.read_bytes(), before)
         self.assertEqual(self.repository.read_head(), head_before)
+
+
+class SelectedOptionsTests(OptionsTestCase):
+    """Make and select an option on a non-default retained candidate."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.client.close()
+        self.app = create_app(StudioSettings(
+            cad_export="off", project_dir=self.repository.layout.root,
+            reference_run=REFERENCE_RUN_ID,
+        ))
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+        self.source_run_id = "selected-massing-source"
+        payload = _massing_payload(levels=1)
+        payload = json.loads(json.dumps(payload))
+        for entity in payload["entities"]:
+            if entity["entity_id"] == "portico-base":
+                entity["fields"]["params"]["height"] = 1.2
+        source = self.repository.create_run(self.source_run_id)
+        retain_runner_receipt(
+            self.repository, source, record_payload=payload,
+            design_state_digest=runner_state_digest(self.repository, self.source_run_id, payload),
+        )
+        response = self.client.get("/api/state", params={"run": self.source_run_id})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.source_state = response.json()
+
+    def register_source_model(self, fixture: str = "a") -> dict:
+        data = (Path(__file__).parent / f"fixtures/model-source-{fixture}.3dm").read_bytes()
+        return register_model(
+            self.client, self.source_run_id, self.source_state["stateDigest"], data,
+        )["modelSource"]
+
+    def test_options_and_packs_keep_the_exact_asset_chosen_at_creation(self) -> None:
+        source = self.register_source_model("a")
+        first = self.option(
+            "add_floor", sourceRunId=self.source_run_id,
+            stateDigest=self.source_state["stateDigest"], modelSource=source,
+        )
+        pack = self.app.state.options.get(first["optionId"]).pack.to_dict()
+        sent = self.option(
+            "pack", pack=pack, sourceRunId=self.source_run_id,
+            stateDigest=self.source_state["stateDigest"], modelSource=source,
+        )
+        other = self.register_source_model("b")
+        self.assertNotEqual(source["assetSha256"], other["assetSha256"])
+        self.assertEqual(
+            self.client.get(f"/api/artifacts/{other['assetSha256']}/bytes").status_code, 200,
+        )
+        self.client.get("/api/state")
+        listed = self.client.get("/api/options").json()["options"]
+        self.assertEqual([option["modelSource"] for option in listed], [source, source])
+
+        with patch("archflow_studio_api.application.candidate.run_operator", return_value={}) as worker:
+            for option in (first, sent):
+                with self.subTest(transform=option["transform"]):
+                    self.assertEqual(option["modelSource"], source)
+                    response = self.client.post(f"/api/options/{option['optionId']}/select")
+                    self.assertEqual(response.status_code, 202, response.text)
+                    job = self.finished(response.json()["jobId"])
+                    self.assertEqual(job["status"], "succeeded", job)
+                    self.assertEqual(worker.call_args.kwargs["source_run_id"], self.source_run_id)
+                    self.assertEqual(worker.call_args.kwargs["model_source"].to_dict(), source)
+        self.assertEqual(worker.call_count, 2)
+
+    def test_invalid_model_source_is_refused_before_an_option_is_retained(self) -> None:
+        source = self.register_source_model()
+        request = {
+            "transform": "add_floor", "sourceRunId": self.source_run_id,
+            "stateDigest": self.source_state["stateDigest"], "modelSource": source,
+        }
+        runs_before = sorted(path.name for path in self.repository.layout.runs.iterdir())
+        for change, code in (
+            ({"modelSource": {**source, "runId": REFERENCE_RUN_ID}}, "MODEL_SOURCE_MISMATCH"),
+            ({"modelSource": {**source, "stateDigest": self.state_digest}}, "MODEL_SOURCE_MISMATCH"),
+            ({"modelSource": {**source, "assetSha256": "0" * 64}}, "MODEL_SOURCE_UNREGISTERED"),
+            ({"stateDigest": self.state_digest}, "STALE_BASE"),
+            ({"sourceRunId": REFERENCE_RUN_ID, "stateDigest": self.state_digest}, "MODEL_SOURCE_MISMATCH"),
+        ):
+            with self.subTest(change=change):
+                response = self.client.post("/api/options", json={**request, **change})
+                self.assertEqual(response.status_code, 409, response.text)
+                self.assertEqual(response.json()["code"], code)
+                self.assertEqual(self.app.state.options.all(), ())
+                self.assertEqual(
+                    sorted(path.name for path in self.repository.layout.runs.iterdir()), runs_before,
+                )
+
+    def test_selected_read_uses_that_runs_massing(self) -> None:
+        response = self.client.get("/api/options", params={"run": self.source_run_id})
+        self.assertEqual(response.status_code, 200, response.text)
+        answer = response.json()
+        self.assertEqual(answer["sourceRunId"], self.source_run_id)
+        self.assertEqual(answer["stateDigest"], self.source_state["stateDigest"])
+        self.assertEqual(answer["baseline"]["floorCount"], 1)
+        default = self.client.get("/api/options").json()
+        self.assertEqual(default["baseline"]["floorCount"], 2)
+        self.assertIsNone(default["sourceRunId"])
+
+    def test_selected_option_executes_on_its_creation_source(self) -> None:
+        authored = self.repository.layout.resolve_relative(RUNNER_RECORD_PATH)
+        before = authored.read_bytes()
+        before_head = self.repository.read_head()
+        option = self.option("add_floor", sourceRunId=self.source_run_id,
+                             stateDigest=self.source_state["stateDigest"], modelSource=None)
+        self.assertEqual(option["sourceRunId"], self.source_run_id)
+        self.assertIsNone(option["modelSource"])
+        self.assertEqual(option["metrics"]["floorCount"], 2)
+        listed = self.client.get("/api/options").json()["options"]
+        self.assertEqual(listed[0]["sourceRunId"], self.source_run_id)
+        # Reading another run does not substitute it for the option's source.
+        self.client.get("/api/state")
+        response = self.client.post(f"/api/options/{option['optionId']}/select")
+        self.assertEqual(response.status_code, 202, response.text)
+        accepted = response.json()
+        job = self.finished(accepted["jobId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        volumes = self.client.get("/api/state/volumes", params={"run": accepted["candidateId"]}).json()
+        self.assertEqual(volumes["metrics"]["floorCount"], 2)
+        retained = [
+            self.repository.load_json(ref)
+            for ref in self.repository.list_json(
+                run=self.repository.load_run(accepted["candidateId"]),
+                destination=run_records(accepted["candidateId"]),
+            )
+            if record_kind(ref) == "state-record"
+        ]
+        elements = {item["entity_id"]: item for item in retained[0]["entities"]}
+        self.assertEqual(elements["portico-base"]["fields"]["params"]["height"], 1.2)
+        self.assertEqual(authored.read_bytes(), before)
+        self.assertEqual(self.repository.read_head(), before_head)
+        self.assertEqual(self.client.get("/api/options").json()["baseline"]["floorCount"], 2)
+
+    def test_invalid_source_or_digest_does_not_fall_back(self) -> None:
+        missing = self.client.get("/api/options", params={"run": "missing-source"})
+        self.assertEqual(missing.status_code, 404, missing.text)
+        self.assertEqual(missing.json()["code"], "RUN_NOT_FOUND")
+        for change, status, code in (
+            ({"sourceRunId": "missing-source"}, 404, "RUN_NOT_FOUND"),
+            ({"stateDigest": self.state_digest}, 409, "STALE_BASE"),
+        ):
+            with self.subTest(code=code):
+                response = self.client.post("/api/options", json={
+                    "transform": "add_floor", "sourceRunId": self.source_run_id,
+                    "stateDigest": self.source_state["stateDigest"], **change,
+                })
+                self.assertEqual(response.status_code, status, response.text)
+                self.assertEqual(response.json()["code"], code)
+        self.assertEqual(self.app.state.options.all(), ())
+
+    def test_an_inexact_selected_run_does_not_return_authored_wip(self) -> None:
+        self.repository.create_run("incomplete-massing-source")
+        response = self.client.get("/api/options", params={"run": "incomplete-massing-source"})
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "REFERENCE_STATE_NOT_EXACT")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@
     "api:check": "node scripts/check-generated.mjs"
   },
   "dependencies": {
+    "pdfjs-dist": "6.3.289",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "rhino3dm": "8.32.2",

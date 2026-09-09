@@ -151,6 +151,7 @@ export function OptionsPanel({
   volumes,
   stateDigest,
   busy,
+  canSelect,
   readOnlyReason,
   onMake,
   onSelect,
@@ -162,6 +163,7 @@ export function OptionsPanel({
   stateDigest: string | null;
   /** An option or a selection is in flight; the buttons wait rather than queue. */
   busy: boolean;
+  canSelect?(option: MassingOptionDto): boolean;
   readOnlyReason?: ReactNode;
   onMake(body: MassingOptionRequestDto): void;
   onSelect(optionId: string): void;
@@ -294,7 +296,7 @@ export function OptionsPanel({
                 <button
                   type="button"
                   className="btn btn--small options__select"
-                  disabled={busy || option.stateDigest !== stateDigest}
+                  disabled={busy || option.stateDigest !== stateDigest || canSelect?.(option) === false}
                   title={
                     option.stateDigest === stateDigest
                       ? t("options.selectTitle")

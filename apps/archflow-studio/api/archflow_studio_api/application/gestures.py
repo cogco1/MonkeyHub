@@ -15,16 +15,38 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import base64
+import binascii
+import hashlib
+import io
+import math
+import threading
 
-from .intent_agent import Selection
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_DOCUMENT_ANNOTATIONS, STUDIO_DOCUMENT_COMMENT
+from archflow.project.refs import ProjectRecordRef
+
+from ..transport.errors import StudioError
+from .artifacts import ModelSource, SourceDocument, document_bytes, require_model_source
+from .binding import ProjectBinding, record_kind
+
+from .intent_agent import DocumentVisual, Selection
 from .pick import PickRequest, resolve_pick
 from .projection import StateProjection
+from archflow.project.record_kinds import STUDIO_MODEL_ANNOTATIONS
 
 CIRCLE = "circle"
 ARROW = "arrow"
 KEEP = "keep"
 REMOVE = "remove"
-KINDS = (CIRCLE, ARROW, KEEP, REMOVE)
+FREEHAND = "freehand"
+LINE = "line"
+RULER = "ruler"
+ARC = "arc"
+KINDS = (CIRCLE, ARROW, KEEP, REMOVE, FREEHAND, LINE, RULER, ARC)
+TEXT = "text"
+DOCUMENT_KINDS = (*KINDS, TEXT)
 
 Vector = tuple[float, float, float]
 
@@ -46,6 +68,12 @@ class Gesture:
     hits: tuple[GestureHit, ...]
     world_direction: Vector | None = None
     length_model_units: float | None = None
+    label: str | None = None
+    screen: tuple[tuple[float, float], ...] = ()
+    color: str | None = None
+    line_width: int | None = None
+    camera: Mapping[str, object] | None = None
+    screen_size: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +89,401 @@ class GestureReading:
     facts: tuple[str, ...]
     keep_refs: tuple[str, ...]
     target: Selection | None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentGesture:
+    """Ink in the visible page, with no model camera, hit or execution target."""
+
+    id: str
+    kind: str
+    points: tuple[tuple[float, float], ...]
+    color: str
+    line_width: float
+    label: str | None = None
+    font_size: float | None = None
+
+    def __post_init__(self) -> None:
+        if not self.id or self.kind not in DOCUMENT_KINDS or not self.points:
+            raise ValueError("a document annotation needs an id, a known tool and page points")
+        if not all(math.isfinite(value) and 0 <= value <= 1 for point in self.points for value in point):
+            raise ValueError("document points must lie in the normalized visible page")
+        if not math.isfinite(self.line_width) or not 0 < self.line_width <= 1:
+            raise ValueError("line width is a fraction of the visible page's shorter side")
+        if self.kind == TEXT:
+            if len(self.points) != 1:
+                raise ValueError("page text needs one top-left anchor")
+            if not self.label or not self.label.strip() or len(self.label) > 2000:
+                raise ValueError("page text needs non-empty content of at most 2000 characters")
+            if self.font_size is None or not math.isfinite(self.font_size) or not 0 < self.font_size <= 1:
+                raise ValueError("page text needs fontSize as a fraction of the visible page's shorter side")
+        elif self.font_size is not None:
+            raise ValueError("fontSize belongs only to page text")
+        elif self.label is not None and len(self.label) > 120:
+            raise ValueError("a stroke label contains at most 120 characters")
+
+    def to_dict(self) -> dict:
+        result = {
+            "id": self.id, "kind": self.kind, "points": [list(point) for point in self.points],
+            "color": self.color, "lineWidth": self.line_width, "label": self.label,
+        }
+        # Preserve the serialized shape (and identity) of existing stroke data.
+        if self.font_size is not None:
+            result["fontSize"] = self.font_size
+        return result
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentAnnotationRef:
+    run_id: str
+    asset_sha256: str
+    page_index: int
+    revision_sha256: str
+
+    def to_dict(self) -> dict:
+        return {
+            "runId": self.run_id, "assetSha256": self.asset_sha256,
+            "pageIndex": self.page_index, "revisionSha256": self.revision_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentAnnotationPage:
+    project_id: str
+    run_id: str
+    asset_sha256: str
+    page_index: int
+    revision_sha256: str | None
+    annotations: tuple[DocumentGesture, ...] = ()
+    comment: str = ""
+
+
+# HTTP saves in this process must check and write a page revision together.
+# Durable data still lives exclusively in P036; this lock holds no saved state.
+_document_annotation_lock = threading.RLock()
+
+
+@dataclass(frozen=True, slots=True)
+class ModelAnnotationSnapshot:
+    project_id: str
+    model_source: ModelSource
+    revision_sha256: str | None
+    annotations: tuple[Mapping, ...] = ()
+    comment: str = ""
+
+
+def _model_annotation_revisions(binding: ProjectBinding, source: ModelSource) -> dict[str, Mapping]:
+    revisions = {}
+    for ref in binding.record_refs(source.run_id):
+        if record_kind(ref) != STUDIO_MODEL_ANNOTATIONS:
+            continue
+        payload = binding.repository.load_json(ref)
+        if payload.get("modelSource") != source.to_dict():
+            continue
+        if payload.get("schema") != "StudioModelAnnotations@1" or payload.get("projectId") != binding.project_id:
+            raise StudioError(409, "ANNOTATION_BINDING_MISMATCH", "The saved model annotations belong to another project.")
+        revisions[ref.sha256] = payload
+    return revisions
+
+
+def read_model_annotations(binding: ProjectBinding, source: ModelSource, revision_sha256: str | None = None) -> ModelAnnotationSnapshot:
+    require_model_source(binding, source)
+    revisions = _model_annotation_revisions(binding, source)
+    revision = revision_sha256 or _latest_document_revision(revisions)
+    if revision is not None and revision not in revisions:
+        raise StudioError(404, "ANNOTATION_REVISION_NOT_FOUND", "This exact model source has no such annotation revision.")
+    row = revisions.get(revision)
+    return ModelAnnotationSnapshot(binding.project_id, source, revision,
+                                   tuple(row["annotations"]) if row else (), row.get("comment", "") if row else "")
+
+
+def save_model_annotations(
+    binding: ProjectBinding, source: ModelSource, base_revision_sha256: str | None,
+    annotations: Sequence[Mapping], comment: str,
+) -> ModelAnnotationSnapshot:
+    require_model_source(binding, source)
+    if len({row["id"] for row in annotations}) != len(annotations):
+        raise StudioError(422, "ANNOTATION_INVALID", "Annotation ids must be distinct within this model source.")
+    run = binding.load_run(source.run_id)
+    with _document_annotation_lock:
+        revisions = _model_annotation_revisions(binding, source)
+        latest = _latest_document_revision(revisions)
+        if base_revision_sha256 != latest:
+            raise StudioError(409, "ANNOTATION_STALE", "This model was annotated from another saved revision. Read its latest annotations before retrying.")
+        payload = {"schema": "StudioModelAnnotations@1", "projectId": binding.project_id,
+                   "modelSource": source.to_dict(), "previousRevisionSha256": latest,
+                   "annotations": [dict(row) for row in annotations], "comment": comment}
+        ref = binding.repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=STUDIO_MODEL_ANNOTATIONS, payload=payload,
+        )
+    return ModelAnnotationSnapshot(binding.project_id, source, ref.sha256, tuple(annotations), comment)
+
+
+def _document_page_source(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int) -> SourceDocument:
+    document, _ = document_bytes(binding, run_id, asset_sha256)
+    if not 0 <= page_index < len(document.pages):
+        raise StudioError(422, "DOCUMENT_PAGE_NOT_FOUND", "The page does not exist in this source document version.")
+    return document
+
+
+def _document_page_revisions(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int) -> dict[str, Mapping]:
+    revisions = {}
+    for ref in binding.record_refs(run_id):
+        if record_kind(ref) != STUDIO_DOCUMENT_ANNOTATIONS:
+            continue
+        payload = binding.repository.load_json(ref)
+        if (payload.get("assetSha256"), payload.get("pageIndex")) != (asset_sha256, page_index):
+            continue
+        if payload.get("schema") != "StudioDocumentAnnotations@1" or (
+            payload.get("projectId"), payload.get("runId")
+        ) != (binding.project_id, run_id):
+            raise StudioError(409, "ANNOTATION_BINDING_MISMATCH", "The saved annotations belong to another project or run.")
+        revisions[ref.sha256] = payload
+    return revisions
+
+
+def _latest_document_revision(revisions: Mapping[str, Mapping]) -> str | None:
+    parents = {payload.get("previousRevisionSha256") for payload in revisions.values()} - {None}
+    tips = revisions.keys() - parents
+    if (revisions and len(tips) != 1) or not parents.issubset(revisions):
+        raise StudioError(409, "ANNOTATION_CONFLICT", "The saved page has competing or incomplete revisions. Its ink has been retained.")
+    return next(iter(tips), None)
+
+
+def _document_page_from(binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int, revision: str | None, payload: Mapping | None) -> DocumentAnnotationPage:
+    return DocumentAnnotationPage(
+        binding.project_id, run_id, asset_sha256, page_index, revision,
+        annotations=tuple(DocumentGesture(
+            id=row["id"], kind=row["kind"], points=tuple(tuple(point) for point in row["points"]),
+            color=row["color"], line_width=row["lineWidth"], label=row.get("label"),
+            font_size=row.get("fontSize"),
+        ) for row in payload["annotations"]) if payload is not None else (),
+        comment=payload.get("comment", "") if payload is not None else "",
+    )
+
+
+def read_document_annotations(
+    binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int,
+    revision_sha256: str | None = None,
+) -> DocumentAnnotationPage:
+    _document_page_source(binding, run_id, asset_sha256, page_index)
+    revisions = _document_page_revisions(binding, run_id, asset_sha256, page_index)
+    revision = revision_sha256 or _latest_document_revision(revisions)
+    if revision is not None and revision not in revisions:
+        raise StudioError(404, "ANNOTATION_REVISION_NOT_FOUND", "This page has no saved annotation revision with that identity.")
+    return _document_page_from(binding, run_id, asset_sha256, page_index, revision, revisions.get(revision))
+
+
+def save_document_annotations(
+    binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int,
+    base_revision_sha256: str | None, annotations: Sequence[DocumentGesture], comment: str,
+) -> DocumentAnnotationPage:
+    _document_page_source(binding, run_id, asset_sha256, page_index)
+    if len({annotation.id for annotation in annotations}) != len(annotations):
+        raise StudioError(422, "ANNOTATION_INVALID", "Annotation ids must be distinct within a page.")
+    run = binding.load_run(run_id)
+    with _document_annotation_lock:
+        revisions = _document_page_revisions(binding, run_id, asset_sha256, page_index)
+        latest = _latest_document_revision(revisions)
+        if base_revision_sha256 != latest:
+            raise StudioError(409, "ANNOTATION_STALE", "This page was saved from another revision. Read its saved annotations before retrying.")
+        payload = {
+            "schema": "StudioDocumentAnnotations@1", "projectId": binding.project_id,
+            "runId": run_id, "assetSha256": asset_sha256, "pageIndex": page_index,
+            "previousRevisionSha256": latest,
+            "annotations": [annotation.to_dict() for annotation in annotations], "comment": comment,
+        }
+        ref = binding.repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+            record_kind=STUDIO_DOCUMENT_ANNOTATIONS, payload=payload,
+        )
+    return _document_page_from(binding, run_id, asset_sha256, page_index, ref.sha256, payload)
+
+
+def _document_facts(document: SourceDocument, page: DocumentAnnotationPage) -> tuple[str, ...]:
+    source = f"source document {document.file_name!r}, sha256 {page.asset_sha256}, run {page.run_id}, page {page.page_index + 1} (pageIndex {page.page_index}), annotation revision {page.revision_sha256}"
+    facts = [f"{source}; coordinates are normalized to the visible page, not model geometry"]
+    for annotation in page.annotations:
+        xs, ys = zip(*annotation.points)
+        if annotation.kind == TEXT:
+            facts.append(
+                f"document annotation {annotation.id}: text at ({xs[0]:.6g}, {ys[0]:.6g}); "
+                f"color {annotation.color}; font size {annotation.font_size:.6g} of page short side; "
+                f"text {annotation.label!r}"
+            )
+            continue
+        facts.append(
+            f"document annotation {annotation.id}: {annotation.kind}; "
+            f"page bounds ({min(xs):.6g}, {min(ys):.6g}) to ({max(xs):.6g}, {max(ys):.6g}); "
+            f"{len(annotation.points)} points; color {annotation.color}; width {annotation.line_width:.6g} of page short side"
+            + (f"; label {annotation.label!r}" if annotation.label else "")
+        )
+    if page.comment:
+        facts.append(f"Architect's saved page comment: {page.comment}")
+    return tuple(facts)
+
+
+def _document_visual_png(encoded: str) -> tuple[bytes, tuple[int, int]]:
+    from PIL import Image
+
+    try:
+        png = base64.b64decode(encoded, validate=True)
+        if not 0 < len(png) <= 4 * 1024 * 1024 or not png.startswith(b"\x89PNG\r\n\x1a\n") or not png.endswith(b"\x00\x00\x00\x00IEND\xaeB`\x82"):
+            raise ValueError("Expected a complete PNG of at most 4 MiB.")
+        with Image.open(io.BytesIO(png)) as image:
+            size = image.size
+            if image.format != "PNG" or min(size) < 1 or max(size) > 2048:
+                raise ValueError("The PNG longer side must be at most 2048 pixels.")
+            image.verify()
+        with Image.open(io.BytesIO(png)) as image:
+            image.load()
+    except (ValueError, OSError, SyntaxError, binascii.Error, Image.DecompressionBombError) as exc:
+        raise StudioError(422, "DOCUMENT_VISUAL_INVALID", "The document visual must be a complete PNG, at most 4 MiB and 2048 pixels on its longer side.") from exc
+    return png, size
+
+
+def prepare_document_visuals(
+    binding: ProjectBinding, references: Sequence[DocumentAnnotationRef], inputs: Sequence[Mapping],
+) -> tuple[DocumentVisual, ...]:
+    """Check registered page/revision bindings; pixels remain the client's render."""
+
+    if not inputs:
+        if references:
+            raise StudioError(422, "DOCUMENT_VISUALS_REQUIRED", "Submit the document page image and its saved annotation overlay with this request.")
+        return ()
+    edits = [row for row in inputs if row["role"] == "edit"]
+    if len(inputs) > 4 or len(references) != 1 or len(edits) != 1 or any(
+        edits[0][key] != value for key, value in references[0].to_dict().items()
+    ):
+        raise StudioError(422, "DOCUMENT_VISUAL_MISMATCH", "One edit visual must match the exact submitted document page revision.")
+    visuals = []
+    total_bytes = 0
+    for row in inputs:
+        document = _document_page_source(binding, row["runId"], row["assetSha256"], row["pageIndex"])
+        page = None
+        if row.get("revisionSha256") is not None:
+            page = read_document_annotations(binding, row["runId"], row["assetSha256"], row["pageIndex"], row["revisionSha256"])
+        has_ink = page is not None and bool(page.annotations)
+        if has_ink != (row.get("annotatedPngBase64") is not None):
+            raise StudioError(422, "DOCUMENT_VISUAL_MISMATCH", "The selected saved revision needs its complete annotation overlay; pages without selected ink must omit it.")
+        png, size = _document_visual_png(row["pagePngBase64"])
+        visible = document.pages[row["pageIndex"]]
+        scale = min(size[0] / visible.width, size[1] / visible.height)
+        if abs(size[0] - visible.width * scale) > 1.01 or abs(size[1] - visible.height * scale) > 1.01:
+            raise StudioError(422, "DOCUMENT_VISUAL_MISMATCH", "The image must preserve the registered visible page's aspect ratio.")
+        overlay = None
+        if has_ink:
+            overlay, overlay_size = _document_visual_png(row["annotatedPngBase64"])
+            if overlay_size != size:
+                raise StudioError(422, "DOCUMENT_VISUAL_MISMATCH", "The page and annotated image must have identical pixel dimensions.")
+        total_bytes += len(png) + (len(overlay) if overlay is not None else 0)
+        if total_bytes > 16 * 1024 * 1024:
+            raise StudioError(422, "DOCUMENT_VISUAL_INVALID", "Document visuals exceed the 16 MiB total decoded PNG limit.")
+        summary = []
+        for annotation in page.annotations if page else ():
+            xs, ys = zip(*annotation.points)
+            summary.append({"kind": annotation.kind, "label": annotation.label, "color": annotation.color,
+                            "bounds": [min(xs), min(ys), max(xs), max(ys)], "pointCount": len(annotation.points)})
+        visuals.append(DocumentVisual(context={
+            "role": row["role"], "runId": row["runId"], "assetSha256": row["assetSha256"],
+            "pageIndex": row["pageIndex"], "revisionSha256": row.get("revisionSha256"),
+            "fileName": document.file_name, "referenceNote": row.get("referenceNote"),
+            "annotationSummary": summary,
+        }, page_png=png, annotated_png=overlay))
+    return tuple(visuals)
+
+
+def retain_document_comment(
+    binding: ProjectBinding, references: Sequence[DocumentAnnotationRef], *,
+    utterance: str, state_digest: str, source_run_id: str | None,
+    document_sources: Sequence[Mapping] = (),
+    document_visuals: Sequence[DocumentVisual] = (),
+) -> tuple[tuple[str, ...], ProjectRecordRef | None]:
+    """Keep the submitted words and exact page revisions before an agent answers."""
+
+    if not references:
+        return (), None
+    facts = []
+    for reference in references:
+        document = _document_page_source(binding, reference.run_id, reference.asset_sha256, reference.page_index)
+        page = read_document_annotations(
+            binding, reference.run_id, reference.asset_sha256, reference.page_index, reference.revision_sha256,
+        )
+        facts.extend(_document_facts(document, page))
+    run = binding.load_run(source_run_id or references[0].run_id)
+    ref = binding.repository.put_json(
+        run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+        record_kind=STUDIO_DOCUMENT_COMMENT,
+        payload={
+            "schema": "StudioDocumentComment@1", "projectId": binding.project_id,
+            "sourceRunId": source_run_id, "stateDigest": state_digest, "utterance": utterance,
+            "documentAnnotations": [reference.to_dict() for reference in references],
+            **({"documentSources": list(document_sources)} if document_sources else {}),
+            **({"documentVisuals": [{**visual.context,
+                "pagePngSha256": hashlib.sha256(visual.page_png).hexdigest(),
+                "annotatedPngSha256": hashlib.sha256(visual.annotated_png).hexdigest() if visual.annotated_png is not None else None,
+            } for visual in document_visuals]} if document_visuals else {}),
+            "submittedAt": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return tuple(facts), ref
+
+
+def require_document_model_sources(
+    binding: ProjectBinding, references: Sequence[DocumentAnnotationRef], projection: StateProjection,
+    model_source: ModelSource | None = None,
+) -> tuple[Mapping, ...]:
+    """Check declared correspondence before any model call; never infer it from storage."""
+
+    sources = []
+    for reference in references:
+        document = _document_page_source(binding, reference.run_id, reference.asset_sha256, reference.page_index)
+        read_document_annotations(binding, reference.run_id, reference.asset_sha256, reference.page_index, reference.revision_sha256)
+        source = document.model_source
+        if source is None:
+            raise StudioError(409, "DOCUMENT_MODEL_SOURCE_UNKNOWN", "This drawing has no declared model source. Its annotations are saved; associate it with the model it describes before requesting a change.")
+        if (source.run_id, source.state_digest) != (projection.run.run_id, projection.state_digest) or (model_source is not None and source != model_source):
+            raise StudioError(409, "DOCUMENT_MODEL_SOURCE_MISMATCH", "The drawing describes a different model from the editing base. Its annotations remain saved; continue from the corresponding model.")
+        require_model_source(binding, source, projection)
+        if model_source is None:
+            model_source = source
+        sources.append({"runId": reference.run_id, "assetSha256": reference.asset_sha256,
+                        "modelSource": source.to_dict(), "bindingRef": document.model_source_binding_ref})
+    return tuple(sources)
+
+
+def require_document_comment_source(binding: ProjectBinding, comment: Mapping, projection: StateProjection) -> None:
+    """An old comment cannot acquire a source association added after it was submitted."""
+
+    pinned = comment.get("documentSources")
+    if not pinned:
+        raise StudioError(409, "DOCUMENT_MODEL_SOURCE_UNKNOWN", "This earlier request did not retain a model association. Submit a new request using the drawing's declared source.")
+    if (comment.get("sourceRunId"), comment.get("stateDigest")) != (projection.run.run_id, projection.state_digest):
+        raise StudioError(409, "DOCUMENT_MODEL_SOURCE_MISMATCH", "The submitted drawing request belongs to another editing base.")
+    references = tuple(DocumentAnnotationRef(row["runId"], row["assetSha256"], row["pageIndex"], row["revisionSha256"]) for row in comment["documentAnnotations"])
+    current = require_document_model_sources(binding, references, projection)
+    if list(current) != pinned:
+        raise StudioError(409, "DOCUMENT_MODEL_SOURCE_MISMATCH", "The submitted request does not retain the drawing's exact declared model association.")
+
+
+def list_document_comments(binding: ProjectBinding, run_id: str) -> tuple[tuple[ProjectRecordRef, Mapping], ...]:
+    """Comments about documents in this storage run, plus legacy run-local copies."""
+
+    binding.load_run(run_id)
+    comments = {}
+    for owner_run in binding.run_ids():
+        for ref in binding.record_refs(owner_run):
+            if record_kind(ref) != STUDIO_DOCUMENT_COMMENT:
+                continue
+            payload = binding.repository.load_json(ref)
+            if payload.get("schema") != "StudioDocumentComment@1" or payload.get("projectId") != binding.project_id:
+                raise StudioError(409, "ANNOTATION_BINDING_MISMATCH", "The retained document comment has a different project binding.")
+            if owner_run != run_id and not any(row["runId"] == run_id for row in payload["documentAnnotations"]):
+                continue
+            if ref.sha256 not in comments or owner_run == payload.get("sourceRunId"):
+                comments[ref.sha256] = (ref, payload)
+    return tuple(sorted(comments.values(), key=lambda item: (item[1]["submittedAt"], item[0].sha256)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +515,10 @@ def read_gestures(
             keep_refs.extend(ref for ref in refs if ref not in keep_refs)
         elif gesture.kind == REMOVE:
             facts.append(_remove(resolved))
+        elif gesture.kind in (FREEHAND, LINE, ARC):
+            facts.append(_annotation(gesture.kind, resolved, gesture))
+        elif gesture.kind == RULER:
+            facts.append(_ruler(resolved, gesture))
         facts.extend(_unresolved(gesture.kind, resolved))
     return GestureReading(
         facts=tuple(facts), keep_refs=tuple(keep_refs), target=target
@@ -238,6 +665,31 @@ def _remove(resolved: Sequence[_Resolved]) -> str:
         f"remove mark on {where} · the grammar has no form that removes; "
         "ask before proposing"
     )
+
+
+def _screen_shape(gesture: Gesture) -> str:
+    points = " → ".join(f"({x:.0f},{y:.0f})" for x, y in gesture.screen)
+    colour = f" · color {gesture.color}" if gesture.color else ""
+    width = f" · {gesture.line_width}px" if gesture.line_width else ""
+    view = (
+        f" · recorded {gesture.screen_size[0]}×{gesture.screen_size[1]} view"
+        if gesture.screen_size is not None else " · recorded view" if gesture.camera is not None else ""
+    )
+    return f" · screen {points}{colour}{width}{view}" if points else f"{colour}{width}{view}"
+
+
+def _annotation(kind: str, resolved: Sequence[_Resolved], gesture: Gesture) -> str:
+    subjects = _subjects(resolved)
+    noun = {FREEHAND: "freehand mark", LINE: "line annotation", ARC: "arc annotation"}[kind]
+    where = f"on {', '.join(subjects)}" if subjects else "over nothing the record names"
+    return f"{noun} {where}{_screen_shape(gesture)}"
+
+
+def _ruler(resolved: Sequence[_Resolved], gesture: Gesture) -> str:
+    subjects = _subjects(resolved)
+    where = ", ".join(subjects) if subjects else "nothing the record names"
+    label = f" · label: {gesture.label}" if gesture.label else ""
+    return f"ruler annotation on {where}{label}{_screen_shape(gesture)}"
 
 
 # How many unresolved object names one fact lists before it counts the rest:

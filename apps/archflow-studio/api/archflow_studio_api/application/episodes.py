@@ -22,9 +22,15 @@ for the records the runner wrote.
 process, exactly like the proposal it is about, and it says so: ``persistence``
 reads ``in-memory (not version history)``. When this process next runs a
 candidate against the same ``stateDigest``, those held episodes are flushed
-into that run beside the accepting one, and ``persistence`` becomes
-``run:<id>``. An episode that never meets a run is lost on restart, and the
-store never pretends otherwise.
+into that run, and ``persistence`` becomes ``run:<id>``. An episode that never
+meets a run is lost on restart, and the store never pretends otherwise.
+
+**Running a candidate is not accepting it.** A candidate is a reversible
+preview the architect asked to look at; the studio makes no judgement on the
+proposal for having run it, and closes none of the other proposals against the
+same base. ``accept`` is the architect's explicit act and is called only when a
+person accepts: ``POST /api/proposals/{id}/decision`` with ``accepted`` and the
+``candidateId`` of the finished run being chosen. No candidate run calls it.
 """
 
 from __future__ import annotations
@@ -40,14 +46,226 @@ from archflow.project.ports import (
     PersistenceDestination,
     RecordSink,
 )
-from archflow.project.record_kinds import DELIBERATION_EPISODE
+from archflow.project.record_kinds import DELIBERATION_EPISODE, STUDIO_WORKING_COPY
 from archflow.project.refs import ProjectRecordRef, RunRef
 
+from ..ports import StudioEventSink
 from ..transport.errors import StudioError
 from .clarification import property_in
 from .proposals import PERSISTENCE, Proposal, closure_of
+from .artifacts import ModelSource, require_model_source
+from .binding import ProjectBinding, record_kind
+from .projection import project_state
+from .pick import COMPONENT_KEY, OBJECT_REF_KEY, OBJECT_REF_PREFIX, element_of_object
+from archflow.adapters.three_dm_inspector import inspect_three_dm_contents
 
 SCHEMA = "DeliberationEpisode@1"
+
+
+@dataclass(frozen=True, slots=True)
+class WorkingCopyOption:
+    id: str
+    label: str
+    model_source: ModelSource
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"id": self.id, "label": self.label, "modelSource": self.model_source.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkingCopy:
+    project_id: str
+    group_id: str
+    label: str
+    stage_id: str
+    common_base: ModelSource
+    scope: tuple[str, ...]
+    options: tuple[WorkingCopyOption, ...]
+    selected_option_id: str | None
+    revision_sha256: str
+
+
+_working_copy_lock = threading.RLock()
+
+
+def _working_copy_revisions(binding: ProjectBinding, group_id: str | None = None) -> dict[str, dict[str, Mapping]]:
+    groups: dict[str, dict[str, Mapping]] = {}
+    for run_id in binding.run_ids():
+        for ref in binding.record_refs(run_id):
+            if record_kind(ref) != STUDIO_WORKING_COPY:
+                continue
+            payload = binding.repository.load_json(ref)
+            if group_id is not None and payload.get("groupId") != group_id:
+                continue
+            if payload.get("schema") != "StudioWorkingCopy@1" or payload.get("projectId") != binding.project_id or payload["commonBase"]["runId"] != run_id:
+                raise StudioError(409, "WORKING_COPY_CONFLICT", "The work item has an inconsistent common-base binding.")
+            groups.setdefault(payload["groupId"], {})[ref.sha256] = payload
+    return groups
+
+
+def _working_copy_from(revisions: Mapping[str, Mapping], revision_sha256: str | None = None) -> WorkingCopy:
+    parents = {row.get("previousRevisionSha256") for row in revisions.values()} - {None}
+    tips = revisions.keys() - parents
+    if not parents.issubset(revisions) or len(tips) != 1:
+        raise StudioError(409, "WORKING_COPY_CONFLICT", "The work item has competing or incomplete saved choices.")
+    revision = revision_sha256 or next(iter(tips))
+    if revision not in revisions:
+        raise StudioError(404, "WORKING_COPY_REVISION_NOT_FOUND", "This work item has no such saved revision.")
+    row = revisions[revision]
+    return WorkingCopy(row["projectId"], row["groupId"], row["label"], row["stageId"],
+                       ModelSource.from_dict(row["commonBase"]), tuple(row["scope"]),
+                       tuple(WorkingCopyOption(item["id"], item["label"], ModelSource.from_dict(item["modelSource"])) for item in row["options"]),
+                       row["selectedOptionId"], revision)
+
+
+def list_working_copies(binding: ProjectBinding) -> tuple[WorkingCopy, ...]:
+    return tuple(_working_copy_from(revisions) for _, revisions in sorted(_working_copy_revisions(binding).items()))
+
+
+def read_working_copy(binding: ProjectBinding, group_id: str, revision_sha256: str | None = None) -> WorkingCopy:
+    revisions = _working_copy_revisions(binding, group_id).get(group_id)
+    if not revisions:
+        raise StudioError(404, "WORKING_COPY_NOT_FOUND", "No retained work item has that id.")
+    return _working_copy_from(revisions, revision_sha256)
+
+
+def _working_scope(binding: ProjectBinding, base: ModelSource, scope: Sequence[str]) -> tuple[set[str], set[str]]:
+    record = project_state(binding, base.run_id).record
+    entities = {row.entity_id: row for row in record.entities}
+    parameters = {row.key for row in record.parameters}
+    entity_ids: set[str] = set()
+    parameter_keys: set[str] = set()
+    for ref in scope:
+        kind, _, value = ref.partition(":")
+        if kind in ("entity", "element", "component") and value in entities:
+            if kind == "element" and entities[value].schema != "Element@1":
+                raise StudioError(422, "WORKING_COPY_SCOPE_INVALID", "The scope element does not name an Element.")
+            if kind == "component" and entities[value].schema != "Component@1":
+                raise StudioError(422, "WORKING_COPY_SCOPE_INVALID", "The scope component does not name a Component.")
+            entity_ids.add(value)
+            if entities[value].schema == "Component@1":
+                descendants = {value}
+                while True:
+                    expanded = descendants | {row.entity_id for row in entities.values() if row.parent_id in descendants}
+                    if expanded == descendants:
+                        break
+                    descendants = expanded
+                entity_ids.update(descendants)
+        elif kind == "parameter" and value in parameters:
+            parameter_keys.add(value)
+        else:
+            raise StudioError(422, "WORKING_COPY_SCOPE_INVALID", "The local scope must name existing record entities, components or parameters.")
+    return entity_ids, parameter_keys
+
+
+def _require_working_option(binding: ProjectBinding, base: ModelSource, scope: Sequence[str], option: WorkingCopyOption) -> None:
+    require_model_source(binding, base)
+    require_model_source(binding, option.model_source)
+    before = project_state(binding, base.run_id).record
+    after = project_state(binding, option.model_source.run_id).record
+    entity_ids, parameter_keys = _working_scope(binding, base, scope)
+    if before.base != after.base:
+        raise StudioError(409, "WORKING_COPY_BASE_MISMATCH", "Both options must belong to the same canonical project base.")
+    kept_before = {row.entity_id: row for row in before.entities if row.entity_id not in entity_ids}
+    kept_after = {row.entity_id: row for row in after.entities if row.entity_id not in entity_ids}
+    if kept_before != kept_after or (
+        {row.key: row for row in before.parameters if row.key not in parameter_keys} !=
+        {row.key: row for row in after.parameters if row.key not in parameter_keys}
+    ) or before.relations != after.relations:
+        raise StudioError(409, "WORKING_COPY_SCOPE_MISMATCH", "This option changes state outside the declared local scope or its existing relations.")
+    _require_scoped_model_assets(binding, base, option.model_source, entity_ids)
+
+
+def _require_scoped_model_assets(binding: ProjectBinding, base: ModelSource, option: ModelSource, entity_ids: set[str]) -> None:
+    before, after = require_model_source(binding, base), require_model_source(binding, option)
+    if base.asset_sha256 == option.asset_sha256:
+        return
+    if before.representation != "composed" or after.representation != "composed":
+        raise StudioError(409, "WORKING_COPY_MODEL_INCOMPLETE", "A composed-model work item needs a complete composed option; a native preview cannot replace shared assets.")
+    assert before.path is not None and after.path is not None
+    inspections = [inspect_three_dm_contents(row.path.read_bytes()) for row in (before, after)]
+    if tuple(row.file_sha256 for row in inspections) != (base.asset_sha256, option.asset_sha256):
+        raise StudioError(409, "MODEL_SOURCE_MISMATCH", "The model bytes changed during comparison.")
+    kept = []
+    for source, inspection in zip((base, option), inspections):
+        projection = project_state(binding, source.run_id)
+        edited = set()
+        for row in inspection.object_user_strings:
+            strings = {value["key"]: value["value"] for value in row["attributes"]}
+            component = strings.get(COMPONENT_KEY)
+            object_ref = strings.get(OBJECT_REF_KEY, "")
+            name = object_ref[len(OBJECT_REF_PREFIX):] if object_ref.startswith(OBJECT_REF_PREFIX) else row["name"]
+            if component and element_of_object(projection, name, component) in entity_ids:
+                edited.add(row["object_id"])
+        kept.append((
+            tuple(row for row in inspection.object_geometry_sha256 if row["object_id"] not in edited),
+            tuple(row for row in inspection.object_user_strings if row["object_id"] not in edited),
+            inspection.units,
+            tuple({key: value for key, value in layer.items() if key != "object_count"} for layer in inspection.layers),
+            inspection.instance_definitions, inspection.instance_references, inspection.materials,
+            tuple(row for row in inspection.object_material_bindings if row["object_id"] not in edited),
+        ))
+    if kept[0] != kept[1]:
+        raise StudioError(409, "WORKING_COPY_SHARED_MODEL_CHANGED", "This option changes model objects or shared definitions outside the declared local scope.")
+
+
+def _retain_working_copy(binding: ProjectBinding, item: WorkingCopy, previous: str | None) -> WorkingCopy:
+    run = binding.load_run(item.common_base.run_id)
+    ref = binding.repository.put_json(
+        run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+        record_kind=STUDIO_WORKING_COPY,
+        payload={"schema": "StudioWorkingCopy@1", "projectId": item.project_id, "groupId": item.group_id,
+                 "label": item.label, "stageId": item.stage_id, "commonBase": item.common_base.to_dict(),
+                 "scope": list(item.scope), "options": [option.to_dict() for option in item.options],
+                 "selectedOptionId": item.selected_option_id, "previousRevisionSha256": previous},
+    )
+    return replace(item, revision_sha256=ref.sha256)
+
+
+def create_working_copy(
+    binding: ProjectBinding, group_id: str, label: str, stage_id: str, common_base: ModelSource,
+    scope: Sequence[str], options: Sequence[WorkingCopyOption],
+) -> WorkingCopy:
+    if len({option.id for option in options}) != len(options) or not any(option.model_source == common_base for option in options):
+        raise StudioError(422, "WORKING_COPY_OPTIONS_INVALID", "The options need distinct ids and must include the common base unchanged.")
+    for option in options:
+        _require_working_option(binding, common_base, scope, option)
+    with _working_copy_lock:
+        if group_id in _working_copy_revisions(binding, group_id):
+            raise StudioError(409, "WORKING_COPY_EXISTS", "This work item is already retained.")
+        return _retain_working_copy(binding, WorkingCopy(binding.project_id, group_id, label, stage_id, common_base,
+                                                        tuple(scope), tuple(options), None, ""), None)
+
+
+def select_working_copy_option(binding: ProjectBinding, group_id: str, base_revision: str, option_id: str) -> WorkingCopy:
+    with _working_copy_lock:
+        item = read_working_copy(binding, group_id)
+        if item.revision_sha256 != base_revision:
+            raise StudioError(409, "WORKING_COPY_STALE", "The work item changed. Read its saved options before choosing again.")
+        option = next((row for row in item.options if row.id == option_id), None)
+        if option is None:
+            raise StudioError(404, "WORKING_COPY_OPTION_NOT_FOUND", "This option does not belong to the work item.")
+        require_model_source(binding, option.model_source)
+        if item.selected_option_id == option_id:
+            return item
+        return _retain_working_copy(binding, replace(item, selected_option_id=option_id), item.revision_sha256)
+
+
+def add_working_copy_option(
+    binding: ProjectBinding, group_id: str, base_revision: str, option: WorkingCopyOption,
+    *, event_sink: StudioEventSink | None = None,
+) -> WorkingCopy:
+    with _working_copy_lock:
+        item = read_working_copy(binding, group_id)
+        if item.revision_sha256 != base_revision:
+            raise StudioError(409, "WORKING_COPY_STALE", "The work item changed. Read its saved options before adding another.")
+        if any(row.id == option.id for row in item.options):
+            raise StudioError(409, "WORKING_COPY_OPTION_EXISTS", "An existing option cannot be overwritten.")
+        _require_working_option(binding, item.common_base, item.scope, option)
+        updated = _retain_working_copy(binding, replace(item, options=(*item.options, option)), item.revision_sha256)
+        if event_sink is not None:
+            event_sink.publish(event={"type": "working_copy.option_added", "run_id": option.model_source.run_id})
+        return updated
 
 # The three decisions a judgement can be. They are the studio's own words for
 # what the architect did with one option, and they are closed: a fourth would
@@ -312,8 +530,8 @@ class EpisodeStore:
     judgements about one state were made one after the other, and which came
     first is the difference between a reconsideration and a first thought.
 
-    Locked, because the accepting judgement is written on a candidate worker
-    thread while ``GET /api/episodes`` is answered on the event loop.
+    Locked, because held judgements are flushed into a run on a candidate
+    worker thread while ``GET /api/episodes`` is answered on the event loop.
     """
 
     def __init__(self) -> None:
@@ -506,18 +724,29 @@ def accept(
     project_id: str,
     proposal: Proposal,
     superseded: Sequence[Proposal] = (),
+    reason: str | None = None,
     evidence_refs: Sequence[str] = (),
     validation_refs: Sequence[str] = (),
 ) -> DeliberationEpisode:
-    """The judgement one accepted proposal makes, retained into its own run.
+    """The architect accepted this proposal: the judgement, retained into the
+    run the proposal produced.
 
-    Two things happen in one breath, because they are one act. Every other
-    option still on the table against this state is closed, with the reason
-    that closed it — the architect ran this one, and *that* is what "not the
-    other one" means. And every judgement made earlier against this state, the
-    rejections and the modifications this process was holding, is flushed into
-    the same run: a run that carried only the conclusion would be a decision
-    with its reasons deleted.
+    This is a person's explicit act, never a side effect of running a
+    candidate: a preview the architect asked to see is not a proposal the
+    architect chose. The caller names the run the accepted proposal made
+    (``run``) and, in ``superseded``, the options the architect is closing
+    with this choice — ``still_open`` is the studio's reading of what was on
+    the table. ``reason`` is the architect's own sentence for the choice,
+    kept verbatim on the accepted option when one was given. The decision
+    route calls this for ``accepted``, with the candidate the request named.
+
+    Two things happen in one breath, because they are one act. Every option
+    in ``superseded`` is closed, with the reason that closed it — the
+    architect chose this one, and *that* is what "not the other one" means.
+    And every judgement made earlier against this state, the rejections and
+    the modifications this process was holding, is flushed into the same run:
+    a run that carried only the conclusion would be a decision with its
+    reasons deleted.
     """
 
     store.flush(repository, run, proposal.base_state_digest)
@@ -526,7 +755,7 @@ def accept(
         state_digest=proposal.base_state_digest,
         intent=intent_of(proposal),
         proposals=(
-            decided(proposal, ACCEPTED),
+            decided(proposal, ACCEPTED, reason=reason),
             *(
                 decided(
                     other,
@@ -577,8 +806,9 @@ def still_open(
     """The options this process still holds undecided, minus the one named.
 
     "Still open" is the whole of the rule: a proposal already rejected is not
-    rejected again, and a proposal already superseded by an earlier run is not
-    superseded twice by a later one.
+    rejected again, and a proposal already superseded by an earlier acceptance
+    is not superseded twice by a later one. Running a candidate decides
+    nothing, so a proposal that has been run is still open.
     """
 
     decided_ids = store.decided_proposals()

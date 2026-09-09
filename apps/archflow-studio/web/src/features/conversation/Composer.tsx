@@ -12,6 +12,7 @@
 import { useState, type FormEvent } from "react";
 
 import type { GestureDto, StateProjectionDto } from "../../api/generated";
+import { designObjectLabel } from "../../app/format";
 import { useT, type TFunction } from "../../i18n/useT";
 import { CapabilityPanel } from "./CapabilityPanel";
 import { ComponentTree } from "./ComponentTree";
@@ -19,6 +20,10 @@ import { ComponentTree } from "./ComponentTree";
 const MARK_GLYPH: Record<GestureDto["kind"], string> = {
   circle: "◯",
   arrow: "↗",
+  freehand: "✎",
+  line: "╱",
+  ruler: "↔",
+  arc: "⌒",
   keep: "✓",
   remove: "✗",
 };
@@ -98,7 +103,7 @@ export function Composer({
         <span>{t("composer.context.talkingAbout")}</span>
         {selection ? (
           <span className="pill pill--accent mono">
-            {selection.elementId ?? selection.componentId}
+            {designObjectLabel(selection.elementId ?? selection.componentId)}
           </span>
         ) : (
           <span className="quiet">

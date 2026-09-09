@@ -10,10 +10,16 @@ import {
   ACESFilmicToneMapping,
   AmbientLight,
   Box3,
+  BufferAttribute,
+  BufferGeometry,
   Color,
   DirectionalLight,
+  DoubleSide,
+  Float32BufferAttribute,
   GridHelper,
   Group,
+  LineSegments,
+  LineBasicMaterial,
   Material,
   Mesh,
   MeshStandardMaterial,
@@ -22,6 +28,7 @@ import {
   Plane,
   Raycaster,
   Scene,
+  ShapeUtils,
   SRGBColorSpace,
   Vector2,
   Vector3,
@@ -125,15 +132,20 @@ export interface CameraState {
   fov: number;
 }
 
+export interface ViewportLoadOptions {
+  /** Keep the current view when replacing a model; the first load still fits. */
+  readonly preserveCamera?: boolean;
+}
+
 export interface ViewportController {
-  openFile(file: File, sourceLabel?: string): Promise<void>;
+  openFile(file: File, sourceLabel?: string, options?: ViewportLoadOptions): Promise<void>;
   /**
    * Put several exports on the stage as one picture — a whole run rather than
    * one seat of it. All of them or none: a file that will not parse leaves
    * whatever was on screen where it was, and says so. The group is the model
    * from then on, so picking, ghosting, fit and clear treat it as one.
    */
-  openFiles(files: readonly File[], sourceLabel?: string): Promise<void>;
+  openFiles(files: readonly File[], sourceLabel?: string, options?: ViewportLoadOptions): Promise<void>;
   /**
    * Mark what was picked. An element lights every object the export tagged
    * with it; a bare object lights only itself; null takes the mark off.
@@ -216,6 +228,112 @@ interface ViewportRuntime {
 }
 
 const MAX_FILE_SIZE = 512 * 1024 * 1024;
+
+interface NurbsFallbackPatch {
+  positions: Float32Array;
+  indices?: Uint32Array;
+  attributes: { name?: string; visible?: boolean; layerIndex?: number; userStrings?: unknown };
+}
+
+interface NurbsFallbackFace {
+  loops: Array<Array<[number, number, number]>>;
+  attributes: NurbsFallbackPatch["attributes"];
+}
+
+/**
+ * Read-only last resort for exact 3DM geometry saved without render meshes.
+ * It is deliberately only called after the installed loader gave us a valid
+ * but empty picture, so native meshes always retain their own materials and
+ * triangle topology.
+ */
+async function nurbsFallback(buffer: ArrayBuffer, source: Object3D): Promise<Object3D | null> {
+  const worker = new Worker("/nurbsFallback.worker.js");
+  try {
+    let missingFaces = 0;
+    const patches = await new Promise<NurbsFallbackPatch[]>((resolve, reject) => {
+      worker.onmessage = (event: MessageEvent<{ paths?: NurbsFallbackPatch[]; faces?: NurbsFallbackFace[]; unsupportedFaces?: number; error?: string }>) => {
+        if (event.data.error) reject(new Error(event.data.error));
+        else {
+          missingFaces = event.data.unsupportedFaces ?? 0;
+          const surfaces = (event.data.faces ?? []).flatMap((face) => {
+            const triangles = triangulatedFace(face);
+            if (triangles.length === 0) missingFaces += 1;
+            return triangles;
+          });
+          resolve([...(event.data.paths ?? []), ...surfaces]);
+        }
+      };
+      worker.onerror = () => reject(new Error("The local NURBS display fallback could not start."));
+      worker.postMessage(buffer, [buffer]);
+    });
+    if (patches.length === 0) return null;
+    const model = new Group();
+    source.userData.nurbsFallback = true;
+    source.userData.nurbsFallbackMissingFaces = missingFaces;
+    const lineMaterial = new LineBasicMaterial({ color: "#d7d0c2" });
+    const surfaceMaterial = new MeshStandardMaterial({ color: "#b8b1a5", roughness: 0.72, metalness: 0, side: DoubleSide });
+    for (const patch of patches) {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new Float32BufferAttribute(patch.positions, 3));
+      const object = patch.indices === undefined
+        ? new LineSegments(geometry, lineMaterial.clone())
+        : new Mesh(geometry.setIndex(new BufferAttribute(patch.indices, 1)), surfaceMaterial.clone());
+      if (patch.indices !== undefined) geometry.computeVertexNormals();
+      object.name = patch.attributes.name ?? "";
+      const layer = source.userData.layers?.[patch.attributes.layerIndex ?? -1];
+      object.visible = patch.attributes.visible !== false && layer?.visible !== false;
+      object.userData.attributes = patch.attributes;
+      model.add(object);
+    }
+    // Keep the loader's layer table, settings, curves and source attributes.
+    // The fallback supplies only the faces and edges its loader could not draw.
+    source.add(model);
+    const warning = nurbsFallbackWarning(source);
+    if (warning !== null) source.userData.warnings = [...(source.userData.warnings ?? []), warning];
+    return source;
+  } finally {
+    worker.terminate();
+  }
+}
+
+function nurbsFallbackWarning(root: Object3D): string | null {
+  let missingFaces = 0;
+  root.traverse((object) => { missingFaces += object.userData.nurbsFallbackMissingFaces ?? 0; });
+  return missingFaces > 0
+    ? `${missingFaces} ${missingFaces === 1 ? "face is" : "faces are"} shown as sampled edges only; no saved render mesh is available.`
+    : null;
+}
+
+export function triangulatedFace(face: NurbsFallbackFace): NurbsFallbackPatch[] {
+  const samePoint = (left: [number, number, number], right: [number, number, number]) =>
+    left.every((value, index) => Math.abs(value - right[index]) < 1e-8);
+  const loops = face.loops.map((loop) =>
+    loop.length > 1 && samePoint(loop[0], loop[loop.length - 1]) ? loop.slice(0, -1) : loop,
+  ).filter((loop) => loop.length >= 3);
+  const outer = loops[0];
+  if (outer === undefined || outer.length < 3) return [];
+  let normal = new Vector3();
+  for (let index = 0; index < outer.length; index += 1) normal.add(new Vector3().fromArray(outer[index]).cross(new Vector3().fromArray(outer[(index + 1) % outer.length])));
+  const axis = Math.abs(normal.x) > Math.abs(normal.y) && Math.abs(normal.x) > Math.abs(normal.z) ? 0 : Math.abs(normal.y) > Math.abs(normal.z) ? 1 : 2;
+  const project = ([x, y, z]: [number, number, number]) => axis === 0 ? new Vector2(y, z) : axis === 1 ? new Vector2(x, z) : new Vector2(x, y);
+  const points = loops.flat();
+  try {
+    const triangles = ShapeUtils.triangulateShape(outer.map(project), loops.slice(1).map((loop) => loop.map(project)));
+    const positions: number[] = [], indices: number[] = [];
+    for (const point of points) positions.push(...point);
+    for (const triangle of triangles) indices.push(...triangle);
+    if (indices.length === 0) return [];
+    return [{ positions: new Float32Array(positions), indices: new Uint32Array(indices), attributes: face.attributes } as any];
+  } catch { return []; }
+}
+
+function meshCount(root: Object3D): number {
+  let count = 0;
+  root.traverse((object) => {
+    if (object instanceof Mesh) count += 1;
+  });
+  return count;
+}
 
 interface ThemeColours {
   viewport: string;
@@ -743,6 +861,7 @@ export const ThreeDmViewport = forwardRef<
       const runtime = runtimeRef.current;
       if (!runtime?.model) throw new Error("Load a model first; the second one is compared against it.");
       const buffer = await file.arrayBuffer();
+      const fallbackBuffer = buffer.slice(0);
       const loader = new Rhino3dmLoader();
       loader.setLibraryPath("/rhino3dm/");
       loader.setWorkerLimit(Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2)));
@@ -751,26 +870,43 @@ export const ThreeDmViewport = forwardRef<
         loader.parse(
           buffer,
           (model) => {
-            loader.dispose();
-            if (generation !== loadGenerationRef.current || !runtimeRef.current?.model) {
-              // The loaded model changed while this parsed: nothing to compare against any more.
-              disposeScene(model);
-              resolve(0);
-              return;
-            }
-            clearSecondary();
-            // The same preparation as the loaded model: what the file hid
-            // stays hidden on the 'after' side too.
-            prepareLoadedModel(model);
-            tintSecondary(model, new Color(accentColour()));
-            runtime.secondary = model;
-            runtime.scene.add(model);
-            let meshes = 0;
-            model.traverse((object) => {
-              if (object instanceof Mesh) meshes += 1;
+            let display = model;
+            void (async () => {
+              try {
+                if (meshCount(model) === 0) {
+                  const fallback = await nurbsFallback(fallbackBuffer, model);
+                  if (fallback !== null) {
+                    display = fallback;
+                  }
+                }
+              } catch {
+                // A display fallback may fail, but a valid 3DM parse remains a
+                // valid (if empty) comparison rather than a failed file load.
+              }
+              loader.dispose();
+              if (generation !== loadGenerationRef.current || !runtimeRef.current?.model) {
+                // The loaded model changed while this parsed: nothing to compare against any more.
+                disposeScene(display);
+                resolve(0);
+                return;
+              }
+              clearSecondary();
+              // The same preparation as the loaded model: what the file hid
+              // stays hidden on the 'after' side too.
+              prepareLoadedModel(display);
+              tintSecondary(display, new Color(accentColour()));
+              runtime.secondary = display;
+              runtime.scene.add(display);
+              const meshes = meshCount(display);
+              blend(0.5);
+              const warning = nurbsFallbackWarning(display);
+              if (warning !== null) reportStatus("ready", `Comparison: ${warning}`);
+              resolve(meshes);
+            })().catch((error) => {
+              loader.dispose();
+              disposeScene(display);
+              reject(error instanceof Error ? error : new Error(String(error)));
             });
-            blend(0.5);
-            resolve(meshes);
           },
           (error) => {
             loader.dispose();
@@ -779,11 +915,11 @@ export const ThreeDmViewport = forwardRef<
         );
       });
     },
-    [blend, clearSecondary],
+    [blend, clearSecondary, reportStatus],
   );
 
   const openFiles = useCallback(
-    async (files: readonly File[], sourceLabel: string = LOCAL_SOURCE_LABEL) => {
+    async (files: readonly File[], sourceLabel: string = LOCAL_SOURCE_LABEL, options?: ViewportLoadOptions) => {
       const runtime = runtimeRef.current;
       if (!runtime) {
         throw new Error(
@@ -836,6 +972,9 @@ export const ThreeDmViewport = forwardRef<
         decline(errorMessage(error));
         return;
       }
+      // Rhino3dmLoader transfers each buffer to its own worker. Preserve a
+      // separate local copy only for the rare valid-but-meshless fallback.
+      const fallbackBuffers = buffers.map((buffer) => buffer.slice(0));
 
       const loader = new Rhino3dmLoader();
       loader.setLibraryPath("/rhino3dm/");
@@ -855,7 +994,7 @@ export const ThreeDmViewport = forwardRef<
         ),
       );
       loader.dispose();
-      const models = parsed
+      let models = parsed
         .filter(
           (result): result is PromiseFulfilledResult<Object3D> =>
             result.status === "fulfilled",
@@ -882,9 +1021,29 @@ export const ThreeDmViewport = forwardRef<
         return;
       }
 
+      models = await Promise.all(models.map(async (model, index) => {
+        if (meshCount(model) > 0) return model;
+        try {
+          const fallback = await nurbsFallback(fallbackBuffers[index], model);
+          if (fallback === null) return model;
+          return fallback;
+        } catch {
+          // The normal loader did successfully read this file; retain its
+          // empty result if its local display approximation cannot be made.
+          return model;
+        }
+      }));
+      // A fallback can take longer than the loader's own parse. It remains
+      // part of this request only while this generation still owns the stage.
+      if (generation !== loadGenerationRef.current || !runtimeRef.current) {
+        for (const model of models) disposeScene(model);
+        return;
+      }
+
       // The file's own display state, whether one export or a whole run of
       // them, before the appearance below is remembered as the original.
       const model = prepareLoadedModel(models.length === 1 ? models[0] : groupOf(models));
+      const preserveCamera = options?.preserveCamera === true && runtime.model !== null;
       // The mark on a picked object belongs to the picture going away.
       restoreHighlight(runtime);
       if (runtime.model) {
@@ -916,11 +1075,19 @@ export const ThreeDmViewport = forwardRef<
       );
       callbacksRef.current.onInspection(inspection);
       callbacksRef.current.onSource(sourceLabel);
-      fitRuntime(runtime);
+      // Keep the live camera rather than restoring an earlier snapshot: the
+      // architect may have orbited while the replacement was being parsed.
+      if (preserveCamera) runtime.render();
+      else fitRuntime(runtime);
+      const fallbackWarning = nurbsFallbackWarning(model);
       reportStatus(
         "ready",
-        inspection.meshCount > 0
+        fallbackWarning !== null
+          ? `${names} · ${inspection.meshCount.toLocaleString()} meshes · ${fallbackWarning}`
+          : inspection.meshCount > 0
           ? `${names} · ${inspection.meshCount.toLocaleString()} meshes`
+          : model.userData.nurbsFallback === true
+            ? `${names} · sampled Brep edges (no saved render mesh)`
           : `${names} opened, but it holds no displayable mesh`,
       );
     },
@@ -929,8 +1096,8 @@ export const ThreeDmViewport = forwardRef<
 
   /** One file is one export: the same road, with a list of one. */
   const openFile = useCallback(
-    (file: File, sourceLabel: string = LOCAL_SOURCE_LABEL) =>
-      openFiles([file], sourceLabel),
+    (file: File, sourceLabel: string = LOCAL_SOURCE_LABEL, options?: ViewportLoadOptions) =>
+      openFiles([file], sourceLabel, options),
     [openFiles],
   );
 

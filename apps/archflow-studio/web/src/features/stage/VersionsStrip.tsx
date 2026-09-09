@@ -1,21 +1,13 @@
 /**
- * The models this project can show, one card per run, in one row along the
- * bottom of the stage: the reference run first, then the candidates this tab
- * launched, and every other run folded behind a count until asked for. A
- * run's exports are the buttons on its card — `show run` for all of them at
- * once, then one per seat — so a version is one card and not two. A card is a
- * receipt's claim beside disk's answer: an unavailable export is a button that
- * says why, never a missing one.
- *
- * With a model on screen, every other run's card offers a comparison against
- * it: Before / After / Why from the inspection records, by run, not by file.
+ * The version panel lists working-copy choices first, followed by the other
+ * assets in each run. Real file names and export kinds identify every model;
+ * view, compare and download still use the existing artifact callbacks.
  */
 
-import { useState } from "react";
-
-import type { ProjectArtifactDto } from "../../api/generated";
+import type { ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
 import { sha8 } from "../../app/format";
 import { useT } from "../../i18n/useT";
+import { usePreferences } from "../settings/preferences";
 import { artifactKindKey, isServable, isViewable } from "../artifacts/artifactSelection";
 
 export interface VersionExport {
@@ -43,6 +35,8 @@ export function VersionsStrip({
   onOpen,
   onOpenRun,
   onCompare,
+  workingCopies = [],
+  onOpenWorkingOption,
 }: {
   groups: readonly VersionGroup[];
   loadingSha: string | null;
@@ -55,21 +49,38 @@ export function VersionsStrip({
   onOpenRun(group: VersionGroup): void;
   /** Compare this card's run against the loaded run's exports. */
   onCompare(artifact: ProjectArtifactDto): void;
+  workingCopies?: readonly WorkingCopyDto[];
+  onOpenWorkingOption?(option: WorkingCopyOptionDto): void;
 }) {
   const t = useT();
-  const [showEarlier, setShowEarlier] = useState(false);
-  if (groups.length === 0) return null;
-  // Reference and this tab's candidates always show; other runs fold. A run
-  // whose export is on screen stays visible whatever it is, so the card the
-  // source chip points at is never the one that was folded away.
-  const earlier = groups.filter(
-    (group) => group.label === "Run" && group.runId !== loadedRunId,
-  );
-  const shown = showEarlier
-    ? groups
-    : groups.filter((group) => !earlier.includes(group));
+  const { developerMode } = usePreferences();
+  if (groups.length === 0 && workingCopies.length === 0) return null;
+  // A grouped option represents one exact asset, not every export in its run.
+  // Keep other composed models and native exports from that run discoverable.
+  const groupedAssets = new Set(workingCopies.flatMap((copy) => copy.options.map((option) =>
+    `${option.modelSource.runId}:${option.modelSource.assetSha256}`)));
+  const shown = groups.map((group) => ({ ...group,
+    exports: group.exports.filter(({ artifact }) => !groupedAssets.has(`${group.runId}:${artifact.sha256}`)),
+  })).filter((group) => group.exports.length > 0);
   return (
     <div className="versions" role="list" aria-label={t("stage.versions.ariaLabel")}>
+      {workingCopies.map((copy) => (
+        <div key={copy.groupId} className="vcard" role="listitem" data-working-copy={copy.groupId}>
+          <div className="vcard__head"><span className="vcard__title">{copy.label}</span></div>
+          <div className="vcard__exports">
+            {copy.options.map((option) => {
+              const source = option.modelSource;
+              const loaded = source.runId === loadedRunId && loadedShas.includes(source.assetSha256);
+              return <button type="button" key={option.id} className="btn btn--small vcard__export"
+                aria-pressed={loaded} disabled={loadingSha !== null} onClick={() => onOpenWorkingOption?.(option)}
+                title={groups.find((group) => group.runId === source.runId)?.exports.find(({ artifact }) => artifact.sha256 === source.assetSha256)?.artifact.fileName}>
+                {t("stage.workingCopy.view", { label: option.label })}
+                {copy.selectedOptionId === option.id && <span aria-label={t("stage.workingCopy.selected")}> · ✓</span>}
+              </button>;
+            })}
+          </div>
+        </div>
+      ))}
       {shown.map((group) => {
         const loaded = group.runId === loadedRunId;
         const comparable =
@@ -83,6 +94,8 @@ export function VersionsStrip({
         const viewable = group.exports.filter((item) => isViewable(item.artifact));
         const servable = viewable.filter((item) => isServable(item.artifact));
         const saves = group.exports.filter((item) => isServable(item.artifact));
+        const namedArtifact = group.exports.find(({ artifact }) => artifact.representation === "composed")?.artifact ?? viewable[0]?.artifact ?? group.exports[0]?.artifact;
+        const displayTitle = group.label === "Candidate" ? group.title : namedArtifact?.fileName ?? group.title;
         const referenceIssue =
           group.label === "Reference"
             ? /^based on issue (.+)$/.exec(group.title)?.[1]
@@ -101,6 +114,7 @@ export function VersionsStrip({
             return t("stage.versions.notLaunchedHere");
           }
           if (group.detail.startsWith("blocked: ")) {
+            if (!developerMode) return t("stage.view.needsAttention");
             return (
               <>
                 {t("stage.view.blocked")}: {group.detail.slice("blocked: ".length)}
@@ -114,32 +128,28 @@ export function VersionsStrip({
             key={group.runId}
             role="listitem"
             className={`vcard${loaded ? " vcard--loaded" : ""}`}
-            title={group.runId}
+            title={developerMode ? group.runId : undefined}
           >
             <div className="vcard__head">
               <span className="label">{displayedLabel}</span>
-              <span className="vcard__title">
-                {referenceIssue !== undefined ? (
-                  t("stage.versions.referenceBasedOn", { version: referenceIssue })
-                ) : (
-                  group.title
-                )}
-              </span>
-              {displayedDetail && <span className="vcard__meta">{displayedDetail}</span>}
+              <span className="vcard__title" title={displayTitle}>{displayTitle}</span>
+              {developerMode && referenceIssue !== undefined && <span className="vcard__meta">{t("stage.versions.referenceBasedOn", { version: referenceIssue })}</span>}
+              {developerMode && <span className="vcard__meta">{group.runId}</span>}
+              {displayedDetail && (developerMode || group.detail !== "not launched from this tab") && <span className="vcard__meta">{displayedDetail}</span>}
             </div>
             <div className="vcard__exports">
-              {servable.length > 0 && (
+              {servable.length > 1 && (
                 <button
                   type="button"
                   className="btn btn--small vcard__run"
                   aria-pressed={loaded && loadedShas.length > 1}
                   disabled={loadingSha !== null}
-                  title={t("stage.versions.showRunTitle", {
+                  title={developerMode ? t("stage.versions.showRunTitle", {
                     seats: servable.map((item) => item.seat).join(" + "),
-                  })}
-                  onClick={() => onOpenRun(group)}
+                  }) : undefined}
+                  onClick={() => onOpenRun(groups.find((original) => original.runId === group.runId) ?? group)}
                 >
-                  {t("stage.versions.showRun")}
+                  {t("stage.versions.showAllExports")}
                 </button>
               )}
               {viewable.map(({ artifact, seat, sourceLabel }) => {
@@ -154,23 +164,19 @@ export function VersionsStrip({
                     className={`btn btn--small vcard__export${artifact.available ? "" : " vcard__export--unavailable"}`}
                     aria-pressed={isLoaded}
                     disabled={!artifact.available || loadingSha !== null}
-                    title={
-                      artifact.available
-                        ? t("stage.versions.showSeatTitle", {
-                            fileName: artifact.fileName,
-                            sha: sha8(artifact.sha256),
-                          })
-                        : (artifact.unavailableReason ??
-                          t("stage.versions.unavailableNoReason"))
-                    }
+                    title={artifact.available
+                      ? developerMode ? t("stage.versions.showSeatTitle", { fileName: artifact.fileName, sha: sha8(artifact.sha256) }) : artifact.fileName
+                      : (artifact.unavailableReason ?? t("stage.versions.unavailableNoReason"))}
                     onClick={() => onOpen(artifact, sourceLabel)}
                   >
-                    {loadingThis ? t("stage.versions.loading") : seat}
+                    <span className="vcard__asset-kind">{loadingThis ? t("stage.versions.loading") : t(artifact.representation === "composed" ? "stage.versions.completeModel" : "stage.versions.nativeExport")}</span>
+                    <span className="vcard__filename">{artifact.fileName}</span>
+                    {(developerMode || artifact.representation === "preview") && <span className="quiet">{developerMode ? `${seat} · ` : ""}{t(artifactKindKey(artifact))}</span>}
                     {!artifact.available && ` · ${t("stage.versions.unavailable")}`}
                   </button>
                 );
               })}
-              {saves.map(({ artifact, seat }) => (
+              {developerMode && saves.map(({ artifact, seat }) => (
                 <a
                   key={`save-${artifact.artifactId}`}
                   className="vcard__save"
@@ -183,7 +189,7 @@ export function VersionsStrip({
                   {t("stage.versions.saveSeat", { seat })} · {t(artifactKindKey(artifact))}
                 </a>
               ))}
-              {group.exports
+              {developerMode && group.exports
                 .filter(({ artifact }) => !artifact.available && !isViewable(artifact))
                 .map(({ artifact, seat }) => (
                   <span
@@ -208,18 +214,6 @@ export function VersionsStrip({
           </div>
         );
       })}
-      {earlier.length > 0 && (
-        <button
-          type="button"
-          className="versions__more"
-          aria-expanded={showEarlier}
-          onClick={() => setShowEarlier((open) => !open)}
-        >
-          {showEarlier
-            ? t("stage.versions.foldEarlier")
-            : t("stage.versions.earlierRuns", { count: earlier.length })}
-        </button>
-      )}
     </div>
   );
 }

@@ -9,3 +9,10 @@
 export function sha8(value: string | null | undefined): string {
   return value ? value.slice(0, 8) : "—";
 }
+
+/** Read an existing semantic id as a compact object label; it is never sent back. */
+export function designObjectLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return value.split(/[-_\s]+/).filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}

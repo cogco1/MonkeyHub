@@ -90,6 +90,7 @@ class ThreeDmInspection:
     object_geometry_analysis: tuple[dict[str, object], ...] = ()
     read_only: bool = True
     rhino_process_started: bool = False
+    invalid_geometry_object_ids: tuple[str, ...] = ()
 
     SCHEMA: ClassVar[str] = "ThreeDmInspectionSummary@4"
 
@@ -127,6 +128,8 @@ class ThreeDmInspection:
             "read_only": self.read_only,
             "rhino_process_started": self.rhino_process_started,
         }
+        if self.invalid_geometry_object_ids:
+            payload["invalid_geometry_object_ids"] = list(self.invalid_geometry_object_ids)
         return json.loads(
             json.dumps(
                 payload,
@@ -198,6 +201,24 @@ def inspect_three_dm(path: Path) -> ThreeDmInspection:
     if not isinstance(path, Path):
         raise TypeError("path must be pathlib.Path")
     file_bytes = _read_file(path)
+    return _inspect_bytes(file_bytes, include_geometry=True)
+
+
+def inspect_three_dm_contents(data: bytes) -> ThreeDmInspection:
+    """Read original container contents without certifying geometry or requiring render meshes.
+
+    Imported assets can contain invalid hidden Breps beside valid display meshes.
+    Their original geometry, attributes, definitions and materials remain inspectable;
+    bounds and geometric analysis are deliberately absent, and invalid ids are named.
+    Ordinary export inspection continues to use ``inspect_three_dm`` unchanged.
+    """
+
+    if not isinstance(data, bytes):
+        raise TypeError("3dm contents must be bytes")
+    return _inspect_bytes(data, include_geometry=False)
+
+
+def _inspect_bytes(file_bytes: bytes, *, include_geometry: bool) -> ThreeDmInspection:
     rhino3dm = _load_rhino3dm()
 
     try:
@@ -214,7 +235,7 @@ def inspect_three_dm(path: Path) -> ThreeDmInspection:
         )
 
     try:
-        payload = _summarize_model(model, rhino3dm)
+        payload = _summarize_model(model, rhino3dm, include_geometry=include_geometry)
     except ThreeDmInspectionError:
         raise
     except Exception as exc:
@@ -277,7 +298,7 @@ def _load_rhino3dm() -> Any:
     return module
 
 
-def _summarize_model(model: Any, rhino3dm: Any) -> dict[str, object]:
+def _summarize_model(model: Any, rhino3dm: Any, *, include_geometry: bool = True) -> dict[str, object]:
     archive_objects = tuple(model.Objects)
     explicit_witnesses, witness_object_ids = _explicit_visible_witnesses(
         archive_objects,
@@ -290,7 +311,7 @@ def _summarize_model(model: Any, rhino3dm: Any) -> dict[str, object]:
         not in witness_object_ids
     )
     layers, layers_by_index = _layers(model, objects)
-    object_rows, objects_by_id = _objects(objects, layers_by_index)
+    object_rows, objects_by_id = _objects(objects, layers_by_index, require_valid_geometry=include_geometry)
     materials, materials_by_index = _materials(model)
     render_materials, render_materials_by_id = _render_materials(model)
     definitions, definition_members = _definitions(model)
@@ -311,7 +332,7 @@ def _summarize_model(model: Any, rhino3dm: Any) -> dict[str, object]:
         definition_members,
         rhino3dm,
         explicit_witnesses,
-    )
+    ) if include_geometry else (None, 0)
     by_type = Counter(item["type"] for item in object_rows)
     by_layer = _object_counts_by_layer(
         object_rows,
@@ -349,14 +370,14 @@ def _summarize_model(model: Any, rhino3dm: Any) -> dict[str, object]:
                 rhino3dm,
                 explicit_witnesses,
             )
-        ),
+        ) if include_geometry else (),
         "visible_bounds_witnesses": tuple(
             _visible_bounds_witnesses(
                 object_rows,
                 rhino3dm,
                 explicit_witnesses,
             )
-        ),
+        ) if include_geometry else (),
         "materials": tuple(materials),
         "render_materials": tuple(render_materials),
         "object_material_bindings": tuple(
@@ -369,9 +390,8 @@ def _summarize_model(model: Any, rhino3dm: Any) -> dict[str, object]:
         "object_geometry_sha256": tuple(
             _object_geometry_sha256(object_rows)
         ),
-        "object_geometry_analysis": tuple(
-            _object_geometry_analysis(object_rows)
-        ),
+        "object_geometry_analysis": tuple(_object_geometry_analysis(object_rows)) if include_geometry else (),
+        "invalid_geometry_object_ids": tuple(item["id"] for item in object_rows if not item["is_valid"]),
     }
 
 
@@ -411,6 +431,7 @@ def _layers(
 def _objects(
     objects: tuple[Any, ...],
     layers_by_index: dict[int, dict[str, object]],
+    *, require_valid_geometry: bool = True,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     by_id: dict[str, Any] = {}
@@ -419,7 +440,8 @@ def _objects(
         geometry = item.Geometry
         if geometry is None:
             raise ValueError("3dm object has no geometry")
-        if hasattr(geometry, "IsValid") and not bool(geometry.IsValid):
+        is_valid = not hasattr(geometry, "IsValid") or bool(geometry.IsValid)
+        if require_valid_geometry and not is_valid:
             raise ValueError("3dm object contains invalid geometry")
         object_id = _identifier(attributes.Id, "object id")
         if object_id in by_id:
@@ -428,6 +450,7 @@ def _objects(
         layer = layers_by_index.get(layer_index)
         row = {
             "id": object_id,
+            "is_valid": is_valid,
             "name": _string(attributes.Name, "object name"),
             "type": _enum_name(geometry.ObjectType, "object type"),
             # Some rhino3dm geometry encoders include transient ordering state.

@@ -2,9 +2,8 @@
  * Everything the server said, verbatim, one click away.
  *
  * Closed by default so the conversation carries the story; pinned, it stands
- * beside the stage as a third column and stays open across actions. The event
- * stream is mounted whatever tab is showing, so the connection it holds is
- * never dropped by a tab switch.
+ * beside the stage as a third column and stays open across actions. Events
+ * come from the shell's subscription, independent of whether this drawer is open.
  */
 
 import type {
@@ -17,7 +16,7 @@ import type { EvidenceTab } from "../../app/evidence";
 import type { MessageKey } from "../../i18n/messages.en";
 import { usePreferences } from "../settings/preferences";
 import { useT } from "../../i18n/useT";
-import { EventStream } from "../events/EventStream";
+import { EventStream, type StreamLine } from "../events/EventStream";
 import { HonestyTab } from "./HonestyTab";
 import { ReceiptsTab } from "./ReceiptsTab";
 
@@ -38,10 +37,10 @@ export function EvidenceDrawer({
   validation,
   sentence,
   notices,
+  eventLines,
   onTab,
   onClose,
   onPin,
-  onEventCount,
 }: {
   open: boolean;
   pinned: boolean;
@@ -55,13 +54,15 @@ export function EvidenceDrawer({
   /** The sentence the shown candidate was made from, when this tab knows it. */
   sentence: string | null;
   notices: readonly string[];
+  eventLines: readonly StreamLine[];
   onTab(tab: EvidenceTab): void;
   onClose(): void;
   onPin(pinned: boolean): void;
-  onEventCount(count: number): void;
 }) {
   const t = useT();
-  const { eventStreamVisible } = usePreferences();
+  const { eventStreamVisible, developerMode } = usePreferences();
+
+  if (!developerMode) return null;
 
   return (
     <aside
@@ -124,7 +125,7 @@ export function EvidenceDrawer({
           <ReceiptsTab candidate={candidate} validation={validation} sentence={sentence} />
         </div>
         <div hidden={tab !== "events" || !eventStreamVisible}>
-          <EventStream notices={notices} onCount={onEventCount} />
+          <EventStream notices={notices} lines={eventLines} />
         </div>
         {tab === "events" && !eventStreamVisible && (
           <p className="panel__note">

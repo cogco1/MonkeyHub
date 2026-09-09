@@ -11,14 +11,11 @@ the case the columns have element rows (west and east) or none at all.
 3. Columns with no rows end in MISSING_EDITABLE_CONTROL whose draft says
    MODEL_VISIBLE_CATALOG_MISSING and names the objects the model shows; the
    abutment's height is offered nowhere.
-4. Confirming that draft keeps a declared control; the record on disk is
-   byte-identical afterwards.
 """
 
 from __future__ import annotations
 
 import copy
-import hashlib
 from pathlib import Path
 import shutil
 import tempfile
@@ -240,29 +237,6 @@ class CatalogMissingTests(VillaLikeTestCase):
         self.assertEqual(payload["pendingIntent"]["candidates"], [])
         self.assertTrue(all("abutment" not in ref for ref in payload["pendingIntent"]["candidates"]))
         self.assertNotIn("abutment.height", payload["detail"])
-
-    def test_confirming_the_draft_keeps_a_declared_control_and_writes_nothing(self) -> None:
-        before = hashlib.sha256(self.record_path.read_bytes()).hexdigest()
-        status, payload = self.ask("补充 portico-columns 字段")
-        self.assertEqual(status, 422, payload)
-        draft = payload["authoredControlDraft"]
-        response = self.client.post("/api/controls", json={"stateDigest": self.state_digest, "utterance": "补充 portico-columns 字段", "draft": draft})
-        self.assertEqual(response.status_code, 201, response.text)
-        control = response.json()
-        self.assertEqual(control["status"], "proposed")
-        self.assertEqual(control["componentId"], "portico-columns")
-        self.assertEqual(control["catalogStatus"], "MODEL_VISIBLE_CATALOG_MISSING")
-        self.assertIn("object:obj-column-west-0", control["provenance"])
-        self.assertEqual(self.client.get(f"/api/controls/{control['controlId']}").status_code, 200)
-        self.assertEqual(hashlib.sha256(self.record_path.read_bytes()).hexdigest(), before)
-        self.assertEqual(self.client.get("/api/state").json()["stateDigest"], self.state_digest)
-
-    def test_a_draft_for_a_component_with_controls_is_refused(self) -> None:
-        status, payload = self.ask("补充 portico-columns 字段")
-        draft = dict(payload["authoredControlDraft"], targetComponentId="portico-roof-abutments")
-        response = self.client.post("/api/controls", json={"stateDigest": self.state_digest, "utterance": "x", "draft": draft})
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()["code"], "CONTROL_ALREADY_EXISTS")
 
 
 if __name__ == "__main__":

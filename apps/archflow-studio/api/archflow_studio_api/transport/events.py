@@ -7,8 +7,10 @@ a conversation — a client that joined late, or resumed, must be able to read
 one frame and know which job and which run it is about without having seen the
 frames before it.
 
+Asset registration and work-item additions identify the updated source run;
+clients read the current lists before presenting a newly available model.
 Fields a given event has nothing to say about travel as ``null`` rather than
-being omitted, so the shape a client parses is the same on all four types.
+being omitted, so the shape a client parses stays the same.
 """
 
 from __future__ import annotations
@@ -30,7 +32,8 @@ class StudioEventDto(BaseModel):
     at: str = Field(description="when the event was published, UTC ISO-8601")
     type: str = Field(
         description="candidate.queued | candidate.running | "
-        "candidate.succeeded | candidate.failed | validation.computed",
+        "candidate.succeeded | candidate.failed | validation.computed | "
+        "model_asset.registered | working_copy.option_added",
     )
     job_id: str | None = Field(alias="jobId", default=None)
     candidate_id: str | None = Field(alias="candidateId", default=None)
