@@ -58,6 +58,14 @@ class UsageEvent:
     duration_ms: int | None = None
     project_id: str | None = None
     run_id: str | None = None
+    ended_at: str | None = None
+    timing_scope: str = "unknown"
+    model_call: bool | None = None
+    source_ref: str | None = None
+    related_event_id: str | None = None
+    session_id: str | None = None
+    parent_session_id: str | None = None
+    turn_id: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("event_id", "provider", "model", "phase", "status", "started_at"):
@@ -68,11 +76,26 @@ class UsageEvent:
             raise ValueError("source must be studio or codex")
         if self.billing_mode not in {"api_estimate", "subscription_equivalent", "unknown"}:
             raise ValueError("unsupported billing_mode")
-        datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))
+        started = datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))
+        if self.ended_at is not None:
+            if not isinstance(self.ended_at, str):
+                raise ValueError("ended_at must be ISO-8601 text or None")
+            ended = datetime.fromisoformat(self.ended_at.replace("Z", "+00:00"))
+            try:
+                if ended < started:
+                    raise ValueError("ended_at precedes started_at")
+            except TypeError as exc:
+                raise ValueError("start and end timestamps must use compatible time zones") from exc
+        if self.timing_scope not in {"unknown", "model_call", "service", "client_wait", "agent_turn"}:
+            raise ValueError("unsupported timing_scope")
+        if self.model_call is not None and type(self.model_call) is not bool:
+            raise ValueError("model_call must be bool or None")
         _count(self.duration_ms, "duration_ms")
         if not isinstance(self.tokens, TokenUsage):
             raise TypeError("tokens must be TokenUsage")
-        for name in ("project_id", "run_id"):
+        if self.model_call is False and any(value is not None for value in self.tokens.to_dict().values()):
+            raise ValueError("a phase without a model call has no provider token counters")
+        for name in ("project_id", "run_id", "source_ref", "related_event_id", "session_id", "parent_session_id", "turn_id"):
             value = getattr(self, name)
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{name} must be non-empty text or None")

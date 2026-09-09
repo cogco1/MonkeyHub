@@ -35,6 +35,7 @@ from ..application.program import (
     operator_for,
 )
 from ..application.projection import project_state, require_actionable
+from ..application.monitoring import projection_source_ref
 from ..settings import StudioSettings
 from ..transport.errors import StudioError
 from ..transport.artifacts import model_source_from
@@ -128,6 +129,7 @@ def apply_program(
             binding, settings, operator, run_id, source_run_id=body.source_run_id,
             model_source=model_source,
             source_stage_ref=projection.source_stage_ref,
+            monitor=state.monitor,
         )
 
     job = registry.submit(
@@ -136,6 +138,8 @@ def apply_program(
         # borrowing a proposal id that would resolve to nothing.
         proposal_id=f"program-sheet:{projection.record_digest}",
         work=work,
+        project_id=binding.project_id,
+        source_ref=projection_source_ref(projection),
         write_refs=closure_of_sheet(sheet),
         exclusive=settings.rhino_lane,
     )

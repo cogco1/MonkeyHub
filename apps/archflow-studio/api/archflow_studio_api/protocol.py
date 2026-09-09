@@ -87,4 +87,6 @@ def server_capabilities(settings: StudioSettings) -> tuple[str, ...]:
         capabilities.append(RHINO_EXPORT_CAPABILITY)
     if settings.mode == LOCAL_MODE:
         capabilities.append("user-settings")
+    if settings.monitor_dir is not None:
+        capabilities.append("operation-timing")
     return tuple(sorted(capabilities))

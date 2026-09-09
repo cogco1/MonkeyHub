@@ -872,6 +872,20 @@ export default function App({ server, initialDocumentIntent }: {
     void viewportRef.current?.openFile(file);
   }, []);
 
+  const monitorLoads = server.capabilities.includes("operation-timing");
+  const startModelLoadTiming = useCallback((projectId: string | null, runId: string, sourceRef: string | null) => {
+    const startedAt = new Date().toISOString();
+    const started = performance.now();
+    return (status: "succeeded" | "failed" | "cancelled") => {
+      if (!monitorLoads || projectId === null) return;
+      // Reporting cannot delay the viewer or repeat a failed download/parse.
+      void studio.recordModelLoad({
+        eventId: crypto.randomUUID(), projectId, runId, sourceRef, startedAt,
+        endedAt: new Date().toISOString(), durationMs: Math.round(performance.now() - started), status,
+      }).catch(() => undefined);
+    };
+  }, [monitorLoads]);
+
   /**
    * Put one certified artifact in the viewer, under the chip that says where
    * it came from. Canonical exports and a candidate's own export take the
@@ -911,6 +925,8 @@ export default function App({ server, initialDocumentIntent }: {
       }
       setArtifactLoadingSha(artifact.sha256);
       setArtifactLoadPhase("download");
+      const finishTiming = startModelLoadTiming(projectId, artifact.runId, artifact.receiptRef);
+      let succeeded = false;
       try {
         const file = await studio.artifactFile(
           artifact.sha256,
@@ -927,11 +943,13 @@ export default function App({ server, initialDocumentIntent }: {
           preserveCamera: preserveCamera && previous.length > 0 && artifact.lengthUnit !== null &&
             previous.every((row) => row.lengthUnit === artifact.lengthUnit),
         });
-        return isCurrent() && viewerStatusRef.current === "ready";
+        succeeded = isCurrent() && viewerStatusRef.current === "ready";
+        return succeeded;
       } catch (cause) {
         if (isCurrent()) setArtifactError(asStudioApiError(cause));
         return false;
       } finally {
+        finishTiming(!isCurrent() ? "cancelled" : succeeded ? "succeeded" : "failed");
         if (request === modelLoadRequest.current) {
           pendingArtifacts.current = [];
           setArtifactLoadingSha(null);
@@ -939,7 +957,7 @@ export default function App({ server, initialDocumentIntent }: {
         }
       }
     },
-    [],
+    [startModelLoadTiming],
   );
 
   /**
@@ -965,6 +983,8 @@ export default function App({ server, initialDocumentIntent }: {
       const isCurrent = () => request === modelLoadRequest.current && projectId === artifactProjectRef.current;
       setArtifactLoadingSha(servable[0].sha256);
       setArtifactLoadPhase("download");
+      const finishTiming = startModelLoadTiming(projectId, servable[0].runId, null);
+      let succeeded = false;
       try {
         // Every seat, or none: a picture missing a seat that nobody was told
         // about would read as the run being smaller than it is.
@@ -975,9 +995,11 @@ export default function App({ server, initialDocumentIntent }: {
         pendingArtifacts.current = servable;
         setArtifactLoadPhase("parse");
         await viewportRef.current?.openFiles(files, label, { preserveCamera, isCurrent });
+        succeeded = isCurrent() && viewerStatusRef.current === "ready";
       } catch (cause) {
         if (isCurrent()) setArtifactError(asStudioApiError(cause));
       } finally {
+        finishTiming(!isCurrent() ? "cancelled" : succeeded ? "succeeded" : "failed");
         if (request === modelLoadRequest.current) {
           pendingArtifacts.current = [];
           setArtifactLoadingSha(null);
@@ -985,7 +1007,7 @@ export default function App({ server, initialDocumentIntent }: {
         }
       }
     },
-    [loadArtifactIntoViewer],
+    [loadArtifactIntoViewer, startModelLoadTiming],
   );
 
   /**

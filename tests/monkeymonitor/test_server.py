@@ -40,8 +40,8 @@ class MonitorServerTests(unittest.TestCase):
         self.thread.join()
         self.temp.cleanup()
 
-    def request(self, path, data=None, headers=None):
-        request = Request(self.url + path, data=None if data is None else json.dumps(data).encode(), headers=headers or {})
+    def request(self, path, data=None, headers=None, method=None):
+        request = Request(self.url + path, data=None if data is None else json.dumps(data).encode(), headers=headers or {}, method=method)
         with urlopen(request, timeout=3) as response:
             return json.loads(response.read())
 
@@ -77,6 +77,44 @@ class MonitorServerTests(unittest.TestCase):
         self.assertEqual(len(result["events"]), 2)
         self.assertEqual(len({event["event_id"] for event in result["events"]}), 2)
         self.assertTrue(result["warnings"])
+
+    def test_codex_sources_select_only_explicit_files_and_clear(self):
+        self.assertEqual(self.request("/api/sources/codex"), {"paths": []})
+        source = Path(self.temp.name) / "selected.jsonl"
+        source.write_text(json.dumps({
+            "type": "event_msg", "timestamp": "2026-09-09T12:00:00Z",
+            "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 3, "output_tokens": 1}}},
+        }) + "\n", encoding="utf-8")
+        (source.parent / "unselected.jsonl").write_text("unselected and not JSON\n", encoding="utf-8")
+        self.assertEqual(self.request("/api/events")["events"], [])
+        expected = {"paths": [source.resolve().as_posix()]}
+        self.assertEqual(self.request("/api/sources/codex", {"paths": [str(source), str(source)]}, method="PUT"), expected)
+        self.assertEqual(self.request("/api/sources/codex"), expected)
+        self.assertEqual(len(self.request("/api/events")["events"]), 1)
+        self.assertEqual(self.request("/api/sources/codex", {"paths": []}, method="PUT"), {"paths": []})
+        self.assertEqual(self.request("/api/events")["events"], [])
+
+    def test_codex_source_validation_is_atomic_and_local_only(self):
+        source = Path(self.temp.name) / "selected.jsonl"
+        source.write_text("", encoding="utf-8")
+        expected = self.request("/api/sources/codex", {"paths": [str(source)]}, method="PUT")
+        for body in (
+            {"paths": "a.jsonl"}, {"paths": [1]}, {"paths": ["relative.jsonl"]},
+            {"paths": [str(source), str(source.parent / "absent.jsonl")]},
+            {"paths": [str(source.parent)]}, {"other": []}, [],
+        ):
+            with self.subTest(body=body):
+                with self.assertRaises(HTTPError) as error:
+                    self.request("/api/sources/codex", body, method="PUT")
+                self.assertEqual(error.exception.code, 400)
+                self.assertIn("error", json.loads(error.exception.read()))
+                self.assertEqual(self.request("/api/sources/codex"), expected)
+        for headers in ({"Host": "example.invalid"}, {"Origin": "https://example.invalid"}):
+            with self.subTest(headers=headers):
+                with self.assertRaises(HTTPError) as error:
+                    self.request("/api/sources/codex", {"paths": []}, headers=headers, method="PUT")
+                self.assertEqual(error.exception.code, 403)
+                self.assertEqual(self.request("/api/sources/codex"), expected)
 
     def test_assets_presets_and_other_origin_refused(self):
         health = self.request("/api/health")
