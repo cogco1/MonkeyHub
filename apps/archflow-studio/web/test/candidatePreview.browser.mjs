@@ -577,8 +577,12 @@ try {
 
   await step("drawing errors stay above the viewport, dismiss, reset on direction changes, and ignore stale replies", async () => {
     await page.getByRole("combobox", { name: "Branch", exact: true }).selectOption("main"); await rendered(historyA.candidateId);
+    const viewTools = page.locator('button[aria-controls="view-tools"]');
+    if (await viewTools.getAttribute("aria-expanded") === "true") await viewTools.click();
+    assert.equal(await page.getByRole("button", { name: "Generate elevation", exact: true }).count(), 0);
+    await viewTools.click();
     drawingFailure = true;
-    const generate = page.getByRole("button", { name: "Generate elevation", exact: true });
+    const generate = page.locator("#view-tools").getByRole("button", { name: "Generate elevation", exact: true });
     const error = page.locator(".stage-drawing-error");
     await generate.click(); await error.waitFor();
     assert.equal(await error.locator('[role="alert"]').textContent(), "This model is missing its matching exact geometry file, so a complete elevation cannot be generated yet.");
