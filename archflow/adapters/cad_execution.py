@@ -3370,6 +3370,9 @@ def patch_composed_three_dm(
     native block instance is refused, never silently stripped of its definition.
     Preserved block instances in the base need no reconstruction. This is a
     display-model composition, not an exact STEP export of the imported assets.
+    A replacement without a native material keeps the existing object's native
+    material, or a new object's unambiguous component material. Explicit donor
+    materials take precedence; inherited materials retain their PBR and textures.
     New native objects must use built-in linetypes: rhino3dm's custom-linetype
     table wrappers cannot safely be released on the supported Windows runtime.
     """
@@ -3440,6 +3443,42 @@ def patch_composed_three_dm(
     if selection.empty:
         return base_3dm
 
+    def native_material_index(model, attributes):
+        if attributes.MaterialSource == rhino3dm.ObjectMaterialSource.MaterialFromObject:
+            index = attributes.MaterialIndex
+        elif attributes.MaterialSource == rhino3dm.ObjectMaterialSource.MaterialFromLayer:
+            layer = model.Layers.FindIndex(attributes.LayerIndex)
+            index = -1 if layer is None else layer.RenderMaterialIndex
+        else:
+            return None
+        return index if index >= 0 and model.Materials.FindIndex(index) is not None else None
+
+    source_materials = {}
+    component_materials: dict[str, set[int]] = {}
+    for name in prior_names:
+        attributes = base_objects[name][0].Attributes
+        index = native_material_index(base, attributes)
+        if index is None:
+            continue
+        source_materials[name] = index
+        component = attributes.GetUserString("archflow:component")
+        if component:
+            component_materials.setdefault(component, set()).add(index)
+
+    inherited_materials = {}
+    for item in replacements:
+        attributes = item.Attributes
+        if native_material_index(donor, attributes) is not None:
+            continue
+        index = source_materials.get(attributes.Name)
+        if index is None:
+            component = attributes.GetUserString("archflow:component")
+            candidates = component_materials.get(component, set())
+            if len(candidates) == 1:
+                index = next(iter(candidates))
+        if index is not None:
+            inherited_materials[attributes.Name] = index
+
     # Table indices belong to a document. Copy only tables the replacement uses;
     # never change an existing base layer or material while adding native objects.
     materials: dict[int, int] = {}
@@ -3503,8 +3542,21 @@ def patch_composed_three_dm(
     imported = set()
     for item in replacements:
         attributes = item.Attributes
+        donor_material = native_material_index(donor, attributes)
         attributes.LayerIndex = copy_layer(attributes.LayerIndex)
-        attributes.MaterialIndex = copy_material(attributes.MaterialIndex)
+        inherited = inherited_materials.get(attributes.Name)
+        if inherited is not None:
+            attributes.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
+            attributes.MaterialIndex = inherited
+            material = base.Materials.FindIndex(inherited)
+            logical = material.GetUserString("archflow:material_id") or material.GetUserString("archflow:material")
+            if logical:
+                attributes.SetUserString("archflow:material", logical)
+        elif donor_material is not None:
+            attributes.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
+            attributes.MaterialIndex = copy_material(donor_material)
+        else:
+            attributes.MaterialIndex = copy_material(attributes.MaterialIndex)
         attributes.LinetypeIndex = copy_linetype(attributes.LinetypeIndex)
         old_groups = attributes.GetGroupList2()
         attributes.RemoveFromAllGroups()

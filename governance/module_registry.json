@@ -55,7 +55,8 @@
         "orthographic visible/hidden polylines of named STEP shapes with their source object ids (project_occt_lines): one exact HLRBRep_Algo solve over every selected shape in a caller-stated right/up frame, an exact near/far depth slab, chord-deflection discretization in the STEP read unit",
         "measuring explicitly requested final named solid pairs from OCCT shapes: true distance in metres and common solid volume in cubic metres, preserving separated/contact/penetrating/unchecked and never reconstructing consumed boolean operands",
         "patching caller-supplied composed 3dm bytes from exact prior/current compiled programs and a native replacement preview, preserving unchanged objects and shared block/material tables with explicit unit conversion",
-        "verifying source OCCT STEP shape reuse for unchanged physical objects while rebuilding changed operations and required intermediate inputs"
+        "verifying source OCCT STEP shape reuse for unchanged physical objects while rebuilding changed operations and required intermediate inputs",
+        "composed replacements without explicit donor materials inherit the same source object material or a unique source component material, preserving native PBR and textures"
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -556,7 +557,8 @@
         "a straight stair flight as one closed stepped solid, a sloped-top wedge (wedge) and a hollow revolved shell (shell), each publishing <id>-top and seated by a support relation like prism",
         "declaring on the operation, as statements and never as parameters, the row facts the produced solid cannot show (a wedge's low/high/axis/sense, a shell's thickness/kind), already formatted as the text the export will carry; wedge_sense is the world-anchored rise direction +x|-x|+z|-z, derived from the row's declared from->to line and slope_across, never measured back off the geometry",
         "the queryable semantic authoring signature of the wall producer and its rectangular or semicircular hosted apertures; project values remain in StateRecord",
-        "in-memory checking of a semantic element edit by the advertised signature and the existing producers before a candidate is queued"
+        "in-memory checking of a semantic element edit by the advertised signature and the existing producers before a candidate is queued",
+        "prism rectangular_cutouts: parameter-bound rectangular openings trim a material panel through its Z thickness, retire empty panels and retain stable fragment ids"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -619,14 +621,16 @@
         "a stair's explicit top must match base plus offset plus count times rise within 0.001 m; the closed profile has that physical top by construction, and a conflict fails without adjusting inputs",
         "the stair emits one whole solid and retains its declared endpoint, width and top datum; positive thin-tread thickness is refused rather than reinterpreted as a whole-flight slab",
         "a direct loft row preserves its explicit cap_ends boolean, defaulting to true, without changing closure of other producers; declared profile_basis is passed through and unsupported open section profiles are refused",
-        "an unfilled semicircular wall opening passes its explicit shape and spring height to wall_solver and creates no frame or leaf"
+        "an unfilled semicircular wall opening passes its explicit shape and spring height to wall_solver and creates no frame or leaf",
+        "rectangular_cutouts require an ordered axis-aligned rectangular prism profile; untouched panels retain their original operation id, and a cut panel publishes no whole-prism top datum"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_element_producers.py",
         "tests/test_whole_stair.py",
         "tests/test_cad_patch.py",
-        "tests/test_project_runner.py"
+        "tests/test_project_runner.py",
+        "tests/test_prism_cutouts.py"
       ],
       "notes": "The single geometry-emission owner on the spine; P105 is where monument vocabulary would be added here rather than beside it."
     },
@@ -964,7 +968,8 @@
         "enumerating the wall solid, one tool per opening and the single boolean difference that cuts them",
         "granting each opening a HostedVoid - its aperture in wall coordinates plus the object ids it may use",
         "rejecting overlapping openings, openings past the wall ends, and openings that hit a declared exclusion",
-        "semicircular hosted apertures with explicit spring height, cut from the wall by the existing revolve, extrusion and boolean operations"
+        "semicircular hosted apertures with explicit spring height, cut from the wall by the existing revolve, extrusion and boolean operations",
+        "subtracting named rectangular cutouts across material-panel boundaries into stable remaining rectangles, including an empty result"
       ],
       "does_not_own": [
         "what fills a void - capabilities.opening_solver decides frames, panes and leaves",
@@ -977,13 +982,16 @@
         "OpeningRequest",
         "exclusion bounds",
         "base elevation",
-        "cut margin"
+        "cut margin",
+        "panel rectangle",
+        "named rectangular cutouts"
       ],
       "outputs": [
         "WallSolution",
         "GeometryOperation",
         "DatumBinding",
-        "HostedVoid"
+        "HostedVoid",
+        "remaining panel rectangles with stable partition suffixes"
       ],
       "public_api": [
         "WallElement",
@@ -992,7 +1000,8 @@
         "HostedVoid",
         "WallSolution",
         "WallSolverError",
-        "solve_wall"
+        "solve_wall",
+        "subtract_rectangular_cutouts"
       ],
       "depends_on": [
         "archflow.project.refs",
@@ -1019,7 +1028,8 @@
         "tests/test_element_producers.py",
         "archive/tests/test_wall_window_families.py",
         "archive/tests/test_type_instance_propagation.py",
-        "tests/test_wall_solver_contact.py"
+        "tests/test_wall_solver_contact.py",
+        "tests/test_prism_cutouts.py"
       ],
       "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (tests/support.py)."
     },

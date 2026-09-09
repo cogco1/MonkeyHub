@@ -444,6 +444,63 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
         self.assertEqual({o.Attributes.Name for o in restored.Objects}, {o.Attributes.Name for o in base.Objects})
         self.assertEqual(len(restored.InstanceDefinitions), 1)
 
+    def test_unassigned_replacements_inherit_exact_source_and_new_component_materials(self):
+        r = self.rhino
+        short = _compile(_rows()[:3])
+        for prior, current in ((self.prior, self.changed), (short, self.prior)):
+            with self.subTest(added=prior is short):
+                base = self.native_model(prior)
+                native = base.Materials[0]
+                native.SetUserString("archflow:material", "source-glass")
+                native.Transparency = 0.65
+                native.ToPhysicallyBased()
+                native.PhysicallyBased.Opacity = 0.35
+                native.PhysicallyBased.Roughness = 0.27
+                native.SetBitmapTexture("source-texture.png")
+                donor = self.native_model(current, replacement=True)
+                for layer in donor.Layers:
+                    layer.RenderMaterialIndex = -1
+                for item in (*base.Objects, *donor.Objects):
+                    item.Attributes.SetUserString("archflow:component", "building")
+                for item in donor.Objects:
+                    item.Attributes.MaterialIndex = -1
+                    item.Attributes.MaterialSource = r.ObjectMaterialSource.MaterialFromLayer
+                before = r.File3dm.FromByteArray(self.encoded(base))
+                output = patch_composed_three_dm(self.encoded(base), prior_program=prior, program=current, replacement_3dm=self.encoded(donor))
+                after = r.File3dm.FromByteArray(output)
+                self.assertEqual(len(after.Materials), len(before.Materials))
+                for saved, original in zip(after.Materials, before.Materials):
+                    self.assertEqual((saved.Id, saved.Name, saved.DiffuseColor, saved.Transparency, saved.GetUserStrings()),
+                                     (original.Id, original.Name, original.DiffuseColor, original.Transparency, original.GetUserStrings()))
+                    self.assertEqual(saved.PhysicallyBased.BaseColor, original.PhysicallyBased.BaseColor)
+                    self.assertEqual(saved.PhysicallyBased.Roughness, original.PhysicallyBased.Roughness)
+                replaced = set(_physical_ids(current.proposal)) - set(select_patch_operations(current, prior).kept_object_ids)
+                for item in after.Objects:
+                    if item.Attributes.Name in replaced:
+                        self.assertEqual(item.Attributes.MaterialSource, r.ObjectMaterialSource.MaterialFromObject)
+                        self.assertEqual(item.Attributes.MaterialIndex, 0)
+                        self.assertEqual(item.Attributes.GetUserString("archflow:material"), "source-glass")
+                self.assertAlmostEqual(after.Materials[0].Transparency, 0.65)
+                self.assertAlmostEqual(after.Materials[0].PhysicallyBased.Opacity, 0.35)
+                self.assertEqual(after.Materials[0].GetBitmapTexture().FileName, "source-texture.png")
+
+    def test_new_object_does_not_guess_between_component_materials(self):
+        r = self.rhino
+        short = _compile(_rows()[:3])
+        base = self.native_model(short)
+        second = base.Materials.Add(r.Material())
+        next(iter(base.Objects)).Attributes.MaterialIndex = second
+        donor = self.native_model(self.prior)
+        for item in (*base.Objects, *donor.Objects):
+            item.Attributes.SetUserString("archflow:component", "building")
+        for item in donor.Objects:
+            item.Attributes.MaterialSource = r.ObjectMaterialSource.MaterialFromLayer
+            item.Attributes.MaterialIndex = -1
+        after = r.File3dm.FromByteArray(patch_composed_three_dm(self.encoded(base), prior_program=short, program=self.prior, replacement_3dm=self.encoded(donor)))
+        added = next(item for item in after.Objects if item.Attributes.Name == "obj-pediment-west")
+        self.assertEqual(added.Attributes.MaterialIndex, -1)
+        self.assertEqual(len(after.Materials), 2)
+
     def test_unchanged_program_returns_original_bytes(self):
         base = self.native_model(self.prior, feet=True)
         self.add_imported_equipment(base)

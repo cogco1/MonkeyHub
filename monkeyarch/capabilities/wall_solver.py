@@ -19,6 +19,7 @@ is the exterior face; thickness grows toward ``normal = (dz, -dx)``.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -37,6 +38,7 @@ from archflow.contracts.fields import (
 )
 
 Bounds = tuple[tuple[float, float, float], tuple[float, float, float]]
+Rectangle = tuple[float, float, float, float]
 _M = LengthUnit.METER
 
 
@@ -60,6 +62,64 @@ def _positive(value: object, field: str) -> float:
         return positive(value, field)
     except ValueError as exc:
         raise WallSolverError(str(exc)) from exc
+
+
+def subtract_rectangular_cutouts(
+    rectangle: Rectangle, cutouts: Sequence[Mapping[str, object]],
+) -> tuple[tuple[str, Rectangle], ...]:
+    """Remaining panel rectangles as ``(suffix, (span0, span1, bottom, top))``.
+
+    Cutouts may cross any panel edge or remove it completely. Coordinates
+    use the same nine-decimal precision as emitted geometry. Cutout ids,
+    followed by left/right/below/above, name the partition path; an untouched
+    panel keeps the empty suffix. Sorting by id makes declaration order inert.
+    """
+
+    def bounds(values, label: str) -> Rectangle:
+        if not isinstance(values, (list, tuple)) or len(values) != 4:
+            raise WallSolverError(f"{label} needs span0, span1, bottom and top")
+        result = tuple(round(_finite(value, label), 9) for value in values)
+        if result[0] >= result[1] or result[2] >= result[3]:
+            raise WallSolverError(f"{label} must have positive width and height")
+        return result
+
+    panel = bounds(rectangle, "panel rectangle")
+    if not isinstance(cutouts, (list, tuple)):
+        raise WallSolverError("rectangular_cutouts must be a list of rectangles")
+    declared = {}
+    for cutout in cutouts:
+        fields = {"cutout_id", "span0", "span1", "bottom", "top"}
+        if not isinstance(cutout, Mapping) or set(cutout) != fields:
+            raise WallSolverError("each rectangular cutout needs cutout_id, span0, span1, bottom and top")
+        cutout_id = cutout["cutout_id"]
+        try:
+            require_identifier(cutout_id, "cutout_id")
+        except ValueError as exc:
+            raise WallSolverError(str(exc)) from exc
+        if cutout_id in declared:
+            raise WallSolverError(f"duplicate cutout_id {cutout_id!r}")
+        declared[cutout_id] = bounds(
+            tuple(cutout[key] for key in ("span0", "span1", "bottom", "top")),
+            f"cutout {cutout_id}",
+        )
+    pieces = (("", panel),)
+    for cutout_id, (a, b, c, d) in sorted(declared.items()):
+        remaining = []
+        for suffix, (left, right, bottom, top) in pieces:
+            il, ir, ib, it = max(left, a), min(right, b), max(bottom, c), min(top, d)
+            if il >= ir or ib >= it:
+                remaining.append((suffix, (left, right, bottom, top)))
+                continue
+            for side, piece in (
+                ("left", (left, il, bottom, top)),
+                ("right", (ir, right, bottom, top)),
+                ("below", (il, ir, bottom, ib)),
+                ("above", (il, ir, it, top)),
+            ):
+                if piece[0] < piece[1] and piece[2] < piece[3]:
+                    remaining.append((f"{suffix}-cut-{cutout_id}-{side}", piece))
+        pieces = tuple(remaining)
+    return pieces
 
 
 def _plan(value: object, field: str) -> tuple[float, float]:
