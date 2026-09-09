@@ -339,18 +339,31 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
 const modelSourceKey = (source: ModelSourceDto) => JSON.stringify([source.runId, source.stateDigest, source.assetSha256]);
 const sameModelSource = (left: ModelSourceDto | null, right: ModelSourceDto | null) => left !== null && right !== null
   && left.runId === right.runId && left.stateDigest === right.stateDigest && left.assetSha256 === right.assetSha256;
-type ReferencePage = Pick<DocumentAnnotationRefDto, "runId" | "assetSha256" | "pageIndex"> & { note: string; includeAnnotations: boolean };
-const pageKey = (page: Pick<DocumentAnnotationRefDto, "runId" | "assetSha256" | "pageIndex">) =>
-  JSON.stringify([page.runId, page.assetSha256, page.pageIndex]);
+type ReferencePage = Pick<DocumentAnnotationRefDto, "runId" | "assetSha256" | "pageIndex" | "drawingRevisionRef"> & { note: string; includeAnnotations: boolean };
+const pageKey = (page: Pick<DocumentAnnotationRefDto, "runId" | "assetSha256" | "pageIndex" | "drawingRevisionRef">) =>
+  JSON.stringify([page.runId, page.assetSha256, page.pageIndex, page.drawingRevisionRef ?? null]);
+
+export interface DocumentViewContext {
+  open: boolean;
+  mounted: boolean;
+  runId: string | null;
+  sourceSha: string | null;
+  revisionRef: string | null;
+  pageIndex: number;
+}
 
 export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, modelSources, editingModelSource,
-  onContinueModelSource, documentVisualInputAvailable, initialSourceSha = null, initialPageIndex = 0 }: {
+  onContinueModelSource, documentVisualInputAvailable, initialSourceSha = null, initialPageIndex = 0, onBeforeLeave,
+  initialRevisionRef = null, sourceStageRef }: {
   projectId: string; runId: string; busy: boolean;
   documentVisualInputAvailable: boolean;
   modelSources: readonly { label: string; modelSource: ModelSourceDto }[];
   editingModelSource: ModelSourceDto | null;
   onContinueModelSource(source: ModelSourceDto): Promise<void>;
   initialSourceSha?: string | null; initialPageIndex?: number;
+  initialRevisionRef?: string | null;
+  sourceStageRef?: string | null;
+  onBeforeLeave?(save: (() => Promise<void>) | null): void;
   controller: ReturnType<typeof createDocumentAnnotationsController>;
   onSubmit(utterance: string, refs: readonly DocumentAnnotationRefDto[], modelSource: ModelSourceDto, visuals: DocumentVisualInputDto[]): Promise<void>;
 }) {
@@ -359,6 +372,9 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   const listRequest = useRef(0);
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]);
   const [selectedSha, setSelectedSha] = useState<string | null>(initialSourceSha);
+  const [selectedRevision, setSelectedRevision] = useState<string | null>(initialRevisionRef);
+  const selectedDocumentRef = useRef({ assetSha256: selectedSha, revisionRef: selectedRevision });
+  selectedDocumentRef.current = { assetSha256: selectedSha, revisionRef: selectedRevision };
   const [pageIndex, setPageIndex] = useState(initialPageIndex);
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
@@ -373,11 +389,11 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   const [feedback, setFeedback] = useState("");
   const [references, setReferences] = useState<ReferencePage[]>([]);
   const documentRun = review?.ref.runId ?? runId;
-  const document = documents.find((item) => item.assetSha256 === selectedSha) ?? null;
+  const document = documents.find((item) => item.assetSha256 === selectedSha && (selectedRevision === null || item.revisionRef === selectedRevision)) ?? null;
   const page = document?.pages.find((item) => item.pageIndex === pageIndex) ?? null;
   const documentModelSource = document?.modelSource ?? null;
   const modelMatches = sameModelSource(documentModelSource, editingModelSource);
-  const submitScopeKey = JSON.stringify([projectId, documentRun, selectedSha, pageIndex, review?.ref.revisionSha256,
+  const submitScopeKey = JSON.stringify([projectId, documentRun, selectedSha, selectedRevision, pageIndex, review?.ref.revisionSha256,
     documentModelSource && modelSourceKey(documentModelSource), editingModelSource && modelSourceKey(editingModelSource)]);
   const submitScope = useRef({ key: submitScopeKey });
   if (submitScope.current.key !== submitScopeKey) submitScope.current = { key: submitScopeKey };
@@ -385,39 +401,60 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { setReferences([]); }, [projectId, documentRun]);
   useEffect(() => {
-    setReferences((current) => current.filter((item) => item.assetSha256 !== selectedSha || item.pageIndex !== pageIndex));
-  }, [selectedSha, pageIndex]);
-  const referenceChoices = documents.flatMap((source) => source.pages
-    .filter((item) => source.assetSha256 !== selectedSha || item.pageIndex !== pageIndex)
+    setReferences((current) => current.filter((item) => item.assetSha256 !== selectedSha || item.pageIndex !== pageIndex ||
+      (item.drawingRevisionRef ?? null) !== selectedRevision));
+  }, [selectedSha, selectedRevision, pageIndex]);
+  const referenceChoices = [...new Map(documents.flatMap((source) => source.pages
+    .filter((item) => source.assetSha256 !== selectedSha || item.pageIndex !== pageIndex || (source.revisionRef ?? null) !== selectedRevision)
     .map((item) => ({ runId: source.runId, assetSha256: source.assetSha256, pageIndex: item.pageIndex,
-      label: t("document.referencePage", { file: source.fileName, page: item.pageIndex + 1 }) })));
+      ...(source.revisionRef ? { drawingRevisionRef: source.revisionRef } : {}),
+      label: t("document.referencePage", { file: source.fileName, page: item.pageIndex + 1 }) +
+        (source.revisionRef ? ` · ${source.generatedAt ?? source.revisionRef.split("/").at(-1)?.slice(0, 8)}` : "") })))
+    .map((choice) => [pageKey(choice), choice] as const)).values()];
   const modelLabel = documentModelSource === null ? null
     : modelSources.find((item) => sameModelSource(item.modelSource, documentModelSource))?.label ?? documentModelSource.runId;
   const missingPage = !loading && selectedSha !== null && !page;
   const draft = useDocumentAnnotations({ projectId, runId: documentRun, assetSha256: page ? selectedSha : null, pageIndex,
-    revisionSha256: review?.ref.revisionSha256 ?? null }, controller);
+    revisionSha256: review?.ref.revisionSha256 ?? null, drawingRevisionRef: review ? review.ref.drawingRevisionRef ?? null : selectedRevision }, controller);
+  useEffect(() => {
+    onBeforeLeave?.(async () => {
+      if (draft.ready && !draft.readOnly && (draft.dirty || draft.saving)) await draft.save();
+    });
+    return () => onBeforeLeave?.(null);
+  }, [draft.ready, draft.readOnly, draft.dirty, draft.saving, draft.save, onBeforeLeave]);
   useEffect(() => {
     let stopped = false;
     const request = ++listRequest.current;
     setLoading(true); setError(null);
     void studio.documents(documentRun).then((result) => {
       if (stopped || request !== listRequest.current) return;
-      setDocuments(result.documents);
-      setSelectedSha((current) => current !== null && (current === initialSourceSha || result.documents.some((item) => item.assetSha256 === current))
-        ? current : result.documents[0]?.assetSha256 ?? null);
+      const available = result.documents;
+      const linked = available.filter((item) => sameModelSource(item.modelSource ?? null, editingModelSource));
+      const generated = linked.filter((item) => item.revisionRef && item.generatedAt && Number.isFinite(Date.parse(item.generatedAt)));
+      const latestTime = Math.max(...generated.map((item) => Date.parse(item.generatedAt!)));
+      const newest = generated.filter((item) => Date.parse(item.generatedAt!) === latestTime);
+      const preferred = newest.length === 1 ? newest[0] : linked.length === 1 ? linked[0] : null;
+      const selected = selectedDocumentRef.current;
+      const keepSelection = selected.assetSha256 !== null && (selected.assetSha256 === initialSourceSha || available.some((item) =>
+        item.assetSha256 === selected.assetSha256 && (selected.revisionRef === null || item.revisionRef === selected.revisionRef)));
+      setDocuments(available);
+      if (!keepSelection) {
+        setSelectedSha(preferred?.assetSha256 ?? null);
+        setSelectedRevision(preferred?.revisionRef ?? null);
+      }
     }).catch((cause: unknown) => { if (!stopped && request === listRequest.current) setError(asStudioApiError(cause)); })
       .finally(() => { if (!stopped && request === listRequest.current) setLoading(false); });
     return () => { stopped = true; };
-  }, [documentRun, initialSourceSha]);
+  }, [documentRun, initialSourceSha, sourceStageRef, editingModelSource]);
   const fileSha = document?.assetSha256 ?? null;
   const fileName = document?.fileName ?? null;
   useEffect(() => {
     let stopped = false;
     setFile(null);
-    if (fileSha && fileName) void studio.documentFile(documentRun, fileSha, fileName)
+    if (fileSha && fileName) void studio.documentFile(documentRun, fileSha, fileName, selectedRevision)
       .then((value) => { if (!stopped) setFile(value); }).catch((cause: unknown) => { if (!stopped) setError(asStudioApiError(cause)); });
     return () => { stopped = true; };
-  }, [fileSha, fileName, documentRun]);
+  }, [fileSha, fileName, documentRun, selectedRevision]);
   useEffect(() => { setModelChoice(""); }, [selectedSha, documentRun]);
   const refreshComments = useCallback(async () => {
     const result = await studio.documentComments(runId); setSubmitted(result.comments); return result.comments;
@@ -432,7 +469,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       // source with its older contents, even if that response arrives last.
       const request = ++listRequest.current; setLoading(false); setError(null);
       setReview(null); setDocuments((current) => [...current.filter((item) => item.assetSha256 !== result.assetSha256), result]);
-      setSelectedSha(result.assetSha256); setPageIndex(0);
+      setSelectedSha(result.assetSha256); setSelectedRevision(result.revisionRef ?? null); setPageIndex(0);
       // Refresh after the upload so an invalidated initial request cannot also
       // hide previously uploaded sources from the selector.
       const refreshed = await studio.documents(runId);
@@ -448,11 +485,18 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     if (!document || documentModelSource || !chosen || bindingModel || uploading || busy || review !== null) return;
     setBindingModel(true); setError(null); setFeedback("");
     try {
+      if (draft.ready && !draft.readOnly && (draft.dirty || draft.saving)) await draft.save();
       const bound = await studio.bindDocumentModelSource(projectId, documentRun, document.assetSha256, chosen.modelSource);
       setDocuments((current) => current.map((item) => item.assetSha256 === bound.assetSha256 ? bound : item));
       setModelChoice("");
     } catch (cause) { setError(asStudioApiError(cause)); }
     finally { setBindingModel(false); }
+  };
+  const switchDocumentPage = async (change: () => void) => {
+    try {
+      if (draft.ready && !draft.readOnly && (draft.dirty || draft.saving)) await draft.save();
+      change();
+    } catch (cause) { setError(asStudioApiError(cause)); }
   };
   const continueModel = async () => {
     if (!documentModelSource || continuingModel || busy || review !== null) return;
@@ -474,32 +518,36 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       const sourceFiles = new Map<string, Promise<File>>();
       const prepare = async (source: SourceDocumentDto, selectedPage: DocumentPageDto, role: "edit" | "reference",
         revision: string | null, referenceNote: string | null, includeAnnotations = true): Promise<DocumentVisualInputDto> => {
-        const sourceKey = JSON.stringify([source.runId, source.assetSha256]);
+        const sourceKey = JSON.stringify([source.runId, source.assetSha256, source.revisionRef ?? null]);
         let sourceFile = sourceFiles.get(sourceKey);
         if (!sourceFile) {
-          sourceFile = studio.documentFile(source.runId, source.assetSha256, source.fileName);
+          sourceFile = studio.documentFile(source.runId, source.assetSha256, source.fileName, source.revisionRef);
           sourceFiles.set(sourceKey, sourceFile);
         }
         const [saved, bytes] = await Promise.all([
-          includeAnnotations ? studio.documentAnnotations(source.runId, source.assetSha256, selectedPage.pageIndex, revision) : null, sourceFile,
+          includeAnnotations ? studio.documentAnnotations(source.runId, source.assetSha256, selectedPage.pageIndex, revision, source.revisionRef) : null, sourceFile,
         ]);
         if (!isCurrent()) throw new Error(t("document.visualSourceChanged"));
         if (saved && (saved.projectId !== projectId || saved.runId !== source.runId || saved.assetSha256 !== source.assetSha256 ||
           saved.pageIndex !== selectedPage.pageIndex || (revision !== null && saved.revisionSha256 !== revision) ||
+          (saved.drawingRevisionRef ?? null) !== (source.revisionRef ?? null) ||
           (saved.annotations.length > 0 && saved.revisionSha256 === null))) throw new Error(t("document.visualSourceChanged"));
         const image = await renderDocumentVisual(bytes, selectedPage, saved?.annotations ?? []);
         if (!isCurrent()) throw new Error(t("document.visualSourceChanged"));
         return { role, runId: source.runId, assetSha256: source.assetSha256, pageIndex: selectedPage.pageIndex,
+          ...(source.revisionRef ? { drawingRevisionRef: source.revisionRef } : {}),
           revisionSha256: saved && (role === "edit" || saved.annotations.length > 0) ? saved.revisionSha256 : null,
           pagePngBase64: image.pagePngBase64, annotatedPngBase64: image.annotatedPngBase64, referenceNote };
       };
-      if (ref.runId !== document.runId || ref.assetSha256 !== document.assetSha256 || ref.pageIndex !== page.pageIndex) {
+      if (ref.runId !== document.runId || ref.assetSha256 !== document.assetSha256 || ref.pageIndex !== page.pageIndex ||
+          (ref.drawingRevisionRef ?? null) !== (document.revisionRef ?? null)) {
         throw new Error(t("document.visualSourceChanged"));
       }
       const visuals = [await prepare(document, page, "edit", ref.revisionSha256, null)];
       for (const reference of references) {
         if (!isCurrent()) return;
-        const source = documents.find((item) => item.runId === reference.runId && item.assetSha256 === reference.assetSha256);
+        const source = documents.find((item) => item.runId === reference.runId && item.assetSha256 === reference.assetSha256 &&
+          (item.revisionRef ?? null) === (reference.drawingRevisionRef ?? null));
         const referencePage = source?.pages.find((item) => item.pageIndex === reference.pageIndex);
         if (!source || !referencePage) throw new Error(t("document.referenceUnavailable"));
         visuals.push(await prepare(source, referencePage, "reference", null, reference.note.trim() || null, reference.includeAnnotations));
@@ -513,7 +561,8 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       const comments = await refreshComments();
       if (!isCurrent()) return;
       const retained = comments.some((comment) => comment.utterance === utterance && comment.documentAnnotations.some((item) =>
-        item.runId === ref.runId && item.assetSha256 === ref.assetSha256 && item.pageIndex === ref.pageIndex && item.revisionSha256 === ref.revisionSha256));
+        item.runId === ref.runId && item.assetSha256 === ref.assetSha256 && item.pageIndex === ref.pageIndex && item.revisionSha256 === ref.revisionSha256 &&
+        (item.drawingRevisionRef ?? null) === (ref.drawingRevisionRef ?? null)));
       setFeedback(t(retained ? "document.submitted" : "document.submitFailed"));
     } catch (cause) { if (isCurrent()) setError(asStudioApiError(cause)); }
     finally { if (mounted.current) setSending(false); }
@@ -530,18 +579,20 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       <button type="button" className="btn" disabled={uploading || sending || review !== null} onClick={() => input.current?.click()}>{t(uploading ? "document.uploading" : "document.open")}</button>
       <input ref={input} className="visually-hidden" type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg"
         aria-label={t("document.open")} onChange={(event) => { const selected = event.target.files?.[0]; event.target.value = ""; if (selected) void upload(selected); }} />
-      {documents.length > 0 && <select aria-label={t("document.source")} value={selectedSha ?? ""} disabled={sending || review !== null}
-        onChange={(event) => { setSelectedSha(event.target.value); setPageIndex(0); setFeedback(""); }}>
+      {documents.length > 0 && <select aria-label={t("document.source")} value={selectedRevision ?? selectedSha ?? ""} disabled={sending || review !== null}
+        onChange={(event) => { const selected = documents.find((item) => (item.revisionRef ?? item.assetSha256) === event.target.value);
+          if (selected) void switchDocumentPage(() => { setSelectedSha(selected.assetSha256); setSelectedRevision(selected.revisionRef ?? null); setPageIndex(0); setFeedback(""); }); }}>
+        {selectedSha === null && <option value="">选择图纸</option>}
         {!document && selectedSha !== null && <option value={selectedSha} disabled>{t("document.linkUnavailable")}</option>}
-        {documents.map((item) => <option key={item.assetSha256} value={item.assetSha256}>{item.fileName}</option>)}
+        {documents.map((item) => <option key={item.revisionRef ?? item.assetSha256} value={item.revisionRef ?? item.assetSha256}>{item.fileName}{item.revisionRef ? ` · ${item.revisionRef.split("/").at(-1)?.slice(0, 8)}` : ""}</option>)}
       </select>}
       {document && <div className="document-pages">
-        <button type="button" aria-label={t("document.previousPage")} disabled={sending || pageIndex <= 0 || review !== null} onClick={() => setPageIndex((value) => value - 1)}>‹</button>
-        <label><span className="visually-hidden">{t("document.page")}</span><select aria-label={t("document.page")} value={pageIndex} disabled={sending || review !== null} onChange={(event) => setPageIndex(Number(event.target.value))}>
+        <button type="button" aria-label={t("document.previousPage")} disabled={sending || pageIndex <= 0 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value - 1)); }}>‹</button>
+        <label><span className="visually-hidden">{t("document.page")}</span><select aria-label={t("document.page")} value={pageIndex} disabled={sending || review !== null} onChange={(event) => { const next = Number(event.target.value); void switchDocumentPage(() => setPageIndex(next)); }}>
           {!page && <option value={pageIndex} disabled>{t("document.linkUnavailable")}</option>}
           {document.pages.map((item) => <option key={item.pageIndex} value={item.pageIndex}>{item.pageIndex + 1} / {document.pageCount}</option>)}
         </select></label>
-        <button type="button" aria-label={t("document.nextPage")} disabled={sending || pageIndex >= document.pageCount - 1 || review !== null} onClick={() => setPageIndex((value) => value + 1)}>›</button>
+        <button type="button" aria-label={t("document.nextPage")} disabled={sending || pageIndex >= document.pageCount - 1 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value + 1)); }}>›</button>
       </div>}
       <span className="document-save-state" role="status">{t(draft.saving ? "document.saving" : draft.dirty ? "document.unsaved" : draft.ready ? "document.saved" : "document.loading")}</span>
     </div>
@@ -596,7 +647,8 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
             return <div className="document-reference" key={pageKey(choice)}>
               <label><input type="checkbox" checked={selected !== undefined} disabled={sending || (!selected && references.length >= 3)}
                 onChange={(event) => setReferences((current) => event.target.checked
-                  ? [...current, { runId: choice.runId, assetSha256: choice.assetSha256, pageIndex: choice.pageIndex, note: "", includeAnnotations: false }]
+                  ? [...current, { runId: choice.runId, assetSha256: choice.assetSha256, pageIndex: choice.pageIndex,
+                    ...(choice.drawingRevisionRef ? { drawingRevisionRef: choice.drawingRevisionRef } : {}), note: "", includeAnnotations: false }]
                   : current.filter((item) => pageKey(item) !== pageKey(choice)))} /><span>{choice.label}</span></label>
               {selected && <><label className="document-reference__ink"><input type="checkbox" checked={selected.includeAnnotations} disabled={sending}
                 aria-label={t("document.referenceInkLabel", { page: choice.label })}
@@ -613,8 +665,8 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
         {feedback && <p role="status">{feedback}</p>}
         <details className="document-submitted"><summary>{t("document.submittedNotes", { count: submitted.length })}</summary>
           {submitted.map((comment) => <article key={comment.commentRef}><p>{comment.utterance}</p>
-            {comment.documentAnnotations.map((ref) => <button key={`${ref.runId}:${ref.assetSha256}:${ref.pageIndex}:${ref.revisionSha256}`} type="button" disabled={sending}
-              onClick={() => { setReview({ ref, text: comment.utterance }); setSelectedSha(ref.assetSha256); setPageIndex(ref.pageIndex); }}>
+            {comment.documentAnnotations.map((ref) => <button key={`${pageKey(ref)}:${ref.revisionSha256}`} type="button" disabled={sending}
+              onClick={() => { void switchDocumentPage(() => { setReview({ ref, text: comment.utterance }); setSelectedSha(ref.assetSha256); setSelectedRevision(ref.drawingRevisionRef ?? null); setPageIndex(ref.pageIndex); }); }}>
               {t("document.openSubmittedPage", { page: ref.pageIndex + 1 })}</button>)}
           </article>)}
         </details>

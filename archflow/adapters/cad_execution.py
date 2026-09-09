@@ -2659,6 +2659,7 @@ class OcctExecutionReceipt:
     readback_tolerance: float
     timings: dict[str, float]
     failures: tuple[dict[str, str], ...]
+    reused_object_ids: tuple[str, ...] = ()
 
     SCHEMA = "OcctExecutionReceipt@1"
 
@@ -2670,6 +2671,8 @@ class OcctExecutionReceipt:
         require_identifier(self.adapter_id, "adapter_id")
         if not isinstance(self.backend, dict):
             raise TypeError("backend must be dict")
+        if not isinstance(self.reused_object_ids, tuple) or set(self.reused_object_ids) - set(self.physical_object_ids):
+            raise CadExecutionError("reused objects must belong to the exported physical denominator")
         if not isinstance(self.evidence_tier, str) or not self.evidence_tier:
             raise CadExecutionError("evidence_tier must be non-empty text")
         for field in ("exact_artifact", "preview_artifact"):
@@ -2745,6 +2748,7 @@ class OcctExecutionReceipt:
                 "timings": self.timings,
                 "failures": list(self.failures),
                 "readback_verified": self.readback_verified,
+                **({"reused_object_ids": list(self.reused_object_ids)} if self.reused_object_ids else {}),
             }
         )
 
@@ -2761,6 +2765,9 @@ def execute_occt_export(
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
     layer_by_component: Mapping[str, str] | None = None,
     preview: bool = True,
+    prior_program: CompiledGeometryProgram | None = None,
+    prior_step: Path | None = None,
+    prior_step_sha256: str | None = None,
 ) -> OcctExecutionReceipt:
     """Realize the bound program in process, write STEP and a mesh preview, cold-read the STEP.
 
@@ -2777,6 +2784,10 @@ def execute_occt_export(
     actual open boundary, no volume claimed.  The preview is read back
     through ``inspect_three_dm`` and checked against the same denominator.
     No process is started.
+
+    An explicitly supplied prior program and verified STEP may contribute
+    unchanged shapes. Only changed geometry is built; the complete current
+    model is written and independently read back under the current binding.
 
     Raises ``CadCapabilityError`` (a ``CadExecutionError``) before writing
     when the program uses an operation this executor does not realize, and
@@ -2871,7 +2882,9 @@ def execute_occt_export(
     except OcctUnavailableError as exc:
         raise CadExecutionError(str(exc)) from exc
     try:
-        build = build_program_shapes(program)
+        reused_shapes = _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256)
+        build = (build_program_shapes(program, reusable_shapes=reused_shapes)
+                 if reused_shapes else build_program_shapes(program))
     except OcctCapabilityError as exc:
         raise CadCapabilityError(
             f"OCCT executor cannot realize {exc.op_id} ({exc.kind}): {exc.reason}",
@@ -3004,7 +3017,37 @@ def execute_occt_export(
         readback_tolerance=tolerance,
         timings=timings,
         failures=tuple(failures),
+        reused_object_ids=tuple(sorted(reused_shapes)),
     )
+
+
+def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256) -> dict[str, Any]:
+    """Load unchanged physical inputs from the exact source the caller chose."""
+
+    if prior_program is None and prior_step is None and prior_step_sha256 is None:
+        return {}
+    if prior_program is None or prior_step is None or prior_step_sha256 is None:
+        raise CadExecutionError("OCCT reuse requires the prior program, STEP and certified digest")
+    if program.proposal.length_unit != prior_program.proposal.length_unit:
+        return {}
+    source = Path(prior_step)
+    if source.is_symlink():
+        raise CadExecutionError("OCCT reuse source cannot be a symlink")
+    with source.open("rb") as stream:
+        if hashlib.file_digest(stream, "sha256").hexdigest() != prior_step_sha256:
+            raise CadExecutionError("OCCT reuse source differs from its certified STEP")
+    entries = read_step(source, length_unit=program.proposal.length_unit.value)
+    by_name = {entry.name: entry.shape for entry in entries}
+    if len(by_name) != len(entries) or set(by_name) != set(_physical_ids(prior_program.proposal)):
+        raise CadExecutionError("OCCT reuse source has missing or ambiguous physical objects")
+    from .cad_patch import select_patch_operations
+
+    selection = select_patch_operations(program, prior_program)
+    # The Rhino patch's kept set excludes the entire connected input closure.
+    # OCCT can keep an unchanged final shape even when a changed sibling needs
+    # their missing shared intermediate rebuilt from the program.
+    unchanged = (set(by_name) & set(_physical_ids(program.proposal))) - set(selection.changed_object_ids)
+    return {name: by_name[name] for name in unchanged}
 
 
 def _declared_deliveries(program: CompiledGeometryProgram, physical: tuple[str, ...]) -> dict[str, str]:

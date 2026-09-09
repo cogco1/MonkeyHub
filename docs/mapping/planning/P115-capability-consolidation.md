@@ -10,6 +10,8 @@
 [work registry](../../../governance/work_registry.json) 生成到 [planning INDEX](INDEX.md)。
 本轮完成的子项保留 `[x]` 和结果，不删行；整张卡结束时按仓库规则退出 live registry，记录由 Git 保留。
 
+**2026-09-09 Stage 收敛。** 用户已同意 [Stage / Branch / Candidate 方案](../../STAGE_BRANCH_CANDIDATE_PLAN.md)。本地实现已接常驻候选预览、显式 Stage 接受和历史 fork、确切模型立面、跨 run 局部复用及同 Stage 独立修改合并；相关 API／OCCT、41 个隔离浏览器场景、构建和架构检查已通过。沿现有 owner 实施，保留真实项目的显式初始接受与正式 issue 边界。此项不关闭 C08 的建筑方法闭环或其他未完成任务。
+
 ## 1. 先记住四块
 
 | 工作领域 | 回答什么问题 | 输入 → 输出 | 不负责 |
@@ -157,7 +159,7 @@
 - [x] **C02｜完成选定来源前后端贯通。** Program／options GET 接收 `run`，POST 接收 `sourceRunId`；option 选择与 worker 保留创建来源，无效来源不退回 WIP。客户端读写传递选定来源，只允许来源和绑定摘要均匹配的结果生成候选，旧响应不会覆盖新来源。OpenAPI SDK 和协议已同步；program／options 61 测、候选续改 5 测与客户端 13 项接线测试通过。现有项目的建筑效果仍由 P108／P111 试用核实，不重做本项实现。
 - [x] **C03｜已删除无消费者的编译回执自摘要。** 移除 `GeometryCompilationReceipt.receipt_digest` 及其冻结断言；保留 `to_dict()`、编译程序身份、错误、asset substitution 的真实摘要和历史 round 读取。编译器／接口 datum／语义几何 27 测通过，两文件净删 8 行。
 - [x] **C04｜已退役空转的 declared-controls 入口。** 核实无设计 successor／candidate 消费及保留记录格式后，删除 `/api/controls` 的 endpoint、store、DTO 三文件、挂载和两项专属冻结测试，并更新协议、模块索引与生成 SDK。仍供澄清解释用的 AuthoredControlDraft 保留；clarification catalog 7 测与接口生成一致性检查通过。删除源码可从 Git 恢复，无项目数据迁移。
-- [x] **C05｜已解除“运行候选＝替人接受方案”的耦合。** candidate 路径只生成预览并保存既有人工判断，不再自动 accepted／rejected。显式采纳复用现有 decision 入口，必须指定同 proposal 的成功 `candidateId`，证据读取该候选的 retained StateRecord；沿已有语义关闭同起点未决定选项，保留原文理由、旧 episode 格式和读取，不移动 HEAD／issue。episodes／candidate／proposals 95 测通过、1 项真实 Villa 环境测试跳过，包含默认来源变化后的精确采纳回归。自动视觉候选与方法循环仍见 C08。
+- [x] **C05｜已解除“运行候选＝替人接受方案”的耦合。** candidate 路径只生成预览并保存既有人工判断，不再自动 accepted／rejected。显式采纳复用现有 decision 入口，必须指定同 proposal 的成功 `candidateId`，证据读取该候选的 retained StateRecord；2026-09-09 已进一步取消自动作废同起点其他选项，保留原文理由、旧 episode 格式和读取，不移动 HEAD／issue。episodes／candidate／proposals 95 测通过、1 项真实 Villa 环境测试跳过，包含默认来源变化后的精确采纳回归。自动视觉候选与方法循环仍见 C08。
 - [ ] **C06｜合并普通意图的重复分流。** 核对 route regex、target／action／scope resolver 的真实用途，移除让非 scalar 任务提前掉进数值补问的分支。保留明确数值输入、滑杆、选中目标和 keep 条件；不是删除所有 parser。
 - [x] **C07｜已完成技术错误责任边界。** Agent 无效 scalar／字段／单位／element 下沉错误为 `502 INTENT_AGENT_FAILED`，不向人返回语法补问；Agent 可明确返回 `unsupported`，沿既有终止结果解释工具限制。确定性直输和真实设计澄清保留。相关四组 90 测通过，另补 scalar unsupported 分支回归。自动修正属于 C08，本项不冒充自修复已实现。
 - [ ] **C08｜完成一个方法＋工具＋检查的 Agent 闭环。** 先用 F03 通道任务，不建立泛化技能平台；Agent 需要能读相关资料／视图、调用现有工具、查看候选并修正。以真实通行与后续修改验收，不以 JSON 合法或测试数量验收。

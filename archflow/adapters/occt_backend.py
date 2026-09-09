@@ -272,12 +272,16 @@ class OcctProgramBuild:
     elapsed_seconds: float
 
 
-def build_program_shapes(program: CompiledGeometryProgram) -> OcctProgramBuild:
+def build_program_shapes(
+    program: CompiledGeometryProgram, *, reusable_shapes: Mapping[str, Any] | None = None,
+) -> OcctProgramBuild:
     """Interpret the program in operation order against the kernel.
 
     Fails ``OcctCapabilityError`` on the first operation outside the
     supported vocabulary and ``OcctBuildError`` when OCCT cannot produce a
-    valid shape; nothing is written by this function.
+    valid shape; nothing is written by this function. The caller supplies
+    already verified, unchanged source shapes. Their producers and unused
+    intermediate operations are not evaluated again.
     """
 
     if not isinstance(program, CompiledGeometryProgram):
@@ -286,11 +290,30 @@ def build_program_shapes(program: CompiledGeometryProgram) -> OcctProgramBuild:
     started = time.perf_counter()
     proposal = program.proposal
     operations = {operation.op_id: operation for operation in proposal.operations}
-    shapes: dict[str, Any] = {}
+    shapes: dict[str, Any] = dict(reusable_shapes or {})
+    producers = {output: operation.op_id for operation in operations.values() for output in operation.output_object_ids}
+    if set(shapes) - set(producers):
+        raise OcctBackendError("reusable shapes name objects outside the program")
+    needed: set[str] = set()
+    frontier = list(_physical_ids(proposal))
+    while frontier:
+        object_id = frontier.pop()
+        if object_id in shapes:
+            continue
+        op_id = producers.get(object_id)
+        if op_id is None or op_id in needed:
+            continue
+        needed.add(op_id)
+        frontier.extend(operations[op_id].input_object_ids)
+    if not reusable_shapes:
+        needed = set(operations)
     built: dict[str, OcctObjectBuild] = {}
     for op_id in program.operation_order:
         operation = operations[op_id]
         kind = operation.kind.value
+        reused = len(operation.output_object_ids) == 1 and operation.output_object_ids[0] in shapes and op_id not in needed
+        if op_id not in needed and not reused:
+            continue
         if kind not in SUPPORTED_OPERATION_KINDS:
             raise OcctCapabilityError(
                 op_id,
@@ -304,7 +327,7 @@ def build_program_shapes(program: CompiledGeometryProgram) -> OcctProgramBuild:
         params = _params(operation)
         output = operation.output_object_ids[0]
         try:
-            shape = _build_operation(occ, kind, operation, params, shapes)
+            shape = shapes[output] if reused else _build_operation(occ, kind, operation, params, shapes)
         except OcctBackendError:
             raise
         except Exception as exc:  # OCCT failures surface as Standard_Failure

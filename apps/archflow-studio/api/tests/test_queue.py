@@ -1,8 +1,8 @@
-"""The dependency-aware queue: what runs beside what, what waits, and why.
+"""The candidate queue: isolated computations, worker capacity and resource lanes.
 
 These tests drive the registry with work that blocks on events, so the order
 and the overlap of runs are observed, not assumed. No project is involved:
-the queue's rule is about closures and lanes, and that is all it is given.
+the queue admits isolated candidates by worker capacity and external resource lanes.
 """
 
 from __future__ import annotations
@@ -65,12 +65,13 @@ class QueueTestCase(unittest.TestCase):
         self.registry = JobRegistry(self.events, max_workers=2)
         self.addCleanup(self.registry.shutdown)
 
-    def submit(self, candidate: str, gate: Gate, closure=(), exclusive=False):
+    def submit(self, candidate: str, gate: Gate, write_refs=(), exclusive=False, read_refs=()):
         return self.registry.submit(
             candidate_id=candidate,
             proposal_id=f"p-{candidate}",
             work=gate,
-            closure=closure,
+            read_refs=read_refs,
+            write_refs=write_refs,
             exclusive=exclusive,
         )
 
@@ -91,7 +92,7 @@ class ConcurrentSubmissionTests(QueueTestCase):
 
         def submit_a():
             try:
-                self.submit("a", a, closure={"entity:a"})
+                self.submit("a", a, write_refs={"entity:a"})
             except Exception as exc:
                 errors.append(exc)
 
@@ -100,7 +101,7 @@ class ConcurrentSubmissionTests(QueueTestCase):
             thread.start()
             try:
                 self.assertTrue(paused.wait(2))
-                self.submit("b", b, closure={"entity:b"})
+                self.submit("b", b, write_refs={"entity:b"})
                 self.assertTrue(a.started.wait(2))
                 self.assertTrue(b.started.wait(2))
             finally:
@@ -137,7 +138,7 @@ class ConcurrentSubmissionTests(QueueTestCase):
             try:
                 if candidate == "b":
                     second_submitting.set()
-                self.submit(candidate, gate, closure={"entity:shared"})
+                self.submit(candidate, gate, write_refs={"entity:shared"}, exclusive=True)
             except Exception as exc:
                 errors.append(exc)
 
@@ -176,8 +177,8 @@ class ConcurrentSubmissionTests(QueueTestCase):
 class DisjointCandidatesTests(QueueTestCase):
     def test_two_disjoint_candidates_run_at_the_same_time(self) -> None:
         a, b = Gate(), Gate()
-        job_a = self.submit("a", a, closure={"entity:portico-base"})
-        job_b = self.submit("b", b, closure={"entity:door-leaf"})
+        job_a = self.submit("a", a, write_refs={"entity:portico-base"})
+        job_b = self.submit("b", b, write_refs={"entity:door-leaf"})
         self.assertTrue(a.started.wait(2))
         self.assertTrue(b.started.wait(2))
         self.assertEqual(self.registry.get(job_a.job_id).status, RUNNING)
@@ -191,7 +192,7 @@ class DisjointCandidatesTests(QueueTestCase):
     def test_a_third_disjoint_candidate_waits_for_a_worker_and_says_so(self) -> None:
         gates = [Gate() for _ in range(3)]
         jobs = [
-            self.submit(f"c{i}", gate, closure={f"entity:e{i}"})
+            self.submit(f"c{i}", gate, write_refs={f"entity:e{i}"})
             for i, gate in enumerate(gates)
         ]
         self.assertTrue(gates[0].started.wait(2))
@@ -208,65 +209,56 @@ class DisjointCandidatesTests(QueueTestCase):
         self.assertTrue(wait_until(lambda: len(self.events.of("candidate.succeeded")) == 3))
 
 
-class ConflictingCandidatesTests(QueueTestCase):
-    def test_a_candidate_that_shares_a_ref_waits_and_names_the_one_ahead(self) -> None:
-        a, b = Gate(), Gate()
-        job_a = self.submit("a", a, closure={"entity:portico-base", "component:portico"})
-        job_b = self.submit("b", b, closure={"entity:portico-cornice", "component:portico"})
-        self.assertTrue(a.started.wait(2))
-        self.assertFalse(b.started.wait(0.2))
-        waiting = self.registry.get(job_b.job_id)
-        self.assertEqual(waiting.status, QUEUED)
-        self.assertEqual(waiting.waiting_for, "a")
-        self.assertEqual(waiting.waiting_reason, "shares component:portico")
-        self.assertEqual(
-            [event["candidate_id"] for event in self.events.of("candidate.waiting")], ["b"]
-        )
-        a.release.set()
-        self.assertTrue(b.started.wait(2))
-        running = self.registry.get(job_b.job_id)
-        self.assertEqual(running.status, RUNNING)
-        self.assertIsNone(running.waiting_for)
-        b.release.set()
-        self.assertTrue(wait_until(lambda: self.registry.get(job_a.job_id).status == SUCCEEDED))
-        self.assertTrue(wait_until(lambda: self.registry.get(job_b.job_id).status == SUCCEEDED))
-
-    def test_conflicting_candidates_keep_their_order_behind_each_other(self) -> None:
-        gates = [Gate() for _ in range(3)]
-        jobs = [
-            self.submit(f"c{i}", gate, closure={"entity:portico-base"})
-            for i, gate in enumerate(gates)
-        ]
-        self.assertTrue(gates[0].started.wait(2))
-        self.assertEqual(self.registry.get(jobs[1].job_id).waiting_for, "c0")
-        # The third waits for the second, not the first: the one directly ahead.
-        self.assertEqual(self.registry.get(jobs[2].job_id).waiting_for, "c1")
-        gates[0].release.set()
-        self.assertTrue(gates[1].started.wait(2))
-        self.assertFalse(gates[2].started.wait(0.2))
-        gates[1].release.set()
-        self.assertTrue(gates[2].started.wait(2))
-        gates[2].release.set()
-        self.assertTrue(wait_until(lambda: len(self.events.of("candidate.succeeded")) == 3))
-
-    def test_a_disjoint_candidate_overtakes_a_waiting_conflicting_one(self) -> None:
-        a, b, c = Gate(), Gate(), Gate()
-        self.submit("a", a, closure={"entity:x"})
-        job_b = self.submit("b", b, closure={"entity:x"})
-        self.submit("c", c, closure={"entity:y"})
-        self.assertTrue(a.started.wait(2))
-        self.assertTrue(c.started.wait(2))
-        self.assertEqual(self.registry.get(job_b.job_id).waiting_for, "a")
-        for gate in (a, b, c):
-            gate.release.set()
-        self.assertTrue(wait_until(lambda: len(self.events.of("candidate.succeeded")) == 3))
+class OverlappingCandidatesTests(QueueTestCase):
+    def test_shared_inputs_and_overlapping_edits_compute_in_separate_candidates(self) -> None:
+        for reads_a, writes_a, reads_b, writes_b in (
+            ({"entity:frozen-building"}, {"entity:cabinet-a"},
+             {"entity:frozen-building"}, {"entity:cabinet-b"}),
+            (set(), {"entity:cabinet"}, set(), {"entity:cabinet"}),
+            ({"entity:cabinet"}, {"entity:wall"}, set(), {"entity:cabinet"}),
+        ):
+            with self.subTest(reads_a=reads_a, writes_a=writes_a, reads_b=reads_b, writes_b=writes_b):
+                a, b = Gate(), Gate()
+                suffix = len(self.events.of("candidate.succeeded"))
+                job_a = self.submit(f"a-{suffix}", a, read_refs=reads_a, write_refs=writes_a)
+                job_b = self.submit(f"b-{suffix}", b, read_refs=reads_b, write_refs=writes_b)
+                try:
+                    self.assertTrue(a.started.wait(2))
+                    self.assertTrue(b.started.wait(2))
+                    self.assertIsNone(self.registry.get(job_a.job_id).waiting_reason)
+                    self.assertIsNone(self.registry.get(job_b.job_id).waiting_reason)
+                    self.assertEqual(self.registry.get(job_a.job_id).read_refs, frozenset(reads_a))
+                    self.assertEqual(self.registry.get(job_b.job_id).write_refs, frozenset(writes_b))
+                finally:
+                    a.release.set()
+                    b.release.set()
+                self.assertTrue(wait_until(lambda: self.registry.get(job_a.job_id).status == SUCCEEDED))
+                self.assertTrue(wait_until(lambda: self.registry.get(job_b.job_id).status == SUCCEEDED))
 
 
 class ExclusiveLaneTests(QueueTestCase):
+    def test_exclusive_candidates_keep_resource_order_while_parallel_work_can_overtake(self) -> None:
+        gates = [Gate() for _ in range(4)]
+        jobs = [self.submit(f"c{i}", gate, exclusive=i < 3) for i, gate in enumerate(gates)]
+        try:
+            self.assertTrue(gates[0].started.wait(2))
+            self.assertTrue(gates[3].started.wait(2))
+            self.assertEqual(self.registry.get(jobs[1].job_id).waiting_for, "c0")
+            self.assertEqual(self.registry.get(jobs[2].job_id).waiting_for, "c1")
+            gates[0].release.set()
+            self.assertTrue(gates[1].started.wait(2))
+            self.assertFalse(gates[2].started.is_set())
+            gates[1].release.set()
+            self.assertTrue(gates[2].started.wait(2))
+        finally:
+            for gate in gates:
+                gate.release.set()
+        self.assertTrue(wait_until(lambda: len(self.events.of("candidate.succeeded")) == 4))
+
     def test_two_exporting_candidates_never_run_together_whatever_they_touch(self) -> None:
         a, b = Gate(), Gate()
-        self.submit("a", a, closure={"entity:x"}, exclusive=True)
-        job_b = self.submit("b", b, closure={"entity:y"}, exclusive=True)
+        self.submit("a", a, write_refs={"entity:x"}, exclusive=True)
+        job_b = self.submit("b", b, write_refs={"entity:y"}, exclusive=True)
         self.assertTrue(a.started.wait(2))
         self.assertFalse(b.started.wait(0.2))
         waiting = self.registry.get(job_b.job_id)
@@ -280,8 +272,8 @@ class ExclusiveLaneTests(QueueTestCase):
 
     def test_a_kernel_only_candidate_runs_beside_an_exporting_one(self) -> None:
         a, b = Gate(), Gate()
-        self.submit("a", a, closure={"entity:x"}, exclusive=True)
-        self.submit("b", b, closure={"entity:y"}, exclusive=False)
+        self.submit("a", a, write_refs={"entity:x"}, exclusive=True)
+        self.submit("b", b, write_refs={"entity:y"}, exclusive=False)
         self.assertTrue(a.started.wait(2))
         self.assertTrue(b.started.wait(2))
         a.release.set()
@@ -295,8 +287,8 @@ class FailureReleasesTheQueueTests(QueueTestCase):
             raise RuntimeError("the seat pack is missing")
 
         b = Gate()
-        job_a = self.submit("a", explode, closure={"entity:x"})
-        job_b = self.submit("b", b, closure={"entity:x"})
+        job_a = self.submit("a", explode, write_refs={"entity:x"}, exclusive=True)
+        job_b = self.submit("b", b, write_refs={"entity:x"}, exclusive=True)
         self.assertTrue(wait_until(lambda: self.registry.get(job_a.job_id).status == "failed"))
         self.assertEqual(self.registry.get(job_a.job_id).error, "the seat pack is missing")
         self.assertTrue(b.started.wait(2))
@@ -307,8 +299,8 @@ class FailureReleasesTheQueueTests(QueueTestCase):
         registry = JobRegistry(self.events, max_workers=1)
         self.addCleanup(registry.shutdown)
         a, b = Gate(), Gate()
-        registry.submit(candidate_id="a", proposal_id="p", work=a, closure={"entity:x"})
-        job_b = registry.submit(candidate_id="b", proposal_id="q", work=b, closure={"entity:y"})
+        registry.submit(candidate_id="a", proposal_id="p", work=a, write_refs={"entity:x"})
+        job_b = registry.submit(candidate_id="b", proposal_id="q", work=b, write_refs={"entity:y"})
         self.assertTrue(a.started.wait(2))
         self.assertFalse(b.started.wait(0.2))
         self.assertEqual(registry.get(job_b.job_id).waiting_reason, "every worker is busy (1 of 1)")

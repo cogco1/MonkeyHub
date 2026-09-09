@@ -73,8 +73,8 @@ from monkeyarch.capabilities.geometry_proposal import (
     produce_geometry_program_proposal,
     proposal_authoring_output,
 )
-from monkeyarch.capabilities.element_producers import ElementProducerError, ProductionContext, element_rows_of, produce_rows
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.capabilities.element_producers import ElementProducerError, ElementRow, ProducedElement, ProducedRelation, ProductionContext, element_rows_of, produce_rows
+from monkeyarch.capabilities.reference_resolver import HostLine, ReferenceContext
 from monkeyarch.capabilities.relation_checks import RelationCheck, RelationCheckReport, check_relations
 from archflow.contracts.authority import no_authority
 from archflow.contracts.canonical import canonical_digest, canonical_json
@@ -119,6 +119,7 @@ from archflow.state.developed_design import (
 )
 from archflow.state.geometry_program import (
     AffineTransform,
+    CompiledGeometryProgram,
     CoordinateFrame,
     DatumBinding,
     GeometryOperation,
@@ -271,8 +272,13 @@ class RunOptions:
     workspace_root: Path | None = None
     powershell: Path | None = None
     patch_oracle: bool = False
+    # An exact retained source, chosen by the caller before this run starts.
+    # None keeps the first-build and legacy callers on the full path.
+    source_run_receipt_ref: ProjectRecordRef | None = None
 
     def __post_init__(self) -> None:
+        if self.source_run_receipt_ref is not None and not isinstance(self.source_run_receipt_ref, ProjectRecordRef):
+            raise TypeError("source_run_receipt_ref must be ProjectRecordRef")
         if self.cad_backend not in CAD_BACKENDS:
             raise ProjectRunnerError(f"cad_backend must be one of {CAD_BACKENDS}, not {self.cad_backend!r}")
         if self.patch_oracle and self.cad_backend != CAD_BACKEND_RHINO:
@@ -282,6 +288,155 @@ class RunOptions:
             raise ProjectRunnerError(
                 f"patch_oracle is the Rhino patch check and runs only under cad_backend {CAD_BACKEND_RHINO!r} "
                 f"(--cad-backend {CAD_BACKEND_RHINO}); the {self.cad_backend!r} backend neither patches nor runs an oracle")
+
+
+@dataclass(frozen=True)
+class _SourceSeat:
+    run: RunRef
+    program: CompiledGeometryProgram
+    rows: Mapping[str, ElementRow]
+    elements: Mapping[str, Mapping[str, Any]]
+    references: str
+    producer_code: str | None
+    cad: Mapping[str, Any] | None
+
+
+def _reference_inputs(levels, grids) -> str:
+    return canonical_json({"levels": levels.to_dict(), "grids": grids.to_dict() if grids else None})
+
+
+def _source_seats(repository, run: RunRef, ref: ProjectRecordRef | None) -> dict[str, _SourceSeat]:
+    if ref is None:
+        return {}
+    if ref.project_id != run.project_id or ref.record_kind != RUNNER_RUN_RECEIPT:
+        raise ProjectRunnerError("source must name this project's retained runner receipt")
+    receipt = repository.load_json(ref)
+    source_run = repository.load_run(receipt["run_id"])
+    prefix = f"runs/{source_run.run_id}/records/"
+    if receipt.get("project_id") != run.project_id or not ref.relative_path.startswith(prefix):
+        raise ProjectRunnerError("source runner receipt belongs to another run")
+    record_ref = record_ref_from_uri(receipt["state_record_ref"], run.project_id)
+    if record_ref.record_kind != STATE_RECORD or not record_ref.relative_path.startswith(prefix):
+        raise ProjectRunnerError("source state record belongs to another run")
+    record = StateRecord.from_dict(repository.load_json(record_ref))
+    if (record.project_id != run.project_id or record.run_id != source_run.run_id or record.base != source_run.base
+            or record.digest != receipt.get("state_record_digest")):
+        raise ProjectRunnerError("source state record does not match its retained run receipt")
+    rows = {row.element_id: row for row in element_rows_of(record)}
+    references = _reference_inputs(project_levels_of(record), project_grids_of(record))
+    found = {}
+    for seat in receipt.get("seat_results", ()):
+        if seat.get("status") != "proposal_accepted" or not seat.get("program_ref") or not seat.get("receipt_ref"):
+            continue
+        program_ref = record_ref_from_uri(seat["program_ref"], run.project_id)
+        round_ref = record_ref_from_uri(seat["receipt_ref"], run.project_id)
+        if (program_ref.record_kind != SEAT_GEOMETRY_PROGRAM or round_ref.record_kind != SEAT_ROUND_RECEIPT
+                or not program_ref.relative_path.startswith(prefix) or not round_ref.relative_path.startswith(prefix)):
+            raise ProjectRunnerError("source seat records belong to another run")
+        program = load_compiled_geometry_program(repository.load_json(program_ref))
+        round_receipt = repository.load_json(round_ref)
+        if (program.program_digest != seat["program_digest"] or program.proposal.run_id != source_run.run_id
+                or program.proposal.base != source_run.base or round_receipt.get("program_ref") != program_ref.uri
+                or round_receipt.get("seat_id") != seat["seat_id"]):
+            raise ProjectRunnerError("source seat program does not match its run receipt")
+        elements = round_receipt.get("element_results", {})
+        if not isinstance(elements, dict):
+            raise ProjectRunnerError("source element results must be a mapping")
+        found[seat["seat_id"]] = _SourceSeat(source_run, program, rows, elements, references,
+                                            round_receipt.get("producer_code"), seat.get("cad"))
+    return found
+
+
+def _producer_code() -> str | None:
+    """The implementations whose retained producer outputs may be reused."""
+    import inspect
+    from monkeyarch.capabilities import element_producers, reference_resolver, opening_solver, wall_solver
+
+    try:
+        return canonical_digest({
+            "modules": {module.__name__: inspect.getsource(module) for module in
+                        (element_producers, reference_resolver, opening_solver, wall_solver)},
+            "producers": {name: inspect.getsource(producer) for name, producer in element_producers.PRODUCERS.items()},
+        })
+    except (OSError, TypeError):
+        return None
+
+
+def _production_inputs(row: ElementRow, context: ProductionContext) -> dict[str, Any]:
+    def names(value):
+        if isinstance(value, str):
+            return {value, f"{value}-top"}
+        if isinstance(value, Mapping):
+            return set().union(*(names(item) for item in value.values()))
+        if isinstance(value, (list, tuple)):
+            return set().union(*(names(item) for item in value))
+        return set()
+
+    mentioned = names(row.references) | names(row.params)
+    return {
+        "frame_id": context.frame_id,
+        "datums": {key: context.published[key].to_dict() for key in sorted(mentioned & context.published.keys())},
+        "hosts": {key: {"origin": list(context.references.hosts[key].origin), "direction": list(context.references.hosts[key].direction)}
+                  for key in sorted(mentioned & context.references.hosts.keys())},
+        "exclusions": [[list(low), list(high)] for low, high in context.exclusions]
+                      if row.producer == "wall" and row.params.get("respect_exclusions", True) else [],
+    }
+
+
+def _element_result(element: ProducedElement, inputs: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "inputs": inputs,
+        "operations": [operation.op_id for operation in element.operations],
+        "bindings": [binding.binding_id for binding in element.bindings],
+        "datums": [datum.datum_id for datum in element.datums],
+        "assemblies": [assembly.assembly_id for assembly in element.assemblies],
+        "relations": [relation.to_dict() for relation in element.relations],
+        "host_line": ({"origin": list(element.host_line.origin), "direction": list(element.host_line.direction)}
+                      if element.host_line is not None else None),
+    }
+
+
+def _reload_element(source: _SourceSeat, value: Mapping[str, Any]) -> ProducedElement:
+    program = source.program
+    operations = {operation.op_id: operation for operation in program.proposal.operations}
+    bindings = {binding.binding_id: binding for binding in program.datum_bindings}
+    datums = {datum.datum_id: datum for datum in program.interface_datums}
+    assemblies = {assembly.assembly_id: assembly for assembly in program.proposal.assemblies}
+    selected_bindings = tuple(bindings[key] for key in value["bindings"])
+    bound_parameters = {(binding.op_id, binding.parameter_name) for binding in selected_bindings}
+    # The compiled program stores resolved literals. Restore their symbolic
+    # bindings before compiling against this run; never restate a datum twice.
+    selected_operations = tuple(replace(operations[key], parameters=tuple(
+        parameter for parameter in operations[key].parameters if (key, parameter.name) not in bound_parameters
+    )) for key in value["operations"])
+    host = value.get("host_line")
+    return ProducedElement(
+        operations=selected_operations, bindings=selected_bindings,
+        datums=tuple(datums[key] for key in value["datums"]),
+        relations=tuple(ProducedRelation(**relation) for relation in value["relations"]),
+        host_line=HostLine(tuple(host["origin"]), tuple(host["direction"])) if host else None,
+        assemblies=tuple(assemblies[key] for key in value["assemblies"]),
+    )
+
+
+def _produce_incrementally(rows, context, source, references: str, producer_code: str | None):
+    results, retained, reused = [], {}, []
+    for row in rows:
+        inputs = _production_inputs(row, context)
+        previous = source.elements.get(row.element_id) if source is not None else None
+        if (previous is not None and producer_code is not None and producer_code == source.producer_code
+                and references == source.references and row == source.rows.get(row.element_id)
+                and inputs == previous.get("inputs")):
+            element = _reload_element(source, previous)
+            context.published.update({datum.datum_id: datum for datum in element.datums})
+            if element.host_line is not None:
+                context.references.hosts[row.element_id] = element.host_line
+            reused.append(row.element_id)
+        else:
+            element, = produce_rows((row,), context)
+        results.append(element)
+        retained[row.element_id] = _element_result(element, inputs)
+    return tuple(results), retained, tuple(reused)
 
 
 @dataclass(frozen=True, slots=True)
@@ -468,12 +623,12 @@ def _export_workspace(options: RunOptions, stage_id: str) -> Path:
     return workspace
 
 
-def _export(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict) -> dict:
+def _export(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict, *, source: _SourceSeat | None = None) -> dict:
     """Export one seat program through the executor the options name; no fallback between the two."""
 
     if options.cad_backend == CAD_BACKEND_RHINO:
-        return _export_rhino(repository, run, branch, branch_destination, program, stage_id, options, provenance)
-    return _export_occt(repository, run, branch, branch_destination, program, stage_id, options, provenance)
+        return _export_rhino(repository, run, branch, branch_destination, program, stage_id, options, provenance, source=source)
+    return _export_occt(repository, run, branch, branch_destination, program, stage_id, options, provenance, source=source)
 
 
 def _sha256_file(path: Path) -> str:
@@ -542,7 +697,39 @@ def _occt_artifact_summary(artifact: dict | None) -> dict | None:
     return {"relative_path": artifact.get("relative_path"), "sha256": artifact.get("sha256"), "format": artifact.get("format")}
 
 
-def _export_occt(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict) -> dict:
+def _source_export(repository, source: _SourceSeat | None, kind: str):
+    """A source file is reusable only with its original, intact execution evidence."""
+    if source is None or not source.cad or not source.cad.get("execution_ref") or not source.cad.get("model"):
+        return None
+    try:
+        ref = record_ref_from_uri(source.cad["execution_ref"], source.run.project_id)
+        if ref.record_kind != kind or not ref.relative_path.startswith(f"runs/{source.run.run_id}/records/"):
+            return None
+        payload = repository.load_json(ref)
+        identity = payload["identity"]["binding"]
+        if (payload.get("status") != "succeeded" or payload.get("readback_verified") is not True or payload.get("failures")
+                or identity.get("project_id") != source.run.project_id or identity.get("run_id") != source.run.run_id
+                or identity.get("base") != source.run.base.to_dict() or identity.get("program_digest") != source.program.program_digest):
+            return None
+        model = Path(source.cad["model"])
+        if kind == SEAT_OCCT_EXECUTION:
+            from archflow.adapters.occt_backend import backend_identity
+            if payload.get("schema") != "OcctExecutionReceipt@1" or payload.get("backend") != backend_identity():
+                return None
+            artifact = payload["exact_artifact"]
+            name, digest = artifact["relative_path"], artifact["sha256"]
+        else:
+            if payload.get("schema") != "RhinoCadExecutionReceipt@4":
+                return None
+            name, digest = payload["artifact_relative_path"], payload["inspection"]["file_sha256"]
+        if model.name != name or not model.is_file() or model.is_symlink() or _sha256_file(model) != digest:
+            return None
+        return payload, model
+    except (KeyError, ValueError, TypeError, OSError, ProjectIntegrityError):
+        return None
+
+
+def _export_occt(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict, *, source: _SourceSeat | None = None) -> dict:
     """Export one seat program in process: exact STEP plus mesh preview, retained as ``seat-occt-execution``.
 
     The program is retained on the branch first (P036), the binding is made
@@ -580,10 +767,17 @@ def _export_occt(repository, run, branch, branch_destination, program, stage_id:
     while (workspace / f"{stem}.step").exists() or (workspace / f"{stem}.preview.3dm").exists():
         attempt += 1
         stem = f"{base_stem}.r{attempt}"
+    source_export = _source_export(repository, source, SEAT_OCCT_EXECUTION)
+    reuse = {}
+    if source_export is not None:
+        source_payload, source_model = source_export
+        reuse = {"prior_program": source.program, "prior_step": source_model,
+                 "prior_step_sha256": source_payload["exact_artifact"]["sha256"]}
+        provenance = {**provenance, "source_execution_ref": source.cad["execution_ref"]}
     t0 = time.perf_counter()
     try:
         receipt = execute_occt_export(program, binding=binding, speculative_workspace=workspace, artifact_stem=stem, readback_tolerance=0.003,
-                                      provenance={**provenance, "export_path": CAD_BACKEND_OCCT}, preview=True)
+                                      provenance={**provenance, "export_path": CAD_BACKEND_OCCT}, preview=True, **reuse)
     except CadCapabilityError as exc:
         return {"execution_ref": None, "status": "unsupported", "readback_verified": False, "path": CAD_BACKEND_OCCT, "backend": CAD_BACKEND_OCCT,
                 "seconds": round(time.perf_counter() - t0, 3),
@@ -595,12 +789,15 @@ def _export_occt(repository, run, branch, branch_destination, program, stage_id:
            "evidence_tier": receipt.evidence_tier, "exact_artifact": _occt_artifact_summary(receipt.exact_artifact),
            "preview_artifact": _occt_artifact_summary(receipt.preview_artifact),
            "model": None if receipt.exact_artifact is None else str(workspace / str(receipt.exact_artifact["relative_path"]))}
+    if receipt.reused_object_ids:
+        out.update(path="incremental", reused_object_ids=list(receipt.reused_object_ids),
+                   source_execution_ref=source.cad["execution_ref"])
     if receipt.status.value == "succeeded" and receipt.preview_inspection is not None:
         out["inspection_ref"] = repository.put_json(run=run, destination=destination, record_kind=SEAT_3DM_INSPECTION, payload=receipt.preview_inspection).uri
     return out
 
 
-def _export_rhino(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict) -> dict:
+def _export_rhino(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict, *, source: _SourceSeat | None = None) -> dict:
     """Export one seat program through Rhino: reuse an identical prior export, patch a different one, or rebuild (P103).
 
     Artifacts are named by program digest inside the stage workspace, so a
@@ -618,6 +815,10 @@ def _export_rhino(repository, run, branch, branch_destination, program, stage_id
     destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
     records_dir = Path(repository.layout.run(run.run_id).records)
     prior = _prior_export(records_dir, workspace, stage_id, program.program_digest)
+    if prior is None:
+        prior = _source_export(repository, source, SEAT_RHINO_EXECUTION)
+        if prior is not None:
+            provenance = {**provenance, "source_execution_ref": source.cad["execution_ref"]}
     if prior is not None and "_reused_path" in prior[0]:
         payload, model = prior
         return {"execution_ref": f"project://{run.project_id}/runs/{run.run_id}/records/{payload['_reused_path'].name}", "status": "succeeded",
@@ -727,6 +928,9 @@ def run_project(
     )
     levels = project_levels_of(record)
     grids = project_grids_of(record)
+    sources = _source_seats(repository, run, options.source_run_receipt_ref)
+    references = _reference_inputs(levels, grids)
+    producer_code = _producer_code()
     try:
         rows = element_rows_of(record)
     except ElementProducerError as exc:
@@ -769,7 +973,8 @@ def run_project(
                 exclusions = tuple(b for h in handovers for b in _exclusion_bounds(h))
                 production = ProductionContext(references=ReferenceContext(grids=grids, levels=levels), published={d.datum_id: d for h in handovers for d in h.datums}, exclusions=exclusions)
                 try:
-                    elements_produced = produce_rows(own, production)
+                    elements_produced, element_results, reused_elements = _produce_incrementally(
+                        own, production, sources.get(seat_id), references, producer_code)
                 except ElementProducerError as exc:
                     raise ProjectRunnerError(str(exc)) from exc
                 produced = _gather(elements_produced)
@@ -828,7 +1033,8 @@ def run_project(
                     violations = [{"code": "relation_violated", "relation_id": c.relation_id, "detail": c.detail} for c in relation_report.checks if c.status == "violated"]
                     seat_result = SeatResult(seat_id, round_index, "proposal_accepted", program_ref.uri, program.program_digest, len(program.objects), covered, undeclared,
                                              tuple(issues) + tuple(violations), time.perf_counter() - t0, relation_check_ref=relation_check_ref)
-                    receipt_ref = put(SEAT_ROUND_RECEIPT, {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], "provider": provider_block, **no_authority(_AUTH)})
+                    receipt_ref = put(SEAT_ROUND_RECEIPT, {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], "provider": provider_block,
+                                                       "element_results": element_results, "producer_code": producer_code, "reused_element_ids": list(reused_elements), **no_authority(_AUTH)})
                     results.append(replace(seat_result, receipt_ref=receipt_ref.uri))
                     continue
                 digests = {o.object_id: o.object_digest for o in program.objects}
@@ -841,11 +1047,12 @@ def run_project(
                 cad = None
                 if options.export:
                     cad = _export(repository, run, branch, branch_destination, program, f"{stage_guard.envelope.stage_id}-{seat_id}", options,
-                                  {"target": "PROJECT_RUNNER", "workflow_stage_id": stage_guard.envelope.stage_id, "workflow_stage_index": str(stage_guard.envelope.stage_index), "stage_envelope_ref": stage_guard.envelope_record_ref.uri, "seat": seat_id, "candidate_status": "HOLD", "frame_semantics": "BUILDING_LOCAL_Y_UP", "state_record_ref": record_ref.uri})
+                                  {"target": "PROJECT_RUNNER", "workflow_stage_id": stage_guard.envelope.stage_id, "workflow_stage_index": str(stage_guard.envelope.stage_index), "stage_envelope_ref": stage_guard.envelope_record_ref.uri, "seat": seat_id, "candidate_status": "HOLD", "frame_semantics": "BUILDING_LOCAL_Y_UP", "state_record_ref": record_ref.uri}, source=sources.get(seat_id))
                 seat_status = "proposal_accepted" if cad is None or cad.get("status") == "succeeded" else "export_failed"
                 seat_result = SeatResult(seat_id, round_index, seat_status, program_ref.uri, program.program_digest, len(program.objects), covered, undeclared, issues, time.perf_counter() - t0, cad, declined=declined,
                                          declination_reasons={e.component_id: str(e.params.get("reason")) for e in own if e.producer == "declined"}, relation_check_ref=relation_check_ref)
-                receipt_ref = put(SEAT_ROUND_RECEIPT, {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], "provider": provider_block, **no_authority(_AUTH)})
+                receipt_ref = put(SEAT_ROUND_RECEIPT, {"schema": "SeatRoundReceipt@1", "stage_id": stage_guard.envelope.stage_id, "stage_index": stage_guard.envelope.stage_index, "stage_envelope_ref": stage_guard.envelope_record_ref.uri, **_seat_dict(seat_result), "context_ref": context_ref.uri, "seat_ref": seat_refs[seat_id], "provider": provider_block,
+                                                   "element_results": element_results, "producer_code": producer_code, "reused_element_ids": list(reused_elements), **no_authority(_AUTH)})
                 results.append(replace(seat_result, receipt_ref=receipt_ref.uri))
             else:
                 continue
@@ -931,6 +1138,8 @@ def run_project(
                             "unmeasured_relation_ids": [] if unmeasured is None else [c.relation_id for c in unmeasured.checks]},
         "wall_time_s": round(time.perf_counter() - started, 3), **no_authority(_AUTH),
     }
+    if options.source_run_receipt_ref is not None:
+        payload["source_run_receipt_ref"] = options.source_run_receipt_ref.uri
     payload["receipt_ref"] = put(RUNNER_RUN_RECEIPT, payload).uri
     return payload
 

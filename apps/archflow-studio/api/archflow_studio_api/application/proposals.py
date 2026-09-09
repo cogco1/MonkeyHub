@@ -76,6 +76,7 @@ class Proposal:
     pending: "PendingIntent | None" = None
     # An explicit editing base; None keeps the project's default projection.
     source_run_id: str | None = None
+    source_stage_ref: ProjectRecordRef | None = None
     # Structured component edits carry the same kernel operator the worker
     # replays. The review is domain data, never a CAD program or a second run.
     state_record_operator: StateRecordOperator | None = None
@@ -86,17 +87,23 @@ class Proposal:
 
 
 
-def closure_of(proposal: "Proposal") -> frozenset[str]:
-    """Everything this change touches, as the record's refs: the target and
-    its component, the kernel's direct and propagated impact, and what the
-    sentence protected. Two proposals whose closures intersect are never run
-    at the same time."""
+def read_refs_of(proposal: "Proposal") -> frozenset[str]:
+    """The protected design inputs this proposal must preserve."""
+
+    return frozenset(proposal.protected) | frozenset(proposal.impact.protected)
+
+
+def write_refs_of(proposal: "Proposal") -> frozenset[str]:
+    """The target and the kernel's direct and propagated changes.
+
+    An element edit does not write its entire containing component, and a
+    protected input is not a write merely because it was read.
+    """
 
     return frozenset(
-        {proposal.target_ref, f"component:{proposal.component_id}"}
+        {proposal.target_ref}
         | set(proposal.impact.direct)
         | set(proposal.impact.propagated)
-        | set(proposal.protected)
     )
 
 

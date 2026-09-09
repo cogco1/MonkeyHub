@@ -362,6 +362,8 @@ try {
     assert.equal(await page.locator(".editing-base").getAttribute("data-source-match"), "different");
     assert.equal(group.selectedOptionId, "B");
     await page.locator(".composer .context").getByRole("button").click();
+    assert.equal(await page.locator(".tree__row--element").count(), 0, "The object tree starts with top-level components");
+    await page.locator(".tree__fold").first().click();
     await page.locator(".tree__row--element").getByRole("button", { name: element.elementId, exact: true }).click();
     assert.equal(await page.locator(".composer .context .pill--accent").count(), 1, "Select an old target through A's actual catalog");
     assert.ok((await page.evaluate(() => window.__intentViewCalls)).includes("highlight"));

@@ -34,7 +34,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application.artifacts import ArtifactRecord
+from archflow_studio_api.application.artifacts import ArtifactRecord, ModelSource
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.candidate import (
     CandidateRun,
@@ -680,6 +680,24 @@ class ReviewReadinessTests(ValidationTestCase):
 
         self.assertNotIn(EXPORTS_CLAUSE, empty.blocked_by)
         self.assertEqual(empty.honesty, ())
+
+    def test_registered_complete_model_is_ready_only_for_its_exact_candidate(self) -> None:
+        accepted, job = self.finished_candidate()
+        candidate = self.candidate_run(accepted, job)
+        source = ModelSource(candidate.candidate_id, candidate.state_digest, "a" * 64)
+        artifact = replace(_export_artifact(status="registered", available=True),
+                           representation="composed", sha256=source.asset_sha256,
+                           run_id=candidate.candidate_id, design_state_digest=candidate.state_digest,
+                           model_source=source)
+        ready = self.validated(replace(candidate, artifacts=(artifact,)))
+        self.assertTrue(ready.review_ready)
+        self.assertEqual(ready.honesty, ())
+        for changed in (replace(source, run_id="another-run"), replace(source, state_digest="b" * 64),
+                        replace(source, asset_sha256="c" * 64), None):
+            with self.subTest(source=changed):
+                refused = self.validated(replace(candidate, artifacts=(replace(artifact, model_source=changed),)))
+                self.assertEqual(refused.blocked_by, (EXPORTS_CLAUSE,))
+                self.assertEqual(len(refused.honesty), 1)
 
     def test_a_seat_that_exported_with_no_artifact_record_blocks(self) -> None:
         """The receipt says an export happened; nothing says it can be had.

@@ -403,13 +403,8 @@ class AcceptanceIsTheArchitectsOwnAct(EpisodeTestCase):
             accepted["reason"], "the taller base reads better from the approach"
         )
         self.assertIsNone(accepted["modifiedTo"])
-        # Every other option still on the table is closed by the same act, and
-        # says which proposal closed it.
-        self.assertEqual(decisions[other["proposalId"]]["decision"], "rejected")
-        self.assertEqual(
-            decisions[other["proposalId"]]["reason"],
-            f"superseded by {chosen['proposalId']}",
-        )
+        # Choosing one result preserves other explorations and alternatives.
+        self.assertNotIn(other["proposalId"], decisions)
         # The one already rejected is not rejected a second time.
         self.assertNotIn(rejected["proposalId"], decisions)
         # The intent that was answered, not the chat log.
@@ -461,14 +456,14 @@ class AcceptanceIsTheArchitectsOwnAct(EpisodeTestCase):
         read = self.client.get(f"/api/episodes/{episode['episodeId']}")
         self.assertEqual(read.status_code, 200, read.text)
         self.assertEqual(read.json(), episode)
-        # And now nothing against this base is open any more.
+        # The other proposal remains available against its original base.
         self.assertEqual(
             episodes.still_open(
                 state.episodes,
                 state.proposals.for_state(self.state_digest),
                 without=chosen["proposalId"],
             ),
-            (),
+            (state.proposals.get(other["proposalId"]),),
         )
 
     def test_accepting_cites_the_named_candidates_own_evidence_not_the_default_runs(

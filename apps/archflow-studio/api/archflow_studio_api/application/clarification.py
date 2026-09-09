@@ -558,6 +558,7 @@ class PendingIntent:
     # The submitted source/page context follows the same clarification token.
     document_comment_ref: ProjectRecordRef | None = None
     model_source: ModelSource | None = None
+    source_stage_ref: ProjectRecordRef | None = None
     document_visuals: tuple[DocumentVisual, ...] = ()
 
     @property

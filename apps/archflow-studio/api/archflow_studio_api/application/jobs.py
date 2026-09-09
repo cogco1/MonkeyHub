@@ -4,15 +4,12 @@
 event loop thread at all: it would refuse. This module owns the worker
 threads it runs on instead, and the queue in front of them.
 
-The queue is dependency-aware. Two candidates conflict when their closures
-intersect - the target, the kernel's direct and propagated impact and what
-the sentence protected - and a conflicting candidate waits for the one ahead
-of it, saying which one and why. Candidates whose closures are disjoint run
-side by side: each run writes only its own directory under the repository's
-lock, and a harness run never issues anything. Exports are the exception: a
-Rhino export is one process on this machine, so a candidate that exports
-takes the exclusive lane and waits for any other exporting candidate,
-whatever their closures. The DAG is never drawn; it shows as behaviour.
+Candidates run in separate workspaces against immutable sources. Their read
+and write refs describe the proposed change; even overlapping edits can be
+computed independently. Deciding whether their results can be combined is
+not queue admission. A Rhino export still takes the exclusive lane because
+there is one Rhino process on this machine; other candidates share the worker
+pool without a design-ref lock.
 
 The registry is an in-process dict, like the proposal store and for the same
 reason: it is not history. It remembers what this service did since it started
@@ -69,7 +66,8 @@ class Job:
     # The queue's own facts: which lane the job runs in, and while it is
     # queued, which candidate it is waiting for and why.
     lane: str = PARALLEL
-    closure: frozenset[str] = frozenset()
+    read_refs: frozenset[str] = frozenset()
+    write_refs: frozenset[str] = frozenset()
     waiting_for: str | None = None
     waiting_reason: str | None = None
 
@@ -89,8 +87,7 @@ class JobRegistry:
         self._lock = threading.Lock()
         self._jobs: dict[str, Job] = {}
         self._by_candidate: dict[str, str] = {}
-        # Admission order: a job waits behind every earlier job it conflicts
-        # with, so two changes to one element run in the order they were asked.
+        # Admission order preserves the exclusive resource lane's order.
         self._pending: list[str] = []
         self._running: list[str] = []
         self._work: dict[str, Callable[[], Any]] = {}
@@ -109,15 +106,15 @@ class JobRegistry:
         candidate_id: str,
         proposal_id: str,
         work: Callable[[], Any],
-        closure: Iterable[str] = (),
+        read_refs: Iterable[str] = (),
+        write_refs: Iterable[str] = (),
         exclusive: bool = False,
     ) -> Job:
         """Queue one candidate run and answer with the job that will do it.
 
-        ``closure`` is what the change touches, as the record's refs; two
-        jobs whose closures intersect never run at the same time. An
-        ``exclusive`` job (one that exports) never runs beside another
-        exclusive job.
+        ``read_refs`` and ``write_refs`` describe the design inputs and edits.
+        Separate candidate workspaces may compute overlapping edits. An
+        ``exclusive`` job never runs beside another exclusive job.
 
         A candidate id is claimed here, once. Rebinding one to a second job
         would silently orphan the first: ``GET /api/candidates/{id}`` would
@@ -133,7 +130,8 @@ class JobRegistry:
             proposal_id=proposal_id,
             created_at=_now(),
             lane=EXCLUSIVE if exclusive else PARALLEL,
-            closure=frozenset(closure),
+            read_refs=frozenset(read_refs),
+            write_refs=frozenset(write_refs),
         )
         with self._lock:
             claimed = self._by_candidate.get(candidate_id)
@@ -211,16 +209,12 @@ class JobRegistry:
     def _blocker(self, job: Job, ahead: Iterable[Job]) -> tuple[str, str] | None:
         """The nearest job ahead that this one must wait for, and why.
 
-        Nearest, not first: behind two changes to one element the third
-        waits for the second, which is the one it will actually run after.
+        An exclusive job waits for the nearest earlier exclusive job.
         """
 
         for other in reversed(list(ahead)):
             if job.lane == EXCLUSIVE and other.lane == EXCLUSIVE:
                 return other.candidate_id, EXCLUSIVE_REASON
-            shared = sorted(job.closure & other.closure)
-            if shared:
-                return other.candidate_id, "shares " + ", ".join(shared)
         return None
 
     def _admit(self) -> None:
@@ -228,8 +222,7 @@ class JobRegistry:
 
         Called on submit and whenever a job finishes. Pending jobs are
         looked at in order; each is blocked by any running job or any
-        *earlier* pending job it conflicts with, so admission never
-        reorders two jobs that touch the same thing. A job that is not
+        *earlier* pending job using the same exclusive resource. A job that is not
         blocked but finds every worker busy waits for a worker, and says so.
         """
 

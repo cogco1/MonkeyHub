@@ -54,7 +54,8 @@
         "CadProgramBinding (the retained RhinoCadProgramBinding alias), OcctCadExportIdentity, OcctExecutionReceipt and explicit CadCapabilityError for unsupported operations",
         "orthographic visible/hidden polylines of named STEP shapes with their source object ids (project_occt_lines): one exact HLRBRep_Algo solve over every selected shape in a caller-stated right/up frame, an exact near/far depth slab, chord-deflection discretization in the STEP read unit",
         "measuring explicitly requested final named solid pairs from OCCT shapes: true distance in metres and common solid volume in cubic metres, preserving separated/contact/penetrating/unchecked and never reconstructing consumed boolean operands",
-        "patching caller-supplied composed 3dm bytes from exact prior/current compiled programs and a native replacement preview, preserving unchanged objects and shared block/material tables with explicit unit conversion"
+        "patching caller-supplied composed 3dm bytes from exact prior/current compiled programs and a native replacement preview, preserving unchanged objects and shared block/material tables with explicit unit conversion",
+        "verifying source OCCT STEP shape reuse for unchanged physical objects while rebuilding changed operations and required intermediate inputs"
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -1569,7 +1570,8 @@
         "the run subdirectory names (RunLayout: run.json, records, branches, candidates, reviews, workspaces, recovery)",
         "resolving a project-relative path or a record/artifact ref to an absolute path inside the root",
         "the names of the two authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json)",
-        "the names of the three authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json, input/runner/program-sheet.json)"
+        "the names of the three authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json, input/runner/program-sheet.json)",
+        "the project-relative design/branches.json position table path"
       ],
       "does_not_own": [
         "creating directories or writing files (project.repository)",
@@ -1593,7 +1595,8 @@
         "ProjectLayout",
         "AUTHORED_RECORD_PATH",
         "SEAT_PACK_PATH",
-        "PROGRAM_SHEET_PATH"
+        "PROGRAM_SHEET_PATH",
+        "ProjectLayout.design_branches"
       ],
       "depends_on": [
         "project.refs"
@@ -1718,7 +1721,8 @@
         "the persistence area vocabulary (PersistenceArea)",
         "a validated project- or run-scoped write destination (PersistenceDestination)",
         "the fail-closed check that a producer was assigned a destination (require_destination, PersistenceDestinationRequired)",
-        "the structural protocols a repository satisfies (RecordSink, WorkspaceSink)"
+        "the structural protocols a repository satisfies (RecordSink, WorkspaceSink)",
+        "the project-scoped design branch read/CAS port; no writer implementation"
       ],
       "does_not_own": [
         "any implementation of these ports (project.repository is the only one)",
@@ -1739,7 +1743,8 @@
         "require_destination",
         "RecordSink",
         "WorkspaceSink",
-        "PersistenceDestinationRequired"
+        "PersistenceDestinationRequired",
+        "DesignBranchStore"
       ],
       "depends_on": [
         "project.manifest",
@@ -1931,7 +1936,10 @@
         "run creation and the run record areas (create_run, create_run_batch, load_run)",
         "format-version compatibility between CanonicalSnapshot@1 and CanonicalSnapshot@2",
         "integrity verification of the snapshot/event chain and orphan reporting (verify, RecoveryReport)",
-        "installing optional caller-authored State Record and seat-pack mappings at the existing input paths during initialize; no run is created and later authored edits remain with their existing owners"
+        "installing optional caller-authored State Record and seat-pack mappings at the existing input paths during initialize; no run is created and later authored edits remain with their existing owners",
+        "project-scoped design branch refs with atomic compare-and-swap under the existing process and file locking primitives; independent of canonical HEAD",
+        "exact historical published state read through the retained event chain",
+        "design Stage reachability and unreferenced prepared Stage reporting in verify"
       ],
       "does_not_own": [
         "path naming inside a project (project.layout)",
@@ -1963,7 +1971,11 @@
         "ProjectIntegrityError",
         "StaleProjectHead",
         "PromotionAuthorityError",
-        "ProjectHeadLocked"
+        "ProjectHeadLocked",
+        "StaleDesignBranch",
+        "FilesystemProjectRepository.read_design_branches",
+        "FilesystemProjectRepository.compare_and_swap_design_branch",
+        "FilesystemProjectRepository.load_version_state"
       ],
       "depends_on": [
         "project.digests",
@@ -1996,7 +2008,8 @@
         "only an accepted PromotionDecision@1 naming the exact expected version may prepare a canonical transition",
         "a record lands in the area its PersistenceDestination names; events/ and canonical/ areas are re-checked on swap",
         "put_workspace_file writes an immutable binary only below the assigned run workspace and never changes HEAD",
-        "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable"
+        "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable",
+        "design branch creation expects no existing branch; advancement compares the exact Stage ref and preserves fork identity; canonical HEAD is unchanged"
       ],
       "status": "canonical",
       "tests": [
@@ -2087,7 +2100,8 @@
         "the export decision: default in-process OCCT export or explicit Rhino compatibility export; reuse an identical verified result, and retain Rhino patch/rebuild within that backend",
         "the retained record kinds (state-record, stage-closure, stage-exit-binding, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, runner-run-failure, RunnerRunReceipt@3)",
         "the stage closure and exit binding of a run: the CompositeStageClosureReceipt compiled from the run's own relation checks and seat results, and the StageExitBinding derived from a SATISFIED one",
-        "the synthetic bounds that make a Space@1 zone measurable: its volumes' declared min/max, entered in objects_by_element under the zone's entity id"
+        "the synthetic bounds that make a Space@1 zone measurable: its volumes' declared min/max, entered in objects_by_element under the zone's entity id",
+        "optional exact source runner receipt for cross-run producer and CAD reuse before execution, including unchanged elements inside a changed seat"
       ],
       "does_not_own": [
         "producing geometry - capabilities.element_producers",
@@ -2173,7 +2187,9 @@
         "state.geometry_program",
         "state.record",
         "state.spatial",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "archflow.adapters.occt_backend",
+        "monkeyarch.capabilities"
       ],
       "used_by": [
         "tools/run_project.py",
@@ -2197,7 +2213,8 @@
         "a closure is written for every completed run; an exit binding only for a SATISFIED closure",
         "the closure states one finding per problem: a required checker kind with no check, each relation bound to a required checker that is violated or unchecked, and a seat that did not finish; an unbound relation remains unchecked without an inferred relation-kind-to-checker mapping",
         "extent relations use compiled-predicted bounds and say so; solid_nonpenetration waits until final exports, verifies their retained receipts/STEP hashes and names, and reports true OCCT solid measurements or unchecked once in the existing seat-relation-check records; a SATISFIED stage covers its explicit required checker ids and is not proof that every architectural relation was measured",
-        "the developed projection receives the actual envelope phase; the existing guard still rejects a different state or phase"
+        "the developed projection receives the actual envelope phase; the existing guard still rejects a different state or phase",
+        "source ProducedElement values and STEP shapes are reused only after verifying row inputs, dependency context and retained source execution; current-run relation and solid checks still receive the complete model; missing legacy producer results fall back to full production"
       ],
       "status": "canonical",
       "tests": [
@@ -2260,7 +2277,8 @@
         "project.repository"
       ],
       "used_by": [
-        "tests/test_drawing_elevation.py"
+        "tests/test_drawing_elevation.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
       ],
       "invariants": [
         "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
@@ -2570,31 +2588,27 @@
       "owner_path": "archflow/state/design_portfolio.py",
       "purpose": "The reloadable ledger of schematic branches, their lineage, and the authorized selection among them.",
       "owns": [
-        "the branch, revision and lineage records (DesignBranch, BranchRevision, BranchRevisionRef, LineageKind)",
-        "the branch lifecycle and its transitions (fork_branch, revise_branch, combine_branches, park_branch, reject_branch, select_branch)",
-        "who may make or release a selection (SelectionPolicy)",
-        "resolution of detached expert advice (ExpertAdviceResolution, AdviceDisposition)",
-        "detached comparison evidence with deliberately no selection authority (ParetoBranchObservation)",
-        "the append-only transition log and the portfolio digest (PortfolioTransition, DesignOptionPortfolio)",
-        "the handoff record for the selected branch (SelectedBranchHandoff, compile_selected_branch_handoff)"
+        "immutable committed DesignStage values with exact state, model and runner references",
+        "continuing DesignBranch positions and initialize/fork/advance rules, separate from A/B exploration",
+        "legacy schematic portfolio readers and compiler compatibility types; no legacy lifecycle writers"
       ],
       "does_not_own": [
-        "ranking or evaluating options (explicitly not the portfolio's job)",
-        "hard usability gates (validation/*)",
-        "promoting canonical state (project.repository)",
-        "the option content itself (state.spatial)"
+        "candidate generation or review - studio.candidate and studio.validation",
+        "exploration scope and human decisions - studio.intent",
+        "retaining stages and atomically moving branch positions - project.repository",
+        "formal issue - project.issue"
       ],
       "inputs": [
-        "SchematicOptionSet",
-        "SchematicOption",
-        "authority id",
-        "decision ref",
-        "expected portfolio digest"
+        "verified ProjectRecordRef values",
+        "DesignStage",
+        "DesignBranch",
+        "expected head and candidate base Stage refs",
+        "legacy serialized schematic portfolio"
       ],
       "outputs": [
-        "DesignOptionPortfolio",
-        "SelectedBranchHandoff",
-        "BranchRevisionRef"
+        "DesignStage",
+        "DesignBranch",
+        "legacy DesignOptionPortfolio and compiler compatibility values"
       ],
       "public_api": [
         "DesignOptionPortfolio",
@@ -2605,16 +2619,12 @@
         "AdviceDisposition",
         "ParetoBranchObservation",
         "SelectedBranchHandoff",
-        "initialize_design_portfolio",
         "fork_branch",
-        "revise_branch",
-        "combine_branches",
-        "park_branch",
-        "reject_branch",
-        "select_branch",
-        "attach_pareto_observation",
-        "compile_selected_branch_handoff",
-        "DesignPortfolioError"
+        "DesignPortfolioError",
+        "DesignStage",
+        "DesignBranch",
+        "initialize_branch",
+        "advance_branch"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -2628,10 +2638,11 @@
         "monkeyarch/runtime/project_runner.py"
       ],
       "invariants": [
-        "every transition is checked against the expected predecessor portfolio digest; a stale base raises",
-        "selection requires a named authority permitted by the selection policy and a decision ref",
-        "the portfolio preserves alternatives and their lineage; it never ranks them",
-        "never writes the filesystem"
+        "ordinary A/B and agent tasks do not create branches",
+        "advancing requires candidate base = expected head = current head and the exact parent Stage",
+        "fork can start from a resolved historical Stage; original history is preserved",
+        "domain values do not write or mint acceptance receipts, schemas or self digests",
+        "legacy portfolio serialization remains readable with its retained identity"
       ],
       "status": "canonical",
       "tests": [
@@ -3038,7 +3049,9 @@
         "the closed StateRecord edit vocabulary and its one successor function: set_scalar, replace_massing, apply_program, reindex and edit_components (StateRecordEditKind, StateRecordOperator, apply_state_record_operator)",
         "adapting declared parameter expressions and explicit @parameter bindings to the existing state.derivation evaluator, locating stale/conflicting input declarations and recomputing declared downstream values through the existing successor operator",
         "atomic semantic component edits: entity, parameter and relationship upserts or explicit removals, with incident relationships removed when their entity is removed",
-        "Type@1 producer defaults combined with Element@1 instance overrides before resolving explicit parameter bindings; the same values and dependencies reach projection and production"
+        "Type@1 producer defaults combined with Element@1 instance overrides before resolving explicit parameter bindings; the same values and dependencies reach projection and production",
+        "plain typed operator serialization for exact-source candidate replay",
+        "normalizing independent materialized component edits into one exact-base typed operator; refusing changed objects or dependencies shared by the candidates"
       ],
       "does_not_own": [
         "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
@@ -3093,7 +3106,10 @@
         "evaluate_parameters",
         "stale_parameters",
         "resolve_element_bindings",
-        "compile_component_edit"
+        "compile_component_edit",
+        "StateRecordOperator.to_dict",
+        "StateRecordOperator.from_dict",
+        "combine_component_changes"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3334,7 +3350,9 @@
         "verifying and decoding a viewport PNG before retaining its original bytes through P036 under runs/<requested-run>/workspaces/studio-captures with a server-generated content name",
         "validating original PDF/PNG/JPEG bytes and visible page dimensions, ingesting them through P036, and registering their content identity in the named run; serving only registered source bytes whose SHA-256 still matches",
         "retaining an explicitly supplied composed 3dm in P036 objects and a registration in its exact retained run state; listing composed alongside native exports with registered status and no native readback claim",
-        "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments"
+        "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments",
+        "registering model-axis elevation revisions from a complete exact STEP in the existing document list, with fixed model/Stage source, logical drawing id, view recipe and immutable drawing receipt",
+        "requiring a native Stage model to cover every producing seat execution, or an explicitly registered complete composed model"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3384,7 +3402,10 @@
         "require_model_source",
         "bind_document_model_source",
         "POST /api/model-assets",
-        "POST /api/documents/{asset_sha256}/model-source"
+        "POST /api/documents/{asset_sha256}/model-source",
+        "POST /api/drawings/elevations",
+        "generate_elevation",
+        "require_complete_model"
       ],
       "depends_on": [
         "archflow.project.refs",
@@ -3395,7 +3416,8 @@
         "project.repository",
         "adapters.three_dm_inspector",
         "studio.binding",
-        "studio.shell"
+        "studio.shell",
+        "runtime.drawing_elevation"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -3413,7 +3435,9 @@
         "page coordinates refer to the visible PDF CropBox after rotation, or the EXIF-oriented image; identical names do not identify identical file content",
         "model bytes require a retained export receipt or explicit composed-model registration; registration declares correspondence to an exact run state and does not establish that pixels or all imported geometry were generated from that state",
         "an unknown document may receive one explicit model association; a known association cannot be overwritten and old submitted comments keep the exact association they originally used",
-        "only a completed new model registration emits model_asset.registered; exact-source retries, including concurrent requests in one process, and failed registration emit no new-model event"
+        "only a completed new model registration emits model_asset.registered; exact-source retries, including concurrent requests in one process, and failed registration emit no new-model event",
+        "drawing requests refuse a partial native STEP for a complete composed model; document bytes resolve the requested drawing revision and verify its retained source and artifact hashes",
+        "new generated drawing registrations retain their original UTC generatedAt through cold reads and idempotent reuse; legacy and uploaded documents carry no inferred generation time"
       ],
       "status": "canonical",
       "tests": [
@@ -3421,13 +3445,17 @@
         "apps/archflow-studio/api/tests/test_cad_export.py",
         "apps/archflow-studio/api/tests/test_captures.py",
         "apps/archflow-studio/api/tests/test_documents.py",
-        "apps/archflow-studio/api/tests/test_working_copies.py"
+        "apps/archflow-studio/api/tests/test_working_copies.py",
+        "apps/archflow-studio/api/tests/test_drawings.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py"
       ]
     },
     {
@@ -3447,7 +3475,8 @@
         "the component catalog derived from the record and the reference run's inspection: per component its descendant elements, editable capabilities (value, type, source, confidence, status, validator refs), object coverage and closure; per exported object the element it binds to, or MODEL_VISIBLE_CATALOG_MISSING when no Element@1 row answers for it",
         "reading PROJECT.md at the project root for names (aliases -> declared components) and the compass; nothing else is read from it",
         "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as element_reindex.axis_lines_of reads it), the elements whose own references name it, and the closure of changing it (GET /api/state/frame, POST /api/state/closure); read-only, no grammar rule for editing a level or an axis",
-        "a capability a reference pins (a height whose top names a level, another element's datum or a grid role) is status=derived with source='derived from <ref>', read from the record's own dependency edges; it is shown, never created"
+        "a capability a reference pins (a height whose top names a level, another element's datum or a grid role) is status=derived with source='derived from <ref>', read from the record's own dependency edges; it is shown, never created",
+        "committed design history reads and exact Stage projections, including a descendant candidate with a retained matching Stage source"
       ],
       "does_not_own": [
         "writing, issuing or advancing anything - the binding is read-only; runtime.project_runner is the only writer and project.issue the only issuer",
@@ -3502,7 +3531,10 @@
         "POST /api/state/closure",
         "frame_of",
         "closure_of_refs",
-        "references_of"
+        "references_of",
+        "ProjectBinding.design_history",
+        "ProjectBinding.design_stage",
+        "ProjectBinding.candidate_delta"
       ],
       "depends_on": [
         "project.inputs",
@@ -3518,7 +3550,8 @@
         "state.spatial",
         "state.stage_workflow",
         "capabilities.element_reindex",
-        "capabilities.reference_resolver"
+        "capabilities.reference_resolver",
+        "state.design_portfolio"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -3534,11 +3567,11 @@
         "the project root is never defaulted in code - it comes from the environment or --project-dir",
         "binding happens on the first request that needs it, not at import or app creation",
         "every fact on a reference projection is the kernel's answer from the State Record that run retained; the current authored input is never rebound onto an existing run",
-        "a reference whose receipt does not bind a readable State Record, whose record digest differs, or whose run base is not current remains inspectable but cannot be used for a proposal, impact or candidate",
-        "a harness run is never automatically chosen as the default reference; explicitly continuing it leaves that default and canonical HEAD unchanged",
         "the projection is read-only and states, in honesty lines, what it could not compute",
         "one process answers for one project: the scoped and the unscoped path resolve to the same binding and are shaped by the same function",
-        "the catalog derives; it never writes: an object no element names stays MODEL_VISIBLE_CATALOG_MISSING, and no neighbouring element's field is offered in its place"
+        "the catalog derives; it never writes: an object no element names stays MODEL_VISIBLE_CATALOG_MISSING, and no neighbouring element's field is offered in its place",
+        "all actionable projections retain exact record and runner binding; historical canonical bases require a verified committed Stage source",
+        "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage"
       ],
       "status": "canonical",
       "tests": [
@@ -3579,7 +3612,9 @@
         "executing a semantic component proposal through the same run_operator path as scalar and massing proposals",
         "retaining the exact document comment referenced by a proposal in the candidate run without substituting newer ink or source file versions",
         "rechecking a proposal model source and its exact pinned document association before candidate execution",
-        "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, and registering the complete result through studio.artifacts"
+        "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, and registering the complete result through studio.artifacts",
+        "retaining each candidate typed operator, exact immediate source and committed base Stage; replaying its chain against the saved materialized result",
+        "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -3627,7 +3662,11 @@
         "seat_from",
         "JobRegistry.candidates_of",
         "execute_option_candidate",
-        "run_operator"
+        "run_operator",
+        "read_candidate_delta",
+        "replay_candidate",
+        "prepare_combined_candidate",
+        "POST /api/candidates/combine"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -3661,12 +3700,14 @@
         "a candidate is detached: it runs under the studio-candidate harness stage and advances no project stage",
         "the record must not have moved since the proposal or option was made: both StateRecord.digest content identity and StateRecord.state_digest binding identity are rechecked, and a stale base is refused rather than merged",
         "run_project calls asyncio.run, so a candidate runs on a worker thread and never on the event loop",
-        "two candidates whose closures intersect do not run together, and only one Rhino export runs at a time",
         "relation totals stay three counts plus two flags; they are never collapsed into a single verdict",
         "everything reported about a finished candidate is read back off retained records, not remembered from the run",
         "a composed candidate retains its exact input model registration in the existing harness workflow basis before execution; a cold read requires an available composed model in that candidate run and never treats native-only results after a failed composition as a completed candidate",
         "ordinary intents, Program application and selected massing options use the same run_operator source validation and composed-model production; omitted model sources preserve the existing native path",
-        "the existing event stream also carries model_asset.registered and working_copy.option_added with runId; clients reread retained lists, and events never substitute for project records"
+        "the existing event stream also carries model_asset.registered and working_copy.option_added with runId; clients reread retained lists, and events never substitute for project records",
+        "separate candidate workspaces may compute shared read or write scopes concurrently; worker capacity and the single Rhino export resource remain queue limits",
+        "retained candidates descend through exact parent runner/record references from their declared Stage; replays never rewrite an operator base digest",
+        "independent same-Stage component changes form a new candidate; overlapping writes or declared dependency effects refuse combination before creating a run"
       ],
       "status": "canonical",
       "tests": [
@@ -3721,7 +3762,9 @@
         "refusing unknown or mismatched document model sources before a model call; retaining resolved sourceRunId and the exact document association in comments and proposals, including clarification continuations",
         "saving existing 3D Gesture payloads with stable ids in exact-model-source annotation revisions and reopening them through P036",
         "retaining local work-item options, common comparison base, explicit scope and selected option in the common-base run; checking scope and unchanged composed contents without issuing or superseding other work items",
-        "preparing transient client-rendered document page and saved-ink PNGs for the existing Codex and Anthropic compilers; distinguishing one exact edit page from explicitly selected reference pages and retaining their metadata in the existing document comment"
+        "preparing transient client-rendered document page and saved-ink PNGs for the existing Codex and Anthropic compilers; distinguishing one exact edit page from explicitly selected reference pages and retaining their metadata in the existing document comment",
+        "explicit initial Stage acceptance, candidate acceptance and historical fork through portfolio rules and P036; WorkingCopy remains Exploration",
+        "preserving optional exact baseStageRef on new Explorations while legacy WorkingCopy labels and choices remain readable without inferred acceptance"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -3786,7 +3829,6 @@
         "read_gestures",
         "direction_words",
         "proposal_from",
-        "closure_of",
         "ProposalStore",
         "element_of_object",
         "compass_side",
@@ -3828,7 +3870,13 @@
         "PUT /api/working-copies/{group_id}/selection",
         "POST /api/working-copies/{group_id}/options",
         "DocumentVisual",
-        "prepare_document_visuals"
+        "prepare_document_visuals",
+        "GET /api/design-history",
+        "POST /api/design-stages/initialize",
+        "POST /api/candidates/{candidate_id}/accept",
+        "POST /api/design-branches",
+        "read_refs_of",
+        "write_refs_of"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3846,7 +3894,9 @@
         "semantics.registry",
         "studio.artifacts",
         "adapters.three_dm_inspector",
-        "studio.shell"
+        "studio.shell",
+        "state.design_portfolio",
+        "project.repository"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -3880,15 +3930,18 @@
         "semantic proposals carry real edits and before/after summaries, never synthetic numeric old/new values",
         "candidate generation does not accept or reject proposals; explicit acceptance uses the existing decision route with a successful candidateId belonging to that proposal, retains an episode and never issues the project",
         "2D ink has no camera, model hit, world direction or implied model target/keep clause; legacy 3D Gesture fields and existing Reading entities retain their meaning",
-        "page revisions bind project, run, source SHA-256 and zero-based page index; stale saves are refused, and erased ink remains readable in its explicit older revision",
+        "page revisions bind project, run, source SHA-256, zero-based page index and optional exact drawingRevisionRef; drawings with identical pixels keep independent annotation heads, and legacy records retain their serialized identity",
         "2D points use the visible page with a top-left origin and x-right/y-down coordinates in [0,1]; lineWidth is a fraction of its shorter side, unaffected by zoom or DPI; page text has one top-left anchor, multiline label content and its own short-side-normalized fontSize, while legacy strokes omit that field and retain their serialized identity",
-        "submitted document words and exact page references survive restart in the named run even when the intent needs clarification; saving documents or ink never moves HEAD",
+        "submitted document words and exact page references survive restart in the named run even when the intent needs clarification; their retained drawing association is not replaced by a later same-pixel revision, and saving documents or ink never moves HEAD",
         "viewing a work item is read-only; explicit selection changes only that item, leaves canonical HEAD and authored inputs unchanged, and is distinct from project issue or proposal endorsement",
         "saved choices and model annotations form run-scoped immutable revision chains; stale saves and competing/incomplete chains are refused; process-local locks do not claim cross-process atomic CAS",
         "a source association added later cannot retroactively authorize an older document comment or proposal",
         "only a successfully retained option addition emits working_copy.option_added; stale, duplicate and failed writes emit no addition event",
         "document intents require one edit visual matching the sole saved page reference; selected reference pages do not change the edit base or import historical comments; each PNG is at most 4 MiB and 2048 pixels on its longer side with registered visible-page aspect ratio, with at most 16 MiB total; validation does not prove client pixels were rendered from the source",
-        "clarification continuations reuse the original transient document image bytes and references; explicit context changes are refused; complete ink travels as an overlay with concise annotation summaries, never a full point array in the model prompt; deduplicated images and their purpose mapping bind the existing model invocation identity"
+        "clarification continuations reuse the original transient document image bytes and references; explicit context changes are refused; complete ink travels as an overlay with concise annotation summaries, never a full point array in the model prompt; deduplicated images and their purpose mapping bind the existing model invocation identity",
+        "candidate generation and option selection never commit a Stage; explicit acceptance verifies retained replay, model and validation before exact branch-head CAS",
+        "ordinary Stage acceptance never issues canonical HEAD; repeat acceptance returns the same committed Stage",
+        "explicit proposal endorsement retains only that choice and does not supersede alternatives or other explorations sharing its base"
       ],
       "status": "canonical",
       "tests": [
@@ -3904,7 +3957,8 @@
         "apps/archflow-studio/api/tests/test_clarification_scope.py",
         "apps/archflow-studio/api/tests/test_document_annotations.py",
         "apps/archflow-studio/api/tests/test_working_copies.py",
-        "apps/archflow-studio/api/tests/test_document_visual_providers.py"
+        "apps/archflow-studio/api/tests/test_document_visual_providers.py",
+        "apps/archflow-studio/api/tests/test_design_history.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -3921,7 +3975,9 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/pick.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
         "apps/archflow-studio/api/archflow_studio_api/application/episodes.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py"
+        "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/design_history.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py"
       ]
     },
     {
@@ -4052,7 +4108,9 @@
         "source coverage from published references and the candidate's exact StateRecord; normative requirement-to-result projection remains incomplete (P110)",
         "memoizing one validation per candidate and issue, computed once in this process",
         "the impact arrangement around StateRecord.closure: direct, propagated, protected, conflicts, locks and unknown coverage",
-        "the before/after/why comparison of two runs' exported objects, joined by name from retained seat-3dm-inspection records"
+        "the before/after/why comparison of two runs' exported objects, joined by name from retained seat-3dm-inspection records",
+        "candidate validation against its verified Stage source and exact historical published base through the existing validators",
+        "available composed registrations are distinct from certified native exports; native execution-ref coverage is still checked"
       ],
       "does_not_own": [
         "the validators themselves - archflow.validation.engine",
@@ -4093,7 +4151,8 @@
         "compare_runs",
         "shapes_of",
         "Comparison",
-        "ValidationStore.receipt_ids"
+        "ValidationStore.receipt_ids",
+        "validate_design_candidate"
       ],
       "depends_on": [
         "archflow.project.refs",
@@ -4124,7 +4183,8 @@
         "review readiness never issues a run or advances a stage; project.issue remains the only issuer",
         "a validation is about one candidate at one issue - the key includes the published version",
         "impact adds no propagation rule of its own; it calls StateRecord.closure and arranges the answer",
-        "the comparison is a join on retained records, with a stated tolerance, not browser or geometry inference"
+        "the comparison is a join on retained records, with a stated tolerance, not browser or geometry inference",
+        "the validation readout for a retained Stage-based candidate uses its exact historical source base, matching design acceptance; legacy candidates retain current-HEAD validation and formal issue remains separate"
       ],
       "status": "canonical",
       "tests": [
@@ -4860,7 +4920,8 @@
         "project.record_kinds",
         "studio.candidate",
         "studio.binding",
-        "studio.artifacts"
+        "studio.artifacts",
+        "project.refs"
       ],
       "invariants": [
         "never writes the authored record and never touches canonical",

@@ -18,7 +18,7 @@ from starlette.datastructures import State
 
 from archflow.project.location import open_located_project
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, STATE_RECORD
+from archflow.project.record_kinds import DESIGN_STAGE, RUNNER_RUN_RECEIPT, STATE_RECORD, STUDIO_CANDIDATE_DELTA
 from archflow.project.refs import (
     ProjectRecordRef,
     ProjectVersionRef,
@@ -30,6 +30,7 @@ from archflow.project.repository import (
     ProjectRepositoryError,
 )
 from archflow.state.stage_workflow import HARNESS_WORKFLOW_IDS
+from archflow.state.design_portfolio import DesignBranch, DesignStage
 from archflow.state.state_record import StateRecord, StateRecordError
 
 from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
@@ -135,6 +136,53 @@ class ProjectBinding:
         """
 
         return self.repository.read_head()
+
+    def design_history(self, branch_id: str) -> tuple[tuple[ProjectRecordRef, DesignStage], ...]:
+        """The committed ancestors of one branch, oldest first."""
+        branches = self.repository.read_design_branches()
+        if branch_id not in branches:
+            raise StudioError(404, "DESIGN_BRANCH_NOT_FOUND", f"Design branch {branch_id!r} does not exist.")
+        branch = DesignBranch.from_dict(branches[branch_id])
+        ref: ProjectRecordRef | None = branch.head_stage
+        history: list[tuple[ProjectRecordRef, DesignStage]] = []
+        seen: set[ProjectRecordRef] = set()
+        while ref is not None:
+            if ref in seen:
+                raise StudioError(409, "DESIGN_HISTORY_INVALID", "The committed design history contains a cycle.")
+            seen.add(ref)
+            payload = self.repository.load_json(ref)
+            if record_kind(ref) != DESIGN_STAGE or payload.get("schema") != "DesignStage@1":
+                raise StudioError(409, "DESIGN_HISTORY_INVALID", "The design history names an invalid stage record.")
+            stage = DesignStage.from_dict({key: value for key, value in payload.items() if key != "schema"})
+            if stage.project_id != self.project_id:
+                raise StudioError(409, "DESIGN_HISTORY_INVALID", "The stage belongs to another project.")
+            history.append((ref, stage))
+            ref = stage.parent_stage
+        if branch.fork_stage not in seen:
+            raise StudioError(409, "DESIGN_HISTORY_INVALID", "The branch history does not reach its fork stage.")
+        return tuple(reversed(history))
+
+    def design_stage(self, ref: ProjectRecordRef) -> DesignStage:
+        """Resolve a committed node; a prepared but unreferenced record is not one."""
+        if ref.project_id != self.project_id:
+            raise StudioError(409, "DESIGN_STAGE_MISMATCH", "The stage belongs to another project.")
+        for branch_id in self.repository.read_design_branches():
+            for retained_ref, stage in self.design_history(branch_id):
+                if retained_ref == ref:
+                    return stage
+        raise StudioError(404, "DESIGN_STAGE_NOT_FOUND", "This stage is not part of committed design history.")
+
+    def candidate_delta(self, run_id: str) -> dict[str, Any] | None:
+        """One actual run's retained change, without inventing legacy deltas."""
+        refs = [ref for ref in self.record_refs(run_id) if record_kind(ref) == STUDIO_CANDIDATE_DELTA]
+        if not refs:
+            return None
+        if len(refs) != 1:
+            raise StudioError(409, "CANDIDATE_DELTA_INVALID", "This candidate has competing retained changes.")
+        payload = self.repository.load_json(refs[0])
+        if payload.get("schema") != "StudioCandidateDelta@1" or payload.get("project_id") != self.project_id or payload.get("run_id") != run_id:
+            raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The retained change has a different project or run binding.")
+        return payload
 
     def run_ids(self) -> tuple[str, ...]:
         """Every run directory in the project, in name order."""
@@ -329,6 +377,11 @@ class ProjectBinding:
             # An explicitly named run must exist; the survey's tolerance is for
             # runs nobody asked about.
             return self._chosen(self.load_run(run_id), "query", run_id)
+        branches = self.repository.read_design_branches()
+        if "main" in branches:
+            head_ref = ProjectRecordRef.from_dict(branches["main"]["head_stage"])
+            stage = self.design_stage(head_ref)
+            return ReferenceRun(self.load_run(stage.candidate_id), "rule", self.repository.load_json(stage.runner_ref))
         configured = self.settings.reference_run
         if configured is not None:
             try:

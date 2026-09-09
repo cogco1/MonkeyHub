@@ -52,7 +52,7 @@ from archflow.project.refs import ProjectRecordRef, RunRef
 from ..ports import StudioEventSink
 from ..transport.errors import StudioError
 from .clarification import property_in
-from .proposals import PERSISTENCE, Proposal, closure_of
+from .proposals import PERSISTENCE, Proposal, write_refs_of
 from .artifacts import ModelSource, require_model_source
 from .binding import ProjectBinding, record_kind
 from .projection import project_state
@@ -83,6 +83,7 @@ class WorkingCopy:
     options: tuple[WorkingCopyOption, ...]
     selected_option_id: str | None
     revision_sha256: str
+    base_stage_ref: str | None = None
 
 
 _working_copy_lock = threading.RLock()
@@ -115,7 +116,7 @@ def _working_copy_from(revisions: Mapping[str, Mapping], revision_sha256: str | 
     return WorkingCopy(row["projectId"], row["groupId"], row["label"], row["stageId"],
                        ModelSource.from_dict(row["commonBase"]), tuple(row["scope"]),
                        tuple(WorkingCopyOption(item["id"], item["label"], ModelSource.from_dict(item["modelSource"])) for item in row["options"]),
-                       row["selectedOptionId"], revision)
+                       row["selectedOptionId"], revision, row.get("baseStageRef"))
 
 
 def list_working_copies(binding: ProjectBinding) -> tuple[WorkingCopy, ...]:
@@ -216,6 +217,7 @@ def _retain_working_copy(binding: ProjectBinding, item: WorkingCopy, previous: s
         record_kind=STUDIO_WORKING_COPY,
         payload={"schema": "StudioWorkingCopy@1", "projectId": item.project_id, "groupId": item.group_id,
                  "label": item.label, "stageId": item.stage_id, "commonBase": item.common_base.to_dict(),
+                 "baseStageRef": item.base_stage_ref,
                  "scope": list(item.scope), "options": [option.to_dict() for option in item.options],
                  "selectedOptionId": item.selected_option_id, "previousRevisionSha256": previous},
     )
@@ -233,8 +235,10 @@ def create_working_copy(
     with _working_copy_lock:
         if group_id in _working_copy_revisions(binding, group_id):
             raise StudioError(409, "WORKING_COPY_EXISTS", "This work item is already retained.")
+        base_stage = project_state(binding, common_base.run_id).source_stage_ref
         return _retain_working_copy(binding, WorkingCopy(binding.project_id, group_id, label, stage_id, common_base,
-                                                        tuple(scope), tuple(options), None, ""), None)
+                                                        tuple(scope), tuple(options), None, "",
+                                                        None if base_stage is None else base_stage.uri), None)
 
 
 def select_working_copy_option(binding: ProjectBinding, group_id: str, base_revision: str, option_id: str) -> WorkingCopy:
@@ -281,11 +285,6 @@ DECISIONS = (ACCEPTED, REJECTED, MODIFIED)
 SCOPE_SLOT = "scope"
 SCOPES = ("element", "stack", "datum")
 
-
-def superseded_by(proposal_id: str) -> str:
-    """The reason a still-open proposal carries when another one was run."""
-
-    return f"superseded by {proposal_id}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,7 +365,7 @@ class EpisodeProposal:
     """One option that was on the table, and what became of it.
 
     ``closure`` is the proposal's own — every ref the change invalidates, as
-    ``closure_of`` computes it. It travels with the decision because what an
+    ``write_refs_of`` computes it. It travels with the decision because what an
     option *would have touched* is half of why it was or was not chosen, and
     the proposal it came from is lost on restart.
     """
@@ -410,7 +409,7 @@ def decided(
     """One proposal as the episode holds it, with the decision made on it.
 
     The closure is taken from the proposal itself rather than recomputed: there
-    is one definition of what a change reaches and it is ``closure_of``.
+    is one definition of what a change reaches and it is ``write_refs_of``.
     """
 
     return EpisodeProposal(
@@ -420,7 +419,7 @@ def decided(
             key=proposal.key, old=proposal.old, new=proposal.new,
             semantic_edit=proposal.semantic_edit,
         ),
-        closure=tuple(sorted(closure_of(proposal))),
+        closure=tuple(sorted(write_refs_of(proposal))),
         decision=decision,
         reason=reason,
         modified_to=modified_to,
@@ -723,48 +722,18 @@ def accept(
     *,
     project_id: str,
     proposal: Proposal,
-    superseded: Sequence[Proposal] = (),
     reason: str | None = None,
     evidence_refs: Sequence[str] = (),
     validation_refs: Sequence[str] = (),
 ) -> DeliberationEpisode:
-    """The architect accepted this proposal: the judgement, retained into the
-    run the proposal produced.
-
-    This is a person's explicit act, never a side effect of running a
-    candidate: a preview the architect asked to see is not a proposal the
-    architect chose. The caller names the run the accepted proposal made
-    (``run``) and, in ``superseded``, the options the architect is closing
-    with this choice — ``still_open`` is the studio's reading of what was on
-    the table. ``reason`` is the architect's own sentence for the choice,
-    kept verbatim on the accepted option when one was given. The decision
-    route calls this for ``accepted``, with the candidate the request named.
-
-    Two things happen in one breath, because they are one act. Every option
-    in ``superseded`` is closed, with the reason that closed it — the
-    architect chose this one, and *that* is what "not the other one" means.
-    And every judgement made earlier against this state, the rejections and
-    the modifications this process was holding, is flushed into the same run:
-    a run that carried only the conclusion would be a decision with its
-    reasons deleted.
-    """
+    """Retain the explicit choice; other explorations and alternatives stay open."""
 
     store.flush(repository, run, proposal.base_state_digest)
     episode = open_episode(
         project_id=project_id,
         state_digest=proposal.base_state_digest,
         intent=intent_of(proposal),
-        proposals=(
-            decided(proposal, ACCEPTED, reason=reason),
-            *(
-                decided(
-                    other,
-                    REJECTED,
-                    reason=superseded_by(proposal.proposal_id),
-                )
-                for other in superseded
-            ),
-        ),
+        proposals=(decided(proposal, ACCEPTED, reason=reason),),
         protected=proposal.protected,
         evidence_refs=evidence_refs,
         validation_refs=validation_refs,

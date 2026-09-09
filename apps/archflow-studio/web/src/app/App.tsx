@@ -34,6 +34,8 @@ import type { ServerIdentity } from "../api/connection";
 import type {
   ArtifactListDto,
   CatalogDto,
+  DesignStageDto,
+  ElevationRequestDto,
   DocumentAnnotationRefDto,
   DocumentVisualInputDto,
   CandidateDto,
@@ -56,6 +58,8 @@ import type {
 } from "../api/generated";
 import type { GestureTool } from "../workspaces/monkeyarch/Annotate";
 import { createModelAnnotationsController, useModelAnnotations } from "../workspaces/monkeyarch/useModelAnnotations";
+import { createDocumentAnnotationsController } from "../workspaces/monkeydiagram/useDocumentAnnotations";
+import type { DocumentViewContext } from "../workspaces/monkeydiagram/DocumentCanvas";
 import {
   canonicalRunSourceLabel,
   canonicalSourceLabel,
@@ -109,6 +113,7 @@ import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { editingDigestForView, useSession } from "./useSession";
 import { useTranscript, type SystemTextPart } from "./transcript";
+import { useCandidateRuns } from "./useCandidateRuns";
 
 /** The three refusing outcomes of an intent, and the two that end an exchange. */
 const TERMINAL_OUTCOMES = [MISSING_EDITABLE_CONTROL, UNSUPPORTED_REQUEST];
@@ -210,6 +215,23 @@ export default function App({ server }: { server: ServerIdentity }) {
   const { session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, recoverFromStaleBase } = useSession(pushNotice, server.capabilities);
   const sourceRunId = session.status === "ready" ? session.value.sourceRunId : null;
   const workingCopies = session.status === "ready" ? session.value.workingCopies : [];
+  const designHistoryEnabled = server.capabilities.includes("design-history");
+  const designHistory = session.status === "ready" ? session.value.designHistory ?? null : null;
+  const stageModelSource = session.status === "ready" ? session.value.stageModelSource ?? null : null;
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [drawingBusy, setDrawingBusy] = useState(false);
+  const [drawingError, setDrawingError] = useState<string | null>(null);
+  const [documentController] = useState(createDocumentAnnotationsController);
+  const documentSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const bindDocumentSave = useCallback((save: (() => Promise<void>) | null) => { documentSaveRef.current = save; }, []);
+  const [documentView, setDocumentView] = useState<DocumentViewContext>(() => {
+    const query = new URLSearchParams(window.location.search);
+    const open = query.get("view") === "documents";
+    const page = Number(query.get("documentPage") ?? 0);
+    return { open, mounted: open, runId: query.get("documentRun"), sourceSha: query.get("documentSource"),
+      revisionRef: query.get("documentRevision"), pageIndex: Number.isSafeInteger(page) && page >= 0 ? page : -1 };
+  });
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [picked, setPicked] = useState<PickedFacts | null>(null);
@@ -230,6 +252,7 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [artifactLoadingSha, setArtifactLoadingSha] = useState<string | null>(
     null,
   );
+  const [artifactLoadPhase, setArtifactLoadPhase] = useState<"download" | "parse" | null>(null);
   const [artifactError, setArtifactError] = useState<StudioApiError | null>(
     null,
   );
@@ -239,6 +262,7 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [inspection, setInspection] = useState<SceneInspection | null>(null);
   const [viewerMessage, setViewerMessage] = useState("");
   const [viewerStatus, setViewerStatus] = useState<ViewportStatus>("idle");
+  const viewerStatusRef = useRef<ViewportStatus>("idle");
   const [sourceLabel, setSourceLabel] = useState<string | null>(null);
   // The listing rows of the artifacts currently in the viewer, kept beside
   // their source label: one seat's export, or every seat of a run shown at
@@ -255,6 +279,11 @@ export default function App({ server }: { server: ServerIdentity }) {
   // because a refused file leaves the previous model on screen.
   const pendingArtifacts = useRef<readonly ProjectArtifactDto[]>([]);
   const modelLoadRequest = useRef(0);
+  const previewContext = useRef({ key: "", revision: 0 });
+  const autoShowRef = useRef<{
+    candidateId: string | null; context: number; viewRequest: number; started?: boolean;
+  } | null>(null);
+  const manualLoadRef = useRef(false);
   // The first seat on screen answers for the picture wherever one row is
   // wanted: the run it belongs to, the receipt a pick is resolved against,
   // the seat a cross-fade is loaded beside.
@@ -304,10 +333,14 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [capturePath, setCapturePath] = useState<string | null>(null);
   const refineInFlight = useRef<string | null>(null);
   const refinePending = useRef<Map<string, number>>(new Map());
-  const [candidates, setCandidates] = useState<Record<string, CandidateDto>>({});
-  const [validations, setValidations] = useState<
-    Record<string, ValidationDto>
-  >({});
+  const candidateEntries = useMemo(() => transcript.entries.filter(
+    (entry) => entry.kind === "candidate",
+  ), [transcript.entries]);
+  const candidateRuns = useCandidateRuns(candidateEntries, (candidateId, status) => noteJobStatus(candidateId, status));
+  const candidates = useMemo(() => Object.fromEntries(Object.entries(candidateRuns.runs).flatMap(([id, run]) =>
+    run.candidate.status === "ready" ? [[id, run.candidate.value]] : [])) as Record<string, CandidateDto>, [candidateRuns.runs]);
+  const validations = useMemo(() => Object.fromEntries(Object.entries(candidateRuns.runs).flatMap(([id, run]) =>
+    run.validation.status === "ready" ? [[id, run.validation.value]] : [])) as Record<string, ValidationDto>, [candidateRuns.runs]);
   // Which candidates already have a verdict entry; a ref so the job reporter
   // never reads a stale transcript.
   const verdictsRef = useRef<Set<string>>(new Set());
@@ -351,6 +384,9 @@ export default function App({ server }: { server: ServerIdentity }) {
   const eventLines = useStudioEvents(server.capabilities.includes("events"), (event) => {
     if (event.type === "model_asset.registered" || event.type === "working_copy.option_added" ||
         event.type === "candidate.succeeded") setVersionRefreshRequest((current) => current + 1);
+    if (event.candidateId && (event.type === "candidate.succeeded" || event.type === "candidate.failed")) {
+      candidateRuns.refresh(event.candidateId);
+    }
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [conversationOpen, setConversationOpen] = useState(false);
@@ -363,6 +399,17 @@ export default function App({ server }: { server: ServerIdentity }) {
     session.status === "ready" ? session.value.projection : null;
   const project = session.status === "ready" ? session.value.project : null;
   artifactProjectRef.current = project?.projectId ?? null;
+  const contextKey = JSON.stringify([project?.projectId, sourceRunId, projection?.stateDigest, projection?.sourceStageRef, changingBase, session.status]);
+  if (previewContext.current.key !== contextKey) {
+    previewContext.current = { key: contextKey, revision: previewContext.current.revision + 1 };
+  }
+  const beginCandidatePreview = useCallback(() => {
+    manualLoadRef.current = false;
+    const preview = { candidateId: null as string | null,
+      context: previewContext.current.revision, viewRequest: modelLoadRequest.current };
+    autoShowRef.current = preview;
+    return preview;
+  }, []);
   // A new editing base starts a new exchange, without discarding the draft or history.
   useEffect(() => {
     pickRequestRef.current += 1;
@@ -373,7 +420,7 @@ export default function App({ server }: { server: ServerIdentity }) {
     setGhostProposalId(null);
     viewportRef.current?.ghost(null);
     refinePending.current.clear();
-  }, [project?.projectId, projection?.stateDigest]);
+  }, [project?.projectId, projection?.stateDigest, projection?.sourceStageRef]);
   const [viewerCatalog, setViewerCatalog] = useState<CatalogDto | null>(null);
   const modelSources = useMemo(() => {
     const options = workingCopies.flatMap((copy) => copy.options.map((option) => ({
@@ -428,12 +475,34 @@ export default function App({ server }: { server: ServerIdentity }) {
     .find((option) => sourceAvailableForEditing(option.modelSource))?.modelSource ?? null;
   const retainedEditingSource = documentEditingRef.current.projectId === project?.projectId && sourceAvailableForEditing(documentEditingRef.current.modelSource)
     ? documentEditingRef.current.modelSource : selectedEditingSource ?? (sourceAvailableForEditing(loadedModelSource) ? loadedModelSource : null);
-  const editingModelSource = retainedEditingSource ?? (
+  const editingModelSource = stageModelSource ?? retainedEditingSource ?? (
     new Set(editingSources.map((row) => row.modelSource.assetSha256)).size === 1
       ? editingSources[0].modelSource : null
   );
-  const editingModelSourceReady = artifacts.status === "ready" && (editingModelSource !== null ||
+  const editingModelSourceReady = artifacts.status === "ready" && (stageModelSource === null || sourceAvailableForEditing(stageModelSource)) && (editingModelSource !== null ||
     !modelSources.some((row) => row.modelSource.runId === projection?.referenceRun.runId));
+  const [candidateStageSources, setCandidateStageSources] = useState<Record<string, string>>({});
+  const [acceptedModelSources, setAcceptedModelSources] = useState<readonly ModelSourceDto[]>([]);
+  useEffect(() => {
+    if (!designHistoryEnabled || !project || !designHistory) return;
+    let current = true;
+    void (async () => {
+      const histories = await Promise.all(designHistory.branches.map((branch) => branch.branchId === designHistory.branchId
+        ? designHistory : studio.designHistory(branch.branchId)));
+      if (!current) return;
+      const accepted = histories.flatMap((history) => history.stages.map((stage) => stage.modelSource));
+      setAcceptedModelSources(accepted);
+      const unaccepted = modelSources.filter(({ modelSource }) => !accepted.some((source) => source.runId === modelSource.runId));
+      const rows = await Promise.allSettled(unaccepted.map(async ({ modelSource }) => {
+        const answer = await studio.state(modelSource.runId);
+        return answer.projectId === project.projectId && answer.stateDigest === modelSource.stateDigest && answer.sourceStageRef
+          ? [modelSource.runId, answer.sourceStageRef] as const : null;
+      }));
+      if (current) setCandidateStageSources(Object.fromEntries(rows.flatMap((row) => row.status === "fulfilled" && row.value ? [row.value] : [])));
+    })()
+      .catch((cause) => { if (current) setHistoryError(asStudioApiError(cause).detail); });
+    return () => { current = false; };
+  }, [designHistoryEnabled, designHistory, modelSources, project?.projectId]);
   documentEditingRef.current = { projectId: project?.projectId ?? null, modelSource: editingModelSource };
   const pendingDocument = pendingIntentRef.current;
   const documentContinuation = pendingDocument?.continuationToken && pendingDocument.documentContext?.projectId === project?.projectId &&
@@ -592,13 +661,26 @@ export default function App({ server }: { server: ServerIdentity }) {
     const projectId = artifactProjectRef.current;
     const isCurrent = () => request === artifactsReadRef.current && projectId === artifactProjectRef.current;
     if (!background) setArtifacts(loading);
-    try {
-      const answer = await studio.artifacts();
+    let lastError: StudioApiError | null = null;
+    for (let attempt = 0; attempt < (background ? 3 : 1); attempt += 1) {
       if (!isCurrent()) return;
-      if (answer.projectId !== projectId) throw new Error("The model list belongs to another project.");
-      setArtifacts(ready(answer));
-    } catch (cause) {
-      if (isCurrent() && !background) setArtifacts(failed(asStudioApiError(cause)));
+      try {
+        const answer = await studio.artifacts();
+        if (!isCurrent()) return;
+        if (answer.projectId !== projectId) throw new Error("The model list belongs to another project.");
+        setArtifacts(ready(answer));
+        if (lastError) {
+          const recovered = lastError;
+          setArtifactError((current) => current === recovered ? null : current);
+        }
+        return;
+      } catch (cause) {
+        if (!isCurrent()) return;
+        lastError = asStudioApiError(cause);
+        if (!background) { setArtifacts(failed(lastError)); return; }
+        setArtifactError(lastError);
+        if (attempt < 2) await new Promise<void>((resolve) => window.setTimeout(resolve, 500 * (attempt + 1)));
+      }
     }
   }, []);
 
@@ -729,14 +811,19 @@ export default function App({ server }: { server: ServerIdentity }) {
         sameModelSource(documentEditingRef.current.modelSource, editingModelSource) &&
         sameModelSource(currentViewSourceRef.current, loadedModelSource);
       setApplyingProgram(true);
+      const preview = beginCandidatePreview();
       try {
         const answer = await studio.applyProgram({
+          sourceStageRef: projection?.sourceStageRef,
           stateDigest,
           sheet: current,
           saveInput,
           ...(sourceRunId === null ? {} : { sourceRunId }),
           ...(editingModelSource === null ? {} : { modelSource: editingModelSource }),
         });
+        if (autoShowRef.current === preview) preview.candidateId = answer.candidateId;
+        append({ kind: "candidate", candidateId: answer.candidateId, jobId: answer.jobId,
+          proposalId: null, status: answer.status });
         append({
           kind: "system",
           ...systemText([
@@ -754,6 +841,7 @@ export default function App({ server }: { server: ServerIdentity }) {
           append({ kind: "system", ...systemText([{ kind: "prose", text: line }]) });
         }
       } catch (cause) {
+        if (autoShowRef.current === preview) autoShowRef.current = null;
         const error = asStudioApiError(cause);
         if (sourceIsCurrent()) recoverFromStaleBase(error);
         append({ kind: "refusal", error, what: "POST /api/program" });
@@ -761,14 +849,15 @@ export default function App({ server }: { server: ServerIdentity }) {
         setApplyingProgram(false);
       }
     },
-    [append, editingModelSource, editingModelSourceReady, loadedModelSource, program, project?.projectId,
-      projection?.recordDigest, recoverFromStaleBase, sourceRunId, stateDigest],
+    [append, beginCandidatePreview, editingModelSource, editingModelSourceReady, loadedModelSource, program, project?.projectId,
+      projection?.recordDigest, projection?.sourceStageRef, recoverFromStaleBase, sourceRunId, stateDigest],
   );
 
   const openLocalFile = useCallback((file: File) => {
     modelLoadRequest.current += 1;
     pendingArtifacts.current = [];
     setArtifactLoadingSha(null);
+    setArtifactLoadPhase(null);
     manualLoadRef.current = true;
     void viewportRef.current?.openFile(file);
   }, []);
@@ -779,8 +868,11 @@ export default function App({ server }: { server: ServerIdentity }) {
    * same route — same digest-addressed bytes, same viewer, different label.
    */
   const loadArtifactIntoViewer = useCallback(
-    async (artifact: ProjectArtifactDto, label: string, preserveCamera = false) => {
+    async (artifact: ProjectArtifactDto, label: string, preserveCamera = false, stillCurrent?: () => boolean): Promise<boolean> => {
       const request = ++modelLoadRequest.current;
+      const projectId = artifactProjectRef.current;
+      const isCurrent = () => request === modelLoadRequest.current &&
+        projectId === artifactProjectRef.current && (stillCurrent?.() ?? true);
       setArtifactError(null);
       if (!artifact.sha256) {
         setArtifactError(
@@ -791,7 +883,7 @@ export default function App({ server }: { server: ServerIdentity }) {
             ),
           ),
         );
-        return;
+        return false;
       }
       if (!isViewable(artifact)) {
         // The exact STEP is the delivery, and the viewer cannot parse it. It
@@ -805,27 +897,35 @@ export default function App({ server }: { server: ServerIdentity }) {
             ),
           ),
         );
-        return;
+        return false;
       }
       setArtifactLoadingSha(artifact.sha256);
+      setArtifactLoadPhase("download");
       try {
         const file = await studio.artifactFile(
           artifact.sha256,
           artifact.fileName,
         );
-        if (request !== modelLoadRequest.current) return;
+        if (!isCurrent()) return false;
         pendingArtifacts.current = [artifact];
+        setArtifactLoadPhase("parse");
         const previous = loadedArtifactsRef.current;
-        await viewportRef.current?.openFile(file, label, {
+        const viewport = viewportRef.current;
+        if (!viewport) throw new Error("The 3D viewport is not ready yet; try again in a moment.");
+        await viewport.openFile(file, label, {
+          isCurrent,
           preserveCamera: preserveCamera && previous.length > 0 && artifact.lengthUnit !== null &&
             previous.every((row) => row.lengthUnit === artifact.lengthUnit),
         });
+        return isCurrent() && viewerStatusRef.current === "ready";
       } catch (cause) {
-        if (request === modelLoadRequest.current) setArtifactError(asStudioApiError(cause));
+        if (isCurrent()) setArtifactError(asStudioApiError(cause));
+        return false;
       } finally {
         if (request === modelLoadRequest.current) {
           pendingArtifacts.current = [];
           setArtifactLoadingSha(null);
+          setArtifactLoadPhase(null);
         }
       }
     },
@@ -851,22 +951,27 @@ export default function App({ server }: { server: ServerIdentity }) {
         return;
       }
       const request = ++modelLoadRequest.current;
+      const projectId = artifactProjectRef.current;
+      const isCurrent = () => request === modelLoadRequest.current && projectId === artifactProjectRef.current;
       setArtifactLoadingSha(servable[0].sha256);
+      setArtifactLoadPhase("download");
       try {
         // Every seat, or none: a picture missing a seat that nobody was told
         // about would read as the run being smaller than it is.
         const files = await Promise.all(
           servable.map((row) => studio.artifactFile(row.sha256, row.fileName)),
         );
-        if (request !== modelLoadRequest.current) return;
+        if (!isCurrent()) return;
         pendingArtifacts.current = servable;
-        await viewportRef.current?.openFiles(files, label, { preserveCamera });
+        setArtifactLoadPhase("parse");
+        await viewportRef.current?.openFiles(files, label, { preserveCamera, isCurrent });
       } catch (cause) {
-        if (request === modelLoadRequest.current) setArtifactError(asStudioApiError(cause));
+        if (isCurrent()) setArtifactError(asStudioApiError(cause));
       } finally {
         if (request === modelLoadRequest.current) {
           pendingArtifacts.current = [];
           setArtifactLoadingSha(null);
+          setArtifactLoadPhase(null);
         }
       }
     },
@@ -1276,6 +1381,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         // already typed. Either way the proposal that comes back is the
         // record's, and the agent's reading travels beside it, kept apart.
         const answer = await studio.compileIntent({
+          sourceStageRef: projection?.sourceStageRef,
           stateDigest: requestStateDigest,
           sourceRunId: requestModelSource?.runId ?? sourceRunId,
           ...(requestModelSource ? { modelSource: requestModelSource } : {}),
@@ -1441,7 +1547,7 @@ export default function App({ server }: { server: ServerIdentity }) {
     [append, documentContinuation, editingModelSource, loadedModelSource, propose, selectSemanticTarget, stateDigest],
   );
 
-  const changeEditingBase = useCallback(async (runId: string | null, modelSource?: ModelSourceDto) => {
+  const changeEditingBase = useCallback(async (runId: string | null, modelSource?: ModelSourceDto, sourceStageRef?: string, branchId?: string, keepDocument = false) => {
     if (changingBase || selectingWorkingCopy || proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy) return null;
     pickRequestRef.current += 1;
     const selectedSource = modelSource ?? (loadedModelSource?.runId === runId ? loadedModelSource : null);
@@ -1452,13 +1558,14 @@ export default function App({ server }: { server: ServerIdentity }) {
     let next;
     setSelectingWorkingCopy(true);
     try {
+      await documentSaveRef.current?.();
       if (group && selectedSource) {
         const option = group.options.find((row) => sameModelSource(row.modelSource, selectedSource))!;
         await studio.selectWorkingCopy(group.groupId, {
           projectId: group.projectId, baseRevisionSha256: group.revisionSha256, optionId: option.id,
         });
       }
-      next = await reload(runId);
+      next = await reload(runId, sourceStageRef, branchId);
     } catch (cause) {
       setArtifactError(asStudioApiError(cause));
       return null;
@@ -1466,6 +1573,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       setSelectingWorkingCopy(false);
     }
     if (next !== null) {
+      if (!keepDocument) setDocumentView((current) => ({ ...current, runId: next.projection.referenceRun.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
       pendingIntentRef.current = null;
       if (selectedSource && selectedSource.runId === next.projection.referenceRun.runId && selectedSource.stateDigest === next.projection.stateDigest) {
         documentEditingRef.current = { projectId: next.project.projectId, modelSource: selectedSource };
@@ -1481,7 +1589,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         if (artifact) await loadArtifactIntoViewer(artifact, modelSources.find((row) => row.modelSource.assetSha256 === selectedSource.assetSha256)?.label ?? artifact.fileName, true);
       }
       if (runId === null) {
-        const complete = next.workingCopies.flatMap((copy) => copy.options.filter((option) => option.id === copy.selectedOptionId)).find((option) =>
+        const complete = next.stageModelSource ?? next.workingCopies.flatMap((copy) => copy.options.filter((option) => option.id === copy.selectedOptionId)).find((option) =>
           option.modelSource.runId === next.projection.referenceRun.runId && option.modelSource.stateDigest === next.projection.stateDigest,
         )?.modelSource ?? (artifacts.status === "ready" ? artifacts.value.artifacts.find((row) =>
           row.runId === next.projection.referenceRun.runId && row.representation === "composed" && row.modelSource?.stateDigest === next.projection.stateDigest,
@@ -1501,6 +1609,63 @@ export default function App({ server }: { server: ServerIdentity }) {
     }
     return next;
   }, [applyingProgram, artifacts, candidateBusy, changingBase, clearComparison, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, optionsBusy, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, workingCopies]);
+
+  const openDesignStage = async (stage: DesignStageDto, branchId = designHistory?.branchId) => {
+    await changeEditingBase(stage.modelSource.runId, stage.modelSource, stage.stageRef, branchId);
+  };
+  const updateDesignHistory = async (operation: () => Promise<DesignStageDto>) => {
+    if (historyBusy) return;
+    setHistoryBusy(true); setHistoryError(null);
+    try { await openDesignStage(await operation()); }
+    catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+    finally { setHistoryBusy(false); }
+  };
+  const selectDesignBranch = async (branchId: string) => {
+    setHistoryBusy(true); setHistoryError(null);
+    try {
+      const history = await studio.designHistory(branchId);
+      const head = history.branches.find((branch) => branch.branchId === branchId)?.headStageRef;
+      const stage = history.stages.find((item) => item.stageRef === head);
+      if (stage) await openDesignStage(stage, branchId);
+    } catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+    finally { setHistoryBusy(false); }
+  };
+  const forkDesignBranch = async (stage: DesignStageDto, branchId: string) => {
+    if (!project || !designHistory) return;
+    setHistoryBusy(true); setHistoryError(null);
+    try {
+      await studio.forkBranch({ projectId: project.projectId, branchId, parentBranch: designHistory.branchId, stageRef: stage.stageRef });
+      await openDesignStage(stage, branchId);
+    } catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+    finally { setHistoryBusy(false); }
+  };
+  const generateElevation = async (view: ElevationRequestDto["view"]) => {
+    if (!project || !loadedModelSource || drawingBusy) return;
+    const stage = designHistory?.stages.find((item) => sameModelSource(item.modelSource, loadedModelSource));
+    const currentContext = previewContext.current.revision;
+    const currentViewRequest = modelLoadRequest.current;
+    setDrawingBusy(true); setDrawingError(null);
+    try {
+      await documentSaveRef.current?.();
+      const result = await studio.elevation({ projectId: project.projectId, view,
+        ...(stage ? { sourceStageRef: stage.stageRef } : { modelSource: loadedModelSource }) });
+      if (previewContext.current.revision !== currentContext || modelLoadRequest.current !== currentViewRequest) return;
+      setDocumentView({ open: true, mounted: true, runId: result.runId, sourceSha: result.assetSha256,
+        revisionRef: result.revisionRef ?? null, pageIndex: 0 });
+    } catch (cause) { setDrawingError(asStudioApiError(cause).detail); }
+    finally { setDrawingBusy(false); }
+  };
+  const combineDesignCandidates = async (candidateIds: string[]) => {
+    if (!project || historyBusy || candidateIds.length < 2) return;
+    const preview = beginCandidatePreview();
+    setHistoryBusy(true); setHistoryError(null);
+    try {
+      const result = await studio.combineCandidates({ projectId: project.projectId, candidateIds });
+      if (autoShowRef.current === preview) preview.candidateId = result.candidateId;
+      append({ kind: "candidate", candidateId: result.candidateId, jobId: result.jobId, proposalId: null, status: result.status });
+    } catch (cause) { if (autoShowRef.current === preview) autoShowRef.current = null; setHistoryError(asStudioApiError(cause).detail); }
+    finally { setHistoryBusy(false); }
+  };
 
   /**
    * The hand moves a proposal's number. The sentence is the grammar's own —
@@ -1528,6 +1693,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       setRefiningEntryId(entryId);
       try {
         const answer = await studio.compileIntent({
+          sourceStageRef: projection?.sourceStageRef,
           stateDigest,
           sourceRunId,
           targetComponentId: proposal.target.componentId,
@@ -1683,9 +1849,10 @@ export default function App({ server }: { server: ServerIdentity }) {
       // loaded model until the exact geometry arrives.
       viewportRef.current?.ghost(null);
       setGhostProposalId(null);
-      manualLoadRef.current = false;
+      const preview = beginCandidatePreview();
       try {
         const accepted = await studio.startCandidate(proposalId);
+        if (autoShowRef.current === preview) preview.candidateId = accepted.candidateId;
         append({
           kind: "candidate",
           candidateId: accepted.candidateId,
@@ -1694,6 +1861,7 @@ export default function App({ server }: { server: ServerIdentity }) {
           status: accepted.status,
         });
       } catch (cause) {
+        if (autoShowRef.current === preview) autoShowRef.current = null;
         const error = asStudioApiError(cause);
         recoverFromStaleBase(error);
         append({
@@ -1705,7 +1873,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         setCandidateBusy(false);
       }
     },
-    [append, recoverFromStaleBase],
+    [append, beginCandidatePreview, recoverFromStaleBase],
   );
 
   /**
@@ -1737,6 +1905,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       try {
         await studio.makeOption({
           ...body,
+          sourceStageRef: projection?.sourceStageRef,
           sourceRunId: source ?? undefined,
           modelSource: editingModelSource,
         });
@@ -1756,7 +1925,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       }
     },
     [append, editingModelSource, editingModelSourceReady, loadedModelSource, optionsTable, project?.projectId,
-      recoverFromStaleBase, sourceRunId, stateDigest],
+      projection?.sourceStageRef, recoverFromStaleBase, sourceRunId, stateDigest],
   );
 
   /**
@@ -1787,9 +1956,10 @@ export default function App({ server }: { server: ServerIdentity }) {
         sameModelSource(documentEditingRef.current.modelSource, editingModelSource) &&
         sameModelSource(currentViewSourceRef.current, loadedModelSource);
       setOptionsBusy(true);
-      manualLoadRef.current = false;
+      const preview = beginCandidatePreview();
       try {
         const accepted = await studio.selectOption(optionId);
+        if (autoShowRef.current === preview) preview.candidateId = accepted.candidateId;
         append({
           kind: "candidate",
           candidateId: accepted.candidateId,
@@ -1798,6 +1968,7 @@ export default function App({ server }: { server: ServerIdentity }) {
           status: accepted.status,
         });
       } catch (cause) {
+        if (autoShowRef.current === preview) autoShowRef.current = null;
         const error = asStudioApiError(cause);
         if (sourceIsCurrent()) recoverFromStaleBase(error);
         append({
@@ -1809,14 +1980,11 @@ export default function App({ server }: { server: ServerIdentity }) {
         setOptionsBusy(false);
       }
     },
-    [append, editingModelSource, editingModelSourceReady, loadedModelSource, optionsTable, project?.projectId,
+    [append, beginCandidatePreview, editingModelSource, editingModelSourceReady, loadedModelSource, optionsTable, project?.projectId,
       recoverFromStaleBase, sourceRunId, stateDigest],
   );
 
-  // The transcript as of the last render, for callbacks that must stay
-  // stable: a card's poll restarts whenever its reporter changes identity,
-  // so the reporter reads the entries through a ref instead of closing over
-  // them.
+  // The shell observes jobs independently of whichever cards are visible.
   const entriesRef = useRef(transcript.entries);
   entriesRef.current = transcript.entries;
 
@@ -1852,43 +2020,23 @@ export default function App({ server }: { server: ServerIdentity }) {
     [append, loadArtifacts, noteTranscriptStatus],
   );
 
-  const noteCandidate = useCallback((candidate: CandidateDto) => {
-    setCandidates((current) => ({
-      ...current,
-      [candidate.candidateId]: candidate,
-    }));
-  }, []);
-
-  // A verdict answers "what happened"; the exact model is the rest of the
-  // answer. Once a candidate's verdict is read, its export of the seat on
-  // screen is loaded in place of the picture the change was drawn over.
-  const autoShowRef = useRef<string | null>(null);
-  // Whether the architect chose an export to look at since the last Apply:
-  // then the verdict's model is announced, not swapped in over their choice.
-  const manualLoadRef = useRef(false);
-  const noteValidation = useCallback((validation: ValidationDto) => {
-    setValidations((current) => ({
-      ...current,
-      [validation.candidateId]: validation,
-    }));
-    autoShowRef.current = validation.candidateId;
-  }, []);
-
+  // Show the completed model without waiting for validation. Only the latest
+  // requested candidate may replace its unchanged launch view and context.
   useEffect(() => {
-    const candidateId = autoShowRef.current;
-    if (candidateId === null || artifacts.status !== "ready") return;
-    const validation = validations[candidateId];
-    if (!validation) return;
-    const rows = viewableArtifacts(
-      artifacts.value.artifacts.filter((row) => row.runId === candidateId),
-    );
+    const preview = autoShowRef.current;
+    if (!preview?.candidateId || preview.started) return;
+    const candidateId = preview.candidateId;
+    const candidate = candidates[candidateId];
+    if (!candidate) return;
+    const rows = viewableArtifacts(candidate.artifacts);
     if (rows.length === 0) return;
     const twin =
       rows.find((row) => row.representation === "composed" && row.modelSource != null) ??
       rows.find((row) => loadedArtifact !== null && row.stageId === loadedArtifact.stageId) ??
       rows[0];
-    autoShowRef.current = null;
-    if (manualLoadRef.current && loadedArtifact?.runId !== candidateId) {
+    preview.started = true;
+    if (preview.context !== previewContext.current.revision ||
+        preview.viewRequest !== modelLoadRequest.current || manualLoadRef.current) {
       append({
         kind: "system",
         ...systemText([
@@ -1904,27 +2052,29 @@ export default function App({ server }: { server: ServerIdentity }) {
       });
       return;
     }
-    append({
-      kind: "system",
-      ...systemText([
-        { kind: "prose", text: "the candidate's model is on screen · " },
-        { kind: "technical", text: twin.fileName },
-        {
-          kind: "prose",
-          text: validation.reviewReady ? " · ready for review" : " · blocked: ",
-        },
-        ...(validation.reviewReady
-          ? []
-          : ([
-              {
-                kind: "technical",
-                text: validation.blockedBy.join(", "),
-              },
-            ] satisfies SystemTextPart[])),
-      ]),
+    void (async () => {
+      try { await documentSaveRef.current?.(); }
+      catch (cause) { setArtifactError(asStudioApiError(cause)); return false; }
+      if (autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current) return false;
+      return loadArtifactIntoViewer(twin, candidateSourceLabel(candidateId), loadedArtifact !== null,
+        () => autoShowRef.current === preview && preview.context === previewContext.current.revision);
+    })().then((shown) => {
+      if (shown && preview.context === previewContext.current.revision) {
+        if (designHistoryEnabled) void reload(twin.runId).then((next) => {
+          if (next) setDocumentView((current) => ({ ...current, runId: twin.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
+        });
+        append({
+        kind: "system",
+        ...systemText([
+          { kind: "prose", text: "the candidate's model is on screen · " },
+          { kind: "technical", text: twin.fileName },
+          { kind: "prose", text: " · not accepted" },
+        ]),
+        });
+      }
+      if (autoShowRef.current === preview) autoShowRef.current = null;
     });
-    void loadArtifactIntoViewer(twin, candidateSourceLabel(candidateId), loadedArtifact !== null);
-  }, [append, artifacts, loadArtifactIntoViewer, loadedArtifact, sourceLabel, validations]);
+  }, [append, candidates, designHistoryEnabled, loadArtifactIntoViewer, loadedArtifact, sourceLabel, reload]);
 
   // Which candidate the drawer shows: the one whose card was clicked, else
   // the latest this tab launched. A card's "receipts" opens its own run.
@@ -1943,9 +2093,6 @@ export default function App({ server }: { server: ServerIdentity }) {
 
   // ---- derived views ---------------------------------------------------
 
-  const candidateEntries = transcript.entries.filter(
-    (entry) => entry.kind === "candidate",
-  );
   const selectedCandidateId =
     evidenceCandidateId !== null &&
     candidateEntries.some((entry) => entry.candidateId === evidenceCandidateId)
@@ -2011,7 +2158,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         return {
           runId,
           label: "Candidate",
-          title: utteranceOf.get(proposalId) ?? runId,
+          title: (proposalId === null ? t("program.title") : utteranceOf.get(proposalId)) ?? runId,
           detail: validation
             ? validation.reviewReady
               ? "ready for review"
@@ -2037,7 +2184,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       }
       return b.runId.localeCompare(a.runId);
     });
-  }, [artifacts, candidateEntries, projection, utteranceOf, validations]);
+  }, [artifacts, candidateEntries, projection, t, utteranceOf, validations]);
 
   // An agent can resolve the subject from the architect's words and the record.
   // A pick or circle supplies context, but is not a prerequisite for speaking.
@@ -2116,10 +2263,10 @@ export default function App({ server }: { server: ServerIdentity }) {
         (row) => row.kind === "candidate" && row.candidateId === candidateId,
       );
       return entry && entry.kind === "candidate"
-        ? (utteranceOf.get(entry.proposalId) ?? null)
+        ? (entry.proposalId === null ? t("program.title") : utteranceOf.get(entry.proposalId) ?? null)
         : null;
     },
-    [candidateEntries, utteranceOf],
+    [candidateEntries, t, utteranceOf],
   );
   const selectedSentence = sentenceOfCandidate(selectedCandidateId);
 
@@ -2300,6 +2447,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         conversation={conversationOpen ? (
           <Conversation
             entries={transcript.entries}
+            candidateRuns={candidateRuns.runs}
             sessionError={null}
             projection={projection}
             currentStateDigest={stateDigest}
@@ -2362,13 +2510,11 @@ export default function App({ server }: { server: ServerIdentity }) {
               onRefine: refine,
               onCompareInModel: (comparison) => void compareInModel(comparison),
               labelOf: sentenceOfCandidate,
-              onJobStatus: noteJobStatus,
-              onCandidate: noteCandidate,
+              onRetryCandidate: candidateRuns.refresh,
               onPreview: (artifact, label) => {
                 manualLoadRef.current = true;
                 void loadArtifactIntoViewer(artifact, label);
               },
-              onValidation: noteValidation,
               onEvidence: openEvidence,
             }}
           />
@@ -2378,8 +2524,8 @@ export default function App({ server }: { server: ServerIdentity }) {
             key={project?.projectId ?? "unbound"}
             viewportRef={viewportRef}
             sourceLabel={sourceLabel}
-            message={viewerMessage}
-            status={viewerStatus}
+            message={artifactLoadPhase === "download" ? t("candidate.loadingBytes") : viewerMessage}
+            status={artifactLoadingSha !== null ? "loading" : viewerStatus}
             inspection={inspection}
             artifactError={artifactError}
             view={view}
@@ -2396,16 +2542,26 @@ export default function App({ server }: { server: ServerIdentity }) {
               (loadedArtifacts.length > 0 || sourceLabel === LOCAL_SOURCE_LABEL)}
             onEraseGestures={(indices) => editGestures((current) => current.filter((_, index) => !indices.includes(index)))}
             documentProjectId={project?.projectId ?? null}
+            documentView={documentView}
+            drawing={server.capabilities.includes("drawing-elevations") ? { busy: drawingBusy, error: drawingError, available: loadedModelSource !== null && !modelLoading && !changingBase,
+              generate: (view) => { void generateElevation(view); } } : undefined}
+            documentAnnotationsController={documentController}
+            onDocumentBeforeLeave={bindDocumentSave}
+            onDocumentView={(next) => {
+              void (async () => {
+                try { await documentSaveRef.current?.(); setDocumentView(next); }
+                catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+              })();
+            }}
             documentModelSources={modelSources}
             viewedModelSource={loadedModelSource}
             editingModelSource={editingModelSource}
             onContinueModelSource={async (source) => {
-              const next = await changeEditingBase(source.runId, source);
+              const next = await changeEditingBase(source.runId, source, undefined, undefined, true);
               if (next === null) throw asStudioApiError(new Error("The editing base could not be changed. Retry after resolving the reported error."));
             }}
             documentVisualInputAvailable={server.capabilities.includes("document-visual-input")}
             onDocumentSubmit={(utterance, refs, source, visuals) => {
-              setConversationOpen(true);
               return propose(utterance, undefined, refs, source, visuals);
             }}
             picked={picked}
@@ -2416,6 +2572,27 @@ export default function App({ server }: { server: ServerIdentity }) {
               setVersionRefreshRequest((current) => current + 1);
             }}
             workingCopies={workingCopies}
+            designHistory={designHistoryEnabled ? {
+              history: designHistory, currentStageRef: projection?.sourceStageRef ?? null,
+              acceptedModelSources,
+              currentModelSource: loadedModelSource,
+              candidates: modelSources.filter(({ modelSource }) => candidateStageSources[modelSource.runId] &&
+                !acceptedModelSources.some((source) => sameModelSource(source, modelSource))).map((source) => ({ ...source, sourceStageRef: candidateStageSources[source.modelSource.runId] })),
+              busy: historyBusy || changingBase || selectingWorkingCopy || modelLoading || proposalBusy || candidateBusy || applyingProgram || optionsBusy,
+              error: historyError,
+              onInitialize: () => { if (project && loadedModelSource) void updateDesignHistory(() => studio.initializeStage({ projectId: project.projectId, modelSource: loadedModelSource, branchId: "main", label: "S0" })); },
+              onStage: (stage) => { void openDesignStage(stage); },
+              onBranch: (branchId) => { void selectDesignBranch(branchId); },
+              onCandidate: (source) => { void changeEditingBase(source.runId, source); },
+              onAccept: (candidateId) => {
+                const branch = designHistory?.branches.find((item) => item.branchId === designHistory.branchId);
+                if (project && branch) void updateDesignHistory(() => studio.acceptCandidate(candidateId, {
+                  projectId: project.projectId, branchId: branch.branchId, expectedHeadStageRef: branch.headStageRef,
+                }));
+              },
+              onFork: (stage, name) => { void forkDesignBranch(stage, name); },
+              onCombine: (ids) => { void combineDesignCandidates(ids); },
+            } : undefined}
             onOpenWorkingOption={openWorkingOption}
             loadingSha={artifactLoadingSha}
             loadedShas={loadedShas}
@@ -2498,6 +2675,7 @@ export default function App({ server }: { server: ServerIdentity }) {
             }
             onInspection={setInspection}
             onStatus={(status, message) => {
+              viewerStatusRef.current = status;
               setViewerStatus(status);
               setViewerMessage(message);
             }}

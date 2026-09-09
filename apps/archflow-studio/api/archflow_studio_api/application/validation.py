@@ -34,7 +34,7 @@ two normative gates (P110), and their empty input is not a successful check.
 Nothing here writes. A validation is a reading of records the run already
 retained; the published position, ``canonical/`` and ``input/`` are untouched,
 and nothing is issued by being ready for review. Only ``project.issue`` can
-issue a run or advance a stage.
+issue a run or advance a formal workflow stage.
 """
 
 from __future__ import annotations
@@ -65,6 +65,7 @@ from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
 from ..transport.errors import StudioError, error_sentence
+from .artifacts import ArtifactRecord
 from .binding import ProjectBinding, ReferenceRun
 from .candidate import CandidateRun, RelationTotals, SeatOutcome
 
@@ -192,6 +193,7 @@ def _condition_sources(
     binding: ProjectBinding,
     head: ProjectVersionRef,
     candidate: CandidateRun,
+    published: Mapping[str, Any],
 ) -> str:
     """Read only the published refs and this candidate's bound record.
 
@@ -201,14 +203,6 @@ def _condition_sources(
     """
 
     repository = binding.repository
-    published = repository.load_current_state()
-    if binding.head() != head:
-        raise StudioError(
-            409,
-            "VALIDATION_HEAD_CHANGED",
-            "The published version changed while reading validation sources; "
-            "request validation again against the current version.",
-        )
     lines = [f"Published version {head.version} ({head.state_sha256})."]
     references = published.get("authoritative_record_refs")
     if references is None:
@@ -316,8 +310,9 @@ def review_readiness(
     the first clause alone would call that a pass.
 
     ``runner.exports_available`` is read from two records, not one. Every
-    artifact the candidate carries must be ``available`` with ``status ==
-    "succeeded"``; and every seat whose run-receipt row carries a ``cad``
+    native artifact the candidate carries must be ``available`` with
+    ``status == "succeeded"``; a registered complete model must bind the exact
+    candidate state and bytes. Every seat whose run-receipt row carries a ``cad``
     block — the runner writes one only when the run was asked to export — must
     have succeeded *and* be matched by such an artifact, found by the very
     ``execution_ref`` the runner wrote into that row. A seat that exported and
@@ -338,7 +333,7 @@ def review_readiness(
             (
                 EXPORTS_CLAUSE,
                 all(
-                    record.available and record.status == "succeeded"
+                    _artifact_ready(record, candidate)
                     for record in candidate.artifacts
                 )
                 and not _unmatched_exports(candidate),
@@ -362,6 +357,21 @@ def _unmatched_exports(candidate: CandidateRun) -> tuple[SeatOutcome, ...]:
         seat
         for seat in candidate.seat_results
         if seat.cad is not None and not _export_delivered(seat, candidate)
+    )
+
+
+def _artifact_ready(record: ArtifactRecord, candidate: CandidateRun) -> bool:
+    if not record.available:
+        return False
+    if record.representation != "composed":
+        return record.status == "succeeded"
+    source = record.model_source
+    return (
+        record.status == "registered"
+        and source is not None
+        and source.run_id == candidate.candidate_id
+        and source.state_digest == candidate.state_digest
+        and source.asset_sha256 == record.sha256
     )
 
 
@@ -408,7 +418,40 @@ def validate_candidate(
     descriptions therefore never expand ``effective_checks``.
     """
 
-    canonical_facts = _condition_sources(binding, head, candidate)
+    published = binding.repository.load_current_state()
+    if binding.head() != head:
+        raise StudioError(409, "VALIDATION_HEAD_CHANGED", "The published version changed while reading validation sources; request validation again against the current version.")
+    return _validate(head, candidate, binding=binding, events=events, published=published)
+
+
+def validate_design_candidate(
+    source_stage_ref: ProjectRecordRef,
+    candidate: CandidateRun,
+    *,
+    binding: ProjectBinding,
+    events: StudioEventSink,
+) -> CandidateValidation:
+    """Validate a retained design continuation against its exact historical base."""
+
+    stage = binding.design_stage(source_stage_ref)
+    source_run = binding.load_run(stage.candidate_id)
+    receipt = binding.repository.load_json(stage.runner_ref)
+    record_ref, _ = binding.exact_state_record(ReferenceRun(run=source_run, source="design-validation", receipt=receipt))
+    if record_ref != stage.record_ref or candidate.base != source_run.base:
+        raise StudioError(409, "CANDIDATE_STAGE_MISMATCH", "The candidate and its accepted source Stage do not have the same exact base.")
+    published = binding.repository.load_version_state(source_run.base)
+    return _validate(source_run.base, candidate, binding=binding, events=events, published=published)
+
+
+def _validate(
+    head: ProjectVersionRef,
+    candidate: CandidateRun,
+    *,
+    binding: ProjectBinding,
+    events: StudioEventSink,
+    published: Mapping[str, Any],
+) -> CandidateValidation:
+    canonical_facts = _condition_sources(binding, head, candidate, published)
     artifacts, honesty = _artifacts_of(candidate)
     honesty = honesty + _exports_of(candidate)
     receipt = validate_submission(
@@ -507,7 +550,7 @@ def _exports_of(candidate: CandidateRun) -> tuple[str, ...]:
             ),
         )
         for record in candidate.artifacts
-        if not (record.available and record.status == "succeeded")
+        if not _artifact_ready(record, candidate)
     ) + tuple(
         EXPORT_UNMATCHED.format(
             seat_id=seat.seat_id,

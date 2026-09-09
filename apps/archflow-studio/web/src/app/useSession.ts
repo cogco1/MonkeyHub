@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 import { StudioApiError, asStudioApiError, studio } from "../api/client";
 import { connection } from "../api/connection";
-import type { ProjectBindingDto, StateProjectionDto, WorkingCopyDto } from "../api/generated";
+import type { DesignHistoryDto, ModelSourceDto, ProjectBindingDto, StateProjectionDto, WorkingCopyDto } from "../api/generated";
 import { editingBasePreferences } from "../features/settings/preferences";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 
@@ -30,6 +30,9 @@ export interface Session {
   /** Null keeps the server's default reference policy; a run is an explicit choice. */
   readonly sourceRunId: string | null;
   readonly workingCopies: readonly WorkingCopyDto[];
+  readonly designHistory?: DesignHistoryDto | null;
+  /** The exact model explicitly selected by a Stage/default-head action. */
+  readonly stageModelSource?: ModelSourceDto | null;
 }
 
 interface SessionSnapshot {
@@ -40,7 +43,7 @@ interface SessionSnapshot {
 }
 
 export interface SessionHandle extends SessionSnapshot {
-  reload(runId?: string | null): Promise<Session | null>;
+  reload(runId?: string | null, sourceStageRef?: string | null, branchId?: string): Promise<Session | null>;
   /** Refresh version choices without re-projecting or selecting an editing base. */
   refreshWorkingCopies(): Promise<readonly WorkingCopyDto[] | null>;
   /** Re-project when the error says the base moved. Answers whether it did. */
@@ -60,7 +63,7 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
     listeners.forEach((listener) => listener());
   };
 
-  const reload = async (requestedRunId?: string | null): Promise<Session | null> => {
+  const reload = async (requestedRunId?: string | null, sourceStageRef?: string | null, branchId?: string): Promise<Session | null> => {
     const currentRequest = ++request;
     const previous = snapshot.session;
     let project: ProjectBindingDto | null = null;
@@ -76,13 +79,23 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
         throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail:
           "The server now binds another project. Retry to read that project's own editing choice." });
       }
-      const runId = requestedRunId !== undefined ? requestedRunId
+      const designHistory = capabilities.includes("design-history")
+        ? await studio.designHistory(branchId ?? (sameProject && previous.status === "ready" ? previous.value.designHistory?.branchId : undefined)) : null;
+      const branch = designHistory?.branches.find((item) => item.branchId === designHistory.branchId);
+      const defaultStage = designHistory?.stages.find((stage) => stage.stageRef === branch?.headStageRef);
+      const useHead = designHistory !== null && (requestedRunId === null || (!sameProject && requestedRunId === undefined));
+      const runId = useHead ? defaultStage?.modelSource.runId ?? null : requestedRunId !== undefined ? requestedRunId
         : sameProject && previous.status === "ready" ? previous.value.sourceRunId
           : editingBasePreferences.read(serverBaseUrl, project.projectId);
       const workingCopies = capabilities.includes("working-copies")
         ? (await studio.workingCopies()).workingCopies : [];
       if (currentRequest !== request) return null;
-      const projection = await studio.state(runId ?? undefined);
+      const stageRef = useHead ? defaultStage?.stageRef : sourceStageRef ??
+        (requestedRunId === undefined && sameProject && previous.status === "ready" ? previous.value.projection.sourceStageRef : undefined);
+      const stageModelSource = useHead ? defaultStage?.modelSource ?? null : sourceStageRef
+        ? designHistory?.stages.find((stage) => stage.stageRef === sourceStageRef)?.modelSource ?? null
+        : requestedRunId === undefined && sameProject && previous.status === "ready" ? previous.value.stageModelSource ?? null : null;
+      const projection = await studio.state(runId ?? undefined, stageRef);
       if (currentRequest !== request) return null;
       if (projection.projectId !== project.projectId ||
           projection.published.version !== project.published.version ||
@@ -93,12 +106,12 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
       }
       if (runId !== null && (projection.stateDigest === null ||
           projection.matchesReferenceReceipt !== true ||
-          projection.referenceRun.baseVersion !== projection.published.version ||
-          projection.referenceRun.baseSha256 !== projection.published.stateSha256)) {
+          (!projection.sourceStageRef && (projection.referenceRun.baseVersion !== projection.published.version ||
+            projection.referenceRun.baseSha256 !== projection.published.stateSha256)))) {
         throw new StudioApiError({ status: 0, code: "EDITING_BASE_UNAVAILABLE", detail:
           `Run ${runId} cannot currently be restored as an editing base. Its verified state must match its receipt and current published base. ` + projection.honesty.join(" ") });
       }
-      const next = { project, projection, sourceRunId: runId, workingCopies };
+      const next = { project, projection, sourceRunId: runId, workingCopies, designHistory, stageModelSource };
       // Reading a model or refreshing a session never records consent. Only the
       // explicit continuation/default action reaches the existing preference writer.
       let persistenceFailed = snapshot.persistenceFailed;

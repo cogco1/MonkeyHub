@@ -55,7 +55,7 @@ from archflow.project.record_kinds import (
 )
 from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, ThreeDmInspectionError
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.refs import ProjectRecordRef
+from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
@@ -201,7 +201,7 @@ class DocumentPage:
 
 @dataclass(frozen=True, slots=True)
 class SourceDocument:
-    """An imported reference, never an exported model or design state."""
+    """An imported reference or a retained drawing, never a design state."""
 
     project_id: str
     run_id: str
@@ -212,6 +212,11 @@ class SourceDocument:
     pages: tuple[DocumentPage, ...]
     model_source: ModelSource | None = None
     model_source_binding_ref: str | None = None
+    drawing_id: str | None = None
+    revision_ref: str | None = None
+    source_stage_ref: str | None = None
+    view_recipe: dict[str, Any] | None = None
+    generated_at: str | None = None
 
 
 def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
@@ -273,15 +278,19 @@ def list_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument
             pages=tuple(DocumentPage(**page) for page in payload["pages"]),
             model_source=ModelSource.from_dict(payload["modelSource"]) if payload.get("modelSource") else None,
             model_source_binding_ref=ref.uri if payload.get("modelSource") else None,
+            drawing_id=payload.get("drawingId"), revision_ref=payload.get("revisionRef"),
+            source_stage_ref=payload.get("sourceStageRef"), view_recipe=payload.get("viewRecipe"),
+            generated_at=payload.get("generatedAt"),
         )
-        previous = documents.get(document.asset_sha256)
+        key = document.revision_ref or document.asset_sha256
+        previous = documents.get(key)
         if previous is None:
-            documents[document.asset_sha256] = document
+            documents[key] = document
         elif document.model_source is not None:
             if previous.model_source is not None and previous.model_source != document.model_source:
                 raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "This document has competing model associations; its pages remain retained.")
             if previous.model_source is None:
-                documents[document.asset_sha256] = replace(previous, model_source=document.model_source,
+                documents[key] = replace(previous, model_source=document.model_source,
                                                            model_source_binding_ref=document.model_source_binding_ref)
     for ref in binding.record_refs(run_id):
         if record_kind(ref) != STUDIO_DOCUMENT_MODEL_SOURCE:
@@ -294,19 +303,37 @@ def list_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument
         if document is None or (document.model_source is not None and document.model_source != source):
             raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "This document has competing model associations; its pages remain retained.")
         documents[document.asset_sha256] = replace(document, model_source=source, model_source_binding_ref=ref.uri)
-    return tuple(sorted(documents.values(), key=lambda doc: (doc.file_name, doc.asset_sha256)))
+    generated = sorted((doc for doc in documents.values() if doc.generated_at is not None),
+                       key=lambda doc: (doc.generated_at, doc.revision_ref or doc.asset_sha256), reverse=True)
+    undated = sorted((doc for doc in documents.values() if doc.generated_at is None),
+                     key=lambda doc: (doc.file_name, doc.asset_sha256))
+    return tuple(generated + undated)
 
 
 def document_bytes(
     binding: ProjectBinding, run_id: str, asset_sha256: str,
+    revision_ref: str | None = None,
+    *, binding_ref: str | None = None,
 ) -> tuple[SourceDocument, bytes]:
     """Serve the registered original only; the caller cannot supply a disk path."""
 
     if not SHA256_HEX.fullmatch(asset_sha256):
         raise StudioError(422, "DOCUMENT_INVALID", "A source document is addressed by its SHA-256.")
-    document = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256), None)
+    document = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256
+                     and (revision_ref is None or row.revision_ref == revision_ref)
+                     and (binding_ref is None or row.model_source_binding_ref == binding_ref)), None)
     if document is None:
         raise StudioError(404, "DOCUMENT_NOT_FOUND", f"Run {run_id} has no source document {asset_sha256}.")
+    if document.revision_ref is not None:
+        from monkeydiagram.drawing_elevation import DrawingElevationError, read_model_axis_elevation
+
+        try:
+            drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(document.revision_ref, binding.project_id))
+        except (DrawingElevationError, TypeError, ValueError) as exc:
+            raise StudioError(409, "DOCUMENT_UNAVAILABLE", "The retained drawing revision cannot be read.") from exc
+        if drawing.png_ref.sha256 != asset_sha256 or drawing.receipt["source"]["run_id"] != run_id or drawing.receipt["view"] != document.view_recipe:
+            raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "The drawing revision does not match its registered source and view.")
+        return document, drawing.png
     try:
         path = binding.repository.layout.resolve_relative(f"objects/sha256/{asset_sha256[:2]}/{asset_sha256}")
         data = path.read_bytes()
@@ -357,7 +384,9 @@ def save_document(
                 run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
                 record_kind=STUDIO_SOURCE_DOCUMENT,
                 payload={"schema": "StudioSourceDocument@1", **{
-                    key: value for key, value in asdict(document).items() if key not in ("model_source", "model_source_binding_ref")
+                    key: value for key, value in asdict(document).items() if key not in (
+                        "model_source", "model_source_binding_ref", "drawing_id", "revision_ref", "source_stage_ref", "view_recipe", "generated_at",
+                    )
                 }, **({"modelSource": model_source.to_dict()} if model_source else {})},
             )
         except (ProjectRepositoryError, OSError) as exc:
@@ -517,6 +546,16 @@ def require_model_source(
     if not record.available:
         raise _unavailable(binding, record)
     return record
+
+
+def require_complete_model(record: ArtifactRecord, runner_receipt: Mapping[str, Any]) -> None:
+    """A native seat export can represent the whole run only if it covers every producing seat."""
+
+    if record.representation == "composed":
+        return
+    produced = [row for row in runner_receipt.get("seat_results", ()) if row.get("program_ref")]
+    if not produced or any((row.get("cad") or {}).get("execution_ref") != record.receipt_ref for row in produced):
+        raise StudioError(409, "MODEL_SOURCE_INCOMPLETE", "This native export does not establish coverage of every producing seat. Select a complete composed model or the run's complete native delivery.")
 
 
 _model_asset_lock = threading.RLock()

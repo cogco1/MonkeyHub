@@ -22,6 +22,13 @@ from .artifacts import ProjectArtifactDto, artifact_dto
 from .project import ProjectVersionDto
 
 
+class CombineCandidatesRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    candidate_ids: list[str] = Field(alias="candidateIds", min_length=2)
+
+
 class CandidateAcceptedDto(BaseModel):
     """The wire form of ``POST /api/proposals/{id}/candidate``: 202, not a run.
 

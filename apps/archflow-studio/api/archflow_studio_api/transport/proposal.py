@@ -67,6 +67,7 @@ class WorkingCopyDto(BaseModel):
     group_id: str = Field(alias="groupId")
     label: str
     stage_id: str = Field(alias="stageId")
+    base_stage_ref: str | None = Field(default=None, alias="baseStageRef")
     common_base: ModelSourceDto = Field(alias="commonBase")
     scope: list[str]
     options: list[WorkingCopyOptionDto]
@@ -84,6 +85,7 @@ def working_option_from(dto: WorkingCopyOptionDto) -> WorkingCopyOption:
 
 def working_copy_dto(item: WorkingCopy) -> WorkingCopyDto:
     return WorkingCopyDto(project_id=item.project_id, group_id=item.group_id, label=item.label, stage_id=item.stage_id,
+                          base_stage_ref=item.base_stage_ref,
                           common_base=model_source_dto(item.common_base), scope=list(item.scope),
                           options=[WorkingCopyOptionDto(**option.to_dict()) for option in item.options],
                           selected_option_id=item.selected_option_id, revision_sha256=item.revision_sha256)
@@ -91,6 +93,8 @@ def working_copy_dto(item: WorkingCopy) -> WorkingCopyDto:
 
 class ProposalRequestDto(BaseModel):
     """One utterance against one selection, at one exact base."""
+
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
@@ -228,6 +232,8 @@ class ProposalScopeDto(BaseModel):
 class ProposalDto(BaseModel):
     """The wire form of ``POST /api/proposals`` and ``GET /api/proposals/{id}``."""
 
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
 
@@ -285,6 +291,7 @@ def to_dto(proposal: Proposal, *, scope: ProposalScopeDto | None = None) -> Prop
         base_state_digest=proposal.base_state_digest,
         record_digest=proposal.record_digest,
         source_run_id=proposal.source_run_id,
+        source_stage_ref=None if proposal.source_stage_ref is None else proposal.source_stage_ref.uri,
         model_source=model_source_dto(proposal.model_source),
         target=ProposalTargetDto(
             component_id=proposal.component_id,

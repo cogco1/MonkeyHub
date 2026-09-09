@@ -11,15 +11,14 @@ import { useEffect, useRef, type ReactNode } from "react";
 
 import type { StudioApiError } from "../../api/client";
 import type {
-  CandidateDto,
   CompareDto,
   GestureDto,
   ProjectArtifactDto,
   StateProjectionDto,
-  ValidationDto,
 } from "../../api/generated";
 import type { EvidenceTab } from "../../app/evidence";
 import type { Entry } from "../../app/transcript";
+import { EMPTY_CANDIDATE_READBACK, type CandidateReadback } from "../../app/useCandidateRuns";
 import { useT, type TFunction } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
 import { CandidateCard } from "./cards/CandidateCard";
@@ -49,10 +48,8 @@ export interface ConversationCallbacks {
   onAdjust(utterance: string): void;
   /** Move a proposal's number by hand; the entry is refined in place. */
   onRefine(entryId: string, value: number): void;
-  onJobStatus(candidateId: string, status: string): void;
-  onCandidate(candidate: CandidateDto): void;
+  onRetryCandidate(candidateId: string): void;
   onPreview(artifact: ProjectArtifactDto, sourceLabel: string): void;
-  onValidation(validation: ValidationDto): void;
   /** Open the drawer on a tab; a card names its own candidate so the drawer shows that run. */
   onEvidence(tab: EvidenceTab, candidateId?: string): void;
   /** Cross-fade a comparison's two exports in the viewer. */
@@ -63,6 +60,7 @@ export interface ConversationCallbacks {
 
 export function Conversation({
   entries,
+  candidateRuns,
   sessionError,
   projection,
   currentStateDigest,
@@ -83,6 +81,7 @@ export function Conversation({
   callbacks,
 }: {
   entries: readonly Entry[];
+  candidateRuns: Readonly<Record<string, CandidateReadback>>;
   sessionError: StudioApiError | null;
   projection: StateProjectionDto | null;
   currentStateDigest: string | null;
@@ -149,6 +148,7 @@ export function Conversation({
               loadingSha,
               ghostProposalId,
               refiningEntryId,
+              candidateRuns,
               callbacks,
               currentStateDigest,
               t,
@@ -181,6 +181,7 @@ function renderEntry(
     loadingSha,
     ghostProposalId,
     refiningEntryId,
+    candidateRuns,
     callbacks,
     currentStateDigest,
     t,
@@ -190,6 +191,7 @@ function renderEntry(
     loadingSha: string | null;
     ghostProposalId: string | null;
     refiningEntryId: string | null;
+    candidateRuns: Readonly<Record<string, CandidateReadback>>;
     callbacks: ConversationCallbacks;
     currentStateDigest: string | null;
     t: TFunction;
@@ -263,9 +265,9 @@ function renderEntry(
           <CandidateCard
             candidateId={entry.candidateId}
             jobId={entry.jobId}
+            readback={candidateRuns[entry.candidateId] ?? EMPTY_CANDIDATE_READBACK}
             loadingSha={loadingSha}
-            onJobStatus={callbacks.onJobStatus}
-            onCandidate={callbacks.onCandidate}
+            onRetry={() => callbacks.onRetryCandidate(entry.candidateId)}
             onPreview={callbacks.onPreview}
             onEvidence={callbacks.onEvidence}
             labelOf={callbacks.labelOf}
@@ -279,7 +281,8 @@ function renderEntry(
           <VerdictCard
             candidateId={entry.candidateId}
             protectedRefs={entry.protectedRefs}
-            onValidation={callbacks.onValidation}
+            validation={(candidateRuns[entry.candidateId] ?? EMPTY_CANDIDATE_READBACK).validation}
+            onRetry={() => callbacks.onRetryCandidate(entry.candidateId)}
             onEvidence={callbacks.onEvidence}
           />
         </>

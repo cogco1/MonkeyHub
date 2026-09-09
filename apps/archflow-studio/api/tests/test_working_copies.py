@@ -68,6 +68,19 @@ class WorkingCopyTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
+    def test_exploration_retains_exact_stage_without_promoting_legacy_choices(self) -> None:
+        legacy = self.group("legacy-cabinets")
+        self.assertIsNone(legacy["baseStageRef"])
+        self.assertEqual(self.client.get("/api/design-history").json()["stages"], [])
+        initial = self.client.post("/api/design-stages/initialize", json={"projectId": PROJECT_ID, "modelSource": self.a})
+        self.assertEqual(initial.status_code, 201, initial.text)
+        current = self.group("stage-cabinets")
+        self.assertEqual(current["baseStageRef"], initial.json()["stageRef"])
+        with TestClient(create_app(self.settings)) as restarted:
+            self.assertEqual(restarted.get("/api/working-copies/stage-cabinets").json(), current)
+            self.assertEqual(restarted.get("/api/working-copies/legacy-cabinets").json(), legacy)
+            self.assertEqual(len(restarted.get("/api/design-history").json()["stages"]), 1)
+
     def events(self) -> list[dict]:
         response = self.client.get("/api/events", params={"limit": 1000})
         self.assertEqual(response.status_code, 200, response.text)

@@ -12,7 +12,7 @@ mesh as the exact model.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -186,6 +186,11 @@ class SourceDocumentDto(BaseModel):
     pages: list[DocumentPageDto]
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
     model_source_binding_ref: str | None = Field(alias="modelSourceBindingRef", default=None)
+    drawing_id: str | None = Field(alias="drawingId", default=None)
+    revision_ref: str | None = Field(alias="revisionRef", default=None)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+    view_recipe: dict[str, Any] | None = Field(alias="viewRecipe", default=None)
+    generated_at: str | None = Field(alias="generatedAt", default=None)
 
 
 class SourceDocumentListDto(BaseModel):
@@ -204,6 +209,9 @@ def document_dto(document: SourceDocument) -> SourceDocumentDto:
         page_count=len(document.pages),
         model_source=model_source_dto(document.model_source),
         model_source_binding_ref=document.model_source_binding_ref,
+        drawing_id=document.drawing_id, revision_ref=document.revision_ref,
+        source_stage_ref=document.source_stage_ref, view_recipe=document.view_recipe,
+        generated_at=document.generated_at,
         pages=[DocumentPageDto(page_index=page.page_index, width=page.width, height=page.height, rotation=page.rotation) for page in document.pages],
     )
 

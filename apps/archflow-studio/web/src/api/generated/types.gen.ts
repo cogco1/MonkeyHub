@@ -5,6 +5,28 @@ export type ClientOptions = {
 };
 
 /**
+ * AcceptDesignCandidateRequestDto
+ */
+export type AcceptDesignCandidateRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Branchid
+     */
+    branchId?: string;
+    /**
+     * Expectedheadstageref
+     */
+    expectedHeadStageRef: string;
+    /**
+     * Label
+     */
+    label?: string | null;
+};
+
+/**
  * AgentReadingDto
  *
  * What the agent said and how it was obtained — the agent's, not the record's.
@@ -629,6 +651,20 @@ export type ClosureRequestDto = {
 };
 
 /**
+ * CombineCandidatesRequestDto
+ */
+export type CombineCandidatesRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Candidateids
+     */
+    candidateIds: Array<string>;
+};
+
+/**
  * CompareComponentDto
  *
  * A component's objects, counted by what happened to them.
@@ -946,6 +982,81 @@ export type DependencyEdgeDto = {
 };
 
 /**
+ * DesignBranchDto
+ */
+export type DesignBranchDto = {
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Parentbranch
+     */
+    parentBranch: string | null;
+    /**
+     * Forkstageref
+     */
+    forkStageRef: string;
+    /**
+     * Headstageref
+     */
+    headStageRef: string;
+};
+
+/**
+ * DesignHistoryDto
+ */
+export type DesignHistoryDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Branches
+     */
+    branches: Array<DesignBranchDto>;
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Stages
+     */
+    stages: Array<DesignStageDto>;
+};
+
+/**
+ * DesignStageDto
+ */
+export type DesignStageDto = {
+    /**
+     * Stageref
+     */
+    stageRef: string;
+    /**
+     * Parentstageref
+     */
+    parentStageRef: string | null;
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Candidateid
+     */
+    candidateId: string;
+    modelSource: ModelSourceDto;
+    /**
+     * Recorddigest
+     */
+    recordDigest: string;
+};
+
+/**
  * DocumentAnnotationRefDto
  *
  * One exact saved page revision to accompany a written design request.
@@ -967,6 +1078,12 @@ export type DocumentAnnotationRefDto = {
      * Revisionsha256
      */
     revisionSha256: string;
+    /**
+     * Drawingrevisionref
+     *
+     * The exact generated drawing receipt URI; omitted for legacy source documents.
+     */
+    drawingRevisionRef?: string | null;
 };
 
 /**
@@ -1001,6 +1118,10 @@ export type DocumentAnnotationsDto = {
      * Comment
      */
     comment: string;
+    /**
+     * Drawingrevisionref
+     */
+    drawingRevisionRef?: string | null;
 };
 
 /**
@@ -1023,6 +1144,10 @@ export type DocumentAnnotationsRequestDto = {
      * Pageindex
      */
     pageIndex: number;
+    /**
+     * Drawingrevisionref
+     */
+    drawingRevisionRef?: string | null;
     /**
      * Baserevisionsha256
      *
@@ -1211,6 +1336,10 @@ export type DocumentVisualInputDto = {
      */
     revisionSha256?: string | null;
     /**
+     * Drawingrevisionref
+     */
+    drawingRevisionRef?: string | null;
+    /**
      * Pagepngbase64
      *
      * Pure base64 PNG, at most 4 MiB decoded and 2048 px on its longer side; same visible-page aspect ratio as the registered PDF/image.
@@ -1252,6 +1381,37 @@ export type ElementDto = {
     numericFields: {
         [key: string]: number | number;
     };
+};
+
+/**
+ * ElevationRequestDto
+ */
+export type ElevationRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * View
+     */
+    view?: 'front' | 'back' | 'left' | 'right';
+    /**
+     * Drawingid
+     */
+    drawingId?: string | null;
+    /**
+     * Hiddenlines
+     */
+    hiddenLines?: boolean;
+    /**
+     * Scaledenominator
+     */
+    scaleDenominator?: number;
 };
 
 /**
@@ -1539,6 +1699,28 @@ export type ExportTimingDto = {
 };
 
 /**
+ * ForkDesignBranchRequestDto
+ */
+export type ForkDesignBranchRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Parentbranch
+     */
+    parentBranch: string;
+    /**
+     * Stageref
+     */
+    stageRef: string;
+};
+
+/**
  * FrameAxisDto
  *
  * One ``GridAxis@1`` row of the frame, read as a plan line where it is one.
@@ -1816,6 +1998,25 @@ export type ImpactLockDto = {
 };
 
 /**
+ * InitializeDesignStageRequestDto
+ */
+export type InitializeDesignStageRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Branchid
+     */
+    branchId?: string;
+    /**
+     * Label
+     */
+    label?: string;
+    modelSource: ModelSourceDto;
+};
+
+/**
  * IntentBlockedDto
  *
  * The body every refusing outcome of ``POST /api/intents`` answers with.
@@ -1886,6 +2087,10 @@ export type IntentDto = {
  * One request in the architect's words, against the current selection.
  */
 export type IntentRequestDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
     modelSource?: ModelSourceDto | null;
     /**
      * Statedigest
@@ -2193,6 +2398,10 @@ export type MassingOptionDto = {
  * one it needs and does not get is a 422 that says which.
  */
 export type MassingOptionRequestDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
     /**
      * Sourcerunid
      *
@@ -2765,6 +2974,10 @@ export type ProgramAdjacencyDto = {
  */
 export type ProgramApplyRequestDto = {
     /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
      * Sourcerunid
      *
      * the selected retained run; omitted uses the project's default source
@@ -3247,6 +3460,10 @@ export type ProposalDecisionRequestDto = {
  * The wire form of ``POST /api/proposals`` and ``GET /api/proposals/{id}``.
  */
 export type ProposalDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
     modelSource?: ModelSourceDto | null;
     /**
      * Proposalid
@@ -3322,6 +3539,10 @@ export type ProposalDto = {
  * One utterance against one selection, at one exact base.
  */
 export type ProposalRequestDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
     /**
      * Statedigest
      *
@@ -3654,6 +3875,28 @@ export type SourceDocumentDto = {
      * Modelsourcebindingref
      */
     modelSourceBindingRef?: string | null;
+    /**
+     * Drawingid
+     */
+    drawingId?: string | null;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Viewrecipe
+     */
+    viewRecipe?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Generatedat
+     */
+    generatedAt?: string | null;
 };
 
 /**
@@ -3709,6 +3952,10 @@ export type SourceDocumentRequestDto = {
  * The wire form of ``GET /api/state``.
  */
 export type StateProjectionDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
     /**
      * Projectid
      */
@@ -4244,6 +4491,10 @@ export type WorkingCopyDto = {
      * Stageid
      */
     stageId: string;
+    /**
+     * Basestageref
+     */
+    baseStageRef?: string | null;
     commonBase: ModelSourceDto;
     /**
      * Scope
@@ -4460,6 +4711,10 @@ export type ReadStateApiStateGetData = {
     body?: never;
     path?: never;
     query?: {
+        /**
+         * Sourcestageref
+         */
+        sourceStageRef?: string | null;
         /**
          * Run
          *
@@ -4767,6 +5022,10 @@ export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetData = {
          * Runid
          */
         runId: string;
+        /**
+         * Revisionref
+         */
+        revisionRef?: string | null;
     };
     url: '/api/documents/{asset_sha256}/bytes';
 };
@@ -4855,6 +5114,31 @@ export type ReadArtifactBytesApiArtifactsSha256BytesGetResponses = {
      */
     200: unknown;
 };
+
+export type CreateElevationApiDrawingsElevationsPostData = {
+    body: ElevationRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/drawings/elevations';
+};
+
+export type CreateElevationApiDrawingsElevationsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateElevationApiDrawingsElevationsPostError = CreateElevationApiDrawingsElevationsPostErrors[keyof CreateElevationApiDrawingsElevationsPostErrors];
+
+export type CreateElevationApiDrawingsElevationsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceDocumentDto;
+};
+
+export type CreateElevationApiDrawingsElevationsPostResponse = CreateElevationApiDrawingsElevationsPostResponses[keyof CreateElevationApiDrawingsElevationsPostResponses];
 
 export type ResolveApiPickResolvePostData = {
     body: PickRequestDto;
@@ -5053,6 +5337,10 @@ export type ReadDocumentPageAnnotationsApiDocumentAnnotationsGetData = {
          * Revisionsha256
          */
         revisionSha256?: string | null;
+        /**
+         * Drawingrevisionref
+         */
+        drawingRevisionRef?: string | null;
     };
     url: '/api/document-annotations';
 };
@@ -5270,6 +5558,31 @@ export type StartCandidateApiProposalsProposalIdCandidatePostResponses = {
 
 export type StartCandidateApiProposalsProposalIdCandidatePostResponse = StartCandidateApiProposalsProposalIdCandidatePostResponses[keyof StartCandidateApiProposalsProposalIdCandidatePostResponses];
 
+export type CombineCandidatesApiCandidatesCombinePostData = {
+    body: CombineCandidatesRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/candidates/combine';
+};
+
+export type CombineCandidatesApiCandidatesCombinePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CombineCandidatesApiCandidatesCombinePostError = CombineCandidatesApiCandidatesCombinePostErrors[keyof CombineCandidatesApiCandidatesCombinePostErrors];
+
+export type CombineCandidatesApiCandidatesCombinePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: CandidateAcceptedDto;
+};
+
+export type CombineCandidatesApiCandidatesCombinePostResponse = CombineCandidatesApiCandidatesCombinePostResponses[keyof CombineCandidatesApiCandidatesCombinePostResponses];
+
 export type ReadJobApiJobsJobIdGetData = {
     body?: never;
     path: {
@@ -5366,6 +5679,116 @@ export type CompareCandidateApiCandidatesCandidateIdCompareGetResponses = {
 };
 
 export type CompareCandidateApiCandidatesCandidateIdCompareGetResponse = CompareCandidateApiCandidatesCandidateIdCompareGetResponses[keyof CompareCandidateApiCandidatesCandidateIdCompareGetResponses];
+
+export type ReadCommittedDesignHistoryApiDesignHistoryGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Branchid
+         */
+        branchId?: string;
+    };
+    url: '/api/design-history';
+};
+
+export type ReadCommittedDesignHistoryApiDesignHistoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadCommittedDesignHistoryApiDesignHistoryGetError = ReadCommittedDesignHistoryApiDesignHistoryGetErrors[keyof ReadCommittedDesignHistoryApiDesignHistoryGetErrors];
+
+export type ReadCommittedDesignHistoryApiDesignHistoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DesignHistoryDto;
+};
+
+export type ReadCommittedDesignHistoryApiDesignHistoryGetResponse = ReadCommittedDesignHistoryApiDesignHistoryGetResponses[keyof ReadCommittedDesignHistoryApiDesignHistoryGetResponses];
+
+export type InitializeCommittedDesignApiDesignStagesInitializePostData = {
+    body: InitializeDesignStageRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/design-stages/initialize';
+};
+
+export type InitializeCommittedDesignApiDesignStagesInitializePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InitializeCommittedDesignApiDesignStagesInitializePostError = InitializeCommittedDesignApiDesignStagesInitializePostErrors[keyof InitializeCommittedDesignApiDesignStagesInitializePostErrors];
+
+export type InitializeCommittedDesignApiDesignStagesInitializePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DesignStageDto;
+};
+
+export type InitializeCommittedDesignApiDesignStagesInitializePostResponse = InitializeCommittedDesignApiDesignStagesInitializePostResponses[keyof InitializeCommittedDesignApiDesignStagesInitializePostResponses];
+
+export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostData = {
+    body: AcceptDesignCandidateRequestDto;
+    path: {
+        /**
+         * Candidate Id
+         */
+        candidate_id: string;
+    };
+    query?: never;
+    url: '/api/candidates/{candidate_id}/accept';
+};
+
+export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostError = AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostErrors[keyof AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostErrors];
+
+export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DesignStageDto;
+};
+
+export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponse = AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses[keyof AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses];
+
+export type ForkCommittedDesignApiDesignBranchesPostData = {
+    body: ForkDesignBranchRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/design-branches';
+};
+
+export type ForkCommittedDesignApiDesignBranchesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ForkCommittedDesignApiDesignBranchesPostError = ForkCommittedDesignApiDesignBranchesPostErrors[keyof ForkCommittedDesignApiDesignBranchesPostErrors];
+
+export type ForkCommittedDesignApiDesignBranchesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DesignBranchDto;
+};
+
+export type ForkCommittedDesignApiDesignBranchesPostResponse = ForkCommittedDesignApiDesignBranchesPostResponses[keyof ForkCommittedDesignApiDesignBranchesPostResponses];
 
 export type ReadWorkingCopiesApiWorkingCopiesGetData = {
     body?: never;

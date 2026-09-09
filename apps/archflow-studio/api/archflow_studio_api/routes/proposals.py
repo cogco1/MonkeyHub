@@ -19,8 +19,8 @@ two unrelated proposals.
 ``accepted`` is the architect's explicit choice, and it names its run: the
 ``candidateId`` of a candidate this process ran from this very proposal and
 finished. Nothing runs again, HEAD does not move and nothing is issued; the
-judgement is written into that run, the other options still open against the
-same base are closed as superseded by it, and the judgements held until then
+judgement is written into that run, the other options remain available,
+and the judgements held until then
 against that base go into the same run. A candidate that was merely run is not
 accepted by this route, and the latest run is never assumed.
 """
@@ -71,7 +71,7 @@ def create_proposal(
 
     binding = bound_project(request.app.state)
     _require_bound_project(binding, body.project_id)
-    projection = project_state(binding, run_id=body.source_run_id)
+    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
     require_actionable(projection)
     proposal = proposal_from(
         DeterministicIntentProvider(projection).propose(
@@ -83,7 +83,8 @@ def create_proposal(
             context_refs=body.context_refs(),
         )
     )
-    proposal = replace(proposal, source_run_id=body.source_run_id)
+    proposal = replace(proposal, source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
+                       source_stage_ref=projection.source_stage_ref)
     return to_dto(request.app.state.proposals.put(proposal))
 
 
@@ -142,15 +143,6 @@ def decide_proposal(
             binding.reference_run(job.candidate_id)
         )
         evidence = tuple(record.evidence_refs)
-        # What is being closed with this choice is what this process still
-        # holds undecided against the same base, read now — running a
-        # candidate decided nothing, so a proposal that was only looked at is
-        # still open here.
-        superseded = episodes.still_open(
-            state.episodes,
-            state.proposals.for_state(proposal.base_state_digest),
-            without=proposal_id,
-        )
         return episode_dto(
             episodes.accept(
                 state.episodes,
@@ -158,11 +150,10 @@ def decide_proposal(
                 binding.load_run(job.candidate_id),
                 project_id=binding.project_id,
                 proposal=proposal,
-                superseded=superseded,
                 reason=body.reason,
                 evidence_refs=evidence,
                 validation_refs=episodes.validation_refs_read(
-                    state.jobs, state.validations, (proposal, *superseded)
+                    state.jobs, state.validations, (proposal,)
                 ),
             )
         )
@@ -176,7 +167,7 @@ def decide_proposal(
     # One projection answers both questions the remaining decisions ask of the
     # record: what evidence it cites, and — for a modification — what the
     # replacement sentence resolves against. Two projections could disagree.
-    projection = project_state(binding, run_id=proposal.source_run_id)
+    projection = project_state(binding, run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref)
     evidence = tuple(projection.record.evidence_refs)
     read = episodes.validation_refs_read(
         state.jobs, state.validations, (proposal,)
@@ -299,7 +290,7 @@ def _reproposed(
             component_id=compilation.component_id, keep_refs=proposal.protected,
         ))
         return state.proposals.put(replace(
-            replacement, source_run_id=proposal.source_run_id,
+            replacement, source_run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref,
             compilation_receipt=None if compilation.receipt is None else compilation.receipt.to_dict(),
             document_comment_ref=proposal.document_comment_ref,
             model_source=proposal.model_source,
@@ -321,6 +312,7 @@ def _reproposed(
                 )
             ),
             source_run_id=proposal.source_run_id,
+            source_stage_ref=proposal.source_stage_ref,
             document_comment_ref=proposal.document_comment_ref,
             model_source=proposal.model_source,
         )

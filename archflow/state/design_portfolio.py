@@ -1,8 +1,11 @@
-"""Reloadable schematic branch portfolios with explicit selection authority.
+"""Committed design stages and continuing branches, without persistence.
 
-The portfolio is a framework-owned ledger for project-authored answers.  It
-preserves alternatives and their lineage, but it does not rank them, evaluate
-hard usability, or issue a published design.
+The application checks candidate contents and explicit acceptance. P036 retains
+stages and atomically advances branch references. The values and rules here do
+neither, and never turn ordinary A/B exploration into separate branches.
+
+The schematic portfolio records below remain readers for retained data and the
+compiler compatibility types. Their superseded lifecycle writers are removed.
 """
 
 from __future__ import annotations
@@ -11,13 +14,14 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from archflow.project.refs import (
+    ProjectRecordRef,
     ProjectVersionRef,
     RunRef,
     require_identifier,
 )
 from archflow.state.operational_state import require_logical_ref
-from archflow.state.spatial import SchematicOption, SchematicOptionSet
-from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
+from archflow.state.spatial import SchematicOption
+from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import (
     mapping as _mapping,
     string_tuple as _strings,
@@ -30,13 +34,183 @@ from archflow.contracts.fields import (
 )
 
 
-_HEX = frozenset("0123456789abcdef")
-_MAX_ITEMS = 4_096
-_MAX_TEXT = 4_000
-
-
 class DesignPortfolioError(ValueError):
     """A portfolio transition is stale, malformed, or exceeds its authority."""
+
+
+def _record_ref(value: object, field: str) -> ProjectRecordRef:
+    if not isinstance(value, ProjectRecordRef):
+        raise TypeError(f"{field} must be a ProjectRecordRef")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class DesignStage:
+    """A committed snapshot's contents; its identity is the P036 record ref.
+
+    ``model_ref`` names the retained composed-model registration or native CAD
+    receipt; ``model_sha256`` selects the exact model bytes from that source.
+    The application verifies those bytes, the StateRecord and runner receipt.
+    Constructing this value does not accept a candidate or advance a branch.
+    """
+
+    parent_stage: ProjectRecordRef | None
+    record_ref: ProjectRecordRef
+    model_ref: ProjectRecordRef
+    model_sha256: str
+    runner_ref: ProjectRecordRef
+    candidate_id: str
+    branch_id: str
+    label: str
+    accepted_by: str
+
+    def __post_init__(self) -> None:
+        project_id = _record_ref(self.record_ref, "record_ref").project_id
+        for field in ("model_ref", "runner_ref", "parent_stage"):
+            value = getattr(self, field)
+            if value is None and field == "parent_stage":
+                continue
+            if _record_ref(value, field).project_id != project_id:
+                raise DesignPortfolioError(f"{field} belongs to another project")
+        require_sha256(self.model_sha256, "model_sha256")
+        require_identifier(self.candidate_id, "candidate_id")
+        require_identifier(self.branch_id, "branch_id")
+        text(self.label, "stage label")
+        text(self.accepted_by, "accepted_by")
+
+    @property
+    def project_id(self) -> str:
+        return self.record_ref.project_id
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "parent_stage": None if self.parent_stage is None else self.parent_stage.to_dict(),
+            "record_ref": self.record_ref.to_dict(),
+            "model_ref": self.model_ref.to_dict(),
+            "model_sha256": self.model_sha256,
+            "runner_ref": self.runner_ref.to_dict(),
+            "candidate_id": self.candidate_id,
+            "branch_id": self.branch_id,
+            "label": self.label,
+            "accepted_by": self.accepted_by,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> DesignStage:
+        payload = _mapping(value, "design stage")
+        _exact(payload, {
+            "parent_stage", "record_ref", "model_ref", "model_sha256", "runner_ref",
+            "candidate_id", "branch_id", "label", "accepted_by",
+        }, "design stage")
+        parent = payload["parent_stage"]
+        return cls(
+            parent_stage=None if parent is None else ProjectRecordRef.from_dict(parent),
+            record_ref=ProjectRecordRef.from_dict(payload["record_ref"]),
+            model_ref=ProjectRecordRef.from_dict(payload["model_ref"]),
+            model_sha256=payload["model_sha256"],
+            runner_ref=ProjectRecordRef.from_dict(payload["runner_ref"]),
+            candidate_id=payload["candidate_id"], branch_id=payload["branch_id"],
+            label=payload["label"], accepted_by=payload["accepted_by"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DesignBranch:
+    """A continuing history line, separate from one exploration's candidates."""
+
+    branch_id: str
+    parent_branch: str | None
+    fork_stage: ProjectRecordRef
+    head_stage: ProjectRecordRef
+
+    def __post_init__(self) -> None:
+        require_identifier(self.branch_id, "branch_id")
+        if self.parent_branch is not None:
+            require_identifier(self.parent_branch, "parent_branch")
+            if self.parent_branch == self.branch_id:
+                raise DesignPortfolioError("a branch cannot fork from itself")
+        fork = _record_ref(self.fork_stage, "fork_stage")
+        head = _record_ref(self.head_stage, "head_stage")
+        if fork.project_id != head.project_id:
+            raise DesignPortfolioError("branch stages belong to different projects")
+
+    @property
+    def project_id(self) -> str:
+        return self.head_stage.project_id
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "branch_id": self.branch_id,
+            "parent_branch": self.parent_branch,
+            "fork_stage": self.fork_stage.to_dict(),
+            "head_stage": self.head_stage.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> DesignBranch:
+        payload = _mapping(value, "design branch")
+        _exact(payload, {"branch_id", "parent_branch", "fork_stage", "head_stage"}, "design branch")
+        return cls(
+            branch_id=payload["branch_id"], parent_branch=payload["parent_branch"],
+            fork_stage=ProjectRecordRef.from_dict(payload["fork_stage"]),
+            head_stage=ProjectRecordRef.from_dict(payload["head_stage"]),
+        )
+
+
+def initialize_branch(branch_id: str, stage_ref: ProjectRecordRef) -> DesignBranch:
+    """Start a history line at a snapshot the caller has verified and retained."""
+    return DesignBranch(branch_id, None, stage_ref, stage_ref)
+
+
+def fork_branch(
+    source_branch: DesignBranch, *, new_branch_id: str, stage_ref: ProjectRecordRef,
+) -> DesignBranch:
+    """Fork at a resolved committed stage, including a non-head historical one.
+
+    The repository/application resolves committed ancestry and refuses a branch
+    id that already exists. This pure rule preserves the original history line.
+    """
+    if not isinstance(source_branch, DesignBranch):
+        raise TypeError("source_branch must be a DesignBranch")
+    if _record_ref(stage_ref, "stage_ref").project_id != source_branch.project_id:
+        raise DesignPortfolioError("fork stage belongs to another project")
+    return DesignBranch(new_branch_id, source_branch.branch_id, stage_ref, stage_ref)
+
+
+def advance_branch(
+    branch: DesignBranch, *, expected_head: ProjectRecordRef,
+    candidate_base: ProjectRecordRef, stage_ref: ProjectRecordRef, stage: DesignStage,
+) -> DesignBranch:
+    """Advance one line using an accepted candidate on its exact design head.
+
+    ``stage_ref`` is the retained identity of ``stage``. Its content and the
+    explicit acceptance are verified by the caller; P036 performs the atomic
+    compare-and-swap. Canonical issue base and design Stage base are distinct.
+    """
+    if not isinstance(branch, DesignBranch):
+        raise TypeError("branch must be a DesignBranch")
+    if not isinstance(stage, DesignStage):
+        raise TypeError("stage must be a DesignStage")
+    _record_ref(expected_head, "expected_head")
+    _record_ref(candidate_base, "candidate_base")
+    _record_ref(stage_ref, "stage_ref")
+    if branch.head_stage != expected_head:
+        raise DesignPortfolioError("branch head changed")
+    if candidate_base != expected_head:
+        raise DesignPortfolioError("candidate base is not the expected Stage")
+    if stage.parent_stage != expected_head:
+        raise DesignPortfolioError("Stage parent is not the expected head")
+    if stage.branch_id != branch.branch_id:
+        raise DesignPortfolioError("Stage belongs to another branch")
+    if stage.project_id != branch.project_id or stage_ref.project_id != branch.project_id:
+        raise DesignPortfolioError("Stage belongs to another project")
+    if stage_ref == expected_head:
+        raise DesignPortfolioError("advancing a branch requires a new Stage")
+    return replace(branch, head_stage=stage_ref)
+
+
+# Retained schematic portfolio readers and compiler compatibility values.
+# These schemas and their digests keep their historical serialized identity.
 
 
 class BranchLifecycle(StrEnum):
@@ -370,7 +544,7 @@ class BranchRevision:
 
 
 @dataclass(frozen=True, slots=True)
-class DesignBranch:
+class LegacyDesignBranch:
     branch_id: str
     lifecycle: BranchLifecycle
     revisions: tuple[BranchRevision, ...]
@@ -434,7 +608,7 @@ class DesignBranch:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> DesignBranch:
+    def from_dict(cls, value: object) -> LegacyDesignBranch:
         payload = _mapping(value, "design branch")
         _exact(
             payload,
@@ -691,7 +865,7 @@ class DesignOptionPortfolio:
     source_option_set_digest: str
     operational_state_digest: str
     selection_policy: SelectionPolicy
-    branches: tuple[DesignBranch, ...]
+    branches: tuple[LegacyDesignBranch, ...]
     observations: tuple[ParetoBranchObservation, ...]
     transitions: tuple[PortfolioTransition, ...]
 
@@ -720,7 +894,7 @@ class DesignOptionPortfolio:
         if (
             not isinstance(self.branches, tuple)
             or len(self.branches) < 2
-            or any(not isinstance(item, DesignBranch) for item in self.branches)
+            or any(not isinstance(item, LegacyDesignBranch) for item in self.branches)
         ):
             raise DesignPortfolioError(
                 "portfolio requires at least two branches"
@@ -844,7 +1018,7 @@ class DesignOptionPortfolio:
         return canonical_digest(self.to_dict())
 
     @property
-    def selected_branch(self) -> DesignBranch | None:
+    def selected_branch(self) -> LegacyDesignBranch | None:
         return next(
             (
                 branch
@@ -854,7 +1028,7 @@ class DesignOptionPortfolio:
             None,
         )
 
-    def branch(self, branch_id: str) -> DesignBranch:
+    def branch(self, branch_id: str) -> LegacyDesignBranch:
         require_identifier(branch_id, "branch_id")
         for branch in self.branches:
             if branch.branch_id == branch_id:
@@ -941,7 +1115,7 @@ class DesignOptionPortfolio:
             selection_policy=SelectionPolicy.from_dict(
                 payload["selection_policy"]
             ),
-            branches=tuple(DesignBranch.from_dict(item) for item in branches),
+            branches=tuple(LegacyDesignBranch.from_dict(item) for item in branches),
             observations=tuple(
                 ParetoBranchObservation.from_dict(item)
                 for item in observations
@@ -1016,596 +1190,3 @@ class SelectedBranchHandoff:
             "candidate_created": False,
             "canonical_write_authority": False,
         }
-
-
-def _require_expected(
-    portfolio: DesignOptionPortfolio,
-    expected_portfolio_digest: str,
-) -> str:
-    if not isinstance(portfolio, DesignOptionPortfolio):
-        raise TypeError("portfolio must be DesignOptionPortfolio")
-    expected = require_sha256(
-        expected_portfolio_digest,
-        "expected_portfolio_digest",
-    )
-    if portfolio.portfolio_digest != expected:
-        raise DesignPortfolioError("portfolio transition has a stale base")
-    return expected
-
-
-def _require_decision(
-    *,
-    authority_id: str,
-    decision_ref: str,
-    rationale: str,
-    evidence_refs: tuple[str, ...],
-) -> None:
-    require_identifier(authority_id, "authority_id")
-    require_logical_ref(decision_ref, "decision_ref")
-    text(rationale, "transition rationale")
-    _refs(evidence_refs, "transition evidence_refs")
-
-
-def _replace_branch(
-    portfolio: DesignOptionPortfolio,
-    branch: DesignBranch,
-) -> tuple[DesignBranch, ...]:
-    branches = tuple(
-        branch if item.branch_id == branch.branch_id else item
-        for item in portfolio.branches
-    )
-    return tuple(sorted(branches, key=lambda item: item.branch_id))
-
-
-def _append_transition(
-    portfolio: DesignOptionPortfolio,
-    *,
-    expected_digest: str,
-    transition_id: str,
-    kind: PortfolioTransitionKind,
-    affected_branch_ids: tuple[str, ...],
-    result_revision_ref: BranchRevisionRef | None,
-    authority_id: str,
-    decision_ref: str,
-    rationale: str,
-    evidence_refs: tuple[str, ...],
-    branches: tuple[DesignBranch, ...] | None = None,
-    observations: tuple[ParetoBranchObservation, ...] | None = None,
-) -> DesignOptionPortfolio:
-    transition = PortfolioTransition(
-        sequence=len(portfolio.transitions) + 1,
-        transition_id=transition_id,
-        kind=kind,
-        predecessor_portfolio_digest=expected_digest,
-        affected_branch_ids=tuple(sorted(affected_branch_ids)),
-        result_revision_ref=result_revision_ref,
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-    )
-    return replace(
-        portfolio,
-        branches=branches if branches is not None else portfolio.branches,
-        observations=(
-            observations
-            if observations is not None
-            else portfolio.observations
-        ),
-        transitions=portfolio.transitions + (transition,),
-    )
-
-
-def initialize_design_portfolio(
-    option_set: SchematicOptionSet,
-    *,
-    portfolio_id: str,
-    selection_policy: SelectionPolicy,
-    architect_id: str,
-) -> DesignOptionPortfolio:
-    if not isinstance(option_set, SchematicOptionSet):
-        raise TypeError("option_set must be SchematicOptionSet")
-    require_identifier(portfolio_id, "portfolio_id")
-    if not isinstance(selection_policy, SelectionPolicy):
-        raise TypeError("selection_policy must be SelectionPolicy")
-    require_identifier(architect_id, "architect_id")
-    branches = []
-    for option in option_set.options:
-        proposal = option.proposal
-        revision = BranchRevision(
-            revision_id=f"origin-{option.option_id}",
-            branch_id=option.option_id,
-            index=0,
-            kind=LineageKind.ORIGIN,
-            option=option,
-            parent_revisions=(),
-            requirement_refs=proposal.responds_to_refs,
-            derivation_refs=(option_set.ref, proposal.ref),
-            evidence_refs=proposal.evidence_refs,
-            expert_resolutions=(),
-            tradeoff_rationale=proposal.rationale,
-            author_id=architect_id,
-        )
-        branches.append(
-            DesignBranch(
-                branch_id=option.option_id,
-                lifecycle=BranchLifecycle.ACTIVE,
-                revisions=(revision,),
-                lifecycle_evidence_refs=(),
-            )
-        )
-    return DesignOptionPortfolio(
-        portfolio_id=portfolio_id,
-        project_id=option_set.project_id,
-        run_id=option_set.run_id,
-        base=option_set.base,
-        source_option_set_digest=option_set.option_set_digest,
-        operational_state_digest=option_set.operational_state_digest,
-        selection_policy=selection_policy,
-        branches=tuple(sorted(branches, key=lambda item: item.branch_id)),
-        observations=(),
-        transitions=(),
-    )
-
-
-def fork_branch(
-    portfolio: DesignOptionPortfolio,
-    *,
-    expected_portfolio_digest: str,
-    parent_branch_id: str,
-    new_branch_id: str,
-    revision_id: str,
-    option: SchematicOption,
-    authority_id: str,
-    decision_ref: str,
-    rationale: str,
-    evidence_refs: tuple[str, ...],
-    expert_resolutions: tuple[ExpertAdviceResolution, ...] = (),
-    transition_id: str,
-) -> DesignOptionPortfolio:
-    expected = _require_expected(portfolio, expected_portfolio_digest)
-    _require_decision(
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-    )
-    require_identifier(new_branch_id, "new_branch_id")
-    if any(item.branch_id == new_branch_id for item in portfolio.branches):
-        raise DesignPortfolioError("new branch id already exists")
-    parent = portfolio.branch(parent_branch_id)
-    if parent.lifecycle is BranchLifecycle.REJECTED:
-        raise DesignPortfolioError("cannot fork a rejected branch")
-    requirements = tuple(sorted(set(parent.head.requirement_refs)))
-    if not set(requirements).issubset(option.proposal.responds_to_refs):
-        raise DesignPortfolioError(
-            "fork lost parent requirement or commitment references"
-        )
-    revision = BranchRevision(
-        revision_id=revision_id,
-        branch_id=new_branch_id,
-        index=0,
-        kind=LineageKind.FORK,
-        option=option,
-        parent_revisions=(parent.head.ref,),
-        requirement_refs=requirements,
-        derivation_refs=tuple(
-            sorted(
-                set(parent.head.derivation_refs)
-                | {parent.head.option.ref, option.proposal.ref}
-            )
-        ),
-        evidence_refs=evidence_refs,
-        expert_resolutions=expert_resolutions,
-        tradeoff_rationale=rationale,
-        author_id=authority_id,
-    )
-    branch = DesignBranch(
-        branch_id=new_branch_id,
-        lifecycle=BranchLifecycle.ACTIVE,
-        revisions=(revision,),
-        lifecycle_evidence_refs=(),
-    )
-    branches = tuple(
-        sorted(
-            portfolio.branches + (branch,),
-            key=lambda item: item.branch_id,
-        )
-    )
-    return _append_transition(
-        portfolio,
-        expected_digest=expected,
-        transition_id=transition_id,
-        kind=PortfolioTransitionKind.FORK,
-        affected_branch_ids=(parent_branch_id, new_branch_id),
-        result_revision_ref=revision.ref,
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-        branches=branches,
-    )
-
-
-def revise_branch(
-    portfolio: DesignOptionPortfolio,
-    *,
-    expected_portfolio_digest: str,
-    branch_id: str,
-    revision_id: str,
-    option: SchematicOption,
-    authority_id: str,
-    decision_ref: str,
-    rationale: str,
-    evidence_refs: tuple[str, ...],
-    expert_resolutions: tuple[ExpertAdviceResolution, ...] = (),
-    transition_id: str,
-) -> DesignOptionPortfolio:
-    expected = _require_expected(portfolio, expected_portfolio_digest)
-    _require_decision(
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-    )
-    branch = portfolio.branch(branch_id)
-    if branch.lifecycle in {
-        BranchLifecycle.REJECTED,
-        BranchLifecycle.SELECTED,
-    }:
-        raise DesignPortfolioError(
-            "rejected or selected branch must not be revised in place"
-        )
-    requirements = branch.head.requirement_refs
-    if not set(requirements).issubset(option.proposal.responds_to_refs):
-        raise DesignPortfolioError(
-            "revision lost requirement or commitment references"
-        )
-    revision = BranchRevision(
-        revision_id=revision_id,
-        branch_id=branch_id,
-        index=len(branch.revisions),
-        kind=LineageKind.REVISION,
-        option=option,
-        parent_revisions=(branch.head.ref,),
-        requirement_refs=requirements,
-        derivation_refs=tuple(
-            sorted(
-                set(branch.head.derivation_refs)
-                | {branch.head.option.ref, option.proposal.ref}
-            )
-        ),
-        evidence_refs=evidence_refs,
-        expert_resolutions=expert_resolutions,
-        tradeoff_rationale=rationale,
-        author_id=authority_id,
-    )
-    revised = replace(branch, revisions=branch.revisions + (revision,))
-    return _append_transition(
-        portfolio,
-        expected_digest=expected,
-        transition_id=transition_id,
-        kind=PortfolioTransitionKind.REVISE,
-        affected_branch_ids=(branch_id,),
-        result_revision_ref=revision.ref,
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-        branches=_replace_branch(portfolio, revised),
-    )
-
-
-def combine_branches(
-    portfolio: DesignOptionPortfolio,
-    *,
-    expected_portfolio_digest: str,
-    parent_branch_ids: tuple[str, ...],
-    new_branch_id: str,
-    revision_id: str,
-    option: SchematicOption,
-    authority_id: str,
-    decision_ref: str,
-    rationale: str,
-    evidence_refs: tuple[str, ...],
-    expert_resolutions: tuple[ExpertAdviceResolution, ...] = (),
-    transition_id: str,
-) -> DesignOptionPortfolio:
-    expected = _require_expected(portfolio, expected_portfolio_digest)
-    _require_decision(
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-    )
-    ids(
-        parent_branch_ids,
-        "parent_branch_ids",
-        sorted_required=True,
-    )
-    if len(parent_branch_ids) < 2:
-        raise DesignPortfolioError("combine requires at least two branches")
-    require_identifier(new_branch_id, "new_branch_id")
-    if any(item.branch_id == new_branch_id for item in portfolio.branches):
-        raise DesignPortfolioError("combined branch id already exists")
-    parents = tuple(portfolio.branch(item) for item in parent_branch_ids)
-    if any(
-        item.lifecycle is BranchLifecycle.REJECTED for item in parents
-    ):
-        raise DesignPortfolioError("cannot combine a rejected branch")
-    requirements = tuple(
-        sorted(
-            {
-                ref
-                for parent in parents
-                for ref in parent.head.requirement_refs
-            }
-        )
-    )
-    if not set(requirements).issubset(option.proposal.responds_to_refs):
-        raise DesignPortfolioError(
-            "combine lost a parent requirement or commitment reference"
-        )
-    derivation_refs = tuple(
-        sorted(
-            {
-                ref
-                for parent in parents
-                for ref in (
-                    *parent.head.derivation_refs,
-                    parent.head.option.ref,
-                )
-            }
-            | {option.proposal.ref}
-        )
-    )
-    revision = BranchRevision(
-        revision_id=revision_id,
-        branch_id=new_branch_id,
-        index=0,
-        kind=LineageKind.COMBINE,
-        option=option,
-        parent_revisions=tuple(parent.head.ref for parent in parents),
-        requirement_refs=requirements,
-        derivation_refs=derivation_refs,
-        evidence_refs=evidence_refs,
-        expert_resolutions=expert_resolutions,
-        tradeoff_rationale=rationale,
-        author_id=authority_id,
-    )
-    branch = DesignBranch(
-        branch_id=new_branch_id,
-        lifecycle=BranchLifecycle.ACTIVE,
-        revisions=(revision,),
-        lifecycle_evidence_refs=(),
-    )
-    branches = tuple(
-        sorted(
-            portfolio.branches + (branch,),
-            key=lambda item: item.branch_id,
-        )
-    )
-    return _append_transition(
-        portfolio,
-        expected_digest=expected,
-        transition_id=transition_id,
-        kind=PortfolioTransitionKind.COMBINE,
-        affected_branch_ids=parent_branch_ids + (new_branch_id,),
-        result_revision_ref=revision.ref,
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-        branches=branches,
-    )
-
-
-def _change_lifecycle(
-    portfolio: DesignOptionPortfolio,
-    *,
-    expected_portfolio_digest: str,
-    branch_id: str,
-    target: BranchLifecycle,
-    kind: PortfolioTransitionKind,
-    authority_id: str,
-    decision_ref: str,
-    rationale: str,
-    evidence_refs: tuple[str, ...],
-    transition_id: str,
-) -> DesignOptionPortfolio:
-    expected = _require_expected(portfolio, expected_portfolio_digest)
-    _require_decision(
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-    )
-    branch = portfolio.branch(branch_id)
-    if branch.lifecycle is target:
-        raise DesignPortfolioError("lifecycle transition is a no-op")
-    if branch.lifecycle is BranchLifecycle.REJECTED:
-        raise DesignPortfolioError("rejected branch is terminal")
-    if target is BranchLifecycle.SELECTED:
-        if not portfolio.selection_policy.permits(authority_id):
-            raise DesignPortfolioError(
-                "authority is not allowed to select a branch"
-            )
-        if portfolio.selected_branch is not None:
-            raise DesignPortfolioError(
-                "release the existing selection before selecting another"
-            )
-    elif branch.lifecycle is BranchLifecycle.SELECTED:
-        if (
-            target is not BranchLifecycle.PARKED
-            or not portfolio.selection_policy.permits(authority_id)
-        ):
-            raise DesignPortfolioError(
-                "selected branch requires authorized release to parked"
-            )
-    elif target not in {
-        BranchLifecycle.PARKED,
-        BranchLifecycle.REJECTED,
-    }:
-        raise DesignPortfolioError("invalid lifecycle transition")
-    changed = replace(
-        branch,
-        lifecycle=target,
-        lifecycle_evidence_refs=tuple(
-            sorted(set(branch.lifecycle_evidence_refs) | set(evidence_refs))
-        ),
-    )
-    return _append_transition(
-        portfolio,
-        expected_digest=expected,
-        transition_id=transition_id,
-        kind=kind,
-        affected_branch_ids=(branch_id,),
-        result_revision_ref=branch.head.ref,
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-        branches=_replace_branch(portfolio, changed),
-    )
-
-
-def park_branch(
-    portfolio: DesignOptionPortfolio,
-    **kwargs: object,
-) -> DesignOptionPortfolio:
-    return _change_lifecycle(
-        portfolio,
-        target=BranchLifecycle.PARKED,
-        kind=PortfolioTransitionKind.PARK,
-        **kwargs,
-    )
-
-
-def reject_branch(
-    portfolio: DesignOptionPortfolio,
-    **kwargs: object,
-) -> DesignOptionPortfolio:
-    return _change_lifecycle(
-        portfolio,
-        target=BranchLifecycle.REJECTED,
-        kind=PortfolioTransitionKind.REJECT,
-        **kwargs,
-    )
-
-
-def select_branch(
-    portfolio: DesignOptionPortfolio,
-    **kwargs: object,
-) -> DesignOptionPortfolio:
-    return _change_lifecycle(
-        portfolio,
-        target=BranchLifecycle.SELECTED,
-        kind=PortfolioTransitionKind.SELECT,
-        **kwargs,
-    )
-
-
-def attach_pareto_observation(
-    portfolio: DesignOptionPortfolio,
-    *,
-    expected_portfolio_digest: str,
-    observation: ParetoBranchObservation,
-    authority_id: str,
-    decision_ref: str,
-    rationale: str,
-    evidence_refs: tuple[str, ...],
-    transition_id: str,
-) -> DesignOptionPortfolio:
-    expected = _require_expected(portfolio, expected_portfolio_digest)
-    _require_decision(
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-    )
-    if not isinstance(observation, ParetoBranchObservation):
-        raise TypeError("observation must be ParetoBranchObservation")
-    if any(
-        item.observation_ref == observation.observation_ref
-        for item in portfolio.observations
-    ):
-        raise DesignPortfolioError("Pareto observation already attached")
-    for revision in observation.branch_revisions:
-        if portfolio.branch(revision.branch_id).head.ref != revision:
-            raise DesignPortfolioError(
-                "Pareto observation is stale for a branch"
-            )
-    statuses = tuple(
-        (item.branch_id, item.lifecycle) for item in portfolio.branches
-    )
-    result = _append_transition(
-        portfolio,
-        expected_digest=expected,
-        transition_id=transition_id,
-        kind=PortfolioTransitionKind.ATTACH_PARETO_OBSERVATION,
-        affected_branch_ids=tuple(
-            item.branch_id for item in observation.branch_revisions
-        ),
-        result_revision_ref=None,
-        authority_id=authority_id,
-        decision_ref=decision_ref,
-        rationale=rationale,
-        evidence_refs=evidence_refs,
-        observations=portfolio.observations + (observation,),
-    )
-    if tuple(
-        (item.branch_id, item.lifecycle) for item in result.branches
-    ) != statuses:
-        raise DesignPortfolioError(
-            "read-only observation changed branch lifecycle"
-        )
-    return result
-
-
-def compile_selected_branch_handoff(
-    portfolio: DesignOptionPortfolio,
-    *,
-    expected_portfolio_digest: str,
-    expected_revision_digest: str,
-) -> SelectedBranchHandoff:
-    _require_expected(portfolio, expected_portfolio_digest)
-    selected = portfolio.selected_branch
-    if selected is None:
-        raise DesignPortfolioError(
-            "candidate assembly requires an explicit selected branch"
-        )
-    expected_revision = require_sha256(
-        expected_revision_digest,
-        "expected_revision_digest",
-    )
-    if selected.head.revision_digest != expected_revision:
-        raise DesignPortfolioError(
-            "selected branch handoff is stale"
-        )
-    selection = next(
-        (
-            item
-            for item in reversed(portfolio.transitions)
-            if item.kind is PortfolioTransitionKind.SELECT
-            and selected.branch_id in item.affected_branch_ids
-        ),
-        None,
-    )
-    if selection is None or not portfolio.selection_policy.permits(
-        selection.authority_id
-    ):
-        raise DesignPortfolioError(
-            "selected branch lacks an authorized selection receipt"
-        )
-    return SelectedBranchHandoff(
-        portfolio_id=portfolio.portfolio_id,
-        portfolio_digest=portfolio.portfolio_digest,
-        project_id=portfolio.project_id,
-        run_id=portfolio.run_id,
-        base=portfolio.base,
-        branch_id=selected.branch_id,
-        revision=selected.head.ref,
-        option=selected.head.option,
-        selection_transition_id=selection.transition_id,
-        selection_decision_ref=selection.decision_ref,
-    )

@@ -77,10 +77,10 @@ on one place, and every resource below reads or writes exactly one of them.
 | **published** | the one compare-and-swap position; moving a run there is an **issue** (出图) | `prepare_transition` + `compare_and_swap`, from a `PromotionDecision@1` | read-only: `head` on the binding |
 | **archived** | every canonical snapshot the published position has left behind | nobody deletes; the chain is the archive | not exposed in v2 (§10.5) |
 
-Two rules a client may not soften. A shared run is never "the current design" — only the
-published container is, and only until the next issue. And a server on this protocol **never
-issues**: version 2 has no route that writes the published container, and a client that offered
-one would be offering something no conforming server can do.
+A shared run does not by itself establish acceptance. An explicit design Stage can
+reference its complete result as the current working design on one design branch (§5.4).
+The published container remains the formally issued position. Version 2 has no route
+that issues a project or writes canonical `HEAD`.
 
 ---
 
@@ -107,6 +107,12 @@ tolerate it.
 | POST | `/api/proposals/{proposalId}/candidate` → 202 | a job id and the run id the candidate will make | **writes shared** | stable |
 | GET | `/api/jobs/{jobId}` | that job as the server last saw it, failures included | server memory | stable |
 | GET | `/api/candidates/{candidateId}` | the finished candidate, read back out of the records its run retained | reads shared | stable |
+| POST | `/api/candidates/combine` → 202 | a new candidate from independent saved component changes sharing one Stage (§5.4) | writes shared | provisional |
+| GET | `/api/design-history?branchId=main` | design branch pointers and their reachable committed Stages | reads shared + design refs | provisional |
+| POST | `/api/design-stages/initialize` → 201 | explicit initial Stage from a complete exact model | writes review + design ref | provisional |
+| POST | `/api/candidates/{candidateId}/accept` | immutable Stage and atomic advancement of its expected design branch head | writes review + design ref | provisional |
+| POST | `/api/design-branches` → 201 | a sustained branch forked from a reachable historical Stage | writes design ref | provisional |
+| POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
 | POST | `/api/proposals/{proposalId}/decision` → 201 | an explicit judgement: accepted with its successful `candidateId`, rejected, or modified into a linked replacement (§5.2) | accepted is **written into its named run**; other decisions stay in memory until a candidate run against the same state | provisional |
@@ -297,14 +303,14 @@ Running a candidate makes a reversible result, not a design decision. It does no
 proposal accepted or reject other open proposals. The job registry already links the proposal
 and candidate; the run only flushes earlier explicit judgements against its base.
 
-An architect accepts through `POST /api/proposals/{id}/decision` with
+The existing proposal endorsement route is `POST /api/proposals/{id}/decision` with
 `{"decision":"accepted","candidateId":"<the chosen candidate>","reason":"<optional reason>"}`.
 The candidate must have succeeded in this process and belong to that proposal. No latest-run
 default is used. `candidateId` is required for acceptance and refused for the other decisions;
 `modifiedTo` is only for modification. Acceptance runs nothing, moves no HEAD and grants no
 formal-issue authority. It retains the existing `DeliberationEpisode@1` in the named candidate run
-and, following the existing explicit-choice semantics, closes other still-open proposals against
-the same base as `superseded by <proposalId>`. Previously retained episodes remain readable.
+and preserves other proposals and alternatives against the same base. It does not create
+a design Stage. Previously retained episodes remain readable.
 
 Rejections and modifications made before a run remain process memory: `producedRun` is `null`
 and `persistence` is `in-memory (not version history)`. When a candidate meets those judgements,
@@ -339,6 +345,57 @@ the run the runner leaves retains that massing as its own `selected-spatial-opti
 authored record is never written.
 
 ---
+
+### 5.4 Design history and exact-source drawings
+
+Servers advertising `design-history` expose immutable accepted Stages and persistent
+design branch pointers. Stage labels such as S0/S1 are display names. Initial acceptance
+takes `{projectId, branchId, label, modelSource}`; legacy exports are references until
+the architect explicitly establishes the first Stage. Native models must cover the
+complete producing run; a partial seat preview cannot become a full Stage.
+
+Candidate acceptance takes `{projectId, branchId, expectedHeadStageRef, label?}` and
+the persistent candidate id in the URL. It verifies the saved base and replayable
+operator chain, complete model and validation before advancing the exact design head.
+It reuses the existing model, returns the same Stage on a successful retry, and refuses
+a changed branch head. An unreachable record written before an interrupted pointer
+update is absent from committed history. Fork takes `{projectId, branchId,
+parentBranch, stageRef}` and produces no geometry.
+
+`sourceStageRef` on state/intents/proposals/program/options names the exact committed
+design base. A candidate's retained delta restores that source after restart. Successive
+candidate adjustments retain their actual parent record and operator; they create no
+intermediate Stage. Historical Stage exploration keeps its historical canonical base;
+the validation readout checks that same source base. Legacy candidates without a Stage
+retain the current-published-base validation rule. Formal issue still requires alignment
+with the current published base.
+
+`POST /api/candidates/combine` takes `{projectId, candidateIds}`. Saved candidates
+must descend from one exact Stage. The StateRecord owner normalizes supported independent
+component changes into one typed operator and checks shared writes and dependencies
+across all supplied changes. Conflicts are returned before a new run is created. The
+new candidate goes through the same generation, preview, validation and acceptance path.
+Candidate workspaces may compute overlapping scopes independently; queue limits are
+worker capacity and the single Rhino export resource.
+
+Servers advertising `drawing-elevations` accept `{projectId, sourceStageRef, view}`
+or an exact candidate `modelSource` instead of `sourceStageRef`. Views are front,
+back, left and right. An optional `drawingId` groups revisions; the response's
+`revisionRef` names an immutable drawing receipt. SourceDocument adds `drawingId`,
+`revisionRef`, `sourceStageRef`, `viewRecipe` and `generatedAt`; original uploaded documents retain
+their existing shape with these fields absent/null. Document bytes may specify
+`revisionRef` to retrieve the exact generated revision. The first consumer needs a
+complete matching OCCT STEP and refuses partial native sources for composed models.
+New drawing registrations retain their UTC generation time once; repeating an identical
+request preserves its original revision and time. Default selection compares generated
+revisions only within the current exact model source. Later drawings do not modify the
+accepted Stage or prior page annotations.
+
+Document annotation pages, saved annotation references and visual inputs may carry
+`drawingRevisionRef`. For generated drawings this pins the exact revision through
+annotation saving, intent compilation and candidate execution, even when another
+drawing has identical PNG bytes. Annotation heads are separate per drawing revision;
+older records without this optional field keep their existing serialization.
 
 ## 6. Pick and gesture resolution
 
