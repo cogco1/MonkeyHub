@@ -1,10 +1,11 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { applyAppearance, type AppearancePreferences, type Language } from "../../../shared-web/src/appearance";
+import { client } from "./api/generated/client.gen";
+import { getUserSettingsApiSettingsUserGet, listAppsApiAppsGet, startAppApiAppsAppIdStartPost, stopAppApiAppsAppIdStopPost, type AppStatus } from "./api/generated";
 import "./styles.css";
 
-type AppId = "arch" | "diagram" | "monitor" | "board";
-type AppStatus = "waiting" | "unavailable";
+type AppId = "monkeyarch" | "monkeydiagram" | "monkeymonitor" | "monkeyboard";
 
 const copy = {
   en: {
@@ -28,17 +29,30 @@ const copy = {
 function App() {
   const [preferences, setPreferences] = useState<AppearancePreferences>({ language: navigator.language.startsWith("zh") ? "zh-CN" : "en", theme: "system", fontScale: 1 });
   useEffect(() => applyAppearance(preferences), [preferences]);
+  const [apps, setApps] = useState<readonly AppStatus[] | null>(null);
+  const [serviceError, setServiceError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<AppId | null>(null);
+  const refresh = async () => {
+    try {
+      const [appResponse, settingsResponse] = await Promise.all([listAppsApiAppsGet(), getUserSettingsApiSettingsUserGet()]);
+      if (!appResponse.data) throw new Error("Hub did not return application status.");
+      setApps(appResponse.data);
+      const settings = settingsResponse.data;
+      if (settings?.language || settings?.theme || settings?.fontScale) setPreferences((current) => ({ language: settings.language ?? current.language, theme: settings.theme ?? current.theme, fontScale: settings.fontScale ?? current.fontScale }));
+      setServiceError(null);
+    } catch {
+      setApps(null); setServiceError(t.waiting);
+    }
+  };
+  useEffect(() => { client.setConfig({ baseUrl: window.location.origin }); void refresh(); }, []);
   const t = copy[preferences.language];
-  const apps: ReadonlyArray<{ id: AppId; status: AppStatus; name: string; description: string }> = [
-    { id: "arch", status: "waiting", name: t.arch[0], description: t.arch[1] },
-    { id: "diagram", status: "waiting", name: t.diagram[0], description: t.diagram[1] },
-    { id: "monitor", status: "waiting", name: t.monitor[0], description: t.monitor[1] },
-    { id: "board", status: "unavailable", name: t.board[0], description: t.board[1] },
-  ];
+  const labels: Record<AppId, readonly [string, string]> = { monkeyarch: t.arch, monkeydiagram: t.diagram, monkeymonitor: t.monitor, monkeyboard: t.board };
+  const cards = (apps ?? (["monkeyarch", "monkeydiagram", "monkeymonitor", "monkeyboard"] as const).map((appId) => ({ appId, title: labels[appId][0], serviceId: appId === "monkeymonitor" ? "monitor" : appId === "monkeyboard" ? "board" : "studio", available: false, state: appId === "monkeyboard" ? "unavailable" : "stopped", url: null })));
+  const act = async (app: AppStatus) => { if (!app.available || app.state === "unavailable") return; setBusy(app.appId); try { const result = app.state === "running" ? await stopAppApiAppsAppIdStopPost({ path: { app_id: app.appId } }) : await startAppApiAppsAppIdStartPost({ path: { app_id: app.appId } }); if (!result.data) throw new Error(); await refresh(); } catch { setServiceError(t.waiting); } finally { setBusy(null); } };
   return <main className="hub">
     <header><div><p className="eyebrow">Monkey</p><h1>{t.title}</h1><p>{t.subtitle}</p></div><fieldset><legend>{t.settings}</legend><label>{t.language}<select value={preferences.language} onChange={(event) => setPreferences((p) => ({ ...p, language: event.target.value as Language }))}><option value="en">English</option><option value="zh-CN">简体中文</option></select></label><label>{t.theme}<select value={preferences.theme} onChange={(event) => setPreferences((p) => ({ ...p, theme: event.target.value as AppearancePreferences["theme"] }))}><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label><label>{t.size}<select value={preferences.fontScale} onChange={(event) => setPreferences((p) => ({ ...p, fontScale: Number(event.target.value) as AppearancePreferences["fontScale"] }))}><option value="0.9">90%</option><option value="1">100%</option><option value="1.1">110%</option></select></label></fieldset></header>
-    <section className="service" aria-live="polite"><span className="dot" />{t.waiting}<button type="button" disabled>{t.primary}</button></section>
-    <section className="apps" aria-label="Applications">{apps.map((app) => <article key={app.id} className="app-card"><div><p className="eyebrow">{app.status === "unavailable" ? t.unavailable : t.waiting}</p><h2>{app.name}</h2><p>{app.description}</p></div><button type="button" disabled aria-label={`${app.name}: ${app.status === "unavailable" ? t.unavailable : t.waiting}`}>{app.status === "unavailable" ? t.unavailable : t.primary}</button></article>)}</section>
+    <section className="service" aria-live="polite"><span className="dot" />{serviceError ?? (apps ? "Hub connected" : t.waiting)}<button type="button" onClick={() => void refresh()}>{t.primary}</button></section>
+    <section className="apps" aria-label="Applications">{cards.map((app) => { const label = labels[app.appId]; const unavailable = !app.available || app.state === "unavailable"; const running = app.state === "running"; return <article key={app.appId} className="app-card"><div><p className="eyebrow">{unavailable ? t.unavailable : `${app.serviceId} · ${app.state}`}</p><h2>{label[0]}</h2><p>{label[1]}</p></div><button type="button" disabled={unavailable || busy !== null} onClick={() => void act(app)}>{unavailable ? t.unavailable : busy === app.appId ? "…" : running ? "Stop" : "Start"}</button></article>; })}</section>
   </main>;
 }
 
