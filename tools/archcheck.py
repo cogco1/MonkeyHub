@@ -5,11 +5,13 @@ write ownership, state authorities, the probe boundary, the module registry,
 and -- since people now develop in parallel -- that no two live work cards claim
 the same path.
 
-With ``--changed <base>`` it checks one branch instead: every commit in
-``<base>..HEAD`` declares which card it belongs to by writing that card's id
-(``P###``) in the commit subject, or in the body when the subject names none,
-and the commit may write only that card's ``write_scope`` plus the shared
-ledgers. This is the mode CI runs on a pull request.
+With ``--changed <base>`` it checks one branch instead, using each commit's
+policy and work registry from Git. Once the scope rule exists in a parent,
+a commit declares its card (``P###``) in the subject, or in the body when the
+subject names none, and may write only that card's scope plus shared ledgers.
+``P000-governance`` permits only governance files and README.md maintenance.
+This is the mode CI runs on a pull request; it does not impose a new rule on
+the commits that preceded or introduced that rule.
 """
 
 from __future__ import annotations
@@ -633,11 +635,20 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
 
 
 WORK_REGISTRY = "governance/work_registry.json"
+ARCHITECTURE_POLICY = "governance/architecture_policy.json"
 LIVE_SCOPE_STATUSES = frozenset({"active", "ready"})
-CARD_ID = re.compile(r"P\d{3}")
+CARD_ID = re.compile(r"\b(?:P000-governance(?![\w-])|P\d{3}(?!\d))")
 # Governance paths a commit may touch without naming a card. Everything else
 # belongs to exactly one card, whose write_scope says so.
 UNCARDED_WRITE_SCOPE = ("docs/adr/", "docs/REPO_LAYOUT.md", "CONTRIBUTING.md")
+GOVERNANCE_WRITE_SCOPE = UNCARDED_WRITE_SCOPE + (
+    "tools/archcheck.py",
+    "governance/architecture_policy.json",
+    ".github/workflows/verify.yml",
+    ".github/pull_request_template.md",
+    "AGENTS.md",
+    "docs/SYSTEM_MAP.md",
+)
 
 
 def load_work_registry(root: Path) -> dict[str, Any] | None:
@@ -749,7 +760,7 @@ def _git(root: Path, *args: str) -> str:
 
 
 def _commit_card(message: str) -> str | None:
-    """The card a commit declares: a ``P###`` in the subject, else in the body.
+    """A card or explicit governance marker in the subject, else in the body.
 
     The subject wins because a body says things about other cards -- what this
     change unblocks, which card a finding belongs to -- and a commit would
@@ -763,36 +774,96 @@ def _commit_card(message: str) -> str | None:
     return found[-1] if found else None
 
 
+def _git_json(root: Path, revision: str, path: str) -> dict[str, Any] | None:
+    """Read a historical policy or registry without checking out another tree."""
+
+    if not _git(root, "ls-tree", "--name-only", revision, "--", path).strip():
+        return None
+    try:
+        value = json.loads(_git(root, "show", f"{revision}:{path}"))
+    except json.JSONDecodeError as exc:
+        raise ArchitecturePolicyError(f"invalid {path} at {revision[:8]}") from exc
+    if not isinstance(value, dict):
+        raise ArchitecturePolicyError(f"invalid {path} at {revision[:8]}")
+    return value
+
+
 def check_changed_scopes(
     root: Path,
-    policy: dict[str, Any],
-    registry: dict[str, Any] | None,
     base: str,
+    policy_path: str = ARCHITECTURE_POLICY,
 ) -> Iterator[PolicyFinding]:
-    """Did this branch write only what its cards allow?
+    """Check the scope that applied when each commit was made.
 
-    Every commit between ``base`` and ``HEAD`` declares its card by writing the
-    card id (``P###``) in the subject, or in the body when the subject names
-    none; the last id in whichever part decides wins. That card's
-    ``write_scope`` plus the shared ledgers is what the commit may touch,
-    deletions included. A commit that declares no card -- or an id no
-    live card carries, ``P000`` for governance work included -- may still touch
-    the shared ledgers, ``docs/adr/``, ``docs/REPO_LAYOUT.md`` and
-    ``CONTRIBUTING.md``; anything else is undeclared.
+    Policy and cards come from the commit, not today's live registry. A card
+    closed by a commit may use its first parent's active scope. The rule
+    starts after a parent first has ``shared_write_scope``; removing that
+    configuration later is an error, not a way to turn the check off.
     """
 
-    shared = list(policy["shared_write_scope"])
-    cards = {
-        str(item.get("id")): item
-        for item in (registry or {}).get("items", ())
-        if isinstance(item, dict)
-    }
+    policies: dict[str, dict[str, Any] | None] = {}
+    enabled: dict[str, bool] = {}
+
+    def policy_at(revision: str) -> dict[str, Any] | None:
+        if revision not in policies:
+            policies[revision] = _git_json(root, revision, policy_path)
+        return policies[revision]
+
+    def rule_enabled_at(revision: str) -> bool:
+        if revision not in enabled:
+            policy = policy_at(revision)
+            enabled[revision] = policy is not None and "shared_write_scope" in policy
+            if not enabled[revision]:
+                # A base after removal must not reset the rule. Inspect only
+                # changes to this existing policy field, not an extra ledger.
+                for earlier in _git(
+                    root, "log", "--format=%H", "--full-history", "-G",
+                    '"shared_write_scope"[[:space:]]*:', revision, "--", policy_path,
+                ).splitlines():
+                    previous = policy_at(earlier)
+                    if previous is not None and "shared_write_scope" in previous:
+                        enabled[revision] = True
+                        break
+        return enabled[revision]
+
+    def cards_at(revision: str) -> dict[str, dict[str, Any]]:
+        registry = _git_json(root, revision, WORK_REGISTRY)
+        if registry is None or not isinstance(registry.get("items"), list):
+            raise ArchitecturePolicyError(
+                f"invalid work registry at {revision[:8]}: {WORK_REGISTRY}"
+            )
+        return {
+            str(item.get("id")): item
+            for item in registry["items"]
+            if isinstance(item, dict) and item.get("status") in LIVE_SCOPE_STATUSES
+        }
+
+    head = _git(root, "rev-parse", "HEAD").strip()
+    if policy_at(head) is None:
+        raise ArchitecturePolicyError(f"missing policy {policy_path} at {head[:8]}")
     revisions = [
-        line.strip()
-        for line in _git(root, "rev-list", "--reverse", f"{base}..HEAD").splitlines()
+        line.split()
+        for line in _git(
+            root, "rev-list", "--reverse", "--topo-order", "--parents", f"{base}..{head}"
+        ).splitlines()
         if line.strip()
     ]
-    for revision in revisions:
+    for revision, *parents in revisions:
+        parent_enabled = any(rule_enabled_at(parent) for parent in parents)
+        policy = policy_at(revision)
+        has_scope = policy is not None and "shared_write_scope" in policy
+        enabled[revision] = parent_enabled or has_scope
+        if has_scope:
+            _require_string_list(policy, "shared_write_scope")
+        if not parent_enabled:
+            continue
+        if not has_scope:
+            raise ArchitecturePolicyError(
+                f"missing shared_write_scope in {policy_path} at {revision[:8]} "
+                "after the scope rule took effect"
+            )
+        shared = list(policy["shared_write_scope"])
+        cards = cards_at(revision)
         message = _git(root, "show", "-s", "--format=%B", revision)
         files = sorted(
             {
@@ -805,20 +876,28 @@ def check_changed_scopes(
         )
         card_id = _commit_card(message)
         card = cards.get(card_id) if card_id else None
-        if card is None:
+        if card is None and card_id not in (None, "P000-governance") and parents:
+            card = cards_at(parents[0]).get(card_id)
+        if card_id == "P000-governance":
+            allowed = shared + list(GOVERNANCE_WRITE_SCOPE)
+            code = "SCOPE_VIOLATION"
+            named = f"commit {revision[:8]} is {card_id}"
+        elif card is None:
             allowed = shared + list(UNCARDED_WRITE_SCOPE)
             code = "SCOPE_UNDECLARED"
             named = (
-                f"commit {revision[:8]} names no live card"
+                f"commit {revision[:8]} names no card"
                 if card_id is None
-                else f"commit {revision[:8]} names {card_id}, which is not a live card"
+                else f"commit {revision[:8]} names {card_id}, which has no scope at that commit"
             )
         else:
             allowed = list(card.get("write_scope", ())) + shared
             code = "SCOPE_VIOLATION"
             named = f"commit {revision[:8]} is {card_id}"
         for path in files:
-            if _covered_by_any(path, allowed):
+            if _covered_by_any(path, allowed) or (
+                card_id == "P000-governance" and path.rsplit("/", 1)[-1] == "README.md"
+            ):
                 continue
             yield PolicyFinding(
                 path,
@@ -878,9 +957,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--changed",
         metavar="BASE",
         help=(
-            "Check only the commits in BASE..HEAD against their declared card "
-            "write scopes. Each commit names its card by writing P### in the "
-            "subject, or in the body when the subject names none."
+            "Check commits in BASE..HEAD against their historical card scopes, "
+            "after the rule first exists in a parent. A commit names P### or "
+            "P000-governance in its subject, else in its body."
         ),
     )
     return parser
@@ -892,24 +971,29 @@ def main(argv: list[str] | None = None) -> int:
     policy_path = (
         args.policy.resolve()
         if args.policy
-        else root / "governance" / "architecture_policy.json"
+        else root / ARCHITECTURE_POLICY
     )
     started = time.perf_counter()
     try:
-        policy = load_policy(policy_path)
         if args.changed:
-            validate_policy(policy, root)
+            try:
+                relative_policy = policy_path.relative_to(root).as_posix()
+            except ValueError as exc:
+                raise ArchitecturePolicyError(
+                    "--changed requires a policy path inside the repository"
+                ) from exc
             findings = tuple(
                 sorted(
                     set(
                         check_changed_scopes(
-                            root, policy, load_work_registry(root), args.changed
+                            root, args.changed, relative_policy
                         )
                     )
                 )
             )
             checked = 0
         else:
+            policy = load_policy(policy_path)
             findings = run_checks(root, policy)
             checked = len(_checked_python_files(root, policy))
     except ArchitecturePolicyError as exc:

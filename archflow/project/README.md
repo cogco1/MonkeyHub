@@ -19,13 +19,13 @@ runs, prepares accepted canonical transitions, atomically compare-and-swaps
 pre-commit records after a crash. Producers receive its sink interfaces and
 an assigned `PersistenceDestination`; they never choose a path.
 
-P052 adds only the external-root selection seam. `RuntimePaths` loads three
-explicit absolute roots for workspace, rebuildable cache, and temporary data.
-An active project resolves to `workspace/projects/<project_id>/` and is then
-created by the unchanged P036 repository. The runtime layer does not store an
-absolute path in `project.json`, add another writer, or change `HEAD` authority.
-Every project lives outside the repository under that workspace root; a test
-that needs one bootstraps its own through this repository under `tempfile`.
+`location.py` resolves existing projects under roots supplied explicitly by the
+caller. `FilesystemProjectRepository.initialize` creates a project at an explicit
+root. These paths do not change `project.json` identity or `HEAD` authority.
+Section 8 of the [work environment and onboarding guide](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md)
+shows how to create a synthetic external project and bind Studio through
+`ARCHFLOW_STUDIO_PROJECT_DIR`. Active projects live outside the source repository;
+tests bootstrap their own through this repository under `tempfile`.
 
 Canonical crash order is:
 

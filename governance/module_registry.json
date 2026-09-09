@@ -3940,7 +3940,8 @@
         "loading and validating ArchFlowArchitecturePolicy@1",
         "the checked-file set for the configured roots and the single AST index per file",
         "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, commit soft-gate leaks, probe-boundary executables, registry owner/test/public-symbol truth and duplicate owned function bodies",
-        "the Finding shape and the JSON/text report and exit code"
+        "the Finding shape and the JSON/text report and exit code",
+        "checking overlapping live work scopes and checking each changed commit against its historical policy and card scope; explicit P000-governance permits only defined governance paths and README.md maintenance"
       ],
       "does_not_own": [
         "the policy content - governance/architecture_policy.json",
@@ -3950,7 +3951,9 @@
       ],
       "inputs": [
         "repository root",
-        "governance/architecture_policy.json"
+        "governance/architecture_policy.json",
+        "governance/work_registry.json",
+        "optional Git base revision and committed policy/registry history"
       ],
       "outputs": [
         "Finding tuple",
@@ -3963,19 +3966,25 @@
         "validate_policy",
         "PolicyFinding",
         "ArchitecturePolicyError",
-        "main"
+        "main",
+        "check_scopes",
+        "check_changed_scopes"
       ],
       "depends_on": [],
       "used_by": [],
       "invariants": [
         "no archflow import: the checker parses source and never executes it",
         "a policy that cannot be interpreted deterministically fails ArchitecturePolicyError rather than passing vacuously",
-        "the file set is stable and de-duplicated, so findings are reproducible"
+        "the file set is stable and de-duplicated, so findings are reproducible",
+        "write-scope rules do not apply retroactively before their introduction; later missing or invalid policy cannot disable the check",
+        "a changed commit uses its own active or ready card declaration; only the commit closing that card may use its first parent's active scope, whether the row is removed or retained as nonlive; later scope edits do not change earlier results",
+        "P000-governance does not authorize business source, arbitrary scripts or all Markdown files"
       ],
       "status": "canonical",
-      "tests": [],
-      "notes": "No test on main (only stale bytecode in tests/__pycache__ and copies in .claude worktrees); the CANONICAL_SPINE 4 registry rules land here.",
-      "untested_reason": "governance CLI; the gate itself runs on every commit and fails loudly"
+      "tests": [
+        "tests/test_archcheck_scopes.py"
+      ],
+      "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },
     {
       "module_id": "tools.devctl",
