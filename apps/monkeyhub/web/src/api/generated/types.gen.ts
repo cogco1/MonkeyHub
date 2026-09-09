@@ -112,6 +112,10 @@ export type HubHealth = {
      */
     processId: number;
     /**
+     * Parentprocessid
+     */
+    parentProcessId: number;
+    /**
      * Managedinstanceid
      */
     managedInstanceId?: string | null;
