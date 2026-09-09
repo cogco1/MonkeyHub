@@ -5300,10 +5300,11 @@
       "module_id": "hub.shell",
       "owner_path": "apps/monkeyhub/api/monkeyhub_api/main.py",
       "status": "canonical",
-      "purpose": "Host the fixed local application lifecycle without a building project; existing Studio settings and child service APIs retain their ownership.",
+      "purpose": "Host the fixed local applications and request-scoped MonkeyFab CLI operations without a building project; existing settings and domain tools retain their ownership.",
       "owns": [
-        "Project-free Hub FastAPI and the finite MonkeyArch, MonkeyDiagram, MonkeyBoard and MonkeyMonitor start/status/stop interface",
+        "Project-free Hub FastAPI and the fixed MonkeyArch, MonkeyDiagram, MonkeyBoard, MonkeyMonitor and MonkeyFab application cards",
         "One owned Studio process shared by MonkeyArch, MonkeyDiagram and MonkeyBoard, and one independent Monitor process",
+        "The built-in Fab page invokes the installed independent MonkeyFab CLI for profiles, preparation and upload; no separate long-running Fab service",
         "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
         "Hub CLI and thin Windows entry point, with shared Studio launcher tray, logs and child monitoring"
       ],
@@ -5316,12 +5317,14 @@
         "Explicit nonproject runtime root",
         "Optional existing project path and retained run",
         "Packaged or checkout source revision and built web directories",
-        "Fixed application id and start/stop request"
+        "Fixed application id and start/stop request",
+        "Explicit local model/output paths, preparation options, or a sliced file and request-local printer access code"
       ],
       "outputs": [
         "Hub FastAPI and OpenAPI",
         "Application status and URL",
-        "Owned process lifecycle and local diagnostic logs"
+        "Owned process lifecycle and local diagnostic logs",
+        "The independent Fab CLI result; geometry files stay in the caller-selected output directory"
       ],
       "public_api": [
         "create_app",
@@ -5335,14 +5338,19 @@
         "GET /api/settings/apps",
         "PUT /api/settings/apps",
         "GET /api/settings/user",
-        "PUT /api/settings/user"
+        "PUT /api/settings/user",
+        "GET /api/fab/profiles",
+        "POST /api/fab/prepare",
+        "POST /api/fab/send"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
         "Arch, Diagram and Board share one service; Diagram opens its documents view and Board opens its board view",
         "Only this Hub's stdin pipes can stop its children; a occupied port or mismatched service is never adopted",
         "Accepted work is allowed to finish; no taskkill or forced process termination is a normal exit path",
-        "Settings and logs have explicit nonproject locations; retained building writes use the existing project interfaces"
+        "Settings and logs have explicit nonproject locations; retained building writes use the existing project interfaces",
+        "Fab uses the existing CLI, never duplicates its geometry or file-output implementation; it does not create a second project store",
+        "Printer access codes are request-local environment values, never command arguments, saved settings or error response payloads; file upload does not start printing"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -5350,6 +5358,7 @@
       ],
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
         "apps/monkeyhub/api/monkeyhub_api/main.py",
         "apps/monkeyhub/api/monkeyhub_api/models.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
@@ -5357,17 +5366,18 @@
         "apps/monkeyhub/launch-hub.ps1"
       ],
       "tests": [
-        "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py"
+        "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+        "apps/monkeyhub/api/tests/test_monkeyfab.py"
       ]
     },
     {
       "module_id": "tools.package_monkeyapps",
       "owner_path": "tools/package_monkeyapps.py",
       "status": "canonical",
-      "purpose": "Build a Windows application distribution from one exact Git commit in caller-selected external directories. This CLI owns packaging; project and app lifecycle owners retain their existing authority.",
+      "purpose": "Build a Windows application distribution from exact ArchFlow and optional independent MonkeyFab Git commits in caller-selected external directories. This CLI owns packaging; project and app lifecycle owners retain their existing authority.",
       "owns": [
-        "Exact-commit source collection, frontend build and embedded Python dependency preparation in external staging/cache",
-        "Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery",
+        "Exact-commit source collection for ArchFlow and optional MonkeyFab, frontend build and one embedded Python environment in external staging/cache",
+        "Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery; integrated package identity binds both source commits",
         "Fresh-version Windows installation and the thin root Hub entry; actual application lifecycle stays with hub.shell"
       ],
       "does_not_own": [
@@ -5376,7 +5386,7 @@
         "The shared application preference authority"
       ],
       "inputs": [
-        "Exact source Git commit or ref",
+        "Exact source Git commit or ref and optional explicit MonkeyFab checkout plus commit/ref",
         "Explicit external staging, cache and output directories",
         "Builder Node/npm and Windows Python runtime inputs"
       ],
@@ -5390,7 +5400,7 @@
       ],
       "invariants": [
         "Only the selected committed source is collected; local WIP and project/runtime folders are not selected inputs",
-        "package validates staging/output/cache against the selected source checkout before passing paths to its write helpers",
+        "package validates staging/output/cache against both selected source checkouts before passing paths to its write helpers",
         "The registered writer functions derive distribution outputs from those validated roots; this registration adds no project writer and is not a filesystem sandbox.",
         "Installation targets a fresh version directory and leaves unknown existing data intact"
       ],

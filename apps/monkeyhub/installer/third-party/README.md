@@ -16,6 +16,9 @@ COPYING、NOTICE 文本；同一包名与版本只复制一份，并在包内列
 Excalidraw 0.18.1 自带字体独立遵循各自的许可，具体原文及来源见
 [字体许可说明](excalidraw-fonts/README.md)。Excalidraw 代码的 MIT 许可不替代字体许可。
 
+包含 MonkeyFab 时，新增的 Python wheel 仍完整保留各自原有许可及 `.dist-info`；
+Paho 和 Manifold 所需的上游补充原文见 [MonkeyFab 依赖说明](monkeyfab-dependencies/README.md)。
+
 ## 库与对应源码
 
 - OCCT 7.9.3：[源码](https://github.com/Open-Cascade-SAS/OCCT/tree/V7_9_3)。

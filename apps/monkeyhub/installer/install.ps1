@@ -58,11 +58,20 @@ try {
     $versionFile = Join-Path $packageRoot 'source-version.txt'
     $version = (Get-Content -LiteralPath $versionFile -Raw -Encoding UTF8).Trim()
     if ($version -notmatch '^[0-9a-f]{40}$') { throw 'The package has no valid source commit.' }
+    $buildInfo = Get-Content -LiteralPath (Join-Path $packageRoot 'build-info.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($buildInfo.sourceCommit -ne $version) { throw 'The package build metadata does not match its source commit.' }
+    $fabVersion = [string]$buildInfo.monkeyFabCommit
+    if ($fabVersion -and $fabVersion -notmatch '^[0-9a-f]{40}$') { throw 'The package has no valid MonkeyFab source commit.' }
+    $versionName = $version.Substring(0, 12)
+    if ($fabVersion) { $versionName += '-fab-' + $fabVersion.Substring(0, 12) }
     $required = @(
-        'source-version.txt', 'OPEN_MONKEYHUB.cmd', '_runtime\python\python.exe',
+        'source-version.txt', 'build-info.json', 'OPEN_MONKEYHUB.cmd', '_runtime\python\python.exe',
         'apps\monkeyhub\run.py', 'apps\monkeyhub\launch-hub.ps1',
         'apps\monkeyhub\web\dist\index.html', 'apps\archflow-studio\web\dist\index.html'
     )
+    if ($fabVersion) {
+        $required += @('apps\monkeyfab\src\monkeyfab\__main__.py', 'apps\monkeyfab\pyproject.toml')
+    }
     foreach ($relative in $required) {
         if (-not (Test-Path -LiteralPath (Join-Path $packageRoot $relative) -PathType Leaf)) {
             throw "The extracted package is incomplete: $relative"
@@ -70,7 +79,7 @@ try {
     }
     if (-not $InstallDirectory) {
         if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is unavailable; supply -InstallDirectory.' }
-        $InstallDirectory = Join-Path $env:LOCALAPPDATA ('MonkeyHub\versions\' + $version.Substring(0, 12))
+        $InstallDirectory = Join-Path $env:LOCALAPPDATA ('MonkeyHub\versions\' + $versionName)
     }
     if (-not [IO.Path]::IsPathRooted($InstallDirectory)) {
         throw 'InstallDirectory must be an absolute path.'
@@ -92,10 +101,14 @@ try {
             foreach ($relative in $required) {
                 $same = $same -and (Test-Path -LiteralPath (Join-Path $destination $relative) -PathType Leaf)
             }
+            if ($same) {
+                $installedBuild = Get-Content -LiteralPath (Join-Path $destination 'build-info.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+                $same = $installedBuild.sourceCommit -eq $version -and [string]$installedBuild.monkeyFabCommit -eq $fabVersion
+            }
             if (-not $same) {
                 throw "The destination already contains files. Choose a new directory: $destination"
             }
-            Write-Host "This source version is already installed: $destination"
+            Write-Host "This build is already installed: $destination"
             Write-Host "Open: $(Join-Path $destination 'OPEN_MONKEYHUB.cmd')"
             Complete-Installation $destination
             exit 0
@@ -134,6 +147,7 @@ try {
     }
     Move-Item -LiteralPath $stagedDestination -Destination $destination -ErrorAction Stop
     Write-Host "Installed MonkeyHub source $version"
+    if ($fabVersion) { Write-Host "Included MonkeyFab source $fabVersion" }
     Write-Host "Open: $(Join-Path $destination 'OPEN_MONKEYHUB.cmd')"
     Write-Host 'No system Python, Node, PATH or project was changed.'
     Complete-Installation $destination

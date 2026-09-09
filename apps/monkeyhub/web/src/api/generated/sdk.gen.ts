@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ApplicationSettingsApiSettingsAppsGetData, ApplicationSettingsApiSettingsAppsGetResponses, GetUserSettingsApiSettingsUserGetData, GetUserSettingsApiSettingsUserGetResponses, HealthApiHealthGetData, HealthApiHealthGetResponses, ListAppsApiAppsGetData, ListAppsApiAppsGetResponses, PutUserSettingsApiSettingsUserPutData, PutUserSettingsApiSettingsUserPutErrors, PutUserSettingsApiSettingsUserPutResponses, StartAppApiAppsAppIdStartPostData, StartAppApiAppsAppIdStartPostErrors, StartAppApiAppsAppIdStartPostResponses, StopAppApiAppsAppIdStopPostData, StopAppApiAppsAppIdStopPostErrors, StopAppApiAppsAppIdStopPostResponses, UpdateApplicationSettingsApiSettingsAppsPutData, UpdateApplicationSettingsApiSettingsAppsPutErrors, UpdateApplicationSettingsApiSettingsAppsPutResponses } from './types.gen';
+import type { ApplicationSettingsApiSettingsAppsGetData, ApplicationSettingsApiSettingsAppsGetResponses, GetFabProfilesApiFabProfilesGetData, GetFabProfilesApiFabProfilesGetErrors, GetFabProfilesApiFabProfilesGetResponses, GetUserSettingsApiSettingsUserGetData, GetUserSettingsApiSettingsUserGetResponses, HealthApiHealthGetData, HealthApiHealthGetResponses, ListAppsApiAppsGetData, ListAppsApiAppsGetResponses, PrepareFabApiFabPreparePostData, PrepareFabApiFabPreparePostErrors, PrepareFabApiFabPreparePostResponses, PutUserSettingsApiSettingsUserPutData, PutUserSettingsApiSettingsUserPutErrors, PutUserSettingsApiSettingsUserPutResponses, SendFabApiFabSendPostData, SendFabApiFabSendPostErrors, SendFabApiFabSendPostResponses, StartAppApiAppsAppIdStartPostData, StartAppApiAppsAppIdStartPostErrors, StartAppApiAppsAppIdStartPostResponses, StopAppApiAppsAppIdStopPostData, StopAppApiAppsAppIdStopPostErrors, StopAppApiAppsAppIdStopPostResponses, UpdateApplicationSettingsApiSettingsAppsPutData, UpdateApplicationSettingsApiSettingsAppsPutErrors, UpdateApplicationSettingsApiSettingsAppsPutResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -37,6 +37,35 @@ export const startAppApiAppsAppIdStartPost = <ThrowOnError extends boolean = fal
  * Stop App
  */
 export const stopAppApiAppsAppIdStopPost = <ThrowOnError extends boolean = false>(options: Options<StopAppApiAppsAppIdStopPostData, ThrowOnError>): RequestResult<StopAppApiAppsAppIdStopPostResponses, StopAppApiAppsAppIdStopPostErrors, ThrowOnError> => (options.client ?? client).post<StopAppApiAppsAppIdStopPostResponses, StopAppApiAppsAppIdStopPostErrors, ThrowOnError>({ url: '/api/apps/{app_id}/stop', ...options });
+
+/**
+ * Get Fab Profiles
+ */
+export const getFabProfilesApiFabProfilesGet = <ThrowOnError extends boolean = false>(options?: Options<GetFabProfilesApiFabProfilesGetData, ThrowOnError>): RequestResult<GetFabProfilesApiFabProfilesGetResponses, GetFabProfilesApiFabProfilesGetErrors, ThrowOnError> => (options?.client ?? client).get<GetFabProfilesApiFabProfilesGetResponses, GetFabProfilesApiFabProfilesGetErrors, ThrowOnError>({ url: '/api/fab/profiles', ...options });
+
+/**
+ * Prepare Fab
+ */
+export const prepareFabApiFabPreparePost = <ThrowOnError extends boolean = false>(options: Options<PrepareFabApiFabPreparePostData, ThrowOnError>): RequestResult<PrepareFabApiFabPreparePostResponses, PrepareFabApiFabPreparePostErrors, ThrowOnError> => (options.client ?? client).post<PrepareFabApiFabPreparePostResponses, PrepareFabApiFabPreparePostErrors, ThrowOnError>({
+    url: '/api/fab/prepare',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Send Fab
+ */
+export const sendFabApiFabSendPost = <ThrowOnError extends boolean = false>(options: Options<SendFabApiFabSendPostData, ThrowOnError>): RequestResult<SendFabApiFabSendPostResponses, SendFabApiFabSendPostErrors, ThrowOnError> => (options.client ?? client).post<SendFabApiFabSendPostResponses, SendFabApiFabSendPostErrors, ThrowOnError>({
+    url: '/api/fab/send',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Application Settings

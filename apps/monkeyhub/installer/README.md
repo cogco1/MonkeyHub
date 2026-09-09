@@ -1,14 +1,16 @@
 # MonkeyHub Windows 候选包
 
 本包面向 Windows 10/11 x64，包含独立 Python 3.13.15 运行时、API 与几何依赖，以及已构建的前端。
-使用者无需安装 Python、Node.js 或运行 npm。包内 `source-version.txt` 是本候选对应的完整源码提交。
+使用者无需安装 Python、Node.js 或运行 npm。包内 `source-version.txt` 是 ArchFlow／Hub 的完整源码提交。
 内置运行时来自 [Python 官方 Windows embeddable package](https://www.python.org/ftp/python/3.13.15/python-3.13.15-embed-amd64.zip)，
-构建器核对固定 SHA-256；包内 `build-info.json` 保存来源与版本。
+构建器核对固定 SHA-256；包内 `build-info.json` 保存来源与版本。包含 MonkeyFab 时，
+其独立仓库的精确提交记在 `monkeyFabCommit`，源码位于 `apps/monkeyfab/`，共用同一套内置 Python。
 
 ## 第一次安装
 
 1. 完整解压候选 ZIP，勿在压缩包预览中直接运行。
-2. 双击 `INSTALL_MONKEYHUB.cmd`。默认复制到 `%LOCALAPPDATA%\MonkeyHub\versions\<源码版本>`，不需要管理员权限。
+2. 双击 `INSTALL_MONKEYHUB.cmd`。默认复制到 `%LOCALAPPDATA%\MonkeyHub\versions\<源码版本>`，不需要管理员权限；
+   整合包的版本目录同时包含 Hub 和 MonkeyFab 的提交前缀。
 3. 安装完成后，选择是否创建桌面快捷方式、是否立即打开 MonkeyHub。按 Enter 接受显示的选项，输入 `n` 跳过。
 4. 之后双击桌面的 `MonkeyHub` 即可；也可运行安装目录中的 `OPEN_MONKEYHUB.cmd`。
    Hub 可在没有项目时打开；MonkeyArch、MonkeyDiagram 和 MonkeyBoard 通过已选真实项目共用 Studio 服务，MonkeyMonitor 可独立启动。
@@ -19,7 +21,7 @@
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\apps\monkeyhub\installer\install.ps1' -InstallDirectory 'E:\我的应用\MonkeyHub 候选'
 ```
 
-再次安装同一版本会返回原安装目录。目标存在其他文件时，安装器拒绝覆盖，请选择新目录。
+再次安装同一组源码版本会返回原安装目录。任一提交不同或目标存在其他文件时，安装器拒绝覆盖，请选择新目录。
 安装器按所选项创建快捷方式和打开应用，不改系统 Python、PATH 或已有项目。不同源码版本各自安装；不自动更新或迁移项目。
 直接运行 `install.ps1` 默认只安装；可用 `-Interactive` 显示完成选项，或明确指定 `-CreateDesktopShortcut`、`-OpenHub`。
 隔离安装检查使用 `-CreateDesktopShortcut -DesktopDirectory '<临时桌面目录>'`，不传 `-Interactive` 和 `-OpenHub`，即可验证快捷方式而不启动应用。
@@ -45,6 +47,14 @@ Hub 的启动和退出统一由包内 `apps/monkeyhub/launch-hub.ps1` 与 `run.p
 使用具体模型提供者或 Rhino 兼容导出时，按既有设置配置使用者自己的工具与账号。
 普通 OCCT 几何功能使用包内运行时，不要求 Rhino。
 
+包含 MonkeyFab 的整合包可准备封闭 STL／OBJ 的打印分件，并校验、发送已切片的 `.gcode.3mf`。
+输出留在使用者明确选择的目录；Bambu Studio 切片和真实打印仍使用自己的机器与工具。
+也可在安装目录直接运行命令行：
+
+```powershell
+.\_runtime\python\python.exe -m monkeyfab profiles --json
+```
+
 ## 开发者构建
 
 安装流程是本轮新增的分发工作；仓库原有启动器继续负责进程，项目存储继续由 ArchFlow 管理。
@@ -56,9 +66,21 @@ Hub 的启动和退出统一由包内 `apps/monkeyhub/launch-hub.ps1` 与 `run.p
 python tools/package_monkeyapps.py --source-ref <三条线集成后的完整提交> --staging-dir 'E:\MonkeyHubBuild\构建' --output-dir 'D:\MonkeyHub候选包'
 ```
 
-`--staging-dir` 和 `--output-dir` 必须在源码工作区之外。缓存默认位于 staging 下，可用 `--cache-dir` 指定。
+整合 MonkeyFab 时，成对增加 `--monkeyfab-source` 和 `--monkeyfab-ref`：
+
+```powershell
+python tools/package_monkeyapps.py --source-ref <ArchFlow完整提交> --monkeyfab-source 'D:\MonkeyFab' --monkeyfab-ref <MonkeyFab完整提交> --staging-dir 'E:\MonkeyHubBuild\构建' --output-dir 'D:\MonkeyHub候选包'
+```
+
+构建器分别从两个仓库导出精确提交；MonkeyFab 只收集 `src/monkeyfab`、`pyproject.toml`、`README.md`，
+不复制虚拟环境、工作区修改、测试或项目资料。省略这两个参数仍构建原有纯 Hub 包。
+两个仓库的依赖在同一次 Windows CPython 3.13 wheel 解析中安装；MonkeyFab 的基础依赖与 `send` 依赖一并提供。
+ZIP 名称、默认安装目录和重复安装判断均绑定两份提交，不以同一 Hub 提交覆盖不同的 MonkeyFab 版本。
+
+`--staging-dir`、`--output-dir` 和缓存必须在两个源码工作区之外。缓存默认位于 staging 下，可用 `--cache-dir` 指定。
 每次构建使用独立子目录，已有候选 ZIP 不会覆盖。打包前会实际导入包内 API、PDF、图像和 CAD 库，
-并执行最小 OCCT/3DM 检查。`_runtime/requirements-lock.txt` 保存实际安装版本；原 wheel 许可及 metadata 保留。
+并执行最小 OCCT/3DM 检查。整合包还用内置 Python 检查 H2S 参数、实际拆件与本地发送 dry-run，
+样件和结果留在外部临时目录，不连接打印机。`_runtime/requirements-lock.txt` 保存实际安装版本；原 wheel 许可及 metadata 保留。
 前端生产依赖的原始 LICENSE 也随构建保留。额外的上游许可和来源见 `apps/monkeyhub/installer/third-party/`。
 
 ## 候选验收边界

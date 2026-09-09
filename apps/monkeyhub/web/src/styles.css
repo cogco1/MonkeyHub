@@ -45,9 +45,25 @@ input::placeholder{color:var(--faint)}
 .error-message summary{cursor:pointer}
 .error-message code{font-family:var(--font-mono);display:block;margin:5px 0}
 footer{font-size:calc(12px * var(--font-scale,1));line-height:1.8;color:var(--muted);border-top:1px solid var(--line);padding-top:17px;margin-top:28px}
+.fab-settings-link{margin-left:auto}
+.fab-page .section-heading{margin-bottom:14px}
+.fab-forms{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+.fab-form>h2{font-size:calc(18px * var(--font-scale,1));font-weight:600}
+.fab-form fieldset{padding:0;margin:18px 0 0;border:0;min-width:0;display:grid;gap:14px}
+.fab-form fieldset>.help,.fab-form fieldset>.actions,.fab-form fieldset>.advanced{margin:0}
+.fab-form label{font-size:calc(13px * var(--font-scale,1))}
+.fab-form input,.fab-form select,.fab-form .btn{min-height:44px;font-size:calc(14px * var(--font-scale,1))}
+.fab-form .advanced>summary{min-height:36px}
+.fab-result{border-top:1px solid var(--line);margin-top:20px;padding-top:16px;overflow-wrap:anywhere}
+.fab-result h3{font-size:calc(14px * var(--font-scale,1));color:var(--held);margin:0 0 10px}
+.fab-result code,.fab-result pre{font-size:calc(12px * var(--font-scale,1));white-space:pre-wrap;overflow-wrap:anywhere}
+.fab-result dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px 14px;font-size:calc(13px * var(--font-scale,1))}
+.fab-result dt{color:var(--muted)}
+.fab-result dd{margin:0}
 
 @media(max-width:720px){.hub{padding:23px 18px}
 .settings{grid-template-columns:1fr;gap:28px}
+.fab-forms{grid-template-columns:1fr}
 .app-card{padding:17px}
 .app-heading{flex-wrap:wrap;gap:4px 12px}
 .app-heading h2{font-size:calc(16px * var(--font-scale,1))}

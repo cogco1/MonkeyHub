@@ -13,6 +13,8 @@ from uuid import UUID
 import webbrowser
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,7 +30,11 @@ from archflow_studio_api.transport.errors import StudioError
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
 
 from .applications import Applications
-from .models import AppId, AppStatus, HubError, HubFailure, HubHealth
+from .fabrication import Fabrication
+from .models import (
+    AppId, AppStatus, FabPrepareRequest, FabPrepareResult, FabProfile,
+    FabSendRequest, FabSendResult, HubError, HubFailure, HubHealth,
+)
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
 
@@ -56,6 +62,7 @@ class HubSettings:
 
 def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> FastAPI:
     applications = Applications(source_root, settings.runtime_root, settings.studio_web_dir, settings.port)
+    fabrication = Fabrication(source_root)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -69,6 +76,15 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.exception_handler(HubFailure)
     async def handle_hub_error(request: Request, exc: HubFailure):
         return JSONResponse(exc.error.model_dump(), status_code=exc.status)
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_request_validation(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/fab/"):
+            return JSONResponse(
+                {"code": "FAB_REQUEST_INVALID", "detail": "Invalid fabrication request. Check the required paths, field types and options."},
+                status_code=422,
+            )
+        return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(StudioError)
     async def handle_preferences_error(request: Request, exc: StudioError):
@@ -124,6 +140,20 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.post("/api/apps/{app_id}/stop", response_model=AppStatus, status_code=202, responses=error_responses)
     def stop_app(app_id: AppId) -> AppStatus:
         return applications.stop(app_id)
+
+    fab_errors = {422: {"model": HubError}, 502: {"model": HubError}, 503: {"model": HubError}}
+
+    @app.get("/api/fab/profiles", response_model=dict[str, FabProfile], responses=fab_errors)
+    def get_fab_profiles() -> dict[str, FabProfile]:
+        return fabrication.profiles()
+
+    @app.post("/api/fab/prepare", response_model=FabPrepareResult, responses=fab_errors)
+    def prepare_fab(body: FabPrepareRequest) -> FabPrepareResult:
+        return fabrication.prepare(body)
+
+    @app.post("/api/fab/send", response_model=FabSendResult, responses=fab_errors)
+    def send_fab(body: FabSendRequest) -> FabSendResult:
+        return fabrication.send(body)
 
     @app.get("/api/settings/apps", response_model=ApplicationSettingsDto, response_model_by_alias=True)
     def application_settings() -> ApplicationSettingsDto:

@@ -142,7 +142,7 @@ class HubApiLifecycleTests(LocalHubCase):
         )), self.hub() as client:
             self.assertEqual(client.get("/api/health").json()["service"], "monkeyhub-api")
             rows = {row["appId"]: row for row in client.get("/api/apps").json()}
-            self.assertEqual(set(rows), {"monkeyarch", "monkeydiagram", "monkeymonitor", "monkeyboard"})
+            self.assertEqual(set(rows), {"monkeyarch", "monkeydiagram", "monkeymonitor", "monkeyboard", "monkeyfab"})
             self.assertEqual(rows["monkeyboard"]["state"], "stopped")
             self.assertEqual(rows["monkeyboard"]["serviceId"], "studio")
             self.assertIsNone(client.get("/api/settings/apps").json()["projectDir"])

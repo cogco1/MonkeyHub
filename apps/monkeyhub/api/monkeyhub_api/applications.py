@@ -18,12 +18,14 @@ from archflow_studio_api.settings import read_application_settings, read_user_se
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
 
 from .models import AppId, AppStatus, HubError, HubFailure
+from . import fabrication
 
 APPS = {
     "monkeyarch": ("MonkeyArch", "studio"),
     "monkeydiagram": ("MonkeyDiagram", "studio"),
     "monkeymonitor": ("MonkeyMonitor", "monitor"),
     "monkeyboard": ("MonkeyBoard", "studio"),
+    "monkeyfab": ("MonkeyFab", "hub"),
 }
 
 
@@ -79,6 +81,18 @@ class Applications:
     def status(self, app_id: AppId) -> AppStatus:
         title, service = APPS[app_id]
         with self._lock:
+            if service == "hub":
+                available = fabrication.available()
+                return AppStatus(
+                    appId=app_id, title=title, serviceId="hub", available=available,
+                    state="running" if available else "unavailable",
+                    url=f"http://127.0.0.1:{self.hub_port}/?view=fab" if available else None,
+                    processId=os.getpid() if available else None,
+                    error=None if available else HubError(
+                        code="FAB_UNAVAILABLE",
+                        detail="MonkeyFab is not included in this Python environment. Use the integrated application package.",
+                    ),
+                )
             child = self._children.get(service)
             if child is None:
                 return AppStatus(appId=app_id, title=title, serviceId=service, state="stopped")
@@ -101,6 +115,8 @@ class Applications:
         with self._lock:
             if self._closing:
                 raise HubFailure(409, "HUB_STOPPING", "The Hub is waiting for its applications to finish.")
+            if service == "hub":
+                return self.status(app_id)
             existing = self._children.get(service)
             if existing is not None and existing.process.poll() is None:
                 return self.status(app_id)
@@ -229,6 +245,8 @@ class Applications:
     def stop(self, app_id: AppId) -> AppStatus:
         _, service = APPS[app_id]
         with self._lock:
+            if service == "hub":
+                raise HubFailure(409, "APP_HOSTED_BY_HUB", "MonkeyFab is an operation page in this Hub and has no separate process to stop.")
             child = self._children.get(service)
             if child is not None and child.process.poll() is None:
                 if child.state != "error":

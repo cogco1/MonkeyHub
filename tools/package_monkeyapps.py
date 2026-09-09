@@ -1,8 +1,8 @@
-"""Build a Windows x64 MonkeyHub candidate from one exact Git commit.
+"""Build a Windows x64 MonkeyHub candidate, optionally with an exact MonkeyFab commit.
 
 This is a distribution builder, not a launcher or project writer. All build,
 dependency and output files go to the supplied external directories. The
-installed application uses apps/monkeyhub/run.py and launch-hub.ps1 unchanged.
+installed application uses the existing apps/monkeyhub/run.py and launch-hub.ps1.
 """
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ SOURCE_PATHS = (
     "apps/monkeyhub", "apps/shared-web", "OPEN_MONKEYHUB.cmd",
     "README.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
 )
+MONKEYFAB_SOURCE_PATHS = ("src/monkeyfab", "pyproject.toml", "README.md")
 
 
 def run(command: list[str], *, cwd: Path | None = None, capture: bool = False,
@@ -75,7 +76,8 @@ def fetch_runtime(cache: Path) -> Path:
 
 
 def prepare_runtime(source: Path, destination: Path, cache: Path,
-                    environment: dict[str, str] | None = None) -> None:
+                    environment: dict[str, str] | None = None,
+                    monkeyfab_source: Path | None = None) -> None:
     """Vendor complete cp313 wheels; never install into the builder's Python."""
     destination.mkdir(parents=True)
     with zipfile.ZipFile(fetch_runtime(cache)) as archive:
@@ -83,6 +85,10 @@ def prepare_runtime(source: Path, destination: Path, cache: Path,
     metadata = tomllib.loads((source / "pyproject.toml").read_text(encoding="utf-8"))
     requirements = [*metadata["project"]["dependencies"],
                     *metadata["project"]["optional-dependencies"]["cad-occt"]]
+    if monkeyfab_source is not None:
+        fab_metadata = tomllib.loads((monkeyfab_source / "pyproject.toml").read_text(encoding="utf-8"))
+        requirements.extend(fab_metadata["project"]["dependencies"])
+        requirements.extend(fab_metadata["project"]["optional-dependencies"]["send"])
     requirement_args = ["-r", str(source / "apps/archflow-studio/api/requirements.txt")]
     hub_requirements = source / "apps/monkeyhub/api/requirements.txt"
     if hub_requirements.is_file():
@@ -100,7 +106,9 @@ def prepare_runtime(source: Path, destination: Path, cache: Path,
     # Keep import site: native wheels use their own .pth/DLL initialization.
     (destination / "python313._pth").write_text(
         "python313.zip\n.\nLib\\site-packages\n..\\..\n"
-        "..\\..\\apps\\archflow-studio\\api\n..\\..\\apps\\monkeyhub\\api\nimport site\n",
+        "..\\..\\apps\\archflow-studio\\api\n..\\..\\apps\\monkeyhub\\api\n"
+        + ("..\\..\\apps\\monkeyfab\\src\n" if monkeyfab_source is not None else "")
+        + "import site\n",
         encoding="utf-8",
     )
     locked = sorted(f"{item.metadata['Name']}=={item.version}"
@@ -156,7 +164,8 @@ def collect_web_notices(source: Path, target: Path, supplemental_links: dict[str
     return "\n".join(rows) + "\n"
 
 
-def collect_application(source: Path, bundle: Path, commit: str) -> None:
+def collect_application(source: Path, bundle: Path, commit: str,
+                        monkeyfab_source: Path | None = None) -> None:
     bundle.mkdir()
     # These trees only contain the committed snapshot, before runtime writes.
     for name in ("archflow", "monkeyarch", "monkeydiagram", "monkeymonitor"):
@@ -204,6 +213,8 @@ def collect_application(source: Path, bundle: Path, commit: str) -> None:
     shutil.copy2(source / "apps/monkeyhub/installer/INSTALL_MONKEYHUB.cmd", bundle / "INSTALL_MONKEYHUB.cmd")
     shutil.copy2(source / "apps/monkeyhub/installer/README.md", bundle / "README.md")
     shutil.copy2(source / "apps/monkeyhub/installer/README.md", bundle / "INSTALLATION.md")
+    if monkeyfab_source is not None:
+        shutil.copytree(monkeyfab_source, bundle / "apps/monkeyfab")
     (bundle / "source-version.txt").write_text(commit + "\n", encoding="utf-8")
 
 
@@ -221,15 +232,58 @@ def smoke_runtime(bundle: Path) -> None:
         "print('Bundled Python, API, image/PDF and OCCT/3DM imports: PASS')"
     )], cwd=bundle)
     run([str(python), "-B", str(bundle / "apps/monkeyhub/run.py"), "--help"], cwd=bundle)
+    if (bundle / "apps/monkeyfab/src/monkeyfab").is_dir():
+        profiles = json.loads(run(
+            [str(python), "-B", "-m", "monkeyfab", "profiles", "--json"], cwd=bundle, capture=True))
+        if profiles["h2s"]["usable_volume_mm"] != [340.0, 320.0, 340.0]:
+            raise ValueError("The bundled MonkeyFab H2S profile is not the expected 340 x 320 x 340 mm.")
+        # Exercise native geometry and CLI I/O outside the distributable tree.
+        with tempfile.TemporaryDirectory(prefix="monkeyfab-smoke-", dir=bundle.parent) as temporary:
+            scratch = Path(temporary)
+            run([str(python), "-B", "-c", (
+                "from pathlib import Path; import sys,trimesh,manifold3d; "
+                "from zipfile import ZipFile; "
+                "from bambulabs_api.ftp_client import ImplicitFTP_TLS; "
+                "root=Path(sys.argv[1]); "
+                "trimesh.creation.box(extents=(680,40,20)).export(root/'box.stl'); "
+                "job=ZipFile(root/'sample.gcode.3mf','w'); "
+                "job.writestr('Metadata/plate_1.gcode','G90\\n'); job.close()"
+            ), str(scratch)], cwd=bundle)
+            output = scratch / "prepared"
+            run([str(python), "-B", "-m", "monkeyfab", "prepare", str(scratch / "box.stl"),
+                 "--input-unit", "mm", "--printer", "h2s", "--output", str(output)], cwd=bundle)
+            prepared = json.loads((output / "parts.json").read_text(encoding="utf-8"))
+            if (len(prepared["parts"]) != 3
+                    or prepared["working_volume_mm"] != [330.0, 310.0, 335.0]
+                    or abs(sum(part["volume_mm3"] for part in prepared["parts"]) - 544000.0) > 0.001
+                    or any(not (output / part["file"]).is_file() for part in prepared["parts"])):
+                raise ValueError("The bundled MonkeyFab did not prepare the expected closed H2S parts.")
+            sent = json.loads(run(
+                [str(python), "-B", "-m", "monkeyfab", "send", str(scratch / "sample.gcode.3mf"),
+                 "--host", "192.0.2.1", "--dry-run", "--json"], cwd=bundle, capture=True))
+            if sent["status"] != "validated" or sent["print_started"] or sent["plates"] != [1]:
+                raise ValueError("The bundled MonkeyFab local send dry-run failed.")
+        print("Bundled MonkeyFab H2S prepare and local send dry-run: PASS", flush=True)
 
 
 def package(source_root: Path, source_ref: str, staging: Path, output: Path,
-            cache: Path, node: Path, npm_cli: Path) -> Path:
+            cache: Path, node: Path, npm_cli: Path,
+            monkeyfab_source: Path | None = None, monkeyfab_ref: str | None = None) -> Path:
     if sys.platform != "win32":
         raise ValueError("Build and verify this Windows candidate on Windows x64.")
     source_root = source_root.resolve()
     staging, output, cache = (external(path, source_root) for path in (staging, output, cache))
     commit = run(["git", "rev-parse", "--verify", f"{source_ref}^{{commit}}"], cwd=source_root, capture=True)
+    if (monkeyfab_source is None) != (monkeyfab_ref is None):
+        raise ValueError("Supply --monkeyfab-source and --monkeyfab-ref together.")
+    fab_commit = None
+    if monkeyfab_source is not None:
+        monkeyfab_source = monkeyfab_source.resolve()
+        for path in (staging, output, cache):
+            external(path, monkeyfab_source)
+        fab_commit = run(["git", "rev-parse", "--verify", f"{monkeyfab_ref}^{{commit}}"],
+                         cwd=monkeyfab_source, capture=True)
+    version = commit[:12] + (f"-fab-{fab_commit[:12]}" if fab_commit else "")
     staging.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
     build = Path(tempfile.mkdtemp(prefix=f"candidate-{commit[:12]}-", dir=staging))
@@ -244,14 +298,24 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     source = build / "source"
     with zipfile.ZipFile(snapshot) as archive:
         archive.extractall(source)
+    fab_snapshot = None
+    if monkeyfab_source is not None:
+        fab_archive = build / "monkeyfab-source.zip"
+        run(["git", "archive", "--format=zip", f"--output={fab_archive}", fab_commit,
+             "--", *MONKEYFAB_SOURCE_PATHS], cwd=monkeyfab_source)
+        fab_snapshot = build / "monkeyfab-source"
+        with zipfile.ZipFile(fab_archive) as archive:
+            archive.extractall(fab_snapshot)
+        print(f"MonkeyFab source: {fab_commit}", flush=True)
     build_web(source, node, npm_cli, environment)
-    bundle = build / f"MonkeyHub-{commit[:12]}-windows-x64"
-    collect_application(source, bundle, commit)
-    prepare_runtime(source, bundle / "_runtime/python", cache, environment)
+    bundle = build / f"MonkeyHub-{version}-windows-x64"
+    collect_application(source, bundle, commit, fab_snapshot)
+    prepare_runtime(source, bundle / "_runtime/python", cache, environment, fab_snapshot)
     smoke_runtime(bundle)
     # Version + exact inputs are distribution metadata, not project records.
     (bundle / "build-info.json").write_text(json.dumps({
         "sourceCommit": commit, "target": "windows-x64", "channel": "candidate",
+        **({"monkeyFabCommit": fab_commit} if fab_commit else {}),
         "pythonVersion": PYTHON_VERSION, "pythonUrl": PYTHON_URL, "pythonSha256": PYTHON_SHA256,
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     zip_path = build / f"{bundle.name}-candidate.zip"
@@ -275,6 +339,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, default=SOURCE_ROOT)
     parser.add_argument("--source-ref", default="HEAD", help="exact integrated commit or ref; working files are not packaged")
+    parser.add_argument("--monkeyfab-source", type=Path, help="independent MonkeyFab Git checkout; pair with --monkeyfab-ref")
+    parser.add_argument("--monkeyfab-ref", help="MonkeyFab commit or ref to include; working files are not packaged")
     parser.add_argument("--staging-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--cache-dir", type=Path, help="defaults to <staging-dir>/cache")
@@ -286,7 +352,8 @@ def main(argv: list[str] | None = None) -> int:
         if not args.node.is_file() or not npm_cli.is_file():
             raise ValueError("The builder needs Node and npm-cli.js; supply --node and --npm-cli.")
         package(args.source_root, args.source_ref, args.staging_dir, args.output_dir,
-                args.cache_dir or args.staging_dir / "cache", args.node, npm_cli)
+                args.cache_dir or args.staging_dir / "cache", args.node, npm_cli,
+                args.monkeyfab_source, args.monkeyfab_ref)
     except (OSError, ValueError, subprocess.CalledProcessError, zipfile.BadZipFile) as error:
         parser.exit(1, f"package_monkeyapps: {error}\n")
     return 0
