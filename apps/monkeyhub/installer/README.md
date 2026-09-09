@@ -54,7 +54,7 @@ python tools/package_monkeyapps.py --source-ref <三条线集成后的完整提�
 `--staging-dir` 和 `--output-dir` 必须在源码工作区之外。缓存默认位于 staging 下，可用 `--cache-dir` 指定。
 每次构建使用独立子目录，已有候选 ZIP 不会覆盖。打包前会实际导入包内 API、PDF、图像和 CAD 库，
 并执行最小 OCCT/3DM 检查。`_runtime/requirements-lock.txt` 保存实际安装版本；原 wheel 许可及 metadata 保留。
-额外的上游许可和来源见 `apps/monkeyhub/installer/third-party/`。
+前端生产依赖的原始 LICENSE 也随构建保留。额外的上游许可和来源见 `apps/monkeyhub/installer/third-party/`。
 
 ## 候选验收边界
 
