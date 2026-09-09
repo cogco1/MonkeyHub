@@ -291,7 +291,11 @@
         "apps/archflow-studio/web/src/app/Connected.tsx",
         "apps/archflow-studio/web/test/boardFeedbackGeometry.test.ts",
         "apps/archflow-studio/web/test/boardFeedback.test.ts",
-        "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs"
+        "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs",
+        "archflow/adapters/cad_program.py",
+        "tests/test_lintel_bearing.py",
+        "tests/test_window_relational_update.py",
+        "archflow/adapters/cad_patch.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -314,7 +318,8 @@
         "2026-09-09 implementation and review fixes complete: persistent Stage/Branch CAS and cold candidate replay; candidate previews; exact-source elevation revisions; within-seat producer/CAD reuse; isolated queue scopes and independent candidate combination. Stage views pin the exact model and source runner across later canonical/run records. Drawing annotations and submitted requests retain their exact revision even when later drawings share PNG bytes. API/OCCT regressions, 41 isolated browser scenarios, affected Web unit tests, build, generated client and archcheck passed. Real project migration, active-service restart and remote push are outside this completed local change; architectural task acceptance and other P115 items remain open.",
         "2026-09-09: MonkeyHub service implementation extends Studio settings/launcher and both service lifecycle boundaries. hub.shell is required because Studio requires a building project; Hub must start and manage Monitor without one. UI and distribution integrate separately; no package or second-machine completion is claimed.",
         "2026-09-09: Shared browser appearance, interpolation, translation and base controls extend studio.shell; Monitor serves only the four exact shared JS/CSS URLs. UI owns the shared files and consumer changes; distribution preserves them in the package. Real browser integration and packaged acceptance remain separate from the HTTP route checks.",
-        "2026-09-09 MonkeyBoard local implementation: single-operator whiteboard for meeting screen sharing, original PDF/image uploads, automatic receipt of new MonkeyDiagram documents, movable drawing frames and notes, immutable layout saves and reopening, and exact run/revision/page return links. Focused API and frontend save/source tests passed; real-browser acceptance is in progress with the main integration task. No multiplayer is requested; meeting plugins, account access and live transcription are not connected."
+        "2026-09-09 MonkeyBoard local implementation: single-operator whiteboard for meeting screen sharing, original PDF/image uploads, automatic receipt of new MonkeyDiagram documents, movable drawing frames and notes, immutable layout saves and reopening, and exact run/revision/page return links. Focused API and frontend save/source tests passed; real-browser acceptance is in progress with the main integration task. No multiplayer is requested; meeting plugins, account access and live transcription are not connected.",
+        "2026-09-09: user authorized the bounded window-width relation slice and editable 3dm materials. Extend existing parameter/closure/operator, window producers, relation checks and CAD reuse. Add only the declared lintel envelope bearing check; repair native material export and legacy layer-colour display. The explicitly named external Ightham analytical input consumes these relations through its existing case script and retains candidates through P036; active services and formal issue are separate."
       ]
     },
     {

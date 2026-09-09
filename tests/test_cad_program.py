@@ -1,8 +1,10 @@
 """P071: deterministic CAD translation and analytic equivalence bounds."""
 
 import json
+import sys
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from archflow.adapters.cad_program import (
     CadTranslationError,
@@ -700,6 +702,81 @@ class SemanticEmissionTest(unittest.TestCase):
                 f"rs.AddLayer({layer_path!r}, {color!r})",
                 translation.script,
             )
+
+    def test_emitted_script_binds_a_shared_native_material_and_retains_semantics(self):
+        try:
+            import rhino3dm as rhino
+        except ImportError:
+            self.skipTest("rhino3dm is not installed")
+        build = program(
+            op("first", "solid", ["first-object"], bindings=("timber",), origin=[0, 0, 0], size=[1, 1, 1]),
+            op("second", "solid", ["second-object"], bindings=("timber",), origin=[2, 0, 0], size=[1, 1, 1]),
+            op("plain", "solid", ["plain-object"], origin=[4, 0, 0], size=[1, 1, 1]),
+            bindings=(binding("timber", "frame", ("first-object", "second-object")),),
+        )
+        translation = translate_to_rhino_python(build, material_by_component={"frame": "oak"}, material_colors={"oak": (120, 80, 40)})
+        document = rhino.File3dm()
+        objects = {}
+        layers = {}
+
+        def add_layer(name, color):
+            layer = rhino.Layer()
+            layer.Name, layer.Color = name, (*color, 255)
+            layers[name] = document.Layers.Add(layer)
+
+        def add_box(points):
+            key = f"guid-{len(objects)}"
+            low = rhino.Point3d(*(min(point[axis] for point in points) for axis in range(3)))
+            high = rhino.Point3d(*(max(point[axis] for point in points) for axis in range(3)))
+            objects[key] = (rhino.Brep.CreateFromBoundingBox(rhino.BoundingBox(low, high)), rhino.ObjectAttributes())
+            return key
+
+        def attribute(key, name, value=None):
+            attributes = objects[key][1]
+            if value is not None:
+                setattr(attributes, name, value)
+            return getattr(attributes, name)
+
+        def material(key):
+            index = document.Materials.Add(rhino.Material())
+            attribute(key, "MaterialIndex", index)
+            return index
+
+        # Execute the complete emitted script through a small in-process port;
+        # its materials and attributes are actual openNURBS values, then reopened.
+        rs = SimpleNamespace(
+            AddLayer=add_layer, AddBox=add_box,
+            AddMaterialToObject=material,
+            MaterialName=lambda index, name: setattr(document.Materials[index], "Name", name),
+            MaterialColor=lambda index, rgb: setattr(document.Materials[index], "DiffuseColor", (*rgb, 255)),
+            ObjectMaterialIndex=lambda key, index: attribute(key, "MaterialIndex", index),
+            ObjectMaterialSource=lambda key, source: attribute(key, "MaterialSource", rhino.ObjectMaterialSource(source)),
+            ObjectName=lambda key, name=None: attribute(key, "Name", name),
+            ObjectLayer=lambda key, name=None: attribute(key, "LayerIndex", layers[name]) if name else next(name for name, index in layers.items() if index == attribute(key, "LayerIndex")),
+            SetUserText=lambda key, name, value: objects[key][1].SetUserString(name, value),
+            GetUserText=lambda key, name=None: objects[key][1].GetUserString(name) if name else [row[0] for row in objects[key][1].GetUserStrings()],
+            BoundingBox=lambda keys: [SimpleNamespace(X=0, Y=0, Z=0)] * 8,
+            SurfaceVolume=lambda key: (1.0,), BlockNames=lambda: [],
+        )
+        class NativeMaterials:
+            def __getitem__(self, index):
+                return SimpleNamespace(IsPhysicallyBased=document.Materials[index].PhysicallyBased.Supported)
+
+        rhino_port = SimpleNamespace(RhinoDoc=SimpleNamespace(ActiveDoc=SimpleNamespace(Materials=NativeMaterials())))
+        with patch.dict(sys.modules, {"rhinoscriptsyntax": rs, "Rhino": rhino_port}), patch("builtins.print"):
+            exec(translation.script, {})
+        for geometry, attributes in objects.values():
+            document.Objects.AddBrep(geometry, attributes)
+        reopened = rhino.File3dm.Decode(document.Encode())
+        self.assertEqual(len(reopened.Materials), 1)
+        self.assertEqual((reopened.Materials[0].Name, reopened.Materials[0].DiffuseColor), ("oak", (120, 80, 40, 255)))
+        saved = {obj.Attributes.Name: obj.Attributes for obj in reopened.Objects}
+        for name in ("first-object", "second-object"):
+            self.assertEqual(saved[name].MaterialSource, rhino.ObjectMaterialSource.MaterialFromObject)
+            self.assertEqual(saved[name].MaterialIndex, 0)
+            self.assertEqual(saved[name].GetUserString("archflow:material"), "oak")
+            self.assertEqual(saved[name].GetUserString("archflow:object_ref"), f"cad-object:{name}")
+        self.assertEqual(saved["plain-object"].MaterialIndex, -1)
 
     def test_layer_color_contract_has_deterministic_fallback(self):
         default = translate_to_rhino_python(semantic_build())

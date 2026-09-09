@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { Material, Mesh, type Object3D } from "three";
+import { Color, Material, Mesh, MeshStandardMaterial, SRGBColorSpace, type Object3D } from "three";
 
 import {
   captureModelAppearance,
@@ -57,7 +57,7 @@ interface WorkerMessage {
 }
 
 interface DecodedFile {
-  layers: Array<{ name: string; visible: boolean }>;
+  layers: Array<{ name: string; visible: boolean; color: { r: number; g: number; b: number } }>;
   materials: Array<{ name: string; transparency: number; diffuseColor: { r: number; g: number; b: number } }>;
   objects: Array<{
     objectType: string;
@@ -67,6 +67,7 @@ interface DecodedFile {
       layerIndex: number;
       materialSource: { name: string; value: number };
       materialIndex: number;
+      drawColor: { r: number; g: number; b: number };
     };
   }>;
 }
@@ -200,6 +201,22 @@ test("the current preview's native materials reach the viewer through the instal
   restoreOpacity(own);
   assert.equal(own.size, 0);
   for (const [material, state] of loaded) assert.deepEqual(opacityOf(material), state, material.name);
+
+  // Layer display colors are saved in the native file, but the loader leaves
+  // unassigned meshes white. Preparation restores that display color only.
+  const savedPlinth = decoded.objects.find((object) => object.attributes.name === "obj-plinth")!.attributes;
+  const rgb = savedPlinth.drawColor;
+  assert.deepEqual(rgb, decoded.layers[savedPlinth.layerIndex].color);
+  const expectedColor = new Color().setRGB(rgb.r / 255, rgb.g / 255, rgb.b / 255, SRGBColorSpace);
+  const frameColor = (frame as MeshStandardMaterial).color.clone();
+  const displayed = meshesByName(prepareLoadedModel(model.clone(true)));
+  const displayedPlinth = displayed.get("obj-plinth")!.material as MeshStandardMaterial;
+  assert.notEqual(displayedPlinth, plinth);
+  assert.ok(displayedPlinth.color.equals(expectedColor));
+  assert.equal(displayed.get(FRAME)!.material, frame);
+  assert.equal(displayed.get(PANE)!.material, glass);
+  assert.ok((frame as MeshStandardMaterial).color.equals(frameColor));
+  assert.deepEqual(opacityOf(displayedPlinth), loaded.get(plinth));
 });
 
 test("the aperture the export saved hidden is not displayed, and nothing brings it back", { skip }, async () => {
