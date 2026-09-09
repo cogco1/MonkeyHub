@@ -28,7 +28,7 @@ Monkey 家族的用量、计价与预算接口归独立 [MonkeyMonitor](../../..
 | 执行会话 | 交付与文件边界 | 完成条件 |
 | --- | --- | --- |
 | 界面交互｜MonkeyArch工作台 | 共用翻译、显示偏好与基础样式，新增 `apps/monkeyhub/web/`；共用前端文件限 `apps/shared-web/`，只迁出真实第二消费者所需部分。可修改 Studio 的 i18n、settings、样式及对应构建/测试和 Monitor 的 Web 消费端。 | 现有 Studio 行为保留；Hub 使用相同的语言、主题、字号和控件。对接真实启动 API 后验证状态与按钮；界面模拟不算集成完成。 |
-| 团队开发｜环境、协作与接入准备 | `apps/monkeyhub/api/`、Hub 根目录运行入口和 README；扩展既有 Studio 启动器及确需调整的 settings/进程退出路径。先提供最小实际 OpenAPI，再交界面会话生成客户端。此会话独占本轮 module/work registry、architecture policy 及生成地图更新。 | Hub 无项目也能启动；Arch/Diagram 共享一组服务；Monitor 可独立开关；重复点击不重复启动；核对正确服务身份；退出协调运行中任务。 |
+| 团队开发｜环境、协作与接入准备 | `apps/monkeyhub/api/`、Hub 根目录运行入口和 README；扩展既有 Studio 启动器及确需调整的 settings/进程退出路径，以及 Monitor 的四个精确共用资源地址与退出路径。先提供最小实际 OpenAPI，再交界面会话生成客户端。此会话独占本轮 module/work registry、architecture policy 及生成地图更新。 | Hub 无项目也能启动；Arch/Diagram 共享一组服务；Monitor 可独立开关并读取共用显示资源；重复点击不重复启动；核对正确服务身份；退出协调运行中任务。 |
 | 仓库维护｜巡检、清理与归档 | `apps/monkeyhub/installer/`、`tools/package_monkeyapps.py`、根目录 `OPEN_MONKEYHUB.cmd` 和首次安装/发行说明；在独立集成工作区接入另外两条线的已检查提交。 | 产出明确源提交对应的 Windows 候选安装包；前端预构建，普通使用者无需运行 npm；验证路径含中文/空格、重开和不覆盖原数据。干净机器/第二位使用者未验证时明确保留该项。 |
 
 **已确认可以复用的实现。** Studio 的 `i18n/browserTranslator.ts`、`useT.ts`、中英词典、
