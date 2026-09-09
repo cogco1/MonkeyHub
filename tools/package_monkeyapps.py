@@ -146,6 +146,8 @@ def collect_application(source: Path, bundle: Path, commit: str) -> None:
         shutil.copytree(source / relative, bundle / relative)
     for relative in ("apps/archflow-studio/launch-studio.ps1", "apps/monkeyhub/run.py",
                      "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "README.md", "pyproject.toml",
+                     "apps/shared-web/src/appearance.js", "apps/shared-web/src/i18n.js",
+                     "apps/shared-web/src/browserTranslator.js", "apps/shared-web/src/base.css",
                      "tools/create_project.py", "tools/run_project.py"):
         target = bundle / relative
         target.parent.mkdir(parents=True, exist_ok=True)
