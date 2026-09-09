@@ -14,7 +14,7 @@ from pathlib import Path
 import tempfile
 from typing import Mapping
 
-from .transport.settings import UserSettingsDto
+from .transport.settings import ApplicationSettingsDto, UserSettingsDto
 
 PROJECT_DIR_ENV = "ARCHFLOW_STUDIO_PROJECT_DIR"
 CAD_EXPORT_ENV = "ARCHFLOW_STUDIO_CAD_EXPORT"
@@ -286,7 +286,30 @@ def read_user_settings() -> UserSettingsDto:
 def save_user_settings(settings: UserSettingsDto) -> UserSettingsDto:
     """Replace one local preferences file atomically; no project state is touched."""
 
-    destination = user_settings_path()
+    _save_local_settings(user_settings_path(), settings)
+    return settings
+
+
+def read_application_settings(runtime_root: Path) -> ApplicationSettingsDto:
+    """Read Hub launch configuration from its explicitly selected nonproject root."""
+
+    try:
+        raw = (runtime_root / "config" / "applications.json").read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return ApplicationSettingsDto()
+    return ApplicationSettingsDto.model_validate_json(raw)
+
+
+def save_application_settings(runtime_root: Path, settings: ApplicationSettingsDto) -> ApplicationSettingsDto:
+    """App configuration has no preference, credential or project-write fields."""
+
+    if not runtime_root.is_absolute():
+        raise SettingsError("The application runtime root must be absolute.")
+    _save_local_settings(runtime_root / "config" / "applications.json", settings)
+    return settings
+
+
+def _save_local_settings(destination: Path, settings: UserSettingsDto | ApplicationSettingsDto) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
@@ -302,4 +325,3 @@ def save_user_settings(settings: UserSettingsDto) -> UserSettingsDto:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
-    return settings

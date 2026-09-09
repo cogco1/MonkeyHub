@@ -1,0 +1,356 @@
+"""Hub behavior against its real managed children in private temporary directories.
+
+The Studio fixture below verifies HTTP routing and shared process ownership. Its
+minimal static page is not a browser or Studio Web end-to-end acceptance test.
+"""
+
+from contextlib import contextmanager, ExitStack
+from http.client import HTTPResponse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import importlib.util
+import json
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from unittest.mock import patch
+from urllib.request import ProxyHandler, Request, build_opener
+from uuid import uuid4
+
+
+ROOT = Path(__file__).resolve().parents[4]
+for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhub/api"):
+    if str(directory) not in sys.path:
+        sys.path.insert(0, str(directory))
+
+from fastapi.testclient import TestClient
+
+from archflow_studio_api.settings import StudioSettings
+from monkeyhub_api.main import HubSettings, create_app
+
+
+def project_fixture():
+    """Reuse the complete Studio P036 fixture without importing a tests package."""
+
+    name = "monkeyhub_studio_project_fixture"
+    spec = importlib.util.spec_from_file_location(
+        name, ROOT / "apps/archflow-studio/api/tests/support.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def free_ports(count):
+    with ExitStack() as stack:
+        sockets = [stack.enter_context(socket.socket()) for _ in range(count)]
+        for listener in sockets:
+            listener.bind(("127.0.0.1", 0))
+        return [listener.getsockname()[1] for listener in sockets]
+
+
+def port_open(port):
+    with socket.socket() as connection:
+        connection.settimeout(0.2)
+        return connection.connect_ex(("127.0.0.1", port)) == 0
+
+
+def http_json(url, *, method="GET", payload=None):
+    request = Request(
+        url, method=method,
+        data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+        headers={"Content-Type": "application/json"},
+    )
+    with build_opener(ProxyHandler({})).open(request, timeout=2) as response:
+        return json.load(response)
+
+
+def wait_for(check, message, timeout=30):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        value = check()
+        if value:
+            return value
+        time.sleep(0.1)
+    raise AssertionError(message)
+
+
+class LocalHubCase(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="MonkeyHub 测试 ")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.runtime = self.root / "runtime"
+        self.appdata = self.root / "private roaming"
+        self.hub_port, self.studio_port, self.monitor_port = free_ports(3)
+        self.base_url = f"http://127.0.0.1:{self.hub_port}"
+        environment = {
+            key: value for key, value in os.environ.items()
+            if not key.startswith("ARCHFLOW_STUDIO_") and key != "MONKEYMONITOR_DATA_DIR"
+        }
+        environment.update({
+            "APPDATA": str(self.appdata), "LOCALAPPDATA": str(self.root / "private local"),
+            "PYTHONUTF8": "1",
+        })
+        environment_patch = patch.dict(os.environ, environment, clear=True)
+        environment_patch.start()
+        self.addCleanup(environment_patch.stop)
+
+    @contextmanager
+    def hub(self, *, studio_web=None):
+        app = create_app(HubSettings(
+            runtime_root=self.runtime, port=self.hub_port, studio_web_dir=studio_web,
+        ), source_root=ROOT)
+        with TestClient(app, base_url=self.base_url) as client:
+            yield client
+
+    def configuration(self, **changes):
+        return {
+            "projectDir": None, "referenceRun": None, "cadExport": "off",
+            "studioPort": self.studio_port, "monitorPort": self.monitor_port,
+            **changes,
+        }
+
+    def configure(self, client, **changes):
+        body = self.configuration(**changes)
+        response = client.put("/api/settings/apps", json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), body)
+        return body
+
+    def wait_state(self, client, app_id, state):
+        def read():
+            response = client.get("/api/apps")
+            self.assertEqual(response.status_code, 200, response.text)
+            item = next(row for row in response.json() if row["appId"] == app_id)
+            if item["state"] == "error" and state != "error":
+                self.fail(str(item))
+            return item if item["state"] == state else None
+        return wait_for(read, f"{app_id} never reached {state}")
+
+
+class HubApiLifecycleTests(LocalHubCase):
+    def test_no_project_hub_runs_monitor_reopens_and_deduplicates_start(self):
+        with patch.object(StudioSettings, "__post_init__", side_effect=AssertionError(
+            "A project-free Hub must not construct StudioSettings"
+        )), self.hub() as client:
+            self.assertEqual(client.get("/api/health").json()["service"], "monkeyhub-api")
+            rows = {row["appId"]: row for row in client.get("/api/apps").json()}
+            self.assertEqual(set(rows), {"monkeyarch", "monkeydiagram", "monkeymonitor", "monkeyboard"})
+            self.assertEqual(rows["monkeyboard"]["state"], "unavailable")
+            self.assertIsNone(client.get("/api/settings/apps").json()["projectDir"])
+            self.configure(client)
+            for app_id in ("monkeyarch", "monkeydiagram"):
+                response = client.post(f"/api/apps/{app_id}/start")
+                self.assertEqual(response.status_code, 409, response.text)
+                self.assertEqual(response.json()["code"], "PROJECT_REQUIRED")
+            actual_popen = subprocess.Popen
+            with patch("monkeyhub_api.applications.subprocess.Popen", wraps=actual_popen) as spawn:
+                first = client.post("/api/apps/monkeymonitor/start")
+                repeated = client.post("/api/apps/monkeymonitor/start")
+                self.assertEqual(first.status_code, 202, first.text)
+                self.assertEqual(repeated.status_code, 202, repeated.text)
+                self.assertEqual(first.json()["processId"], repeated.json()["processId"])
+                self.assertEqual(spawn.call_count, 1)
+            running = self.wait_state(client, "monkeymonitor", "running")
+            first_health = http_json(running["url"] + "api/health")
+            self.assertEqual(first_health["name"], "MonkeyMonitor")
+            self.assertIn(running["processId"], (first_health["processId"], first_health["parentProcessId"]))
+            self.assertEqual(client.post("/api/apps/monkeymonitor/stop").status_code, 202)
+            self.wait_state(client, "monkeymonitor", "stopped")
+            self.assertFalse(port_open(self.monitor_port))
+            self.assertEqual(client.post("/api/apps/monkeymonitor/start").status_code, 202)
+            reopened = self.wait_state(client, "monkeymonitor", "running")
+            second_health = http_json(reopened["url"] + "api/health")
+            self.assertNotEqual(first_health["managedInstanceId"], second_health["managedInstanceId"])
+
+    def test_application_config_and_user_preferences_survive_independent_reopen(self):
+        preferences = {"language": "zh-CN", "theme": "dark", "fontScale": 1.1, "intentProvider": "deterministic"}
+        project_path = str(self.root / "future project")
+        with self.hub() as client:
+            response = client.put("/api/settings/user", json=preferences)
+            self.assertEqual(response.status_code, 200, response.text)
+            preference_file = self.appdata / "MonkeyArch/settings.json"
+            original_preferences = preference_file.read_bytes()
+            configured = self.configure(client, projectDir=project_path, referenceRun="selected-run")
+            self.assertEqual(preference_file.read_bytes(), original_preferences)
+            application_file = self.runtime / "config/applications.json"
+            original_applications = application_file.read_bytes()
+            changed_preferences = {**preferences, "theme": "light"}
+            self.assertEqual(client.put("/api/settings/user", json=changed_preferences).status_code, 200)
+            self.assertEqual(application_file.read_bytes(), original_applications)
+            self.assertFalse((self.root / "future project").exists())
+        with self.hub() as reopened:
+            self.assertEqual(reopened.get("/api/settings/apps").json(), configured)
+            self.assertEqual(reopened.get("/api/settings/user").json(), changed_preferences)
+
+    def test_running_application_refuses_launch_configuration_changes(self):
+        with self.hub() as client:
+            configured = self.configure(client)
+            self.assertEqual(client.post("/api/apps/monkeymonitor/start").status_code, 202)
+            self.wait_state(client, "monkeymonitor", "running")
+            response = client.put("/api/settings/apps", json={**configured, "cadExport": "occt"})
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertEqual(response.json()["code"], "APPS_RUNNING")
+            self.assertEqual(client.get("/api/settings/apps").json(), configured)
+
+    def test_a_foreign_listener_is_neither_claimed_nor_stopped(self):
+        class ForeignHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = b'{"service":"foreign-fixture"}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        with ThreadingHTTPServer(("127.0.0.1", self.monitor_port), ForeignHandler) as foreign:
+            thread = threading.Thread(target=foreign.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with self.hub() as client:
+                    self.configure(client)
+                    response = client.post("/api/apps/monkeymonitor/start")
+                    self.assertEqual(response.status_code, 409, response.text)
+                    self.assertEqual(response.json()["code"], "PORT_IN_USE")
+                    item = self.wait_state(client, "monkeymonitor", "stopped")
+                    self.assertIsNone(item["processId"])
+                    self.assertEqual(client.post("/api/apps/monkeymonitor/stop").status_code, 202)
+                self.assertEqual(http_json(f"http://127.0.0.1:{self.monitor_port}/")["service"], "foreign-fixture")
+            finally:
+                foreign.shutdown()
+                thread.join(5)
+
+    def test_a_real_child_from_an_unexpected_source_is_refused_and_stopped(self):
+        with patch("monkeyhub_api.applications.source_revision", return_value="f" * 40), self.hub() as client:
+            self.configure(client)
+            response = client.post("/api/apps/monkeymonitor/start")
+            self.assertEqual(response.status_code, 202, response.text)
+            failure = self.wait_state(client, "monkeymonitor", "error")
+            self.assertEqual(failure["error"]["code"], "SERVICE_IDENTITY_MISMATCH")
+
+            def exited():
+                rows = client.get("/api/apps").json()
+                item = next(row for row in rows if row["appId"] == "monkeymonitor")
+                return item["processId"] is None
+            wait_for(exited, "The rejected owned child did not exit")
+            self.assertFalse(port_open(self.monitor_port))
+
+    def test_arch_and_diagram_share_one_studio_and_either_card_stops_it(self):
+        fixture = project_fixture()
+        fixture.make_project(self.root / "projects")
+        web = self.root / "minimal Studio web"
+        web.mkdir()
+        page = b"<html>Isolated Studio static route fixture</html>"
+        (web / "index.html").write_bytes(page)
+        with self.hub(studio_web=web) as client:
+            self.configure(
+                client, projectDir=str(self.root / "projects" / fixture.PROJECT_ID),
+                referenceRun=fixture.REFERENCE_RUN_ID,
+            )
+            self.assertEqual(client.post("/api/apps/monkeymonitor/start").status_code, 202)
+            monitor = self.wait_state(client, "monkeymonitor", "running")
+            for first_card, other_card in (("monkeyarch", "monkeydiagram"), ("monkeydiagram", "monkeyarch")):
+                with self.subTest(first_card=first_card):
+                    first = client.post(f"/api/apps/{first_card}/start")
+                    second = client.post(f"/api/apps/{other_card}/start")
+                    self.assertEqual(first.status_code, 202, first.text)
+                    self.assertEqual(second.status_code, 202, second.text)
+                    self.assertEqual(first.json()["processId"], second.json()["processId"])
+                    arch = self.wait_state(client, "monkeyarch", "running")
+                    diagram = self.wait_state(client, "monkeydiagram", "running")
+                    self.assertEqual(arch["processId"], diagram["processId"])
+                    self.assertEqual(diagram["url"], arch["url"] + "?view=documents")
+                    self.assertTrue(http_json(arch["url"] + "api/health")["projectBound"])
+                    for url in (arch["url"], diagram["url"]):
+                        with build_opener(ProxyHandler({})).open(url, timeout=2) as response:
+                            self.assertEqual(response.read(), page)
+                    self.assertEqual(client.post(f"/api/apps/{other_card}/stop").status_code, 202)
+                    self.wait_state(client, "monkeyarch", "stopped")
+                    self.wait_state(client, "monkeydiagram", "stopped")
+                    self.assertEqual(self.wait_state(client, "monkeymonitor", "running")["processId"], monitor["processId"])
+
+
+class HubCliLifecycleTests(LocalHubCase):
+    def test_cli_stop_and_eof_wait_for_an_accepted_monitor_request(self):
+        for stop_mode in ("stop", "eof"):
+            with self.subTest(stop_mode=stop_mode):
+                instance_id = str(uuid4())
+                log_path = self.root / f"hub-{stop_mode}.log"
+                with log_path.open("wb") as log:
+                    child = subprocess.Popen(
+                        [sys.executable, str(ROOT / "apps/monkeyhub/run.py"),
+                         "--runtime-root", str(self.runtime), "--port", str(self.hub_port),
+                         "--managed-stdin", "--managed-instance-id", instance_id, "--no-browser"],
+                        cwd=self.root, env=os.environ.copy(), stdin=subprocess.PIPE,
+                        stdout=log, stderr=subprocess.STDOUT,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    )
+                    pending = None
+                    try:
+                        def ready():
+                            self.assertIsNone(child.poll(), f"Hub exited early; see {log_path}")
+                            try:
+                                return http_json(self.base_url + "/api/health")
+                            except OSError:
+                                return None
+                        health = wait_for(ready, "The isolated CLI Hub did not become ready")
+                        self.assertEqual(health["managedInstanceId"], instance_id)
+                        self.assertIn(child.pid, (health["processId"], health["parentProcessId"]))
+                        http_json(self.base_url + "/api/settings/apps", method="PUT", payload=self.configuration())
+                        http_json(self.base_url + "/api/apps/monkeymonitor/start", method="POST")
+
+                        def monitor_running():
+                            rows = http_json(self.base_url + "/api/apps")
+                            item = next(row for row in rows if row["appId"] == "monkeymonitor")
+                            self.assertNotEqual(item["state"], "error", str(item))
+                            return item if item["state"] == "running" else None
+                        running = wait_for(monitor_running, "The CLI-owned Monitor did not become ready")
+                        body = json.dumps({
+                            "usage": {"input_tokens": 1, "output_tokens": 1},
+                            "rate": {"provider": "fixture", "model": "fixture", "input": "1", "output": "1"},
+                        }).encode("utf-8")
+                        pending = socket.create_connection(("127.0.0.1", self.monitor_port), timeout=5)
+                        pending.sendall((
+                            f"POST /api/quote HTTP/1.1\r\nHost: 127.0.0.1:{self.monitor_port}\r\n"
+                            f"Content-Type: application/json\r\nContent-Length: {len(body)}\r\n\r\n"
+                        ).encode("ascii"))
+                        # A subsequent health connection is served while the earlier
+                        # accepted request is waiting for its body on its own thread.
+                        self.assertEqual(http_json(running["url"] + "api/health")["name"], "MonkeyMonitor")
+                        if stop_mode == "stop":
+                            child.stdin.write(b"stop\n")
+                            child.stdin.flush()
+                        else:
+                            child.stdin.close()
+                        wait_for(lambda: not port_open(self.monitor_port), "Monitor kept accepting connections after Hub shutdown")
+                        self.assertIsNone(child.poll(), "Hub exited before the accepted Monitor request finished")
+                        pending.sendall(body)
+                        with HTTPResponse(pending) as response:
+                            response.begin()
+                            self.assertEqual(response.status, 200)
+                            self.assertEqual(json.loads(response.read())["currency"], "USD")
+                        pending.close()
+                        pending = None
+                        self.assertEqual(child.wait(timeout=20), 0)
+                        self.assertFalse(port_open(self.monitor_port))
+                    finally:
+                        if pending is not None:
+                            pending.close()
+                        if child.stdin is not None and not child.stdin.closed:
+                            child.stdin.close()
+                        if child.poll() is None:
+                            child.wait(timeout=30)
+                self.assertIn("Application shutdown complete.", log_path.read_text(encoding="utf-8"))
+
+
+if __name__ == "__main__":
+    unittest.main()
