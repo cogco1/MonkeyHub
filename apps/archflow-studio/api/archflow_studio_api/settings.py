@@ -10,7 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import tempfile
 from typing import Mapping
+
+from .transport.settings import UserSettingsDto
 
 PROJECT_DIR_ENV = "ARCHFLOW_STUDIO_PROJECT_DIR"
 CAD_EXPORT_ENV = "ARCHFLOW_STUDIO_CAD_EXPORT"
@@ -245,3 +248,44 @@ def cad_export_from_env(environ: Mapping[str, str]) -> str:
     if legacy is None or not legacy.strip():
         return CAD_EXPORT_OCCT
     return CAD_EXPORT_OCCT if legacy.strip() == "1" else CAD_EXPORT_OFF
+
+
+def user_settings_path() -> Path:
+    """The local account's preferences, never a project or request-selected path."""
+
+    appdata = os.environ.get("APPDATA", "").strip()
+    if not appdata or not Path(appdata).is_absolute():
+        raise SettingsError("APPDATA must name the local account's absolute settings directory.")
+    return Path(appdata) / "MonkeyArch" / "settings.json"
+
+
+def read_user_settings() -> UserSettingsDto:
+    """Read saved values, or no overrides when the file does not yet exist."""
+
+    try:
+        raw = user_settings_path().read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return UserSettingsDto()
+    return UserSettingsDto.model_validate_json(raw)
+
+
+def save_user_settings(settings: UserSettingsDto) -> UserSettingsDto:
+    """Replace one local preferences file atomically; no project state is touched."""
+
+    destination = user_settings_path()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=destination.parent,
+            prefix="settings-", suffix=".tmp", delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(settings.model_dump_json(by_alias=True, exclude_none=True, indent=2) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return settings

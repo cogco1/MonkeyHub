@@ -7,11 +7,15 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 import venv
 
+from fastapi.testclient import TestClient
+
+from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import (
     CAD_EXPORT_ENV,
     CAD_EXPORT_OCCT,
@@ -23,6 +27,7 @@ from archflow_studio_api.settings import (
     SettingsError,
     StudioSettings,
     cad_export_from_env,
+    user_settings_path,
 )
 
 from .support import make_empty_project
@@ -172,6 +177,93 @@ class SettingsTests(unittest.TestCase):
         self.assertIn("ARCHFLOW_STUDIO_TOKEN", str(raised.exception))
 
 
+class UserSettingsRouteTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="studio user settings ")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        environment = patch.dict(os.environ, {"APPDATA": str(self.root)})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.client = TestClient(create_app(StudioSettings(project_dir=self.root / "not-a-project")))
+        self.addCleanup(self.client.close)
+
+    def test_absent_settings_need_no_project_and_create_no_file(self) -> None:
+        self.assertIn("user-settings", self.client.get("/api/protocol").json()["capabilities"])
+        response = self.client.get("/api/settings/user")
+        self.assertEqual((response.status_code, response.json()), (200, {}))
+        self.assertFalse(user_settings_path().exists())
+
+    def test_save_survives_a_fresh_process_configuration_without_switching_the_compiler(self) -> None:
+        payload = {"language": "zh-CN", "theme": "light", "fontScale": 1.1,
+                   "intentProvider": "codex", "intentModel": "saved-model", "intentTimeoutS": 45.5}
+        response = self.client.put("/api/settings/user", json=payload)
+        self.assertEqual((response.status_code, response.json()), (200, payload))
+        self.assertEqual(json.loads(user_settings_path().read_text(encoding="utf-8")), payload)
+        self.assertEqual(self.client.app.state.settings.intent_provider, "deterministic")
+        with TestClient(create_app(StudioSettings(project_dir=self.root / "still-not-a-project"))) as restarted:
+            self.assertEqual(restarted.get("/api/settings/user").json(), payload)
+        self.assertEqual([path.name for path in user_settings_path().parent.iterdir()], ["settings.json"])
+
+    def test_put_replaces_the_file_and_null_clears_an_override(self) -> None:
+        self.client.put("/api/settings/user", json={"intentModel": "old-model", "theme": "dark"})
+        response = self.client.put("/api/settings/user", json={"language": "en", "intentModel": None})
+        self.assertEqual(response.json(), {"language": "en"})
+        self.assertEqual(self.client.get("/api/settings/user").json(), {"language": "en"})
+
+    def test_unsupported_values_and_secret_fields_cannot_replace_saved_settings(self) -> None:
+        self.client.put("/api/settings/user", json={"theme": "light"})
+        for payload in ({"language": "zh"}, {"language": ["en"]}, {"theme": "auto"},
+                        {"theme": ["light"]}, {"intentProvider": ["codex"]}, {"fontScale": True},
+                        {"fontScale": 2}, {"intentProvider": "new-provider"},
+                        {"intentModel": "  "}, {"intentModel": "invalid\u0000model"},
+                        {"intentTimeoutS": 0}, {"intentTimeoutS": True},
+                        {"intentTimeoutS": "60"}, {"token": "private-token"},
+                        {"codexExecutable": "another-program"}):
+            with self.subTest(payload=payload):
+                response = self.client.put("/api/settings/user", json=payload)
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertNotIn("private-token", response.text)
+                self.assertEqual(self.client.get("/api/settings/user").json(), {"theme": "light"})
+
+    def test_invalid_saved_file_answers_422_and_an_explicit_save_repairs_it(self) -> None:
+        user_settings_path().parent.mkdir()
+        for raw in ("{unfinished", "[]", '{"intentTimeoutS": 1e309}', '{"fontScale": true}',
+                    '{"token":"private-token"}', '{"language":"other"}'):
+            with self.subTest(raw=raw):
+                user_settings_path().write_text(raw, encoding="utf-8")
+                response = self.client.get("/api/settings/user")
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual(response.json()["code"], "USER_SETTINGS_INVALID")
+                self.assertNotIn("private-token", response.text)
+                self.assertEqual(self.client.get("/api/protocol").status_code, 200)
+                self.assertEqual(self.client.put("/api/settings/user", json={"theme": "system"}).status_code, 200)
+                self.assertEqual(self.client.get("/api/settings/user").json(), {"theme": "system"})
+
+    def test_failed_atomic_replace_preserves_the_prior_file(self) -> None:
+        self.client.put("/api/settings/user", json={"theme": "dark"})
+        prior = user_settings_path().read_bytes()
+        with patch("archflow_studio_api.settings.os.replace", side_effect=OSError("replace refused")):
+            response = self.client.put("/api/settings/user", json={"theme": "light"})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(user_settings_path().read_bytes(), prior)
+        self.assertEqual([path.name for path in user_settings_path().parent.iterdir()], ["settings.json"])
+
+    def test_remote_does_not_declare_or_access_the_users_settings(self) -> None:
+        settings = StudioSettings(project_dir=self.root / "unbound", mode=REMOTE_MODE,
+                                  api_token="test-token", origins=("https://studio.example",))
+        with TestClient(create_app(settings)) as remote:
+            self.assertNotIn("user-settings", remote.get("/api/protocol").json()["capabilities"])
+            self.assertEqual(remote.get("/api/settings/user").status_code, 401)
+            headers = {"Authorization": "Bearer test-token"}
+            with patch("archflow_studio_api.routes.settings.read_user_settings", side_effect=AssertionError("read local file")), \
+                 patch("archflow_studio_api.routes.settings.save_user_settings", side_effect=AssertionError("wrote local file")):
+                self.assertEqual(remote.get("/api/settings/user", headers=headers).status_code, 404)
+                self.assertEqual(remote.put("/api/settings/user", json={"theme": "dark"}, headers=headers).status_code, 404)
+                self.assertEqual(remote.put("/api/settings/user", json={"token": "invalid"}, headers=headers).status_code, 404)
+        self.assertFalse(user_settings_path().exists())
+
+
 @unittest.skipUnless(Path(POWERSHELL).is_file(), "Windows launcher")
 class LauncherCadExportForwardingTests(unittest.TestCase):
     """The launcher's environment block, run by itself over a runtime.json of each shape.
@@ -192,32 +284,56 @@ class LauncherCadExportForwardingTests(unittest.TestCase):
         cls.addClassCleanup(cls.temporary.cleanup)
         cls.harness = Path(cls.temporary.name) / "forward env.ps1"
         cls.harness.write_text(
-            "param([string]$RuntimeJson)\n"
+            "param([string]$RuntimeConfig, [string]$ProbePython)\n"
             "$ErrorActionPreference = 'Stop'\n"
-            "$runtime = $RuntimeJson | ConvertFrom-Json\n"
+            "$runtime = Get-Content -LiteralPath $RuntimeConfig -Raw -Encoding utf8 | ConvertFrom-Json\n"
             "$projectDir = [string]$runtime.project_dir\n"
             + cls.block
-            + "\n[pscustomobject]@{ Cad = $env:ARCHFLOW_STUDIO_CAD_EXPORT; Rhino = $env:ARCHFLOW_STUDIO_RHINO_EXPORT } | ConvertTo-Json -Compress\n",
+            + "\n$probe = & $ProbePython -c 'import json; from archflow_studio_api.settings import StudioSettings; s=StudioSettings.from_env(); print(json.dumps(dict(provider=s.intent_provider, model=s.intent_model, timeout=s.intent_timeout_s)))'\n"
+            + "if ($LASTEXITCODE -ne 0) { throw 'API environment probe failed' }\n"
+            + "[pscustomobject]@{ Cad = $env:ARCHFLOW_STUDIO_CAD_EXPORT; Rhino = $env:ARCHFLOW_STUDIO_RHINO_EXPORT; Project = $env:ARCHFLOW_STUDIO_PROJECT_DIR; Codex = $env:ARCHFLOW_STUDIO_CODEX; ReferenceRun = $env:ARCHFLOW_STUDIO_REFERENCE_RUN; Api = ($probe | ConvertFrom-Json) } | ConvertTo-Json -Compress\n",
             encoding="utf-8-sig",
         )
 
-    def forwarded(self, runtime: dict) -> tuple[str | None, str | None]:
+    def forwarded_values(self, runtime: dict, *, saved: dict | None = None, raw: str | None = None,
+                         inherited: dict | None = None) -> dict:
         environment = {
             key: value for key, value in os.environ.items()
-            if key not in ("ARCHFLOW_STUDIO_CAD_EXPORT", "ARCHFLOW_STUDIO_RHINO_EXPORT")
+            if not key.startswith("ARCHFLOW_STUDIO_")
         }
+        environment.update(inherited or {})
+        environment["PYTHONPATH"] = os.pathsep.join((str(LAUNCHER.parents[2]), str(LAUNCHER.parent / "api")))
         # A stale value from a previous launch must be cleared, not inherited.
         environment["ARCHFLOW_STUDIO_CAD_EXPORT"] = "stale"
         environment["ARCHFLOW_STUDIO_RHINO_EXPORT"] = "stale"
-        result = subprocess.run(
-            [
-                POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass",
-                "-File", str(self.harness), "-RuntimeJson", json.dumps({"project_dir": "unused", **runtime}),
-            ],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, env=environment,
-        )
+        with tempfile.TemporaryDirectory(prefix="launcher AppData with spaces ") as appdata:
+            environment["APPDATA"] = appdata
+            runtime_file = Path(appdata) / "runtime.json"
+            runtime_file.write_text(json.dumps({"project_dir": "unused", **runtime}), encoding="utf-8")
+            runtime_before = runtime_file.read_bytes()
+            settings_file = Path(appdata) / "MonkeyArch" / "settings.json"
+            if saved is not None or raw is not None:
+                settings_file.parent.mkdir()
+                settings_file.write_text(raw if raw is not None else json.dumps(saved), encoding="utf-8")
+            before = settings_file.read_bytes() if settings_file.exists() else None
+            result = subprocess.run(
+                [
+                    POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass",
+                    "-File", str(self.harness), "-RuntimeConfig", str(runtime_file),
+                    "-ProbePython", sys.executable,
+                ],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, env=environment,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            self.assertEqual(settings_file.read_bytes() if settings_file.exists() else None, before)
+            self.assertEqual(runtime_file.read_bytes(), runtime_before)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        answer = json.loads(result.stdout)
+        answer = json.loads(result.stdout.strip().splitlines()[-1])
+        answer["warned"] = "Saved user settings could not be read" in result.stdout
+        return answer
+
+    def forwarded(self, runtime: dict) -> tuple[str | None, str | None]:
+        answer = self.forwarded_values(runtime)
         return answer["Cad"], answer["Rhino"]
 
     @staticmethod
@@ -260,6 +376,47 @@ class LauncherCadExportForwardingTests(unittest.TestCase):
         forwarded = self.forwarded({"cad_export": "  Rhino ", "rhino_export": False})
         self.assertEqual(forwarded, ("Rhino", None))
         self.assertEqual(cad_export_from_env(self.as_environ(forwarded)), CAD_EXPORT_RHINO)
+
+    def test_saved_intent_defaults_reach_the_child_over_old_runtime_defaults(self) -> None:
+        answer = self.forwarded_values(
+            {"intent_provider": "codex", "intent_model": "old-runtime-model", "intent_timeout_s": 120,
+             "codex": "unchanged-codex-path", "reference_run": "unchanged-run", "cad_export": "off"},
+            saved={"language": "zh-CN", "theme": "light", "fontScale": 1.1,
+                   "intentProvider": "anthropic", "intentModel": "saved-model", "intentTimeoutS": 45.5},
+            inherited={"ARCHFLOW_STUDIO_INTENT_MODEL": "old-environment-model"},
+        )
+        self.assertEqual(answer["Api"], {"provider": "anthropic", "model": "saved-model", "timeout": 45.5})
+        self.assertEqual((answer["Project"], answer["Codex"], answer["ReferenceRun"], answer["Cad"]),
+                         ("unused", "unchanged-codex-path", "unchanged-run", "off"))
+        self.assertFalse(answer["warned"])
+
+    def test_cleared_saved_fields_restore_runtime_then_environment_then_api_defaults(self) -> None:
+        inherited = {"ARCHFLOW_STUDIO_INTENT_MODEL": "environment-model"}
+        for saved in (None, {}, {"intentModel": None, "theme": "dark"}):
+            with self.subTest(saved=saved):
+                self.assertEqual(self.forwarded_values({"intent_model": "runtime-model"}, saved=saved, inherited=inherited)["Api"]["model"], "runtime-model")
+                self.assertEqual(self.forwarded_values({}, saved=saved, inherited=inherited)["Api"]["model"], "environment-model")
+        self.assertEqual(self.forwarded_values({})["Api"], {"provider": "deterministic", "model": None, "timeout": 120.0})
+
+    def test_invalid_user_file_warns_and_keeps_the_runtime_defaults(self) -> None:
+        for raw in ("{unfinished", '[]', '[{"intentModel":"wrong-root"}]',
+                    '{"intentModel":"saved","fontScale":true}', '{"intentTimeoutS":"60"}',
+                    '{"intentTimeoutS":-2}', '{"intentProvider":"new-provider"}',
+                    '{"intentProvider":["codex"]}', '{"language":["en"]}', '{"theme":["light"]}',
+                    '{"intentModel":"saved","token":"private-token"}'):
+            with self.subTest(raw=raw):
+                answer = self.forwarded_values({"intent_model": "runtime-model"}, raw=raw)
+                self.assertEqual(answer["Api"]["model"], "runtime-model")
+                self.assertTrue(answer["warned"])
+
+    def test_remote_mode_does_not_read_or_apply_the_local_preferences(self) -> None:
+        inherited = {"ARCHFLOW_STUDIO_MODE": "remote", "ARCHFLOW_STUDIO_TOKEN": "test-token",
+                     "ARCHFLOW_STUDIO_ORIGINS": "https://studio.example"}
+        for raw in ('{"intentModel":"local-user-model"}', '{broken'):
+            with self.subTest(raw=raw):
+                answer = self.forwarded_values({"intent_model": "remote-runtime-model"}, raw=raw, inherited=inherited)
+                self.assertEqual(answer["Api"]["model"], "remote-runtime-model")
+                self.assertFalse(answer["warned"])
 
 
 @unittest.skipUnless(shutil.which("powershell.exe"), "Windows launcher")

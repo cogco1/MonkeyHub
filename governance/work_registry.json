@@ -1,6 +1,6 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@2",
-  "phase": "Current authorized slice: a short Studio demo showing a recognizable record-driven Villa Rotonda candidate and a visible stair-width change from 10.71 to 12 m. Preserve the source drum and dome as explicitly uncapped polyline lofts; defer complex passage and ornament details in the demo input rather than substituting incorrect geometry. The project data task is the sole writer of the configured Villa project; one coordinator owns source integration and commits, the main task manages the demo services, and the reporting task records the actual Studio. Keep the canonical project HEAD and the source's SOFT, HOLD and PARKED distinctions. Full reconstruction, extra audit, broader requirement, composition and drawing work do not block this demo. Ordinary create/save/reopen/preview must not launch Rhino. P111 remains delivered; research and formal issue remain separate.",
+  "phase": "The v0.1.0 source candidate contains P108 document visual input, the three local fixes and the existing P114 settings dependency, verified in an isolated installation. The unused in-memory controls API is retired; target clarification, retained readers and the candidate-versus-acceptance boundary remain. Live-page integration and independent member trials remain pending.",
   "items": [
     {
       "id": "P094",
@@ -60,7 +60,7 @@
     {
       "id": "P108",
       "stream": "planning",
-      "status": "ready",
+      "status": "active",
       "goal": "Close the first usable edit-and-review round in the existing Studio web/API, preserving the landed viewer, launcher and kernel delegation. Verify a real project's intent, affected parts, candidate model and honestly scoped checks. The refoundation is not a new rebuild request; this round does not issue a project version.",
       "depends_on": [
         "P102",
@@ -73,6 +73,9 @@
         "apps/archflow-studio/web/src/features/evidence/",
         "apps/archflow-studio/web/src/features/events/",
         "apps/archflow-studio/web/src/features/artifacts/",
+        "apps/archflow-studio/web/src/features/program/ProgramPanel.tsx",
+        "apps/archflow-studio/web/src/features/options/OptionsPanel.tsx",
+        "apps/archflow-studio/web/test/",
         "apps/archflow-studio/web/src/api/",
         "apps/archflow-studio/web/src/viewer/",
         "apps/archflow-studio/web/src/i18n/",
@@ -83,6 +86,8 @@
         "apps/archflow-studio/web/scripts/",
         "apps/archflow-studio/web/vite.config.ts",
         "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+        "apps/archflow-studio/api/archflow_studio_api/main.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/candidates.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/pick.py",
@@ -119,7 +124,19 @@
         "apps/archflow-studio/api/archflow_studio_api/application/pick.py",
         "apps/archflow-studio/api/archflow_studio_api/application/program.py",
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/proposals.py"
+        "apps/archflow-studio/api/archflow_studio_api/application/proposals.py",
+        "archflow/adapters/cad_execution.py",
+        "archflow/adapters/cad_patch.py",
+        "archflow/adapters/three_dm_inspector.py",
+        "tests/test_cad_execution.py",
+        "tests/test_cad_patch.py",
+        "tests/test_three_dm_inspector.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
+        "apps/archflow-studio/api/requirements.txt",
+        "apps/archflow-studio/web/package-lock.json",
+        "apps/archflow-studio/web/public/nurbsFallback.worker.js",
+        "archflow/project/record_kinds.py",
+        "docs/SYSTEM_MAP.md"
       ],
       "card": "docs/mapping/planning/P108-vibe-modeling-frontend.md",
       "acceptance": [
@@ -193,7 +210,7 @@
     {
       "id": "P113",
       "stream": "planning",
-      "status": "ready",
+      "status": "blocked",
       "goal": "An evidence ledger: a research-evidence-ledger record (EvidenceLedger@1, new owner archflow/state/evidence.py, registered in record_kinds.py) whose entries the record's evidence_refs must resolve against, checked like relationship_refs (dangling refs refused, unsupported entities reported); one import from the villa's five research runs into research-006 and one export to the research-atlas skill's source files. The Studio tab and the stage evidence-coverage check are separate cards.",
       "depends_on": [],
       "write_scope": [
@@ -217,7 +234,7 @@
     {
       "id": "P114",
       "stream": "planning",
-      "status": "ready",
+      "status": "active",
       "goal": "User settings the launcher can read: GET/PUT /api/settings/user (language, theme, fontScale, model defaults) backed by %APPDATA%\\MonkeyArch\\settings.json in local mode only (remote mode neither declares the user-settings capability nor serves it), the launcher translating that file into environment variables at start, and the settings panel's save wired to the PUT with a user source badge. No remote multi-user.",
       "depends_on": [],
       "write_scope": [
