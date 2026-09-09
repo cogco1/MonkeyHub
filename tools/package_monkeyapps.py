@@ -156,7 +156,7 @@ def collect_application(source: Path, bundle: Path, commit: str) -> None:
     for relative in ("apps/archflow-studio/web/dist", "apps/monkeyhub/web/dist"):
         shutil.copytree(source / relative, bundle / relative)
     for relative in ("apps/archflow-studio/launch-studio.ps1", "apps/monkeyhub/run.py",
-                     "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "README.md", "pyproject.toml",
+                     "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
                      "apps/shared-web/src/appearance.js", "apps/shared-web/src/i18n.js",
                      "apps/shared-web/src/browserTranslator.js", "apps/shared-web/src/base.css",
                      "tools/create_project.py", "tools/run_project.py"):
@@ -164,6 +164,7 @@ def collect_application(source: Path, bundle: Path, commit: str) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source / relative, target)
     shutil.copy2(source / "apps/monkeyhub/installer/INSTALL_MONKEYHUB.cmd", bundle / "INSTALL_MONKEYHUB.cmd")
+    shutil.copy2(source / "apps/monkeyhub/installer/README.md", bundle / "README.md")
     shutil.copy2(source / "apps/monkeyhub/installer/README.md", bundle / "INSTALLATION.md")
     (bundle / "source-version.txt").write_text(commit + "\n", encoding="utf-8")
 
