@@ -21,7 +21,7 @@ const workingCopies = [];
 const requests = [], errors = [], passed = [], validationGates = new Map(), modelGates = new Map(), stateGates = new Map();
 let projectId = "candidate-preview-fixture", artifactFailures = 0, seq = 0, nextProgram = null;
 let historyEnabled = false, acceptFailure = false, annotationFailure = false, lastDrawing = null, nextCombined = null;
-let drawingFailure = false, drawingGate = null;
+let drawingFailure = false, drawingGate = null, monitorFailure = false;
 const branches = new Map(), stages = new Map(), candidateBases = new Map(), documents = [], annotations = new Map();
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDWsAAAAASUVORK5CYII=", "base64");
 function historyDto(branchId = "main") {
@@ -117,6 +117,17 @@ async function until(read, accepts, message, timeout = 20_000) {
   assert.fail(`${message}: ${JSON.stringify(value)}`);
 }
 const snapshot = () => page.evaluate(() => window.__candidatePreview?.snapshot ?? {});
+const loadTimings = (runId) => requests.filter((row) => row.name === "/api/events/model-load" && row.body.runId === runId);
+async function reportedLoad(artifact, status) {
+  await until(() => loadTimings(artifact.runId), (rows) => rows.length === 1, `${artifact.runId} did not report exactly one finished model load`);
+  const { body } = loadTimings(artifact.runId)[0];
+  assert.equal(body.status, status);
+  assert.equal(body.projectId, artifact.projectId);
+  assert.equal(body.sourceRef, artifact.receiptRef);
+  assert.ok(Number.isSafeInteger(body.durationMs) && body.durationMs >= 0);
+  assert.ok(Date.parse(body.endedAt) >= Date.parse(body.startedAt));
+  return body;
+}
 async function rendered(id, fileName = `${id}.3dm`) {
   await until(snapshot, (value) => value.loadedRunId === id && value.loadedFileName === fileName && value.status === "ready" && value.loadingSha === null,
     `${id} did not finish parsing and become the displayed model`, 45_000);
@@ -203,7 +214,7 @@ try {
       const json = (body, status = 200) => route.fulfill({ status, json: body });
       if (method === "GET") {
         if (name === "/api/protocol") return await json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local",
-          capabilities: ["working-copies", "model-annotations", "events", "program", ...(historyEnabled ? ["design-history", "drawing-elevations", "document-visual-input"] : [])] });
+          capabilities: ["working-copies", "model-annotations", "events", "program", "operation-timing", ...(historyEnabled ? ["design-history", "drawing-elevations", "document-visual-input"] : [])] });
         if (name === "/api/project") return await json(binding());
         if (name === "/api/state") {
           const runId = url.searchParams.get("run") ?? currentHome.runId;
@@ -263,6 +274,9 @@ try {
       }
       if (method === "POST" && name === "/api/design-stages/initialize") {
         const body = request.postDataJSON(); return await json(commitStage(body.modelSource, body.branchId, body.label), 201);
+      }
+      if (method === "POST" && name === "/api/events/model-load") {
+        return await json(monitorFailure ? { code: "MONITOR_UNAVAILABLE", detail: "Diagnostic write unavailable." } : { recorded: true }, monitorFailure ? 503 : 200);
       }
       if (method === "POST" && /^\/api\/candidates\/[^/]+\/accept$/.test(name)) {
         if (acceptFailure) return await json({ code: "DESIGN_HEAD_MOVED", detail: "The branch head changed. Candidate kept." }, 409);
@@ -345,7 +359,9 @@ try {
     assert.equal(waiting.loadedRunId, home.runId);
     assert.equal(waiting.runs[candidate.candidateId].validation.status, "loading");
     assert.equal(waiting.entries.some((line) => line.includes("model is on screen") && line.includes(candidate.candidateId)), false);
+    assert.equal(loadTimings(candidate.candidateId).length, 0, "A download still in flight must not report a completed load");
     bytes.resolve(); await rendered(candidate.candidateId);
+    await reportedLoad(candidate.artifacts[0], "succeeded");
     assert.equal((await snapshot()).runs[candidate.candidateId].validation.status, "loading");
     assert.equal(await page.locator("#conversation-panel").count(), 0);
     assert.equal((await snapshot()).entries.filter((line) => line.includes("model is on screen") && line.includes(candidate.candidateId)).length, 1);
@@ -360,6 +376,25 @@ try {
     assert.equal((await snapshot()).runs[candidate.candidateId].validation.status, "failed");
   });
 
+  await step("failed monitoring cannot repeat a model load or block the next view", async () => {
+    monitorFailure = true;
+    const candidate = prepare("monitor-unavailable");
+    try {
+      await launch(candidate); await complete(candidate); await rendered(candidate.candidateId);
+      await reportedLoad(candidate.artifacts[0], "succeeded");
+      await emit("candidate.succeeded", candidate.candidateId); await emit("model_asset.registered");
+      await delay(250); await rendered(candidate.candidateId);
+      assert.equal(requests.filter((row) => row.name === `/api/artifacts/${candidate.artifacts[0].sha256}/bytes`).length, 1,
+        "A failed diagnostic POST must not retry the artifact download");
+      assert.equal(loadTimings(candidate.candidateId).length, 1, "A failed diagnostic POST must not restart the load");
+      const otherLoads = loadTimings(other.runId).length;
+      await view(other);
+      await until(() => loadTimings(other.runId).length, (count) => count === otherLoads + 1, "The next view did not finish while monitoring was unavailable");
+      assert.equal(loadTimings(other.runId).at(-1).body.status, "succeeded");
+    } finally { monitorFailure = false; }
+    await view(home);
+  });
+
   await step("a parse failure retains the previous model and never announces the candidate as displayed", async () => {
     await view(home);
     const candidate = prepare("invalid-model");
@@ -372,6 +407,7 @@ try {
     const failed = await snapshot();
     assert.equal(failed.loadedRunId, home.runId);
     assert.equal(failed.entries.some((line) => line.includes("model is on screen") && line.includes(candidate.candidateId)), false);
+    await reportedLoad(candidate.artifacts[0], "failed");
   });
 
   await step("a delayed model download cannot replace a newer explicit view", async () => {
@@ -383,6 +419,7 @@ try {
     await view(other); bytes.resolve();
     await delay(150); await rendered(other.runId);
     assert.equal((await snapshot()).entries.some((line) => line.includes("model is on screen") && line.includes(candidate.candidateId)), false);
+    await reportedLoad(candidate.artifacts[0], "cancelled");
   });
 
   await step("a parsed candidate cannot attach after an editing-context switch begins", async () => {
@@ -394,6 +431,7 @@ try {
     }, candidate.artifacts[0].fileName);
     await launch(candidate); await complete(candidate);
     await page.waitForFunction((fileName) => window.__previewParseGates[fileName].waiting, candidate.artifacts[0].fileName);
+    assert.equal(loadTimings(candidate.candidateId).length, 0, "A parse still in flight must not report a completed load");
     const stateGate = deferred(); stateGates.set(other.runId, stateGate);
     await page.evaluate((source) => { void window.__candidatePreview.changeBase(source.runId, source); }, other.modelSource);
     await until(() => stateGate.requested, Boolean, "The next editing context was not requested");
@@ -401,6 +439,7 @@ try {
     await until(snapshot, (value) => value.loadingSha === null, "The stale parse did not finish");
     assert.equal((await snapshot()).status, "ready", "Cancelling a parsed replacement must release its loading status while preserving the old model");
     assert.equal((await snapshot()).loadedRunId, home.runId, "The old parse must not attach even before the new base model starts loading");
+    await reportedLoad(candidate.artifacts[0], "cancelled");
     stateGates.delete(other.runId); stateGate.resolve(); await rendered(other.runId);
     await page.evaluate((source) => window.__candidatePreview.changeBase(source.runId, source), home.modelSource); await rendered(home.runId);
   });

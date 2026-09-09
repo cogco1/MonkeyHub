@@ -2684,6 +2684,46 @@ export type ModelGestureDto = {
 };
 
 /**
+ * ModelLoadTimingDto
+ *
+ * Client elapsed time from artifact download to viewport load completion.
+ */
+export type ModelLoadTimingDto = {
+    /**
+     * Eventid
+     */
+    eventId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Sourceref
+     */
+    sourceRef?: string | null;
+    /**
+     * Startedat
+     */
+    startedAt: string;
+    /**
+     * Endedat
+     */
+    endedAt: string;
+    /**
+     * Durationms
+     */
+    durationMs: number;
+    /**
+     * Status
+     */
+    status: 'succeeded' | 'failed' | 'cancelled';
+};
+
+/**
  * ModelSourceDto
  */
 export type ModelSourceDto = {
@@ -2713,6 +2753,18 @@ export type ModifiedToDto = {
      * the sentence the architect replaced the proposal with; it is re-proposed through the same deterministic path
      */
     utterance: string;
+};
+
+/**
+ * MonitorWriteDto
+ *
+ * A diagnostic acknowledgement; it does not change a model or project.
+ */
+export type MonitorWriteDto = {
+    /**
+     * Recorded
+     */
+    recorded: boolean;
 };
 
 /**
@@ -6140,6 +6192,31 @@ export type ReadValidationApiCandidatesCandidateIdValidationGetResponses = {
 };
 
 export type ReadValidationApiCandidatesCandidateIdValidationGetResponse = ReadValidationApiCandidatesCandidateIdValidationGetResponses[keyof ReadValidationApiCandidatesCandidateIdValidationGetResponses];
+
+export type RecordModelLoadApiEventsModelLoadPostData = {
+    body: ModelLoadTimingDto;
+    path?: never;
+    query?: never;
+    url: '/api/events/model-load';
+};
+
+export type RecordModelLoadApiEventsModelLoadPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RecordModelLoadApiEventsModelLoadPostError = RecordModelLoadApiEventsModelLoadPostErrors[keyof RecordModelLoadApiEventsModelLoadPostErrors];
+
+export type RecordModelLoadApiEventsModelLoadPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MonitorWriteDto;
+};
+
+export type RecordModelLoadApiEventsModelLoadPostResponse = RecordModelLoadApiEventsModelLoadPostResponses[keyof RecordModelLoadApiEventsModelLoadPostResponses];
 
 export type StreamEventsApiEventsGetData = {
     body?: never;

@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="MonkeyMonitor local usage and pricing calculator")
     parser.add_argument("command", choices=("serve", "report"))
     parser.add_argument("--data-dir", type=Path, help="Explicit Studio diagnostic directory (read only)")
-    parser.add_argument("--codex-session", action="append", type=Path, default=[], help="One explicit Codex JSONL session; repeat to include subagents")
+    parser.add_argument("--codex-session", action="append", type=Path, default=[], help="One explicit Codex JSONL source; repeat for known related sources (no discovery)")
     parser.add_argument("--port", type=int, default=8788)
     parser.add_argument("--managed-stdin", action="store_true", help="Stop this managed server on stdin stop or EOF")
     parser.add_argument("--managed-instance-id", type=UUID, help="Hub-owned instance UUID (requires --managed-stdin)")

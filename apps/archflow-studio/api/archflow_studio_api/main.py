@@ -33,6 +33,7 @@ from .application.episodes import EpisodeStore
 from .application.events import StudioEvents
 from .application.intent_agent import compiler_from_settings
 from .application.jobs import JobRegistry
+from .application.monitoring import MonitoredCompiler, StudioMonitor
 from .application.options import OptionStore
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
@@ -174,6 +175,9 @@ def create_app(settings: StudioSettings) -> FastAPI:
         title="ArchFlow Studio API", version=SERVER_VERSION, lifespan=_lifespan
     )
     app.state.settings = settings
+    from monkeymonitor.store import UsageLog
+
+    app.state.monitor = StudioMonitor(UsageLog(settings.monitor_dir) if settings.monitor_dir is not None else None)
     # Proposals live in this process and nowhere else. The store is created
     # here so that fact is visible at the top of the application rather than
     # accumulating quietly at the bottom of a route.
@@ -183,7 +187,7 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # here for the same reason as the store: what this process holds in memory,
     # and therefore loses on restart, is stated at the top of the application.
     app.state.events = StudioEvents()
-    app.state.jobs = JobRegistry(app.state.events, max_workers=settings.workers)
+    app.state.jobs = JobRegistry(app.state.events, max_workers=settings.workers, monitor=app.state.monitor)
     # One validation per candidate, remembered so that reading a verdict twice
     # is one verdict and one event rather than two of each. In memory, like
     # everything above it, and lost on restart for the same reason.
@@ -212,11 +216,8 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # before a request arrives, rather than at the first sentence.
     app.state.intent_compiler = compiler_from_settings(settings)
     if settings.monitor_dir is not None:
-        from monkeymonitor.store import UsageLog
-        from .application.monitoring import MonitoredCompiler
-
         app.state.intent_compiler = MonitoredCompiler(
-            app.state.intent_compiler, UsageLog(settings.monitor_dir)
+            app.state.intent_compiler, app.state.monitor
         )
     app.add_exception_handler(StudioError, _handle_studio_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)

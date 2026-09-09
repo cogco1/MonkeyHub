@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from functools import partial
-from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -49,6 +48,23 @@ class MonitorData:
         self.store = UsageLog(data_dir) if data_dir is not None else None
         self.codex_sessions = codex_sessions
 
+    def codex_sources(self) -> dict:
+        return {"paths": [path.as_posix() for path in dict.fromkeys(
+            Path(value).resolve() for value in self.codex_sessions
+        )]}
+
+    def select_codex_sources(self, paths: object) -> dict:
+        if not isinstance(paths, list) or any(not isinstance(value, str) for value in paths):
+            raise ValueError("paths must be a list of absolute Codex JSONL file paths")
+        selected = []
+        for value in paths:
+            path = Path(value)
+            if not path.is_absolute() or not path.is_file():
+                raise ValueError("Each Codex source must be an existing absolute file path")
+            selected.append(path.resolve())
+        self.codex_sessions = tuple(dict.fromkeys(selected))
+        return self.codex_sources()
+
     def snapshot(self) -> dict:
         events, warnings = [], []
         if self.store is not None:
@@ -56,14 +72,10 @@ class MonitorData:
                 events, warnings = self.store.read()
             except (OSError, UnicodeError):
                 warnings.append("Studio 用量文件暂时不可读。")
-        for index, path in enumerate(dict.fromkeys(path.resolve() for path in self.codex_sessions)):
-            try:
-                for event in iter_codex_events((path,)):
-                    if event.event_id.startswith("codex:file-0:"):
-                        event = replace(event, event_id=event.event_id.replace("codex:file-0:", f"codex:file-{index}:", 1))
-                    events.append(event)
-            except (OSError, ValueError, UnicodeError):
-                warnings.append("指定的 Codex 会话暂时不可读或包含无效计数。")
+        try:
+            events.extend(iter_codex_events(self.codex_sessions, warnings=warnings))
+        except (OSError, ValueError, UnicodeError):
+            warnings.append("指定的 Codex 会话暂时不可读或包含无效计数。")
         unique = {event.event_id: event for event in events}
         rows = sorted(unique.values(), key=lambda event: event.started_at, reverse=True)
         if any(event.status in {"counter_discontinuity", "partial_history", "counter_reset_unknown", "last_only"} for event in rows):
@@ -110,6 +122,8 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self._send(self.health)
         elif path == "/api/events":
             self._send(self.data.snapshot())
+        elif path == "/api/sources/codex":
+            self._send(self.data.codex_sources())
         elif path == "/api/rates":
             self._send(json.loads((Path(__file__).parent / "rates.json").read_text(encoding="utf-8")))
         elif path in SHARED_ASSETS:
@@ -126,6 +140,23 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self._send((WEB / filename).read_bytes(), content_type=mime[Path(filename).suffix] + "; charset=utf-8")
         else:
             self._send({"error": "Not found"}, 404)
+
+    def do_PUT(self):
+        if not self._local_request():
+            return
+        if urlsplit(self.path).path != "/api/sources/codex":
+            self._send({"error": "Not found"}, 404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 65536:
+                raise ValueError("Invalid request size")
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict) or set(body) != {"paths"}:
+                raise ValueError("Expected an object containing paths")
+            self._send(self.data.select_codex_sources(body["paths"]))
+        except (OSError, ValueError, TypeError, UnicodeError) as exc:
+            self._send({"error": str(exc)}, 400)
 
     def do_POST(self):
         if not self._local_request():

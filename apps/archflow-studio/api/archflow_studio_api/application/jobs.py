@@ -34,6 +34,7 @@ from uuid import uuid4
 
 from ..ports import StudioEventSink
 from ..transport.errors import StudioError
+from .monitoring import StudioMonitor, candidate_event_id
 
 QUEUED = "queued"
 RUNNING = "running"
@@ -80,10 +81,11 @@ class JobRegistry:
     submitter or a finishing worker can admit it.
     """
 
-    def __init__(self, events: StudioEventSink, *, max_workers: int = 2) -> None:
+    def __init__(self, events: StudioEventSink, *, max_workers: int = 2, monitor: StudioMonitor | None = None) -> None:
         if max_workers < 1:
             raise ValueError("max_workers must be at least 1")
         self._events = events
+        self._monitor = monitor
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
         self._accepting = True
@@ -122,6 +124,9 @@ class JobRegistry:
         read_refs: Iterable[str] = (),
         write_refs: Iterable[str] = (),
         exclusive: bool = False,
+        project_id: str | None = None,
+        source_ref: str | None = None,
+        related_event_id: str | None = None,
     ) -> Job:
         """Queue one candidate run and answer with the job that will do it.
 
@@ -135,6 +140,19 @@ class JobRegistry:
         those records would become unreachable through the id it was given.
         The second submission is refused instead, naming both jobs.
         """
+
+        if self._monitor is not None:
+            operation = work
+
+            def measured_work():
+                with self._monitor.measure(
+                    "candidate", project_id=project_id, run_id=candidate_id,
+                    source_ref=source_ref, related_event_id=related_event_id,
+                    event_id=candidate_event_id(project_id, candidate_id) if project_id is not None else None,
+                ):
+                    return operation()
+
+            work = measured_work
 
         job = Job(
             job_id=f"job-{uuid4().hex[:12]}",

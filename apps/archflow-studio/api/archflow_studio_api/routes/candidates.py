@@ -35,6 +35,7 @@ from ..application.binding import ProjectBinding, bound_project
 from ..application.candidate import describe, execute_candidate, prepare_combined_candidate, run_operator
 from ..application.compare import compare_runs
 from ..application.jobs import FAILED, QUEUED, RUNNING, SUCCEEDED, Job, JobRegistry
+from ..application.monitoring import projection_source_ref
 from ..application.projection import (
     StateProjection,
     project_state,
@@ -92,7 +93,7 @@ def start_candidate(
     run_id = _run_id(proposal_id)
 
     def work() -> object:
-        receipt = execute_candidate(binding, settings, proposal, run_id)
+        receipt = execute_candidate(binding, settings, proposal, run_id, monitor=state.monitor)
         # No judgement is made here: a candidate the architect asked to see is
         # not a proposal the architect accepted, and the other proposals
         # against this base stay open. Only the judgements already made
@@ -114,6 +115,12 @@ def start_candidate(
             # The work runs on a registry worker thread: ``run_project``
             # calls ``asyncio.run`` and would refuse to start on the loop.
             work=work,
+            project_id=binding.project_id,
+            source_ref=projection_source_ref(projection),
+            related_event_id=(
+                f"studio:model:{proposal.compilation_receipt['receipt_id']}"
+                if proposal.compilation_receipt and proposal.compilation_receipt.get("receipt_id") else None
+            ),
             # The queue's two facts about this run: what it touches, and
             # whether it needs the one Rhino this machine can export with. An
             # OCCT export is ordinary worker work and takes no lane of its own.
@@ -137,7 +144,8 @@ def combine_candidates(request: Request, body: CombineCandidatesRequestDto) -> C
         candidate_id=run_id, proposal_id="combined:" + "+".join(candidate_ids),
         work=lambda: run_operator(binding, state.settings, operator, run_id,
                                   source_run_id=projection.run.run_id, source_stage_ref=projection.source_stage_ref,
-                                  combined_candidate_ids=candidate_ids),
+                                  combined_candidate_ids=candidate_ids, monitor=state.monitor),
+        project_id=binding.project_id, source_ref=projection_source_ref(projection),
         read_refs=frozenset(operator.protected), exclusive=state.settings.rhino_lane,
     ))
 

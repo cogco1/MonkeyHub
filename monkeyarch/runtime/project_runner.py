@@ -53,6 +53,7 @@ import asyncio
 import hashlib
 import time
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -623,12 +624,39 @@ def _export_workspace(options: RunOptions, stage_id: str) -> Path:
     return workspace
 
 
-def _export(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict, *, source: _SourceSeat | None = None) -> dict:
+def _export(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict, *, source: _SourceSeat | None = None,
+            operation_observer: Callable[[Mapping[str, Any]], None] | None = None) -> dict:
     """Export one seat program through the executor the options name; no fallback between the two."""
 
-    if options.cad_backend == CAD_BACKEND_RHINO:
-        return _export_rhino(repository, run, branch, branch_destination, program, stage_id, options, provenance, source=source)
-    return _export_occt(repository, run, branch, branch_destination, program, stage_id, options, provenance, source=source)
+    started_at = datetime.now(timezone.utc).isoformat()
+    started = time.perf_counter()
+    result = None
+    status = "failed"
+    try:
+        if options.cad_backend == CAD_BACKEND_RHINO:
+            result = _export_rhino(repository, run, branch, branch_destination, program, stage_id, options, provenance, source=source)
+        else:
+            result = _export_occt(repository, run, branch, branch_destination, program, stage_id, options, provenance, source=source)
+        status = "succeeded" if result.get("status") == "succeeded" else "failed"
+        return result
+    except BaseException as exc:
+        if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
+            status = "cancelled"
+        raise
+    finally:
+        if operation_observer is not None:
+            try:
+                operation_observer({
+                    "phase": "geometry_export", "status": status,
+                    "started_at": started_at, "ended_at": datetime.now(timezone.utc).isoformat(),
+                    "duration_ms": round((time.perf_counter() - started) * 1000),
+                    "backend": options.cad_backend,
+                    "path": "unknown" if result is None else result.get("path", "unknown"),
+                    "source_ref": provenance.get("state_record_ref"),
+                })
+            except Exception:
+                # An optional observer cannot fail or retry a geometry export.
+                pass
 
 
 def _sha256_file(path: Path) -> str:
@@ -881,6 +909,7 @@ def run_project(
     record: StateRecord,
     seats: tuple[SeatSpec, ...],
     options: RunOptions,
+    operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, object]:
     """Run admitted seat rounds from one State Record; return an authority-free stage-run receipt.
 
@@ -1047,7 +1076,7 @@ def run_project(
                 cad = None
                 if options.export:
                     cad = _export(repository, run, branch, branch_destination, program, f"{stage_guard.envelope.stage_id}-{seat_id}", options,
-                                  {"target": "PROJECT_RUNNER", "workflow_stage_id": stage_guard.envelope.stage_id, "workflow_stage_index": str(stage_guard.envelope.stage_index), "stage_envelope_ref": stage_guard.envelope_record_ref.uri, "seat": seat_id, "candidate_status": "HOLD", "frame_semantics": "BUILDING_LOCAL_Y_UP", "state_record_ref": record_ref.uri}, source=sources.get(seat_id))
+                                  {"target": "PROJECT_RUNNER", "workflow_stage_id": stage_guard.envelope.stage_id, "workflow_stage_index": str(stage_guard.envelope.stage_index), "stage_envelope_ref": stage_guard.envelope_record_ref.uri, "seat": seat_id, "candidate_status": "HOLD", "frame_semantics": "BUILDING_LOCAL_Y_UP", "state_record_ref": record_ref.uri}, source=sources.get(seat_id), operation_observer=operation_observer)
                 seat_status = "proposal_accepted" if cad is None or cad.get("status") == "succeeded" else "export_failed"
                 seat_result = SeatResult(seat_id, round_index, seat_status, program_ref.uri, program.program_digest, len(program.objects), covered, undeclared, issues, time.perf_counter() - t0, cad, declined=declined,
                                          declination_reasons={e.component_id: str(e.params.get("reason")) for e in own if e.producer == "declined"}, relation_check_ref=relation_check_ref)

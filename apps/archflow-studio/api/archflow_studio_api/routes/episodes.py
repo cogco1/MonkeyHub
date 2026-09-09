@@ -19,6 +19,7 @@ from starlette.requests import Request
 
 from ..transport.proposal import EpisodeDto, episode_dto
 from ..application.binding import bound_project
+from ..application.monitoring import candidate_event_id
 from ..application.design_history import (
     accept_design_candidate, fork_design_branch, initialize_design_stage,
     read_design_history, stage_ref_from,
@@ -52,17 +53,27 @@ def read_committed_design_history(request: Request, branch_id: str = Query(defau
 def initialize_committed_design(request: Request, payload: InitializeDesignStageRequestDto) -> DesignStageDto:
     binding = bound_project(request.app.state)
     _require_bound_project(binding, payload.project_id)
-    return stage_dto(initialize_design_stage(binding, model_source=model_source_from(payload.model_source),
-                                            branch_id=payload.branch_id, label=payload.label))
+    source = model_source_from(payload.model_source)
+    with request.app.state.monitor.measure(
+        "stage_save", project_id=binding.project_id, run_id=source.run_id,
+    ) as operation:
+        saved = initialize_design_stage(binding, model_source=source, branch_id=payload.branch_id, label=payload.label)
+        operation["source_ref"] = saved.stage.model_ref.uri
+    return stage_dto(saved)
 
 
 @router.post("/candidates/{candidate_id}/accept", response_model=DesignStageDto, response_model_by_alias=True)
 def accept_committed_design(request: Request, candidate_id: str, payload: AcceptDesignCandidateRequestDto) -> DesignStageDto:
     binding = bound_project(request.app.state)
     _require_bound_project(binding, payload.project_id)
-    return stage_dto(accept_design_candidate(binding, candidate_id=candidate_id, branch_id=payload.branch_id,
-                                            expected_head=stage_ref_from(binding, payload.expected_head_stage_ref),
-                                            events=request.app.state.events, label=payload.label))
+    expected_head = stage_ref_from(binding, payload.expected_head_stage_ref)
+    with request.app.state.monitor.measure(
+        "stage_save", project_id=binding.project_id, run_id=candidate_id, source_ref=expected_head.uri,
+        related_event_id=candidate_event_id(binding.project_id, candidate_id),
+    ):
+        saved = accept_design_candidate(binding, candidate_id=candidate_id, branch_id=payload.branch_id,
+                                        expected_head=expected_head, events=request.app.state.events, label=payload.label)
+    return stage_dto(saved)
 
 
 @router.post("/design-branches", response_model=DesignBranchDto, response_model_by_alias=True, status_code=201)

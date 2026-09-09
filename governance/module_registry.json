@@ -2135,7 +2135,8 @@
         "StageExecutionGuard",
         "StateRecord",
         "SeatSpec tuple",
-        "RunOptions"
+        "RunOptions",
+        "Optional caller-owned operation_observer receives final export status, measured interval, actual backend/path and retained source; it has no project-write authority"
       ],
       "outputs": [
         "RunnerRunReceipt@3 dict",
@@ -2230,7 +2231,8 @@
         "the closure states one finding per problem: a required checker kind with no check, each relation bound to a required checker that is violated or unchecked, and a seat that did not finish; an unbound relation remains unchecked without an inferred relation-kind-to-checker mapping",
         "extent relations use compiled-predicted bounds and say so; solid_nonpenetration waits until final exports, verifies their retained receipts/STEP hashes and names, and reports true OCCT solid measurements or unchecked once in the existing seat-relation-check records; a SATISFIED stage covers its explicit required checker ids and is not proof that every architectural relation was measured",
         "the developed projection receives the actual envelope phase; the existing guard still rejects a different state or phase",
-        "source ProducedElement values and STEP shapes are reused only after verifying row inputs, dependency context and retained source execution; current-run relation and solid checks still receive the complete model; missing legacy producer results fall back to full production"
+        "source ProducedElement values and STEP shapes are reused only after verifying row inputs, dependency context and retained source execution; current-run relation and solid checks still receive the complete model; missing legacy producer results fall back to full production",
+        "Export observer failure never fails or repeats an export; the workflow imports no monitoring implementation"
       ],
       "status": "canonical",
       "tests": [
@@ -3756,7 +3758,10 @@
         "prepare_combined_candidate",
         "POST /api/candidates/combine",
         "JobRegistry.stop_accepting",
-        "JobRegistry.accepting"
+        "JobRegistry.accepting",
+        "POST /api/events/model-load",
+        "ModelLoadTimingDto",
+        "MonitorWriteDto"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -3798,7 +3803,8 @@
         "separate candidate workspaces may compute shared read or write scopes concurrently; worker capacity and the single Rhino export resource remain queue limits",
         "retained candidates descend through exact parent runner/record references from their declared Stage; replays never rewrite an operator base digest",
         "independent same-Stage component changes form a new candidate; overlapping writes or declared dependency effects refuse combination before creating a run",
-        "Shutdown closes admission before draining all accepted queued and running jobs, and only then closes the executor"
+        "Shutdown closes admission before draining all accepted queued and running jobs, and only then closes the executor",
+        "Candidate service timing begins at worker entry and includes nested geometry export; browser load timing is separately marked client_wait and validates the project, run and optional retained source"
       ],
       "status": "canonical",
       "tests": [
@@ -3810,7 +3816,9 @@
         "apps/archflow-studio/api/tests/test_timings.py",
         "apps/archflow-studio/api/tests/test_options.py",
         "apps/archflow-studio/api/tests/test_document_annotations.py",
-        "apps/archflow-studio/api/tests/test_working_copies.py"
+        "apps/archflow-studio/api/tests/test_working_copies.py",
+        "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
+        "apps/archflow-studio/web/test/candidatePreview.browser.mjs"
       ],
       "notes": "The whole module is arrangement: the kernel runner does the work, this decides when and with what.",
       "files": [
@@ -4156,7 +4164,8 @@
         "apps/shared-web/src/appearance.js: DEFAULT_APPEARANCE, isLanguage, isTheme, isFontScale, resolveAppearance, appearanceFromSearch, applyAppearance and applicationUrl",
         "apps/shared-web/src/i18n.js: translateMessage",
         "apps/shared-web/src/browserTranslator.js: prepareEnglishToChinese, translateEnglishToChinese and subscribeToEnglishToChineseReadiness",
-        "apps/shared-web/src/base.css: appearance tokens and base controls"
+        "apps/shared-web/src/base.css: appearance tokens and base controls",
+        "StudioMonitor"
       ],
       "depends_on": [
         "monkeymonitor"
@@ -4187,7 +4196,8 @@
         "Managed stop refuses new jobs, ends SSE and drains accepted work before normal process exit; standalone startup remains supported",
         "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
         "Shared browser modules import no React or backend runtime and do not persist preferences; each host retains its existing settings boundary, and explicit launch-URL appearance does not imply shared localStorage across ports",
-        "Browser translation preserves technical tokens and retains source text when unavailable or unsuccessful; applications keep their own message catalogs and layouts"
+        "Browser translation preserves technical tokens and retains source text when unavailable or unsuccessful; applications keep their own message catalogs and layouts",
+        "One optional host UsageLog records compiler, candidate, export, client wait and Stage-save diagnostics; logging never changes or repeats business operations"
       ],
       "status": "canonical",
       "tests": [
@@ -5252,7 +5262,8 @@
         "Pure Algorithm selection interface and FirstAvailablePolicy baseline over caller-owned actions and budgets",
         "Loopback MonkeyMonitor UI and CLI, and optional usage.jsonl diagnostic append/read under a caller-supplied noncanonical data directory",
         "Optional managed stdin lifecycle and additive health identity for a Hub-owned CLI process; stop/EOF stops listening and waits for active request threads",
-        "Read-only HTTP delivery of the four shared appearance, translation and base-style assets through the existing loopback boundary"
+        "Read-only HTTP delivery of the four shared appearance, translation and base-style assets through the existing loopback boundary",
+        "Explicitly selected Codex task/child-source families and known turn intervals; distinct model-call, service, client-wait and agent-turn timing views"
       ],
       "does_not_own": [
         "Architectural evaluation, geometry, candidate execution or formal design acceptance",
@@ -5291,7 +5302,9 @@
         "GET /shared/appearance.js",
         "GET /shared/i18n.js",
         "GET /shared/browserTranslator.js",
-        "GET /shared/base.css"
+        "GET /shared/base.css",
+        "GET /api/sources/codex",
+        "PUT /api/sources/codex"
       ],
       "depends_on": [],
       "used_by": [
@@ -5306,13 +5319,17 @@
         "Only the explicitly supplied diagnostics directory is writable; project state is untouched",
         "The algorithm chooses only a caller-provided action within stated estimates or stops",
         "Standalone serve/report remain available; managed identity reads the actual source-version.txt or checkout HEAD and never trusts a parent-supplied revision",
-        "Shared asset URLs are an exact allowlist with JavaScript or CSS content types; other paths never expose a source directory"
+        "Shared asset URLs are an exact allowlist with JavaScript or CSS content types; other paths never expose a source directory",
+        "Only explicitly selected Codex paths are read; lineage uses recorded session/parent ids, repeated source snapshots count once and token event gaps never become model duration",
+        "Non-model phases carry unknown token counters; nested geometry duration is not added to the candidate interval and human review time is not service duration"
       ],
       "status": "canonical",
       "tests": [
         "tests/monkeymonitor/test_core.py",
         "tests/monkeymonitor/test_server.py",
-        "apps/archflow-studio/api/tests/test_monitoring.py"
+        "apps/archflow-studio/api/tests/test_monitoring.py",
+        "tests/monkeymonitor/test_web_timing.py",
+        "apps/archflow-studio/api/tests/test_model_load_monitoring.py"
       ],
       "notes": "CREATE explicitly requested by user. Existing ports.model owns provider receipt transport; neither it nor architectural workflow/evaluation owners owns cross-application token accounting, rates and engineering budget advice. Independent Python package and local UI; no separate architectural authority.",
       "files": [

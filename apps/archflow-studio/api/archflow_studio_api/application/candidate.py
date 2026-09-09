@@ -62,6 +62,7 @@ from .artifacts import (
     ArtifactRecord, ModelSource, _text, _whole, artifact_bytes, list_artifacts,
     register_model_asset, require_model_source,
 )
+from .monitoring import StudioMonitor, candidate_event_id
 from .binding import ProjectBinding, ReferenceRun, record_kind
 from .jobs import FAILED, QUEUED, RUNNING
 from .projection import (
@@ -91,6 +92,8 @@ def execute_candidate(
     settings: StudioSettings,
     proposal: Proposal,
     run_id: str,
+    *,
+    monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
     """Run the proposal as a candidate and return the runner's own receipt.
 
@@ -150,6 +153,7 @@ def execute_candidate(
         source_run_id=proposal.source_run_id, retain=retain,
         model_source=proposal.model_source,
         source_stage_ref=proposal.source_stage_ref,
+        monitor=monitor,
     )
 
 
@@ -194,6 +198,7 @@ def execute_option_candidate(
     source_run_id: str | None = None,
     model_source: ModelSource | None = None,
     source_stage_ref: ProjectRecordRef | None = None,
+    monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
     """Run one selected massing option as a candidate, by the same arrangement.
 
@@ -223,7 +228,7 @@ def execute_option_candidate(
         massing_pack=pack,
     )
     return run_operator(binding, settings, operator, run_id, source_run_id=source_run_id, model_source=model_source,
-                        source_stage_ref=source_stage_ref)
+                        source_stage_ref=source_stage_ref, monitor=monitor)
 
 
 def _operator_base(
@@ -267,6 +272,7 @@ def _run_successor(
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
     model_source_ref: str | None = None,
     source_run_receipt_ref: ProjectRecordRef | None = None,
+    monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
     """Create the run, retain what belongs to it, and hand the record to the runner.
 
@@ -329,6 +335,16 @@ def _run_successor(
                     options.workspace_root
                     / f"cad-{STAGE_ID}-{seat.seat_id}"
                 ).mkdir(parents=True, exist_ok=True)
+    observations = {}
+    if monitor is not None and monitor.store is not None:
+        def observe_export(timing):
+            monitor.record(
+                phase=f"geometry_export.{timing['backend']}.{timing['path']}",
+                status=timing["status"], started_at=timing["started_at"], ended_at=timing["ended_at"],
+                duration_ms=timing["duration_ms"], project_id=binding.project_id, run_id=run_id,
+                source_ref=timing["source_ref"], related_event_id=candidate_event_id(binding.project_id, run_id),
+            )
+        observations["operation_observer"] = observe_export
     return run_project(
         repository,
         run=run,
@@ -336,6 +352,7 @@ def _run_successor(
         record=bound,
         seats=seats,
         options=options,
+        **observations,
     )
 
 
@@ -350,6 +367,7 @@ def run_operator(
     model_source: ModelSource | None = None,
     source_stage_ref: ProjectRecordRef | None = None,
     combined_candidate_ids: tuple[str, ...] = (),
+    monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
     """Replay a typed operator against its selected or default exact base and run it."""
 
@@ -397,7 +415,7 @@ def run_operator(
     receipt = _run_successor(binding, settings, seat_pack, successor, run_id,
                              retain=(*retain, (STUDIO_CANDIDATE_DELTA, delta)),
                              model_source_ref=source_model.receipt_ref if source_model is not None else None,
-                             source_run_receipt_ref=runner_ref)
+                             source_run_receipt_ref=runner_ref, monitor=monitor)
     if source_model is not None and settings.exports:
         _retain_composed_candidate(binding, source_model, run_id, receipt, source_receipt=projection.reference.receipt)
     return receipt
