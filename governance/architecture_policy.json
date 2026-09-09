@@ -184,6 +184,50 @@
       "kind": "application_logs",
       "owner": "hub.shell",
       "reason": "Creates only stdout/stderr logs for this Hub's own service children under its explicit nonproject runtime root; it never writes a project."
+    },
+    {
+      "path": "tools/package_monkeyapps.py",
+      "function": "fetch_runtime",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Downloads and verifies the fixed embedded runtime only in the caller-selected external cache; an incomplete download is atomically replaced after its checksum matches."
+    },
+    {
+      "path": "tools/package_monkeyapps.py",
+      "function": "prepare_runtime",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Prepares the embedded interpreter, its import paths and dependency lock only inside the external candidate bundle and cache selected by package()."
+    },
+    {
+      "path": "tools/package_monkeyapps.py",
+      "function": "collect_application",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Assembles the committed application snapshot and its source-version marker only in the external candidate bundle supplied by package()."
+    },
+    {
+      "path": "tools/package_monkeyapps.py",
+      "function": "package",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Creates explicit external staging/output paths, build metadata and the finalized archive checksum after external() rejects paths inside the selected source checkout."
     }
   ],
   "forbidden_layer_imports": [

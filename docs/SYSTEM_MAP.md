@@ -482,6 +482,13 @@ Create a run and retain the StageRunEnvelope@1 that binds it to one stage of the
 - api: `open_stage_run`, `StageRunError`, `main`
 - invariants: stage 0 opens with no predecessor; stage N>0 opens only against the retained SATISFIED exit binding of the run that closed stage N-1, and refuses before the run is created; a workflow naming a check the spine cannot measure is refused (require_measurable); the state digest the envelope binds is the one the runner recomputes, so the guard admits the run it opened; nothing is closed, accepted or issued here
 
+### tools.package_monkeyapps — `tools/package_monkeyapps.py`
+Build a Windows application distribution from one exact Git commit in caller-selected external directories. This CLI owns packaging; project and app lifecycle owners retain their existing authority.
+- owns: Exact-commit source collection, frontend build and embedded Python dependency preparation in external staging/cache; Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery; Fresh-version Windows installation and the thin root Hub entry; actual application lifecycle stays with hub.shell
+- does not own: Project data, project initialization, candidate execution or formal project issue; Application lifecycle, model/provider credentials, automatic updates or publishing to a remote service; The shared application preference authority
+- api: `main`, `package`
+- invariants: Only the selected committed source is collected; local WIP and project/runtime folders are not selected inputs; package validates staging/output/cache against the selected source checkout before passing paths to its write helpers; The registered writer functions derive distribution outputs from those validated roots; this registration adds no project writer and is not a filesystem sandbox.; Installation targets a fresh version directory and leaves unknown existing data intact
+
 ### tools.reindex_project — `tools/reindex_project.py`
 CLI: re-index a project's authored record against named inspection records, apply the typed reindex operator, and write a component-catalog and draft state-record successor into a new run through the repository.
 - owns: the --source <uri>@<precedence> vocabulary; writing component-catalog and state-record records into --out-run; the Markdown coverage summary
