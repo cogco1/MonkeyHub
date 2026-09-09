@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from archflow.capabilities.geometry_proposal import (
+from monkeyarch.capabilities.geometry_proposal import (
     GeometryProposalProviderIdentity,
     load_compiled_geometry_program,
 )
@@ -41,7 +41,7 @@ from archflow.project.record_kinds import (
     STUDIO_MODEL_ASSET,
 )
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef, record_ref_from_uri
-from archflow.runtime.project_runner import CAD_BACKEND_OCCT, RunOptions, run_project
+from monkeyarch.runtime.project_runner import CAD_BACKEND_OCCT, RunOptions, run_project
 from archflow.state.state_record import (
     SchematicPack,
     StateRecord,

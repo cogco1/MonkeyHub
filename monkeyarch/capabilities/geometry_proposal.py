@@ -32,10 +32,12 @@ from archflow.project.record_kinds import (
 )
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.contracts.authority import no_authority
-from archflow.compilers.geometry import (
+from archflow.state.geometry_program import (
     AssetSubstitutionReceipt,
     CompiledGeometryObject,
     CompiledGeometryProgram,
+)
+from monkeyarch.compilers.geometry import (
     GeometryIssue,
     GeometryIssueCode,
     compile_geometry_program,

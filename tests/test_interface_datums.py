@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import unittest
 
-from archflow.capabilities.geometry_proposal import (
+from monkeyarch.capabilities.geometry_proposal import (
     load_compiled_geometry_program,
 )
-from archflow.compilers.geometry import (
+from monkeyarch.compilers.geometry import (
     GeometryCompileStatus,
     GeometryIssueCode,
     compile_geometry_program,

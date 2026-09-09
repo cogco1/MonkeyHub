@@ -61,7 +61,7 @@ import math
 import re
 from typing import Any, Iterable, Mapping, Sequence
 
-from archflow.capabilities.element_producers import (
+from monkeyarch.capabilities.element_producers import (
     ElementProducerError,
     ElementRow,
     ProductionContext,
@@ -69,7 +69,7 @@ from archflow.capabilities.element_producers import (
     produce_rows,
     production_order,
 )
-from archflow.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from archflow.state.geometry_program import GeometryOperationKind
 from archflow.state.state_record import (
     Entity,

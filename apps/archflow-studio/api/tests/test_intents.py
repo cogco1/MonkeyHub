@@ -487,7 +487,7 @@ class SemanticIntentTests(IntentTestCase):
         self.assertNotIn("old", change)
 
     def test_the_model_schema_uses_the_producer_signature(self) -> None:
-        from archflow.capabilities.element_producers import producer_signatures
+        from monkeyarch.capabilities.element_producers import producer_signatures
 
         schema = response_schema(strict=False)
         edits = schema["properties"]["semanticEdit"]["anyOf"][1]

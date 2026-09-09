@@ -535,7 +535,7 @@ class StateRecordTests(unittest.TestCase):
                          parameters={"object_pairs": pairs})
 
     def test_production_entry_accepts_the_record(self) -> None:
-        from archflow.capabilities.geometry_proposal import GeometryProposalProductionError, _as_developed_state
+        from monkeyarch.capabilities.geometry_proposal import GeometryProposalProductionError, _as_developed_state
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
@@ -562,7 +562,7 @@ class StateRecordTests(unittest.TestCase):
             self.assertEqual(set(component.source_refs), set(proposal.evidence_refs))    # nothing dropped, nothing invented
 
     def test_massing_entities_rebuild_the_spatial_option_exactly(self) -> None:
-        from archflow.runtime.project_runner import SchematicPack, bootstrap_developed_state
+        from monkeyarch.runtime.project_runner import SchematicPack, bootstrap_developed_state
         from tests.test_project_runner import EVIDENCE, _component
         pack = SchematicPack.from_dict({
             "schema": "SchematicPack@1", "project_id": "demo", "option_id": "declared-option", "label": "demo declared schematic", "typology": "test block with a portico",
@@ -614,7 +614,7 @@ class StateRecordTests(unittest.TestCase):
     def test_the_compiler_binds_a_program_to_the_record_itself(self) -> None:
         """P102 last step: the record answers the four identity questions, so the compiler takes it directly."""
 
-        from archflow.compilers.geometry import compile_geometry_program
+        from monkeyarch.compilers.geometry import compile_geometry_program
         from tests.test_geometry_compiler import COMMITMENT, _proposal, _state
 
         with tempfile.TemporaryDirectory() as tmp:

@@ -203,7 +203,7 @@ try {
     }
   });
   await step("a mounted but hidden document does not handle shortcuts", async () => {
-    await page.locator(".stage-mode-switch").getByRole("button", { name: "3D model", exact: true }).click();
+    await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyArch · 3D", exact: true }).click();
     const before = await marks();
     assert.equal(await page.locator(".document-workspace").isVisible(), false);
     await page.keyboard.press("Control+z");
@@ -216,7 +216,7 @@ try {
       assert.equal(prevented, false, "even a dispatched event in an inert document stays unhandled");
       assert.deepEqual(await marks(), before);
     }
-    await page.locator(".stage-mode-switch").getByRole("button", { name: "Drawings & images", exact: true }).click();
+    await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyDiagram · Drawings", exact: true }).click();
     await page.locator('.document-viewport[data-ready="true"]').waitFor();
     assert.deepEqual(await marks(), initial, "the visible document keeps the original stroke IDs");
   });

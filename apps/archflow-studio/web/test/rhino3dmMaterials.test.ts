@@ -16,7 +16,7 @@ import {
   restoreOpacity,
   savedObjectVisible,
   type MaterialOpacity,
-} from "../src/viewer/modelDisplay.ts";
+} from "../src/workspaces/monkeyarch/viewer/modelDisplay.ts";
 
 /**
  * The preview ``execute_occt_export`` just wrote, opened by the installed

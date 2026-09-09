@@ -4,7 +4,7 @@ import test from "node:test";
 import rhino3dm from "rhino3dm";
 
 const rhino = await rhino3dm();
-const workerSource = await readFile(new URL("../public/nurbsFallback.worker.js", import.meta.url), "utf8");
+const workerSource = await readFile(new URL("../src/workspaces/monkeyarch/viewer/nurbsFallback.worker.js", import.meta.url), "utf8");
 
 // Run the unchanged worker entry with the installed Rhino runtime. Every 3DM
 // below is created and re-read as bytes in memory; no source project is used.

@@ -21,7 +21,9 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 
 ```text
 Git 源码仓 / worktree
-  archflow/                  当前统一 Python 包：含底座与待分离的领域实现
+  archflow/                  公共项目底座、建筑事实和技术接口
+  monkeyarch/                三维建模算法与运行编排
+  monkeydiagram/             图纸投影与表达
   apps/archflow-studio/      共同宿主；面向两个平行工作流
   governance/                owner、依赖与架构防火墙
   docs/                      人读文档，不是实时项目状态

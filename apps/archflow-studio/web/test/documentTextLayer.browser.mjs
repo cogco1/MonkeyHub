@@ -10,7 +10,7 @@ const fixture = `
 import React, {useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
-import {DocumentTextLayer} from '/src/features/stage/DocumentTextLayer.tsx';
+import {DocumentTextLayer} from '/src/workspaces/monkeydiagram/DocumentTextLayer.tsx';
 import {UserPreferencesProvider} from '/src/features/settings/preferences.tsx';
 const initial={width:800,height:600,scale:1,color:'#243b53',fontSize:.03,lineWidth:.004,active:true,panning:false,readOnly:false};
 const metrics=window.textFixture={changes:[],parentDown:[],undoEvents:0};

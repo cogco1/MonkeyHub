@@ -4,13 +4,13 @@
  * with the loader's own counts beside it.
  */
 
-import type { SceneInspection } from "../../viewer/sceneInspection";
+import type { SceneInspection } from "../../workspaces/monkeyarch/viewer/sceneInspection";
 import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
 import {
   LOCAL_SOURCE_LABEL,
   type ViewportStatus,
-} from "../../viewer/ThreeDmViewport";
+} from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
 
 function tagOf(sourceLabel: string | null): { tag: string; rest: string } {
   if (sourceLabel === null) return { tag: "NO MODEL", rest: "" };

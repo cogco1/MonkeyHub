@@ -39,7 +39,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from archflow.adapters.cad_program import expected_object_bounds  # noqa: E402
-from archflow.capabilities.geometry_proposal import GeometryProposalProviderIdentity, load_compiled_geometry_program  # noqa: E402
+from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity, load_compiled_geometry_program  # noqa: E402
 from archflow.contracts.authority import no_authority  # noqa: E402
 from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
@@ -51,7 +51,7 @@ from archflow.project.record_kinds import (  # noqa: E402
     STATE_RECORD_EQUIVALENCE,
 )
 from archflow.project.refs import parse_record_file_name, record_ref_from_uri  # noqa: E402
-from archflow.runtime.project_runner import (  # noqa: E402
+from monkeyarch.runtime.project_runner import (  # noqa: E402
     CAD_BACKEND_OCCT,
     CAD_BACKEND_RHINO,
     CAD_BACKENDS,

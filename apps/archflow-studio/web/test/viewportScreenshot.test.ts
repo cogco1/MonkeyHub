@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   encodeViewportPng,
   type PngCanvas,
-} from "../src/viewer/viewportScreenshot.ts";
+} from "../src/workspaces/monkeyarch/viewer/viewportScreenshot.ts";
 
 test("PNG encoding redraws the viewport immediately before serialization", async () => {
   const events: string[] = [];

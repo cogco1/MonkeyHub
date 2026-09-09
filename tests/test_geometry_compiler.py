@@ -10,8 +10,10 @@ from dataclasses import replace
 from pathlib import Path
 import unittest
 
-from archflow.compilers.geometry import (
+from archflow.state.geometry_program import (
     AssetSubstitutionReceipt,
+)
+from monkeyarch.compilers.geometry import (
     GeometryCompileStatus,
     GeometryIssueCode,
     compile_geometry_program,

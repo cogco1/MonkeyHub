@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import unittest
 
-from archflow.capabilities.reference_resolver import (
+from monkeyarch.capabilities.reference_resolver import (
     AxisPoint,
     GridIntersection,
     GridRef,

@@ -14,7 +14,7 @@ import {
   restoreOpacity,
   savedObjectVisible,
   semanticObjectNames,
-} from "../src/viewer/modelDisplay.ts";
+} from "../src/workspaces/monkeyarch/viewer/modelDisplay.ts";
 
 /** A mesh as the Rhino3dmLoader leaves it: attributes on userData, ``visible`` taken from its layer only. */
 function loadedMesh(name: string, layerIndex: number, saved: { visible?: boolean; layerVisible: boolean }): Mesh {

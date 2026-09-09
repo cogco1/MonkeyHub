@@ -18,20 +18,20 @@ import type { EvidenceTab } from "../../app/evidence";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
 import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
-import type { SceneInspection } from "../../viewer/sceneInspection";
-import type { ModelDisplayMode } from "../../viewer/modelDisplay";
+import type { SceneInspection } from "../../workspaces/monkeyarch/viewer/sceneInspection";
+import type { ModelDisplayMode } from "../../workspaces/monkeyarch/viewer/modelDisplay";
 import {
   ThreeDmViewport,
   type ViewportController,
   type ViewportPick,
   type ViewportStatus,
-} from "../../viewer/ThreeDmViewport";
-import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "./Annotate";
+} from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
+import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { SourceChip, type ViewState } from "./SourceChip";
 import { VersionsStrip, type VersionGroup } from "./VersionsStrip";
-import { DocumentCanvas } from "./DocumentCanvas";
-import { createDocumentAnnotationsController } from "./useDocumentAnnotations";
-import type { ModelAnnotationsHandle } from "./useModelAnnotations";
+import { DocumentCanvas } from "../../workspaces/monkeydiagram/DocumentCanvas";
+import { createDocumentAnnotationsController } from "../../workspaces/monkeydiagram/useDocumentAnnotations";
+import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useModelAnnotations";
 
 export interface PickedFacts {
   readonly componentId: string | null;
@@ -316,9 +316,9 @@ export function Stage({
   </>;
   return (
     <section className="stage" aria-label={t("stage.ariaLabel")}>
-      <div className="stage-mode-switch" role="group" aria-label={t("document.workspace")}>
-        <button type="button" aria-pressed={!documentOpen} onClick={() => setDocumentOpen(false)}>{t("document.model")}</button>
-        <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); setDocumentMounted(true); setDocumentOpen(true); }}>{t("document.workspace")}</button>
+      <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
+        <button type="button" aria-pressed={!documentOpen} onClick={() => setDocumentOpen(false)}>{t("workspace.monkeyarch")}</button>
+        <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); setDocumentMounted(true); setDocumentOpen(true); }}>{t("workspace.monkeydiagram")}</button>
       </div>
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
         onKeyDown={(event) => {

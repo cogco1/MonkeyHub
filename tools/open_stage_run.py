@@ -42,7 +42,7 @@ from archflow.project.record_kinds import (  # noqa: E402
 )
 from archflow.project.refs import RunRef, parse_record_file_name, record_ref_from_uri  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository  # noqa: E402
-from archflow.runtime.project_runner import RunOptions  # noqa: E402
+from monkeyarch.runtime.project_runner import RunOptions  # noqa: E402
 from archflow.state.developed_design import DevelopedDesignError  # noqa: E402
 from archflow.state.operational_state import DesignObligation  # noqa: E402
 from archflow.state.stage_workflow import (  # noqa: E402

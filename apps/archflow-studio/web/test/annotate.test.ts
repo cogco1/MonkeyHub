@@ -10,7 +10,7 @@ test("straight annotations persist and sample only their two endpoints", async (
     logLevel: "silent", server: { middlewareMode: true, watch: null },
   });
   t.after(() => vite.close());
-  const { completedStroke, gestureSamplePoints, gestureScreen } = await vite.ssrLoadModule("/src/features/stage/Annotate.tsx");
+  const { completedStroke, gestureSamplePoints, gestureScreen } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/Annotate.tsx");
   const curvedDrag = [[10, 10], [20, 80], [90, 30]] as const;
   assert.deepEqual(gestureScreen("arrow", curvedDrag), [[10, 10], [90, 30]]);
   assert.deepEqual(gestureScreen("line", curvedDrag), [[10, 10], [90, 30]]);
@@ -33,7 +33,7 @@ test("an arc retains three defining points and refuses a collinear third point",
     logLevel: "silent", server: { middlewareMode: true, watch: null },
   });
   t.after(() => vite.close());
-  const { arcBaseFromStroke, arcScreenPoints, gestureScreen, isValidArc } = await vite.ssrLoadModule("/src/features/stage/Annotate.tsx");
+  const { arcBaseFromStroke, arcScreenPoints, gestureScreen, isValidArc } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/Annotate.tsx");
   const arc = [[10, 10], [80, 10], [45, 40]] as const;
   assert.deepEqual(gestureScreen("arc", arc), arc);
   assert.equal(isValidArc(arc), true);
@@ -62,7 +62,7 @@ test("an arc previews its endpoints before the third point and retains view-chan
     logLevel: "silent", server: { middlewareMode: true, watch: null },
   });
   t.after(() => vite.close());
-  const { drawGesture } = await vite.ssrLoadModule("/src/features/stage/Annotate.tsx");
+  const { drawGesture } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/Annotate.tsx");
   const segments: unknown[] = [];
   const arcs: unknown[] = [];
   const strokeAlpha: number[] = [];
@@ -95,7 +95,7 @@ test("a ruler label is rendered beside its annotation and cannot alter older geo
     logLevel: "silent", server: { middlewareMode: true, watch: null },
   });
   t.after(() => vite.close());
-  const { drawGesture } = await vite.ssrLoadModule("/src/features/stage/Annotate.tsx");
+  const { drawGesture } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/Annotate.tsx");
   const calls: string[] = [];
   const context = new Proxy({
     save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, arc() {}, closePath() {}, fill() {}, setLineDash() {},
@@ -108,7 +108,7 @@ test("a ruler label is rendered beside its annotation and cannot alter older geo
 test("a single point and short freehand stroke remain visible and retain model samples", async (t) => {
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
-  const { drawGesture, completedStroke, gestureSamplePoints } = await vite.ssrLoadModule("/src/features/stage/Annotate.tsx");
+  const { drawGesture, completedStroke, gestureSamplePoints } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/Annotate.tsx");
   const point = [[10, 10]];
   assert.deepEqual(completedStroke("freehand", point, [10, 10]), point);
   assert.deepEqual(gestureSamplePoints("freehand", point, point), point);
@@ -124,7 +124,7 @@ test("a single point and short freehand stroke remain visible and retain model s
 test("whole-stroke erasing intersects actual ink across fast cursor moves", async (t) => {
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
-  const { annotationIntersectsEraser } = await vite.ssrLoadModule("/src/features/stage/Annotate.tsx");
+  const { annotationIntersectsEraser } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/Annotate.tsx");
   const line = { kind: "freehand", screen: [[0, 20], [100, 20]], lineWidth: 2 };
   assert.equal(annotationIntersectsEraser(line, [50, 0], [50, 50], 1), true);
   assert.equal(annotationIntersectsEraser(line, [50, 30], [50, 50], 1), false);

@@ -10,9 +10,9 @@ from pathlib import Path
 from archflow.adapters.cad_execution import CadExecutionError, RhinoPatchBase, patch_composed_three_dm, prepare_rhino_three_dm_export
 from archflow.adapters.cad_patch import CadPatchError, select_patch_operations
 from archflow.adapters.cad_program import _physical_ids, translate_to_rhino_python
-from archflow.capabilities.element_producers import ProductionContext, produce_rows
-from archflow.capabilities.reference_resolver import ReferenceContext
-from archflow.compilers.geometry import compile_geometry_program
+from monkeyarch.capabilities.element_producers import ProductionContext, produce_rows
+from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.compilers.geometry import compile_geometry_program
 from tests.test_cad_execution import _binding
 from tests.test_element_producers import _grids, _levels, _rows
 from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state

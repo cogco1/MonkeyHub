@@ -1483,7 +1483,7 @@ def schematic_pack_of(record: StateRecord, *, option_id: str | None = None, evid
     The one reader of ``MassingLevel@1`` / ``Volume@1`` / ``Space@1`` /
     ``Connection@1`` *as a spatial option*. ``developed_design_view`` builds its
     view from this, and so does anything that measures the massing
-    (``state.massing_metrics``) or offers a variant of it. A record is said to
+    (``monkeyarch.capabilities.massing_metrics``) or offers a variant of it. A record is said to
     declare massing when it carries volumes, zones and massing levels together;
     with any of the three absent the view falls back to one block and this
     answers ``None`` rather than half a pack.

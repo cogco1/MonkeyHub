@@ -11,11 +11,11 @@ from io import BytesIO
 from pathlib import Path
 
 from archflow.adapters import occt_backend
-from archflow.adapters.drawing_svg import svg_objects
+from monkeydiagram.drawing_svg import svg_objects
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT, SEAT_OCCT_EXECUTION
 from archflow.project.repository import FilesystemProjectRepository
-from archflow.runtime.drawing_elevation import (
+from monkeydiagram.drawing_elevation import (
     DrawingElevationError,
     ElevationSource,
     ElevationView,

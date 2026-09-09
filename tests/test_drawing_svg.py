@@ -6,7 +6,7 @@ import unittest
 from io import BytesIO
 from xml.etree import ElementTree
 
-from archflow.adapters.drawing_svg import (
+from monkeydiagram.drawing_svg import (
     DrawingSvgError,
     crop_polylines,
     drawing_svg,

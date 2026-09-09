@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from archflow.state.massing_metrics import EnvelopeFinding, MassingMetrics
+from monkeyarch.capabilities.massing_metrics import EnvelopeFinding, MassingMetrics
 
 from ..application.options import (
     PERSISTENCE,

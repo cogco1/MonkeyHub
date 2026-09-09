@@ -332,7 +332,7 @@ try {
     assert.deepEqual(await getJson("/api/document-annotations", { runId: oldEditingRun, assetSha256: drawingSha, pageIndex: 0 }), drawingBaseline,
       "Saving an unchanged L6 page must retain its existing revision");
     assert.equal(requests.filter((request) => !["GET", "HEAD", "OPTIONS"].includes(request.method)).length, 0);
-    await page.locator(".stage-mode-switch").getByRole("button", { name: "3D model", exact: true }).click();
+    await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyArch · 3D", exact: true }).click();
     await page.locator(".stage-model .source__facts").waitFor({ timeout: 60_000 });
     await until(() => page.locator(".stage-model .source__status").count(), (count) => count === 0, "The old model must finish loading before viewing B");
   });
@@ -403,7 +403,7 @@ try {
     await drawingReady(documentReadsBefore);
     assert.equal(await editingRun(), sourceB.runId);
     assert.deepEqual(await editingBases(), { ...existingEditingBases, [editPreferenceKey]: sourceB.runId });
-    await page.locator(".stage-mode-switch").getByRole("button", { name: "3D model", exact: true }).click();
+    await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyArch · 3D", exact: true }).click();
     await ready(optionB);
     assertOnlyExactBytes(start, sourceB);
     assert.equal(await editingRun(), sourceB.runId);

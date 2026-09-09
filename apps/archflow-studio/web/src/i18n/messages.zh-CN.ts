@@ -1,6 +1,9 @@
 import type { MessageCatalog } from "./messages.en";
 
 export const messagesZhCN = {
+  "workspace.switcher": "工作区",
+  "workspace.monkeyarch": "MonkeyArch · 3D",
+  "workspace.monkeydiagram": "MonkeyDiagram · 图纸",
   "document.workspace": "图纸与图片",
   "document.model": "三维模型",
   "document.open": "打开 PDF／图片",
@@ -224,7 +227,7 @@ export const messagesZhCN = {
   "shell.askAgain": "重新连接",
   "shell.client": "客户端外壳",
   "shell.reloadPage": "重新加载页面",
-  "shell.wordmarkTitle": "ArchFlow 建模工作区",
+  "shell.wordmarkTitle": "ArchFlow 共享工作区",
   "shell.publishedIssue": "已发布 · 第 {version} 版",
   "shell.proposalOnlyTitle":
     "候选工作区 · 已发布版本未变",

@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import type { GestureDto, GestureHitDto } from "../../api/generated";
 import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
-import type { SampleHit, Vec3, ViewportController } from "../../viewer/ThreeDmViewport";
+import type { SampleHit, Vec3, ViewportController } from "./viewer/ThreeDmViewport";
 
 export type GestureTool = GestureDto["kind"];
 

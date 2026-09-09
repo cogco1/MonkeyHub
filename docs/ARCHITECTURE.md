@@ -26,13 +26,12 @@ content or its presentation belongs to MonkeyDiagram, including axonometric or
 perspective views placed on a sheet. A proposed change drawn in 2D does not silently
 change the 3D model; applying it to the model is an explicit handoff to MonkeyArch.
 
-**ArchFlow** owns the shared project and contract foundation. The current `archflow/`
-Python package also contains modeling and drawing domain code; its directory name is
-not proof that every module is shared infrastructure. The long-term target separates
-`archflow/`, `monkeyarch/` and `monkeydiagram/`, with two peer Web workspaces and a shared
-application host. The dependency direction, current-to-target file map and staged
-migration are defined in [REPO_LAYOUT.md](REPO_LAYOUT.md). Existing registered paths
-remain authoritative until their actual consumers migrate; no empty package is needed.
+**ArchFlow** owns the shared project and contract foundation. The Python source now
+separates `archflow/`, `monkeyarch/` and `monkeydiagram/`, with two peer Web workspaces
+and a shared application host. Modeling algorithms and drawing execution live in their
+respective packages. Shared geometry values remain in `archflow.state.geometry_program`
+so CAD adapters do not import the modeling compiler. The dependency direction and
+current file map are defined in [REPO_LAYOUT.md](REPO_LAYOUT.md).
 
 The UI direction is two peer workspace entries. MonkeyDiagram can begin with an
 existing document or diagram, or reference a specific model version from MonkeyArch.
@@ -43,7 +42,8 @@ Existing module owners keep their contracts; product names do not rename module 
 This is the agreed product boundary, not a claim that every listed drawing operation
 is implemented. The current document canvas and markup are usable code; the model-axis
 elevation owner and the project-specific drawing consumer also exist. Peer workspace
-navigation and the explicit redraw-from-new-model action remain to be integrated.
+navigation uses the existing model/document switch; the explicit redraw-from-new-model
+action remains to be integrated.
 See [the MonkeyDiagram plan](DRAWING_MODULE_ARCHITECTURE_PLAN.md) for that work.
 
 ## Four areas of architectural work
@@ -82,16 +82,16 @@ Local improvements can be tried without waiting for the formal-issue workflow.
 StateRecord@1                     archflow/state/state_record.py      the design, content-addressed
   │ developed_design_view          the bound projection (run, base) — binding identity
   ▼
-element producers                 archflow/capabilities/element_producers.py
+element producers                 monkeyarch/capabilities/element_producers.py
   │ reference_resolver             levels, grids, datums, derivations resolve here
   ▼
 GeometryProgramProposal           archflow/state/geometry_program.py
-  │ compile_geometry_program       archflow/compilers/geometry.py — the one compiler
+  │ compile_geometry_program       monkeyarch/compilers/geometry.py — the one compiler
   ▼
 CAD                               archflow/adapters/cad_program.py → cad_execution.py → cad_patch.py
   │ three_dm_inspector             readback is evidence, never intent
   ▼
-relation checks                   archflow/capabilities/relation_checks.py — plain domain values
+relation checks                   monkeyarch/capabilities/relation_checks.py — plain domain values
   ▼
 stage workflow                    archflow/state/stage_workflow.py + StageExecutionGuard (project_runner)
   ▼

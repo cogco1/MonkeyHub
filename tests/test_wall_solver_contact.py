@@ -6,7 +6,7 @@ import json
 import unittest
 from dataclasses import replace
 
-from archflow.capabilities.wall_solver import (
+from monkeyarch.capabilities.wall_solver import (
     CONTACT_TOLERANCE_M, OpeningKind, OpeningRequest, WallElement, WallSolverError, _overlaps, solve_wall,
 )
 

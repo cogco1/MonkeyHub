@@ -1,12 +1,12 @@
-# runtime
+# MonkeyDiagram
 
-Runtime: `project_runner.run_project` binds a record to a run, projects the developed-design view, runs the seats through the producers and the compiler, checks relations, writes the stage closure and exit binding, and retains everything through P036. It writes; it never decides what the design is.
+Drawing and diagram workflow. The current Python owners project a retained model elevation and produce SVG/PNG output; PDF/image interaction lives in the peer Web workspace. They consume ArchFlow source, CAD and project contracts without importing MonkeyArch.
 
 `drawing_elevation.freeze_model_axis_elevation` is the drawing boundary: it verifies a retained exact STEP through its CAD receipt, projects one model-axis elevation, and retains the SVG, PNG and `drawing-projection-receipt` in a drawing run on the source run's base. Usage:
 
 ```python
 from archflow.project.repository import FilesystemProjectRepository
-from archflow.runtime.drawing_elevation import ElevationSource, ElevationView, freeze_model_axis_elevation
+from monkeydiagram.drawing_elevation import ElevationSource, ElevationView, freeze_model_axis_elevation
 
 repository = FilesystemProjectRepository.open(project_root)
 source = ElevationSource(run_id=..., step_relative_path="runs/<run>/workspaces/<ws>/<stem>.step", step_sha256=...,
@@ -18,6 +18,4 @@ drawing = freeze_model_axis_elevation(repository, source=source, view=view, draw
 
 `read_model_axis_elevation(repository, receipt_ref)` and `list_model_axis_elevations(repository, run_id)` read a drawing back cold with every sha verified.
 
-Modules and owners: `docs/SYSTEM_MAP.md` (rendered from `governance/module_registry.json`; one owner per capability). This README says what the package is for; it does not repeat the map.
-
-Current owners: runtime.drawing_elevation, runtime.project_runner.
+Owners and public contracts: [SYSTEM_MAP](../docs/SYSTEM_MAP.md). Retained record schemas and P036 destinations are unchanged by this namespace migration.

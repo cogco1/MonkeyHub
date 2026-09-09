@@ -57,7 +57,7 @@ from archflow.adapters.three_dm_inspector import (
     inspect_three_dm,
 )
 from archflow.project.refs import BranchRef, ProjectRecordRef, require_identifier
-from archflow.compilers.geometry import CompiledGeometryProgram
+from archflow.state.geometry_program import CompiledGeometryProgram
 from archflow.state.geometry_program import AssemblyRole, require_sha256
 from archflow.contracts.canonical import canonical_digest
 

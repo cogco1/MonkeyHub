@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 import unittest
 
-from archflow.compilers.geometry import (
+from monkeyarch.compilers.geometry import (
     GeometryIssueCode,
     compile_geometry_program,
 )

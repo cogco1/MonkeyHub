@@ -100,7 +100,7 @@ RESPONSE_SCHEMA: dict[str, Any] = {
 def response_schema(*, strict: bool = True) -> dict[str, Any]:
     """The provider's closed design-input schema, from the producer owner."""
 
-    from archflow.capabilities.element_producers import producer_signatures
+    from monkeyarch.capabilities.element_producers import producer_signatures
     from archflow.relations.contracts import ArchitecturalRelationKind
 
     text = {"type": "string"}
@@ -354,7 +354,7 @@ def _document_images(visuals: Sequence[DocumentVisual]) -> tuple[list[dict[str, 
 def record_sheet(projection: StateProjection, selection: Selection) -> dict[str, Any]:
     """What the agent is allowed to know: the projection, as facts, nothing else."""
 
-    from archflow.capabilities.element_producers import producer_signatures
+    from monkeyarch.capabilities.element_producers import producer_signatures
     from archflow.semantics.registry import registered_ids
 
     signatures = producer_signatures()

@@ -11,6 +11,7 @@ temporary directory; nothing here reads or writes this repository.
 """
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -20,7 +21,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.archcheck import ArchitecturePolicyError, check_changed_scopes, check_scopes
+from tools.archcheck import (
+    ArchitecturePolicyError, _index_tree, check_changed_scopes, check_imports,
+    check_registry, check_scopes, load_policy,
+)
 
 
 SHARED = (
@@ -67,6 +71,42 @@ def _write(root: Path, relative: str, text: str) -> None:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8", newline="\n")
+
+
+class WorkflowBoundaryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.policy = load_policy(Path(__file__).resolve().parents[1] / POLICY_PATH)
+
+    def test_core_and_peer_workflow_reverse_imports_are_refused(self) -> None:
+        for source, target in (
+            ("archflow/state/example.py", "monkeyarch.capabilities.element_producers"),
+            ("archflow/adapters/example.py", "monkeydiagram.drawing_svg"),
+            ("monkeyarch/example.py", "monkeydiagram.drawing_svg"),
+            ("monkeydiagram/example.py", "monkeyarch.compilers.geometry"),
+        ):
+            with self.subTest(source=source, target=target):
+                findings = tuple(check_imports(source, _index_tree(ast.parse(f"import {target}")), self.policy))
+                self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
+
+    def test_workflows_may_consume_shared_contracts(self) -> None:
+        for source in ("monkeyarch/example.py", "monkeydiagram/example.py"):
+            with self.subTest(source=source):
+                findings = tuple(check_imports(source, _index_tree(ast.parse(
+                    "from archflow.state.geometry_program import CompiledGeometryProgram"
+                )), self.policy))
+                self.assertEqual((), findings)
+
+    def test_registry_checks_dependencies_from_each_workflow_package(self) -> None:
+        for package in ("monkeyarch", "monkeydiagram"):
+            with self.subTest(package=package), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                _write(root, "tools/consumer.py", f"import {package}.example\n")
+                _write(root, "governance/module_registry.json", json.dumps({"modules": [{
+                    "module_id": "tools.consumer", "owner_path": "tools/consumer.py",
+                    "depends_on": [], "untested_reason": "synthetic checker fixture",
+                }]}))
+                findings = tuple(check_registry(root, self.policy))
+                self.assertTrue(any(f.code == "REGISTRY_DEPENDS_ON_DRIFT" for f in findings))
 
 
 class ScopeOverlapTests(unittest.TestCase):

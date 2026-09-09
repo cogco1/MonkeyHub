@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { createServer } from "vite";
 import type { DocumentAnnotationsDto, DocumentAnnotationsRequestDto, DocumentGestureDto } from "../src/api/generated/index.ts";
-import type { DocumentAnnotationsOptions } from "../src/features/stage/useDocumentAnnotations.ts";
+import type { DocumentAnnotationsOptions } from "../src/workspaces/monkeydiagram/useDocumentAnnotations.ts";
 
 const scope = { projectId: "project-a", runId: "run-a", assetSha256: "a".repeat(64), pageIndex: 0 };
 const revision = (index: number) => String(index).repeat(64);
@@ -31,7 +31,7 @@ async function harness(t: TestContext) {
     logLevel: "silent", server: { middlewareMode: true, watch: null },
   });
   t.after(() => vite.close());
-  const { createDocumentAnnotationsController } = await vite.ssrLoadModule("/src/features/stage/useDocumentAnnotations.ts");
+  const { createDocumentAnnotationsController } = await vite.ssrLoadModule("/src/workspaces/monkeydiagram/useDocumentAnnotations.ts");
   const { studio, StudioApiError, NETWORK_ERROR } = await vite.ssrLoadModule("/src/api/client.ts");
   return { controller: createDocumentAnnotationsController(), createController: createDocumentAnnotationsController, studio, StudioApiError, NETWORK_ERROR };
 }

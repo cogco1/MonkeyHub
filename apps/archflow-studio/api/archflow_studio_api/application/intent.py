@@ -228,7 +228,7 @@ def component_edit_proposal(
     neither the transport nor the model supplies a geometry program.
     """
 
-    from archflow.capabilities.element_producers import producer_signatures, validate_element_contract
+    from monkeyarch.capabilities.element_producers import producer_signatures, validate_element_contract
 
     allowed = {
         "summary", "entities", "parameters", "relations", "removeEntityIds",

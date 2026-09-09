@@ -1,6 +1,6 @@
-# capabilities
+# MonkeyArch capabilities
 
-Capabilities: what the kernel can derive from a State Record. Element producers and the wall/opening solvers, the reference resolver, relation checks, discipline seats, the geometry proposal contract, and the re-index that recovers Element rows from an exported model.
+Capabilities: what the 3D workflow can derive from a State Record. Element producers and the wall/opening solvers, the reference resolver, relation checks, discipline seats, the geometry proposal contract, and the re-index that recovers Element rows from an exported model.
 
 Modules and owners: `docs/SYSTEM_MAP.md` (rendered from `governance/module_registry.json`; one owner per capability). This README says what the package is for; it does not repeat the map.
 

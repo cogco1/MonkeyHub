@@ -16,9 +16,9 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.capabilities.declaration import DeclarationQuadrant
-from archflow.capabilities.discipline_seats import SeatSpec
-from archflow.capabilities.geometry_proposal import GeometryProposalProviderIdentity, load_compiled_geometry_program
+from monkeyarch.capabilities.declaration import DeclarationQuadrant
+from monkeyarch.capabilities.discipline_seats import SeatSpec
+from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity, load_compiled_geometry_program
 from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -28,7 +28,7 @@ from archflow.project.record_kinds import (
     STAGE_EXIT_BINDING,
     STAGE_RUN_ENVELOPE,
 )
-from archflow.runtime.project_runner import (
+from monkeyarch.runtime.project_runner import (
     RECORDED_PROPOSAL_IDENTITY,
     Produced,
     ProjectRunnerError,
@@ -783,7 +783,7 @@ class ParameterBindingRunTests(unittest.TestCase):
 
     def _bounds(self, repository, receipt, seat_id: str):
         from archflow.adapters.cad_program import expected_object_bounds
-        from archflow.capabilities.geometry_proposal import load_compiled_geometry_program
+        from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 
         seat = {s["seat_id"]: s for s in receipt["seat_results"]}[seat_id]
         return expected_object_bounds(load_compiled_geometry_program(repository.load_json(record_ref_from_uri(seat["program_ref"], "demo"))))
@@ -1218,7 +1218,7 @@ class OcctExportTests(unittest.TestCase):
 
     def test_native_loft_height_fix_rebuilds_an_old_program_cache_then_reuses_the_correct_export(self) -> None:
         from unittest.mock import patch
-        from archflow.capabilities import element_producers
+        from monkeyarch.capabilities import element_producers
 
         loft = _prism_row()
         profiles = [[[x, height, z] for x, z in ((0.0, -1.5), (1.0, -1.5), (1.0, -0.5), (0.0, -0.5))] for height in (0.4, 1.4)]
@@ -1582,7 +1582,7 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
     def test_cold_read_failure_or_step_changed_after_export_leaves_the_current_required_check_unchecked(self) -> None:
         from unittest.mock import patch
         from archflow.adapters import cad_execution
-        from archflow.runtime import project_runner
+        from monkeyarch.runtime import project_runner
 
         for failure in ("cold-read", "changed-bytes"):
             with self.subTest(failure=failure):
@@ -1797,7 +1797,7 @@ class PriorExportTests(unittest.TestCase):
     def test_latest_succeeded_export_of_the_stage_with_a_present_model_is_the_patch_base(self) -> None:
         import json
         import time
-        from archflow.runtime.project_runner import _prior_export
+        from monkeyarch.runtime.project_runner import _prior_export
 
         with tempfile.TemporaryDirectory() as tmp:
             records, workspace = Path(tmp) / "records", Path(tmp) / "cad-stage"

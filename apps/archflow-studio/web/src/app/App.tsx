@@ -54,8 +54,8 @@ import type {
   ValidationDto,
   VolumesDto,
 } from "../api/generated";
-import type { GestureTool } from "../features/stage/Annotate";
-import { createModelAnnotationsController, useModelAnnotations } from "../features/stage/useModelAnnotations";
+import type { GestureTool } from "../workspaces/monkeyarch/Annotate";
+import { createModelAnnotationsController, useModelAnnotations } from "../workspaces/monkeyarch/useModelAnnotations";
 import {
   canonicalRunSourceLabel,
   canonicalSourceLabel,
@@ -69,7 +69,7 @@ import type { Choice } from "../features/conversation/cards/QuestionCard";
 import type { Selection } from "../features/conversation/Composer";
 import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { useStudioEvents } from "../features/events/EventStream";
-import { OptionsPanel } from "../features/options/OptionsPanel";
+import { OptionsPanel } from "../workspaces/monkeyarch/OptionsPanel";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { usePreferences } from "../features/settings/preferences";
@@ -78,7 +78,7 @@ import {
   ProgramPanel,
   edited,
   type SpaceEdit,
-} from "../features/program/ProgramPanel";
+} from "../workspaces/monkeyarch/ProgramPanel";
 import type { ViewState } from "../features/stage/SourceChip";
 import {
   Stage,
@@ -88,7 +88,7 @@ import {
 } from "../features/stage/Stage";
 import type { VersionExport, VersionGroup } from "../features/stage/VersionsStrip";
 import { useT } from "../i18n/useT";
-import type { SceneInspection } from "../viewer/sceneInspection";
+import type { SceneInspection } from "../workspaces/monkeyarch/viewer/sceneInspection";
 import {
   LOCAL_SOURCE_LABEL,
   type GhostSpec,
@@ -96,12 +96,12 @@ import {
   type ViewportController,
   type ViewportPick,
   type ViewportStatus,
-} from "../viewer/ThreeDmViewport";
+} from "../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import {
   nextModelDisplayMode,
   semanticObjectNames,
   type ModelDisplayMode,
-} from "../viewer/modelDisplay";
+} from "../workspaces/monkeyarch/viewer/modelDisplay";
 import { AppShell } from "./AppShell";
 import { ErrorPanel } from "./ErrorPanel";
 import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";

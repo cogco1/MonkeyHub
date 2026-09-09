@@ -16,11 +16,20 @@ are distinct actions. The editing-base choice is tab-local; after reopening, sho
 the retained run and choose Continue again. See the [vision](../../docs/VISION.md) for the
 long-term direction and the [dynamic map](../../docs/DYNAMIC_MAP.md) for development.
 
-ArchFlow Studio is the product shell for ArchFlow. It is two programs:
+ArchFlow Studio is the shared host for **MonkeyArch** (3D modeling) and
+**MonkeyDiagram** (drawings and diagrams). Their browser code lives in
+`web/src/workspaces/monkeyarch/` and `web/src/workspaces/monkeydiagram/`; project
+connection, conversation, settings and the generated client stay shared. The
+existing model/document switch opens the two workspaces. A drawing's model-edit
+submission is still an explicit modeling action; automatic redraw is separate work.
+See [file ownership](../../docs/REPO_LAYOUT.md).
+
+The host has two programs:
 
 - **`api/`** — a FastAPI **BFF** (`archflow_studio_api`). It validates requests, streams
   progress, owns the candidate job lifecycle, and shapes answers for the wire. Every design
-  question — state, dependencies, impact, geometry, validation — is an `archflow` call. It
+  question — state, dependencies, impact, geometry, validation — calls its registered
+  owner in `archflow`, `monkeyarch` or `monkeydiagram`. It
   re-derives no kernel answer, and a machine-enforced firewall keeps `rhino3dm`, `numpy`,
   `networkx`, `OCP`, `build123d`, `shapely`, `trimesh`, `scipy`, `tests`, `tools` and
   `probes` out of it.

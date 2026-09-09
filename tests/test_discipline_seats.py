@@ -11,8 +11,8 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.capabilities.declaration import DeclarationQuadrant
-from archflow.capabilities.discipline_seats import (
+from monkeyarch.capabilities.declaration import DeclarationQuadrant
+from monkeyarch.capabilities.discipline_seats import (
     DeclaredEngagement,
     HandoverKind,
     check_handover_exclusions,
@@ -24,7 +24,7 @@ from archflow.capabilities.discipline_seats import (
     project_seat_context,
     schedule_seats,
 )
-from archflow.capabilities.geometry_proposal import (
+from monkeyarch.capabilities.geometry_proposal import (
     GeometryProposalStatus,
     proposal_authoring_output,
 )

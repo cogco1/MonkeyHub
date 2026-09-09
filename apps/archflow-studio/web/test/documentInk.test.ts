@@ -12,7 +12,7 @@ test("page ink uses visible rectangular page coordinates and pointer-centred zoo
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
-  const { toPagePoint, zoomPageAt } = await vite.ssrLoadModule("/src/features/stage/documentInk.ts");
+  const { toPagePoint, zoomPageAt } = await vite.ssrLoadModule("/src/workspaces/monkeydiagram/documentInk.ts");
   const rect = { left: 80, top: 120 };
   const view = { x: -40, y: 30, scale: 0.5 };
   // A rotated, cropped 500 x 600 page remains rectangular in normalized space.
@@ -27,7 +27,7 @@ test("eraser sweeps remove whole strokes without changing missed strokes", async
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
-  const { eraseAt } = await vite.ssrLoadModule("/src/features/stage/documentInk.ts");
+  const { eraseAt } = await vite.ssrLoadModule("/src/workspaces/monkeydiagram/documentInk.ts");
   const hit = gesture("freehand", [[0.1, 0.5], [0.5, 0.5], [0.9, 0.5]], "hit");
   const missed = gesture("line", [[0.1, 0.1], [0.9, 0.1]], "missed");
   const annotations = [hit, missed];
@@ -45,7 +45,7 @@ test("circle and arrow hits follow their visible outlines, with short-side line 
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
-  const { inkPath, eraseAt } = await vite.ssrLoadModule("/src/features/stage/documentInk.ts");
+  const { inkPath, eraseAt } = await vite.ssrLoadModule("/src/workspaces/monkeydiagram/documentInk.ts");
   const circle = gesture("circle", [[0.2, 0.2], [0.8, 0.8]]);
   assert.match(inkPath(circle, 1000, 500), /^M 800 250 L /);
   assert.ok(inkPath(circle, 1000, 500).endsWith(" Z"));
@@ -65,7 +65,7 @@ test("retained closed circles, three-point arcs, ruler ticks and semantic marks 
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
-  const { inkPath, eraseAt } = await vite.ssrLoadModule("/src/features/stage/documentInk.ts");
+  const { inkPath, eraseAt } = await vite.ssrLoadModule("/src/workspaces/monkeydiagram/documentInk.ts");
   const polygon = gesture("circle", [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8]]);
   assert.equal(inkPath(polygon, 100, 100), "M 20 20 L 80 20 L 80 80 Z");
   assert.deepEqual(eraseAt([polygon], [0.5, 0.5], [0.5, 0.5], 100, 100, 0), []);

@@ -167,7 +167,7 @@ try {
     plugins: [{ name: "observe-actual-viewport-methods", enforce: "pre",
       transform(source, id) {
         const modulePath = id.split("?")[0].replaceAll("\\", "/");
-        if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/features/stage/documentVisualInput.ts`) {
+        if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeydiagram/documentVisualInput.ts`) {
           const marker = "  if (!Number.isFinite(maxEdge)";
           assert.equal(source.split(marker).length, 2, "Observe the real document renderer once");
           return { code: source.replace(marker, '(window as unknown as { __documentVisualRenders: number }).__documentVisualRenders++;\n' + marker), map: null };
@@ -177,7 +177,7 @@ try {
           assert.equal(source.split(marker).length, 2, "Observe the actual App annotation snapshot once");
           return { code: source.replace(marker, marker + '\n(window as unknown as { __modelInkSnapshot: unknown }).__modelInkSnapshot = structuredClone(gestures);'), map: null };
         }
-        if (modulePath !== `${webRoot.replaceAll("\\", "/")}/src/viewer/ThreeDmViewport.tsx`) return;
+        if (modulePath !== `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx`) return;
         for (const [name, entry] of [["ghost", "(spec: GhostSpec | null) => {"], ["highlight", "(target: HighlightRequest): number => {"]]) {
           assert.equal(source.split(entry).length, 2);
           source = source.replace(entry, `${entry}\n(window as unknown as { __intentViewCalls: string[] }).__intentViewCalls.push(${JSON.stringify(name)});`);
@@ -366,7 +366,7 @@ try {
     assert.equal(await page.locator(".composer .context .pill--accent").count(), 1, "Select an old target through A's actual catalog");
     assert.ok((await page.evaluate(() => window.__intentViewCalls)).includes("highlight"));
     const beforeDocument = await viewState();
-    await page.locator(".stage-mode-switch").getByRole("button", { name: "Drawings & images", exact: true }).click();
+    await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyDiagram · Drawings", exact: true }).click();
     await page.locator('.document-viewport[data-ready="true"]').waitFor();
     assert.equal(await page.locator(".document-model-source").getAttribute("data-model-source-status"), "ready");
     await page.locator("#document-comment").fill("Apply the drawing annotation to B");
@@ -459,7 +459,7 @@ try {
     await page.locator("#document-comment").fill("Check B's marked height while I inspect C");
     await page.getByRole("button", { name: "Submit page note", exact: true }).click();
     await Promise.race([delayed.requested.promise, sleep(12_000).then(() => assert.fail("The document request was not held"))]);
-    await page.locator(".stage-mode-switch").getByRole("button", { name: "3D model", exact: true }).click();
+    await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyArch · 3D", exact: true }).click();
     await openVersions();
     await page.locator(".vcard__export").filter({ hasText: "option-C.3dm" }).click();
     await until(async () => ({ name: await page.locator(".source__name").textContent(),

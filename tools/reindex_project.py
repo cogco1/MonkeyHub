@@ -25,7 +25,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from archflow.capabilities.element_reindex import AMBIGUOUS, DRAFT, ERROR, EXISTING, reindex  # noqa: E402
+from monkeyarch.capabilities.element_reindex import AMBIGUOUS, DRAFT, ERROR, EXISTING, reindex  # noqa: E402
 from archflow.project.inputs import load_authored_record  # noqa: E402
 from archflow.project.ports import PersistenceArea, PersistenceDestination  # noqa: E402
 from archflow.project.record_kinds import COMPONENT_CATALOG, STATE_RECORD  # noqa: E402

@@ -15,8 +15,8 @@ import unittest
 from dataclasses import replace
 
 from archflow.adapters.cad_program import expected_object_bounds
-from archflow.capabilities.element_producers import ElementRow
-from archflow.capabilities.relation_checks import CHECKERS, RelationCheckError, check_relations
+from monkeyarch.capabilities.element_producers import ElementRow
+from monkeyarch.capabilities.relation_checks import CHECKERS, RelationCheckError, check_relations
 from archflow.state.state_record import CHECK_KINDS, Entity, Relation, StateRecord, StateRecordError, ValidatorBinding
 from tests.test_cad_patch import _compile
 from tests.test_element_producers import BASIS, PN, _levels, _produce, _rows

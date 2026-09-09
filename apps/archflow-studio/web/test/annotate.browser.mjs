@@ -12,7 +12,7 @@ const fixture = `
 import React, {useState, useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
-import {Annotate} from '${process.argv.includes('--baseline') ? '/baseline-annotate.tsx' : '/src/features/stage/Annotate.tsx'}';
+import {Annotate} from '${process.argv.includes('--baseline') ? '/baseline-annotate.tsx' : '/src/workspaces/monkeyarch/Annotate.tsx'}';
 import {UserPreferencesProvider} from '/src/features/settings/preferences.tsx';
 const camera={position:[1,2,3],target:[0,0,0],fov:50};
 const base=Array.from({length:120},(_,i)=>({kind:'freehand',screen:Array.from({length:180},(_,j)=>[10+j*4,10+i*4+Math.sin(j/12)*7]),screenSize:[800,600],camera,hits:[],color:'#2468dd',lineWidth:2}));

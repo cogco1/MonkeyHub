@@ -14,7 +14,7 @@ import unittest
 from dataclasses import replace
 
 from archflow.adapters.cad_program import expected_object_bounds, expected_object_semantics
-from archflow.capabilities.element_producers import (
+from monkeyarch.capabilities.element_producers import (
     ElementProducerError,
     ElementRow,
     ProductionContext,
@@ -24,9 +24,9 @@ from archflow.capabilities.element_producers import (
     producer_signatures,
     validate_element_contract,
 )
-from archflow.capabilities.geometry_proposal import GeometryProposalStatus
-from archflow.capabilities.reference_resolver import ReferenceContext
-from archflow.compilers.geometry import compile_geometry_program
+from monkeyarch.capabilities.geometry_proposal import GeometryProposalStatus
+from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.compilers.geometry import compile_geometry_program
 from archflow.state.geometry_program import GeometryOperationKind, ProjectGridAxis, ProjectGrids, ProjectLevel, ProjectLevels, SemanticBinding
 from archflow.state.state_record import project_grids_of, project_levels_of
 from tests.support import ProducerFixture, authored_record
@@ -678,7 +678,7 @@ class StatedRowsThroughTheProposalTests(ProducerFixture):
     """
 
     def _accepted(self):
-        from archflow.capabilities.geometry_proposal import proposal_authoring_output
+        from monkeyarch.capabilities.geometry_proposal import proposal_authoring_output
         from tests.support import ScriptedProvider
 
         context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
@@ -727,7 +727,7 @@ class StatedRowsThroughTheProposalTests(ProducerFixture):
         self.assertEqual(set(wedge.statements) & {p.name for p in wedge.parameters}, set())
 
     def test_a_blank_statement_is_refused_by_the_contract_not_exported_empty(self) -> None:
-        from archflow.capabilities.geometry_proposal import _validate_function_contracts
+        from monkeyarch.capabilities.geometry_proposal import _validate_function_contracts
 
         (wedge,), _ = _produce((_wedge_row(),))
         blank = replace(wedge.operations[0], statements={**wedge.operations[0].statements, "wedge_axis": "  "})

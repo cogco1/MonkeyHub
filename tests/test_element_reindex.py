@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from archflow.capabilities.element_reindex import (
+from monkeyarch.capabilities.element_reindex import (
     ALTERNATE,
     AMBIGUOUS,
     BOUND,

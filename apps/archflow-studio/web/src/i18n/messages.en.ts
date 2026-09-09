@@ -1,4 +1,7 @@
 export const messagesEn = {
+  "workspace.switcher": "Workspaces",
+  "workspace.monkeyarch": "MonkeyArch · 3D",
+  "workspace.monkeydiagram": "MonkeyDiagram · Drawings",
   "document.workspace": "Drawings & images",
   "document.model": "3D model",
   "document.open": "Open PDF / image",
@@ -229,7 +232,7 @@ export const messagesEn = {
   "shell.askAgain": "Ask again",
   "shell.client": "client shell",
   "shell.reloadPage": "Reload the page",
-  "shell.wordmarkTitle": "ArchFlow modeling workspace",
+  "shell.wordmarkTitle": "ArchFlow shared workspace",
   "shell.publishedIssue": "published · issue {version}",
   "shell.proposalOnlyTitle":
     "Candidate workspace · published version unchanged",

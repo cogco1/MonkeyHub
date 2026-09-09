@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
-from archflow.capabilities.declaration import DeclarationQuadrant
+from monkeyarch.capabilities.declaration import DeclarationQuadrant
 from archflow.contracts.authority import no_authority
 from archflow.project.refs import require_identifier
 from archflow.state.stage_workflow import DesignPhase

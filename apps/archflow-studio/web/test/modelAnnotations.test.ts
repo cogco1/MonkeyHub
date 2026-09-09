@@ -4,7 +4,7 @@ import test, { type TestContext } from "node:test";
 
 import { createServer } from "vite";
 import type { ModelAnnotationsDto, ModelAnnotationsRequestDto, ModelGestureDto, ModelSourceDto } from "../src/api/generated/index.ts";
-import type { ModelAnnotationsOptions } from "../src/features/stage/useModelAnnotations.ts";
+import type { ModelAnnotationsOptions } from "../src/workspaces/monkeyarch/useModelAnnotations.ts";
 
 const source: ModelSourceDto = { runId: "run-a", stateDigest: "d".repeat(64), assetSha256: "a".repeat(64) };
 const scope: ModelAnnotationsOptions = { projectId: "project-a", modelSource: source };
@@ -31,7 +31,7 @@ async function harness(t: TestContext) {
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
-  const { createModelAnnotationsController } = await vite.ssrLoadModule("/src/features/stage/useModelAnnotations.ts");
+  const { createModelAnnotationsController } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/useModelAnnotations.ts");
   const { studio, StudioApiError, NETWORK_ERROR } = await vite.ssrLoadModule("/src/api/client.ts");
   return { controller: createModelAnnotationsController(), createController: createModelAnnotationsController, studio, StudioApiError, NETWORK_ERROR };
 }

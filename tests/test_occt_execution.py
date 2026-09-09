@@ -38,9 +38,10 @@ from archflow.adapters.cad_execution import (
     project_occt_lines,
 )
 from archflow.adapters.three_dm_inspector import inspect_three_dm
-from archflow.capabilities.element_producers import ProductionContext, element_rows_of, produce_rows
-from archflow.capabilities.reference_resolver import ReferenceContext
-from archflow.compilers.geometry import CompiledGeometryObject, CompiledGeometryProgram, compile_geometry_program
+from monkeyarch.capabilities.element_producers import ProductionContext, element_rows_of, produce_rows
+from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from archflow.state.geometry_program import CompiledGeometryObject, CompiledGeometryProgram
+from monkeyarch.compilers.geometry import compile_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef

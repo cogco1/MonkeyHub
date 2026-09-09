@@ -229,10 +229,10 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 | 资料与任务（3） | `state.program`、`state.program_sheet`、`studio.program` |
 | 方案与建模（10） | `capabilities.element_producers`、`capabilities.geometry_proposal`、`capabilities.opening_solver`、`capabilities.reference_resolver`、`capabilities.wall_solver`、`capabilities.element_reindex`、`state.spatial`、`state.developed_design`、`state.decision_operator`、`studio.options` |
 | 分析与校核（7） | `capabilities.declaration`、`capabilities.relation_checks`、`state.massing_metrics`、`validation.engine`、`validation.model`、`studio.validation`、`adapters.three_dm_inspector` |
-| 表达与出图（1） | `studio.artifacts` |
+| 表达与出图（3） | `studio.artifacts`、`adapters.drawing_svg`、`runtime.drawing_elevation` |
 | Agent 与工作台（6） | `ports.model`、`capabilities.discipline_seats`、`studio.binding`、`studio.candidate`、`studio.intent`、`studio.shell` |
 | 共享：状态与语义（12） | `state.commitments`、`state.derivation`、`state.design_portfolio`、`state.model`、`state.operational_state`、`state.record`、`state.stage_workflow`、`relations.contracts`、`semantics.conditions`、`semantics.registry`、`semantics.roles`、`submission.model` |
-| 共享：编译与执行（6） | `state.geometry_program`、`compilers.geometry`、`runtime.project_runner`、`adapters.cad_execution`、`adapters.cad_patch`、`adapters.cad_program` |
+| 建模编译与共用 CAD 执行（6） | `state.geometry_program`、`compilers.geometry`、`runtime.project_runner`、`adapters.cad_execution`、`adapters.cad_patch`、`adapters.cad_program` |
 | 共享：项目与版本（11） | `project.containers`、`project.digests`、`project.inputs`、`project.issue`、`project.layout`、`project.location`、`project.manifest`、`project.ports`、`project.record_kinds`、`project.refs`、`project.repository` |
 | 共享：通用契约（3） | `contracts.authority`、`contracts.canonical`、`contracts.fields` |
 | 实际命令入口（6） | `tools.freeze_project_stage_workflow`、`tools.open_stage_run`、`tools.run_project`、`tools.issue_project`、`tools.verify_state_record`、`tools.reindex_project` |

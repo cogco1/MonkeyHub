@@ -57,7 +57,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from archflow.adapters.cad_program import expected_object_bounds
-from archflow.capabilities.discipline_seats import (
+from monkeyarch.capabilities.discipline_seats import (
     SeatSpec,
     check_seat_datums,
     compile_handover,
@@ -65,7 +65,7 @@ from archflow.capabilities.discipline_seats import (
     project_seat_context,
     schedule_seats,
 )
-from archflow.capabilities.geometry_proposal import (
+from monkeyarch.capabilities.geometry_proposal import (
     GeometryProposalPolicy,
     GeometryProposalProviderIdentity,
     GeometryProposalStatus,
@@ -73,9 +73,9 @@ from archflow.capabilities.geometry_proposal import (
     produce_geometry_program_proposal,
     proposal_authoring_output,
 )
-from archflow.capabilities.element_producers import ElementProducerError, ProductionContext, element_rows_of, produce_rows
-from archflow.capabilities.reference_resolver import ReferenceContext
-from archflow.capabilities.relation_checks import RelationCheck, RelationCheckReport, check_relations
+from monkeyarch.capabilities.element_producers import ElementProducerError, ProductionContext, element_rows_of, produce_rows
+from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.capabilities.relation_checks import RelationCheck, RelationCheckReport, check_relations
 from archflow.contracts.authority import no_authority
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus

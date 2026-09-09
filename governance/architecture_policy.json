@@ -3,6 +3,8 @@
   "source_root": "archflow",
   "checked_source_roots": [
     "archflow",
+    "monkeyarch",
+    "monkeydiagram",
     "tools",
     "apps/archflow-studio/api",
     "tests",
@@ -330,6 +332,55 @@
         "archive"
       ],
       "reason": "The Studio API (P108, FastAPI BFF) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
+    },
+    {
+      "source": "archflow",
+      "targets": [
+        "monkeyarch",
+        "monkeydiagram"
+      ],
+      "reason": "The shared ArchFlow core provides facts, persistence and CAD contracts; it cannot depend on either workflow."
+    },
+    {
+      "source": "monkeyarch",
+      "targets": [
+        "monkeydiagram",
+        "labs",
+        "docs",
+        "tests",
+        "tools",
+        "probes",
+        "archive"
+      ],
+      "reason": "The 3D workflow uses ArchFlow contracts and ports; the host coordinates drawing handoffs. Project-specific data and tooling are not runtime dependencies."
+    },
+    {
+      "source": "monkeydiagram",
+      "targets": [
+        "monkeyarch",
+        "labs",
+        "docs",
+        "tests",
+        "tools",
+        "probes",
+        "archive"
+      ],
+      "reason": "The drawing workflow consumes retained source contracts through ArchFlow; it cannot import 3D workflow internals or project-specific code."
+    },
+    {
+      "source": "monkeyarch/capabilities",
+      "targets": [
+        "archflow.commit",
+        "archflow.project.repository"
+      ],
+      "reason": "Detached modeling capabilities cannot acquire persistence or promotion authority."
+    },
+    {
+      "source": "monkeyarch/compilers",
+      "targets": [
+        "archflow.project.repository"
+      ],
+      "reason": "Geometry compilation returns a domain value and has no project writer."
     }
   ],
   "authority_symbol_patterns": [

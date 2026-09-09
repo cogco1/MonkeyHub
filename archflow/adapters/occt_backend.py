@@ -73,7 +73,7 @@ from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
 from archflow.adapters.cad_program import _params, _physical_ids, _revolve_parameters, lift_to_base_level
-from archflow.compilers.geometry import CompiledGeometryProgram
+from archflow.state.geometry_program import CompiledGeometryProgram
 
 
 class OcctBackendError(ValueError):

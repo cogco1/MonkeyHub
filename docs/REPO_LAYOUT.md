@@ -1,7 +1,7 @@
 # ArchFlow、MonkeyArch、MonkeyDiagram：职责与文件归属
 
-本文定义长期目录目标和当前代码的迁移归属。当前实际 owner、路径和公开接口仍以
-[module registry](../governance/module_registry.json) 为准；目标目录不表示已经迁移。
+本文定义三个实际源码包及两个 Web 工作区的职责。当前 owner、路径和公开接口以
+[module registry](../governance/module_registry.json) 为准；目录分离不表示所有规划能力已经实现。
 协作规则见 [AGENTS](../AGENTS.md) 与 [CONTRIBUTING](../CONTRIBUTING.md)。
 
 ## 1. 三个明确的能力范围
@@ -16,25 +16,24 @@ MonkeyArch 和 MonkeyDiagram 是平行工作流。ArchFlow 提供它们共同依
 二维图纸可以表达新的设计想法；将该想法应用到三维模型是明确的跨工作流动作。
 模型派生的轴测图、透视图和截图放到图纸中时，表达工作属于 MonkeyDiagram。
 
-`archflow/` **目前是统一 Python 实现包，不等于其中每个模块都属于共享底座**。
-其中的建模和出图领域代码按下表迁入自己的命名空间；仅因代码可复用，不把它放进公共核心。
+建模与出图执行已迁入 `monkeyarch/` 和 `monkeydiagram/`。`archflow/` 保留共同的建筑事实、
+项目契约和技术适配。仅因代码可复用，不把某个工作流的业务算法放进公共核心。
 
-## 2. 长期源码目录目标
+## 2. 当前源码目录
 
-以下是目标目录；`monkeyarch/`、`monkeydiagram/` 与 Web 的两个工作区尚未创建。
-它们随真实调用链迁移形成，不先建立空目录。
+下列三个 Python 包随同一发行包安装，两个 Web 工作区由同一 Studio 宿主装配。
 
 ```text
 <source-root>/
 ├─ archflow/                     共享项目核心、事实契约、技术接口
 │  ├─ project/                   P036、refs、layout、repository、issue
 │  ├─ contracts/                 共同值契约与规范化
-│  ├─ state/                     共同读取的建筑事实；只保留共享部分
+│  ├─ state/                     建筑事实、变更契约及共享几何值
 │  ├─ semantics/                 建筑实体、角色与条件词汇
 │  ├─ ports/                     已有外部调用接口
 │  └─ adapters/                  两条工作流实际共用的技术适配
-├─ monkeyarch/                   3D 领域算法与应用编排
-├─ monkeydiagram/                图纸／图解领域算法与应用编排
+├─ monkeyarch/                   3D producer、solver、编译及运行编排
+├─ monkeydiagram/                图纸投影编排、SVG 与 PNG 表达
 ├─ apps/archflow-studio/         共享启动与应用装配，不承载两套领域算法
 │  ├─ api/                       HTTP、鉴权、DTO、路由及工作流装配
 │  └─ web/src/
@@ -55,21 +54,23 @@ MonkeyArch 和 MonkeyDiagram 是平行工作流。ArchFlow 提供它们共同依
 是否拆成独立部署或安装包，由真实使用需要决定，不与本次目录划分捆绑。
 `apps/archflow-studio/` 保留为共同宿主名称；它不是 MonkeyArch 的业务代码总目录。
 
-## 3. 现有文件分别归哪里
+## 3. 文件归属与迁移范围
 
-| 当前实现 | 长期归属与移动边界 |
+| 当前实现 | 职责与边界 |
 | --- | --- |
 | `archflow/project/`、`contracts/`、共享 `state/` 与 `semantics/` | 留在 ArchFlow。图纸可引用建筑事实；图纸排版、字形和笔迹不进入建筑 StateRecord。状态中的建模专用表示需按实际消费者单独划分，不能整目录搬走。 |
-| `capabilities/element_producers.py`、wall/opening/reference solvers、`compilers/geometry.py`、`runtime/project_runner.py` | 归 MonkeyArch。按真实建模调用链迁移；能力名称、记录身份及已有检查保持稳定。 |
-| `runtime/drawing_elevation.py`、`adapters/drawing_svg.py` | 归 MonkeyDiagram。来源核验与出图编排、SVG 表达分别保留自己的 owner；迁移时同时改调用方，不复制第二份 renderer。 |
+| `monkeyarch/capabilities/`、`monkeyarch/compilers/geometry.py`、`monkeyarch/runtime/project_runner.py` | 3D 生成、求解、重建语义、关系检查、编译和运行。原 `archflow` 中的对应生产文件已退役，调用方直接导入新位置。 |
+| `monkeydiagram/drawing_elevation.py`、`monkeydiagram/drawing_svg.py` | 图纸来源核验、模型轴立面投影编排、SVG／PNG 表达。两位既有 owner 保持原 API 和记录语义，不复制 renderer。 |
+| `archflow/state/geometry_program.py` 的 `CompiledGeometryProgram` 等值 | 三维编译器与共享 CAD 执行器共用的结果契约。数据值留在 ArchFlow，生成这些值的编译算法归 MonkeyArch。 |
 | `adapters/cad_execution.py`、`three_dm_inspector.py`、`ports/model.py` | 已被两条链使用的技术部分留在 ArchFlow。模型生成与二维投影的领域规则分别归各工作流；按函数职责处理混合文件，不整份复制。 |
 | Web 的 `ThreeDmViewport`、Program／Options、模型 `Annotate`／`useModelAnnotations` | 归 `workspaces/monkeyarch/`；通用三维显示器若有实际共享消费者，可以继续共用。 |
-| Web 的 `DocumentCanvas`、`DocumentTextLayer`、`documentInk`、`documentVisualInput`、`useDocumentAnnotations` | 归 `workspaces/monkeydiagram/`。当前仍在 `features/stage/`；搬动时一起更新真实导入和交互检查。模型修改提交仍是显式交给 MonkeyArch 的动作。 |
+| Web 的 `DocumentCanvas`、`DocumentTextLayer`、`documentInk`、`documentVisualInput`、`useDocumentAnnotations` | 已在 `workspaces/monkeydiagram/`。模型修改提交仍是显式交给 MonkeyArch 的动作，不能误称为重新出图。 |
 | App／AppShell、生成 SDK、连接、通用设置、会话显示 | 留在共同宿主。会话按当前工作流调用不同能力；不能把整个 Conversation 都归 3D，也不复制一套消息系统。 |
 | API 的 `application/artifacts.py`、`gestures.py`、`jobs.py` 等混合文件 | 公共文件访问、实际共用的排队／事件机制留在宿主或已有底座；模型用例归 MonkeyArch，图纸用例归 MonkeyDiagram。当前 job 合同仍偏向 candidate，不能先当成已完成的通用绘图任务接口。拆现有函数和调用，不复制保存、锁或来源校验。 |
 
-当前目录和目标归属可以暂时不同。一个 owner 在迁移后仍负责原来的明确能力；仅改变
-`owner_path`、相关文件、调用方和测试，不因产品名新增平行 owner 或记录 schema。
+API 中的装配用例仍保留一位 owner；拆出混合文件中的具体方法，应随下一项真实用例进行，
+不能为目录对称复制 DTO、来源校验或保存流程。本轮保持 HTTP 接口及客户端契约不变。
+模块 ID 不因产品名而改名，`owner_path`、调用方和公开类型的归属已同步到现有注册表。
 
 ## 4. 依赖方向与交接
 
@@ -101,13 +102,14 @@ MonkeyDiagram 工作区 → monkeydiagram → archflow
 退役前核对真实调用、公开契约和保留数据。普通旧代码可由 Git 找回；私人原件和唯一临时材料先确认交接，
 不根据“零 import”自动删除，不要求每次修复另建归档台账。
 
-## 6. 迁移顺序与完成条件
+## 6. 当前迁移与后续工作
 
-1. **固定现有 `v0.1.0` 候选。** 后续目录和工作区调整不混入已经检查的源码包。
-2. **先完成 MonkeyDiagram 的一个实际调用链。** 将现有文档组件组织成独立工作区，并接入已选出图／更新动作；
-   随该调用链迁移出图领域文件。保留源模型、旧图和批注，完成一次可继续编辑的图纸交付。
-3. **再迁移 MonkeyArch 的建模业务。** 从真实用例逐组拆出编排、producer 与编译代码；保留身份计算和历史读取。
-   同一改动移除被替代入口，不能留下新旧两条生产链。
+1. **已固定 `v0.1.0` 源码候选。** 本轮从当前开发代码的独立基线迁移，未改动该冻结包。
+2. **现有二维与三维链迁入各自包和工作区。** 调用方直接使用新路径，旧生产模块退役；
+   API、记录 schema、摘要计算与项目保存位置保持一致。
+3. **后续功能沿新归属继续。** 显式更新图纸、独立二维编辑、通用平立剖与排版等仍按实际用例推进；
+   本次迁移本身不宣称这些能力已经交付，也不将它们作为完成目录分离的前置条件。
 
-每一批同步真实 imports、包安装配置、registry 的路径与受影响测试；沿已有 archcheck 更新实际检查范围。
+包安装配置、registry 路径与受影响测试同步新位置；已有 archcheck 同时检查三个 Python 包，
+拒绝底座反向导入工作流，以及两个工作流互导。
 完成标准是新位置能独立测试、宿主经明确入口调用、原使用流程仍可运行，不是三个目录已经出现。

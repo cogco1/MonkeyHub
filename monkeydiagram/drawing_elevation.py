@@ -7,7 +7,7 @@ one exact hidden-line solve for a frame stated along the model axes
 (``adapters.cad_execution.project_occt_lines``), the visible (and, on
 request, hidden) polylines are cropped and serialised as one deterministic
 SVG whose every polyline names its source physical object, a PNG is
-rendered from that SVG (``adapters.drawing_svg``), and the two files plus
+rendered from that SVG (``monkeydiagram.drawing_svg``), and the two files plus
 one ``DrawingProjectionReceipt@1`` are retained in a *drawing run* whose
 base is the source run's base.
 
@@ -50,7 +50,7 @@ from archflow.adapters.cad_execution import (
     project_occt_lines,
     read_step,
 )
-from archflow.adapters.drawing_svg import (
+from monkeydiagram.drawing_svg import (
     PNG_MEDIA_TYPE,
     SVG_MEDIA_TYPE,
     DrawingSvgError,

@@ -590,7 +590,7 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
         for symbol in entry.get("public_api", ()):
             if symbol.isidentifier() and symbol not in defined:
                 yield PolicyFinding(rel_registry, 1, "REGISTRY_SYMBOL_MISSING", f"{module_id}: public_api symbol {symbol} is not defined in {entry['owner_path']} or its files")
-        # depends_on must be what the owner imports from archflow (module ids or dotted module paths)
+        # Dependencies cover shared core and both workflow packages.
         owner_by_module = {e2["owner_path"][:-3].replace("/", "."): e2["module_id"] for e2 in entries if e2.get("owner_path", "").endswith(".py")}
         actual: set[str] = set()
         for path in span:
@@ -601,10 +601,10 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
             except SyntaxError:
                 continue
             for node in ast.walk(tree2):
-                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("archflow."):
+                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(("archflow.", "monkeyarch.", "monkeydiagram.")):
                     actual.add(owner_by_module.get(node.module, node.module))
                 elif isinstance(node, ast.Import):
-                    actual.update(owner_by_module.get(a.name, a.name) for a in node.names if a.name.startswith("archflow."))
+                    actual.update(owner_by_module.get(a.name, a.name) for a in node.names if a.name.startswith(("archflow.", "monkeyarch.", "monkeydiagram.")))
         declared = set()
         for dep in entry.get("depends_on", ()):
             declared.add(owner_by_module.get(dep, dep))

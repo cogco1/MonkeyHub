@@ -43,8 +43,8 @@ const fixture = `
 import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
-import {DocumentCanvas} from '/src/features/stage/DocumentCanvas.tsx';
-import {createDocumentAnnotationsController} from '/src/features/stage/useDocumentAnnotations.ts';
+import {DocumentCanvas} from '/src/workspaces/monkeydiagram/DocumentCanvas.tsx';
+import {createDocumentAnnotationsController} from '/src/workspaces/monkeydiagram/useDocumentAnnotations.ts';
 import {UserPreferencesProvider} from '/src/features/settings/preferences.tsx';
 import {studio} from '/src/api/client';
 const modelA=${JSON.stringify(modelA)},modelB=${JSON.stringify(modelB)},storageRun=${JSON.stringify(storageRun)},documentSha=${JSON.stringify(documentSha)};

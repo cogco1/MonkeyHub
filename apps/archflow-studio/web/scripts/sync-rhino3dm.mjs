@@ -23,7 +23,7 @@ await Promise.all(
 // The exact-geometry fallback is a classic worker: it shares this public
 // rhino3dm runtime without making Vite bundle rhino3dm's Node shims.
 await copyFile(
-  join(appRoot, "public", "nurbsFallback.worker.js"),
+  join(appRoot, "src", "workspaces", "monkeyarch", "viewer", "nurbsFallback.worker.js"),
   join(publicRoot, "nurbsFallback.worker.js"),
 );
 

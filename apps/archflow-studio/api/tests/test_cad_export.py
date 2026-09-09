@@ -43,7 +43,7 @@ from archflow_studio_api.settings import (
 from archflow.adapters import cad_execution, occt_backend
 from archflow.adapters.cad_execution import CadCapabilityError
 from archflow.adapters.three_dm_inspector import inspect_three_dm
-from archflow.capabilities.geometry_proposal import load_compiled_geometry_program
+from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import record_ref_from_uri
 

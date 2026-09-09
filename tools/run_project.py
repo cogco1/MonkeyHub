@@ -34,15 +34,15 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from archflow.capabilities.declaration import DeclarationQuadrant  # noqa: E402
-from archflow.capabilities.discipline_seats import SeatSpec  # noqa: E402
-from archflow.capabilities.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
+from monkeyarch.capabilities.declaration import DeclarationQuadrant  # noqa: E402
+from monkeyarch.capabilities.discipline_seats import SeatSpec  # noqa: E402
+from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
 from archflow.state.stage_workflow import CompositeStageClosureReceipt
 from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.refs import record_ref_from_uri  # noqa: E402
 from archflow.state.state_record import StateRecord  # noqa: E402
-from archflow.runtime.project_runner import (  # noqa: E402
+from monkeyarch.runtime.project_runner import (  # noqa: E402
     CAD_BACKEND_OCCT,
     CAD_BACKENDS,
     RunOptions,

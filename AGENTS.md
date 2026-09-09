@@ -37,7 +37,10 @@ its currently implemented limits are described in `docs/ARCHITECTURE.md`.
 
 ## Framework versus project data
 
-- `archflow/` contains reusable mechanisms only.
+- `archflow/` contains shared project, fact and technical contracts. `monkeyarch/`
+  owns 3D modeling algorithms; `monkeydiagram/` owns drawing algorithms. The Studio
+  host composes peer workspaces. Core code imports neither workflow, and the
+  workflows do not import one another; see `docs/REPO_LAYOUT.md`.
 - `probes/<project_id>/` contains explicitly promoted, committed building
   inputs and framework-produced evidence used for regression or publication.
 - Active, unpromoted projects may use an explicitly configured external

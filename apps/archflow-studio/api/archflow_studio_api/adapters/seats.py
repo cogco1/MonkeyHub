@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from archflow.capabilities.declaration import DeclarationQuadrant
-from archflow.capabilities.discipline_seats import SeatSpec
+from monkeyarch.capabilities.declaration import DeclarationQuadrant
+from monkeyarch.capabilities.discipline_seats import SeatSpec
 from archflow.project.inputs import (
     SeatPackInvalid,
     SeatPackMissing,
