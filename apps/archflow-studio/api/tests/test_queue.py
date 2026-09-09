@@ -21,6 +21,7 @@ from archflow_studio_api.application.jobs import (
     SUCCEEDED,
     JobRegistry,
 )
+from archflow_studio_api.transport.errors import StudioError
 
 
 class Recorder:
@@ -279,6 +280,73 @@ class ExclusiveLaneTests(QueueTestCase):
         a.release.set()
         b.release.set()
         self.assertTrue(wait_until(lambda: len(self.events.of("candidate.succeeded")) == 2))
+
+
+class ShutdownTests(QueueTestCase):
+    def test_shutdown_drains_running_and_queued_jobs_and_refuses_new_work(self) -> None:
+        first, second = Gate(), Gate()
+        first_job = self.submit("first", first, exclusive=True)
+        second_job = self.submit("second", second, exclusive=True)
+        stopped = threading.Event()
+        thread = threading.Thread(target=lambda: (self.registry.shutdown(), stopped.set()))
+        thread.start()
+        try:
+            self.assertTrue(wait_until(lambda: not self.registry.accepting))
+            with self.assertRaises(StudioError) as refused:
+                self.submit("late", Gate())
+            self.assertEqual(refused.exception.status, 503)
+            self.assertEqual(refused.exception.code, "STUDIO_STOPPING")
+            self.assertFalse(stopped.is_set())
+            first.release.set()
+            self.assertTrue(second.started.wait(2))
+            self.assertFalse(stopped.is_set())
+            second.release.set()
+            self.assertTrue(stopped.wait(2))
+        finally:
+            first.release.set()
+            second.release.set()
+            thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(self.registry.get(first_job.job_id).status, SUCCEEDED)
+        self.assertEqual(self.registry.get(second_job.job_id).status, SUCCEEDED)
+        self.assertEqual(len(self.events.of("candidate.queued")), 2)
+
+    def test_shutdown_keeps_a_job_accepted_before_its_submitter_can_admit_it(self) -> None:
+        accepted, resume, stopped = (threading.Event() for _ in range(3))
+        gate = Gate()
+        original_admit = self.registry._admit
+
+        def pause_admission():
+            if threading.current_thread().name == "late-admission":
+                accepted.set()
+                if not resume.wait(5):
+                    raise TimeoutError("admission was never resumed")
+            original_admit()
+
+        with patch.object(self.registry, "_admit", side_effect=pause_admission):
+            submitter = threading.Thread(
+                target=lambda: self.submit("accepted", gate), name="late-admission",
+            )
+            submitter.start()
+            shutdown = threading.Thread(target=lambda: (self.registry.shutdown(), stopped.set()))
+            try:
+                self.assertTrue(accepted.wait(2))
+                shutdown.start()
+                self.assertTrue(wait_until(lambda: not self.registry.accepting))
+                self.assertFalse(stopped.is_set())
+                resume.set()
+                self.assertTrue(gate.started.wait(2))
+                gate.release.set()
+                self.assertTrue(stopped.wait(2))
+            finally:
+                resume.set()
+                gate.release.set()
+                submitter.join(5)
+                if shutdown.ident is not None:
+                    shutdown.join(5)
+        self.assertFalse(submitter.is_alive())
+        self.assertFalse(shutdown.is_alive())
+        self.assertEqual(self.registry.for_candidate("accepted").status, SUCCEEDED)
 
 
 class FailureReleasesTheQueueTests(QueueTestCase):

@@ -5,7 +5,10 @@ from functools import partial
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
+import re
+import subprocess
 from urllib.parse import urlsplit
 
 from .codex import iter_codex_events
@@ -14,6 +17,24 @@ from .store import UsageLog
 from .usage import TokenUsage
 
 WEB = Path(__file__).parent / "web"
+SERVER_VERSION = "0.1.0"
+
+
+def _source_revision() -> str | None:
+    root = Path(__file__).resolve().parent.parent
+    try:
+        revision = (root / "source-version.txt").read_text(encoding="ascii").strip()
+    except FileNotFoundError:
+        try:
+            revision = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                check=True, capture_output=True, text=True, timeout=2,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
+    except (OSError, UnicodeError):
+        return None
+    return revision.lower() if re.fullmatch(r"[0-9a-fA-F]{40}", revision) else None
 
 
 class MonitorData:
@@ -44,8 +65,9 @@ class MonitorData:
 
 
 class MonitorHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args, data: MonitorData, **kwargs):
+    def __init__(self, *args, data: MonitorData, health: dict, **kwargs):
         self.data = data
+        self.health = health
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
@@ -78,7 +100,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path == "/api/health":
-            self._send({"status": "ok", "name": "MonkeyMonitor"})
+            self._send(self.health)
         elif path == "/api/events":
             self._send(self.data.snapshot())
         elif path == "/api/rates":
@@ -107,5 +129,16 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self._send({"error": str(exc)}, 400)
 
 
-def make_server(data: MonitorData, port: int = 8788) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer(("127.0.0.1", port), partial(MonitorHandler, data=data))
+def make_server(
+    data: MonitorData, port: int = 8788, *, managed_instance_id: str | None = None,
+) -> ThreadingHTTPServer:
+    health = {
+        "status": "ok", "name": "MonkeyMonitor",
+        "managedInstanceId": managed_instance_id, "processId": os.getpid(),
+        "parentProcessId": os.getppid(),
+        "sourceRevision": _source_revision(), "serverVersion": SERVER_VERSION,
+    }
+    server = ThreadingHTTPServer(("127.0.0.1", port), partial(MonitorHandler, data=data, health=health))
+    # Managed shutdown waits for accepted requests before the child exits.
+    server.daemon_threads = managed_instance_id is None
+    return server

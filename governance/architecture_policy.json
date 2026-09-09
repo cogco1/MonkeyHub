@@ -9,7 +9,8 @@
     "tools",
     "apps/archflow-studio/api",
     "tests",
-    "labs"
+    "labs",
+    "apps/monkeyhub"
   ],
   "import_only_source_roots": [
     "labs"
@@ -56,7 +57,7 @@
   "allowed_write_sites": [
     {
       "path": "apps/archflow-studio/api/archflow_studio_api/settings.py",
-      "function": "save_user_settings",
+      "function": "_save_local_settings",
       "operations": [
         "mkdir",
         "replace",
@@ -64,7 +65,7 @@
       ],
       "kind": "user_settings",
       "owner": "studio.shell",
-      "reason": "Atomically replaces only the local account's APPDATA/MonkeyArch/settings.json through the local-only settings route; the launcher only reads it and no project data is written."
+      "reason": "Atomic replacement shared by the existing account preferences and Hub launch configuration in an explicitly supplied nonproject runtime; neither file contains or writes project state."
     },
     {
       "path": "archflow/project/repository.py",
@@ -172,6 +173,17 @@
       "kind": "diagnostics",
       "owner": "monkeymonitor",
       "reason": "Metadata-only usage.jsonl is appended under an explicitly supplied noncanonical diagnostics directory; it does not write any project document."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/applications.py",
+      "function": "start",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "application_logs",
+      "owner": "hub.shell",
+      "reason": "Creates only stdout/stderr logs for this Hub's own service children under its explicit nonproject runtime root; it never writes a project."
     }
   ],
   "forbidden_layer_imports": [
