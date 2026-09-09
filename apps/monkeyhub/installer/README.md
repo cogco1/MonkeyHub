@@ -9,9 +9,9 @@
 
 1. 完整解压候选 ZIP，勿在压缩包预览中直接运行。
 2. 双击 `INSTALL_MONKEYHUB.cmd`。默认复制到 `%LOCALAPPDATA%\MonkeyHub\versions\<源码版本>`，不需要管理员权限。
-3. 从安装器显示的目录打开 `OPEN_MONKEYHUB.cmd`。Hub 可在没有项目时打开；MonkeyArch 和 MonkeyDiagram
-   通过已选真实项目共用 Studio 服务，MonkeyMonitor 可独立启动。
-4. 如需桌面入口，由使用者对安装目录内的 `OPEN_MONKEYHUB.cmd` 创建快捷方式。
+3. 安装完成后，选择是否创建桌面快捷方式、是否立即打开 MonkeyHub。按 Enter 接受显示的选项，输入 `n` 跳过。
+4. 之后双击桌面的 `MonkeyHub` 即可；也可运行安装目录中的 `OPEN_MONKEYHUB.cmd`。
+   Hub 可在没有项目时打开；MonkeyArch 和 MonkeyDiagram 通过已选真实项目共用 Studio 服务，MonkeyMonitor 可独立启动。
 
 安装目录也可在 PowerShell 中明确指定，例如：
 
@@ -20,7 +20,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\apps\monkeyhub\instal
 ```
 
 再次安装同一版本会返回原安装目录。目标存在其他文件时，安装器拒绝覆盖，请选择新目录。
-安装器不改系统 Python、PATH、桌面或已有项目。不同源码版本各自安装；不自动更新或迁移项目。
+安装器按所选项创建快捷方式和打开应用，不改系统 Python、PATH 或已有项目。不同源码版本各自安装；不自动更新或迁移项目。
+直接运行 `install.ps1` 默认只安装；可用 `-Interactive` 显示完成选项，或明确指定 `-CreateDesktopShortcut`、`-OpenHub`。
+隔离安装检查使用 `-CreateDesktopShortcut -DesktopDirectory '<临时桌面目录>'`，不传 `-Interactive` 和 `-OpenHub`，即可验证快捷方式而不启动应用。
+
+安装器按 Windows 传统路径长度限制检查解压、安装与临时目录，无需开启 `LongPathsEnabled`。
+如提示路径过长，请将 ZIP 解压到较短目录，或指定较短的安装目录。额外许可在包内采用较短文件名，
+许可目录的 README 保留原始路径说明、来源链接及对应文本链接。
 
 ## 使用与退出
 

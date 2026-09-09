@@ -12,6 +12,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -124,7 +125,23 @@ def collect_application(source: Path, bundle: Path, commit: str) -> None:
     for relative in ("apps/archflow-studio/api/archflow_studio_api", "apps/archflow-studio/assets",
                      "apps/monkeyhub/api", "apps/monkeyhub/installer"):
         shutil.copytree(source / relative, bundle / relative,
-                        ignore=shutil.ignore_patterns("__pycache__", "tests", "test_*"))
+                        ignore=shutil.ignore_patterns("__pycache__", "tests", "test_*", "third-party"))
+    # Keep upstream license text and source labels, but shorten its distribution
+    # paths so the installer does not depend on Windows long-path opt-in.
+    notices = source / "apps/monkeyhub/installer/third-party"
+    notice_target = bundle / "apps/monkeyhub/installer/third-party"
+    notice_target.mkdir()
+    links = {}
+    for index, notice in enumerate(sorted(path for path in notices.rglob("*")
+                                         if path.is_file() and path != notices / "README.md"), 1):
+        filename = f"{index:03d}-{notice.name}"
+        links[notice.relative_to(notices).as_posix()] = filename
+        shutil.copy2(notice, notice_target / filename)
+    notice_readme = (notices / "README.md").read_text(encoding="utf-8")
+    notice_readme = re.sub(r"\]\(([^)]+)\)",
+                          lambda match: "](" + links[match[1]] + ")" if match[1] in links else match[0],
+                          notice_readme)
+    (notice_target / "README.md").write_text(notice_readme, encoding="utf-8")
     for relative in ("apps/archflow-studio/web/dist", "apps/monkeyhub/web/dist"):
         shutil.copytree(source / relative, bundle / relative)
     for relative in ("apps/archflow-studio/launch-studio.ps1", "apps/monkeyhub/run.py",
