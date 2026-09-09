@@ -431,11 +431,14 @@ New-Splash | Out-Null
 
 # --- runtime.json selects the project and is validated before anything is started
 Set-SplashStep 1 'validating runtime.json'
-if (-not (Test-Path -LiteralPath $RuntimeConfig -PathType Leaf)) { throw "runtime.json is required: $RuntimeConfig" }
+if (-not (Test-Path -LiteralPath $RuntimeConfig -PathType Leaf)) {
+    $runtimeExample = Join-Path $studioRoot 'runtime.example.json'
+    throw "Runtime configuration is missing: $RuntimeConfig$([Environment]::NewLine)Copy '$runtimeExample' to your own runtime.json, then set project_dir to an existing P036 project and python to your environment's Python executable.$([Environment]::NewLine)Pass -RuntimeConfig <your config path> when keeping the configuration outside the Studio directory."
+}
 $runtime = Get-Content -LiteralPath $RuntimeConfig -Raw -Encoding utf8 | ConvertFrom-Json
 if ($runtime.schema_version -ne 'archflow-studio-runtime@1') { throw "runtime.json has an unsupported schema_version: $($runtime.schema_version)" }
 $projectDir = [string]$runtime.project_dir
-if (-not $projectDir) { throw "runtime.json must name project_dir (a P036 project directory): $RuntimeConfig" }
+if (-not $projectDir) { throw "Set project_dir to an existing P036 project directory in '$RuntimeConfig'. The example leaves this field empty for you to fill in." }
 if (-not (Test-Path -LiteralPath $projectDir -PathType Container)) {
     throw "project_dir does not exist: $projectDir  (named by $RuntimeConfig)"
 }

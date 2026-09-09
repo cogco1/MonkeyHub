@@ -13,6 +13,7 @@ venv/
 *.log
 *.egg-info/
 config/runtime.json
+apps/archflow-studio/runtime.json
 apps/archflow-studio/.runtime/
 .claude/
 !.claude/launch.json

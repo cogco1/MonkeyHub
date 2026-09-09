@@ -438,6 +438,7 @@ class LauncherSettingsTests(unittest.TestCase):
 param([string]$LauncherPath, [string]$RuntimeConfig, [string]$ProbeRoot)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$studioRoot = Split-Path -Parent $LauncherPath
 $tokens = $null
 $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($LauncherPath, [ref]$tokens, [ref]$parseErrors)
@@ -472,26 +473,17 @@ $child = Start-Process -FilePath $pythonExe -ArgumentList ($pythonArgs + @('-V')
 
     def read_config(self, python: str) -> dict:
         config = self.root / "external runtime config.json"
+        settings = json.loads(
+            self.launcher.with_name("runtime.example.json").read_text(encoding="utf-8")
+        )
+        settings.update(
+            project_dir=str(self.project), python=python, api_port=18080, web_port=15174
+        )
         config.write_text(
-            json.dumps(
-                {
-                    "schema_version": "archflow-studio-runtime@1",
-                    "project_dir": str(self.project),
-                    "python": python,
-                    "api_port": 18080,
-                    "web_port": 15174,
-                }
-            ),
+            json.dumps(settings),
             encoding="utf-8",
         )
-        result = subprocess.run(
-            [
-                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                "-File", str(self.harness), "-LauncherPath", str(self.launcher),
-                "-RuntimeConfig", str(config), "-ProbeRoot", str(self.root),
-            ],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
-        )
+        result = self.invoke_config(config)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         answer = json.loads(result.stdout)
         self.assertEqual(Path(answer["Config"]), config)
@@ -499,6 +491,30 @@ $child = Start-Process -FilePath $pythonExe -ArgumentList ($pythonArgs + @('-V')
         self.assertEqual((answer["ApiPort"], answer["WebPort"]), (18080, 15174))
         self.assertEqual(answer["ChildExit"], 0)
         return answer
+
+    def invoke_config(self, config: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                "-File", str(self.harness), "-LauncherPath", str(self.launcher),
+                "-RuntimeConfig", str(config), "-ProbeRoot", str(self.root),
+            ],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+        )
+
+    def test_missing_runtime_config_explains_local_setup(self) -> None:
+        config = self.root / "missing runtime.json"
+        result = self.invoke_config(config)
+        self.assertNotEqual(result.returncode, 0)
+        detail = result.stdout + result.stderr
+        for required in ("runtime.example.json", "project_dir", "python", "-RuntimeConfig"):
+            self.assertIn(required, detail)
+        self.assertFalse(config.exists())
+
+    def test_shared_example_requires_a_chosen_project(self) -> None:
+        result = self.invoke_config(self.launcher.with_name("runtime.example.json"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Set project_dir", result.stdout + result.stderr)
 
     def test_external_config_starts_venv_python_with_spaces(self) -> None:
         answer = self.read_config(str(self.python))

@@ -7,7 +7,7 @@
       "runtimeArgs": [
         "-3.12",
         "-c",
-        "import os, sys; os.environ['ARCHFLOW_STUDIO_PROJECT_DIR']='C:/Users/asus/AppData/Local/Temp/p108/villa-rotonda-reconstruction'; os.environ['ARCHFLOW_STUDIO_RHINO_EXPORT']='1'; os.environ['ARCHFLOW_STUDIO_POWERSHELL']='C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'; os.environ['ARCHFLOW_STUDIO_INTENT_PROVIDER']='codex'; os.environ['ARCHFLOW_STUDIO_CODEX']='C:/Users/asus/AppData/Roaming/npm/codex.cmd'; sys.path.insert(0, 'apps/archflow-studio/api'); from archflow_studio_api.main import main; main()"
+        "import sys; sys.path.insert(0, 'apps/archflow-studio/api'); from archflow_studio_api.main import main; main()"
       ],
       "port": 8000
     },
@@ -21,17 +21,6 @@
         "dev"
       ],
       "port": 5174
-    },
-    {
-      "name": "state-tree",
-      "runtimeExecutable": "python",
-      "runtimeArgs": [
-        "archive/tools/state_tree_viewer.py",
-        "D:/PROJECTS/01_ACTIVE_当前项目/ARCHFLOW CAADRIA 2027/V4_RUNTIME/workspace/projects",
-        "--port",
-        "8766"
-      ],
-      "port": 8766
     },
     {
       "name": "archflow-studio",
@@ -52,7 +41,7 @@
       "runtimeArgs": [
         "-3.12",
         "-c",
-        "import os, sys; os.environ['ARCHFLOW_STUDIO_PROJECT_DIR']='D:/PROJECTS/01_ACTIVE_当前项目/ARCHFLOW CAADRIA 2027/V4_RUNTIME/workspace/projects/villa-rotonda-reconstruction'; os.environ['ARCHFLOW_STUDIO_REFERENCE_RUN']='reindex-compile-008'; os.environ['ARCHFLOW_STUDIO_INTENT_PROVIDER']='deterministic'; sys.path.insert(0, 'apps/archflow-studio/api'); sys.argv=['archflow-studio','--port','8014']; from archflow_studio_api.main import main; main()"
+        "import sys; sys.path.insert(0, 'apps/archflow-studio/api'); from archflow_studio_api.main import main; main(['--port', '8014'])"
       ],
       "port": 8014
     },
