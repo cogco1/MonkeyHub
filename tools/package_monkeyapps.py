@@ -141,6 +141,17 @@ def collect_application(source: Path, bundle: Path, commit: str) -> None:
     notice_readme = re.sub(r"\]\(([^)]+)\)",
                           lambda match: "](" + links[match[1]] + ")" if match[1] in links else match[0],
                           notice_readme)
+    notice_readme += "\n## 前端随包许可\n\n原文来自各前端按 package-lock.json 安装的生产依赖。\n\n"
+    for application, packages in (
+        ("archflow-studio", ("react", "react-dom", "scheduler", "three", "pdfjs-dist")),
+        ("monkeyhub", ("react", "react-dom", "scheduler")),
+    ):
+        for name in packages:
+            dependency = source / "apps" / application / "web/node_modules" / name
+            version = json.loads((dependency / "package.json").read_text(encoding="utf-8"))["version"]
+            filename = f"web-{application}-{name}-LICENSE.txt"
+            shutil.copy2(dependency / "LICENSE", notice_target / filename)
+            notice_readme += f"- {application}: {name} {version} — [LICENSE]({filename})\n"
     (notice_target / "README.md").write_text(notice_readme, encoding="utf-8")
     for relative in ("apps/archflow-studio/web/dist", "apps/monkeyhub/web/dist"):
         shutil.copytree(source / relative, bundle / relative)
